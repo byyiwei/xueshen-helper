@@ -1,0 +1,1320 @@
+.preview-page {
+  min-height: 100vh;
+  background-color: #faf8f3;
+  padding-bottom: 40rpx;
+  --primary-color: #B8860B;
+  --primary-light: #f5e6c8;
+  --primary-dark: #8B6914;
+  --bg-color: #f5f0e6;
+  --bg-light: #faf8f3;
+}
+
+.preview-page.theme-mocha {
+  background-color: #f5f5f0;
+  --primary-color: #8B7765;
+  --primary-light: #d4cfc4;
+  --primary-dark: #6B5744;
+  --bg-color: #faf8f3;
+  --bg-light: #f5f5f0;
+}
+
+.preview-page.theme-olive {
+  background-color: #e8ede4;
+  --primary-color: #556B2F;
+  --primary-light: #b8c9b8;
+  --primary-dark: #3d5020;
+  --bg-color: #f0f3ef;
+  --bg-light: #e8ede4;
+}
+
+/* 加载中 */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 300rpx 0;
+}
+
+.loading-spinner {
+  width: 60rpx;
+  height: 60rpx;
+  border: 4rpx solid #f0f0f0;
+  border-top-color: #B8860B;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  margin-top: 20rpx;
+  font-size: 28rpx;
+  color: #999;
+}
+
+/* 内容区 */
+.preview-content {
+  padding: 0;
+}
+
+/* 图片轮播区 */
+.photo-section {
+  position: relative;
+  width: 100%;
+  height: 500rpx;
+  background-color: #e8e4dc;
+}
+
+.photo-swiper {
+  width: 100%;
+  height: 100%;
+}
+
+.photo-img {
+  width: 100%;
+  height: 100%;
+}
+
+.photo-count {
+  position: absolute;
+  right: 24rpx;
+  bottom: 24rpx;
+  padding: 8rpx 20rpx;
+  background-color: rgba(0, 0, 0, 0.5);
+  border-radius: 24rpx;
+  font-size: 24rpx;
+  color: #fff;
+}
+
+.empty-photo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.empty-photo-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.empty-photo-icon {
+  font-size: 80rpx;
+}
+
+.empty-photo-text {
+  font-size: 28rpx;
+  color: #999;
+}
+
+/* 信息卡片 */
+.info-card {
+  margin: -40rpx 24rpx 24rpx;
+  padding: 32rpx;
+  background-color: #ffffff;
+  border-radius: 24rpx;
+  box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.08);
+  position: relative;
+  z-index: 10;
+}
+
+.pet-header {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+  margin-bottom: 24rpx;
+}
+
+.pet-avatar-section {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 60rpx;
+  overflow: hidden;
+  flex-shrink: 0;
+  border: 4rpx solid #f5f5f5;
+}
+
+.pet-avatar {
+  width: 100%;
+  height: 100%;
+}
+
+.pet-avatar-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48rpx;
+  color: #fff;
+  background: linear-gradient(135deg, #ffc53d 0%, #B8860B 100%);
+}
+
+.pet-basic-info {
+  flex: 1;
+}
+
+.pet-name {
+  font-size: 40rpx;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 16rpx;
+  display: block;
+}
+
+.pet-tags {
+  display: flex;
+  gap: 12rpx;
+  flex-wrap: wrap;
+}
+
+.tag {
+  padding: 8rpx 16rpx;
+  border-radius: 20rpx;
+  font-size: 22rpx;
+}
+
+.gender-tag {
+  background-color: #e8f4f8;
+  color: #1890ff;
+}
+
+.category-tag {
+  background-color: #f6ffed;
+  color: #52c41a;
+}
+
+.status-tag {
+  background-color: #f6ffed;
+  color: #52c41a;
+}
+
+.status-sick {
+  background-color: #fff2f0;
+  color: #ff4d4f;
+}
+
+.status-dead {
+  background-color: #f5f5f5;
+  color: #999;
+}
+
+.status-sold {
+  background-color: #fff7e6;
+  color: #fa8c16;
+}
+
+.alias-tag {
+  background-color: #f0f5ff;
+  color: #2f54eb;
+}
+
+/* 父母信息 */
+.parents-row {
+  display: flex;
+  align-items: center;
+  padding-top: 24rpx;
+  border-top: 1rpx solid #f0f0f0;
+}
+
+.parent-box {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.parent-label {
+  font-size: 24rpx;
+  color: #999;
+}
+
+.parent-value {
+  font-size: 28rpx;
+  color: #1890ff;
+  font-weight: 500;
+}
+
+.parent-value.unlinked {
+  color: #1890ff;
+}
+
+.parent-value.unlinked-red {
+  color: #ff4d4f;
+}
+
+.parent-divider {
+  width: 1rpx;
+  height: 60rpx;
+  background-color: #f0f0f0;
+}
+
+/* 详细信息卡片 */
+.detail-card,
+.notes-card,
+.events-card {
+  margin: 0 24rpx 24rpx;
+  padding: 32rpx;
+  background-color: #ffffff;
+  border-radius: 24rpx;
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.06);
+}
+
+.card-title {
+  font-size: 32rpx;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 24rpx;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.event-count {
+  font-size: 26rpx;
+  color: #999;
+  font-weight: normal;
+}
+
+/* 详细信息网格 */
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24rpx;
+}
+
+.detail-item {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 20rpx;
+  background-color: #fafafa;
+  border-radius: 16rpx;
+}
+
+.detail-icon {
+  font-size: 40rpx;
+}
+
+.detail-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+}
+
+.detail-label {
+  font-size: 22rpx;
+  color: #999;
+}
+
+.detail-value {
+  font-size: 28rpx;
+  color: #333;
+  font-weight: 500;
+}
+
+/* 备注 */
+.notes-content {
+  font-size: 28rpx;
+  color: #666;
+  line-height: 1.8;
+}
+
+/* 事件统计 */
+.event-stats {
+  display: flex;
+  justify-content: space-around;
+  padding: 20rpx 0;
+  margin-bottom: 24rpx;
+  background-color: #fafafa;
+  border-radius: 16rpx;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.stat-icon {
+  font-size: 36rpx;
+}
+
+.stat-text {
+  font-size: 22rpx;
+  color: #666;
+}
+
+/* 事件列表 */
+.event-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.event-item {
+  display: flex;
+  gap: 20rpx;
+  padding: 24rpx;
+  background-color: #fafafa;
+  border-radius: 16rpx;
+}
+
+.event-icon-box {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 36rpx;
+  background-color: #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.event-icon {
+  font-size: 36rpx;
+}
+
+.event-body {
+  flex: 1;
+}
+
+.event-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8rpx;
+}
+
+.event-type {
+  font-size: 30rpx;
+  font-weight: bold;
+  color: #333;
+}
+
+.event-date {
+  font-size: 22rpx;
+  color: #999;
+}
+
+.event-text {
+  font-size: 26rpx;
+  color: #666;
+  line-height: 1.5;
+}
+
+/* 空事件提示 */
+.empty-events {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 60rpx 0;
+}
+
+.empty-icon {
+  font-size: 64rpx;
+  margin-bottom: 16rpx;
+}
+
+.empty-text {
+  font-size: 28rpx;
+  color: #999;
+}
+
+/* 底部提示 */
+.preview-footer {
+  padding: 40rpx 0;
+  text-align: center;
+}
+
+.footer-text {
+  font-size: 24rpx;
+  color: #ccc;
+}
+
+/* 主题色支持 - 米金棕 */
+.theme-gold .loading-spinner {
+  border-top-color: #B8860B;
+}
+
+.theme-gold .pet-avatar-placeholder {
+  background: linear-gradient(135deg, #ffc53d 0%, #B8860B 100%);
+}
+
+/* 主题色支持 - 摩卡纸本 */
+.theme-mocha .loading-spinner {
+  border-top-color: #8B7765;
+}
+
+.theme-mocha .pet-avatar-placeholder {
+  background: linear-gradient(135deg, #c4b8a8 0%, #8B7765 100%);
+}
+
+/* 主题色支持 - 橄榄档案 */
+.theme-olive .loading-spinner {
+  border-top-color: #556B2F;
+}
+
+.theme-olive .pet-avatar-placeholder {
+  background: linear-gradient(135deg, #a8c2a8 0%, #556B2F 100%);
+}
+
+/* 二维码区域 */
+.qrcode-section {
+  margin: 0 24rpx 24rpx;
+}
+
+.qrcode-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 32rpx;
+  background-color: #ffffff;
+  border-radius: 24rpx;
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.06);
+}
+
+.qrcode-left {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.qrcode-title {
+  font-size: 30rpx;
+  font-weight: bold;
+  color: #333;
+}
+
+.qrcode-subtitle {
+  font-size: 24rpx;
+  color: #999;
+}
+
+.qrcode-right {
+  flex-shrink: 0;
+}
+
+.qrcode-img {
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 12rpx;
+  border: 2rpx solid #f0f0f0;
+}
+
+.qrcode-placeholder {
+  width: 160rpx;
+  height: 160rpx;
+  border-radius: 12rpx;
+  border: 2rpx dashed #ddd;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.qrcode-loading {
+  font-size: 22rpx;
+  color: #ccc;
+}
+
+/* 底部操作栏 */
+.preview-bottom-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24rpx;
+  padding: 40rpx 24rpx 60rpx;
+}
+
+.save-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  padding: 20rpx 60rpx;
+  background: linear-gradient(135deg, var(--primary-color, #B8860B) 0%, var(--primary-dark, #8B6914) 100%);
+  border-radius: 48rpx;
+  box-shadow: 0 8rpx 24rpx rgba(184, 134, 11, 0.3);
+}
+
+.save-btn-icon {
+  font-size: 32rpx;
+}
+
+.save-btn-text {
+  font-size: 28rpx;
+  color: #ffffff;
+  font-weight: 500;
+}
+
+/* 隐藏的 Canvas */
+.preview-canvas {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  width: 750px;
+  height: 3000px;
+}
+
+/* ========== 家族谱系样式 ========== */
+.section {
+  background-color: #ffffff;
+  border-radius: 24rpx;
+  padding: 24rpx;
+  margin: 0 24rpx 24rpx;
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.06);
+}
+
+.section-pedigree {
+  padding-bottom: 24rpx;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24rpx 0;
+}
+
+.section-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 16rpx;
+}
+
+.pedigree-badge {
+  background: linear-gradient(135deg, var(--primary-color, #B8860B) 0%, var(--primary-dark, #8B6914) 100%);
+  padding: 6rpx 16rpx;
+  border-radius: 20rpx;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+}
+
+.pedigree-count {
+  font-size: 22rpx;
+  color: #ffffff;
+  font-weight: 500;
+  line-height: 1.2;
+}
+
+/* 收起状态 - 谱系卡片 */
+.pedigree-cards {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: stretch;
+  gap: 24rpx;
+  padding: 16rpx 0 24rpx;
+}
+
+.pedigree-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+  padding: 16rpx 28rpx 12rpx;
+  background-color: #ffffff;
+  border: 2rpx solid var(--primary-light, #f5e6c8);
+  border-radius: 24rpx;
+  min-width: 200rpx;
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.06);
+  position: relative;
+  overflow: visible;
+}
+
+.card-gender-tag {
+  position: absolute;
+  top: 8rpx;
+  right: 8rpx;
+  min-width: 44rpx;
+  height: 44rpx;
+  padding: 0 10rpx;
+  border-radius: 22rpx;
+  font-size: 22rpx;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.3);
+  z-index: 1;
+}
+
+.card-gender-tag.male {
+  background: linear-gradient(135deg, var(--primary-color, #B8860B) 0%, var(--primary-dark, #8B6914) 100%);
+}
+
+.card-gender-tag.female {
+  background: linear-gradient(135deg, var(--primary-color, #B8860B) 0%, var(--primary-dark, #8B6914) 100%);
+}
+
+.card-avatar {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 20rpx;
+  background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.card-icon {
+  font-size: 60rpx;
+  color: #cccccc;
+}
+
+.card-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4rpx;
+}
+
+.card-label {
+  font-size: 24rpx;
+  color: var(--primary-color, #B8860B);
+  font-weight: 600;
+  padding: 6rpx 20rpx;
+  background-color: var(--primary-light, #f5e6c8);
+  border-radius: 12rpx;
+}
+
+.card-name {
+  font-size: 32rpx;
+  color: #333333;
+  font-weight: 600;
+  max-width: 200rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-more {
+  font-size: 22rpx;
+  color: #999999;
+  padding: 4rpx 16rpx;
+  background-color: #f5f5f5;
+  border-radius: 10rpx;
+}
+
+.expand-btn {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 12rpx 20rpx;
+  background-color: #f5f5f5;
+  border-radius: 24rpx;
+  transition: all 0.3s ease;
+}
+
+.expand-btn.expanded {
+  background-color: var(--primary-light, #f5e6c8);
+}
+
+.expand-text {
+  font-size: 26rpx;
+  color: #666666;
+}
+
+.expand-icon {
+  font-size: 24rpx;
+  color: #999999;
+  transition: transform 0.3s ease;
+}
+
+.expand-btn.expanded .expand-icon {
+  transform: rotate(180deg);
+}
+
+/* 收起状态 - 简洁预览 */
+.pedigree-preview {
+  padding: 8rpx 0;
+  position: relative;
+  overflow: visible;
+}
+
+.family-tree-empty {
+  border: 2rpx dashed #d4d4d4;
+  border-radius: 24rpx;
+  padding: 48rpx 32rpx;
+  text-align: center;
+  background-color: #fafafa;
+}
+
+.family-status {
+  display: inline-block;
+  padding: 8rpx 24rpx;
+  background-color: #fff7e6;
+  border-radius: 16rpx;
+  font-size: 24rpx;
+  color: #fa8c16;
+  margin-bottom: 24rpx;
+}
+
+.family-title {
+  font-size: 32rpx;
+  color: #333333;
+  display: block;
+  margin-bottom: 16rpx;
+}
+
+.family-hint {
+  font-size: 26rpx;
+  color: #999999;
+  display: block;
+  line-height: 1.6;
+  margin-bottom: 32rpx;
+}
+
+/* 展开状态 - 完整族谱 */
+.pedigree-full {
+  padding: 16rpx 0;
+  animation: fadeIn 0.3s ease;
+  position: relative;
+  overflow: visible;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10rpx); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 统计信息 */
+.pedigree-stats {
+  display: flex;
+  justify-content: space-around;
+  padding: 16rpx;
+  background: linear-gradient(135deg, #faf8f3 0%, #f5f0e6 100%);
+  border-radius: 20rpx;
+  margin-bottom: 20rpx;
+}
+
+.pedigree-stats .stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.pedigree-stats .stat-num {
+  font-size: 40rpx;
+  font-weight: bold;
+  color: var(--primary-color, #B8860B);
+}
+
+.pedigree-stats .stat-label {
+  font-size: 24rpx;
+  color: #999999;
+}
+
+/* 血缘主线 */
+.bloodline-section {
+  margin-bottom: 32rpx;
+}
+
+.bloodline-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20rpx;
+}
+
+.bloodline-title .title-text {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #333333;
+}
+
+.bloodline-tabs {
+  display: flex;
+  gap: 12rpx;
+}
+
+.bloodline-tabs .tab {
+  padding: 12rpx 24rpx;
+  font-size: 26rpx;
+  color: #666666;
+  background-color: #f5f5f5;
+  border-radius: 24rpx;
+  transition: all 0.2s ease;
+}
+
+.bloodline-tabs .tab.active {
+  color: #ffffff;
+  background-color: var(--primary-color, #B8860B);
+}
+
+.bloodline-content {
+  padding: 32rpx 0;
+}
+
+.empty-line {
+  text-align: center;
+  padding: 48rpx;
+  color: #999999;
+  font-size: 28rpx;
+}
+
+.bloodline-chain {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.bloodline-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.node-card {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  width: 100%;
+  padding: 20rpx 24rpx;
+  background-color: #ffffff;
+  border: 2rpx solid #f0f0f0;
+  border-radius: 16rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+  position: relative;
+  overflow: visible;
+}
+
+.node-avatar {
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary-light, #f5e6c8) 0%, #f5f0e6 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.node-avatar .avatar-img {
+  width: 100%;
+  height: 100%;
+}
+
+.node-avatar .avatar-text {
+  font-size: 36rpx;
+  color: var(--primary-color, #B8860B);
+}
+
+.node-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.node-name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #333333;
+}
+
+.node-category {
+  font-size: 24rpx;
+  color: #999999;
+}
+
+.chain-arrow {
+  font-size: 32rpx;
+  color: var(--primary-color, #B8860B);
+  padding: 8rpx 0;
+}
+
+/* 完整家谱树 */
+.family-tree-section {
+  margin-top: 32rpx;
+}
+
+.tree-title {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 24rpx;
+}
+
+.tree-title .title-text {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #333333;
+}
+
+.tree-title .tree-hint {
+  font-size: 24rpx;
+  color: #999999;
+}
+
+.empty-tree {
+  text-align: center;
+  padding: 48rpx;
+  color: #999999;
+  background-color: #fafafa;
+  border-radius: 16rpx;
+}
+
+.family-tree-visual {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12rpx;
+  padding: 24rpx 24rpx 120rpx;
+  background: linear-gradient(180deg, #faf8f3 0%, #ffffff 100%);
+  border-radius: 20rpx;
+  border: 2rpx solid var(--primary-light, #f5e6c8);
+}
+
+/* 代数标签 */
+.generation-label {
+  font-size: 24rpx;
+  color: var(--primary-color, #B8860B);
+  font-weight: 600;
+  padding: 8rpx 24rpx;
+  background-color: var(--primary-light, #f5e6c8);
+  border-radius: 20rpx;
+  margin-bottom: 8rpx;
+}
+
+.tree-level {
+  display: flex;
+  justify-content: center;
+  gap: 32rpx;
+  width: 100%;
+}
+
+.tree-level.level-2 {
+  gap: 16rpx;
+}
+
+.tree-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12rpx;
+  padding: 16rpx;
+  border-radius: 20rpx;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.tree-node.ancestor {
+  background-color: #ffffff;
+  border: 2rpx solid #e8e8e8;
+  min-width: 160rpx;
+}
+
+.tree-node.parent {
+  background-color: #ffffff;
+  border: 2rpx solid var(--primary-light, #f5e6c8);
+  min-width: 200rpx;
+}
+
+.tree-node.current {
+  background: linear-gradient(135deg, var(--primary-color, #B8860B) 0%, var(--primary-dark, #8B6914) 100%);
+  border: 2rpx solid var(--primary-dark, #8B6914);
+  min-width: 240rpx;
+  padding: 20rpx;
+  position: relative;
+  margin-top: 60rpx;
+  padding-top: 60rpx;
+}
+
+/* 卡片外部性别标签 - 相对于tree-node定位 */
+.tree-node .node-gender-tag {
+  position: absolute;
+  top: 8rpx;
+  right: 8rpx;
+  min-width: 44rpx;
+  height: 44rpx;
+  padding: 0 10rpx;
+  border-radius: 22rpx;
+  font-size: 22rpx;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.3);
+  z-index: 1;
+}
+
+.tree-node .node-gender-tag.male {
+  background: linear-gradient(135deg, var(--primary-color, #B8860B) 0%, var(--primary-dark, #8B6914) 100%);
+}
+
+.tree-node .node-gender-tag.female {
+  background: linear-gradient(135deg, var(--primary-color, #B8860B) 0%, var(--primary-dark, #8B6914) 100%);
+}
+
+.tree-node.parent .node-gender-tag {
+  min-width: 52rpx;
+  height: 52rpx;
+  font-size: 26rpx;
+  border-radius: 26rpx;
+  top: 12rpx;
+  right: 12rpx;
+}
+
+.tree-node.current .node-gender-tag {
+  min-width: 56rpx;
+  height: 56rpx;
+  font-size: 28rpx;
+  border-radius: 28rpx;
+  top: 16rpx;
+  right: 16rpx;
+}
+
+/* 当前龟标识 */
+.tree-node .current-badge {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10rpx 28rpx;
+  background: linear-gradient(135deg, var(--primary-color, #B8860B) 0%, var(--primary-dark, #8B6914) 100%);
+  color: #ffffff;
+  font-size: 28rpx;
+  font-weight: 600;
+  border-radius: 28rpx;
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.3);
+  z-index: 1;
+}
+
+.tree-node .node-avatar-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 240rpx;
+  height: 240rpx;
+  background-color: #f5f5f5;
+  border-radius: 24rpx;
+  overflow: hidden;
+}
+
+.tree-node .node-gender-text {
+  font-size: 26rpx;
+  color: var(--primary-color, #B8860B);
+  font-weight: 600;
+  margin-top: 8rpx;
+  padding: 4rpx 20rpx;
+  background-color: var(--primary-light, #f5e6c8);
+  border-radius: 16rpx;
+}
+
+.tree-node .node-img {
+  width: 100%;
+  height: 100%;
+  border-radius: 20rpx;
+  object-fit: cover;
+}
+
+.tree-node .node-icon {
+  width: 100%;
+  height: 100%;
+  border-radius: 20rpx;
+  background-color: #f5f5f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 72rpx;
+  color: #999999;
+}
+
+/* 名称和别名 */
+.tree-node .node-name {
+  font-size: 26rpx;
+  color: #333333;
+  font-weight: 600;
+  max-width: 120rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 8rpx;
+}
+
+.tree-node.parent .node-name {
+  font-size: 28rpx;
+  max-width: 140rpx;
+}
+
+.tree-node.current .node-name {
+  font-size: 30rpx;
+  color: #ffffff;
+  max-width: 160rpx;
+}
+
+.tree-node .node-alias {
+  font-size: 22rpx;
+  color: #999999;
+  max-width: 120rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 4rpx;
+}
+
+.tree-node.parent .node-alias {
+  font-size: 24rpx;
+  max-width: 140rpx;
+}
+
+.tree-node.current .node-alias {
+  color: rgba(255, 255, 255, 0.8);
+  max-width: 160rpx;
+}
+
+.tree-connections {
+  display: flex;
+  justify-content: center;
+  gap: 120rpx;
+  width: 100%;
+}
+
+.connection-line {
+  width: 2rpx;
+  height: 32rpx;
+  background: linear-gradient(180deg, var(--primary-color, #B8860B) 0%, var(--primary-light, #f5e6c8) 100%);
+}
+
+.connection-line.center {
+  width: 2rpx;
+  height: 40rpx;
+}
+
+/* ========== 事件Tab样式 ========== */
+.event-tabs {
+  display: flex;
+  gap: 10rpx;
+  margin-bottom: 24rpx;
+}
+
+.event-tab {
+  flex: 1;
+  padding: 14rpx 16rpx;
+  text-align: center;
+  border-radius: 16rpx;
+  font-size: 22rpx;
+  color: #666666;
+  background-color: #f5f5f5;
+  transition: all 0.15s ease;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+}
+
+.event-tab-icon {
+  font-size: 26rpx;
+  line-height: 1;
+}
+
+.event-tab-text {
+  font-size: 22rpx;
+  line-height: 1;
+}
+
+.event-tab.active {
+  background-color: #1a1a1a;
+  color: #ffffff;
+  font-weight: 500;
+}
+
+/* ========== 事件卡片样式 ========== */
+.event-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32rpx 24rpx;
+  background-color: #ffffff;
+  border-radius: 24rpx;
+  width: calc(50% - 10rpx);
+  box-sizing: border-box;
+  transition: all 0.2s ease;
+  box-shadow: 0 4rpx 16rpx rgba(0, 0, 0, 0.04);
+  border: 1rpx solid #f0f0f0;
+}
+
+.event-icon {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20rpx;
+  background: linear-gradient(135deg, #f5e6c8 0%, #fff7e6 100%);
+}
+
+.event-icon-lay {
+  background: linear-gradient(135deg, #fff7e6 0%, #ffe8b0 100%);
+}
+
+.event-icon-lay .icon-emoji {
+  font-size: 60rpx;
+}
+
+.icon-emoji {
+  font-size: 52rpx;
+  line-height: 1;
+  font-weight: bold;
+}
+
+.event-info {
+  width: 100%;
+  text-align: center;
+}
+
+.event-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #333333;
+  margin-bottom: 8rpx;
+}
+
+.event-content {
+  font-size: 24rpx;
+  color: #666666;
+  margin-bottom: 12rpx;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+}
+
+.event-date {
+  font-size: 22rpx;
+  color: #999999;
+}
+
+.event-date .date {
+  margin-right: 8rpx;
+}
+
+.event-date .time {
+  opacity: 0.8;
+}

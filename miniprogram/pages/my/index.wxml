@@ -1,0 +1,394 @@
+<view class="page theme-{{currentTheme}}">
+  <view class="header-bg"></view>
+  
+  <view class="profile-card">
+    <view class="avatar-section">
+          <view class="avatar" bindtap="chooseAvatar">
+            <image wx:if="{{userInfo.avatar}}" class="avatar-image" src="{{userInfo.avatar}}" mode="aspectFill" binderror="onPhotoError" data-type="avatar" />
+            <text wx:else class="avatar-text">龟</text>
+          </view>
+          <view class="avatar-btn">选头像</view>
+        </view>
+    
+    <view class="profile-info">
+      <text class="username">{{userInfo.nickname || '龟上心'}}</text>
+      <text class="user-desc">龟上心 · 宠物档案</text>
+    </view>
+    
+    <view class="logout-btn" bindtap="handleLogout">
+      <text class="logout-icon">退出</text>
+    </view>
+  </view>
+  
+  <view class="tabs">
+    <view class="tab {{activeTab === 'account' ? 'active' : ''}}" bindtap="switchTab" data-tab="account">账号</view>
+    <view class="tab {{activeTab === 'data' ? 'active' : ''}}" bindtap="switchTab" data-tab="data">数据</view>
+    <view class="tab {{activeTab === 'share' ? 'active' : ''}}" bindtap="switchTab" data-tab="share">分享</view>
+    <view class="tab {{activeTab === 'config' ? 'active' : ''}}" bindtap="switchTab" data-tab="config">配置</view>
+  </view>
+  
+  <view class="content">
+    <!-- 账号 -->
+    <view wx:if="{{activeTab === 'account'}}" class="tab-content">
+      <view class="section">
+        <view class="section-title">账号资料</view>
+        <view class="section-items">
+          <view class="item" bindtap="editNickname">
+            <view class="item-left">
+              <text class="item-label">显示名称 / 昵称</text>
+            </view>
+            <view class="input-with-voice">
+              <text wx:if="{{!isEditingNickname}}" class="item-value">{{userInfo.nickname}}</text>
+              <input wx:else class="item-value-input" focus="{{isEditingNickname}}" value="{{tempNickname}}" bindinput="onNicknameInput" bindblur="saveNickname" placeholder="请输入昵称" />
+              <view wx:if="{{isEditingNickname}}" class="voice-btn {{isRecording ? 'recording' : ''}}" bindlongpress="startVoiceInput" bindtouchend="stopVoiceInput">
+                <text class="voice-btn-icon">●</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+      
+      <view class="section">
+        <view class="section-title">界面主题</view>
+        <text class="section-desc">切换整套小程序的主色、背景和高亮语义，当前页面会立即预览。</text>
+        <view class="theme-options">
+          <view class="theme-option {{currentTheme === 'gold' ? 'active' : ''}}" bindtap="selectTheme" data-theme="gold">
+            <text class="theme-name">米金棕</text>
+          </view>
+          <view class="theme-option {{currentTheme === 'mocha' ? 'active' : ''}}" bindtap="selectTheme" data-theme="mocha">
+            <text class="theme-name">摩卡纸本</text>
+          </view>
+          <view class="theme-option {{currentTheme === 'olive' ? 'active' : ''}}" bindtap="selectTheme" data-theme="olive">
+            <text class="theme-name">橄榄档案</text>
+          </view>
+        </view>
+      </view>
+    </view>
+    
+    <!-- 分享 -->
+    <view wx:if="{{activeTab === 'share'}}" class="tab-content">
+      <!-- 龟友名片卡片 -->
+      <view class="shop-card {{'theme-' + currentTheme}}">
+        <!-- 顶部封面 -->
+        <view class="shop-banner" bindtap="chooseCover">
+          <image wx:if="{{shareInfo.cover}}" class="banner-image" src="{{shareInfo.cover}}" mode="aspectFill" binderror="onPhotoError" data-type="cover" />
+          <view wx:else class="banner-placeholder">
+            <text class="banner-hint">点击添加宠物照片</text>
+          </view>
+          <view class="banner-watermark">PRESENTED BY 龟上心</view>
+        </view>
+        
+        <!-- 店名 + 实名标签 -->
+        <view class="shop-header">
+          <text class="shop-name">{{userInfo.nickname || '龟上心'}}</text>
+          <view class="verified-badge">已实名</view>
+        </view>
+        
+        <!-- 主玩品种 -->
+        <view class="shop-specialty">
+          <text class="specialty-label">主玩：</text>
+          <text class="specialty-text">{{shareInfo.specialty || '记录、档案、繁育'}}</text>
+        </view>
+        
+        <!-- 信息表 -->
+        <view class="shop-info">
+          <view class="info-row">
+            <text class="info-label">营业执照</text>
+            <text class="info-value">{{shareInfo.hasLicense ? '有' : '无'}}</text>
+            <text class="info-label info-label-right">地区</text>
+            <text class="info-value">{{shareInfo.region || '未设置'}}</text>
+          </view>
+          <view class="info-row">
+            <text class="info-label">微信号</text>
+            <text wx:if="{{shareInfo.wechatId}}" class="info-value wechat-id">{{shareInfo.wechatId}}</text>
+            <text wx:else class="info-value wechat-id">未设置</text>
+            <view wx:if="{{shareInfo.wechatId}}" class="copy-btn" bindtap="copyWechat" data-wechat="{{shareInfo.wechatId}}">复制</view>
+            <text wx:else class="info-hint">未公开</text>
+          </view>
+        </view>
+        
+        <!-- 标签 -->
+        <view class="shop-tags">
+          <view wx:for="{{shareInfo.tags}}" wx:key="*this" class="shop-tag">{{item}}</view>
+        </view>
+
+        <!-- 种群展示 -->
+        <view wx:if="{{shareInfo.species.length > 0}}" class="species-section">
+          <view class="section-title-row">
+            <view class="section-title-bar"></view>
+            <text class="section-title-text">种群展示</text>
+            <text class="section-title-count">共 {{shareInfo.species.length}} 个品种</text>
+          </view>
+          <view class="species-grid">
+            <view wx:for="{{shareInfo.species}}" wx:key="name" class="species-card">
+              <image wx:if="{{item.image}}" class="species-photo" src="{{item.image}}" mode="aspectFill" binderror="onPhotoError" data-type="species" data-index="{{index}}" />
+              <view wx:else class="species-photo placeholder">
+                <text class="species-photo-text">{{item.name}}</text>
+              </view>
+              <view class="species-info">
+                <text class="species-name">{{item.name}}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+        
+        <!-- 养殖环境展示 -->
+        <view class="env-section">
+          <view class="section-title-row">
+            <view class="section-title-bar"></view>
+            <text class="section-title-text">养殖环境</text>
+          </view>
+          <view wx:if="{{shareInfo.envImages.length > 0}}" class="env-image-grid">
+            <view wx:for="{{shareInfo.envImages}}" wx:key="*this" class="env-image-item">
+              <image class="env-image" src="{{item}}" mode="aspectFill" binderror="onPhotoError" data-type="env" />
+            </view>
+          </view>
+          <view wx:else class="env-placeholder" bindtap="chooseEnvImages">
+            <text class="env-placeholder-text">+ 上传环境照片</text>
+          </view>
+          <text wx:if="{{shareInfo.envDesc}}" class="env-desc">{{shareInfo.envDesc}}</text>
+        </view>
+      </view>
+      
+      <view class="share-actions">
+        <view class="share-btn outline" bindtap="showEditShareModal">编辑名片</view>
+        <view class="share-btn primary" bindtap="generateShareImage">保存图片到相册</view>
+      </view>
+    </view>
+
+    <!-- 编辑名片弹窗 -->
+    <view wx:if="{{showEditShareModal}}" class="modal-overlay-center" bindtap="hideEditShareModal">
+      <view class="edit-share-modal" catchtap="stopPropagation">
+        <view class="modal-header">
+          <text class="modal-title">编辑分享名片</text>
+          <view class="modal-close" bindtap="hideEditShareModal">×</view>
+        </view>
+        <view class="modal-body">
+          <view class="edit-item" bindtap="chooseCover">
+            <text class="edit-label">更换封面图</text>
+            <text class="edit-value">{{shareInfo.cover ? '已设置，点击更换' : '未设置'}}</text>
+            <view class="edit-arrow">›</view>
+          </view>
+          <view class="edit-item" bindtap="editField" data-field="specialty" data-title="主玩品种" data-placeholder="如：巨头、东方、头盔、佛泥、窄桥">
+            <text class="edit-label">主玩品种</text>
+            <text class="edit-value">{{shareInfo.specialty || '未设置'}}</text>
+            <view class="edit-arrow">›</view>
+          </view>
+          <view class="edit-item" bindtap="editField" data-field="wechatId" data-title="微信号" data-placeholder="请输入微信号">
+            <text class="edit-label">微信号</text>
+            <text class="edit-value">{{shareInfo.wechatId || '未设置'}}</text>
+            <view class="edit-arrow">›</view>
+          </view>
+          <view class="edit-item" bindtap="editField" data-field="region" data-title="地区" data-placeholder="如：浙江省 绍兴市 新昌县">
+            <text class="edit-label">地区</text>
+            <text class="edit-value">{{shareInfo.region || '未设置'}}</text>
+            <view class="edit-arrow">›</view>
+          </view>
+          <view class="edit-item" bindtap="editField" data-field="intro" data-title="龟友有话说" data-placeholder="介绍一下自己和你的宠物...">
+            <text class="edit-label">简介</text>
+            <text class="edit-value">{{shareInfo.intro || '未设置'}}</text>
+            <view class="edit-arrow">›</view>
+          </view>
+          <view class="edit-item" bindtap="editField" data-field="tags" data-title="标签" data-placeholder="用逗号分隔，如：接受平台交易,有待售龟苗">
+            <text class="edit-label">标签</text>
+            <text class="edit-value">{{shareInfo.tags.length > 0 ? shareInfo.tags.join('、') : '未设置'}}</text>
+            <view class="edit-arrow">›</view>
+          </view>
+          <view class="edit-item" bindtap="addSpeciesImage">
+            <text class="edit-label">添加种群图片</text>
+            <text class="edit-value">{{shareInfo.species.length}} 张，点击继续添加</text>
+            <view class="edit-arrow">›</view>
+          </view>
+          <view wx:if="{{shareInfo.species.length > 0}}" class="edit-item" bindtap="clearSpeciesImages">
+            <text class="edit-label">清空种群图片</text>
+            <text class="edit-value">清空 {{shareInfo.species.length}} 条记录</text>
+            <view class="edit-arrow">›</view>
+          </view>
+          <view class="edit-item" bindtap="chooseEnvImages">
+            <text class="edit-label">环境照片</text>
+            <text class="edit-value">{{shareInfo.envImages.length > 0 ? shareInfo.envImages.length + ' 张，可继续上传' : '未设置（最多3张）'}}</text>
+            <view class="edit-arrow">›</view>
+          </view>
+          <view class="edit-item" bindtap="editField" data-field="envDesc" data-title="环境描述" data-placeholder="如：室外生态池 / 室内恒温箱">
+            <text class="edit-label">环境描述</text>
+            <text class="edit-value">{{shareInfo.envDesc || '未设置'}}</text>
+            <view class="edit-arrow">›</view>
+          </view>
+        </view>
+        <view class="modal-footer">
+          <view class="btn-confirm" bindtap="hideEditShareModal">完成</view>
+        </view>
+      </view>
+    </view>
+    
+    <!-- 联系信息设置弹窗 -->
+    <view wx:if="{{showContactModal}}" class="modal-overlay-center" bindtap="hideContactModal">
+      <view class="contact-modal" catchtap="stopPropagation">
+        <view class="modal-header">
+          <text class="modal-title">联系信息设置</text>
+          <view class="modal-close" bindtap="hideContactModal">×</view>
+        </view>
+        <view class="modal-body">
+          <view class="form-item">
+            <text class="form-label">启用联系信息</text>
+            <view class="switch-wrapper">
+              <switch checked="{{shareInfo.contactEnabled}}" bindchange="onContactSwitchChange" color="{{switchColor}}" />
+            </view>
+          </view>
+          <view class="form-item">
+            <text class="form-label">联系电话</text>
+            <view class="input-with-voice">
+              <input class="form-input" value="{{shareInfo.contactPhone || ''}}" bindinput="onContactPhoneInput" placeholder="请输入联系电话" />
+              <view class="voice-btn" bindlongpress="startContactVoiceInput" bindtouchend="stopContactVoiceInput" data-field="phone">
+                <text class="voice-btn-icon">●</text>
+              </view>
+            </view>
+          </view>
+          <view class="form-item">
+            <text class="form-label">微信号</text>
+            <view class="input-with-voice">
+              <input class="form-input" value="{{shareInfo.contactWechat || ''}}" bindinput="onContactWechatInput" placeholder="请输入微信号" />
+              <view class="voice-btn" bindlongpress="startContactVoiceInput" bindtouchend="stopContactVoiceInput" data-field="wechat">
+                <text class="voice-btn-icon">●</text>
+              </view>
+            </view>
+          </view>
+        </view>
+        <view class="modal-footer">
+          <view class="btn-cancel" bindtap="hideContactModal">取消</view>
+          <view class="btn-confirm" bindtap="saveContactInfo">保存</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 数据 -->
+    <view wx:if="{{activeTab === 'data'}}" class="tab-content">
+      <view class="stats-grid">
+        <view class="stats-row">
+          <view class="stat-card">
+            <text class="stat-label">宠物数量</text>
+            <text class="stat-value">{{stats.petCount}}</text>
+            <text class="stat-sub">当前在档</text>
+          </view>
+          <view class="stat-card">
+            <text class="stat-label">产蛋总数</text>
+            <text class="stat-value">{{stats.eggCount}}</text>
+            <text class="stat-sub">累计</text>
+          </view>
+        </view>
+        <view class="stats-row">
+          <view class="stat-card">
+            <text class="stat-label">产蛋事件</text>
+            <text class="stat-value">{{stats.eggEvents}}</text>
+            <text class="stat-sub">累计</text>
+          </view>
+          <view class="stat-card">
+            <text class="stat-label">配对事件</text>
+            <text class="stat-value">{{stats.pairEvents}}</text>
+            <text class="stat-sub">累计</text>
+          </view>
+        </view>
+        <view class="stats-row">
+          <view class="stat-card">
+            <text class="stat-label">待配对</text>
+            <text class="stat-value">{{stats.pendingCount}}</text>
+            <text class="stat-sub">当前状态</text>
+          </view>
+          <view class="stat-card">
+            <text class="stat-label">预警</text>
+            <text class="stat-value">{{stats.warningCount}}</text>
+            <text class="stat-sub">当前状态</text>
+          </view>
+        </view>
+      </view>
+    </view>
+    
+    <!-- 配置 -->
+    <view wx:if="{{activeTab === 'config'}}" class="tab-content">
+      <view class="section">
+        <view class="section-title">打印机配置 - 德佟P1</view>
+        <view class="section-items">
+          <view class="item">
+            <view class="item-left">
+              <text class="item-label">打印机状态</text>
+              <text class="item-value">{{printerConfig.connected ? '已连接' : '未连接'}}</text>
+            </view>
+            <switch checked="{{printerConfig.enabled}}" bindchange="onPrinterSwitchChange" color="{{switchColor}}" />
+          </view>
+          <view class="item" bindtap="scanBluetooth">
+            <view class="item-left">
+              <text class="item-label">蓝牙设备</text>
+              <text class="item-value">{{printerConfig.deviceName || '未配对'}}</text>
+            </view>
+            <view class="item-arrow">›</view>
+          </view>
+          <view class="item">
+            <view class="item-left">
+              <text class="item-label">设备ID</text>
+              <text class="item-value">{{printerConfig.deviceId || '未知'}}</text>
+            </view>
+            <view class="item-arrow">›</view>
+          </view>
+          <view class="item">
+            <view class="item-left">
+              <text class="item-label">自动打印</text>
+              <text class="item-value">{{printerConfig.autoPrint ? '已开启' : '已关闭'}}</text>
+            </view>
+            <switch checked="{{printerConfig.autoPrint}}" bindchange="onAutoPrintSwitchChange" color="{{switchColor}}" />
+          </view>
+        </view>
+      </view>
+      
+      <view class="section">
+        <view class="section-title">打印测试</view>
+        <view class="section-items">
+          <view class="action-item" bindtap="testPrint">
+            <text class="action-text">打印测试页</text>
+          </view>
+          <view class="action-item" bindtap="disconnectPrinter">
+            <text class="action-text danger">断开连接</text>
+          </view>
+        </view>
+      </view>
+    </view>
+    
+    <!-- 蓝牙设备列表弹窗 -->
+    <view wx:if="{{showBluetoothModal}}" class="modal-overlay-center" bindtap="hideBluetoothModal">
+      <view class="contact-modal" style="max-height: 70vh;" catchtap="stopPropagation">
+        <view class="modal-header">
+          <text class="modal-title">选择蓝牙设备</text>
+          <view class="modal-close" bindtap="hideBluetoothModal">×</view>
+        </view>
+        <view class="modal-body" style="max-height: 50vh; overflow-y: auto;">
+          <view wx:if="{{isScanning}}" class="scanning-indicator">
+            <view class="scan-dots">
+              <view class="dot"></view>
+              <view class="dot"></view>
+              <view class="dot"></view>
+            </view>
+            <text class="scanning-text">正在搜索蓝牙设备...</text>
+          </view>
+          <view wx:elif="{{bluetoothDevices.length === 0}}" class="empty-state">
+            <text class="empty-text">未找到蓝牙设备</text>
+          </view>
+          <view wx:else class="device-list">
+            <view wx:for="{{bluetoothDevices}}" wx:key="deviceId" class="device-item" bindtap="connectBluetooth" data-device-id="{{item.deviceId}}" data-device-name="{{item.name}}">
+              <view class="device-icon">●</view>
+              <view class="device-info">
+                <text class="device-name">{{item.name || '未知设备'}}</text>
+                <text class="device-id">{{item.deviceId}}</text>
+              </view>
+              <view class="device-arrow">›</view>
+            </view>
+          </view>
+        </view>
+        <view class="modal-footer">
+          <view class="btn-cancel" bindtap="hideBluetoothModal">取消</view>
+          <view class="btn-confirm" bindtap="scanBluetooth">重新搜索</view>
+        </view>
+      </view>
+    </view>
+    
+
+  </view>
+</view>

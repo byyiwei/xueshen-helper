@@ -1,0 +1,248 @@
+/* ====== 容器 ====== */
+.custom-tab-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  display: flex;
+  justify-content: space-around;
+  align-items: flex-end;
+  padding: 16rpx 32rpx calc(12rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+/* ====== 毛玻璃背景层 ====== */
+.tab-bar-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 36rpx 36rpx 0 0;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.tab-bar-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
+}
+
+.tab-bar-bg::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1rpx;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 0, 0, 0.06) 20%,
+    rgba(0, 0, 0, 0.06) 80%,
+    transparent 100%
+  );
+}
+
+/* ====== Tab 项 ====== */
+.tab-item {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 8rpx 0 4rpx;
+  font-size: 24rpx;
+  color: #999999;
+  transition: color 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* ====== 图标包装器 ====== */
+.tab-icon-wrap {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 8rpx;
+}
+
+.tab-icon {
+  width: 52rpx;
+  height: 44rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* 选中态：图标上浮 */
+.tab-item.active .tab-icon {
+  transform: translateY(-4rpx);
+}
+
+/* ====== 活跃指示器（小圆点） ====== */
+.active-indicator {
+  width: 6rpx;
+  height: 6rpx;
+  border-radius: 50%;
+  background-color: currentColor;
+  margin-top: 8rpx;
+  opacity: 0;
+  transform: scale(0);
+  transition:
+    opacity 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+    transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.tab-item.active .active-indicator {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* ====== 宠物图标：爪印 ====== */
+.icon-pet {
+  position: relative;
+  width: 40rpx;
+  height: 36rpx;
+}
+
+/* 主垫 */
+.paw-pad {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24rpx;
+  height: 20rpx;
+  border: 2.5rpx solid currentColor;
+  border-radius: 50% 50% 45% 45%;
+  background-color: transparent;
+  box-sizing: border-box;
+  transition:
+    background-color 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+    border-color 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* 脚趾 */
+.toe {
+  position: absolute;
+  width: 8rpx;
+  height: 10rpx;
+  border: 2rpx solid currentColor;
+  border-radius: 50%;
+  background-color: transparent;
+  box-sizing: border-box;
+  transition:
+    background-color 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+    border-color 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.toe-1 { top: 0; left: 2rpx; transform: rotate(-20deg); }
+.toe-2 { top: -2rpx; left: 12rpx; }
+.toe-3 { top: -2rpx; left: 22rpx; }
+.toe-4 { top: 0; right: 2rpx; transform: rotate(20deg); }
+
+/* 选中态：填充 */
+.tab-item.active .paw-pad,
+.tab-item.active .toe {
+  background-color: currentColor;
+}
+
+/* ====== 足迹图标：波浪柱状图 ====== */
+.icon-footprint {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 4rpx;
+  height: 32rpx;
+}
+
+.wave-bar {
+  width: 5rpx;
+  border: 2rpx solid currentColor;
+  border-radius: 3rpx;
+  background-color: transparent;
+  box-sizing: border-box;
+  transition:
+    height 0.35s cubic-bezier(0.25, 1, 0.5, 1),
+    background-color 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+    border-color 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.bar1 { height: 12rpx; }
+.bar2 { height: 22rpx; }
+.bar3 { height: 16rpx; }
+
+/* 选中态：变高 + 填充 */
+.tab-item.active .bar1 { height: 18rpx; }
+.tab-item.active .bar2 { height: 32rpx; }
+.tab-item.active .bar3 { height: 24rpx; }
+
+.tab-item.active .wave-bar {
+  background-color: currentColor;
+}
+
+/* ====== 我的图标：圆润人形 ====== */
+.icon-my {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.my-head {
+  width: 14rpx;
+  height: 14rpx;
+  border: 2.5rpx solid currentColor;
+  border-radius: 50%;
+  background-color: transparent;
+  box-sizing: border-box;
+  transition:
+    background-color 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+    border-color 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+    transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.my-body {
+  width: 26rpx;
+  height: 16rpx;
+  border-left: 2.5rpx solid currentColor;
+  border-right: 2.5rpx solid currentColor;
+  border-bottom: 2.5rpx solid currentColor;
+  border-radius: 0 0 13rpx 13rpx;
+  background-color: transparent;
+  box-sizing: border-box;
+  margin-top: -2rpx;
+  transition:
+    background-color 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+    border-color 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* 选中态：填充 + 放大 */
+.tab-item.active .my-head {
+  background-color: currentColor;
+  transform: scale(1.15);
+}
+
+.tab-item.active .my-body {
+  background-color: currentColor;
+}
+
+/* ====== 文字 ====== */
+.tab-text {
+  font-size: 22rpx;
+  line-height: 1.3;
+  color: inherit;
+  font-weight: 500;
+  letter-spacing: 0.5rpx;
+  transition:
+    font-weight 0.2s ease,
+    transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.tab-item.active .tab-text {
+  font-weight: 700;
+  transform: translateY(-2rpx);
+}

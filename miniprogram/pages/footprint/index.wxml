@@ -1,0 +1,125 @@
+<view class="page theme-{{currentTheme || 'gold'}}">
+  <view class="header-bg"></view>
+
+  <!-- 陪伴统计 -->
+  <view class="stats-card">
+    <view class="stats-header">
+      <view class="stats-title-wrap">
+        <text class="stats-title">足迹</text>
+        <text class="stats-subtitle">记录和您一起走过的每一天</text>
+      </view>
+      <view class="days-badge">
+        <text class="days-num">{{companyDays}}</text>
+        <text class="days-unit">天</text>
+      </view>
+    </view>
+    <view class="stats-row">
+      <view class="stat-item">
+        <text class="stat-num">{{totalPets}}</text>
+        <text class="stat-label">宠物</text>
+      </view>
+      <view class="stat-divider"></view>
+      <view class="stat-item">
+        <text class="stat-num">{{totalRecords}}</text>
+        <text class="stat-label">档案</text>
+      </view>
+      <view class="stat-divider"></view>
+      <view class="stat-item">
+        <text class="stat-num">{{footprints.length}}</text>
+        <text class="stat-label">足迹</text>
+      </view>
+    </view>
+
+    <!-- 编辑入口 -->
+    <view wx:if="{{!isEditMode && footprints.length > 0}}" class="edit-entry" bindtap="enterEditMode">
+      <text class="edit-entry-text">批量管理</text>
+    </view>
+    <!-- 编辑操作栏 -->
+    <view wx:if="{{isEditMode}}" class="edit-bar">
+      <view class="edit-bar-left">
+        <view class="select-all-btn" bindtap="toggleSelectAll">
+          <view class="checkbox {{allSelected ? 'checked' : ''}}">
+            <text wx:if="{{allSelected}}" class="check-mark">✓</text>
+          </view>
+          <text class="select-all-text">全选</text>
+          <text class="selected-count">（已选 {{selectedIds.length}}）</text>
+        </view>
+      </view>
+      <view class="edit-bar-right">
+        <view class="edit-bar-btn" bindtap="exitEditMode">完成</view>
+        <view class="edit-bar-btn edit-bar-delete" bindtap="deleteSelected">删除</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 时间线 -->
+  <view class="timeline-wrapper">
+    <view wx:if="{{!footprints || footprints.length === 0}}" class="empty-state">
+      <view class="empty-emoji">📷</view>
+      <text class="empty-title">还没有足迹</text>
+      <text class="empty-desc">记录下宠物的每一个瞬间吧</text>
+      <view class="empty-action" bindtap="addFootprint">
+        <text>添加第一条足迹</text>
+      </view>
+    </view>
+
+    <block wx:else>
+      <view wx:for="{{groupedFootprints}}" wx:for-item="group" wx:key="key" class="timeline-group">
+        <view class="group-header">
+          <view class="group-dot"></view>
+          <text class="group-title">{{group.title}}</text>
+          <text class="group-count">{{group.items.length}} 条</text>
+        </view>
+        <view class="group-items">
+          <view wx:for="{{group.items}}" wx:for-item="fp" wx:key="id" class="footprint-card {{isEditMode ? 'edit-mode' : ''}}" bindtap="previewFootprint" data-footprint="{{fp}}">
+            <view wx:if="{{isEditMode}}" class="card-checkbox" catchtap="toggleSelect" data-id="{{fp.id}}">
+              <view class="checkbox {{selectedIds.indexOf(fp.id) >= 0 ? 'checked' : ''}}">
+                <text wx:if="{{selectedIds.indexOf(fp.id) >= 0}}" class="check-mark">✓</text>
+              </view>
+            </view>
+            <view class="fp-media">
+              <image class="fp-image" src="{{fp.path || fp.url}}" mode="aspectFill" lazy-load="true" binderror="onPhotoError" data-id="{{fp.id}}" />
+            </view>
+            <view class="fp-content">
+              <view class="fp-meta">
+                <text class="fp-type">照片</text>
+                <text class="fp-date">{{fp.date}} {{fp.time}}</text>
+              </view>
+              <view wx:if="{{fp.description}}" class="fp-desc">{{fp.description}}</view>
+              <view wx:if="{{fp.petName}}" class="fp-pet-tag">
+                <text class="fp-pet-icon">🐢</text>
+                <text class="fp-pet-name">{{fp.petName}}</text>
+              </view>
+            </view>
+            <view wx:if="{{!isEditMode}}" class="fp-delete" catchtap="deleteFootprint" data-id="{{fp.id}}">
+              <text class="fp-delete-icon">×</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </block>
+  </view>
+
+  <!-- 浮动添加按钮 -->
+  <view class="fab {{isEditMode ? 'fab-hidden' : ''}}" bindtap="addFootprint">
+    <view class="fab-icon">+</view>
+  </view>
+
+  <!-- 预览弹窗 -->
+  <view wx:if="{{showPreviewModal && selectedFootprint}}" class="preview-modal">
+    <view class="preview-overlay" bindtap="hidePreview"></view>
+    <view class="preview-content">
+      <view class="preview-header">
+        <text class="preview-title">{{selectedFootprint.date}} {{selectedFootprint.time}}</text>
+        <view class="preview-close" bindtap="hidePreview">×</view>
+      </view>
+      <view class="preview-image-wrapper">
+        <image class="preview-image" src="{{selectedFootprint.path || selectedFootprint.url}}" mode="widthFix" binderror="onPhotoError" data-id="{{selectedFootprint.id}}" />
+      </view>
+      <view wx:if="{{selectedFootprint.petName}}" class="preview-pet-tag">
+        <text class="fp-pet-icon">🐢</text>
+        <text class="fp-pet-name">{{selectedFootprint.petName}}</text>
+      </view>
+    </view>
+  </view>
+</view>

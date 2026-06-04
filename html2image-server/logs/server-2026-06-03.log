@@ -1,0 +1,385 @@
+[06-03-2026, 10:20:39] [INFO] [Server] PID 27504 written to .app.pid
+[06-03-2026, 10:20:39] [INFO] ========================================
+[06-03-2026, 10:20:39] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 10:20:39] [INFO]   URL:      http://localhost:3000
+[06-03-2026, 10:20:39] [INFO]   API Docs: http://localhost:3000/api-docs
+[06-03-2026, 10:20:39] [INFO]   Health:   http://localhost:3000/health
+[06-03-2026, 10:20:39] [INFO] ========================================
+[06-03-2026, 10:20:58] [INFO] [Request] mpxfwelbao36 started
+[06-03-2026, 10:20:58] [INFO] [HTTP] GET / 200 (7ms)
+[06-03-2026, 10:20:58] [INFO] [Request] mpxfwelbao36 OK (8ms)
+[06-03-2026, 10:20:58] [INFO] [Request] mpxfweqq1hv9 started
+[06-03-2026, 10:20:58] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 10:20:58] [INFO] [Request] mpxfweqq1hv9 OK (3ms)
+[06-03-2026, 10:21:06] [INFO] [Request] mpxfwkf4jjkg started
+[06-03-2026, 10:21:06] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 10:21:06] [INFO] [Request] mpxfwkf4jjkg OK (3ms)
+[06-03-2026, 10:21:11] [INFO] [Request] mpxfwo9n58nz started
+[06-03-2026, 10:21:11] [INFO] [Browser] Launching headless Chromium...
+[06-03-2026, 10:21:11] [ERROR] [Generate] spawn UNKNOWN
+[06-03-2026, 10:21:11] [INFO] [HTTP] POST / 500 (52ms)
+[06-03-2026, 10:21:11] [INFO] [Request] mpxfwo9n58nz FAIL (52ms)
+[06-03-2026, 10:21:20] [INFO] [Request] mpxfwvedq26a started
+[06-03-2026, 10:21:20] [INFO] [HTTP] GET /api-docs 200 (3ms)
+[06-03-2026, 10:21:20] [INFO] [Request] mpxfwvedq26a OK (4ms)
+[06-03-2026, 10:21:47] [INFO] [Request] mpxfxgpv1was started
+[06-03-2026, 10:21:47] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 10:21:47] [INFO] [Request] mpxfxgpv1was OK (3ms)
+[06-03-2026, 10:22:11] [INFO] [Request] mpxfxz90n16k started
+[06-03-2026, 10:22:11] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 10:22:11] [INFO] [Request] mpxfxz90n16k OK (3ms)
+[06-03-2026, 10:24:22] [INFO] [Server] PID 18704 written to .app.pid
+[06-03-2026, 10:24:22] [INFO] ========================================
+[06-03-2026, 10:24:22] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 10:24:22] [INFO]   URL:      http://localhost:3000
+[06-03-2026, 10:24:22] [INFO]   API Docs: http://localhost:3000/api-docs
+[06-03-2026, 10:24:22] [INFO]   Health:   http://localhost:3000/health
+[06-03-2026, 10:24:22] [INFO] ========================================
+[06-03-2026, 10:25:00] [INFO] [Request] mpxg1loamxhh started
+[06-03-2026, 10:25:00] [INFO] [HTTP] GET / 200 (4ms)
+[06-03-2026, 10:25:00] [INFO] [Request] mpxg1loamxhh OK (6ms)
+[06-03-2026, 10:25:00] [INFO] [Request] mpxg1lol1ztx started
+[06-03-2026, 10:25:00] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 10:25:00] [INFO] [Request] mpxg1lol1ztx OK (3ms)
+[06-03-2026, 10:25:00] [INFO] [Request] mpxg1loqtif6 started
+[06-03-2026, 10:25:00] [INFO] [HTTP] GET /api-docs 200 (2ms)
+[06-03-2026, 10:25:00] [INFO] [Request] mpxg1loqtif6 OK (3ms)
+[06-03-2026, 10:25:00] [INFO] [Request] mpxg1loygpfc started
+[06-03-2026, 10:25:00] [INFO] [Browser] Launching headless Chromium (C:\Users\byyiwei\.cache\puppeteer\chrome\win64-1108766\chrome-win\chrome.exe)...
+[06-03-2026, 10:25:00] [ERROR] [Generate] spawn UNKNOWN
+[06-03-2026, 10:25:00] [INFO] [HTTP] POST / 500 (53ms)
+[06-03-2026, 10:25:01] [INFO] [Request] mpxg1loygpfc FAIL (54ms)
+[06-03-2026, 10:25:01] [INFO] [Request] mpxg1lqhhtmy started
+[06-03-2026, 10:25:01] [ERROR] [Generate] spawn UNKNOWN
+[06-03-2026, 10:25:01] [INFO] [HTTP] POST / 500 (3ms)
+[06-03-2026, 10:25:01] [INFO] [Request] mpxg1lqhhtmy FAIL (4ms)
+[06-03-2026, 10:25:01] [INFO] [Request] mpxg1lqmnjsg started
+[06-03-2026, 10:25:01] [INFO] [HTTP] POST / 400 (2ms)
+[06-03-2026, 10:25:01] [INFO] [Request] mpxg1lqmnjsg FAIL (3ms)
+[06-03-2026, 10:25:01] [INFO] [Request] mpxg1lqqu286 started
+[06-03-2026, 10:25:01] [INFO] [HTTP] GET /does-not-exist 404 (1ms)
+[06-03-2026, 10:25:01] [INFO] [Request] mpxg1lqqu286 FAIL (2ms)
+[06-03-2026, 10:26:42] [INFO] [Server] PID 28364 written to .app.pid
+[06-03-2026, 10:26:42] [INFO] ========================================
+[06-03-2026, 10:26:42] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 10:26:42] [INFO]   URL:      http://localhost:3000
+[06-03-2026, 10:26:42] [INFO]   API Docs: http://localhost:3000/api-docs
+[06-03-2026, 10:26:42] [INFO]   Health:   http://localhost:3000/health
+[06-03-2026, 10:26:42] [INFO] ========================================
+[06-03-2026, 10:26:54] [INFO] [Request] mpxg415mrn9r started
+[06-03-2026, 10:26:54] [INFO] [HTTP] GET / 200 (3ms)
+[06-03-2026, 10:26:54] [INFO] [Request] mpxg415mrn9r OK (4ms)
+[06-03-2026, 10:26:54] [INFO] [Request] mpxg415unkft started
+[06-03-2026, 10:26:54] [INFO] [HTTP] GET /health 200 (1ms)
+[06-03-2026, 10:26:54] [INFO] [Request] mpxg415unkft OK (2ms)
+[06-03-2026, 10:26:54] [INFO] [Request] mpxg415x68sp started
+[06-03-2026, 10:26:54] [INFO] [HTTP] GET /api-docs 200 (2ms)
+[06-03-2026, 10:26:54] [INFO] [Request] mpxg415x68sp OK (3ms)
+[06-03-2026, 10:26:54] [INFO] [Request] mpxg41642znq started
+[06-03-2026, 10:26:54] [INFO] [Browser] Launching headless Chromium (C:\Users\byyiwei\AppData\Local/Google/Chrome/Application/chrome.exe)...
+[06-03-2026, 10:26:54] [INFO] [Browser] Launched (pid=26784)
+[06-03-2026, 10:26:57] [INFO] [HTTP] POST / 200 (2997ms)
+[06-03-2026, 10:26:57] [INFO] [Request] mpxg41642znq OK (2998ms)
+[06-03-2026, 10:26:57] [INFO] [Request] mpxg43hkv3qh started
+[06-03-2026, 10:26:59] [INFO] [HTTP] POST / 200 (2180ms)
+[06-03-2026, 10:26:59] [INFO] [Request] mpxg43hkv3qh OK (2181ms)
+[06-03-2026, 10:26:59] [INFO] [Request] mpxg4567l9x5 started
+[06-03-2026, 10:26:59] [INFO] [HTTP] POST / 400 (2ms)
+[06-03-2026, 10:26:59] [INFO] [Request] mpxg4567l9x5 FAIL (3ms)
+[06-03-2026, 10:26:59] [INFO] [Request] mpxg456b0k2s started
+[06-03-2026, 10:26:59] [INFO] [HTTP] GET /does-not-exist 404 (1ms)
+[06-03-2026, 10:26:59] [INFO] [Request] mpxg456b0k2s FAIL (2ms)
+[06-03-2026, 10:27:11] [INFO] [Request] mpxg4emhwy0l started
+[06-03-2026, 10:27:11] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 10:27:11] [INFO] [Request] mpxg4emhwy0l OK (4ms)
+[06-03-2026, 10:27:17] [INFO] [Request] mpxg4j354xcp started
+[06-03-2026, 10:27:17] [INFO] [HTTP] GET /health 200 (3ms)
+[06-03-2026, 10:27:17] [INFO] [Request] mpxg4j354xcp OK (4ms)
+[06-03-2026, 10:33:50] [INFO] [Server] PID 24168 written to .app.pid
+[06-03-2026, 10:33:50] [INFO] ========================================
+[06-03-2026, 10:33:50] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 10:33:50] [INFO]   URL:      http://localhost:3000
+[06-03-2026, 10:33:50] [INFO]   API Docs: http://localhost:3000/api-docs
+[06-03-2026, 10:33:50] [INFO]   Health:   http://localhost:3000/health
+[06-03-2026, 10:33:50] [INFO] ========================================
+[06-03-2026, 10:39:41] [INFO] [Server] PID 2956 written to .app.pid
+[06-03-2026, 10:39:41] [INFO] ========================================
+[06-03-2026, 10:39:41] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 10:39:41] [INFO]   URL:      http://localhost:3000
+[06-03-2026, 10:39:41] [INFO]   API Docs: http://localhost:3000/api-docs
+[06-03-2026, 10:39:41] [INFO]   Health:   http://localhost:3000/health
+[06-03-2026, 10:39:41] [INFO] ========================================
+[06-03-2026, 10:40:01] [INFO] [Request] mpxgkwxlvfiu started
+[06-03-2026, 10:40:01] [INFO] [HTTP] GET /health 200 (4ms)
+[06-03-2026, 10:40:01] [INFO] [Request] mpxgkwxlvfiu OK (5ms)
+[06-03-2026, 10:40:21] [INFO] [Request] mpxglc7m38l4 started
+[06-03-2026, 10:40:21] [INFO] [Browser] Launching headless Chromium (C:\Users\byyiwei\AppData\Local/Google/Chrome/Application/chrome.exe)...
+[06-03-2026, 10:41:06] [INFO] [Request] mpxgmb2xepwd started
+[06-03-2026, 10:41:57] [INFO] [Server] PID 30084 written to .app.pid
+[06-03-2026, 10:42:04] [INFO] [Request] mpxgnjfep0y8 started
+[06-03-2026, 10:42:04] [INFO] [HTTP] GET /health 200 (3ms)
+[06-03-2026, 10:42:04] [INFO] [Request] mpxgnjfep0y8 OK (5ms)
+[06-03-2026, 10:42:05] [INFO] [Request] mpxgnka4snvl started
+[06-03-2026, 10:42:05] [INFO] [HTTP] GET /health 200 (1ms)
+[06-03-2026, 10:42:05] [INFO] [Request] mpxgnka4snvl OK (3ms)
+[06-03-2026, 10:42:37] [INFO] [Server] PID 17492 written to .app.pid
+[06-03-2026, 10:42:37] [INFO] ========================================
+[06-03-2026, 10:42:37] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 10:42:37] [INFO]   URL:      http://localhost:3000
+[06-03-2026, 10:42:37] [INFO]   API Docs: http://localhost:3000/api-docs
+[06-03-2026, 10:42:37] [INFO]   Health:   http://localhost:3000/health
+[06-03-2026, 10:42:37] [INFO] ========================================
+[06-03-2026, 10:45:31] [INFO] [Server] PID 16200 written to .app.pid
+[06-03-2026, 10:45:31] [INFO] ========================================
+[06-03-2026, 10:45:31] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 10:45:31] [INFO]   URL:      http://localhost:3000
+[06-03-2026, 10:45:31] [INFO]   API Docs: http://localhost:3000/api-docs
+[06-03-2026, 10:45:31] [INFO]   Health:   http://localhost:3000/health
+[06-03-2026, 10:45:31] [INFO] ========================================
+[06-03-2026, 10:46:14] [INFO] [Server] PID 14952 written to .app.pid
+[06-03-2026, 10:46:14] [INFO] ========================================
+[06-03-2026, 10:46:14] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 10:46:14] [INFO]   URL:      http://localhost:3000
+[06-03-2026, 10:46:14] [INFO]   API Docs: http://localhost:3000/api-docs
+[06-03-2026, 10:46:14] [INFO]   Health:   http://localhost:3000/health
+[06-03-2026, 10:46:14] [INFO] ========================================
+[06-03-2026, 10:46:15] [INFO] [Request] mpxgswyvrlkd started
+[06-03-2026, 10:46:15] [INFO] [HTTP] GET /health 200 (4ms)
+[06-03-2026, 10:46:15] [INFO] [Request] mpxgswyvrlkd OK (5ms)
+[06-03-2026, 10:46:15] [INFO] [Request] mpxgswz58ljj started
+[06-03-2026, 10:46:15] [INFO] [HTTP] GET / 200 (2ms)
+[06-03-2026, 10:46:15] [INFO] [Request] mpxgswz58ljj OK (3ms)
+[06-03-2026, 10:46:15] [INFO] [Request] mpxgswzambbo started
+[06-03-2026, 10:46:15] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 10:46:15] [INFO] [Request] mpxgswzambbo OK (3ms)
+[06-03-2026, 10:46:15] [INFO] [Request] mpxgswze8uuv started
+[06-03-2026, 10:46:15] [INFO] [Browser] Launching headless Chromium (C:\Users\byyiwei\AppData\Local/Google/Chrome/Application/chrome.exe)...
+[06-03-2026, 10:50:21] [INFO] [Request] mpxgy7a2bg21 started
+[06-03-2026, 10:50:21] [INFO] [HTTP] GET /health 200 (4ms)
+[06-03-2026, 10:50:21] [INFO] [Request] mpxgy7a2bg21 OK (5ms)
+[06-03-2026, 10:57:25] [INFO] [Server] PID 24484 written to .app.pid
+[06-03-2026, 10:57:25] [INFO] ========================================
+[06-03-2026, 10:57:25] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 10:57:25] [INFO]   URL:      http://localhost:3000
+[06-03-2026, 10:57:25] [INFO]   API Docs: http://localhost:3000/api-docs
+[06-03-2026, 10:57:25] [INFO]   Health:   http://localhost:3000/health
+[06-03-2026, 10:57:25] [INFO] ========================================
+[06-03-2026, 10:59:05] [INFO] [Server] PID 6524 written to .app.pid
+[06-03-2026, 10:59:05] [INFO] ========================================
+[06-03-2026, 10:59:05] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 10:59:05] [INFO]   URL:      http://localhost:3000
+[06-03-2026, 10:59:05] [INFO]   API Docs: http://localhost:3000/api-docs
+[06-03-2026, 10:59:05] [INFO]   Health:   http://localhost:3000/health
+[06-03-2026, 10:59:05] [INFO] ========================================
+[06-03-2026, 10:59:17] [INFO] [Request] mpxh9om601d5 started
+[06-03-2026, 10:59:17] [INFO] [HTTP] GET /health 200 (3ms)
+[06-03-2026, 10:59:17] [INFO] [Request] mpxh9om601d5 OK (4ms)
+[06-03-2026, 10:59:35] [INFO] [Request] mpxha2ra1b4a started
+[06-03-2026, 10:59:35] [INFO] [Browser] Launching headless Chromium (C:\Users\byyiwei\AppData\Local/Google/Chrome/Application/chrome.exe)...
+[06-03-2026, 11:13:57] [INFO] [Server] PID 18784 written to .app.pid
+[06-03-2026, 11:13:57] [INFO] ================================================
+[06-03-2026, 11:13:57] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 11:13:57] [INFO]   URL:      http://localhost:3000
+[06-03-2026, 11:13:57] [INFO]   API Docs: http://localhost:3000/api-docs
+[06-03-2026, 11:13:57] [INFO]   Health:   http://localhost:3000/health
+[06-03-2026, 11:13:57] [INFO] ================================================
+[06-03-2026, 11:13:57] [INFO] [Request] mpxhsjcclv5y started
+[06-03-2026, 11:13:57] [INFO] [HTTP] GET / 200 (4ms)
+[06-03-2026, 11:13:57] [INFO] [Request] mpxhsjcclv5y OK (5ms)
+[06-03-2026, 11:13:57] [INFO] [Request] mpxhsjevzdqj started
+[06-03-2026, 11:13:57] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 11:13:57] [INFO] [Request] mpxhsjevzdqj OK (3ms)
+[06-03-2026, 11:13:57] [INFO] [Request] mpxhsjf91a8h started
+[06-03-2026, 11:13:57] [INFO] [HTTP] GET /api-docs 200 (2ms)
+[06-03-2026, 11:13:57] [INFO] [Request] mpxhsjf91a8h OK (3ms)
+[06-03-2026, 11:25:47] [INFO] [Server] PID 24028 written to .app.pid
+[06-03-2026, 11:25:47] [INFO] ================================================
+[06-03-2026, 11:25:47] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 11:25:47] [INFO]   URL:      http://localhost:3000
+[06-03-2026, 11:25:47] [INFO]   API Docs: http://localhost:3000/api-docs
+[06-03-2026, 11:25:47] [INFO]   Health:   http://localhost:3000/health
+[06-03-2026, 11:25:47] [INFO] ================================================
+[06-03-2026, 11:25:51] [INFO] [Request] mpxi7u534264 started
+[06-03-2026, 11:25:51] [INFO] [HTTP] GET /health 200 (6ms)
+[06-03-2026, 11:25:51] [INFO] [Request] mpxi7u534264 OK (8ms)
+[06-03-2026, 11:49:12] [INFO] [Server] PID 26188 written to D:\Code\龟上心\html2image-server\.app.pid
+[06-03-2026, 11:49:12] [INFO] ================================================
+[06-03-2026, 11:49:12] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 11:49:12] [INFO]   Host:     0.0.0.0
+[06-03-2026, 11:49:12] [INFO]   Port:     3000
+[06-03-2026, 11:49:12] [INFO]   Docs:     http://localhost:3000/api-docs
+[06-03-2026, 11:49:12] [INFO]   Health:   http://localhost:3000/health
+[06-03-2026, 11:49:12] [INFO]   Config:   http://localhost:3000/config
+[06-03-2026, 11:49:12] [INFO] ================================================
+[06-03-2026, 11:49:26] [INFO] [Request] mpxj263rbfuc started
+[06-03-2026, 11:49:26] [INFO] [HTTP] GET / 200 (9ms)
+[06-03-2026, 11:49:26] [INFO] [Request] mpxj263rbfuc OK (11ms)
+[06-03-2026, 11:49:26] [INFO] [Request] mpxj265mbm8c started
+[06-03-2026, 11:49:26] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 11:49:26] [INFO] [Request] mpxj265mbm8c OK (4ms)
+[06-03-2026, 11:49:26] [INFO] [Request] mpxj2661uamf started
+[06-03-2026, 11:49:26] [INFO] [HTTP] GET /config 200 (2ms)
+[06-03-2026, 11:49:26] [INFO] [Request] mpxj2661uamf OK (3ms)
+[06-03-2026, 11:49:26] [INFO] [Request] mpxj266pkeqi started
+[06-03-2026, 11:49:26] [INFO] [HTTP] GET /api-docs 200 (3ms)
+[06-03-2026, 11:49:26] [INFO] [Request] mpxj266pkeqi OK (5ms)
+[06-03-2026, 11:49:46] [INFO] [Request] mpxj2li6flc1 started
+[06-03-2026, 11:49:46] [INFO] [Browser] Resolved executable: C:\Users\byyiwei\.cache\puppeteer\chrome\win64-131.0.6778.204\chrome-win64\chrome.exe
+[06-03-2026, 11:49:46] [ERROR] [Browser] Launch failed: spawn UNKNOWN
+[06-03-2026, 11:49:46] [ERROR] [Generate] spawn UNKNOWN
+[06-03-2026, 11:49:46] [INFO] [HTTP] POST / 500 (125ms)
+[06-03-2026, 11:49:46] [INFO] [Request] mpxj2li6flc1 FAIL (127ms)
+[06-03-2026, 11:50:35] [INFO] [Server] PID 33004 written to D:\Code\龟上心\html2image-server\.app.pid
+[06-03-2026, 11:50:35] [INFO] ================================================
+[06-03-2026, 11:50:35] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 11:50:35] [INFO]   Host:     0.0.0.0
+[06-03-2026, 11:50:35] [INFO]   Port:     9999
+[06-03-2026, 11:50:35] [INFO]   Docs:     http://localhost:9999/api-docs
+[06-03-2026, 11:50:35] [INFO]   Health:   http://localhost:9999/health
+[06-03-2026, 11:50:35] [INFO]   Config:   http://localhost:9999/config
+[06-03-2026, 11:50:35] [INFO] ================================================
+[06-03-2026, 11:51:48] [INFO] [Request] mpxj57lx0eih started
+[06-03-2026, 11:51:48] [INFO] [HTTP] GET /health 200 (5ms)
+[06-03-2026, 11:51:48] [INFO] [Request] mpxj57lx0eih OK (6ms)
+[06-03-2026, 12:21:09] [INFO] [Server] PID 32208 written to D:\Code\龟上心\html2image-server\.app.pid
+[06-03-2026, 12:21:09] [INFO] ================================================
+[06-03-2026, 12:21:09] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 12:21:09] [INFO]   Host:     0.0.0.0
+[06-03-2026, 12:21:09] [INFO]   Port:     3000
+[06-03-2026, 12:21:09] [INFO]   Docs:     http://localhost:3000/api-docs
+[06-03-2026, 12:21:09] [INFO]   Health:   http://localhost:3000/health
+[06-03-2026, 12:21:09] [INFO]   Config:   http://localhost:3000/config
+[06-03-2026, 12:21:09] [INFO] ================================================
+[06-03-2026, 12:21:15] [INFO] [Request] mpxk73nyepi4 started
+[06-03-2026, 12:21:15] [INFO] [HTTP] GET /health 200 (3ms)
+[06-03-2026, 12:21:15] [INFO] [Request] mpxk73nyepi4 OK (4ms)
+[06-03-2026, 12:22:03] [INFO] [Request] mpxk84fbxcje started
+[06-03-2026, 12:22:03] [INFO] [HTTP] GET /health 200 (1ms)
+[06-03-2026, 12:22:03] [INFO] [Request] mpxk84fbxcje OK (2ms)
+[06-03-2026, 12:22:07] [INFO] [Request] mpxk87fanspt started
+[06-03-2026, 12:22:07] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 12:22:07] [INFO] [Request] mpxk87fanspt OK (3ms)
+[06-03-2026, 12:22:08] [INFO] [Request] mpxk880w5z2w started
+[06-03-2026, 12:22:08] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 12:22:08] [INFO] [Request] mpxk880w5z2w OK (3ms)
+[06-03-2026, 12:22:08] [INFO] [Request] mpxk88d37at9 started
+[06-03-2026, 12:22:08] [INFO] [HTTP] GET /health 200 (1ms)
+[06-03-2026, 12:22:08] [INFO] [Request] mpxk88d37at9 OK (2ms)
+[06-03-2026, 12:23:53] [INFO] [Request] mpxkah40bde2 started
+[06-03-2026, 12:23:53] [INFO] [HTTP] GET /health 200 (1ms)
+[06-03-2026, 12:23:53] [INFO] [Request] mpxkah40bde2 OK (5ms)
+[06-03-2026, 12:26:53] [INFO] [Request] mpxkebtxe4zw started
+[06-03-2026, 12:26:53] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 12:26:53] [INFO] [Request] mpxkebtxe4zw OK (5ms)
+[06-03-2026, 12:26:54] [INFO] [Request] mpxkecocuewh started
+[06-03-2026, 12:26:54] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 12:26:54] [INFO] [Request] mpxkecocuewh OK (5ms)
+[06-03-2026, 12:27:05] [INFO] [Request] mpxkelqffao5 started
+[06-03-2026, 12:27:05] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 12:27:05] [INFO] [Request] mpxkelqffao5 OK (4ms)
+[06-03-2026, 12:27:55] [INFO] [Server] PID 23952 written to D:\Code\龟上心\html2image-server\.app.pid
+[06-03-2026, 12:27:55] [INFO] ================================================
+[06-03-2026, 12:27:55] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 12:27:55] [INFO]   Host:     0.0.0.0
+[06-03-2026, 12:27:55] [INFO]   Port:     3000
+[06-03-2026, 12:27:55] [INFO]   Docs:     http://localhost:3000/api-docs
+[06-03-2026, 12:27:55] [INFO]   Health:   http://localhost:3000/health
+[06-03-2026, 12:27:55] [INFO]   Config:   http://localhost:3000/config
+[06-03-2026, 12:27:55] [INFO] ================================================
+[06-03-2026, 12:27:58] [INFO] [Request] mpxkfq1wd2s0 started
+[06-03-2026, 12:27:58] [INFO] [HTTP] GET /health 200 (4ms)
+[06-03-2026, 12:27:58] [INFO] [Request] mpxkfq1wd2s0 OK (5ms)
+[06-03-2026, 12:28:07] [INFO] [Request] mpxkfwxxgbi2 started
+[06-03-2026, 12:28:07] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 12:28:07] [INFO] [Request] mpxkfwxxgbi2 OK (3ms)
+[06-03-2026, 12:28:08] [INFO] [Request] mpxkfxv6j8q9 started
+[06-03-2026, 12:28:08] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 12:28:08] [INFO] [Request] mpxkfxv6j8q9 OK (3ms)
+[06-03-2026, 12:28:11] [INFO] [Request] mpxkg0hnwkw4 started
+[06-03-2026, 12:28:11] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 12:28:11] [INFO] [Request] mpxkg0hnwkw4 OK (3ms)
+[06-03-2026, 12:28:12] [INFO] [Request] mpxkg122ljw6 started
+[06-03-2026, 12:28:12] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 12:28:12] [INFO] [Request] mpxkg122ljw6 OK (3ms)
+[06-03-2026, 12:28:16] [INFO] [Request] mpxkg47tclv3 started
+[06-03-2026, 12:28:16] [INFO] [HTTP] GET /health 200 (1ms)
+[06-03-2026, 12:28:16] [INFO] [Request] mpxkg47tclv3 OK (3ms)
+[06-03-2026, 12:28:17] [INFO] [Request] mpxkg5355ks7 started
+[06-03-2026, 12:28:17] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 12:28:17] [INFO] [Request] mpxkg5355ks7 OK (3ms)
+[06-03-2026, 12:28:18] [INFO] [Request] mpxkg5j1i3r6 started
+[06-03-2026, 12:28:18] [INFO] [HTTP] GET /health 200 (1ms)
+[06-03-2026, 12:28:18] [INFO] [Request] mpxkg5j1i3r6 OK (3ms)
+[06-03-2026, 12:28:18] [INFO] [Request] mpxkg5x4uv9f started
+[06-03-2026, 12:28:18] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 12:28:18] [INFO] [Request] mpxkg5x4uv9f OK (4ms)
+[06-03-2026, 12:28:19] [INFO] [Request] mpxkg695i5im started
+[06-03-2026, 12:28:19] [INFO] [HTTP] GET /health 200 (1ms)
+[06-03-2026, 12:28:19] [INFO] [Request] mpxkg695i5im OK (3ms)
+[06-03-2026, 12:28:19] [INFO] [Request] mpxkg6gfa3k0 started
+[06-03-2026, 12:28:19] [INFO] [HTTP] GET /health 200 (1ms)
+[06-03-2026, 12:28:19] [INFO] [Request] mpxkg6gfa3k0 OK (3ms)
+[06-03-2026, 12:28:19] [INFO] [Request] mpxkg6nhtfi2 started
+[06-03-2026, 12:28:19] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 12:28:19] [INFO] [Request] mpxkg6nhtfi2 OK (3ms)
+[06-03-2026, 12:28:28] [INFO] [Request] mpxkgdqcbg4s started
+[06-03-2026, 12:28:28] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 12:28:28] [INFO] [Request] mpxkgdqcbg4s OK (3ms)
+[06-03-2026, 12:30:48] [INFO] [Server] PID 31780 written to D:\Code\龟上心\html2image-server\.app.pid
+[06-03-2026, 12:31:41] [INFO] [Server] PID 33604 written to D:\Code\龟上心\html2image-server\.app.pid
+[06-03-2026, 12:31:42] [INFO] ================================================
+[06-03-2026, 12:31:42] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 12:31:42] [INFO]   Host:     0.0.0.0
+[06-03-2026, 12:31:42] [INFO]   Port:     3000
+[06-03-2026, 12:31:42] [INFO]   Docs:     http://localhost:3000/api-docs
+[06-03-2026, 12:31:42] [INFO]   Health:   http://localhost:3000/health
+[06-03-2026, 12:31:42] [INFO]   Config:   http://localhost:3000/config
+[06-03-2026, 12:31:42] [INFO] ================================================
+[06-03-2026, 12:31:44] [INFO] [Request] mpxkkkctmj12 started
+[06-03-2026, 12:31:44] [INFO] [HTTP] GET /health 200 (3ms)
+[06-03-2026, 12:31:44] [INFO] [Request] mpxkkkctmj12 OK (4ms)
+[06-03-2026, 12:32:22] [INFO] [Server] PID 33192 written to D:\Code\龟上心\html2image-server\.app.pid
+[06-03-2026, 12:32:22] [INFO] ================================================
+[06-03-2026, 12:32:22] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 12:32:22] [INFO]   Host:     0.0.0.0
+[06-03-2026, 12:32:22] [INFO]   Port:     3000
+[06-03-2026, 12:32:22] [INFO]   Docs:     http://localhost:3000/api-docs
+[06-03-2026, 12:32:22] [INFO]   Health:   http://localhost:3000/health
+[06-03-2026, 12:32:22] [INFO]   Config:   http://localhost:3000/config
+[06-03-2026, 12:32:22] [INFO] ================================================
+[06-03-2026, 12:32:22] [INFO] [Request] mpxkle51ly20 started
+[06-03-2026, 12:32:22] [INFO] [HTTP] GET /health 200 (3ms)
+[06-03-2026, 12:32:22] [INFO] [Request] mpxkle51ly20 OK (4ms)
+[06-03-2026, 12:32:25] [INFO] [Request] mpxklg70j25a started
+[06-03-2026, 12:32:25] [INFO] [HTTP] GET /health 200 (2ms)
+[06-03-2026, 12:32:25] [INFO] [Request] mpxklg70j25a OK (3ms)
+[06-03-2026, 12:32:35] [INFO] [Server] PID 34524 written to D:\Code\龟上心\html2image-server\.app.pid
+[06-03-2026, 12:32:35] [INFO] ================================================
+[06-03-2026, 12:32:35] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 12:32:35] [INFO]   Host:     0.0.0.0
+[06-03-2026, 12:32:35] [INFO]   Port:     3000
+[06-03-2026, 12:32:35] [INFO]   Docs:     http://localhost:3000/api-docs
+[06-03-2026, 12:32:35] [INFO]   Health:   http://localhost:3000/health
+[06-03-2026, 12:32:35] [INFO]   Config:   http://localhost:3000/config
+[06-03-2026, 12:32:35] [INFO] ================================================
+[06-03-2026, 12:32:35] [INFO] [Request] mpxklob3h8jm started
+[06-03-2026, 12:32:35] [INFO] [HTTP] GET /health 200 (5ms)
+[06-03-2026, 12:32:35] [INFO] [Request] mpxklob3h8jm OK (6ms)
+[06-03-2026, 12:32:40] [INFO] [Request] mpxklrxzd7sl started
+[06-03-2026, 12:32:40] [INFO] [HTTP] GET /health 200 (1ms)
+[06-03-2026, 12:32:40] [INFO] [Request] mpxklrxzd7sl OK (2ms)
+[06-03-2026, 12:33:45] [INFO] [Server] PID 32792 written to D:\Code\龟上心\html2image-server\.app.pid
+[06-03-2026, 12:33:45] [INFO] ================================================
+[06-03-2026, 12:33:45] [INFO]   HTML-to-Image Server is running
+[06-03-2026, 12:33:45] [INFO]   Host:     0.0.0.0
+[06-03-2026, 12:33:45] [INFO]   Port:     3001
+[06-03-2026, 12:33:45] [INFO]   Docs:     http://localhost:3001/api-docs
+[06-03-2026, 12:33:45] [INFO]   Health:   http://localhost:3001/health
+[06-03-2026, 12:33:45] [INFO]   Config:   http://localhost:3001/config
+[06-03-2026, 12:33:45] [INFO] ================================================
+[06-03-2026, 12:33:49] [INFO] [Request] mpxkn9201vco started
+[06-03-2026, 12:33:49] [INFO] [HTTP] GET / 200 (4ms)
+[06-03-2026, 12:33:49] [INFO] [Request] mpxkn9201vco OK (5ms)
+[06-03-2026, 12:33:49] [INFO] [Request] mpxkn937elck started
+[06-03-2026, 12:33:49] [INFO] [HTTP] GET /favicon.ico 404 (2ms)
+[06-03-2026, 12:33:49] [INFO] [Request] mpxkn937elck FAIL (3ms)

@@ -1,0 +1,37 @@
+# Cloudflare Worker 配置
+# https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name = "html-to-image"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat_v2"]
+
+# Workers 付费计划配置（可选）
+# 免费版已足够个人使用
+
+# KV 命名空间（可选，用于缓存）
+# [[kv_namespaces]]
+# binding = "CACHE"
+# id = "your-kv-namespace-id"
+
+# 环境变量
+[vars]
+# 默认配置
+DEFAULT_WIDTH = "750"
+DEFAULT_HEIGHT = "1334"
+DEFAULT_QUALITY = "90"
+CLOUDFLARE_ACCOUNT_ID = "60a39f952c4569aff95be54f130601c2"
+
+# Secrets（使用 wrangler secret put 设置）
+# CLOUDFLARE_API_TOKEN - Browser Rendering API Token
+
+# Workers 设置
+# 免费版限制
+# - 100,000 请求/天
+# - 10ms CPU 时间/请求（超出按量付费）
+# - 1MB 响应大小
+
+# 如需更高限制，可升级到 Workers 付费版
+# [[environments.production]]
+# workers_dev = true
+# plan = "workers-paid"

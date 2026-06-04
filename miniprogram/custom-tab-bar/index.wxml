@@ -1,0 +1,45 @@
+<view class="custom-tab-bar">
+  <view class="tab-bar-bg">
+    <view class="tab-bar-blur"></view>
+  </view>
+
+  <view
+    wx:for="{{list}}"
+    wx:key="pagePath"
+    class="tab-item {{selected === index ? 'active' : ''}}"
+    style="color: {{selected === index ? selectedColor : color}};"
+    bindtap="switchTab"
+    data-path="{{item.pagePath}}"
+  >
+    <view class="tab-icon-wrap">
+      <view class="tab-icon">
+        <!-- 宠物图标：爪印 -->
+        <view wx:if="{{index === 0}}" class="icon-pet">
+          <view class="paw-pad"></view>
+          <view class="toe toe-1"></view>
+          <view class="toe toe-2"></view>
+          <view class="toe toe-3"></view>
+          <view class="toe toe-4"></view>
+        </view>
+
+        <!-- 足迹图标：波浪柱状图 -->
+        <view wx:elif="{{index === 1}}" class="icon-footprint">
+          <view class="wave-bar bar1"></view>
+          <view class="wave-bar bar2"></view>
+          <view class="wave-bar bar3"></view>
+        </view>
+
+        <!-- 我的图标：圆润人形 -->
+        <view wx:else class="icon-my">
+          <view class="my-head"></view>
+          <view class="my-body"></view>
+        </view>
+      </view>
+
+      <!-- 活跃指示器 -->
+      <view class="active-indicator"></view>
+    </view>
+
+    <text class="tab-text">{{item.text}}</text>
+  </view>
+</view>

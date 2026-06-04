@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>龟上心 · 暖阳晨光Logo | 高清144x144 PNG下载</title>
+    <!-- html2canvas 高质量渲染库 -->
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: linear-gradient(145deg, #fff7ef 0%, #ffefdf 100%);
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
+            padding: 2rem 1.5rem;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .design-container {
+            max-width: 1000px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        /* 暖阳晨光主题 */
+        .brand-header {
+            text-align: center;
+            margin-bottom: 2.5rem;
+        }
+        .brand-header h1 {
+            font-size: 2.2rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, #E68A2E, #F7C56E);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            letter-spacing: 2px;
+            margin-bottom: 0.5rem;
+        }
+        .brand-header p {
+            color: #cd7a32;
+            font-size: 0.95rem;
+            letter-spacing: 0.5px;
+        }
+
+        .logos-showcase {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 2.5rem;
+            margin-bottom: 3rem;
+        }
+        .logo-card {
+            background: rgba(255, 245, 235, 0.85);
+            backdrop-filter: blur(2px);
+            border-radius: 48px;
+            padding: 1.8rem 1.5rem;
+            box-shadow: 0 20px 35px -12px rgba(180, 80, 20, 0.18), 0 1px 2px rgba(0,0,0,0.02);
+            transition: transform 0.2s;
+            text-align: center;
+            flex: 1;
+            min-width: 260px;
+            border: 1px solid rgba(245, 180, 100, 0.5);
+        }
+        .logo-card:hover {
+            transform: translateY(-4px);
+        }
+        .card-title {
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #c2712a;
+            margin-bottom: 1.2rem;
+        }
+        .icon-wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0 auto;
+        }
+        .logo-svg {
+            width: 160px;
+            height: 160px;
+            display: block;
+            filter: drop-shadow(0 8px 16px rgba(160, 70, 20, 0.15));
+        }
+        .brand-text {
+            margin-top: 1.2rem;
+            text-align: center;
+        }
+        /* 只有“龟上心”三个字，无副标题 */
+        .brand-name {
+            font-size: 2rem;
+            font-weight: 700;
+            letter-spacing: 4px;
+            background: linear-gradient(135deg, #E68A2E, #F7C56E);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            font-family: 'Noto Serif SC', 'Times New Roman', 'Songti SC', serif;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        }
+        /* 移除副标题，不需要显示额外文字 */
+        .brand-sub {
+            display: none;
+        }
+        .download-btn {
+            margin-top: 1.5rem;
+            background: linear-gradient(135deg, #E68A2E, #F7Bf5E);
+            border: none;
+            padding: 0.55rem 1.2rem;
+            border-radius: 60px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: #4d2f12;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: inherit;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .download-btn:hover {
+            transform: scale(0.98);
+            background: linear-gradient(135deg, #dc7c2a, #f5b24e);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        }
+
+        /* 预览区 */
+        .preview-section {
+            background: rgba(255, 245, 232, 0.9);
+            backdrop-filter: blur(4px);
+            border-radius: 40px;
+            padding: 1.4rem 1rem;
+            margin-top: 1rem;
+            text-align: center;
+            border: 1px solid #f7dfc2;
+        }
+        .preview-title {
+            font-size: 0.8rem;
+            color: #cb7c32;
+            margin-bottom: 1rem;
+            font-weight: 500;
+        }
+        .icon-samples {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 1.8rem;
+            align-items: flex-end;
+        }
+        .sample-item {
+            text-align: center;
+        }
+        .sample-label {
+            font-size: 0.7rem;
+            color: #bb7a3a;
+            margin-top: 0.5rem;
+        }
+        .small-icon {
+            width: 48px;
+            height: 48px;
+            background: white;
+            border-radius: 14px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        .small-icon svg {
+            width: 36px;
+            height: 36px;
+        }
+        .medium-icon {
+            width: 80px;
+            height: 80px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 6px 12px rgba(0,0,0,0.08);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .medium-icon svg {
+            width: 64px;
+            height: 64px;
+        }
+        hr {
+            margin: 1rem 0;
+            border: none;
+            border-top: 1px solid #f5ddbe;
+        }
+        .footnote {
+            text-align: center;
+            font-size: 0.7rem;
+            color: #c9813b;
+            margin-top: 2rem;
+        }
+
+        @media (max-width: 720px) {
+            body { padding: 1rem; }
+            .logo-svg { width: 130px; height: 130px; }
+            .brand-name { font-size: 1.6rem; letter-spacing: 2px; }
+            .logo-card { padding: 1.2rem; }
+        }
+    </style>
+</head>
+<body>
+<div class="design-container">
+    <div class="brand-header">
+        <h1>🐢 龟上心 · 用心记录每一刻</h1>
+        <p>暖阳晨光 · 新生希望 · 温暖生命</p>
+    </div>
+
+    <!-- 双版本 Logo: 带文字版（仅“龟上心”三字）+ 纯图标版 -->
+    <div class="logos-showcase">
+        <!-- 完整品牌标识：带文字“龟上心”无副标题 -->
+        <div class="logo-card" id="logoCardWithText">
+            <div class="card-title">☀️ 完整品牌标识 · 带文字「龟上心」</div>
+            <div class="icon-wrapper">
+                <svg class="logo-svg" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <linearGradient id="heartGrad" x1="20%" y1="10%" x2="80%" y2="90%">
+                            <stop offset="0%" stop-color="#E68A2E" />
+                            <stop offset="100%" stop-color="#F7C56E" />
+                        </linearGradient>
+                        <linearGradient id="shellGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#FFF0D4" stop-opacity="0.95" />
+                            <stop offset="100%" stop-color="#FFE0B5" stop-opacity="0.85" />
+                        </linearGradient>
+                        <linearGradient id="sproutGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+                            <stop offset="0%" stop-color="#FFBA7A" />
+                            <stop offset="100%" stop-color="#FFD9A3" />
+                        </linearGradient>
+                        <filter id="softShadow" x="-10%" y="-10%" width="130%" height="130%">
+                            <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#b4571e30"/>
+                        </filter>
+                    </defs>
+                    <path d="M120,190 C70,140 25,100 25,65 C25,40 45,20 70,20 C88,20 102,32 112,48 C118,57 120,65 120,72 C120,65 122,57 128,48 C138,32 152,20 170,20 C195,20 215,40 215,65 C215,100 170,140 120,190 Z" 
+                          fill="url(#heartGrad)" stroke="none" filter="url(#softShadow)"/>
+                    <polygon points="120,100 142,110 142,135 120,146 98,135 98,110" 
+                             fill="url(#shellGlow)" stroke="#FFD699" stroke-width="1.8" stroke-linejoin="round" opacity="0.92"/>
+                    <line x1="120" y1="100" x2="120" y2="146" stroke="#F8CA8C" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+                    <line x1="98" y1="122" x2="142" y2="122" stroke="#F8CA8C" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+                    <polygon points="120,110 131,117 131,129 120,136 109,129 109,117" 
+                             fill="none" stroke="#FFE0B5" stroke-width="1.2" opacity="0.9"/>
+                    <path d="M120,92 C114,74 102,68 102,68 C102,68 112,60 120,66 C128,60 138,68 138,68 C138,68 126,74 120,92 Z" 
+                          fill="url(#sproutGrad)" stroke="none" opacity="0.96"/>
+                    <path d="M118,78 C112,70 106,68 106,68 C106,68 112,64 118,72" fill="#FFCB8A" opacity="0.95"/>
+                    <path d="M122,78 C128,70 134,68 134,68 C134,68 128,64 122,72" fill="#FFCB8A" opacity="0.95"/>
+                    <circle cx="120" cy="168" r="4" fill="#FFE5BC" opacity="0.85"/>
+                    <circle cx="112" cy="172" r="2.5" fill="#FFE5BC" opacity="0.75"/>
+                    <circle cx="128" cy="172" r="2.5" fill="#FFE5BC" opacity="0.75"/>
+                    <path d="M80 52 L82 58 L88 58 L83 62 L85 68 L80 64 L75 68 L77 62 L72 58 L78 58 Z" fill="#FFE5BC" opacity="0.85"/>
+                    <path d="M160 48 L162 54 L168 54 L163 58 L165 64 L160 60 L155 64 L157 58 L152 54 L158 54 Z" fill="#FFE5BC" opacity="0.85"/>
+                </svg>
+            </div>
+            <div class="brand-text">
+                <div class="brand-name">龟上心</div>
+                <!-- 无副标题，只显示三个字 -->
+            </div>
+            <button class="download-btn" id="downloadTextLogoBtn">📸 高清PNG下载 · 带文字 (144x144)</button>
+        </div>
+
+        <!-- 纯图标版本 (无文字) -->
+        <div class="logo-card" id="logoCardPureIcon">
+            <div class="card-title">🐢 纯图标版本 · 无文字</div>
+            <div class="icon-wrapper">
+                <svg class="logo-svg" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <linearGradient id="heartGradPure" x1="20%" y1="10%" x2="80%" y2="90%">
+                            <stop offset="0%" stop-color="#E68A2E" />
+                            <stop offset="100%" stop-color="#F7C56E" />
+                        </linearGradient>
+                        <linearGradient id="shellGlowPure" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="#FFF0D4" stop-opacity="0.95" />
+                            <stop offset="100%" stop-color="#FFE0B5" stop-opacity="0.85" />
+                        </linearGradient>
+                        <linearGradient id="sproutGradPure" x1="0%" y1="100%" x2="100%" y2="0%">
+                            <stop offset="0%" stop-color="#FFBA7A" />
+                            <stop offset="100%" stop-color="#FFD9A3" />
+                        </linearGradient>
+                        <filter id="softShadowPure" x="-10%" y="-10%" width="130%" height="130%">
+                            <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#b4571e30"/>
+                        </filter>
+                    </defs>
+                    <path d="M120,190 C70,140 25,100 25,65 C25,40 45,20 70,20 C88,20 102,32 112,48 C118,57 120,65 120,72 C120,65 122,57 128,48 C138,32 152,20 170,20 C195,20 215,40 215,65 C215,100 170,140 120,190 Z" 
+                          fill="url(#heartGradPure)" stroke="none" filter="url(#softShadowPure)"/>
+                    <polygon points="120,100 142,110 142,135 120,146 98,135 98,110" 
+                             fill="url(#shellGlowPure)" stroke="#FFD699" stroke-width="1.8" stroke-linejoin="round" opacity="0.92"/>
+                    <line x1="120" y1="100" x2="120" y2="146" stroke="#F8CA8C" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+                    <line x1="98" y1="122" x2="142" y2="122" stroke="#F8CA8C" stroke-width="1.5" stroke-linecap="round" opacity="0.8"/>
+                    <polygon points="120,110 131,117 131,129 120,136 109,129 109,117" 
+                             fill="none" stroke="#FFE0B5" stroke-width="1.2" opacity="0.9"/>
+                    <path d="M120,92 C114,74 102,68 102,68 C102,68 112,60 120,66 C128,60 138,68 138,68 C138,68 126,74 120,92 Z" 
+                          fill="url(#sproutGradPure)" stroke="none" opacity="0.96"/>
+                    <path d="M118,78 C112,70 106,68 106,68 C106,68 112,64 118,72" fill="#FFCB8A" opacity="0.95"/>
+                    <path d="M122,78 C128,70 134,68 134,68 C134,68 128,64 122,72" fill="#FFCB8A" opacity="0.95"/>
+                    <circle cx="120" cy="168" r="4" fill="#FFE5BC" opacity="0.85"/>
+                    <circle cx="112" cy="172" r="2.5" fill="#FFE5BC" opacity="0.75"/>
+                    <circle cx="128" cy="172" r="2.5" fill="#FFE5BC" opacity="0.75"/>
+                    <path d="M80 52 L82 58 L88 58 L83 62 L85 68 L80 64 L75 68 L77 62 L72 58 L78 58 Z" fill="#FFE5BC" opacity="0.85"/>
+                    <path d="M160 48 L162 54 L168 54 L163 58 L165 64 L160 60 L155 64 L157 58 L152 54 L158 54 Z" fill="#FFE5BC" opacity="0.85"/>
+                </svg>
+            </div>
+            <div class="brand-text" style="margin-top:0.8rem">
+                <div style="font-size:0.7rem; color:#e18c42;">纯净图标 · 无文字，适合小程序入口</div>
+            </div>
+            <button class="download-btn" id="downloadIconBtn">📸 高清PNG下载 · 纯图标 (144x144)</button>
+        </div>
+    </div>
+
+    <!-- 移动端预览区 -->
+    <div class="preview-section">
+        <div class="preview-title">📱 移动端实际预览 · 小尺寸依然清晰温暖</div>
+        <div class="icon-samples">
+            <div class="sample-item">
+                <div class="small-icon" id="previewSmall"></div>
+                <div class="sample-label">48px (小程序icon)</div>
+            </div>
+            <div class="sample-item">
+                <div class="medium-icon" id="previewMedium"></div>
+                <div class="sample-label">80px (个人中心/登录)</div>
+            </div>
+            <div class="sample-item">
+                <div style="width:110px; height:110px; background:white; border-radius:28px; display: flex; align-items: center; justify-content: center; box-shadow:0 8px 18px rgba(0,0,0,0.05);">
+                    <svg id="previewLarge" width="88" height="88" viewBox="0 0 240 240" style="display:block"></svg>
+                </div>
+                <div class="sample-label">110px (启动页缩略)</div>
+            </div>
+        </div>
+        <hr />
+        <div style="font-size:0.75rem; color:#d6893c;">☀️ 心形龟甲 + 萌芽新生 · 暖阳晨光渐变，传递希望与温情</div>
+        <div style="font-size:0.7rem; margin-top: 8px;">✅ 符合小程序新规：无政治敏感、无色情内容 | 高清PNG下载，尺寸144x144</div>
+    </div>
+    <div class="footnote">
+        🐢 龟上心 · 龟类养殖管理 | 用心记录龟龟成长 · 暖阳晨光，守护每一份生命与陪伴
+    </div>
+</div>
+
+<script>
+    // 高质量下载函数：确保生成144x144像素，边缘锐利，背景透明
+    // 参数：elementToCapture - 要截图的DOM元素（已包含所有样式，宽高自适应）
+    // 最终输出144x144 PNG，高清 (通过4倍超采样再降采样)
+    async function downloadHighQualityPNG(elementToCapture, fileName) {
+        if (!elementToCapture) return;
+        try {
+            // 获取元素当前计算尺寸，但我们希望强制输出为144x144，内部元素等比缩放
+            // 为了达到最佳清晰度，克隆元素到一个固定尺寸 144x144 的容器，并使用 scale = 4 渲染，再缩至144
+            const tempContainer = document.createElement('div');
+            tempContainer.style.position = 'fixed';
+            tempContainer.style.top = '-9999px';
+            tempContainer.style.left = '-9999px';
+            tempContainer.style.width = '144px';
+            tempContainer.style.height = '144px';
+            tempContainer.style.backgroundColor = 'transparent';
+            tempContainer.style.display = 'flex';
+            tempContainer.style.alignItems = 'center';
+            tempContainer.style.justifyContent = 'center';
+            tempContainer.style.flexDirection = 'column';
+            tempContainer.style.overflow = 'hidden';
+            
+            // 深克隆目标元素
+            const clone = elementToCapture.cloneNode(true);
+            // 重置克隆容器的样式，完全适配144x144区域
+            clone.style.width = '100%';
+            clone.style.height = '100%';
+            clone.style.display = 'flex';
+            clone.style.flexDirection = 'column';
+            clone.style.alignItems = 'center';
+            clone.style.justifyContent = 'center';
+            clone.style.backgroundColor = 'transparent';
+            clone.style.padding = '0';
+            clone.style.margin = '0';
+            clone.style.borderRadius = '0';
+            clone.style.boxShadow = 'none';
+            clone.style.backdropFilter = 'none';
+            
+            // 处理内部元素: 对于带文字版本，需要保证 .icon-wrapper 和 .brand-text 布局紧凑
+            const iconWrap = clone.querySelector('.icon-wrapper');
+            const brandTextDiv = clone.querySelector('.brand-text');
+            if (iconWrap) {
+                const svg = iconWrap.querySelector('.logo-svg');
+                if (svg) {
+                    // 根据是否有文字版本来适配尺寸
+                    if (brandTextDiv && brandTextDiv.querySelector('.brand-name')) {
+                        // 带文字版：SVG 大小 80x80，文字适中
+                        svg.style.width = '80px';
+                        svg.style.height = '80px';
+                    } else {
+                        // 纯图标版：SVG 大小 120x120
+                        svg.style.width = '120px';
+                        svg.style.height = '120px';
+                    }
+                }
+                iconWrap.style.margin = '0';
+            }
+            if (brandTextDiv) {
+                brandTextDiv.style.marginTop = '4px';
+                const nameSpan = brandTextDiv.querySelector('.brand-name');
+                if (nameSpan) {
+                    nameSpan.style.fontSize = '26px';
+                    nameSpan.style.letterSpacing = '2px';
+                }
+                // 确保没有副标题，已经不存在 .brand-sub
+            }
+            
+            tempContainer.appendChild(clone);
+            document.body.appendChild(tempContainer);
+            
+            // 使用 html2canvas 以高倍率渲染 (scale = 4) 获得超清源图
+            const canvas = await html2canvas(tempContainer, {
+                backgroundColor: null,       // 透明背景
+                scale: 4,                   // 4倍超采样，实际渲染尺寸 576x576
+                logging: false,
+                useCORS: false,
+                allowTaint: false,
+                windowWidth: 144,
+                windowHeight: 144
+            });
+            
+            // 创建最终 144x144 的 canvas，进行高质量下采样
+            const finalCanvas = document.createElement('canvas');
+            finalCanvas.width = 144;
+            finalCanvas.height = 144;
+            const ctx = finalCanvas.getContext('2d');
+            ctx.clearRect(0, 0, 144, 144);
+            // 将高清 canvas 绘制到 144x144 (双线性插值，清晰且平滑)
+            ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, 144, 144);
+            
+            // 导出 PNG
+            const link = document.createElement('a');
+            link.download = `${fileName}.png`;
+            link.href = finalCanvas.toDataURL('image/png');
+            link.click();
+            
+            // 清理临时元素
+            document.body.removeChild(tempContainer);
+        } catch (err) {
+            console.error('高清截图失败: ', err);
+            alert('生成图片失败，请刷新页面重试。');
+        }
+    }
+    
+    // 带文字下载 (只包含图标 + “龟上心”文字)
+    const textCard = document.getElementById('logoCardWithText');
+    const downloadTextBtn = document.getElementById('downloadTextLogoBtn');
+    downloadTextBtn.addEventListener('click', () => {
+        // 构建一个临时的干净组合: icon-wrapper + brand-text (仅龟上心)
+        const originalIcon = textCard.querySelector('.icon-wrapper');
+        const originalText = textCard.querySelector('.brand-text');
+        if (!originalIcon || !originalText) {
+            alert('未找到logo元素');
+            return;
+        }
+        const container = document.createElement('div');
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
+        container.style.alignItems = 'center';
+        container.style.justifyContent = 'center';
+        container.style.backgroundColor = 'transparent';
+        container.style.padding = '0';
+        const iconClone = originalIcon.cloneNode(true);
+        const textClone = originalText.cloneNode(true);
+        // 调整SVG尺寸由download函数内部处理，但这里保留默认
+        container.appendChild(iconClone);
+        container.appendChild(textClone);
+        downloadHighQualityPNG(container, '龟上心_logo_带文字_144x144');
+    });
+    
+    // 纯图标下载 (只截取 .icon-wrapper 内部)
+    const pureCard = document.getElementById('logoCardPureIcon');
+    const downloadIconBtn = document.getElementById('downloadIconBtn');
+    downloadIconBtn.addEventListener('click', () => {
+        const iconWrapper = pureCard.querySelector('.icon-wrapper');
+        if (!iconWrapper) {
+            alert('未找到图标');
+            return;
+        }
+        const container = document.createElement('div');
+        container.style.display = 'flex';
+        container.style.alignItems = 'center';
+        container.style.justifyContent = 'center';
+        container.style.backgroundColor = 'transparent';
+        const iconClone = iconWrapper.cloneNode(true);
+        container.appendChild(iconClone);
+        downloadHighQualityPNG(container, '龟上心_logo_纯图标_144x144');
+    });
+    
+    // 预览区纯图标克隆（用于界面小尺寸演示）
+    function cloneIconToPreviews() {
+        const pureSvg = document.querySelector('#logoCardPureIcon .logo-svg');
+        if (!pureSvg) return;
+        
+        const previewSmall = document.getElementById('previewSmall');
+        const previewMedium = document.getElementById('previewMedium');
+        const previewLarge = document.getElementById('previewLarge');
+        
+        if (previewSmall) {
+            const cloneSmall = pureSvg.cloneNode(true);
+            cloneSmall.setAttribute('width', '40');
+            cloneSmall.setAttribute('height', '40');
+            cloneSmall.setAttribute('viewBox', '0 0 240 240');
+            cloneSmall.style.width = '40px';
+            cloneSmall.style.height = '40px';
+            previewSmall.innerHTML = '';
+            previewSmall.appendChild(cloneSmall);
+        }
+        
+        if (previewMedium) {
+            const cloneMed = pureSvg.cloneNode(true);
+            cloneMed.setAttribute('width', '70');
+            cloneMed.setAttribute('height', '70');
+            cloneMed.setAttribute('viewBox', '0 0 240 240');
+            cloneMed.style.width = '70px';
+            cloneMed.style.height = '70px';
+            previewMedium.innerHTML = '';
+            previewMedium.appendChild(cloneMed);
+        }
+        
+        if (previewLarge) {
+            const cloneLarge = pureSvg.cloneNode(true);
+            cloneLarge.setAttribute('width', '88');
+            cloneLarge.setAttribute('height', '88');
+            cloneLarge.setAttribute('viewBox', '0 0 240 240');
+            cloneLarge.style.width = '88px';
+            cloneLarge.style.height = '88px';
+            const parent = previewLarge.parentNode;
+            if (parent) {
+                parent.replaceChild(cloneLarge, previewLarge);
+                cloneLarge.id = 'previewLarge';
+            }
+        }
+    }
+    
+    window.addEventListener('DOMContentLoaded', cloneIconToPreviews);
+    window.addEventListener('load', cloneIconToPreviews);
+</script>
+</body>
+</html>

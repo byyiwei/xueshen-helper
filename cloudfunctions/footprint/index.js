@@ -1,0 +1,129 @@
+const cloud = require('wx-server-sdk')
+
+cloud.init({
+  env: cloud.DYNAMIC_CURRENT_ENV
+})
+
+const db = cloud.database()
+
+exports.main = async (event, context) => {
+  const { action, data } = event
+  const { OPENID } = cloud.getWXContext()
+
+  try {
+    switch (action) {
+      case 'create':
+        return await createFootprint(data, OPENID)
+      case 'list':
+        return await getFootprintList(data, OPENID)
+      case 'get':
+        return await getFootprintById(data.id, OPENID)
+      case 'update':
+        return await updateFootprint(data, OPENID)
+      case 'delete':
+        return await deleteFootprint(data.id, OPENID)
+      default:
+        return { success: false, message: '未知操作' }
+    }
+  } catch (error) {
+    console.error('足迹操作失败:', error)
+    return { success: false, message: error.message }
+  }
+}
+
+async function createFootprint(data, openid) {
+  const footprint = {
+    type: data.type || 'image',
+    url: data.url || '',
+    thumbnail: data.thumbnail || '',
+    duration: data.duration || 0,
+    date: data.date,
+    time: data.time,
+    // 操作记录相关字段
+    action: data.action || '',
+    petId: data.petId || '',
+    petName: data.petName || '',
+    description: data.description || '',
+    openid,
+    createdAt: db.serverDate(),
+    updatedAt: db.serverDate()
+  }
+
+  const result = await db.collection('footprints').add({ data: footprint })
+  return {
+    success: true,
+    data: {
+      id: result._id,
+      ...footprint
+    }
+  }
+}
+
+async function getFootprintList(params, openid) {
+  let query = db.collection('footprints').where({ openid })
+
+  if (params && params.type && params.type !== 'all') {
+    query = query.where({ type: params.type })
+  }
+
+  const result = await query.orderBy('createdAt', 'desc').get()
+  return {
+    success: true,
+    data: result.data.map(item => ({
+      id: item._id,
+      ...item
+    }))
+  }
+}
+
+async function getFootprintById(id, openid) {
+  const result = await db.collection('footprints').where({
+    _id: id,
+    openid
+  }).get()
+
+  if (result.data.length === 0) {
+    throw new Error('足迹不存在')
+  }
+
+  return {
+    success: true,
+    data: {
+      id: result.data[0]._id,
+      ...result.data[0]
+    }
+  }
+}
+
+async function updateFootprint(data, openid) {
+  const { id, ...updateData } = data
+  
+  const result = await db.collection('footprints').where({
+    _id: id,
+    openid
+  }).update({
+    data: {
+      ...updateData,
+      updatedAt: db.serverDate()
+    }
+  })
+
+  if (result.stats.updated === 0) {
+    throw new Error('更新失败，足迹不存在或无权限')
+  }
+
+  return { success: true, message: '更新成功' }
+}
+
+async function deleteFootprint(id, openid) {
+  const result = await db.collection('footprints').where({
+    _id: id,
+    openid
+  }).remove()
+
+  if (result.stats.removed === 0) {
+    throw new Error('删除失败，足迹不存在或无权限')
+  }
+
+  return { success: true, message: '删除成功' }
+}

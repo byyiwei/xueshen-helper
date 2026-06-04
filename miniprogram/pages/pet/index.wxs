@@ -1,0 +1,8 @@
+function isSelected(selectedIds, id) {
+  if (!selectedIds || !selectedIds.length) return false
+  return selectedIds.indexOf(id) !== -1
+}
+
+module.exports = {
+  isSelected: isSelected
+}

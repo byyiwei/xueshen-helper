@@ -1,0 +1,103 @@
+page {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+.container {
+  padding: 0 24rpx;
+}
+
+.flex-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.flex-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.text-gray {
+  color: #999999;
+}
+
+.text-dark {
+  color: #333333;
+}
+
+.bg-dark {
+  background-color: #1a1a1a;
+}
+
+:root {
+  --primary-color: #B8860B;
+  --primary-light: #f5e6c8;
+  --primary-dark: #8B6914;
+  --bg-color: #f5f0e6;
+  --bg-light: #faf8f3;
+  --card-bg: #ffffff;
+}
+
+page.theme-gold {
+  --primary-color: #B8860B;
+  --primary-light: #f5e6c8;
+  --primary-dark: #8B6914;
+  --bg-color: #f5f0e6;
+  --bg-light: #faf8f3;
+}
+
+page.theme-mocha {
+  --primary-color: #8B7765;
+  --primary-light: #d4cfc4;
+  --primary-dark: #6B5744;
+  --bg-color: #faf8f3;
+  --bg-light: #f5f5f0;
+}
+
+page.theme-olive {
+  --primary-color: #556B2F;
+  --primary-light: #b8c9b8;
+  --primary-dark: #3d5020;
+  --bg-color: #f0f3ef;
+  --bg-light: #e8ede4;
+}
+
+.btn-primary {
+  background-color: #1a1a1a;
+  color: #ffffff;
+  border-radius: 40rpx;
+  font-size: 28rpx;
+  padding: 24rpx 48rpx;
+  border: none;
+}
+
+.btn-secondary {
+  background-color: var(--bg-light);
+  color: var(--primary-color);
+  border-radius: 40rpx;
+  font-size: 28rpx;
+  padding: 24rpx 48rpx;
+  border: none;
+}
+
+.btn-outline {
+  background-color: transparent;
+  color: #333333;
+  border: 2rpx solid #e5e5e5;
+  border-radius: 40rpx;
+  font-size: 28rpx;
+  padding: 24rpx 48rpx;
+}
+
+.text-primary {
+  color: var(--primary-color);
+}
+
+.bg-primary-light {
+  background-color: var(--bg-light);
+}
+
+.bg-page {
+  background-color: var(--bg-color);
+}

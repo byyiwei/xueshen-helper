@@ -1,0 +1,31 @@
+<view class="container theme-{{currentTheme}}">
+  <view class="header">
+    <view class="user-info">
+      <view class="avatar">
+        <image wx:if="{{userInfo.avatar}}" src="{{userInfo.avatar}}" mode="aspectFill" binderror="onPhotoError" data-type="avatar" />
+        <text wx:else>{{userInfo.nickname ? userInfo.nickname.charAt(0) : '龟'}}</text>
+      </view>
+      <view class="user-detail">
+        <text class="username">{{userInfo.nickname || '用户'}}</text>
+        <text class="count">共 {{pets.length}} 只宠物</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="pet-list">
+    <view wx:for="{{pets}}" wx:key="id" class="pet-item" bindtap="viewDetail" data-id="{{item.id}}">
+      <image class="pet-image" src="{{item.images[0] || '/images/default.png'}}" mode="aspectFill" binderror="onPhotoError" data-index="{{index}}" />
+      <view class="pet-info">
+        <text class="pet-name">{{item.name}}</text>
+        <text class="pet-category">{{item.category}}</text>
+        <text class="pet-desc">{{item.description}}</text>
+      </view>
+      <view class="arrow">›</view>
+    </view>
+  </view>
+
+  <view wx:if="{{pets.length === 0}}" class="empty-state">
+    <text class="empty-icon">🐢</text>
+    <text class="empty-text">暂无宠物</text>
+  </view>
+</view>

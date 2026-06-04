@@ -1,0 +1,714 @@
+<view class="page theme-{{currentTheme || 'gold'}}">
+  <view class="header">
+    <view class="header-inner">
+      <view class="back-btn" bindtap="goBack">
+        <text class="back-icon">‹</text>
+      </view>
+      <text class="header-title">种龟详情</text>
+      <view wx:if="{{!isPublicMode}}" class="header-actions">
+        <view class="action-btn" bindtap="showMore">⋯</view>
+        <view class="action-btn" bindtap="showDeleteConfirm">−</view>
+        <view class="action-btn" bindtap="editInfo">⟳</view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{loading}}" class="loading-container">
+    <view class="loading-spinner"></view>
+    <text class="loading-text">加载中...</text>
+  </view>
+
+  <view wx:else class="content">
+    <!-- 图片展示区 -->
+    <view wx:if="{{pet.photos && pet.photos.length > 0}}" class="photo-banner">
+      <swiper class="photo-swiper" indicator-dots="{{pet.photos.length > 1}}" circular autoplay>
+        <swiper-item wx:for="{{pet.photos}}" wx:key="*this">
+          <image class="photo-swiper-img" src="{{item}}" mode="aspectFill" binderror="onPhotoError" data-index="{{index}}" data-type="hero" />
+        </swiper-item>
+      </swiper>
+    </view>
+
+    <view class="pet-info">
+      <view class="pet-name-row">
+        <text class="pet-name">{{pet.name}}</text>
+        <view class="gender-tag">
+          <text class="gender-text">{{pet.gender}}</text>
+        </view>
+      </view>
+      
+      <view class="info-tags">
+        <text class="info-tag">{{pet.category}}</text>
+        <text class="info-tag status-{{statusClass}}">{{pet.status}}</text>
+        <text wx:if="{{pet.alias}}" class="info-tag alias">{{pet.alias}}</text>
+      </view>
+      
+      <view class="relation-row">
+        <view class="relation-item">
+          <text class="relation-label">父本</text>
+          <text class="relation-value {{pet.father ? 'gender-male' : 'unlinked'}}">{{pet.fatherName || '未关联'}}</text>
+        </view>
+        <view class="relation-divider"></view>
+        <view class="relation-item">
+          <text class="relation-label">母本</text>
+          <text class="relation-value {{pet.mother ? 'gender-female' : 'unlinked-red'}}">{{pet.motherName || '未关联'}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="section-title">种龟事件</view>
+      <view class="event-tabs">
+        <view class="event-tab {{currentEventTab === '全部事件' ? 'active' : ''}}" bindtap="setEventTab" data-tab="全部事件">
+          <text class="event-tab-icon">📋</text>
+          <text class="event-tab-text">全部</text>
+        </view>
+        <view class="event-tab {{currentEventTab === '交配' ? 'active' : ''}}" bindtap="setEventTab" data-tab="交配">
+          <text class="event-tab-icon">💕</text>
+          <text class="event-tab-text">交配</text>
+        </view>
+        <view class="event-tab {{currentEventTab === '产蛋' ? 'active' : ''}}" bindtap="setEventTab" data-tab="产蛋">
+          <text class="event-tab-icon">🥚</text>
+          <text class="event-tab-text">产蛋</text>
+        </view>
+        <view class="event-tab {{currentEventTab === '换公' ? 'active' : ''}}" bindtap="setEventTab" data-tab="换公">
+          <text class="event-tab-icon">🔄</text>
+          <text class="event-tab-text">换公</text>
+        </view>
+      </view>
+
+      <view wx:if="{{filteredRecords.length > 0}}" class="event-list">
+        <view wx:for="{{filteredRecords}}" wx:key="id" class="event-card" bindtap="showRecordDetail" data-id="{{item.id}}">
+          <view class="event-icon {{item.type === '产蛋' ? 'event-icon-lay' : ''}}">
+            <text class="icon-emoji">{{item.type === '建档' ? '📁' : item.type === '交配' ? '💕' : item.type === '产蛋' ? '🥚' : item.type === '换公' ? '🔄' : '📝'}}</text>
+          </view>
+          <view class="event-info">
+            <text class="event-title">{{item.type}}</text>
+            <text class="event-content">{{item.text}}</text>
+            <view class="event-date">
+              <text class="date">{{item.date}}</text>
+              <text class="time">{{item.time}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view wx:else class="empty-events">
+        <text class="empty-text">暂无事件记录</text>
+      </view>
+
+      <view class="timeline-section">
+        <view class="timeline-header">
+          <text class="timeline-title">记录（{{filteredRecords.length}}条）</text>
+          <view class="timeline-actions">
+            <view class="timeline-date-range">
+              <picker mode="date" value="{{selectedDate || today}}" bindchange="onDateChange" class="timeline-date-picker">
+                <view class="timeline-btn {{selectedDate ? 'active' : ''}}">
+                  <text class="timeline-btn-text">{{selectedDate ? selectedDate : '开始'}}</text>
+                  <text class="timeline-btn-icon">▾</text>
+                </view>
+              </picker>
+              <text class="range-separator">~</text>
+              <picker mode="date" value="{{endDate || today}}" bindchange="onEndDateChange" class="timeline-date-picker">
+                <view class="timeline-btn {{endDate ? 'active' : ''}}">
+                  <text class="timeline-btn-text">{{endDate ? endDate : '结束'}}</text>
+                  <text class="timeline-btn-icon">▾</text>
+                </view>
+              </picker>
+            </view>
+            <view wx:if="{{selectedDate || endDate}}" class="timeline-btn timeline-btn-clear" bindtap="clearDateFilter">
+              <text class="timeline-btn-text">清除</text>
+            </view>
+            <view class="timeline-btn timeline-btn-expand" bindtap="expandTimeline">展开</view>
+          </view>
+        </view>
+        <text class="timeline-hint">点上方事件卡或展开查看完整时间线</text>
+      </view>
+    </view>
+
+    <!-- 家族谱系 -->
+    <view class="section section-pedigree">
+      <view class="section-header" bindtap="togglePedigree">
+        <view class="section-title-row">
+          <text class="section-title">家族谱系</text>
+          <view wx:if="{{pedigreeStats.totalAncestors > 0}}" class="pedigree-badge">
+            <text class="pedigree-count">有血系</text>
+          </view>
+        </view>
+        <view class="expand-btn {{showPedigree ? 'expanded' : ''}}">
+          <text class="expand-text">{{showPedigree ? '收起' : '展开'}}</text>
+          <text class="expand-icon">▾</text>
+        </view>
+      </view>
+      
+      <!-- 收起状态：简洁预览 -->
+      <view wx:if="{{!showPedigree}}" class="pedigree-preview">
+        <!-- 有父系或母系数据时显示谱系预览 -->
+        <view wx:if="{{paternalLine.length > 0 || maternalLine.length > 0}}" class="pedigree-cards">
+          <view wx:if="{{paternalLine.length > 0}}" class="pedigree-card">
+            <view class="card-gender-tag male">父系</view>
+            <view class="card-avatar">
+              <image wx:if="{{paternalLine[0].photos && paternalLine[0].photos.length > 0}}" class="card-img" src="{{paternalLine[0].photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+            </view>
+            <view class="card-info">
+              <text class="card-label">{{paternalLine[0].alias || paternalLine[0].name || '父本'}}</text>
+              <text class="card-name">{{paternalLine[0].alias || paternalLine[0].name || '未命名'}}</text>
+              <text wx:if="{{paternalLine.length > 1}}" class="card-more">+{{paternalLine.length - 1}}代</text>
+            </view>
+          </view>
+          <view wx:if="{{maternalLine.length > 0}}" class="pedigree-card">
+            <view class="card-gender-tag female">母系</view>
+            <view class="card-avatar">
+              <image wx:if="{{maternalLine[0].photos && maternalLine[0].photos.length > 0}}" class="card-img" src="{{maternalLine[0].photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+            </view>
+            <view class="card-info">
+              <text class="card-label">{{maternalLine[0].alias || maternalLine[0].name || '母本'}}</text>
+              <text class="card-name">{{maternalLine[0].alias || maternalLine[0].name || '未命名'}}</text>
+              <text wx:if="{{maternalLine.length > 1}}" class="card-more">+{{maternalLine.length - 1}}代</text>
+            </view>
+          </view>
+        </view>
+        <!-- 没有谱系数据时显示空状态 -->
+        <view wx:else class="family-tree-empty">
+          <view class="family-status">等待补全</view>
+          <text class="family-title">还没有父母谱系</text>
+          <text class="family-hint">补充父本或母本后，这里就会显示当前个体的溯源关系。</text>
+          <view class="family-btn" bindtap="editInfo">编辑信息</view>
+        </view>
+      </view>
+      
+      <!-- 展开状态：完整族谱 -->
+      <view wx:if="{{showPedigree}}" class="pedigree-full">
+        <!-- 统计信息 -->
+        <view class="pedigree-stats">
+          <view class="stat-item">
+            <text class="stat-num">{{pedigreeStats.totalAncestors}}</text>
+            <text class="stat-label">祖先总数</text>
+          </view>
+          <view class="stat-item">
+            <text class="stat-num">{{pedigreeStats.maleCount}}</text>
+            <text class="stat-label">父系</text>
+          </view>
+          <view class="stat-item">
+            <text class="stat-num">{{pedigreeStats.femaleCount}}</text>
+            <text class="stat-label">母系</text>
+          </view>
+          <view class="stat-item">
+            <text class="stat-num">{{pedigreeStats.maxDepth}}</text>
+            <text class="stat-label">最深远</text>
+          </view>
+        </view>
+        
+        <!-- 血缘主线 -->
+        <view class="bloodline-section">
+          <view class="bloodline-title">
+            <text class="title-text">血缘主线</text>
+            <view class="bloodline-tabs">
+              <view class="tab {{bloodlineTab === 'paternal' ? 'active' : ''}}" bindtap="switchBloodlineTab" data-tab="paternal">父本</view>
+              <view class="tab {{bloodlineTab === 'maternal' ? 'active' : ''}}" bindtap="switchBloodlineTab" data-tab="maternal">母本</view>
+            </view>
+          </view>
+          
+          <!-- 父系主线 -->
+          <view wx:if="{{bloodlineTab === 'paternal'}}" class="bloodline-content">
+            <view wx:if="{{paternalLine.length === 0}}" class="empty-line">
+              <text class="empty-text">暂无父系谱系</text>
+            </view>
+            <view wx:else class="bloodline-chain">
+              <view wx:for="{{paternalLine}}" wx:key="id" class="bloodline-node">
+                <view class="node-card" bindtap="viewAncestorDetail" data-id="{{item.id}}">
+                  <view class="node-avatar">
+                    <image wx:if="{{item.photos && item.photos.length > 0}}" class="avatar-img" src="{{item.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  </view>
+                  <view class="node-info">
+                    <text class="node-name">{{item.alias || item.name || '未命名'}}</text>
+                    <text class="node-category">{{item.category || '无'}} · 第{{item.generation}}代</text>
+                  </view>
+                </view>
+                <view wx:if="{{index < paternalLine.length - 1}}" class="chain-arrow">↓</view>
+              </view>
+            </view>
+          </view>
+          
+          <!-- 母系主线 -->
+          <view wx:if="{{bloodlineTab === 'maternal'}}" class="bloodline-content">
+            <view wx:if="{{maternalLine.length === 0}}" class="empty-line">
+              <text class="empty-text">暂无母系谱系</text>
+            </view>
+            <view wx:else class="bloodline-chain">
+              <view wx:for="{{maternalLine}}" wx:key="id" class="bloodline-node">
+                <view class="node-card" bindtap="viewAncestorDetail" data-id="{{item.id}}">
+                  <view class="node-avatar">
+                    <image wx:if="{{item.photos && item.photos.length > 0}}" class="avatar-img" src="{{item.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  </view>
+                  <view class="node-info">
+                    <text class="node-name">{{item.alias || item.name || '未命名'}}</text>
+                    <text class="node-category">{{item.category || '无'}} · 第{{item.generation}}代</text>
+                  </view>
+                </view>
+                <view wx:if="{{index < maternalLine.length - 1}}" class="chain-arrow">↓</view>
+              </view>
+            </view>
+          </view>
+        </view>
+        
+        <!-- 完整家谱树 -->
+        <view class="family-tree-section">
+          <view class="tree-title">
+            <text class="title-text">完整家谱</text>
+            <text class="tree-hint">（最多展示3代）</text>
+          </view>
+          <view wx:if="{{!pedigreeData.fullTree || (!pedigreeData.fullTree.father && !pedigreeData.fullTree.mother)}}" class="empty-tree">
+            <text class="empty-text">暂无家谱数据</text>
+          </view>
+          <view wx:else class="family-tree-visual">
+            <!-- 第3代：曾祖父母（有条件显示） -->
+            <block wx:if="{{pedigreeData.hasGen3}}">
+              <view class="generation-label">第3代（曾祖父母）</view>
+              <view class="tree-level level-3">
+                <view wx:if="{{pedigreeData.fullTree.father && pedigreeData.fullTree.father.father && pedigreeData.fullTree.father.father.father}}" class="tree-node ancestor" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.father.father.father.id}}">
+                  <view class="node-gender-tag male">曾祖父</view>
+                  <view class="node-avatar-wrapper">
+                    <image wx:if="{{pedigreeData.fullTree.father.father.father.photos && pedigreeData.fullTree.father.father.father.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.father.father.father.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  </view>
+                  <text class="node-name">{{pedigreeData.fullTree.father.father.father.alias || pedigreeData.fullTree.father.father.father.name || '未命名'}}</text>
+                  <text wx:if="{{pedigreeData.fullTree.father.father.father.alias}}" class="node-alias">{{pedigreeData.fullTree.father.father.father.name}}</text>
+                </view>
+                <view wx:if="{{pedigreeData.fullTree.father && pedigreeData.fullTree.father.father && pedigreeData.fullTree.father.father.mother}}" class="tree-node ancestor" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.father.father.mother.id}}">
+                  <view class="node-gender-tag female">曾祖母</view>
+                  <view class="node-avatar-wrapper">
+                    <image wx:if="{{pedigreeData.fullTree.father.father.mother.photos && pedigreeData.fullTree.father.father.mother.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.father.father.mother.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  </view>
+                  <text class="node-name">{{pedigreeData.fullTree.father.father.mother.alias || pedigreeData.fullTree.father.father.mother.name || '未命名'}}</text>
+                  <text wx:if="{{pedigreeData.fullTree.father.father.mother.alias}}" class="node-alias">{{pedigreeData.fullTree.father.father.mother.name}}</text>
+                </view>
+                <view wx:if="{{pedigreeData.fullTree.mother && pedigreeData.fullTree.mother.father && pedigreeData.fullTree.mother.father.father}}" class="tree-node ancestor" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.mother.father.father.id}}">
+                  <view class="node-gender-tag male">曾外祖父</view>
+                  <view class="node-avatar-wrapper">
+                    <image wx:if="{{pedigreeData.fullTree.mother.father.father.photos && pedigreeData.fullTree.mother.father.father.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.mother.father.father.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  </view>
+                  <text class="node-name">{{pedigreeData.fullTree.mother.father.father.alias || pedigreeData.fullTree.mother.father.father.name || '未命名'}}</text>
+                  <text wx:if="{{pedigreeData.fullTree.mother.father.father.alias}}" class="node-alias">{{pedigreeData.fullTree.mother.father.father.name}}</text>
+                </view>
+                <view wx:if="{{pedigreeData.fullTree.mother && pedigreeData.fullTree.mother.father && pedigreeData.fullTree.mother.father.mother}}" class="tree-node ancestor" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.mother.father.mother.id}}">
+                  <view class="node-gender-tag female">曾外祖母</view>
+                  <view class="node-avatar-wrapper">
+                    <image wx:if="{{pedigreeData.fullTree.mother.father.mother.photos && pedigreeData.fullTree.mother.father.mother.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.mother.father.mother.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  </view>
+                  <text class="node-name">{{pedigreeData.fullTree.mother.father.mother.alias || pedigreeData.fullTree.mother.father.mother.name || '未命名'}}</text>
+                  <text wx:if="{{pedigreeData.fullTree.mother.father.mother.alias}}" class="node-alias">{{pedigreeData.fullTree.mother.father.mother.name}}</text>
+                </view>
+              </view>
+              
+              <!-- 连接线 -->
+              <view class="tree-connections" wx:if="{{pedigreeData.hasGen2}}">
+                <view class="connection-line" wx:if="{{pedigreeData.fullTree.father && pedigreeData.fullTree.father.father && (pedigreeData.fullTree.father.father.father || pedigreeData.fullTree.father.father.mother)}}"></view>
+                <view class="connection-line" wx:if="{{pedigreeData.fullTree.mother && pedigreeData.fullTree.mother.father && (pedigreeData.fullTree.mother.father.father || pedigreeData.fullTree.mother.father.mother)}}"></view>
+              </view>
+            </block>
+            
+            <!-- 第2代：祖父母（有条件显示） -->
+            <block wx:if="{{pedigreeData.hasGen2}}">
+              <view class="generation-label">第2代（祖父母）</view>
+              <view class="tree-level level-2">
+                <view wx:if="{{pedigreeData.fullTree.father && pedigreeData.fullTree.father.father}}" class="tree-node ancestor" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.father.father.id}}">
+                  <view class="node-gender-tag male">祖父</view>
+                  <view class="node-avatar-wrapper">
+                    <image wx:if="{{pedigreeData.fullTree.father.father.photos && pedigreeData.fullTree.father.father.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.father.father.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  </view>
+                  <text class="node-name">{{pedigreeData.fullTree.father.father.alias || pedigreeData.fullTree.father.father.name || '未命名'}}</text>
+                  <text wx:if="{{pedigreeData.fullTree.father.father.alias}}" class="node-alias">{{pedigreeData.fullTree.father.father.name}}</text>
+                </view>
+                <view wx:if="{{pedigreeData.fullTree.father && pedigreeData.fullTree.father.mother}}" class="tree-node ancestor" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.father.mother.id}}">
+                  <view class="node-gender-tag female">祖母</view>
+                  <view class="node-avatar-wrapper">
+                    <image wx:if="{{pedigreeData.fullTree.father.mother.photos && pedigreeData.fullTree.father.mother.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.father.mother.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  </view>
+                  <text class="node-name">{{pedigreeData.fullTree.father.mother.alias || pedigreeData.fullTree.father.mother.name || '未命名'}}</text>
+                  <text wx:if="{{pedigreeData.fullTree.father.mother.alias}}" class="node-alias">{{pedigreeData.fullTree.father.mother.name}}</text>
+                </view>
+                <view wx:if="{{pedigreeData.fullTree.mother && pedigreeData.fullTree.mother.father}}" class="tree-node ancestor" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.mother.father.id}}">
+                  <view class="node-gender-tag male">外祖父</view>
+                  <view class="node-avatar-wrapper">
+                    <image wx:if="{{pedigreeData.fullTree.mother.father.photos && pedigreeData.fullTree.mother.father.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.mother.father.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  </view>
+                  <text class="node-name">{{pedigreeData.fullTree.mother.father.alias || pedigreeData.fullTree.mother.father.name || '未命名'}}</text>
+                  <text wx:if="{{pedigreeData.fullTree.mother.father.alias}}" class="node-alias">{{pedigreeData.fullTree.mother.father.name}}</text>
+                </view>
+                <view wx:if="{{pedigreeData.fullTree.mother && pedigreeData.fullTree.mother.mother}}" class="tree-node ancestor" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.mother.mother.id}}">
+                  <view class="node-gender-tag female">外祖母</view>
+                  <view class="node-avatar-wrapper">
+                    <image wx:if="{{pedigreeData.fullTree.mother.mother.photos && pedigreeData.fullTree.mother.mother.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.mother.mother.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  </view>
+                  <text class="node-name">{{pedigreeData.fullTree.mother.mother.alias || pedigreeData.fullTree.mother.mother.name || '未命名'}}</text>
+                  <text wx:if="{{pedigreeData.fullTree.mother.mother.alias}}" class="node-alias">{{pedigreeData.fullTree.mother.mother.name}}</text>
+                </view>
+              </view>
+              
+              <!-- 连接线 -->
+              <view class="tree-connections" wx:if="{{pedigreeData.hasGen1}}">
+                <view class="connection-line" wx:if="{{pedigreeData.fullTree.father && (pedigreeData.fullTree.father.father || pedigreeData.fullTree.father.mother)}}"></view>
+                <view class="connection-line" wx:if="{{pedigreeData.fullTree.mother && (pedigreeData.fullTree.mother.father || pedigreeData.fullTree.mother.mother)}}"></view>
+              </view>
+            </block>
+            
+            <!-- 第1代：父母（有条件显示） -->
+            <block wx:if="{{pedigreeData.hasGen1}}">
+              <view class="generation-label">第1代（父母）</view>
+              <view class="tree-level level-1">
+                <view wx:if="{{pedigreeData.fullTree.father}}" class="tree-node parent" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.father.id}}">
+                  <view class="node-gender-tag male">父本</view>
+                  <view class="node-avatar-wrapper">
+                    <image wx:if="{{pedigreeData.fullTree.father.photos && pedigreeData.fullTree.father.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.father.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  </view>
+                  <text class="node-name">{{pedigreeData.fullTree.father.alias || pedigreeData.fullTree.father.name || '未命名'}}</text>
+                  <text wx:if="{{pedigreeData.fullTree.father.alias}}" class="node-alias">{{pedigreeData.fullTree.father.name}}</text>
+                </view>
+                <view wx:if="{{pedigreeData.fullTree.mother}}" class="tree-node parent" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.mother.id}}">
+                  <view class="node-gender-tag female">母本</view>
+                  <view class="node-avatar-wrapper">
+                    <image wx:if="{{pedigreeData.fullTree.mother.photos && pedigreeData.fullTree.mother.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.mother.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  </view>
+                  <text class="node-name">{{pedigreeData.fullTree.mother.alias || pedigreeData.fullTree.mother.name || '未命名'}}</text>
+                  <text wx:if="{{pedigreeData.fullTree.mother.alias}}" class="node-alias">{{pedigreeData.fullTree.mother.name}}</text>
+                </view>
+              </view>
+              
+              <!-- 连接线 -->
+              <view class="tree-connections">
+                <view class="connection-line center"></view>
+              </view>
+            </block>
+
+            <!-- 第0代：当前宠物 -->
+            <view class="tree-level level-0">
+              <view class="tree-node current">
+                <view class="current-badge">当前</view>
+                <view class="node-avatar-wrapper">
+                  <image wx:if="{{pet.photos && pet.photos.length > 0}}" class="node-img" src="{{pet.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  <text wx:else class="node-icon current">🐢</text>
+                </view>
+                <text class="node-name current">{{pet.alias || pet.name || '未命名'}}</text>
+                <text wx:if="{{pet.alias}}" class="node-alias current">{{pet.name}}</text>
+                <text class="node-gender-text">{{pet.gender || '未知'}}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view wx:if="{{currentEventTab === '换公'}}" class="section">
+      <view class="section-title">关联母龟</view>
+      <text class="empty-text">暂无关联母龟</text>
+    </view>
+  </view>
+
+  <view wx:if="{{!isPublicMode}}" class="bottom-bar">
+    <view class="bar-btn" bindtap="showMore">
+      <text class="bar-icon">⋯</text>
+    </view>
+    <view class="bar-btn" bindtap="sharePet">
+      <text class="bar-text">分享</text>
+    </view>
+    <view class="bar-btn primary" bindtap="addRecord">
+      <text class="bar-text">记录</text>
+    </view>
+  </view>
+
+  <!-- 编辑弹窗 -->
+  <view wx:if="{{showEditModal}}" class="modal-overlay" bindtap="hideEditModal">
+    <view class="modal-content" catchtap="stopPropagation">
+      <view class="modal-header">
+        <text class="modal-title">编辑宠物信息</text>
+        <view class="modal-close" bindtap="hideEditModal">×</view>
+      </view>
+      
+      <view class="modal-content-scroll">
+        <view class="edit-form">
+          <view class="form-item">
+            <text class="form-label">名称</text>
+            <view class="input-with-voice">
+              <input class="form-input" placeholder="宠物名称" value="{{editForm.name}}" bindinput="onEditNameInput" />
+              <view class="voice-btn" bindlongpress="startVoice" bindtouchend="stopVoice" data-field="editName">
+                <text class="voice-btn-icon">●</text>
+              </view>
+            </view>
+          </view>
+          
+          <view class="form-item">
+            <text class="form-label">分类</text>
+            <view class="form-options">
+              <view class="option {{editForm.category === '无' ? 'active' : ''}}" bindtap="selectEditCategory" data-category="无">无</view>
+            </view>
+          </view>
+          
+          <view class="form-item">
+            <text class="form-label">性别</text>
+            <view class="form-options">
+              <view class="option {{editForm.gender === '公' ? 'active' : ''}}" bindtap="selectEditGender" data-gender="公">公</view>
+              <view class="option {{editForm.gender === '母' ? 'active' : ''}}" bindtap="selectEditGender" data-gender="母">母</view>
+              <view class="option {{editForm.gender === '未知' ? 'active' : ''}}" bindtap="selectEditGender" data-gender="未知">未知</view>
+            </view>
+          </view>
+          
+          <view class="form-item">
+            <text class="form-label">状态</text>
+            <view class="form-options">
+              <view class="option {{editForm.status === '正常' ? 'active' : ''}}" bindtap="selectEditStatus" data-status="正常">正常</view>
+              <view class="option {{editForm.status === '待配' ? 'active' : ''}}" bindtap="selectEditStatus" data-status="待配">待配</view>
+              <view class="option {{editForm.status === '预警' ? 'active' : ''}}" bindtap="selectEditStatus" data-status="预警">预警</view>
+            </view>
+          </view>
+          
+          <view class="form-item">
+            <text class="form-label">公开展示</text>
+            <view class="form-switch-row">
+              <text class="switch-hint">允许他人通过分享码查看此宠物</text>
+              <switch checked="{{editForm.isPublic}}" bindchange="onPublicSwitchChange" color="{{switchColor}}" />
+            </view>
+          </view>
+          
+          <view class="form-item">
+            <text class="form-label">别名</text>
+            <view class="input-with-voice">
+              <input class="form-input" placeholder="可选" value="{{editForm.alias}}" bindinput="onEditAliasInput" />
+              <view class="voice-btn" bindlongpress="startVoice" bindtouchend="stopVoice" data-field="editAlias">
+                <text class="voice-btn-icon">●</text>
+              </view>
+            </view>
+          </view>
+          
+          <view class="form-item">
+            <text class="form-label">父本</text>
+            <view class="family-selector" bindtap="openFatherModal">
+              <view wx:if="{{selectedFather}}" class="family-selected">
+                <image wx:if="{{selectedFather.photos && selectedFather.photos[0]}}" class="family-avatar" src="{{selectedFather.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                <view class="family-info">
+                  <text class="family-name">{{selectedFather.alias || selectedFather.name}}</text>
+                  <text class="family-desc">公龟</text>
+                </view>
+              </view>
+              <text wx:else class="family-placeholder">点击选择父本</text>
+            </view>
+            <view wx:if="{{selectedFather}}" class="family-clear" bindtap="clearFather">清空</view>
+          </view>
+          
+          <view class="form-item">
+            <text class="form-label">母本</text>
+            <view class="family-selector" bindtap="openMotherModal">
+              <view wx:if="{{selectedMother}}" class="family-selected">
+                <image wx:if="{{selectedMother.photos && selectedMother.photos[0]}}" class="family-avatar" src="{{selectedMother.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                <view class="family-info">
+                  <text class="family-name">{{selectedMother.alias || selectedMother.name}}</text>
+                  <text class="family-desc">母龟</text>
+                </view>
+              </view>
+              <text wx:else class="family-placeholder">点击选择母本</text>
+            </view>
+            <view wx:if="{{selectedMother}}" class="family-clear" bindtap="clearMother">清空</view>
+          </view>
+
+          <!-- 图片管理 -->
+          <view class="form-item">
+            <text class="form-label">照片</text>
+            <view class="photo-manager">
+              <view wx:for="{{editPhotoList}}" wx:key="*this" class="photo-thumb-wrap">
+                <image class="photo-thumb" src="{{item}}" mode="aspectFill" binderror="onPhotoError" data-type="hero" data-index="{{index}}" />
+                <view class="photo-del" catchtap="removeEditPhoto" data-index="{{index}}">×</view>
+              </view>
+              <view wx:if="{{editPhotoList.length < 5}}" class="photo-add-btn" bindtap="chooseEditPhoto">
+                <text class="photo-add-icon">+</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </view>
+      
+      <view class="modal-footer">
+        <view class="btn-cancel" bindtap="hideEditModal">取消</view>
+        <view class="btn-confirm" bindtap="saveEdit">保存</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 选择父本弹窗 -->
+  <view wx:if="{{showFatherModal}}" class="modal-overlay" bindtap="hideFatherModal">
+    <view class="family-modal" catchtap="stopPropagation">
+      <view class="family-modal-header">
+        <text class="family-modal-title">选择父本</text>
+        <view class="modal-close" bindtap="hideFatherModal">×</view>
+      </view>
+      <view class="family-search">
+        <input class="family-search-input" placeholder="搜索父本" value="{{fatherSearchText}}" bindinput="onFatherSearchInput" />
+      </view>
+      <scroll-view class="family-list" scroll-y>
+        <view wx:for="{{fatherList}}" wx:key="id" class="family-item" bindtap="selectFather" data-id="{{item.id}}">
+          <image wx:if="{{item.photos && item.photos[0]}}" class="family-item-avatar" src="{{item.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+          <view class="family-item-placeholder" wx:else>宠物</view>
+          <view class="family-item-info">
+            <text class="family-item-name">{{item.alias || item.name}}</text>
+            <text class="family-item-desc">公龟 · 最近 今天</text>
+          </view>
+          <text class="family-item-select">选择这只</text>
+        </view>
+        <view wx:if="{{fatherList.length === 0}}" class="empty-text">暂无公龟</view>
+      </scroll-view>
+    </view>
+  </view>
+
+  <!-- 选择母本弹窗 -->
+  <view wx:if="{{showMotherModal}}" class="modal-overlay" bindtap="hideMotherModal">
+    <view class="family-modal" catchtap="stopPropagation">
+      <view class="family-modal-header">
+        <text class="family-modal-title">选择母本</text>
+        <view class="modal-close" bindtap="hideMotherModal">×</view>
+      </view>
+      <view class="family-search">
+        <input class="family-search-input" placeholder="搜索母本" value="{{motherSearchText}}" bindinput="onMotherSearchInput" />
+      </view>
+      <scroll-view class="family-list" scroll-y>
+        <view wx:for="{{motherList}}" wx:key="id" class="family-item" bindtap="selectMother" data-id="{{item.id}}">
+          <image wx:if="{{item.photos && item.photos[0]}}" class="family-item-avatar" src="{{item.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+          <view class="family-item-placeholder" wx:else>宠物</view>
+          <view class="family-item-info">
+            <text class="family-item-name">{{item.alias || item.name}}</text>
+            <text class="family-item-desc">母龟 · 最近 今天</text>
+          </view>
+          <text class="family-item-select">选择这只</text>
+        </view>
+        <view wx:if="{{motherList.length === 0}}" class="empty-text">暂无母龟</view>
+      </scroll-view>
+    </view>
+  </view>
+
+  <!-- 删除确认弹窗 -->
+  <view wx:if="{{showDeleteConfirm}}" class="modal-overlay" bindtap="hideDeleteConfirm">
+    <view class="confirm-modal" catchtap="stopPropagation">
+      <view class="confirm-content">
+        <text class="confirm-title">确认删除</text>
+        <text class="confirm-text">确定要删除"{{pet.name}}"吗？此操作不可恢复。</text>
+        <view class="confirm-buttons">
+          <view class="btn-cancel" bindtap="hideDeleteConfirm">取消</view>
+          <view class="btn-delete" bindtap="confirmDelete">删除</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 添加记录弹窗 -->
+  <view wx:if="{{showAddRecordModal}}" class="modal-overlay" bindtap="hideAddRecordModal">
+    <view class="modal-content add-record-modal" catchtap="stopPropagation">
+      <view class="modal-header">
+        <text class="modal-title">添加记录</text>
+        <view class="modal-close" bindtap="hideAddRecordModal">×</view>
+      </view>
+      
+      <view class="add-record-body">
+        <view class="form-item">
+          <text class="form-label">记录类型</text>
+          <view class="record-type-grid">
+            <view wx:for="{{recordTypes}}" wx:for-item="type" wx:key="*this" 
+                  class="record-type-item {{newRecord.type === type ? 'active' : ''}}" 
+                  bindtap="selectRecordType" data-type="{{type}}">
+              <text class="record-type-icon">{{type === '全部' ? '📋' : type === '建档' ? '📁' : type === '交配' ? '💕' : type === '产蛋' ? '🥚' : type === '日常' ? '📝' : type === '健康' ? '💊' : type === '繁育' ? '🌱' : type === '换公' ? '🔄' : '📝'}}</text>
+              <text class="record-type-text">{{type}}</text>
+            </view>
+          </view>
+        </view>
+        
+        <view class="form-item form-item-content">
+          <text class="form-label">记录内容</text>
+          <textarea class="form-textarea" placeholder="输入记录内容..." value="{{newRecord.text}}" bindinput="onRecordTextInput"></textarea>
+        </view>
+        
+        <!-- 可拖动悬浮语音按钮 -->
+        <view class="voice-float-btn {{isRecording && currentVoiceField === 'recordText' ? 'recording' : ''}}"
+              style="left: {{voiceBtnX}}px; top: {{voiceBtnY}}px;"
+              bindtouchstart="onVoiceBtnTouchStart"
+              bindtouchmove="onVoiceBtnTouchMove"
+              bindtouchend="onVoiceBtnTouchEnd"
+              data-field="recordText">
+          <text class="voice-float-icon">●</text>
+          <text class="voice-float-hint" wx:if="{{isRecording && currentVoiceField === 'recordText'}}">松开结束</text>
+        </view>
+      </view>
+      
+      <view class="modal-footer add-record-footer">
+        <view wx:if="{{printerConfig.autoPrint}}" class="btn-print-record" bindtap="printNewRecord">
+          <text class="btn-print-icon">🖨</text>
+          <text class="btn-print-text">打印</text>
+        </view>
+        <view class="btn-cancel" bindtap="hideAddRecordModal">取消</view>
+        <view class="btn-confirm" bindtap="confirmAddRecord">确认</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 记录详情弹窗 -->
+  <view wx:if="{{showRecordModal}}" class="modal-overlay" bindtap="hideRecordModal">
+    <view class="record-detail-modal" catchtap="stopPropagation">
+      <view class="record-detail-header">
+        <view class="record-type-badge {{currentRecord.type === '产蛋' ? 'record-badge-lay' : ''}}">
+          <text class="record-type-icon">{{currentRecord.type === '建档' ? '📁' : currentRecord.type === '交配' ? '💕' : currentRecord.type === '产蛋' ? '🥚' : currentRecord.type === '换公' ? '🔄' : '📝'}}</text>
+        </view>
+        <text class="record-detail-title">{{currentRecord.type}}</text>
+        <view class="modal-close" bindtap="hideRecordModal">×</view>
+      </view>
+      
+      <view class="record-detail-content">
+        <text class="record-detail-text">{{currentRecord.text}}</text>
+      </view>
+      
+      <view class="record-detail-footer">
+        <view class="record-detail-date">
+          <text class="date-label">记录时间</text>
+          <text class="date-value">{{currentRecord.date}} {{currentRecord.time}}</text>
+        </view>
+        <view class="record-detail-actions">
+          <view wx:if="{{printerConfig.autoPrint}}" class="btn-print" bindtap="printRecord">
+            <text class="btn-print-icon">🖨</text>
+            <text class="btn-print-text">打印</text>
+          </view>
+          <view class="btn-confirm btn-full" bindtap="hideRecordModal">知道了</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 时间线弹窗 -->
+  <view wx:if="{{showTimelineModal}}" class="modal-overlay" bindtap="hideTimelineModal">
+    <view class="timeline-modal" catchtap="stopPropagation">
+      <view class="modal-header">
+        <text class="modal-title">时间线</text>
+        <view class="modal-close" bindtap="hideTimelineModal">×</view>
+      </view>
+      
+      <scroll-view class="timeline-content" scroll-y>
+        <view wx:if="{{records.length === 0}}" class="empty-timeline">
+          <text class="empty-text">暂无记录</text>
+        </view>
+        
+        <view wx:else class="timeline-list">
+          <view wx:for="{{groupedRecords}}" wx:key="date" class="timeline-date-group">
+            <view class="timeline-date-header">
+              <text class="timeline-date">{{item.date}}</text>
+              <text class="timeline-count">{{item.count}}条记录</text>
+            </view>
+            
+            <view wx:for="{{item.records}}" wx:for-item="record" wx:key="record.id" class="timeline-item">
+              <view class="timeline-dot"></view>
+              <view class="timeline-line"></view>
+              <view class="timeline-card" bindtap="showRecordDetail" data-id="{{record.id}}">
+                <view class="timeline-card-header">
+                  <text class="timeline-type">{{record.type}}</text>
+                  <text class="timeline-time">{{record.time}}</text>
+                </view>
+                <text class="timeline-text">{{record.text}}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+  </view>
+</view>

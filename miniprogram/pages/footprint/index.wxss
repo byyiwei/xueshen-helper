@@ -1,0 +1,699 @@
+/* ====== 基础布局 ====== */
+.page {
+  position: relative;
+  min-height: 100vh;
+  padding-bottom: calc(120rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  background: #faf8f3;
+}
+
+.header-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 360rpx;
+  background: linear-gradient(180deg, #f5e6c8 0%, #faf8f3 100%);
+  z-index: 0;
+}
+
+/* ====== 顶部统计卡片 ====== */
+.stats-card {
+  position: relative;
+  margin: 32rpx;
+  margin-top: 48rpx;
+  padding: 40rpx;
+  border-radius: 32rpx;
+  background: linear-gradient(135deg, #fff9ea 0%, #f5e6c8 100%);
+  box-shadow: 0 8rpx 32rpx rgba(184, 134, 11, 0.1);
+  z-index: 1;
+}
+
+.stats-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32rpx;
+}
+
+.stats-title-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.stats-title {
+  font-size: 48rpx;
+  font-weight: bold;
+  color: #8B6914;
+  display: block;
+  margin-bottom: 8rpx;
+}
+
+.stats-subtitle {
+  font-size: 24rpx;
+  color: rgba(0, 0, 0, 0.5);
+}
+
+.days-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 120rpx;
+  padding: 16rpx 20rpx;
+  border-radius: 24rpx;
+  background: rgba(139, 105, 20, 0.1);
+}
+
+.days-num {
+  font-size: 40rpx;
+  font-weight: bold;
+  line-height: 1;
+  color: #8B6914;
+}
+
+.days-unit {
+  font-size: 22rpx;
+  margin-top: 6rpx;
+  color: #8B6914;
+}
+
+.stats-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding-top: 28rpx;
+  border-top: 2rpx solid rgba(184, 134, 11, 0.15);
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+}
+
+.stat-num {
+  font-size: 44rpx;
+  font-weight: bold;
+  color: #333;
+  line-height: 1.2;
+}
+
+.stat-label {
+  font-size: 22rpx;
+  color: #999;
+  margin-top: 6rpx;
+}
+
+.stat-divider {
+  width: 2rpx;
+  height: 48rpx;
+  background: rgba(184, 134, 11, 0.15);
+}
+
+/* ====== 时间线容器 ====== */
+.timeline-wrapper {
+  position: relative;
+  margin: 0 32rpx;
+  z-index: 1;
+}
+
+/* ====== 空状态 ====== */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 120rpx 32rpx;
+  border-radius: 32rpx;
+  background: #ffffff;
+}
+
+.empty-emoji {
+  font-size: 120rpx;
+  margin-bottom: 24rpx;
+  opacity: 0.8;
+}
+
+.empty-title {
+  font-size: 34rpx;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 12rpx;
+}
+
+.empty-desc {
+  font-size: 26rpx;
+  color: #999;
+  margin-bottom: 40rpx;
+}
+
+.empty-action {
+  padding: 20rpx 48rpx;
+  border-radius: 48rpx;
+  font-size: 28rpx;
+  color: #ffffff;
+  font-weight: 500;
+  background: linear-gradient(135deg, #B8860B 0%, #DAA520 100%);
+}
+
+/* ====== 时间线分组 ====== */
+.timeline-group {
+  margin-bottom: 36rpx;
+}
+
+.group-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20rpx;
+  padding-left: 8rpx;
+}
+
+.group-dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+  background: #B8860B;
+  box-shadow: 0 0 0 6rpx rgba(184, 134, 11, 0.15);
+  margin-right: 16rpx;
+  flex-shrink: 0;
+}
+
+.group-title {
+  font-size: 30rpx;
+  font-weight: bold;
+  color: #333;
+  flex: 1;
+}
+
+.group-count {
+  font-size: 24rpx;
+  color: #999;
+}
+
+/* ====== 足迹卡片 ====== */
+.group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.footprint-card {
+  display: flex;
+  align-items: stretch;
+  background: #ffffff;
+  border-radius: 24rpx;
+  overflow: hidden;
+  box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.05);
+  position: relative;
+}
+
+.fp-media {
+  width: 200rpx;
+  height: 200rpx;
+  flex-shrink: 0;
+  position: relative;
+  background: #f5f5f5;
+  overflow: hidden;
+}
+
+.fp-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.fp-video-wrapper {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.fp-video-badge {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 60rpx;
+  height: 60rpx;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 28rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fp-content {
+  flex: 1;
+  padding: 24rpx;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.fp-meta {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 12rpx;
+}
+
+.fp-type {
+  font-size: 22rpx;
+  padding: 4rpx 16rpx;
+  border-radius: 20rpx;
+  background: rgba(184, 134, 11, 0.12);
+  color: #8B6914;
+  flex-shrink: 0;
+}
+
+.fp-date {
+  font-size: 24rpx;
+  color: #999;
+  flex-shrink: 0;
+}
+
+.fp-desc {
+  font-size: 28rpx;
+  color: #333;
+  line-height: 1.5;
+  margin-bottom: 12rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.fp-pet-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 6rpx 16rpx;
+  border-radius: 20rpx;
+  background: rgba(184, 134, 11, 0.08);
+  align-self: flex-start;
+  margin-top: 8rpx;
+}
+
+.fp-pet-icon {
+  font-size: 22rpx;
+}
+
+.fp-pet-name {
+  font-size: 22rpx;
+  color: #333;
+}
+
+.fp-delete {
+  position: absolute;
+  top: 12rpx;
+  right: 12rpx;
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.fp-delete-icon {
+  font-size: 28rpx;
+  color: #999;
+  line-height: 1;
+}
+
+/* ====== FAB 浮动按钮 ====== */
+.fab {
+  position: fixed;
+  right: 32rpx;
+  bottom: calc(180rpx + env(safe-area-inset-bottom));
+  width: 100rpx;
+  height: 100rpx;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #1a1a1a 0%, #333333 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.25);
+  transition: all 0.25s cubic-bezier(0.25, 1.5, 0.5, 1);
+  z-index: 99;
+}
+
+.fab-icon {
+  font-size: 52rpx;
+  color: #ffffff;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.fab-hidden {
+  transform: scale(0.1);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ====== 批量管理 ====== */
+.edit-entry {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20rpx;
+}
+
+.edit-entry-text {
+  font-size: 26rpx;
+  color: #8B6914;
+  padding: 10rpx 20rpx;
+  border-radius: 20rpx;
+  background: rgba(184, 134, 11, 0.08);
+}
+
+.edit-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 20rpx;
+  padding: 20rpx 24rpx;
+  background: linear-gradient(135deg, #ffffff 0%, #fff9ea 100%);
+  border-radius: 20rpx;
+  border: 1rpx solid rgba(184, 134, 11, 0.1);
+}
+
+.edit-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.select-all-btn {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.select-all-text {
+  font-size: 26rpx;
+  color: #333;
+  font-weight: 500;
+}
+
+.selected-count {
+  font-size: 22rpx;
+  color: #999;
+}
+
+.checkbox {
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 50%;
+  border: 2rpx solid #cccccc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #ffffff;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.checkbox.checked {
+  border-color: #B8860B;
+  background-color: #B8860B;
+}
+
+.check-mark {
+  color: #ffffff;
+  font-size: 24rpx;
+  font-weight: bold;
+  line-height: 1;
+}
+
+.edit-bar-right {
+  display: flex;
+  gap: 16rpx;
+}
+
+.edit-bar-btn {
+  font-size: 26rpx;
+  font-weight: 500;
+  padding: 10rpx 24rpx;
+  border-radius: 16rpx;
+  color: #8B6914;
+  background: rgba(184, 134, 11, 0.08);
+}
+
+.edit-bar-delete {
+  color: #e74c3c;
+  background: rgba(231, 76, 60, 0.08);
+}
+
+/* ====== 卡片复选框 ====== */
+.footprint-card.edit-mode {
+  background: #fafafa;
+}
+
+.card-checkbox {
+  position: absolute;
+  top: 12rpx;
+  left: 12rpx;
+  z-index: 10;
+  width: 48rpx;
+  height: 48rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-checkbox .checkbox {
+  width: 40rpx;
+  height: 40rpx;
+  background: rgba(255, 255, 255, 0.95);
+}
+
+/* 编辑模式下，让图片稍微缩进显示复选框 */
+.footprint-card.edit-mode .fp-media {
+  width: 180rpx;
+  height: 180rpx;
+  margin-left: 12rpx;
+}
+
+/* ====== 预览弹窗 ====== */
+.preview-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.92);
+}
+
+.preview-content {
+  position: relative;
+  width: 100%;
+  padding: 40rpx;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.preview-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 32rpx;
+}
+
+.preview-title {
+  font-size: 30rpx;
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.preview-close {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 44rpx;
+  color: #ffffff;
+  line-height: 1;
+}
+
+.preview-image-wrapper,
+.preview-video-wrapper {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.preview-image {
+  max-width: 100%;
+  max-height: 70vh;
+  border-radius: 20rpx;
+}
+
+.preview-video {
+  width: 100%;
+  max-height: 70vh;
+  border-radius: 20rpx;
+}
+
+.preview-play-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 48rpx;
+}
+
+.preview-pet-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 32rpx;
+  padding: 12rpx 28rpx;
+  border-radius: 28rpx;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ============================================
+   主题 — 摩卡色
+   ============================================ */
+.theme-mocha {
+  background: #f5f5f0;
+}
+
+.theme-mocha .header-bg {
+  background: linear-gradient(180deg, #e8e4dc 0%, #f5f5f0 100%);
+}
+
+.theme-mocha .stats-card {
+  background: linear-gradient(135deg, #f0ece 0%, #e8e4dc 100%);
+  box-shadow: 0 8rpx 32rpx rgba(139, 119, 101, 0.1);
+}
+
+.theme-mocha .stats-title {
+  color: #6B5744;
+}
+
+.theme-mocha .days-badge {
+  background: rgba(107, 87, 68, 0.1);
+}
+
+.theme-mocha .days-num,
+.theme-mocha .days-unit {
+  color: #6B5744;
+}
+
+.theme-mocha .stats-row {
+  border-top-color: rgba(139, 119, 101, 0.15);
+}
+
+.theme-mocha .stat-divider {
+  background: rgba(139, 119, 101, 0.15);
+}
+
+.theme-mocha .group-dot {
+  background: #8B7765;
+  box-shadow: 0 0 0 6rpx rgba(139, 119, 101, 0.15);
+}
+
+.theme-mocha .fp-type {
+  background: rgba(139, 119, 101, 0.12);
+  color: #6B5744;
+}
+
+.theme-mocha .fp-pet-tag {
+  background: rgba(139, 119, 101, 0.08);
+}
+
+.theme-mocha .empty-action,
+.theme-mocha .fab {
+  background: linear-gradient(135deg, #8B7765 0%, #a89078 100%);
+}
+
+/* ============================================
+   主题 — 橄榄绿
+   ============================================ */
+.theme-olive {
+  background: #ede9e0;
+}
+
+.theme-olive .header-bg {
+  background: linear-gradient(180deg, #d4e0d4 0%, #ede9e0 100%);
+}
+
+.theme-olive .stats-card {
+  background: linear-gradient(135deg, #e8ede4 0%, #d4e0d4 100%);
+  box-shadow: 0 8rpx 32rpx rgba(85, 107, 47, 0.1);
+}
+
+.theme-olive .stats-title {
+  color: #3d5020;
+}
+
+.theme-olive .days-badge {
+  background: rgba(85, 107, 47, 0.1);
+}
+
+.theme-olive .days-num,
+.theme-olive .days-unit {
+  color: #3d5020;
+}
+
+.theme-olive .stats-row {
+  border-top-color: rgba(85, 107, 47, 0.15);
+}
+
+.theme-olive .stat-divider {
+  background: rgba(85, 107, 47, 0.15);
+}
+
+.theme-olive .group-dot {
+  background: #556B2F;
+  box-shadow: 0 0 0 6rpx rgba(85, 107, 47, 0.15);
+}
+
+.theme-olive .fp-type {
+  background: rgba(85, 107, 47, 0.12);
+  color: #3d5020;
+}
+
+.theme-olive .fp-pet-tag {
+  background: rgba(85, 107, 47, 0.08);
+}
+
+.theme-olive .empty-action,
+.theme-olive .fab {
+  background: linear-gradient(135deg, #556B2F 0%, #7a9a52 100%);
+}

@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HTML-to-Image Server · API 文档</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --panel-2: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-2: #22c55e;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --code: #0b1220;
+      --border: #334155;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, "Segoe UI", "PingFang SC",
+        "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg); color: var(--text); line-height: 1.75;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 24px 80px; }
+    header {
+      background: linear-gradient(135deg, #1e40af, #0ea5e9);
+      border-radius: 16px; padding: 36px 32px; margin-bottom: 28px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    }
+    header h1 { margin: 0 0 8px; font-size: 32px; }
+    header p  { margin: 0; color: rgba(255,255,255,.88); }
+    header .base {
+      display: inline-block; margin-top: 18px; padding: 6px 14px;
+      background: rgba(255,255,255,.15); border-radius: 999px;
+      font-family: ui-monospace, "SF Mono", Consolas, "Courier New", monospace;
+    }
+    h2 {
+      margin: 36px 0 12px; font-size: 22px; color: #fff;
+      border-bottom: 1px solid var(--border); padding-bottom: 8px;
+    }
+    h3 { font-size: 16px; color: #fff; margin: 20px 0 8px; }
+    .endpoint {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 12px; padding: 20px 22px; margin-bottom: 18px;
+    }
+    .method-path {
+      display: inline-flex; align-items: center; gap: 10px;
+      margin-bottom: 10px;
+      font-family: ui-monospace, "SF Mono", Consolas, "Courier New", monospace;
+      font-size: 15px;
+    }
+    .tag {
+      padding: 4px 10px; border-radius: 6px; font-weight: 700;
+      letter-spacing: .5px; background: var(--accent-2); color: #052e16;
+    }
+    .tag.POST { background: var(--accent); color: #082f49; }
+    .tag.GET  { background: var(--accent-2); color: #052e16; }
+    .path { color: #fff; }
+    .desc { color: var(--muted); margin: 4px 0 14px; }
+    table {
+      width: 100%; border-collapse: collapse; margin: 8px 0 14px;
+      background: var(--panel-2); border-radius: 8px; overflow: hidden;
+    }
+    th, td {
+      text-align: left; padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px; vertical-align: top;
+    }
+    th { background: #1e293b; color: #cbd5e1; font-weight: 600; }
+    td code { color: #fbbf24; }
+    pre {
+      background: var(--code); color: #e2e8f0; padding: 14px 16px;
+      border-radius: 8px; overflow-x: auto;
+      font-family: ui-monospace, "SF Mono", Consolas, "Courier New", monospace;
+      font-size: 13.5px; line-height: 1.6; margin: 8px 0;
+      border: 1px solid var(--border);
+    }
+    code.k { color: #60a5fa; }
+    code.s { color: #86efac; }
+    code.c { color: #94a3b8; font-style: italic; }
+    code.n { color: #fbbf24; }
+    code.inline {
+      background: #1e293b; color: #fbbf24; padding: 1px 6px;
+      border-radius: 4px;
+      font-family: ui-monospace, "SF Mono", Consolas, "Courier New", monospace;
+      font-size: 13px;
+    }
+    .pill {
+      display: inline-block; padding: 2px 10px; background: #1e293b;
+      color: #fbbf24; font-size: 12px; border-radius: 999px;
+      margin-left: 8px; border: 1px solid var(--border);
+    }
+    ul.quick { padding-left: 24px; }
+    ul.quick li { margin-bottom: 6px; }
+    .foot {
+      color: var(--muted); font-size: 13px; margin-top: 40px;
+      text-align: center;
+    }
+    .note {
+      background: #1e293b; border-left: 4px solid var(--accent);
+      padding: 10px 14px; border-radius: 6px; color: var(--muted);
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>HTML-to-Image Server · API 文档</h1>
+      <p>通过 HTTP 接口将任意 HTML 内容渲染为 PNG / JPEG / WebP 图片 —— 基于无头 Chromium（Puppeteer）。</p>
+      <span class="base">服务地址：http://localhost:3000</span>
+    </header>
+
+    <h2>快速开始</h2>
+    <ul class="quick">
+      <li>Windows：双击或运行 <code class="inline">start-server.bat</code>；停止运行 <code class="inline">stop-server.bat</code></li>
+      <li>Linux / macOS：<code class="inline">chmod +x *.sh &amp;&amp; ./start-server.sh</code>；停止 <code class="inline">./stop-server.sh</code></li>
+      <li>前台调试：<code class="inline">node server.js</code>；停止：<code class="inline">Ctrl+C</code> 或 <code class="inline">node stop.js</code></li>
+      <li>调用 <strong>POST /</strong>，JSON 请求体：<code class="inline">{ "html": "&lt;h1&gt;Hello&lt;/h1&gt;", "options": { ... } }</code></li>
+      <li>响应中 <code class="inline">image</code> 字段是 base64 图片内容</li>
+      <li>健康检查：<a href="/health" style="color:var(--accent)">GET /health</a> &nbsp; 配置查看：<a href="/config" style="color:var(--accent)">GET /config</a></li>
+    </ul>
+
+    <h2>接口列表</h2>
+
+    <!-- POST / -->
+    <div class="endpoint">
+      <div class="method-path">
+        <span class="tag POST">POST</span>
+        <span class="path">/</span>
+        <span class="pill">主接口 · HTML → 图片</span>
+      </div>
+      <p class="desc">接收 HTML 内容并渲染成图片，以 base64 字符串返回。</p>
+
+      <h3>请求体字段</h3>
+      <table>
+        <thead><tr><th>字段</th><th>类型</th><th>必填</th><th>默认值</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td><code>html</code></td><td>string</td><td>是</td><td>—</td><td>完整 HTML 文档或片段，例如 <code>&lt;h1 style='color:red'&gt;Hello&lt;/h1&gt;</code></td></tr>
+          <tr><td><code>options</code></td><td>object</td><td>否</td><td><code>{}</code></td><td>渲染选项（见下表）</td></tr>
+        </tbody>
+      </table>
+
+      <h3>options 渲染选项</h3>
+      <table>
+        <thead><tr><th>选项</th><th>类型</th><th>默认值</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td><code>width</code></td><td>number</td><td><code>1280</code></td><td>视口宽度（CSS 像素，范围 100–10000）</td></tr>
+          <tr><td><code>height</code></td><td>number</td><td><code>800</code></td><td>视口高度（CSS 像素，范围 100–10000）</td></tr>
+          <tr><td><code>deviceScaleFactor</code></td><td>number</td><td><code>2</code></td><td>像素比 / DPR。数值越大图片越清晰（1–5）</td></tr>
+          <tr><td><code>format</code></td><td>string</td><td><code>png</code></td><td><code>png</code> / <code>jpeg</code> / <code>webp</code></td></tr>
+          <tr><td><code>quality</code></td><td>number</td><td><code>90</code></td><td>1–100。仅对 <code>jpeg</code> / <code>webp</code> 生效</td></tr>
+          <tr><td><code>fullPage</code></td><td>boolean</td><td><code>false</code></td><td>为 <code>true</code> 时截图整个可滚动页面</td></tr>
+          <tr><td><code>clip</code></td><td>object</td><td>—</td><td><code>{ x, y, width, height }</code>（CSS 像素）— 仅截取指定区域</td></tr>
+          <tr><td><code>waitFor</code></td><td>number</td><td><code>0</code></td><td>加载完成后再等待的毫秒数（上限 30000）</td></tr>
+          <tr><td><code>loadTimeout</code></td><td>number</td><td><code>30000</code></td><td>页面加载超时（毫秒，下限 10000）</td></tr>
+        </tbody>
+      </table>
+
+      <h3>请求示例（curl）</h3>
+<pre><code class="c"># 最基本的 PNG 截图</code>
+curl -X POST http://localhost:3000/ \
+  -H "Content-Type: application/json; charset=utf-8" \
+  -d '{
+    <code class="s">"html"</code>: <code class="s">"&lt;h1 style='color:#0ea5e9'&gt;Hello html2image&lt;/h1&gt;"</code>,
+    <code class="s">"options"</code>: {
+      <code class="s">"width"</code>: <code class="n">800</code>,
+      <code class="s">"height"</code>: <code class="n">600</code>,
+      <code class="s">"format"</code>: <code class="s">"png"</code>,
+      <code class="s">"deviceScaleFactor"</code>: <code class="n">2</code>
+    }
+  }'</pre>
+
+      <h3>请求示例（Node.js）</h3>
+<pre>const res = await fetch('http://localhost:3000/', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    html: '&lt;h1 style="color:#0ea5e9"&gt;Hello&lt;/h1&gt;',
+    options: { width: 800, height: 600, format: 'png' }
+  })
+});
+const data = await res.json();
+if (data.success) {
+  const buf = Buffer.from(data.image, 'base64');
+  require('fs').writeFileSync('output.png', buf);
+}</pre>
+
+      <h3>成功响应</h3>
+<pre>HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+
+{
+  <code class="s">"success"</code>: <code class="k">true</code>,
+  <code class="s">"image"</code>: <code class="s">"iVBORw0KGgoAAAANSUhEUgAA..."</code>,  <code class="c">// base64 图片数据</code>
+  <code class="s">"format"</code>: <code class="s">"png"</code>,
+  <code class="s">"time"</code>: <code class="n">1187</code>                              <code class="c">// 总耗时（毫秒）</code>
+}</pre>
+
+      <h3>错误响应</h3>
+      <p class="desc">
+        <code class="inline">400</code> JSON 解析失败 &nbsp;·&nbsp;
+        <code class="inline">413</code> 请求体超过最大限制（默认 10MB）&nbsp;·&nbsp;
+        <code class="inline">500</code> 浏览器启动 / 渲染异常
+      </p>
+<pre>{
+  <code class="s">"success"</code>: <code class="k">false</code>,
+  <code class="s">"error"</code>: <code class="s">"Browser launch timeout (45000ms)"</code>
+}</pre>
+    </div>
+
+    <!-- GET /health -->
+    <div class="endpoint">
+      <div class="method-path">
+        <span class="tag GET">GET</span>
+        <span class="path">/health</span>
+        <span class="pill">健康检查</span>
+      </div>
+      <p class="desc">轻量健康检查，适用于负载均衡 / 存活探针 / 监控告警。</p>
+<pre>{
+  <code class="s">"success"</code>: <code class="k">true</code>,
+  <code class="s">"status"</code>: <code class="s">"ok"</code>,
+  <code class="s">"browser"</code>: <code class="s">"idle"</code>,   <code class="c">// "running" 或 "idle"</code>
+  <code class="s">"uptime"</code>: <code class="s">"42s"</code>,
+  <code class="s">"config"</code>: { "port": 3000, "host": "0.0.0.0" }
+}</pre>
+    </div>
+
+    <!-- GET /config -->
+    <div class="endpoint">
+      <div class="method-path">
+        <span class="tag GET">GET</span>
+        <span class="path">/config</span>
+        <span class="pill">只读配置摘要</span>
+      </div>
+      <p class="desc">返回当前生效的配置（不含敏感字段），便于排查问题。</p>
+<pre>{
+  "success": true,
+  "server": { "host": "0.0.0.0", "port": 3000 },
+  "rendering": {
+    "defaultViewport": { "width": 1280, "height": 800, "deviceScaleFactor": 2 },
+    "defaultFormat": "png", ...
+  },
+  "http": { "maxRequestBodyBytes": 10485760 },
+  "browser": { "headless": true, "launchTimeoutMs": 45000, ... }
+}</pre>
+    </div>
+
+    <!-- GET / -->
+    <div class="endpoint">
+      <div class="method-path">
+        <span class="tag GET">GET</span>
+        <span class="path">/</span>
+        <span class="pill">服务信息</span>
+      </div>
+      <p class="desc">返回服务基本信息与链接。</p>
+<pre>{
+  <code class="s">"success"</code>: <code class="k">true</code>,
+  <code class="s">"name"</code>: <code class="s">"html2image-server"</code>,
+  <code class="s">"version"</code>: <code class="s">"1.0.0"</code>,
+  <code class="s">"docs"</code>: <code class="s">"/api-docs"</code>,
+  <code class="s">"health"</code>: <code class="s">"/health"</code>,
+  <code class="s">"config"</code>: <code class="s">"/config"</code>,
+  <code class="s">"usage"</code>: <code class="s">"POST / with JSON body { html, options }"</code>
+}</pre>
+    </div>
+
+    <h2>启动与停止</h2>
+
+    <h3>Windows</h3>
+<pre><code class="c">:: 启动</code>
+start-server.bat
+
+<code class="c">:: 停止</code>
+stop-server.bat
+
+<code class="c">:: 或直接用 node 前台启动 / 停止</code>
+node server.js
+node stop.js</pre>
+
+    <h3>Linux / macOS</h3>
+<pre><code class="c"># 首次运行：给脚本加上可执行权限（只需一次）</code>
+chmod +x start-server.sh stop-server.sh
+
+<code class="c"># 启动（后台运行）</code>
+./start-server.sh
+
+<code class="c"># 停止</code>
+./stop-server.sh</pre>
+
+    <h2>配置（config.json）</h2>
+    <p class="desc">所有可配置项集中在项目根目录 <code class="inline">config.json</code>。修改后重启服务即可生效。</p>
+
+    <table>
+      <thead><tr><th>路径</th><th>默认值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><code>server.host</code></td><td><code>0.0.0.0</code></td><td>监听地址（0.0.0.0 表示所有网卡均可访问）</td></tr>
+        <tr><td><code>server.port</code></td><td><code>3000</code></td><td>HTTP 端口</td></tr>
+        <tr><td><code>process.pidFile</code></td><td><code>.app.pid</code></td><td>运行进程 PID 写入的文件路径（脚本读取用）</td></tr>
+        <tr><td><code>logging.logDir</code></td><td><code>logs</code></td><td>日志输出目录</td></tr>
+        <tr><td><code>logging.stdoutLog</code></td><td><code>app_output.log</code></td><td>标准输出日志文件名</td></tr>
+        <tr><td><code>browser.executablePath</code></td><td><code>""</code>（空 = 自动探测）</td><td>强制使用某个 Chrome / Chromium 可执行路径</td></tr>
+        <tr><td><code>browser.headless</code></td><td><code>true</code></td><td>是否无头模式（true 推荐）</td></tr>
+        <tr><td><code>browser.launchTimeoutMs</code></td><td><code>45000</code></td><td>浏览器启动超时（毫秒）</td></tr>
+        <tr><td><code>browser.protocolTimeoutMs</code></td><td><code>30000</code></td><td>Chrome DevTools 协议超时（毫秒）</td></tr>
+        <tr><td><code>rendering.defaultViewport</code></td><td><code>1280×800 @2x</code></td><td>默认视口</td></tr>
+        <tr><td><code>rendering.defaultFormat</code></td><td><code>png</code></td><td>未指定 format 时的默认图片格式</td></tr>
+        <tr><td><code>rendering.defaultQuality</code></td><td><code>90</code></td><td>jpeg / webp 默认质量</td></tr>
+        <tr><td><code>rendering.loadTimeoutMs</code></td><td><code>30000</code></td><td>页面加载超时（毫秒）</td></tr>
+        <tr><td><code>rendering.fullPageByDefault</code></td><td><code>false</code></td><td>是否默认整页截图</td></tr>
+        <tr><td><code>http.maxRequestBodyBytes</code></td><td><code>10485760</code> (10MB)</td><td>请求体最大字节数</td></tr>
+        <tr><td><code>http.startupWaitSeconds</code></td><td><code>15</code></td><td>启动脚本等待 .app.pid 出现的最长秒数</td></tr>
+      </tbody>
+    </table>
+
+    <p class="note"><strong>环境变量覆盖：</strong>任意配置项均可通过 <code class="inline">H2I_&lt;SECTION&gt;_&lt;KEY&gt;</code> 形式的环境变量覆盖。嵌套层级用单下划线分隔，key 内的下划线用双下划线表示。例如：</p>
+<pre><code class="c"># 临时改端口为 8080（Windows CMD）</code>
+set H2I_SERVER_PORT=8080
+node server.js
+
+<code class="c"># Linux / macOS 一行</code>
+H2I_SERVER_PORT=8080 ./start-server.sh
+
+<code class="c"># 指定 Chrome 可执行路径</code>
+H2I_BROWSER__EXECUTABLE_PATH=/usr/bin/chromium node server.js
+
+<code class="c"># 调整浏览器启动超时为 60 秒</code>
+H2I_BROWSER__LAUNCH_TIMEOUT_MS=60000 node server.js</pre>
+
+    <h2>注意事项</h2>
+    <ul class="quick">
+      <li>请求体最大 <strong>10 MB</strong>。</li>
+      <li>首次调用 <strong>POST /</strong> 会稍慢 —— Chromium 是懒启动的。</li>
+      <li>HTML 中引用的外部资源（图片、字体）必须能被服务器所在网络访问。</li>
+      <li>日志写入 <code class="inline">logs/</code> 目录，按日期滚动。</li>
+      <li>如需指定 Chrome 可执行文件路径，设置 <code class="inline">browser.executablePath</code> 或环境变量 <code class="inline">H2I_BROWSER__EXECUTABLE_PATH</code>。</li>
+      <li>端口可通过配置或环境变量修改：<code class="inline">PORT=8080 ./start-server.sh</code>。</li>
+    </ul>
+
+    <div class="foot">html2image-server v1.0.0 · Node.js + Puppeteer</div>
+  </div>
+</body>
+</html>
