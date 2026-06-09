@@ -1,7 +1,6 @@
 const { getAPI } = require('../../utils/api.js')
 const { showError, showLoading, hideLoading } = require('../../utils/error.js')
 const { getTempUrl, convertPhotoIdsToUrls } = require('../../utils/image.js')
-const ThemeManager = require('../../utils/theme.js')
 const { generatePetImage } = require('../../utils/imageService.js')
 
 const API = getAPI()
@@ -13,10 +12,12 @@ Page({
     records: [],
     filteredRecords: [],
     loading: true,
-    currentTheme: 'gold',
+    showSkeleton: true,
     qrcodeUrl: '',
     qrcodeFileId: '',
     currentEventTab: '全部事件',
+    // 公开模式
+    isPublic: false,
     // 家族谱系
     showPedigree: true,
     pedigreeData: null,
@@ -28,23 +29,39 @@ Page({
     },
     paternalLine: [],
     maternalLine: [],
-    bloodlineTab: 'paternal'
+    bloodlineTab: 'paternal',
+    // 事件详情弹窗
+    showEventModal: false,
+    selectedEvent: null
   },
 
   onLoad: function (options) {
-    this.loadTheme()
-    
     let petId = ''
-    if (options && options.id) {
+    // 支持小程序码 scene 参数解析（扫码进入）
+    if (options && options.scene) {
+      const scene = decodeURIComponent(options.scene)
+      const match = scene.match(/petId=([^&]+)/)
+      petId = match ? match[1] : scene
+    }
+    if (!petId && options && options.id) {
       petId = options.id
     }
+    if (!petId && options && options.petId) {
+      petId = options.petId
+    }
+    
+    // 扫码进入时默认公开模式（分享二维码场景，扫码者不是宠物主人）
+    const isFromScan = !!(options && options.scene)
+    const isPublic = (options && options.isPublic === 'true') || isFromScan
     
     if (petId) {
-      this.setData({ petId })
-      this.loadPetDetail(petId)
+      this.setData({ petId, isPublic })
+      this.loadPetDetail(petId, isPublic)
       this.loadRecords(petId)
-      this.generatePreviewQrcode(petId)
       this.loadPedigree()
+      if (!isPublic) {
+        this.generatePreviewQrcode(petId)
+      }
     } else {
       showError('宠物ID不存在')
       setTimeout(() => {
@@ -53,16 +70,12 @@ Page({
     }
   },
 
-  loadTheme: function () {
-    const currentTheme = ThemeManager.getCurrentTheme()
-    this.setData({ currentTheme })
-  },
-
   // 生成预览页面专属小程序码
   generatePreviewQrcode: function (petId) {
     const scene = 'petId=' + petId
     const page = 'pages/pet/preview'
-    
+
+    // 使用 qrcode 云函数生成小程序码
     wx.cloud.callFunction({
       name: 'qrcode',
       data: {
@@ -73,30 +86,40 @@ Page({
         }
       },
       success: (res) => {
+
         if (res.result && res.result.success) {
           const fileID = res.result.data
           this.setData({ qrcodeFileId: fileID })
-          // 将 cloud:// fileID 转为临时 URL
           if (fileID && fileID.startsWith('cloud://')) {
             getTempUrl(fileID).then(tempUrl => {
               this.setData({ qrcodeUrl: tempUrl })
             }).catch(err => {
               console.error('获取小程序码临时URL失败:', err)
+              this.setData({ qrcodeUrl: '' })
             })
           }
         } else {
-          console.error('小程序码生成失败:', res.result ? res.result.message : '未知错误')
+
+          this.setData({ qrcodeUrl: '' })
         }
       },
       fail: (err) => {
-        console.error('小程序码云函数调用失败:', err)
+        console.error('qrcode 云函数调用失败:', err)
+        this.setData({ qrcodeUrl: '' })
       }
     })
   },
 
-  loadPetDetail: async function (petId) {
+  loadPetDetail: async function (petId, isPublic) {
     try {
-      const result = await API.getPetById(petId)
+      let result
+      if (isPublic) {
+        // 公开模式：调用公开接口
+        result = await API.callCloudFunction('pet', 'publicGet', { id: petId })
+      } else {
+        // 普通模式：调用获取详情接口
+        result = await API.getPetById(petId)
+      }
       
       if (result.success) {
         const pet = result.data
@@ -125,16 +148,17 @@ Page({
         
         this.setData({ 
           pet,
-          loading: false
+          loading: false,
+          showSkeleton: false
         })
       } else {
-        showError('加载宠物信息失败')
-        this.setData({ loading: false })
+        showError(result.message || '加载宠物信息失败')
+        this.setData({ loading: false, showSkeleton: false })
       }
     } catch (error) {
       console.error('加载宠物详情失败:', error)
-      showError('加载失败')
-      this.setData({ loading: false })
+      showError(error.message || '加载失败')
+      this.setData({ loading: false, showSkeleton: false })
     }
   },
 
@@ -379,7 +403,7 @@ Page({
 
     try {
       const {
-        pet, records, qrcodeUrl, pedigreeData, currentTheme,
+        pet, records, qrcodeUrl, pedigreeData,
         paternalLine, maternalLine, showPedigree, bloodlineTab
       } = this.data
 
@@ -394,7 +418,7 @@ Page({
         bloodlineTab: bloodlineTab || 'paternal'
       }
 
-      const tempFilePath = await generatePetImage(petData, currentTheme)
+      const tempFilePath = await generatePetImage(petData)
       this.saveImageToAlbum(tempFilePath)
     } catch (err) {
       hideLoading()
@@ -522,6 +546,40 @@ Page({
         photos[index] = ''
         this.setData({ pet: { ...pet, photos } })
       }
+    }
+  },
+
+  // 点击事件卡片，显示详情弹窗
+  showEventDetail: function (e) {
+    const event = e.currentTarget.dataset.event
+    if (event) {
+      this.setData({
+        showEventModal: true,
+        selectedEvent: event
+      })
+    }
+  },
+
+  // 关闭事件详情弹窗
+  hideEventModal: function () {
+    this.setData({
+      showEventModal: false,
+      selectedEvent: null
+    })
+  },
+
+  // 阻止事件冒泡
+  stopPropagation: function () {
+    // 阻止冒泡
+  },
+
+  // 跳转到宠物详情页（事件关联的宠物）
+  gotoPetDetail: function (e) {
+    const petId = e.currentTarget.dataset.petId
+    if (petId) {
+      wx.navigateTo({
+        url: '/pages/pet/detail?petId=' + petId
+      })
     }
   }
 })

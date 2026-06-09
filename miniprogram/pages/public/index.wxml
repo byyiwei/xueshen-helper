@@ -1,31 +1,45 @@
-<view class="container theme-{{currentTheme}}">
-  <view class="header">
-    <view class="user-info">
-      <view class="avatar">
-        <image wx:if="{{userInfo.avatar}}" src="{{userInfo.avatar}}" mode="aspectFill" binderror="onPhotoError" data-type="avatar" />
-        <text wx:else>{{userInfo.nickname ? userInfo.nickname.charAt(0) : '龟'}}</text>
-      </view>
-      <view class="user-detail">
-        <text class="username">{{userInfo.nickname || '用户'}}</text>
-        <text class="count">共 {{pets.length}} 只宠物</text>
+<view class="public-page">
+  <view class="page-wrapper">
+    <!-- 标题栏 -->
+    <view class="section-header" style="margin-bottom: 32rpx;">
+      <text class="section-title">公开宠物列表</text>
+      <text class="section-subtitle">查看 {{userInfo.nickname || '用户'}} 的所有公开宠物</text>
+    </view>
+
+    <!-- 加载状态 -->
+    <view wx:if="{{loading}}" class="loading-state">
+      <view class="loading-spinner"></view>
+      <text class="loading-text">加载中...</text>
+    </view>
+
+    <!-- 空状态 -->
+    <view wx:elif="{{pets.length === 0}}" class="empty-state">
+      <text class="empty-text">暂无公开宠物</text>
+    </view>
+
+    <!-- 宠物列表 -->
+    <view wx:else class="pets-grid">
+      <view 
+        wx:for="{{pets}}" 
+        wx:key="id" 
+        class="pet-card" 
+        bindtap="viewDetail" 
+        data-id="{{item.id}}"
+      >
+        <view class="pet-image-wrapper">
+          <image wx:if="{{item.photos && item.photos.length > 0}}" class="pet-image" src="{{item.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-index="{{index}}" />
+          <view wx:else class="pet-placeholder"></view>
+          <view class="pet-gender-badge">
+            <text class="gender-icon">{{item.gender || '未知'}}</text>
+          </view>
+        </view>
+
+        <!-- 宠物信息 -->
+        <view class="pet-card-info">
+          <text class="pet-card-name">{{item.alias || item.name}}</text>
+          <text class="pet-card-meta">{{item.category || '未分类'}}</text>
+        </view>
       </view>
     </view>
-  </view>
-
-  <view class="pet-list">
-    <view wx:for="{{pets}}" wx:key="id" class="pet-item" bindtap="viewDetail" data-id="{{item.id}}">
-      <image class="pet-image" src="{{item.images[0] || '/images/default.png'}}" mode="aspectFill" binderror="onPhotoError" data-index="{{index}}" />
-      <view class="pet-info">
-        <text class="pet-name">{{item.name}}</text>
-        <text class="pet-category">{{item.category}}</text>
-        <text class="pet-desc">{{item.description}}</text>
-      </view>
-      <view class="arrow">›</view>
-    </view>
-  </view>
-
-  <view wx:if="{{pets.length === 0}}" class="empty-state">
-    <text class="empty-icon">🐢</text>
-    <text class="empty-text">暂无宠物</text>
   </view>
 </view>

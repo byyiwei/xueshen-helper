@@ -1,0 +1,66 @@
+@import "./pages/common/weui.wxss";
+/* 通过 useExtendedLib 方式引入时，可省略 该@import步骤 */
+/* @import 'weui-miniprogram/weui-wxss/dist/style/weui.wxss'; */
+
+/**app.wxss**/
+.container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 200rpx 0;
+    box-sizing: border-box;
+}
+
+.page-section {
+    width: 100%;
+    margin-bottom: 30px;
+}
+
+.page-section_center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.page-section:last-child {
+    margin-bottom: 0;
+}
+
+.page-section-gap {
+    box-sizing: border-box;
+    padding: 0 15px;
+}
+
+.page-section-spacing {
+    box-sizing: border-box;
+    padding: 0 40px;
+}
+
+.page-section-title {
+    /* font-size: 14px; */
+    font-size: 14px;
+    color: var(--weui-FG-1);
+    /* margin-bottom: 5px;
+    padding-left: 15px;
+    padding-right: 15px; */
+    margin-bottom: 5px;
+    padding-left: 15px;
+    padding-right: 15px;
+}
+
+.page-section-gap .page-section-title {
+    padding-left: 0;
+    padding-right: 0;
+}
+
+/* .dz-cells {
+
+} */
+.dz-cells .dz-cell {
+    height: 45rpx !important;
+    line-height: 45rpx !important;
+    /* font-size: 25rpx; */
+    padding: 10px 16px !important;
+}

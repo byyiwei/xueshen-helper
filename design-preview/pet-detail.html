@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>宠物详情 - 龟上心</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #F7F9F8;
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    justify-content: center;
+    padding: 20px;
+  }
+  .phone-frame {
+    width: 375px;
+    height: 812px;
+    background: #F7F9F8;
+    border-radius: 40px;
+    box-shadow: 0 25px 80px rgba(27, 67, 50, 0.15), 0 8px 24px rgba(0,0,0,0.08);
+    overflow: hidden;
+    position: relative;
+    border: 8px solid #1A1D1B;
+  }
+  .screen {
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: 100px;
+  }
+  .screen::-webkit-scrollbar { display: none; }
+
+  /* 顶部照片区 */
+  .photo-banner {
+    position: relative;
+    width: 100%;
+    height: 280px;
+    background: linear-gradient(135deg, #E8F5EE 0%, #D1EBDD 100%);
+    overflow: hidden;
+  }
+  .photo-banner-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 80px;
+  }
+  .photo-count {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    padding: 6px 14px;
+    background: rgba(0,0,0,0.5);
+    border-radius: 16px;
+    font-size: 12px;
+    color: #FFFFFF;
+    backdrop-filter: blur(8px);
+  }
+  .back-btn {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.9);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    color: #1B4332;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    z-index: 2;
+  }
+
+  /* 信息卡片 */
+  .info-card {
+    margin: -24px 16px 16px;
+    padding: 20px;
+    background: #FFFFFF;
+    border-radius: 24px;
+    box-shadow: 0 4px 20px rgba(27, 67, 50, 0.08);
+    position: relative;
+    z-index: 1;
+  }
+  .pet-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .pet-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #1B4332 0%, #2D9A6E 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    color: #FFFFFF;
+    font-weight: bold;
+    border: 3px solid #FFFFFF;
+    box-shadow: 0 2px 8px rgba(27, 67, 50, 0.15);
+  }
+  .pet-basic-info {
+    flex: 1;
+  }
+  .pet-name {
+    font-size: 22px;
+    font-weight: 700;
+    color: #1B4332;
+    margin-bottom: 8px;
+  }
+  .pet-tags {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .tag {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .tag.gender-male {
+    background: #E8F1F7;
+    color: #2A6F97;
+  }
+  .tag.gender-female {
+    background: #F9EBE5;
+    color: #C77D5F;
+  }
+  .tag.category {
+    background: #E8F5EE;
+    color: #1B4332;
+  }
+  .tag.status {
+    background: #E8F5EC;
+    color: #2D7A4E;
+  }
+
+  /* 父母信息 */
+  .parents-row {
+    display: flex;
+    align-items: center;
+    padding-top: 16px;
+    border-top: 1px solid #E2E6E4;
+  }
+  .parent-box {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .parent-label {
+    font-size: 13px;
+    color: #9BA5A0;
+  }
+  .parent-value {
+    font-size: 15px;
+    color: #2A6F97;
+    font-weight: 500;
+  }
+  .parent-value.female {
+    color: #C77D5F;
+  }
+  .parent-value.unlinked {
+    color: #9BA5A0;
+  }
+  .parent-divider {
+    width: 1px;
+    height: 40px;
+    background: #E2E6E4;
+  }
+
+  /* 详情网格 */
+  .detail-card {
+    margin: 0 16px 16px;
+    padding: 20px;
+    background: #FFFFFF;
+    border-radius: 24px;
+    box-shadow: 0 2px 12px rgba(27, 67, 50, 0.06);
+  }
+  .card-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: #1B4332;
+    margin-bottom: 16px;
+  }
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .detail-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px;
+    background: #F7F9F8;
+    border-radius: 16px;
+  }
+  .detail-icon {
+    font-size: 24px;
+  }
+  .detail-content {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .detail-label {
+    font-size: 12px;
+    color: #9BA5A0;
+  }
+  .detail-value {
+    font-size: 15px;
+    color: #2D332F;
+    font-weight: 600;
+  }
+
+  /* 事件记录 */
+  .event-card {
+    margin: 0 16px 16px;
+    padding: 20px;
+    background: #FFFFFF;
+    border-radius: 24px;
+    box-shadow: 0 2px 12px rgba(27, 67, 50, 0.06);
+  }
+  .event-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .event-tab {
+    flex: 1;
+    padding: 10px;
+    text-align: center;
+    border-radius: 14px;
+    font-size: 13px;
+    color: #6B756F;
+    background: #F7F9F8;
+    transition: all 0.2s;
+  }
+  .event-tab.active {
+    background: #1B4332;
+    color: #FFFFFF;
+    font-weight: 500;
+  }
+  .event-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .event-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px 10px;
+    background: #FFFFFF;
+    border-radius: 16px;
+    width: calc(25% - 8px);
+    box-shadow: 0 2px 8px rgba(27, 67, 50, 0.04);
+    border: 1px solid #F0F2F1;
+  }
+  .event-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 8px;
+    background: #F7F9F8;
+    font-size: 20px;
+  }
+  .event-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #2D332F;
+    margin-bottom: 2px;
+  }
+  .event-date {
+    font-size: 11px;
+    color: #9BA5A0;
+  }
+
+  /* 谱系区域 */
+  .pedigree-card {
+    margin: 0 16px 16px;
+    padding: 20px;
+    background: #FFFFFF;
+    border-radius: 24px;
+    box-shadow: 0 2px 12px rgba(27, 67, 50, 0.06);
+  }
+  .pedigree-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .pedigree-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: #1B4332;
+  }
+  .pedigree-badge {
+    padding: 4px 12px;
+    background: linear-gradient(135deg, #1B4332 0%, #2D9A6E 100%);
+    border-radius: 12px;
+    font-size: 12px;
+    color: #FFFFFF;
+    font-weight: 500;
+  }
+  .pedigree-preview {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    padding: 12px 0;
+  }
+  .pedigree-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 20px;
+    background: #FFFFFF;
+    border: 2px solid #E2E6E4;
+    border-radius: 20px;
+    min-width: 120px;
+    box-shadow: 0 2px 8px rgba(27, 67, 50, 0.04);
+    position: relative;
+  }
+  .node-gender-tag {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    min-width: 28px;
+    height: 28px;
+    padding: 0 8px;
+    border-radius: 14px;
+    font-size: 12px;
+    color: #FFFFFF;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .node-gender-tag.male {
+    background: linear-gradient(135deg, #2A6F97 0%, #1B4332 100%);
+  }
+  .node-gender-tag.female {
+    background: linear-gradient(135deg, #C77D5F 0%, #A65D3F 100%);
+  }
+  .node-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #F7F9F8 0%, #E2E6E4 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+  }
+  .node-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: #2D332F;
+  }
+  .node-label {
+    font-size: 12px;
+    color: #1B4332;
+    font-weight: 600;
+    padding: 4px 12px;
+    background: #E8F5EE;
+    border-radius: 10px;
+  }
+
+  /* 底部操作栏 */
+  .bottom-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    gap: 12px;
+    padding: 12px 16px 28px;
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(20px);
+    border-top: 1px solid #E2E6E4;
+    z-index: 10;
+  }
+  .bar-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+    border-radius: 16px;
+    font-size: 15px;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+  .bar-btn.secondary {
+    background: #F7F9F8;
+    color: #4A524D;
+  }
+  .bar-btn.primary {
+    flex: 2;
+    background: linear-gradient(135deg, #1B4332 0%, #2D9A6E 100%);
+    color: #FFFFFF;
+    box-shadow: 0 4px 16px rgba(27, 67, 50, 0.25);
+  }
+</style>
+</head>
+<body>
+<div class="phone-frame">
+  <div class="screen">
+    <!-- 顶部照片 -->
+    <div class="photo-banner">
+      <div class="back-btn">←</div>
+      <div class="photo-banner-placeholder">🐢</div>
+      <span class="photo-count">5 张照片</span>
+    </div>
+
+    <!-- 信息卡片 -->
+    <div class="info-card">
+      <div class="pet-header">
+        <div class="pet-avatar">黑</div>
+        <div class="pet-basic-info">
+          <div class="pet-name">小黑</div>
+          <div class="pet-tags">
+            <span class="tag gender-male">公</span>
+            <span class="tag category">巴西龟</span>
+            <span class="tag status">健康</span>
+          </div>
+        </div>
+      </div>
+      <div class="parents-row">
+        <div class="parent-box">
+          <span class="parent-label">父本</span>
+          <span class="parent-value">大黑</span>
+        </div>
+        <div class="parent-divider"></div>
+        <div class="parent-box">
+          <span class="parent-label">母本</span>
+          <span class="parent-value female">花花</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 详细信息 -->
+    <div class="detail-card">
+      <div class="card-title">详细信息</div>
+      <div class="detail-grid">
+        <div class="detail-item">
+          <span class="detail-icon">🎂</span>
+          <div class="detail-content">
+            <span class="detail-label">出生日期</span>
+            <span class="detail-value">2021-05-12</span>
+          </div>
+        </div>
+        <div class="detail-item">
+          <span class="detail-icon">⚖️</span>
+          <div class="detail-content">
+            <span class="detail-label">体重</span>
+            <span class="detail-value">320g</span>
+          </div>
+        </div>
+        <div class="detail-item">
+          <span class="detail-icon">🎨</span>
+          <div class="detail-content">
+            <span class="detail-label">颜色</span>
+            <span class="detail-value">深绿色</span>
+          </div>
+        </div>
+        <div class="detail-item">
+          <span class="detail-icon">🏷️</span>
+          <div class="detail-content">
+            <span class="detail-label">品种</span>
+            <span class="detail-value">红耳巴西龟</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 事件记录 -->
+    <div class="event-card">
+      <div class="card-title">种龟事件</div>
+      <div class="event-tabs">
+        <div class="event-tab active">全部</div>
+        <div class="event-tab">交配</div>
+        <div class="event-tab">产蛋</div>
+        <div class="event-tab">换公</div>
+      </div>
+      <div class="event-list">
+        <div class="event-item">
+          <div class="event-icon">💕</div>
+          <span class="event-title">交配</span>
+          <span class="event-date">05-12</span>
+        </div>
+        <div class="event-item">
+          <div class="event-icon">🥚</div>
+          <span class="event-title">产蛋</span>
+          <span class="event-date">06-03</span>
+        </div>
+        <div class="event-item">
+          <div class="event-icon">🔄</div>
+          <span class="event-title">换公</span>
+          <span class="event-date">04-20</span>
+        </div>
+        <div class="event-item">
+          <div class="event-icon">📁</div>
+          <span class="event-title">建档</span>
+          <span class="event-date">2021-05</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 家族谱系 -->
+    <div class="pedigree-card">
+      <div class="pedigree-header">
+        <span class="pedigree-title">家族谱系</span>
+        <span class="pedigree-badge">有血系</span>
+      </div>
+      <div class="pedigree-preview">
+        <div class="pedigree-node">
+          <span class="node-gender-tag male">父系</span>
+          <div class="node-avatar">🐢</div>
+          <span class="node-name">大黑</span>
+          <span class="node-label">父本</span>
+        </div>
+        <div class="pedigree-node">
+          <span class="node-gender-tag female">母系</span>
+          <div class="node-avatar">🐢</div>
+          <span class="node-name">花花</span>
+          <span class="node-label">母本</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="height: 40px;"></div>
+  </div>
+
+  <!-- 底部操作栏 -->
+  <div class="bottom-bar">
+    <div class="bar-btn secondary">分享</div>
+    <div class="bar-btn primary">编辑档案</div>
+  </div>
+</div>
+</body>
+</html>

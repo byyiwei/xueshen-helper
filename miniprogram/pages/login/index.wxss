@@ -1,6 +1,6 @@
 .container {
   min-height: 100vh;
-  background: linear-gradient(180deg, #faf8f3 0%, #f5f0e6 100%);
+  background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFB 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -34,7 +34,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8rpx 36rpx rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8rpx 36rpx rgba(45, 106, 79, 0.08);
   margin-bottom: 20rpx;
   overflow: hidden;
 }
@@ -49,11 +49,11 @@
 .logo-text {
   font-size: 64rpx;
   font-weight: bold;
-  background: linear-gradient(135deg, #E68A2E 0%, #F7C56E 100%);
+  background: linear-gradient(135deg, #2D6A4F 0%, #1B4332 100%);
   -webkit-background-clip: text;
   color: transparent;
   letter-spacing: 8rpx;
-  text-shadow: 0 4rpx 12rpx rgba(184, 134, 11, 0.15);
+  text-shadow: 0 4rpx 12rpx rgba(45, 106, 79, 0.1);
   white-space: nowrap;
   font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
@@ -61,7 +61,7 @@
 /* ===== 副标题 ===== */
 .subtitle {
   font-size: 28rpx;
-  color: #999;
+  color: #94A3B8;
   margin-bottom: 100rpx;
 }
 
@@ -74,12 +74,12 @@
 .wechat-btn {
   width: 100% !important;
   height: 96rpx !important;
-  background: linear-gradient(135deg, #1a1a1a 0%, #333 100%) !important;
-  color: #fff !important;
+  background: linear-gradient(135deg, #2D6A4F 0%, #1B4332 100%) !important;
+  color: #ffffff !important;
   border-radius: 48rpx !important;
   font-size: 32rpx !important;
   line-height: 96rpx !important;
-  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.15);
+  box-shadow: 0 8rpx 24rpx rgba(45, 106, 79, 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -107,7 +107,7 @@
 .checkbox {
   width: 40rpx;
   height: 40rpx;
-  border: 2rpx solid #ccc;
+  border: 2rpx solid #CBD5E1;
   border-radius: 8rpx;
   display: flex;
   align-items: center;
@@ -116,19 +116,19 @@
 }
 
 .checkbox.checked {
-  background: #B8860B;
-  border-color: #B8860B;
+  background: #2D6A4F;
+  border-color: #2D6A4F;
 }
 
 .check-icon {
-  color: #fff;
+  color: #ffffff;
   font-size: 26rpx;
   font-weight: bold;
 }
 
 .agreement-text {
   font-size: 28rpx;
-  color: #666;
+  color: #5A6C7D;
 }
 
 .agreement-links {
@@ -139,13 +139,13 @@
 
 .link {
   font-size: 28rpx;
-  color: #B8860B;
+  color: #2A6F97;
   text-decoration: underline;
 }
 
 .divider {
   font-size: 26rpx;
-  color: #999;
+  color: #94A3B8;
 }
 
 /* ===== 协议弹窗 ===== */
@@ -155,18 +155,18 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(45, 106, 79, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 60rpx 40rpx;
   box-sizing: border-box;
-  z-index: 1000;
+  z-index: 10000;
 }
 
 .modal-content {
   width: 650rpx;
-  background: #fff;
+  background: #ffffff;
   border-radius: 24rpx;
   overflow: hidden;
   max-height: 75vh;
@@ -176,7 +176,7 @@
 
 .modal-header {
   padding: 32rpx;
-  border-bottom: 1rpx solid #eee;
+  border-bottom: 1rpx solid #E8F5EE;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -185,7 +185,7 @@
 .modal-title {
   font-size: 30rpx;
   font-weight: bold;
-  color: #333;
+  color: #2D6A4F;
 }
 
 .modal-close {
@@ -195,7 +195,7 @@
   align-items: center;
   justify-content: center;
   font-size: 40rpx;
-  color: #999;
+  color: #94A3B8;
 }
 
 .modal-body {
@@ -219,27 +219,27 @@
 .section-title {
   font-size: 26rpx;
   font-weight: bold;
-  color: #333;
+  color: #2D6A4F;
   text-align: center;
   margin-bottom: 20rpx;
   padding-bottom: 12rpx;
-  border-bottom: 1rpx solid #eee;
+  border-bottom: 1rpx solid #E8F5EE;
   word-break: break-all;
 }
 
 .section-subtitle {
   font-size: 24rpx;
   font-weight: bold;
-  color: #333;
+  color: #2D6A4F;
   margin-bottom: 12rpx;
   padding-left: 12rpx;
-  border-left: 4rpx solid #B8860B;
+  border-left: 4rpx solid #2D6A4F;
   word-break: break-all;
 }
 
 .section-paragraph {
   font-size: 22rpx;
-  color: #666;
+  color: #5A6C7D;
   line-height: 1.8;
   text-indent: 44rpx;
   margin-bottom: 12rpx;
@@ -257,7 +257,7 @@
 
 .list-number {
   font-size: 22rpx;
-  color: #B8860B;
+  color: #2D6A4F;
   font-weight: 500;
   flex-shrink: 0;
   margin-right: 8rpx;
@@ -265,7 +265,7 @@
 
 .list-text {
   font-size: 22rpx;
-  color: #666;
+  color: #5A6C7D;
   line-height: 1.8;
   flex: 1;
   word-break: break-all;
@@ -273,15 +273,15 @@
 
 .modal-footer {
   padding: 28rpx 36rpx;
-  border-top: 1rpx solid #eee;
+  border-top: 1rpx solid #E8F5EE;
   flex-shrink: 0;
 }
 
 .modal-btn {
   width: 100%;
   height: 80rpx;
-  background: linear-gradient(135deg, #B8860B 0%, #DAA520 100%);
-  color: #fff;
+  background: linear-gradient(135deg, #2D6A4F 0%, #1B4332 100%);
+  color: #ffffff;
   border-radius: 40rpx;
   display: flex;
   align-items: center;
@@ -289,62 +289,14 @@
   font-size: 30rpx;
 }
 
-/* ===== 主题覆盖样式 ===== */
-
-/* 1. .container 背景渐变 */
-.theme-mocha .container {
-  background: linear-gradient(180deg, #f5f5f0 0%, #faf8f3 100%);
-}
-.theme-olive .container {
-  background: linear-gradient(180deg, #e8ede4 0%, #f0f3ef 100%);
+/* 跳过登录按钮 */
+.skip-btn {
+  margin-top: 40rpx;
+  padding: 20rpx 40rpx;
+  text-align: center;
 }
 
-/* 2. .logo-text 文字阴影 */
-.theme-mocha .logo-text {
-  text-shadow: 0 4rpx 12rpx rgba(139, 119, 101, 0.15);
-}
-.theme-olive .logo-text {
-  text-shadow: 0 4rpx 12rpx rgba(85, 107, 47, 0.15);
-}
-
-/* 3. .checkbox.checked 背景和边框 */
-.theme-mocha .checkbox.checked {
-  background: #8B7765;
-  border-color: #8B7765;
-}
-.theme-olive .checkbox.checked {
-  background: #556B2F;
-  border-color: #556B2F;
-}
-
-/* 4. .link 颜色 */
-.theme-mocha .link {
-  color: #8B7765;
-}
-.theme-olive .link {
-  color: #556B2F;
-}
-
-/* 5. .section-subtitle 左边框 */
-.theme-mocha .section-subtitle {
-  border-left-color: #8B7765;
-}
-.theme-olive .section-subtitle {
-  border-left-color: #556B2F;
-}
-
-/* 6. .list-number 颜色 */
-.theme-mocha .list-number {
-  color: #8B7765;
-}
-.theme-olive .list-number {
-  color: #556B2F;
-}
-
-/* 7. .modal-btn 背景渐变 */
-.theme-mocha .modal-btn {
-  background: linear-gradient(135deg, #8B7765 0%, #a8927e 100%);
-}
-.theme-olive .modal-btn {
-  background: linear-gradient(135deg, #556B2F 0%, #6d8a3c 100%);
+.skip-text {
+  font-size: 28rpx;
+  color: #94A3B8;
 }

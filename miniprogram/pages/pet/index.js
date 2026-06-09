@@ -3,13 +3,13 @@ const { showError, showSuccess, showLoading, hideLoading, showConfirm } = requir
 const { getVoiceManager } = require('../../utils/voice.js')
 const { convertPetPhotosToUrls, convertPhotoIdsToUrls, sanitizePetPhotos, getTempUrl } = require('../../utils/image.js')
 const { getCache, setCache } = require('../../utils/cache.js')
-const ThemeManager = require('../../utils/theme.js')
-
 const API = getAPI()
 const voiceManager = getVoiceManager()
 
 Page({
   data: {
+    statusBarHeight: 0,
+    totalNavHeight: 120,
     pets: [],
     filteredPets: [],
     showModal: false,
@@ -17,11 +17,12 @@ Page({
     selectedIds: [],
     allSelected: false,
     dragItem: null,
-    showManual: true,
+    showManual: false,
     showFilters: false,
     searchText: '',
-    searchPlaceholder: '搜索编号 / 别名',
-    switchColor: '#B8860B',
+    searchPlaceholder: '搜索别名 / 扫码搜索',
+    switchColor: '#2D6A4F',
+    showSkeleton: true,
     filter: {
       series: '全部',
       gender: '全部',
@@ -33,9 +34,7 @@ Page({
       gender: '公',
       alias: '',
       father: '',
-      fatherName: '',
       mother: '',
-      motherName: '',
       isPublic: false,
       photos: []
     },
@@ -43,8 +42,8 @@ Page({
     showAddCategoryModal: false,
     newCategoryName: '',
     loading: false,
+    loadingMore: false,
     cloudAvailable: true,
-    currentTheme: 'gold',
     showRecordModal: false,
     currentPet: null,
     recordTab: '全部',
@@ -58,37 +57,54 @@ Page({
     motherSearchText: '',
     selectedFather: null,
     selectedMother: null,
-    isEditingCategories: false
+    isEditingCategories: false,
+    pageNum: 1,
+    pageSize: 4,
+    hasMore: true,
+    total: 0,
+    refreshing: false
   },
 
   onLoad() {
-    const app = getApp()
-    if (!app.checkLogin()) return
+    const sysInfo = wx.getSystemInfoSync()
+    const statusBarHeight = Math.max(sysInfo.statusBarHeight || 20, 20)
+    const safeAreaTop = sysInfo.safeArea ? (sysInfo.safeArea.top || statusBarHeight) : statusBarHeight
+    const finalStatusBarHeight = Math.max(statusBarHeight, safeAreaTop)
+    const rpxRatio = 750 / sysInfo.windowWidth
+    const totalNavHeight = Math.round(finalStatusBarHeight * rpxRatio) + 88 + 24
+    this.setData({ statusBarHeight: finalStatusBarHeight, totalNavHeight })
     this.loadCategories()
     this.loadPets()
-    this.loadTheme()
   },
 
   onShow() {
     const app = getApp()
-    if (!app.globalData.isLoggedIn) return
-    this.loadTheme()
-    this.loadPets()
-    
-    // 主动更新tabBar选中状态和主题色
+    // 主动更新tabBar选中状态，并确保 tabBar 可见
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
       const tabBar = this.getTabBar()
-      tabBar.setData({ selected: 0 })
-      if (tabBar.applyThemeColor) {
-        tabBar.applyThemeColor()
-      }
+      tabBar.setData({ selected: 0, visible: true })
     }
+    // 只在没有数据时显示骨架屏，避免频繁显示
+    if (this.data.pets.length === 0) {
+      this.setData({ showSkeleton: true })
+    }
+    // 始终加载最新数据
+    this.loadPets()
   },
 
-  loadTheme: function () {
-    const currentTheme = ThemeManager.getCurrentTheme()
-    const switchColor = ThemeManager.getThemeConfig(currentTheme).primary
-    this.setData({ currentTheme, switchColor })
+  onReachBottom() {
+    this.loadMorePets()
+  },
+
+  onPullDownRefresh() {
+    this.setData({ refreshing: true })
+    this.loadPets(true).then(() => {
+      this.setData({ refreshing: false })
+      wx.stopPullDownRefresh()
+    }).catch(() => {
+      this.setData({ refreshing: false })
+      wx.stopPullDownRefresh()
+    })
   },
 
   loadCategories() {
@@ -102,11 +118,16 @@ Page({
     }
   },
 
-  async loadPets() {
-    this.setData({ loading: true })
+  async loadPets(reset = true) {
+    if (reset) {
+      this.setData({ loading: true, pageNum: 1, hasMore: true, pets: [], filteredPets: [] })
+    } else {
+      if (this.data.loadingMore || !this.data.hasMore) return
+      this.setData({ loadingMore: true })
+    }
 
     try {
-      const result = await API.getPetList(this.data.filter)
+      const result = await API.getPetList(this.data.filter, this.data.pageNum, this.data.pageSize)
 
       if (result.success && result.data) {
         // 合并云端数据与本地缓存的photos
@@ -115,7 +136,8 @@ Page({
         localPets.forEach(p => { localMap[p.id || p._id] = p })
         
         // 适配分页数据结构: { list, total, pageNum, pageSize, hasMore }
-        const petList = result.data.list || result.data || []
+        const rawData = result.data
+        const petList = Array.isArray(rawData.list) ? rawData.list : (Array.isArray(rawData) ? rawData : [])
         const mergedData = petList.map(pet => {
           const id = pet.id || pet._id
           const local = localMap[id]
@@ -126,24 +148,50 @@ Page({
         })
 
         // 转换云存储URL（仅用于展示）
-        const petsWithUrls = await convertPetPhotosToUrls(mergedData)
+        let petsWithUrls = []
+        try {
+          petsWithUrls = await convertPetPhotosToUrls(mergedData)
+        } catch (err) {
 
+          petsWithUrls = mergedData
+        }
+
+        // 新数据 - 确保始终是数组
+        const validPetsWithUrls = Array.isArray(petsWithUrls) ? petsWithUrls : []
+        let newPets = reset ? validPetsWithUrls : [...(this.data.pets || []), ...validPetsWithUrls]
+        
         // 存入缓存时净化图片URL，确保只存储cloud://fileID
-        wx.setStorageSync('pets', sanitizePetPhotos(mergedData))
+        try {
+          wx.setStorageSync('pets', sanitizePetPhotos(newPets))
+        } catch (e) {
+          console.error('缓存宠物数据失败:', e)
+        }
+        
         this.setData({
-          pets: petsWithUrls,
+          pets: newPets || [],
           cloudAvailable: true,
-          filteredPets: petsWithUrls
+          hasMore: result.data.hasMore !== undefined ? result.data.hasMore : petList.length === this.data.pageSize,
+          total: result.data.total || (newPets || []).length,
+          pageNum: reset ? 2 : this.data.pageNum + 1,
+          showSkeleton: false
         })
+        this.computePetStatuses()
+        this.updateFilteredPets()
       } else {
         throw new Error(result.message)
       }
     } catch (error) {
       console.error('云函数调用失败，使用本地数据:', error)
-      this.loadLocalPets()
+      if (reset) {
+        this.loadLocalPets()
+      }
     } finally {
-      this.setData({ loading: false })
+      this.setData({ loading: false, loadingMore: false })
     }
+  },
+
+  async loadMorePets() {
+    await this.loadPets(false)
   },
 
   loadLocalPets() {
@@ -151,20 +199,24 @@ Page({
       const localPets = wx.getStorageSync('pets') || []
       let pets = localPets
       
-      if (localPets.length === 0) {
+      if (!Array.isArray(localPets) || localPets.length === 0) {
         pets = [
           { id: '1', name: '小金', category: '豹纹', gender: '公', alias: '', father: '', mother: '', status: '正常' },
           { id: '2', name: '糖糖', category: '豹纹', gender: '母', alias: '', father: '', mother: '', status: '待配' },
           { id: '3', name: '豆豆', category: '无', gender: '公', alias: '', father: '', mother: '', status: '正常' },
           { id: '4', name: '花花', category: '豹纹', gender: '母', alias: '', father: '', mother: '', status: '预警' }
         ]
-        wx.setStorageSync('pets', pets)
+        try {
+          wx.setStorageSync('pets', pets)
+        } catch (e) {
+          console.error('缓存默认宠物失败:', e)
+        }
       }
 
-      this.setData({ pets, filteredPets: pets, cloudAvailable: false })
+      this.setData({ pets: pets || [], filteredPets: pets || [], cloudAvailable: false, showSkeleton: false })
     } catch (error) {
       console.error('加载宠物列表失败:', error)
-      this.setData({ pets: [], filteredPets: [] })
+      this.setData({ pets: [], filteredPets: [], showSkeleton: false })
     }
   },
 
@@ -181,13 +233,13 @@ Page({
     }
 
     if (this.data.filter.status !== '全部') {
-      result = result.filter(pet => pet.status === this.data.filter.status)
+      result = result.filter(pet => (pet.computedStatus || pet.status) === this.data.filter.status)
     }
 
     if (this.data.searchText) {
       const search = this.data.searchText.toLowerCase()
       result = result.filter(pet =>
-        pet.name.toLowerCase().includes(search) ||
+        (pet.name && pet.name.toLowerCase().includes(search)) ||
         (pet.alias && pet.alias.toLowerCase().includes(search)) ||
         (pet.id && pet.id.toString().includes(search))
       )
@@ -196,12 +248,98 @@ Page({
     this.setData({ filteredPets: result })
   },
 
+  // 计算所有宠物的动态状态
+  computePetStatuses() {
+    const pets = this.data.pets || []
+    const allRecords = wx.getStorageSync('records') || []
+    const now = new Date()
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+    const statusMap = {}
+
+    pets.forEach(pet => {
+      const petId = pet.id || pet._id
+      // 保留手动设置的特殊状态
+      if (pet.status === '出售' || pet.status === '死亡') {
+        statusMap[petId] = pet.status
+        return
+      }
+
+      const petRecords = allRecords.filter(r => r.petId === petId)
+      if (petRecords.length === 0) {
+        // 母性宠物无记录 → 待配，其他 → 正常
+        statusMap[petId] = pet.gender === '母' ? '待配' : '正常'
+        return
+      }
+
+      const latestRecord = petRecords.sort((a, b) => {
+        const dateA = new Date(a.date + 'T' + (a.time || '00:00'))
+        const dateB = new Date(b.date + 'T' + (b.time || '00:00'))
+        return dateB - dateA
+      })[0]
+
+      // 健康记录在近 30 天内 → 预警
+      const hasRecentHealth = petRecords.some(r => {
+        if (r.type !== '健康') return false
+        const rDate = new Date(r.date + 'T' + (r.time || '00:00'))
+        return rDate >= thirtyDaysAgo
+      })
+      if (hasRecentHealth) {
+        statusMap[petId] = '预警'
+        return
+      }
+
+      // 母性 + 近 30 天内无交配/产蛋记录 → 待配
+      if (pet.gender === '母') {
+        const recentBreedRecords = petRecords.filter(r => {
+          if (r.type !== '交配' && r.type !== '产蛋') return false
+          const rDate = new Date(r.date + 'T' + (r.time || '00:00'))
+          return rDate >= thirtyDaysAgo
+        })
+        if (recentBreedRecords.length === 0) {
+          statusMap[petId] = '待配'
+          return
+        }
+        // 近 30 天内有产蛋记录但受精率低于 50% → 待配
+        const recentEggRecords = recentBreedRecords.filter(r => r.type === '产蛋' && r.eggCount > 0)
+        if (recentEggRecords.length > 0) {
+          const totalEggs = recentEggRecords.reduce((sum, r) => sum + (parseInt(r.eggCount) || 0), 0)
+          const totalFertilized = recentEggRecords.reduce((sum, r) => sum + (parseInt(r.fertilizedCount) || 0), 0)
+          if (totalEggs > 0 && (totalFertilized / totalEggs) < 0.5) {
+            statusMap[petId] = '待配'
+            return
+          }
+        }
+      }
+
+      statusMap[petId] = pet.status || '正常'
+    })
+
+    this._statusMap = statusMap
+    // 将计算状态写回 pet 数据以便 WXML 渲染
+    const statusClassMap = { '正常': 'normal', '待配': 'waiting', '预警': 'warning', '出售': 'sold', '死亡': 'dead' }
+    const updatedPets = pets.map(pet => {
+      const petId = pet.id || pet._id
+      const status = statusMap[petId] || pet.status || '正常'
+      return { ...pet, computedStatus: status, statusClass: statusClassMap[status] || 'normal' }
+    })
+    this.setData({ pets: updatedPets })
+  },
+
+  // 获取宠物当前状态
+  _getPetStatus(pet) {
+    const petId = pet.id || pet._id
+    if (this._statusMap && this._statusMap[petId]) {
+      return this._statusMap[petId]
+    }
+    return pet.status || '正常'
+  },
+
   setFilter(e) {
     const { key, value } = e.currentTarget.dataset
     if (!key || value === undefined) return
     const filter = { ...this.data.filter, [key]: value }
     this.setData({ filter })
-    this.updateFilteredPets()
+    this.loadPets(true)
   },
 
   toggleFilters() {
@@ -209,8 +347,17 @@ Page({
   },
 
   onSearchInput(e) {
-    this.setData({ searchText: e.detail.value })
-    this.updateFilteredPets()
+    const searchText = e.detail.value
+    this.setData({ searchText })
+    // 如果搜索清空了，重新加载全部
+    if (!searchText) {
+      this.loadPets(true)
+    } else {
+      this.setData({ 
+        'filter.searchText': searchText 
+      })
+      this.loadPets(true)
+    }
   },
 
   onSearchFocus() {
@@ -229,9 +376,76 @@ Page({
     }, 250)
   },
 
+  // 扫码跳转宠物详情（扫描打印标签二维码）
+  scanQrCode() {
+    wx.scanCode({
+      onlyFromCamera: false,
+      scanType: ['qrCode', 'barCode', 'datamatrix', 'pdf417'],
+      success: (res) => {
+        const scanned = (res.result || '').trim()
+
+        if (!scanned) {
+          showError('扫码结果为空')
+          return
+        }
+
+        let petId = ''
+
+        // 策略 1：正则提取 petId=xxx（兼容 URL、scene、任意参数格式）
+        const petIdMatch = scanned.match(/[?&]petId=([^&\s]+)/) || scanned.match(/petId=([^&\s]+)/)
+        if (petIdMatch) {
+          petId = decodeURIComponent(petIdMatch[1])
+        }
+
+        // 策略 2：解析本地 fallback 格式 wxapp://pet/petId
+        if (!petId && scanned.indexOf('wxapp://pet/') === 0) {
+          // wxapp://pet/petId 或 wxapp://pet/petId/recordId
+          const parts = scanned.replace('wxapp://pet/', '').split('/')
+          if (parts[0]) petId = parts[0]
+        }
+
+        // 策略 3：如果扫到的是 scene 参数格式（petId=xxx&from=scan）
+        if (!petId && scanned.indexOf('petId=') !== -1) {
+          const m = scanned.match(/petId=([^&\s]+)/)
+          if (m) petId = decodeURIComponent(m[1])
+        }
+
+        if (petId) {
+          wx.navigateTo({ url: '/pages/pet/detail?petId=' + petId })
+        } else {
+          // 显示扫码原始内容，便于调试排查
+          wx.showModal({
+            title: '无法识别该二维码',
+            content: '扫码内容：' + scanned.substring(0, 120),
+            confirmText: '知道了',
+            showCancel: false
+          })
+        }
+      },
+      fail: (err) => {
+        console.error('[scan] 扫码失败:', err)
+        if (err.errMsg && err.errMsg.indexOf('cancel') === -1) {
+          showError('扫码失败：' + (err.errMsg || ''))
+        }
+      }
+    })
+  },
+
   showAddModal() {
+    const app = getApp()
+    if (!app.requireLogin()) return
+
+    // 从本地存储读取用户的手动配置展开/收起习惯
+    let savedShowManual = false
+    try {
+      savedShowManual = wx.getStorageSync('showManual')
+    } catch (error) {
+      console.error('读取手动配置状态失败:', error)
+    }
+    
     this.setData({
       showModal: true,
+      showManual: savedShowManual === true,
       selectedFather: null,
       selectedMother: null,
       petForm: {
@@ -256,7 +470,14 @@ Page({
   stopPropagation() {},
 
   toggleManual() {
-    this.setData({ showManual: !this.data.showManual })
+    const newShowManual = !this.data.showManual
+    this.setData({ showManual: newShowManual })
+    // 保存用户的展开/收起习惯到本地存储
+    try {
+      wx.setStorageSync('showManual', newShowManual)
+    } catch (error) {
+      console.error('保存手动配置状态失败:', error)
+    }
   },
 
   onNameInput(e) {
@@ -538,9 +759,22 @@ Page({
   },
 
   async confirmCreate() {
+    const app = getApp()
+    if (!app.requireLogin()) return
+
     if (!this.data.petForm.name) {
       showError('请输入宠物名称')
       return
+    }
+
+    // 别名唯一性校验
+    const newAlias = (this.data.petForm.alias || '').trim()
+    if (newAlias) {
+      const existingPet = this.data.pets.find(p => (p.alias || '').trim() === newAlias)
+      if (existingPet) {
+        showError('别名「' + newAlias + '」已存在，请使用其他别名')
+        return
+      }
     }
 
     this.setData({ loading: true })
@@ -622,7 +856,12 @@ Page({
       }
     } catch (error) {
       console.error('创建宠物失败:', error)
-      this.createLocalPet()
+      const errMsg = error.message || ''
+      if (errMsg.indexOf('别名') !== -1 && errMsg.indexOf('已存在') !== -1) {
+        showError(errMsg)
+      } else {
+        this.createLocalPet()
+      }
     } finally {
       this.setData({ loading: false })
     }
@@ -790,7 +1029,7 @@ Page({
 
     wx.showActionSheet({
       itemList: ['进入编辑模式', '删除该宠物'],
-      itemColor: '#333333',
+      itemColor: '#2D6A4F',
       success: (res) => {
         if (res.tapIndex === 0) {
           // 进入编辑模式并选中当前卡片
@@ -804,7 +1043,7 @@ Page({
           wx.showModal({
             title: '确认删除',
             content: `确定删除「${pet.alias || pet.name}」吗？`,
-            confirmColor: '#e74c3c',
+            confirmColor: '#E76F51',
             success: (res) => {
               if (res.confirm) {
                 this.doDeletePets([pet.id])
@@ -960,7 +1199,7 @@ Page({
     wx.showModal({
       title: '确认删除',
       content: `确定删除选中的 ${selectedIds.length} 个宠物吗？`,
-      confirmColor: '#e74c3c',
+      confirmColor: '#E76F51',
       success: (res) => {
         if (res.confirm) {
           this.doDeletePets(selectedIds)
@@ -970,6 +1209,9 @@ Page({
   },
 
   doDeletePets(ids) {
+    const app = getApp()
+    if (!app.requireLogin()) return
+
     const pets = this.data.pets || []
     const filteredPets = this.data.filteredPets || []
     const idSet = new Set(ids)

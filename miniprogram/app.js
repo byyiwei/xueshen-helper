@@ -1,41 +1,87 @@
-const ThemeManager = require('./utils/theme.js')
-
 App({
   onLaunch: function () {
-    try {
-      wx.cloud.init({
-        env: 'cloud1-d0g853l9d7017ea3b'
-      })
-      console.log('云开发初始化成功')
-    } catch (error) {
-      console.log('云开发初始化失败，使用本地数据模式:', error)
-    }
+    // 云开发初始化（异步完成，不阻塞后续逻辑）
+    wx.cloud.init({
+      env: 'cloud1-d0g853l9d7017ea3b'
+    }).then(() => {
 
-    try {
-      const savedTheme = ThemeManager.initTheme()
-      this.globalData.theme = savedTheme
-    } catch (error) {
-      console.error('读取主题失败:', error)
-    }
+      // 初始化完成后再执行需要云能力的操作
+      this.onCloudReady()
+    }).catch((error) => {
 
-    // 1. 本地已存在 openid → 视为已登录，直接恢复会话
+    })
+
+    // 延迟执行本地数据恢复，避免 too early 错误
+    wx.nextTick(() => {
+      this.initLocalData()
+    })
+  },
+
+  // 云开发就绪后的回调
+  onCloudReady: function () {
+    // 加载系统配置（图片服务器地址等）
+    this.loadSystemConfig()
+
+    // 只有已登录用户才需要恢复云端会话
+    wx.nextTick(() => {
+      try {
+        const openid = wx.getStorageSync('openid')
+        if (openid && !this.globalData.openid) {
+          this.globalData.isLoggedIn = true
+          this.globalData.openid = openid
+          this.generateQrcode(openid)
+
+        }
+      } catch (error) {
+        console.error('恢复会话失败:', error)
+      }
+    })
+  },
+
+  // 从云数据库加载系统配置
+  // 集合: system  文档 _id: config
+  // 字段: imageServerUrl（图片服务器地址）
+  loadSystemConfig: function () {
+    const db = wx.cloud.database()
+    db.collection('system').doc('config').get({
+      success: (res) => {
+        if (res.data) {
+          this.globalData.systemConfig = res.data
+          console.log('[systemConfig] 读取成功:', res.data)
+        } else {
+          console.log('[systemConfig] 文档存在但无数据')
+        }
+      },
+      fail: (err) => {
+        console.error('[systemConfig] 读取失败:', err.errMsg || err)
+      }
+    })
+  },
+
+  // 初始化本地数据（同步执行，不依赖云开发）
+  initLocalData: function () {
     try {
       const openid = wx.getStorageSync('openid')
       if (openid) {
         this.globalData.isLoggedIn = true
         this.globalData.openid = openid
-        this.generateQrcode(openid)
-        console.log('App Launch - 已登录用户恢复会话')
+        // 延迟执行需要云环境的操作
+        setTimeout(() => {
+          this.generateQrcode(openid)
+        }, 500)
+
         return
       }
     } catch (error) {
       console.error('读取登录状态失败:', error)
     }
 
-    // 2. 本地没有 openid → 静默调用登录云函数获取 openid
-    //    - 老用户（本设备之前同意过协议 agreedBefore = true）：自动登录
-    //    - 新用户 / 主动退出过的用户：只预存 openid，等待用户在登录页勾选协议后再登录
-    //    说明：不使用"数据库有用户记录"作为自动登录依据，否则退出登录后又会被立刻自动登回去
+    // 本地无 openid，异步获取
+    this.asyncLogin()
+  },
+
+  // 异步登录流程
+  asyncLogin: function () {
     try {
       wx.cloud.callFunction({
         name: 'login',
@@ -50,22 +96,35 @@ App({
             } catch (e) {}
 
             if (agreedBefore) {
-              // 老用户（本设备同意过协议）→ 静默自动登录
+              // 老用户自动登录
               try {
                 wx.setStorageSync('openid', openid)
               } catch (e) {}
               this.globalData.isLoggedIn = true
               this.globalData.openid = openid
-              // 补齐默认用户信息
               if (user) {
                 try {
-                  if (!user.nickname) {
+                  // 合并本地与云端用户信息（本地优先，云端补充）
+                  let localUser = wx.getStorageSync('userInfo') || {}
+                  // 云端有昵称则用云端，否则保留本地
+                  if (user.nickname && user.nickname !== '') {
+                    localUser.nickname = user.nickname
+                  } else if (!localUser.nickname) {
+                    // 云端和本地都没有昵称，生成默认
                     let idx = wx.getStorageSync('userIndex') || 0
                     idx += 1
                     wx.setStorageSync('userIndex', idx)
-                    user.nickname = '龟上心' + idx
+                    localUser.nickname = '龟上心' + idx
                   }
-                  wx.setStorageSync('userInfo', user)
+                  // 云端有头像则用云端，否则保留本地
+                  if (user.avatar && user.avatar !== '') {
+                    localUser.avatar = user.avatar
+                  }
+                  // 云端有手机则用云端
+                  if (user.phone && user.phone !== '') {
+                    localUser.phone = user.phone
+                  }
+                  wx.setStorageSync('userInfo', localUser)
                   if (user.createdAt) {
                     const t = user.createdAt instanceof Date
                       ? user.createdAt.toISOString()
@@ -74,13 +133,15 @@ App({
                   }
                 } catch (e) {}
               }
-              this.generateQrcode(openid)
-              console.log('App Launch - 老用户自动登录成功, openid:', openid)
+              setTimeout(() => {
+                this.generateQrcode(openid)
+              }, 500)
+
             } else {
-              // 新用户 或 主动退出过的用户 → 预存 openid，交给登录页
+              // 新用户预存 openid
               this.globalData.pendingOpenid = openid
               this.globalData.pendingUser = user || null
-              console.log('App Launch - 静默获取 openid 成功（等待用户勾选协议后登录）')
+
             }
           }
         },
@@ -91,8 +152,6 @@ App({
     } catch (error) {
       console.error('App Launch - 静默登录流程异常:', error)
     }
-
-    console.log('App Launch')
   },
 
   // 后台静默生成小程序码，不阻塞用户操作
@@ -118,7 +177,7 @@ App({
           const savedShareInfo = wx.getStorageSync('shareInfo') || {}
           savedShareInfo.qrcode = fileID
           wx.setStorageSync('shareInfo', savedShareInfo)
-          console.log('小程序码生成成功, fileID:', fileID)
+
         } else {
           console.error('小程序码生成失败:', res.result ? res.result.message : '未知错误')
         }
@@ -129,10 +188,10 @@ App({
     })
   },
 
-  // 检查是否已登录，未登录跳转到登录页
-  checkLogin: function () {
+  // 检查是否已登录，未登录则跳转登录页（用户可返回）
+  requireLogin: function () {
     if (!this.globalData.isLoggedIn) {
-      wx.reLaunch({
+      wx.navigateTo({
         url: '/pages/login/index'
       })
       return false
@@ -154,30 +213,22 @@ App({
       wx.removeStorageSync('registerTime')
     } catch (e) {}
     wx.reLaunch({
-      url: '/pages/login/index'
+      url: '/pages/pet/index'
     })
   },
   
-  // 兼容旧代码 - 委托给 ThemeManager
-  getThemeConfig: function (theme) {
-    return ThemeManager.getThemeConfig(theme)
-  },
-  
-  // 兼容旧代码 - 委托给 ThemeManager
-  setTheme: function (theme) {
-    ThemeManager.setTheme(theme)
-  },
-  
   onShow: function () {
-    console.log('App Show')
+
   },
   onHide: function () {
-    console.log('App Hide')
+
   },
   globalData: {
     userInfo: null,
-    theme: ThemeManager.DEFAULT_THEME,
     isLoggedIn: false,
-    openid: null
+    openid: null,
+    systemConfig: {
+      imageServerUrl: 'http://192.168.110.29:3000'
+    }
   }
 })

@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>我的 - 龟上心</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #F7F9F8;
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    justify-content: center;
+    padding: 20px;
+  }
+  .phone-frame {
+    width: 375px;
+    height: 812px;
+    background: #F7F9F8;
+    border-radius: 40px;
+    box-shadow: 0 25px 80px rgba(27, 67, 50, 0.15), 0 8px 24px rgba(0,0,0,0.08);
+    overflow: hidden;
+    position: relative;
+    border: 8px solid #1A1D1B;
+  }
+  .screen {
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: 100px;
+  }
+  .screen::-webkit-scrollbar { display: none; }
+
+  /* 顶部背景 */
+  .profile-header-bg {
+    height: 180px;
+    background: linear-gradient(135deg, #1B4332 0%, #2D9A6E 100%);
+    position: relative;
+    overflow: hidden;
+  }
+  .profile-header-bg::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -20%;
+    width: 300px;
+    height: 300px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.06);
+  }
+  .profile-header-bg::after {
+    content: '';
+    position: absolute;
+    bottom: -30%;
+    left: -10%;
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.04);
+  }
+
+  /* 个人信息卡片 */
+  .profile-card {
+    margin: -60px 16px 16px;
+    padding: 24px;
+    background: #FFFFFF;
+    border-radius: 24px;
+    box-shadow: 0 4px 24px rgba(27, 67, 50, 0.1);
+    position: relative;
+    z-index: 1;
+  }
+  .profile-top {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .profile-avatar {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #1B4332 0%, #2D9A6E 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    color: #FFFFFF;
+    font-weight: bold;
+    border: 4px solid #FFFFFF;
+    box-shadow: 0 4px 16px rgba(27, 67, 50, 0.2);
+  }
+  .profile-info {
+    flex: 1;
+  }
+  .profile-name {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1B4332;
+    margin-bottom: 6px;
+  }
+  .profile-id {
+    font-size: 13px;
+    color: #9BA5A0;
+    background: #F7F9F8;
+    padding: 4px 12px;
+    border-radius: 12px;
+    display: inline-block;
+  }
+  .profile-stats {
+    display: flex;
+    justify-content: space-around;
+    padding-top: 16px;
+    border-top: 1px solid #E2E6E4;
+  }
+  .stat-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .stat-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: #1B4332;
+  }
+  .stat-label {
+    font-size: 12px;
+    color: #9BA5A0;
+  }
+
+  /* 龟友名片 */
+  .card-section {
+    margin: 0 16px 16px;
+    padding: 20px;
+    background: #FFFFFF;
+    border-radius: 24px;
+    box-shadow: 0 2px 12px rgba(27, 67, 50, 0.06);
+  }
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .section-title {
+    font-size: 17px;
+    font-weight: 700;
+    color: #1B4332;
+  }
+  .section-more {
+    font-size: 13px;
+    color: #6B756F;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* 名片预览 */
+  .namecard-preview {
+    padding: 20px;
+    background: linear-gradient(135deg, #1B4332 0%, #2D9A6E 100%);
+    border-radius: 20px;
+    color: #FFFFFF;
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 12px;
+  }
+  .namecard-preview::before {
+    content: '';
+    position: absolute;
+    top: -40px;
+    right: -40px;
+    width: 160px;
+    height: 160px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+  }
+  .namecard-name {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    position: relative;
+  }
+  .namecard-id {
+    font-size: 12px;
+    opacity: 0.8;
+    margin-bottom: 16px;
+    position: relative;
+  }
+  .namecard-qr {
+    width: 64px;
+    height: 64px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    position: relative;
+  }
+  .namecard-tip {
+    font-size: 12px;
+    color: #6B756F;
+    text-align: center;
+    margin-top: 8px;
+  }
+
+  /* 功能菜单 */
+  .menu-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+  }
+  .menu-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 0;
+    border-radius: 16px;
+    transition: all 0.2s;
+  }
+  .menu-item:active {
+    background: #F7F9F8;
+  }
+  .menu-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    background: #F7F9F8;
+  }
+  .menu-icon.green {
+    background: #E8F5EE;
+  }
+  .menu-icon.blue {
+    background: #E8F1F7;
+  }
+  .menu-icon.orange {
+    background: #FDF6E3;
+  }
+  .menu-icon.red {
+    background: #FDECEC;
+  }
+  .menu-label {
+    font-size: 12px;
+    color: #4A524D;
+    font-weight: 500;
+  }
+
+  /* 列表菜单 */
+  .list-menu {
+    display: flex;
+    flex-direction: column;
+  }
+  .list-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 0;
+    border-bottom: 1px solid #F0F2F1;
+  }
+  .list-item:last-child {
+    border-bottom: none;
+  }
+  .list-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .list-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    background: #F7F9F8;
+  }
+  .list-icon.green { background: #E8F5EE; }
+  .list-icon.blue { background: #E8F1F7; }
+  .list-icon.orange { background: #FDF6E3; }
+  .list-icon.red { background: #FDECEC; }
+  .list-text {
+    font-size: 15px;
+    color: #2D332F;
+    font-weight: 500;
+  }
+  .list-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .list-badge {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #FFFFFF;
+    background: #C45B5B;
+  }
+  .list-arrow {
+    font-size: 14px;
+    color: #9BA5A0;
+  }
+
+  /* 版本信息 */
+  .version-info {
+    text-align: center;
+    padding: 20px 0;
+    font-size: 12px;
+    color: #9BA5A0;
+  }
+
+  /* Tab Bar */
+  .tab-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 84px;
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(20px) saturate(1.2);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
+    display: flex;
+    justify-content: space-around;
+    align-items: flex-start;
+    padding-top: 8px;
+    border-top: 1px solid rgba(27, 67, 50, 0.06);
+    z-index: 10;
+  }
+  .tab-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 4px 0;
+    color: #9BA5A0;
+    transition: color 0.3s;
+  }
+  .tab-item.active {
+    color: #1B4332;
+  }
+  .tab-icon {
+    font-size: 22px;
+    margin-bottom: 2px;
+  }
+  .tab-text {
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .tab-indicator {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: currentColor;
+    margin-top: 4px;
+    opacity: 0;
+    transform: scale(0);
+    transition: all 0.3s;
+  }
+  .tab-item.active .tab-indicator {
+    opacity: 1;
+    transform: scale(1);
+  }
+</style>
+</head>
+<body>
+<div class="phone-frame">
+  <div class="screen">
+    <!-- 顶部背景 -->
+    <div class="profile-header-bg"></div>
+
+    <!-- 个人信息卡片 -->
+    <div class="profile-card">
+      <div class="profile-top">
+        <div class="profile-avatar">龟</div>
+        <div class="profile-info">
+          <div class="profile-name">龟友小明</div>
+          <span class="profile-id">ID: 20240601001</span>
+        </div>
+      </div>
+      <div class="profile-stats">
+        <div class="stat-item">
+          <span class="stat-value">12</span>
+          <span class="stat-label">我的宠物</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">3</span>
+          <span class="stat-label">种龟</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-value">28</span>
+          <span class="stat-label">事件记录</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 龟友名片 -->
+    <div class="card-section">
+      <div class="section-header">
+        <span class="section-title">龟友名片</span>
+        <span class="section-more">查看详情 →</span>
+      </div>
+      <div class="namecard-preview">
+        <div class="namecard-name">龟友小明</div>
+        <div class="namecard-id">ID: 20240601001</div>
+        <div class="namecard-qr">📱</div>
+      </div>
+      <div class="namecard-tip">扫码添加龟友，分享养龟经验</div>
+    </div>
+
+    <!-- 快捷功能 -->
+    <div class="card-section">
+      <div class="section-header">
+        <span class="section-title">快捷功能</span>
+      </div>
+      <div class="menu-grid">
+        <div class="menu-item">
+          <div class="menu-icon green">🐢</div>
+          <span class="menu-label">添加宠物</span>
+        </div>
+        <div class="menu-item">
+          <div class="menu-icon blue">📊</div>
+          <span class="menu-label">数据统计</span>
+        </div>
+        <div class="menu-item">
+          <div class="menu-icon orange">📅</div>
+          <span class="menu-label">提醒设置</span>
+        </div>
+        <div class="menu-item">
+          <div class="menu-icon green">🏷️</div>
+          <span class="menu-label">品种库</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 设置菜单 -->
+    <div class="card-section">
+      <div class="list-menu">
+        <div class="list-item">
+          <div class="list-left">
+            <div class="list-icon green">👤</div>
+            <span class="list-text">个人资料</span>
+          </div>
+          <div class="list-right">
+            <span class="list-arrow">›</span>
+          </div>
+        </div>
+        <div class="list-item">
+          <div class="list-left">
+            <div class="list-icon blue">🔔</div>
+            <span class="list-text">消息通知</span>
+          </div>
+          <div class="list-right">
+            <span class="list-badge">3</span>
+            <span class="list-arrow">›</span>
+          </div>
+        </div>
+        <div class="list-item">
+          <div class="list-left">
+            <div class="list-icon orange">🌙</div>
+            <span class="list-text">深色模式</span>
+          </div>
+          <div class="list-right">
+            <span class="list-arrow">›</span>
+          </div>
+        </div>
+        <div class="list-item">
+          <div class="list-left">
+            <div class="list-icon green">💾</div>
+            <span class="list-text">数据备份</span>
+          </div>
+          <div class="list-right">
+            <span class="list-arrow">›</span>
+          </div>
+        </div>
+        <div class="list-item">
+          <div class="list-left">
+            <div class="list-icon blue">❓</div>
+            <span class="list-text">帮助与反馈</span>
+          </div>
+          <div class="list-right">
+            <span class="list-arrow">›</span>
+          </div>
+        </div>
+        <div class="list-item">
+          <div class="list-left">
+            <div class="list-icon red">⚙️</div>
+            <span class="list-text">系统设置</span>
+          </div>
+          <div class="list-right">
+            <span class="list-arrow">›</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="version-info">龟上心 v1.0.0</div>
+    <div style="height: 20px;"></div>
+  </div>
+
+  <!-- Tab Bar -->
+  <div class="tab-bar">
+    <div class="tab-item">
+      <span class="tab-icon">🐾</span>
+      <span class="tab-text">宠物</span>
+      <span class="tab-indicator"></span>
+    </div>
+    <div class="tab-item">
+      <span class="tab-icon">📊</span>
+      <span class="tab-text">足迹</span>
+      <span class="tab-indicator"></span>
+    </div>
+    <div class="tab-item active">
+      <span class="tab-icon">👤</span>
+      <span class="tab-text">我的</span>
+      <span class="tab-indicator"></span>
+    </div>
+  </div>
+</div>
+</body>
+</html>

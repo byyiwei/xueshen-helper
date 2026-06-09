@@ -1,4 +1,4 @@
-<view class="custom-tab-bar">
+<view class="custom-tab-bar {{visible ? '' : 'hidden'}}">
   <view class="tab-bar-bg">
     <view class="tab-bar-blur"></view>
   </view>

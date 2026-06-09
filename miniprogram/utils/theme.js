@@ -49,22 +49,22 @@ function urlToBase64(url) {
                     resolve(`data:${mimeType};base64,${res.data}`);
                   },
                   fail: (err) => {
-                    console.warn('读取云存储临时文件失败:', err, url);
+
                     resolve(url);
                   }
                 });
               } catch (e) {
-                console.warn('读取云存储临时文件异常:', e, url);
+
                 resolve(url);
               }
             },
             fail: (err) => {
-              console.warn('下载云存储文件失败:', err, url);
+
               resolve(url);
             }
           });
         } else {
-          console.warn('wx.cloud.downloadFile 不可用:', url);
+
           resolve(url);
         }
         return;
@@ -83,12 +83,12 @@ function urlToBase64(url) {
           resolve(`data:${mimeType};base64,${res.data}`);
         },
         fail: (err) => {
-          console.warn('图片转 base64 失败:', err, url);
+
           resolve(url);
         }
       });
     } catch (e) {
-      console.warn('图片转 base64 异常:', e, url);
+
       resolve(url);
     }
   });
@@ -132,88 +132,37 @@ async function convertHTMLImagesToBase64(html) {
   return resultHtml;
 }
 
-const THEMES = {
-  gold: {
-    name: 'gold',
-    primary: '#B8860B',
-    primaryDark: '#8B6914',
-    primaryLight: '#f5e6c8',
-    accent: '#ffc53d',
-    bg: '#faf8f3',
-    bgLight: '#f5f0e6',
-    cardBg: '#ffffff',
-    text: '#333333',
-    textSecondary: '#666666',
-    textLight: '#999999',
-    border: '#f0f0f0',
-  },
-  mocha: {
-    name: 'mocha',
-    primary: '#8B7765',
-    primaryDark: '#6B5744',
-    primaryLight: '#d4cfc4',
-    accent: '#a89078',
-    bg: '#f5f5f0',
-    bgLight: '#faf8f3',
-    cardBg: '#ffffff',
-    text: '#333333',
-    textSecondary: '#666666',
-    textLight: '#999999',
-    border: '#f0f0f0',
-  },
-  olive: {
-    name: 'olive',
-    primary: '#556B2F',
-    primaryDark: '#3d5020',
-    primaryLight: '#b8c9b8',
-    accent: '#7a9a52',
-    bg: '#e8ede4',
-    bgLight: '#f0f3ef',
-    cardBg: '#ffffff',
-    text: '#333333',
-    textSecondary: '#666666',
-    textLight: '#999999',
-    border: '#f0f0f0',
-  }
+const WHITE_THEME = {
+  name: 'white',
+  primary: '#2D6A4F',
+  primaryDark: '#1B4332',
+  primaryLight: '#E8F5EE',
+  accent: '#F4A261',
+  bg: '#F8FAFB',
+  bgLight: '#FFFFFF',
+  pageBg: '#F8FAFB',
+  cardBg: '#ffffff',
+  text: '#2C3E50',
+  textSecondary: '#5A6C7D',
+  textLight: '#94A3B8',
+  border: '#E2E8F0',
 };
 
-const DEFAULT_THEME = 'gold';
-
 class ThemeManager {
-  static initTheme() {
-    try {
-      let savedTheme = wx.getStorageSync('theme')
-      if (!savedTheme || !THEMES[savedTheme]) {
-        savedTheme = DEFAULT_THEME
-        wx.setStorageSync('theme', savedTheme)
-      }
-      return savedTheme
-    } catch (e) {
-      console.error('读取主题失败:', e)
-      return DEFAULT_THEME
-    }
-  }
-
-  static getThemeConfig(themeName) {
-    return THEMES[themeName] || THEMES[DEFAULT_THEME]
-  }
-
-  static setTheme(theme) {
-    if (THEMES[theme]) {
-      wx.setStorageSync('theme', theme)
-    }
+  static getThemeConfig() {
+    return WHITE_THEME;
   }
 
   static getCurrentTheme() {
-    return wx.getStorageSync('theme') || DEFAULT_THEME
+    return 'white';
   }
 }
 
 /**
- * 获取主题配置
+ * 获取主题配置（兼容旧代码）
  */
-function getTheme(themeName) {
-  return THEMES[themeName] || THEMES.gold;
+function getTheme() {
+  return WHITE_THEME;
 }
 
 /**
@@ -563,7 +512,7 @@ function generatePetHTML(data, theme) {
       position: relative;
       width: 100%;
       height: 500px;
-      background-color: #e8e4dc;
+      background-color: #EDF2F7;
     }
     
     .photo-img {
@@ -577,10 +526,10 @@ function generatePetHTML(data, theme) {
       right: 24px;
       bottom: 24px;
       padding: 8px 20px;
-      background-color: rgba(0, 0, 0, 0.5);
+      background-color: rgba(45, 106, 79, 0.5);
       border-radius: 24px;
       font-size: 24px;
-      color: #fff;
+      color: #ffffff;
     }
     
     .empty-photo {
@@ -602,7 +551,7 @@ function generatePetHTML(data, theme) {
     
     .empty-photo-text {
       font-size: 28px;
-      color: #999;
+      color: #94A3B8;
     }
     
     /* 信息卡片 - 对齐 WXSS: margin -40rpx 24rpx 24rpx, padding 32rpx */
@@ -611,7 +560,7 @@ function generatePetHTML(data, theme) {
       padding: 32px;
       background-color: #ffffff;
       border-radius: 24px;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+      box-shadow: 0 4px 20px rgba(45, 106, 79, 0.08);
       position: relative;
       z-index: 10;
     }
@@ -629,7 +578,7 @@ function generatePetHTML(data, theme) {
       border-radius: 60px;
       overflow: hidden;
       flex-shrink: 0;
-      border: 4px solid #f5f5f5;
+      border: 4px solid #F8FAFB;
     }
     
     .pet-avatar {
@@ -645,7 +594,7 @@ function generatePetHTML(data, theme) {
       align-items: center;
       justify-content: center;
       font-size: 48px;
-      color: #fff;
+      color: #ffffff;
       background: linear-gradient(135deg, ${theme.accent} 0%, ${theme.primary} 100%);
     }
     
@@ -656,7 +605,7 @@ function generatePetHTML(data, theme) {
     .pet-name {
       font-size: 40px;
       font-weight: bold;
-      color: #333;
+      color: #2D6A4F;
       margin-bottom: 16px;
       display: block;
     }
@@ -674,38 +623,38 @@ function generatePetHTML(data, theme) {
     }
     
     .gender-tag {
-      background-color: #e8f4f8;
-      color: #1890ff;
+      background-color: #E0F2F7;
+      color: #2A6F97;
     }
     
     .category-tag {
-      background-color: #f6ffed;
-      color: #52c41a;
+      background-color: #EDF2F7;
+      color: #2D6A4F;
     }
     
     .status-tag {
-      background-color: #f6ffed;
-      color: #52c41a;
+      background-color: #EDF2F7;
+      color: #2D6A4F;
     }
     
     .status-sick {
-      background-color: #fff2f0;
-      color: #ff4d4f;
+      background-color: #FDECE8;
+      color: #E76F51;
     }
     
     .status-dead {
-      background-color: #f5f5f5;
-      color: #999;
+      background-color: #F8FAFB;
+      color: #94A3B8;
     }
     
     .status-sold {
-      background-color: #fff7e6;
-      color: #fa8c16;
+      background-color: #EDF2F7;
+      color: #D4A373;
     }
     
     .alias-tag {
-      background-color: #f0f5ff;
-      color: #2f54eb;
+      background-color: #E8F0F7;
+      color: #2A6F97;
     }
     
     /* 父母信息 */
@@ -713,7 +662,7 @@ function generatePetHTML(data, theme) {
       display: flex;
       align-items: center;
       padding-top: 24px;
-      border-top: 1px solid #f0f0f0;
+      border-top: 1px solid #EDF2F7;
     }
     
     .parent-box {
@@ -726,27 +675,27 @@ function generatePetHTML(data, theme) {
     
     .parent-label {
       font-size: 24px;
-      color: #999;
+      color: #94A3B8;
     }
     
     .parent-value {
       font-size: 28px;
-      color: #1890ff;
+      color: #2A6F97;
       font-weight: 500;
     }
     
     .parent-value.unlinked {
-      color: #1890ff;
+      color: #2A6F97;
     }
     
     .parent-value.unlinked-red {
-      color: #ff4d4f;
+      color: #E76F51;
     }
     
     .parent-divider {
       width: 1px;
       height: 60px;
-      background-color: #f0f0f0;
+      background-color: #EDF2F7;
     }
     
     /* 通用卡片 - margin 0 24rpx 24rpx, padding 32rpx */
@@ -755,13 +704,13 @@ function generatePetHTML(data, theme) {
       padding: 32px;
       background-color: #ffffff;
       border-radius: 24px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+      box-shadow: 0 4px 16px rgba(45, 106, 79, 0.06);
     }
     
     .card-title {
       font-size: 32px;
       font-weight: bold;
-      color: #333;
+      color: #2D6A4F;
       margin-bottom: 24px;
       display: flex;
       align-items: center;
@@ -770,7 +719,7 @@ function generatePetHTML(data, theme) {
     
     .event-count {
       font-size: 26px;
-      color: #999;
+      color: #94A3B8;
       font-weight: normal;
     }
     
@@ -786,7 +735,7 @@ function generatePetHTML(data, theme) {
       align-items: center;
       gap: 16px;
       padding: 20px;
-      background-color: #fafafa;
+      background-color: #FFFFFF;
       border-radius: 16px;
     }
     
@@ -802,19 +751,19 @@ function generatePetHTML(data, theme) {
     
     .detail-label {
       font-size: 22px;
-      color: #999;
+      color: #94A3B8;
     }
     
     .detail-value {
       font-size: 28px;
-      color: #333;
+      color: #2D6A4F;
       font-weight: 500;
     }
     
     /* 备注 */
     .notes-content {
       font-size: 28px;
-      color: #666;
+      color: #5A6C7D;
       line-height: 1.8;
     }
     
@@ -824,13 +773,13 @@ function generatePetHTML(data, theme) {
       border-radius: 24px;
       padding: 24px;
       margin: 0 24px 24px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+      box-shadow: 0 4px 16px rgba(45, 106, 79, 0.06);
     }
     
     .section-title {
       font-size: 28px;
       font-weight: bold;
-      color: #333;
+      color: #2D6A4F;
     }
     
     .pedigree-badge {
@@ -867,7 +816,7 @@ function generatePetHTML(data, theme) {
       border: 2px solid ${theme.primaryLight};
       border-radius: 24px;
       min-width: 200px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+      box-shadow: 0 4px 16px rgba(45, 106, 79, 0.06);
       position: relative;
       overflow: visible;
     }
@@ -886,7 +835,7 @@ function generatePetHTML(data, theme) {
       align-items: center;
       justify-content: center;
       font-weight: 600;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 4px 12px rgba(45, 106, 79, 0.3);
       z-index: 1;
       background: linear-gradient(135deg, ${theme.primary} 0%, ${theme.primaryDark} 100%);
     }
@@ -895,7 +844,7 @@ function generatePetHTML(data, theme) {
       width: 120px;
       height: 120px;
       border-radius: 20px;
-      background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%);
+      background: linear-gradient(135deg, #F8FAFB 0%, #E8F5EE 100%);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -926,7 +875,7 @@ function generatePetHTML(data, theme) {
     
     .card-name {
       font-size: 32px;
-      color: #333;
+      color: #2D6A4F;
       font-weight: 600;
       max-width: 200px;
       overflow: hidden;
@@ -936,19 +885,19 @@ function generatePetHTML(data, theme) {
     
     .card-more {
       font-size: 22px;
-      color: #999;
+      color: #94A3B8;
       padding: 4px 16px;
-      background-color: #f5f5f5;
+      background-color: #F8FAFB;
       border-radius: 10px;
     }
     
     /* 空状态 - 对齐 WXSS */
     .family-tree-empty {
-      border: 2px dashed #d4d4d4;
+      border: 2px dashed #CBD5E1;
       border-radius: 24px;
       padding: 48px 32px;
       text-align: center;
-      background-color: #fafafa;
+      background-color: #FFFFFF;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -958,23 +907,23 @@ function generatePetHTML(data, theme) {
     .family-status {
       display: inline-block;
       padding: 8px 24px;
-      background-color: #fff7e6;
+      background-color: #EDF2F7;
       border-radius: 16px;
       font-size: 24px;
-      color: #fa8c16;
+      color: #D4A373;
       margin-bottom: 24px;
     }
     
     .family-title {
       font-size: 32px;
-      color: #333;
+      color: #2D6A4F;
       display: block;
       margin-bottom: 16px;
     }
     
     .family-hint {
       font-size: 26px;
-      color: #999;
+      color: #94A3B8;
       display: block;
       line-height: 1.6;
       margin-bottom: 32px;
@@ -1005,7 +954,7 @@ function generatePetHTML(data, theme) {
     
     .pedigree-stats .stat-label {
       font-size: 24px;
-      color: #999;
+      color: #94A3B8;
     }
     
     /* 血缘主线 */
@@ -1023,7 +972,7 @@ function generatePetHTML(data, theme) {
     .bloodline-title .title-text {
       font-size: 30px;
       font-weight: 600;
-      color: #333;
+      color: #2D6A4F;
     }
     
     .bloodline-tabs {
@@ -1034,8 +983,8 @@ function generatePetHTML(data, theme) {
     .bloodline-tabs .tab {
       padding: 12px 24px;
       font-size: 26px;
-      color: #666;
-      background-color: #f5f5f5;
+      color: #5A6C7D;
+      background-color: #F8FAFB;
       border-radius: 24px;
       transition: all 0.2s ease;
     }
@@ -1052,7 +1001,7 @@ function generatePetHTML(data, theme) {
     .empty-line {
       text-align: center;
       padding: 48px;
-      color: #999;
+      color: #94A3B8;
       font-size: 28px;
     }
     
@@ -1075,9 +1024,9 @@ function generatePetHTML(data, theme) {
       width: 100%;
       padding: 20px 24px;
       background-color: #ffffff;
-      border: 2px solid #f0f0f0;
+      border: 2px solid #EDF2F7;
       border-radius: 16px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+      box-shadow: 0 2px 8px rgba(45, 106, 79, 0.04);
       position: relative;
       overflow: visible;
     }
@@ -1110,12 +1059,12 @@ function generatePetHTML(data, theme) {
     .node-name {
       font-size: 30px;
       font-weight: 600;
-      color: #333;
+      color: #2D6A4F;
     }
     
     .node-category {
       font-size: 24px;
-      color: #999;
+      color: #94A3B8;
     }
     
     .chain-arrow {
@@ -1139,19 +1088,19 @@ function generatePetHTML(data, theme) {
     .tree-title .title-text {
       font-size: 30px;
       font-weight: 600;
-      color: #333;
+      color: #2D6A4F;
     }
     
     .tree-title .tree-hint {
       font-size: 24px;
-      color: #999;
+      color: #94A3B8;
     }
     
     .empty-tree {
       text-align: center;
       padding: 48px;
-      color: #999;
-      background-color: #fafafa;
+      color: #94A3B8;
+      background-color: #FFFFFF;
       border-radius: 16px;
     }
     
@@ -1200,7 +1149,7 @@ function generatePetHTML(data, theme) {
     
     .tree-node.ancestor {
       background-color: #ffffff;
-      border: 2px solid #e8e8e8;
+      border: 2px solid #E8F5EE;
       min-width: 160px;
     }
     
@@ -1233,7 +1182,7 @@ function generatePetHTML(data, theme) {
       align-items: center;
       justify-content: center;
       font-weight: 600;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 4px 12px rgba(45, 106, 79, 0.3);
       z-index: 1;
       background: linear-gradient(135deg, ${theme.primary} 0%, ${theme.primaryDark} 100%);
     }
@@ -1258,7 +1207,7 @@ function generatePetHTML(data, theme) {
       font-size: 28px;
       font-weight: 600;
       border-radius: 28px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 4px 16px rgba(45, 106, 79, 0.3);
       z-index: 1;
     }
     
@@ -1268,7 +1217,7 @@ function generatePetHTML(data, theme) {
       justify-content: center;
       width: 240px;
       height: 240px;
-      background-color: #f5f5f5;
+      background-color: #F8FAFB;
       border-radius: 24px;
       overflow: hidden;
     }
@@ -1284,12 +1233,12 @@ function generatePetHTML(data, theme) {
       width: 100%;
       height: 100%;
       border-radius: 20px;
-      background-color: #f5f5f5;
+      background-color: #F8FAFB;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 72px;
-      color: #999;
+      color: #94A3B8;
     }
     
     .tree-node .node-gender-text {
@@ -1304,7 +1253,7 @@ function generatePetHTML(data, theme) {
     
     .tree-node .node-name {
       font-size: 26px;
-      color: #333;
+      color: #2D6A4F;
       font-weight: 600;
       max-width: 120px;
       overflow: hidden;
@@ -1326,7 +1275,7 @@ function generatePetHTML(data, theme) {
     
     .tree-node .node-alias {
       font-size: 22px;
-      color: #999;
+      color: #94A3B8;
       max-width: 120px;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1376,8 +1325,8 @@ function generatePetHTML(data, theme) {
       padding: 32px 24px;
       background-color: #ffffff;
       border-radius: 24px;
-      border: 1px solid #f0f0f0;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+      border: 1px solid #EDF2F7;
+      box-shadow: 0 4px 16px rgba(45, 106, 79, 0.04);
     }
     
     .event-icon {
@@ -1388,11 +1337,11 @@ function generatePetHTML(data, theme) {
       align-items: center;
       justify-content: center;
       margin-bottom: 20px;
-      background: linear-gradient(135deg, ${theme.primaryLight} 0%, #fff7e6 100%);
+      background: linear-gradient(135deg, ${theme.primaryLight} 0%, #EDF2F7 100%);
     }
     
     .event-icon-lay {
-      background: linear-gradient(135deg, #fff7e6 0%, #ffe8b0 100%);
+      background: linear-gradient(135deg, #EDF2F7 0%, #EDF2F7 100%);
     }
     
     .icon-emoji {
@@ -1409,14 +1358,14 @@ function generatePetHTML(data, theme) {
     .event-title {
       font-size: 28px;
       font-weight: 600;
-      color: #333;
+      color: #2D6A4F;
       margin-bottom: 8px;
       display: block;
     }
     
     .event-content {
       font-size: 24px;
-      color: #666;
+      color: #5A6C7D;
       margin-bottom: 12px;
       display: -webkit-box;
       -webkit-line-clamp: 2;
@@ -1427,7 +1376,7 @@ function generatePetHTML(data, theme) {
     
     .event-date {
       font-size: 22px;
-      color: #999;
+      color: #94A3B8;
     }
     
     .event-date .date {
@@ -1452,7 +1401,7 @@ function generatePetHTML(data, theme) {
     
     .empty-text {
       font-size: 28px;
-      color: #999;
+      color: #94A3B8;
     }
     
     /* 二维码区域 - 对齐 WXSS: padding 32rpx, 图片 160rpx */
@@ -1467,7 +1416,7 @@ function generatePetHTML(data, theme) {
       padding: 32px;
       background-color: #ffffff;
       border-radius: 24px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+      box-shadow: 0 4px 16px rgba(45, 106, 79, 0.06);
     }
     
     .qrcode-left {
@@ -1479,12 +1428,12 @@ function generatePetHTML(data, theme) {
     .qrcode-title {
       font-size: 30px;
       font-weight: bold;
-      color: #333;
+      color: #2D6A4F;
     }
     
     .qrcode-subtitle {
       font-size: 24px;
-      color: #999;
+      color: #94A3B8;
     }
     
     .qrcode-right {
@@ -1495,14 +1444,14 @@ function generatePetHTML(data, theme) {
       width: 160px;
       height: 160px;
       border-radius: 12px;
-      border: 2px solid #f0f0f0;
+      border: 2px solid #EDF2F7;
     }
     
     .qrcode-placeholder {
       width: 160px;
       height: 160px;
       border-radius: 12px;
-      border: 2px dashed #ddd;
+      border: 2px dashed #E8F5EE;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1519,7 +1468,7 @@ function generatePetHTML(data, theme) {
     
     .footer-text {
       font-size: 24px;
-      color: #ccc;
+      color: #CBD5E1;
     }
     
     .brand-text {
@@ -1635,7 +1584,7 @@ function generatePetHTML(data, theme) {
  * @returns {string} 完整 HTML 字符串
  */
 function generateShareHTML(shareInfo, options = {}) {
-  const theme = options.theme || getTheme('gold');
+  const theme = options.theme || getTheme();
   const nickname = options.nickname || '龟上心';
   const cover = options.cover || '';
   const specialty = options.specialty || '记录、档案、繁育';
@@ -1649,15 +1598,15 @@ function generateShareHTML(shareInfo, options = {}) {
   const envDesc = options.envDesc || '';
 
   // 主题色
-  const primary = theme.primary || '#B8860B';
-  const primaryDark = theme.primaryDark || '#8B6914';
-  const primaryLight = theme.primaryLight || '#fff9e6';
+  const primary = theme.primary || '#2D6A4F';
+  const primaryDark = theme.primaryDark || '#1B4332';
+  const primaryLight = theme.primaryLight || '#E8F5EE';
 
   // banner 背景：如果没有封面图，使用渐变
   const hasCover = cover && cover.length > 0;
   const bannerStyle = hasCover
     ? ''
-    : `background: linear-gradient(135deg, ${primaryLight} 0%, ${theme.pageBg || '#f5e6c8'} 50%, ${primary} 100%);`;
+    : `background: linear-gradient(135deg, ${primaryLight} 0%, ${theme.pageBg || '#F8FAFB'} 50%, ${primary} 100%);`;
 
   // 标签 HTML
   const tagsHtml = tags.map(t => `<span class="shop-tag">${t}</span>`).join('');
@@ -1742,8 +1691,8 @@ function generateShareHTML(shareInfo, options = {}) {
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-    color: #1f2937;
-    background: #f8fafc;
+    color: #2D6A4F;
+    background: #FFFFFF;
     -webkit-font-smoothing: antialiased;
   }
 
@@ -1762,8 +1711,8 @@ function generateShareHTML(shareInfo, options = {}) {
     background: #ffffff;
     border-radius: 24px;
     overflow: hidden;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
-    border: 2px solid #e8f5e9;
+    box-shadow: 0 8px 32px rgba(45, 106, 79, 0.08);
+    border: 2px solid #E8F5EE;
   }
 
   /* 顶部封面 */
@@ -1816,7 +1765,7 @@ function generateShareHTML(shareInfo, options = {}) {
   .shop-name {
     font-size: 32px;
     font-weight: bold;
-    color: #1f2937;
+    color: #2D6A4F;
     margin-right: 16px;
   }
 
@@ -1860,7 +1809,7 @@ function generateShareHTML(shareInfo, options = {}) {
     display: flex;
     align-items: center;
     padding: 16px 0;
-    border-bottom: 2px solid #f3f4f6;
+    border-bottom: 2px solid #F8FAFB;
   }
 
   .info-row:last-child {
@@ -1869,7 +1818,7 @@ function generateShareHTML(shareInfo, options = {}) {
 
   .info-label {
     font-size: 22px;
-    color: #6b7280;
+    color: #5A6C7D;
     width: 120px;
     flex-shrink: 0;
   }
@@ -1882,7 +1831,7 @@ function generateShareHTML(shareInfo, options = {}) {
 
   .info-value {
     font-size: 22px;
-    color: #1f2937;
+    color: #2D6A4F;
     font-weight: 500;
     flex: 1;
   }
@@ -1903,7 +1852,7 @@ function generateShareHTML(shareInfo, options = {}) {
 
   .info-hint {
     font-size: 18px;
-    color: #9ca3af;
+    color: #94A3B8;
     margin-left: auto;
   }
 
@@ -1929,7 +1878,7 @@ function generateShareHTML(shareInfo, options = {}) {
     display: flex;
     align-items: center;
     padding: 24px 32px 16px;
-    border-top: 2px solid #f3f4f6;
+    border-top: 2px solid #F8FAFB;
   }
 
   .section-title-bar {
@@ -1943,13 +1892,13 @@ function generateShareHTML(shareInfo, options = {}) {
   .section-title-text {
     font-size: 22px;
     font-weight: 600;
-    color: #1f2937;
+    color: #2D6A4F;
   }
 
   .section-title-count {
     margin-left: auto;
     font-size: 18px;
-    color: #9ca3af;
+    color: #94A3B8;
   }
 
   /* 种群展示 */
@@ -1964,8 +1913,8 @@ function generateShareHTML(shareInfo, options = {}) {
     background: #ffffff;
     border-radius: 16px;
     overflow: hidden;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
-    border: 2px solid #f0f0f0;
+    box-shadow: 0 2px 10px rgba(45, 106, 79, 0.06);
+    border: 2px solid #EDF2F7;
   }
 
   .species-photo {
@@ -1980,7 +1929,7 @@ function generateShareHTML(shareInfo, options = {}) {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, ${primaryLight} 0%, ${theme.pageBg || '#faf8f3'} 100%);
+    background: linear-gradient(135deg, ${primaryLight} 0%, ${theme.pageBg || '#FFFFFF'} 100%);
   }
 
   .species-photo-text {
@@ -1998,7 +1947,7 @@ function generateShareHTML(shareInfo, options = {}) {
     display: block;
     font-size: 18px;
     font-weight: 600;
-    color: #1f2937;
+    color: #2D6A4F;
     margin-bottom: 4px;
     white-space: nowrap;
     overflow: hidden;
@@ -2023,7 +1972,7 @@ function generateShareHTML(shareInfo, options = {}) {
     aspect-ratio: 1;
     border-radius: 16px;
     overflow: hidden;
-    background: #f3f4f6;
+    background: #F8FAFB;
   }
 
   .env-image {
@@ -2037,7 +1986,7 @@ function generateShareHTML(shareInfo, options = {}) {
     margin: 8px 32px 16px;
     width: 160px;
     height: 160px;
-    background: linear-gradient(135deg, ${primaryLight} 0%, ${theme.pageBg || '#f5e6c8'} 100%);
+    background: linear-gradient(135deg, ${primaryLight} 0%, ${theme.pageBg || '#F8FAFB'} 100%);
     border: 2px dashed ${primary};
     border-radius: 16px;
     display: flex;
@@ -2055,26 +2004,26 @@ function generateShareHTML(shareInfo, options = {}) {
     display: block;
     padding: 0 32px 24px;
     font-size: 20px;
-    color: #6b7280;
+    color: #5A6C7D;
     line-height: 1.7;
   }
 
   /* 龟友有话说 */
   .shop-intro-section {
     padding: 24px 32px 32px;
-    border-top: 2px solid #f3f4f6;
+    border-top: 2px solid #F8FAFB;
   }
 
   .intro-title {
     font-size: 22px;
-    color: #1f2937;
+    color: #2D6A4F;
     font-weight: 600;
     margin-bottom: 16px;
   }
 
   .intro-text {
     font-size: 22px;
-    color: #4b5563;
+    color: #5A6C7D;
     line-height: 1.8;
   }
 </style>
@@ -2131,8 +2080,6 @@ function generateShareHTML(shareInfo, options = {}) {
 
 module.exports = ThemeManager;
 
-module.exports.THEMES = THEMES;
-module.exports.DEFAULT_THEME = DEFAULT_THEME;
 module.exports.getTheme = getTheme;
 module.exports.generatePetHTML = generatePetHTML;
 module.exports.generateShareHTML = generateShareHTML;

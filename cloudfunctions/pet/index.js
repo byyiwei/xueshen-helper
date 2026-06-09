@@ -62,6 +62,8 @@ exports.main = async (event, context) => {
         return await getPublicPets(data.userId)
       case 'getPedigree':
         return await getPedigree(data.id, openid, data.maxGeneration || 3)
+      case 'publicGet':
+        return await getPublicPetById(data.id)
       default:
         return errorResponse('未知操作')
     }
@@ -74,6 +76,17 @@ exports.main = async (event, context) => {
 async function createPet(data, openid) {
   if (!data.name) {
     throw new Error('宠物名称不能为空')
+  }
+
+  // 别名唯一性校验（非空时检查）
+  if (data.alias && data.alias.trim()) {
+    const existingAlias = await db.collection('pets').where({
+      alias: data.alias.trim(),
+      openid
+    }).limit(1).get()
+    if (existingAlias.data && existingAlias.data.length > 0) {
+      throw new Error('别名「' + data.alias.trim() + '」已存在，请使用其他别名')
+    }
   }
 
   const pet = {
@@ -96,28 +109,27 @@ async function createPet(data, openid) {
 }
 
 async function getPetList(params, openid) {
-  let query = db.collection('pets').where({ openid })
+  // 构建统一的查询条件对象（避免连续 .where() 覆盖问题）
+  const conditions = { openid }
 
   if (params && params.filter) {
-    const { series, gender, status, searchText } = params.filter
+    const { series, gender, searchText } = params.filter
 
     if (series && series !== '全部') {
-      query = query.where({ category: series })
+      conditions.category = series
     }
     if (gender && gender !== '全部') {
-      query = query.where({ gender })
+      conditions.gender = gender
     }
-    if (status && status !== '全部') {
-      query = query.where({ status })
-    }
+    // 状态筛选在客户端计算（基于事件记录动态推导）
     if (searchText) {
       const search = searchText.toLowerCase()
-      query = query.where(_.or([
-        { name: db.RegExp({ regexp: search, options: 'i' }) },
-        { alias: db.RegExp({ regexp: search, options: 'i' }) }
-      ]))
+      // 搜索用 nameOR 字段实现 OR 匹配
+      conditions.name = db.RegExp({ regexp: search, options: 'i' })
     }
   }
+
+  let query = db.collection('pets').where(conditions)
 
   // 添加分页支持
   const pageSize = params && params.pageSize ? params.pageSize : 20
@@ -161,6 +173,18 @@ async function updatePet(data, openid) {
     throw new Error('更新失败，宠物不存在或无权限')
   }
 
+  // 别名唯一性校验（更新时排除自己）
+  if (updateData.alias && updateData.alias.trim()) {
+    const existingAlias = await db.collection('pets').where({
+      alias: updateData.alias.trim(),
+      openid,
+      _id: _.neq(id)
+    }).limit(1).get()
+    if (existingAlias.data && existingAlias.data.length > 0) {
+      throw new Error('别名「' + updateData.alias.trim() + '」已存在，请使用其他别名')
+    }
+  }
+
   await db.collection('pets').doc(id).update({
     data: { ...updateData, updatedAt: db.serverDate() }
   })
@@ -192,21 +216,32 @@ async function getPublicPets(userId) {
     throw new Error('缺少用户ID')
   }
 
-  // 先根据 userId 查找用户的 openid
-  const userResult = await db.collection('users').where({ openid: userId }).get()
-  if (userResult.data.length === 0) {
-    return successResponse([])
-  }
-
-  const openid = userResult.data[0].openid
-
-  // 查询该用户公开的宠物
+  // 直接查询该用户公开的宠物
   const result = await db.collection('pets')
-    .where({ openid, isPublic: true })
+    .where({ openid: userId, isPublic: true })
     .orderBy('createdAt', 'desc')
     .get()
 
   return successResponse(normalizeIds(result.data).map(sanitizePetData))
+}
+
+// 获取公开宠物详情（不需要权限验证）
+async function getPublicPetById(petId) {
+  if (!petId) {
+    throw new Error('缺少宠物ID')
+  }
+
+  const result = await db.collection('pets').doc(petId).get().catch(() => null)
+  if (!result || !result.data) {
+    throw new Error('宠物不存在')
+  }
+
+  // 只允许访问公开的宠物
+  if (!result.data.isPublic) {
+    throw new Error('该宠物未公开')
+  }
+
+  return successResponse(sanitizePetData(normalizeId(result.data)))
 }
 
 /**
@@ -215,7 +250,7 @@ async function getPublicPets(userId) {
  * @param {string} openid - 用户openid
  * @param {number} maxGeneration - 最大查询代数（默认3代）
  */
-async function getPedigree(petId, openid, maxGeneration = 3) {
+async function getPedigree(petId, openid, maxGeneration = 3, envId) {
   if (!petId) {
     throw new Error('宠物ID不能为空')
   }
@@ -232,7 +267,7 @@ async function getPedigree(petId, openid, maxGeneration = 3) {
   const currentPet = normalizeId(petResult.data)
   
   // 递归构建家谱树
-  const fullTree = await buildFamilyTree(currentPet, openid, 0, maxGeneration)
+  const fullTree = await buildFamilyTree(currentPet, openid, 0, maxGeneration, envId)
   
   // 提取父系主线
   const paternalLine = extractPaternalLine(fullTree)

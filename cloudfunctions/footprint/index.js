@@ -60,19 +60,37 @@ async function createFootprint(data, openid) {
 }
 
 async function getFootprintList(params, openid) {
-  let query = db.collection('footprints').where({ openid })
-
+  let query = db.collection('footprints')
+  
+  let whereConditions = { openid }
   if (params && params.type && params.type !== 'all') {
-    query = query.where({ type: params.type })
+    whereConditions.type = params.type
   }
+  
+  query = query.where(whereConditions)
 
-  const result = await query.orderBy('createdAt', 'desc').get()
+  const pageNum = params && params.pageNum ? parseInt(params.pageNum) : 1
+  const pageSize = params && params.pageSize ? parseInt(params.pageSize) : 20
+  const offset = (pageNum - 1) * pageSize
+
+  const result = await query.orderBy('createdAt', 'desc').skip(offset).limit(pageSize).get()
+  
+  const totalResult = await db.collection('footprints').where(whereConditions).count()
+  const total = totalResult.total
+  const hasMore = offset + result.data.length < total
+
   return {
     success: true,
-    data: result.data.map(item => ({
-      id: item._id,
-      ...item
-    }))
+    data: {
+      list: result.data.map(item => ({
+        id: item._id,
+        ...item
+      })),
+      total,
+      pageNum,
+      pageSize,
+      hasMore
+    }
   }
 }
 

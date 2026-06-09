@@ -1,0 +1,52 @@
+{
+    "name": "lpapi-ble-wx",
+    "version": "1.6.260309",
+    "author": "DothanTech <hudianxing@dothantech.com>",
+    "homepage": "https://thanmore.net",
+    "license": "ISC",
+    "moduleName": "LPAPI",
+    "fileName": "lpapi-ble-wx",
+    "main": "lib/index.umd.js",
+    "module": "lib/index.js",
+    "types": "lib/index.d.ts",
+    "typings": "lib/index.d.ts",
+    "type": "module",
+    "scripts": {
+        "compile": "tsc --build",
+        "clean": "npx shx rm -rf tsconfig.tsbuildinfo ./node_modules",
+        "dev": "set NODE_ENV=development && rollup -c",
+        "build": "set NODE_ENV=production && rollup -c"
+    },
+    "description": "蓝牙打印接口",
+    "directories": {
+        "doc": "doc",
+        "lib": "lib",
+        "test": "__tests__"
+    },
+    "files": [
+        "lib"
+    ],
+    "publishConfig": {
+        "registry": "https://registry.npmjs.org/"
+    },
+    "dependencies": {
+        "lpapi-ble": "^1.5.251016"
+    },
+    "devDependencies": {
+        "@rollup/plugin-babel": "^6.0.4",
+        "@rollup/plugin-commonjs": "^28.0.2",
+        "@rollup/plugin-eslint": "^9.0.5",
+        "@rollup/plugin-json": "^6.1.0",
+        "@rollup/plugin-node-resolve": "^15.3.0",
+        "@rollup/plugin-terser": "^0.4.4",
+        "@rollup/plugin-typescript": "^12.1.0",
+        "miniprogram-api-typings": "^3.12.2",
+        "prettier": "^2.4.1",
+        "rollup": "^4.24.0",
+        "rollup-plugin-copy": "^3.5.0",
+        "rollup-plugin-delete": "^2.1.0",
+        "rollup-plugin-typescript2": "^0.36.0",
+        "shx": "^0.4.0",
+        "typescript": "^5.3.3"
+    }
+}

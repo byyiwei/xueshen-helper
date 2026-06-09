@@ -1,7 +1,64 @@
-<view class="page theme-{{currentTheme}}">
+<view class="page" style="padding-top: {{totalNavHeight}}rpx;">
+  <!-- 自定义导航栏（含刷新状态） -->
+  <view class="custom-nav {{refreshing ? 'is-refreshing' : ''}}" style="padding-top: {{statusBarHeight}}px">
+    <block wx:if="{{refreshing}}">
+      <view class="nav-refresh-spinner"></view>
+      <text class="nav-refresh-text">刷新中...</text>
+    </block>
+    <text wx:else class="nav-title">我的</text>
+  </view>
+
   <view class="header-bg"></view>
   
-  <view class="profile-card">
+  <!-- 骨架屏 -->
+  <view wx:if="{{showSkeleton}}" class="skeleton-container">
+    <!-- 个人信息骨架 -->
+    <view class="skeleton-profile-card">
+      <view class="skeleton-avatar"></view>
+      <view class="skeleton-profile-info">
+        <view class="skeleton-username"></view>
+        <view class="skeleton-edit-hint"></view>
+      </view>
+    </view>
+    
+    <!-- Tabs骨架 -->
+    <view class="skeleton-tabs">
+      <view class="skeleton-tab"></view>
+      <view class="skeleton-tab"></view>
+      <view class="skeleton-tab"></view>
+    </view>
+    
+    <!-- 内容骨架 -->
+    <view class="skeleton-content">
+      <!-- 统计数据骨架 -->
+      <view class="skeleton-stats-grid">
+        <view class="skeleton-stats-row">
+          <view class="skeleton-stat-card"></view>
+          <view class="skeleton-stat-card"></view>
+        </view>
+        <view class="skeleton-stats-row">
+          <view class="skeleton-stat-card"></view>
+          <view class="skeleton-stat-card"></view>
+        </view>
+        <view class="skeleton-stats-row">
+          <view class="skeleton-stat-card"></view>
+          <view class="skeleton-stat-card"></view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 未登录提示 -->
+  <view wx:elif="{{!isLoggedIn}}" class="not-logged-in">
+    <view class="not-logged-in-icon">👤</view>
+    <view class="not-logged-in-title">登录后查看个人中心</view>
+    <view class="not-logged-in-desc">登录后可使用该工具进行管理宠物资料、产蛋记录和打印标签等功能</view>
+    <view class="not-logged-in-btn" bindtap="goToLogin">立即登录</view>
+  </view>
+  
+  <!-- 真实内容 -->
+  <view wx:else>
+    <view class="profile-card">
     <view class="avatar-section">
           <view class="avatar" bindtap="chooseAvatar">
             <image wx:if="{{userInfo.avatar}}" class="avatar-image" src="{{userInfo.avatar}}" mode="aspectFill" binderror="onPhotoError" data-type="avatar" />
@@ -10,9 +67,14 @@
           <view class="avatar-btn">选头像</view>
         </view>
     
-    <view class="profile-info">
-      <text class="username">{{userInfo.nickname || '龟上心'}}</text>
-      <text class="user-desc">龟上心 · 宠物档案</text>
+    <view class="profile-info" bindtap="editNickname">
+      <view class="username-row">
+        <text class="username">{{userInfo.nickname || '龟上心'}}</text>
+      </view>
+      <view class="edit-hint-row">
+          <text class="edit-hint-icon">✎</text>
+          <text class="edit-hint-text">本月可改 {{nicknameRemaining}} 次</text>
+        </view>
     </view>
     
     <view class="logout-btn" bindtap="handleLogout">
@@ -21,54 +83,17 @@
   </view>
   
   <view class="tabs">
-    <view class="tab {{activeTab === 'account' ? 'active' : ''}}" bindtap="switchTab" data-tab="account">账号</view>
     <view class="tab {{activeTab === 'data' ? 'active' : ''}}" bindtap="switchTab" data-tab="data">数据</view>
     <view class="tab {{activeTab === 'share' ? 'active' : ''}}" bindtap="switchTab" data-tab="share">分享</view>
     <view class="tab {{activeTab === 'config' ? 'active' : ''}}" bindtap="switchTab" data-tab="config">配置</view>
   </view>
   
   <view class="content">
-    <!-- 账号 -->
-    <view wx:if="{{activeTab === 'account'}}" class="tab-content">
-      <view class="section">
-        <view class="section-title">账号资料</view>
-        <view class="section-items">
-          <view class="item" bindtap="editNickname">
-            <view class="item-left">
-              <text class="item-label">显示名称 / 昵称</text>
-            </view>
-            <view class="input-with-voice">
-              <text wx:if="{{!isEditingNickname}}" class="item-value">{{userInfo.nickname}}</text>
-              <input wx:else class="item-value-input" focus="{{isEditingNickname}}" value="{{tempNickname}}" bindinput="onNicknameInput" bindblur="saveNickname" placeholder="请输入昵称" />
-              <view wx:if="{{isEditingNickname}}" class="voice-btn {{isRecording ? 'recording' : ''}}" bindlongpress="startVoiceInput" bindtouchend="stopVoiceInput">
-                <text class="voice-btn-icon">●</text>
-              </view>
-            </view>
-          </view>
-        </view>
-      </view>
-      
-      <view class="section">
-        <view class="section-title">界面主题</view>
-        <text class="section-desc">切换整套小程序的主色、背景和高亮语义，当前页面会立即预览。</text>
-        <view class="theme-options">
-          <view class="theme-option {{currentTheme === 'gold' ? 'active' : ''}}" bindtap="selectTheme" data-theme="gold">
-            <text class="theme-name">米金棕</text>
-          </view>
-          <view class="theme-option {{currentTheme === 'mocha' ? 'active' : ''}}" bindtap="selectTheme" data-theme="mocha">
-            <text class="theme-name">摩卡纸本</text>
-          </view>
-          <view class="theme-option {{currentTheme === 'olive' ? 'active' : ''}}" bindtap="selectTheme" data-theme="olive">
-            <text class="theme-name">橄榄档案</text>
-          </view>
-        </view>
-      </view>
-    </view>
     
     <!-- 分享 -->
     <view wx:if="{{activeTab === 'share'}}" class="tab-content">
       <!-- 龟友名片卡片 -->
-      <view class="shop-card {{'theme-' + currentTheme}}">
+      <view class="shop-card">
         <!-- 顶部封面 -->
         <view class="shop-banner" bindtap="chooseCover">
           <image wx:if="{{shareInfo.cover}}" class="banner-image" src="{{shareInfo.cover}}" mode="aspectFill" binderror="onPhotoError" data-type="cover" />
@@ -78,38 +103,85 @@
           <view class="banner-watermark">PRESENTED BY 龟上心</view>
         </view>
         
-        <!-- 店名 + 实名标签 -->
+        <!-- 店名 + 品牌标签 -->
         <view class="shop-header">
           <text class="shop-name">{{userInfo.nickname || '龟上心'}}</text>
-          <view class="verified-badge">已实名</view>
         </view>
-        
-        <!-- 主玩品种 -->
+
+        <!-- 主玩品种标签 -->
         <view class="shop-specialty">
-          <text class="specialty-label">主玩：</text>
-          <text class="specialty-text">{{shareInfo.specialty || '记录、档案、繁育'}}</text>
-        </view>
-        
-        <!-- 信息表 -->
-        <view class="shop-info">
-          <view class="info-row">
-            <text class="info-label">营业执照</text>
-            <text class="info-value">{{shareInfo.hasLicense ? '有' : '无'}}</text>
-            <text class="info-label info-label-right">地区</text>
-            <text class="info-value">{{shareInfo.region || '未设置'}}</text>
-          </view>
-          <view class="info-row">
-            <text class="info-label">微信号</text>
-            <text wx:if="{{shareInfo.wechatId}}" class="info-value wechat-id">{{shareInfo.wechatId}}</text>
-            <text wx:else class="info-value wechat-id">未设置</text>
-            <view wx:if="{{shareInfo.wechatId}}" class="copy-btn" bindtap="copyWechat" data-wechat="{{shareInfo.wechatId}}">复制</view>
-            <text wx:else class="info-hint">未公开</text>
+          <view class="specialty-tag">
+            <text class="specialty-tag-label">主玩</text>
+            <text class="specialty-tag-divider">·</text>
+            <text class="specialty-tag-text">{{shareInfo.specialty || '记录、档案、繁育'}}</text>
           </view>
         </view>
-        
-        <!-- 标签 -->
-        <view class="shop-tags">
-          <view wx:for="{{shareInfo.tags}}" wx:key="*this" class="shop-tag">{{item}}</view>
+
+        <!-- 信息卡片网格 -->
+        <view class="shop-info-grid">
+          <view class="info-card info-card-license">
+            <view class="info-card-icon">📄</view>
+            <view class="info-card-body">
+              <text class="info-card-label">营业执照</text>
+              <view class="info-card-badge {{shareInfo.hasLicense ? 'badge-active' : 'badge-muted'}}">
+                <text class="info-card-badge-text">{{shareInfo.hasLicense ? '已持有' : '未持有'}}</text>
+              </view>
+            </view>
+          </view>
+          <view class="info-card info-card-region">
+            <view class="info-card-icon">📍</view>
+            <view class="info-card-body">
+              <text class="info-card-label">所在地区</text>
+              <text class="info-card-text {{!shareInfo.region ? 'info-card-text-empty' : ''}}">{{shareInfo.region || '未设置'}}</text>
+            </view>
+          </view>
+          <view class="info-card info-card-wechat info-card-full">
+            <view class="info-card-icon">💬</view>
+            <view class="info-card-body">
+              <text class="info-card-label">微信联系</text>
+              <view class="info-card-wechat-row">
+                <block wx:if="{{shareInfo.wechatPublic && shareInfo.wechatId}}">
+                  <text class="info-card-text info-card-text-wechat">{{shareInfo.wechatId}}</text>
+                  <view class="info-card-copy-btn" bindtap="copyWechat" data-wechat="{{shareInfo.wechatId}}">
+                    <text class="info-card-copy-text">复制</text>
+                  </view>
+                </block>
+                <block wx:else>
+                  <text class="info-card-text info-card-text-empty">{{shareInfo.wechatPublic ? '未设置微信号' : '暂未公开联系方式'}}</text>
+                  <view class="info-card-status badge-muted">
+                    <text class="info-card-badge-text">{{shareInfo.wechatPublic ? '待填写' : '私密'}}</text>
+                  </view>
+                </block>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <!-- 营业执照图片展示区 -->
+        <view wx:if="{{shareInfo.hasLicense && shareInfo.licenseImage}}" class="shop-license-section">
+          <view class="license-card">
+            <view class="license-image-wrap">
+              <image class="license-image" src="{{shareInfo.licenseImage}}" mode="aspectFit" bindload="onLicenseImageLoad" binderror="onPhotoError" data-type="license" />
+            </view>
+            <view class="license-footer">
+              <text class="license-icon">✓</text>
+              <text class="license-text">已认证 · 营业执照</text>
+            </view>
+          </view>
+        </view>
+
+        <!-- 特色标签 -->
+        <view wx:if="{{shareInfo.tags && shareInfo.tags.length > 0}}" class="shop-tags-section">
+          <text class="shop-tags-title">标签</text>
+          <view class="shop-tags">
+            <view wx:for="{{shareInfo.tags}}" wx:key="*this" class="shop-tag shop-tag-{{index % 4}}">{{item}}</view>
+          </view>
+        </view>
+
+        <!-- 龟友有话说 -->
+        <view wx:if="{{shareInfo.intro}}" class="shop-intro-section">
+          <view class="shop-intro-quote">"</view>
+          <text class="shop-intro-text">{{shareInfo.intro}}</text>
         </view>
 
         <!-- 种群展示 -->
@@ -140,7 +212,7 @@
           </view>
           <view wx:if="{{shareInfo.envImages.length > 0}}" class="env-image-grid">
             <view wx:for="{{shareInfo.envImages}}" wx:key="*this" class="env-image-item">
-              <image class="env-image" src="{{item}}" mode="aspectFill" binderror="onPhotoError" data-type="env" />
+              <image class="env-image" src="{{item}}" mode="aspectFill" binderror="onPhotoError" data-type="env" data-index="{{index}}" />
             </view>
           </view>
           <view wx:else class="env-placeholder" bindtap="chooseEnvImages">
@@ -149,7 +221,21 @@
           <text wx:if="{{shareInfo.envDesc}}" class="env-desc">{{shareInfo.envDesc}}</text>
         </view>
       </view>
-      
+
+      <!-- 小程序二维码卡片 -->
+      <view class="qr-card" bindtap="previewQrcode">
+        <view class="qr-card-text">
+          <text class="qr-card-title">扫一扫进入小程序</text>
+          <text class="qr-card-sub">微信扫一扫 · 直接进入</text>
+        </view>
+        <view class="qr-card-image">
+          <image wx:if="{{qrcodeImage}}" class="qr-card-qr" src="{{qrcodeImage}}" mode="aspectFit" binderror="onQrcodeError" />
+          <view wx:else class="qr-card-qr-placeholder">
+            <text class="qr-card-qr-icon">⌂</text>
+          </view>
+        </view>
+      </view>
+
       <view class="share-actions">
         <view class="share-btn outline" bindtap="showEditShareModal">编辑名片</view>
         <view class="share-btn primary" bindtap="generateShareImage">保存图片到相册</view>
@@ -157,13 +243,14 @@
     </view>
 
     <!-- 编辑名片弹窗 -->
-    <view wx:if="{{showEditShareModal}}" class="modal-overlay-center" bindtap="hideEditShareModal">
-      <view class="edit-share-modal" catchtap="stopPropagation">
+    <view wx:if="{{showEditShareModal}}" class="modal-overlay" bindtap="hideEditShareModal">
+      <view class="modal-content" catchtap="stopPropagation">
         <view class="modal-header">
           <text class="modal-title">编辑分享名片</text>
           <view class="modal-close" bindtap="hideEditShareModal">×</view>
         </view>
-        <view class="modal-body">
+        
+        <scroll-view class="modal-scroll" scroll-y enhanced show-scrollbar="{{false}}">
           <view class="edit-item" bindtap="chooseCover">
             <text class="edit-label">更换封面图</text>
             <text class="edit-value">{{shareInfo.cover ? '已设置，点击更换' : '未设置'}}</text>
@@ -179,9 +266,24 @@
             <text class="edit-value">{{shareInfo.wechatId || '未设置'}}</text>
             <view class="edit-arrow">›</view>
           </view>
-          <view class="edit-item" bindtap="editField" data-field="region" data-title="地区" data-placeholder="如：浙江省 绍兴市 新昌县">
-            <text class="edit-label">地区</text>
-            <text class="edit-value">{{shareInfo.region || '未设置'}}</text>
+          <view class="edit-item edit-item-switch">
+            <text class="edit-label">公开微信号</text>
+            <switch checked="{{shareInfo.wechatPublic}}" bindchange="toggleWechatPublic" color="#2D6A4F" />
+          </view>
+          <picker mode="region" bindchange="chooseRegion" custom-item="{{provinceCityAreaCustomItem}}">
+            <view class="edit-item">
+              <text class="edit-label">所在地区</text>
+              <text class="edit-value">{{shareInfo.region || '点击选择省/市/区'}}</text>
+              <view class="edit-arrow">›</view>
+            </view>
+          </picker>
+          <view class="edit-item edit-item-switch">
+            <text class="edit-label">营业执照</text>
+            <switch checked="{{shareInfo.hasLicense}}" bindchange="toggleLicense" color="#2D6A4F" />
+          </view>
+          <view wx:if="{{shareInfo.hasLicense}}" class="edit-item" bindtap="chooseLicenseImage">
+            <text class="edit-label">执照图片</text>
+            <text class="edit-value">{{shareInfo.licenseImage ? '已上传，点击更换' : '点击上传营业执照照片'}}</text>
             <view class="edit-arrow">›</view>
           </view>
           <view class="edit-item" bindtap="editField" data-field="intro" data-title="龟友有话说" data-placeholder="介绍一下自己和你的宠物...">
@@ -214,7 +316,8 @@
             <text class="edit-value">{{shareInfo.envDesc || '未设置'}}</text>
             <view class="edit-arrow">›</view>
           </view>
-        </view>
+        </scroll-view>
+        
         <view class="modal-footer">
           <view class="btn-confirm" bindtap="hideEditShareModal">完成</view>
         </view>
@@ -263,6 +366,45 @@
 
     <!-- 数据 -->
     <view wx:if="{{activeTab === 'data'}}" class="tab-content">
+      <!-- 提醒汇总（放在最上面，展示当天/明天/超期事项） -->
+      <view class="reminder-summary-wrap">
+        <view class="reminder-summary-header">
+          <text class="reminder-summary-title">待办提醒</text>
+          <text class="reminder-summary-count">共 {{allReminders.length}} 项</text>
+        </view>
+
+        <block wx:if="{{hasAnyReminder}}">
+          <view wx:for="{{allReminders}}" wx:key="id"
+                class="reminder-summary-card reminder-{{item.statusClass}}"
+                bindtap="gotoPetDetailFromReminder" data-pet-id="{{item.petId}}">
+            <view class="reminder-summary-icon">
+              <text>{{item.type === '换水' ? '💧' : item.type === '喂食' ? '🍽' : item.type === '健康' ? '❤' : '🥚'}}</text>
+            </view>
+            <view class="reminder-summary-main">
+              <view class="reminder-summary-top">
+                <text class="reminder-summary-type">{{item.type}}</text>
+                <text class="reminder-summary-status">{{item.statusText}}</text>
+              </view>
+              <view class="reminder-summary-bottom">
+                <text class="reminder-summary-name">{{item.petName}}</text>
+                <text wx:if="{{item.petCategory}}" class="reminder-summary-category"> · {{item.petCategory}}</text>
+                <text class="reminder-summary-meta"> · 每 {{item.intervalDays}} 天 · 下次 {{item.nextDueDate}}</text>
+              </view>
+            </view>
+            <view class="reminder-summary-done-btn" catchtap="markReminderDoneFromMy"
+                  data-pet-id="{{item.petId}}" data-reminder-id="{{item.id}}">
+              <text>✓ 完成</text>
+            </view>
+          </view>
+        </block>
+
+        <view wx:else class="reminder-summary-empty">
+          <text class="reminder-empty-icon">⏰</text>
+          <text class="reminder-empty-text">暂无待办提醒</text>
+          <text class="reminder-empty-hint">进入宠物详情页 · 右上角「⋯」· 添加提醒 · 即可添加换水 / 喂食 / 健康检查等定期提醒</text>
+        </view>
+      </view>
+
       <view class="stats-grid">
         <view class="stats-row">
           <view class="stat-card">
@@ -301,8 +443,9 @@
           </view>
         </view>
       </view>
+
     </view>
-    
+
     <!-- 配置 -->
     <view wx:if="{{activeTab === 'config'}}" class="tab-content">
       <view class="section">
@@ -336,15 +479,19 @@
             </view>
             <switch checked="{{printerConfig.autoPrint}}" bindchange="onAutoPrintSwitchChange" color="{{switchColor}}" />
           </view>
+          <view class="item">
+            <view class="item-left">
+              <text class="item-label">自动连接</text>
+              <text class="item-value">{{printerConfig.autoConnect ? '已开启' : '已关闭'}}</text>
+            </view>
+            <switch checked="{{printerConfig.autoConnect}}" bindchange="onAutoConnectSwitchChange" color="{{switchColor}}" />
+          </view>
         </view>
       </view>
       
       <view class="section">
-        <view class="section-title">打印测试</view>
+        <view class="section-title">打印机</view>
         <view class="section-items">
-          <view class="action-item" bindtap="testPrint">
-            <text class="action-text">打印测试页</text>
-          </view>
           <view class="action-item" bindtap="disconnectPrinter">
             <text class="action-text danger">断开连接</text>
           </view>
@@ -368,8 +515,13 @@
             </view>
             <text class="scanning-text">正在搜索蓝牙设备...</text>
           </view>
-          <view wx:elif="{{bluetoothDevices.length === 0}}" class="empty-state">
+          <view wx:elif="{{bluetoothDevices.length === 0 && !isScanning}}" class="empty-state">
             <text class="empty-text">未找到蓝牙设备</text>
+            <text class="empty-hint">请确保打印机已开启并处于可发现模式</text>
+          </view>
+          <view wx:elif="{{bluetoothDevices.length === 0 && isScanning}}" class="empty-state">
+            <text class="empty-text">正在搜索...</text>
+            <text class="empty-hint">请确保打印机已开启并处于可发现模式</text>
           </view>
           <view wx:else class="device-list">
             <view wx:for="{{bluetoothDevices}}" wx:key="deviceId" class="device-item" bindtap="connectBluetooth" data-device-id="{{item.deviceId}}" data-device-name="{{item.name}}">
@@ -390,5 +542,6 @@
     </view>
     
 
+    </view>
   </view>
 </view>

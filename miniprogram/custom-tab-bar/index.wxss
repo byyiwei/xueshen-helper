@@ -10,6 +10,13 @@
   align-items: flex-end;
   padding: 16rpx 32rpx calc(12rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.custom-tab-bar.hidden {
+  transform: translateY(100%);
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* ====== 毛玻璃背景层 ====== */
@@ -39,8 +46,8 @@
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(0, 0, 0, 0.06) 20%,
-    rgba(0, 0, 0, 0.06) 80%,
+    rgba(45, 106, 79, 0.06) 20%,
+    rgba(45, 106, 79, 0.06) 80%,
     transparent 100%
   );
 }
@@ -56,7 +63,7 @@
   justify-content: flex-end;
   padding: 8rpx 0 4rpx;
   font-size: 24rpx;
-  color: #999999;
+  color: #94A3B8;
   transition: color 0.3s cubic-bezier(0.25, 1, 0.5, 1);
 }
 

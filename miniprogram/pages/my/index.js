@@ -1,8 +1,10 @@
+import { LPAPIFactory } from '../../lpapi/index'
+
 const { getAPI } = require('../../utils/api.js')
 const { showError, showSuccess, showLoading, hideLoading } = require('../../utils/error.js')
 const { getVoiceManager } = require('../../utils/voice.js')
-const { getTempUrl } = require('../../utils/image.js')
-const ThemeManager = require('../../utils/theme.js')
+const { getTempUrl, convertSinglePhoto } = require('../../utils/image.js')
+const { generateShareHTML } = require('../../utils/theme.js')
 const { generateImageFromHTML } = require('../../utils/imageService.js')
 
 const API = getAPI()
@@ -10,18 +12,22 @@ const voiceManager = getVoiceManager()
 
 Page({
   data: {
+    statusBarHeight: 0,
+    totalNavHeight: 120,
     userInfo: {
       nickname: '龟上心',
       avatar: '',
       phone: ''
     },
-    activeTab: 'account',
-    currentTheme: 'gold',
-    switchColor: '#B8860B',
-    isEditingNickname: false,
-    tempNickname: '',
-    isRecording: false,
-    currentVoiceField: '',
+    activeTab: 'data',
+    switchColor: '#2D6A4F',
+    provinceCityAreaCustomItem: '全部',
+    qrcodeImage: '',
+    // 跨宠物提醒汇总
+    allReminders: [],
+    hasAnyReminder: false,
+    nicknameRemaining: 3,
+    lpapi: null,
     showBluetoothModal: false,
     isScanning: false,
     bluetoothDevices: [],
@@ -29,14 +35,17 @@ Page({
     printerConfig: {
       enabled: false,
       autoPrint: false,
+      autoConnect: false,     // 开机自动连接
       connected: false,
       deviceId: '',
       deviceName: '',
       serviceId: '',
       writeCharacteristicId: '',
-      notifyCharacteristicId: ''
+      notifyCharacteristicId: '',
+      connectFailCount: 0      // 连续连接失败次数
     },
     // 动态统计数据
+    refreshing: false,
     stats: {
       petCount: 0,
       eggCount: 0,
@@ -50,63 +59,259 @@ Page({
       cover: '',
       specialty: '',
       hasLicense: false,
+      licenseImage: '',
       region: '',
       wechatId: '',
+      wechatPublic: false,
       tags: ['宠物档案', '繁育记录'],
       intro: '',
       envImages: [],
       envDesc: '',
       species: []
     },
-    showEditShareModal: false
+    showEditShareModal: false,
+    showSkeleton: true,
+    isLoggedIn: false
   },
 
   onLoad: function () {
+    const sysInfo = wx.getSystemInfoSync()
+    // 获取状态栏高度，确保至少 20px（兜底保护）
+    const statusBarHeight = Math.max(sysInfo.statusBarHeight || 20, 20)
+    // 获取安全区顶部间距（刘海屏设备）
+    const safeAreaTop = sysInfo.safeArea ? (sysInfo.safeArea.top || statusBarHeight) : statusBarHeight
+    // 取较大值：状态栏高度 vs 安全区顶部
+    const finalStatusBarHeight = Math.max(statusBarHeight, safeAreaTop)
+    const rpxRatio = 750 / sysInfo.windowWidth
+    // 导航栏高度 = 状态栏高度(rpx) + 导航栏内容区(88rpx)
+    const totalNavHeight = Math.round(finalStatusBarHeight * rpxRatio) + 88
+    this.setData({ statusBarHeight: finalStatusBarHeight, totalNavHeight })
+    // 初始化德佟打印SDK（离屏Canvas模式）
+    this.lpapi = LPAPIFactory.getInstance({ showLog: 4 })
+    this.setData({ lpapi: this.lpapi })
+    // 检查登录状态，已登录才加载数据
     const app = getApp()
-    if (!app.checkLogin()) return
-    this.loadTheme()
-    this.loadUserInfo()
-    this.loadPrinterConfig()
-    this.loadShareInfo()
+    const isLoggedIn = app.globalData.isLoggedIn
+    this.setData({ isLoggedIn })
+    if (isLoggedIn) {
+      this.loadAll()
+      this.loadQrcode()
+    } else {
+      this.setData({ showSkeleton: false })
+    }
   },
-
+  
   onShow: function () {
     const app = getApp()
-    if (!app.globalData.isLoggedIn) return
-    this.loadTheme()
-    
-    // 主动更新tabBar选中状态和主题色
+    const isLoggedIn = app.globalData.isLoggedIn
+    this.setData({ isLoggedIn })
+    // 主动更新tabBar选中状态，并确保 tabBar 可见
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
       const tabBar = this.getTabBar()
-      tabBar.setData({ selected: 2 })
-      if (tabBar.applyThemeColor) {
-        tabBar.applyThemeColor()
-      }
+      tabBar.setData({ selected: 2, visible: true })
+    }
+    // 登录后返回时加载数据
+    if (isLoggedIn && !this._loadedOnce) {
+      this._loadedOnce = true
+      this.loadAll()
+      this.loadQrcode()
+      return
+    }
+    if (!isLoggedIn) return
+    // 每次进入页面都刷新待办提醒
+    this.loadAllPetReminders()
+    // 尝试自动连接打印机
+    if (this.data.printerConfig.autoConnect && !this.data.printerConfig.connected) {
+      this.tryAutoConnect()
+    }
+  },
+  
+  goToLogin: function () {
+    const app = getApp()
+    app.requireLogin()
+  },
+
+  onUnload: function () {
+    if (this.lpapi) {
+      this.lpapi.stopBleDiscovery()
+      this.lpapi.closePrinter()
     }
   },
 
-  loadTheme: function () {
-    const savedTheme = ThemeManager.getCurrentTheme()
-    const switchColor = ThemeManager.getThemeConfig(savedTheme).primary
-    this.setData({ currentTheme: savedTheme, switchColor })
+  onHide: function () {
+    if (this.lpapi) {
+      this.lpapi.stopBleDiscovery()
+    }
+  },
+
+  onPullDownRefresh: function () {
+    this.setData({ refreshing: true })
+    this.loadAll().then(() => {
+      this.setData({ refreshing: false })
+      wx.stopPullDownRefresh()
+    }).catch(() => {
+      this.setData({ refreshing: false })
+      wx.stopPullDownRefresh()
+    })
+  },
+
+  loadAll: async function () {
+    this.setData({ loading: true })
+    try {
+      await Promise.all([
+        this.loadUserInfo(),
+        this.loadShareInfo(),
+        this.loadPrinterConfig(),
+        this.loadStats()
+      ])
+      // 骨架屏在核心数据加载后立即关闭
+      this.setData({ showSkeleton: false })
+      // 非关键数据延迟加载，不阻塞UI
+      wx.nextTick(() => {
+        this.loadAllPetReminders()
+        this.tryAutoConnect()
+      })
+    } catch (error) {
+      console.error('加载失败:', error)
+      this.setData({ showSkeleton: false })
+    } finally {
+      this.setData({ loading: false })
+    }
   },
 
   loadUserInfo: function () {
-    try {
-      const savedUser = wx.getStorageSync('userInfo');
-      if (savedUser) {
-        if (savedUser.nickname && savedUser.nickname.includes('益玮的龟')) {
-          let userIndex = wx.getStorageSync('userIndex') || 0;
-          userIndex += 1;
-          wx.setStorageSync('userIndex', userIndex);
-          savedUser.nickname = '龟上心' + userIndex;
-          wx.setStorageSync('userInfo', savedUser);
+    wx.nextTick(() => {
+      try {
+        const savedUser = wx.getStorageSync('userInfo');
+        if (savedUser) {
+          if (savedUser.nickname && savedUser.nickname.includes('益玮的龟')) {
+            let userIndex = wx.getStorageSync('userIndex') || 0;
+            userIndex += 1;
+            wx.setStorageSync('userIndex', userIndex);
+            savedUser.nickname = '龟上心' + userIndex;
+            wx.setStorageSync('userInfo', savedUser);
+          }
+          this.setData({ userInfo: savedUser });
+          // 异步刷新头像临时 URL
+          this.refreshUserAvatar(savedUser);
         }
-        this.setData({ userInfo: savedUser });
+        // 计算本月剩余修改次数
+        const nicknameLog = wx.getStorageSync('nicknameLog') || { count: 0, lastReset: Date.now() };
+        const now = Date.now();
+        const lastMonth = now - 30 * 24 * 60 * 60 * 1000;
+        if (nicknameLog.lastReset < lastMonth) {
+          nicknameLog.count = 0;
+          nicknameLog.lastReset = now;
+          wx.setStorageSync('nicknameLog', nicknameLog);
+        }
+        this.setData({ nicknameRemaining: Math.max(0, 3 - nicknameLog.count) });
+      } catch (error) {
+        console.error('加载用户信息失败:', error);
       }
-    } catch (error) {
-      console.error('加载用户信息失败:', error);
+    });
+  },
+
+  loadQrcode: async function () {
+    // 优先从本地缓存读取小程序码（v2 版本：指向 pages/public/index）
+    try {
+      const qrcodeVersion = wx.getStorageSync('qrcodeImageVersion')
+      const cachedQrcode = wx.getStorageSync('qrcodeImage')
+      if (cachedQrcode && qrcodeVersion >= 2) {
+        this.setData({ qrcodeImage: cachedQrcode })
+        return
+      }
+      // 旧版缓存（指向 pages/pet/index）需清除
+      if (cachedQrcode && (!qrcodeVersion || qrcodeVersion < 2)) {
+        wx.removeStorageSync('qrcodeImage')
+      }
+    } catch (e) {}
+
+    // 尝试通过云函数获取小程序码（使用 qrcode 云函数）
+    try {
+      if (wx.cloud) {
+        const result = await wx.cloud.callFunction({
+          name: 'qrcode',
+          data: {
+            action: 'generate',
+            data: {
+              scene: 'userId=' + (wx.getStorageSync('openid') || 'guest'),
+              page: 'pages/public/index'
+            }
+          }
+        })
+        if (result && result.result && result.result.success) {
+          const fileID = result.result.data
+          if (fileID && fileID.startsWith('cloud://')) {
+            // 下载到本地
+            const tempFileRes = await wx.cloud.downloadFile({ fileID: fileID })
+            if (tempFileRes.tempFilePath) {
+              this.setData({ qrcodeImage: tempFileRes.tempFilePath })
+              wx.setStorageSync('qrcodeImage', tempFileRes.tempFilePath)
+              wx.setStorageSync('qrcodeImageVersion', 2)
+              return
+            }
+          }
+        }
+      }
+    } catch (err) {
+
     }
+
+    // 兜底：等待用户点击保存时再走保存流程（占位状态）
+    this.setData({ qrcodeImage: '' })
+  },
+
+  previewQrcode: function () {
+    if (!this.data.qrcodeImage) {
+      wx.showToast({ title: '二维码生成中，请稍候', icon: 'none' })
+      return
+    }
+    wx.previewImage({
+      urls: [this.data.qrcodeImage],
+      current: this.data.qrcodeImage
+    })
+  },
+
+  saveQrcodeToAlbum: function () {
+    const that = this
+    // 如果没有缓存二维码，引导用户
+    if (!this.data.qrcodeImage) {
+      wx.showModal({
+        title: '提示',
+        content: '小程序码需在微信后台配置后生成。\n您可以在「微信公众平台 → 设置 → 基本设置 → 小程序码」中获取官方小程序码，或联系开发者通过云函数生成后保存。',
+        showCancel: false,
+        confirmText: '知道了'
+      })
+      return
+    }
+
+    wx.saveImageToPhotosAlbum({
+      filePath: this.data.qrcodeImage,
+      success: function () {
+        wx.showToast({ title: '已保存到相册', icon: 'success' })
+      },
+      fail: function (err) {
+        if (err.errMsg && err.errMsg.indexOf('auth deny') > -1) {
+          wx.showModal({
+            title: '需要授权',
+            content: '请在设置中打开相册权限，以便保存二维码图片',
+            confirmText: '去设置',
+            success: function (res) {
+              if (res.confirm) {
+                wx.openSetting()
+              }
+            }
+          })
+        } else {
+          wx.showToast({ title: '保存失败', icon: 'none' })
+        }
+      }
+    })
+  },
+
+  onQrcodeError: function () {
+
+    this.setData({ qrcodeImage: '' })
   },
 
   generateShareImage: async function () {
@@ -114,9 +319,9 @@ Page({
     try {
       this.loadShareInfo()
 
-      const { userInfo, shareInfo, currentTheme } = this.data
-      const theme = ThemeManager.getThemeConfig(currentTheme)
-      const html = ThemeManager.generateShareHTML({}, {
+      const { userInfo, shareInfo } = this.data
+      const theme = { primary: '#2D6A4F', primaryDark: '#1B4332', primaryLight: '#E8F5EE', bg: '#F8FAFB', bgLight: '#FFFFFF', accent: '#F4A261', text: '#2C3E50' }
+      const html = generateShareHTML({}, {
         nickname: userInfo.nickname || '龟上心',
         cover: shareInfo.cover || '',
         specialty: shareInfo.specialty || '记录、档案、繁育',
@@ -157,7 +362,11 @@ Page({
   loadPrinterConfig: function () {
     try {
       const savedConfig = wx.getStorageSync('printerConfig');
-      if (savedConfig) {
+      if (savedConfig && savedConfig.deviceId) {
+        // 恢复配置但标记为未连接（BLE连接不会跨会话保持）
+        savedConfig.connected = false
+        // 如果之前开启了"启用打印"，新会话也初始化为未连接状态
+        savedConfig.enabled = false
         this.setData({ printerConfig: savedConfig });
       }
     } catch (error) {
@@ -210,7 +419,7 @@ Page({
       this.updateStatsData(petList, recordList, footList)
     } catch (error) {
       // 云模式不可用时静默回退，本地数据已展示
-      console.log('云端统计获取失败，使用本地数据:', error.message)
+
     }
   },
 
@@ -350,14 +559,68 @@ Page({
 
   showEditShareModal: function () {
     this.setData({ showEditShareModal: true })
+    // 隐藏tab-bar，避免遮挡弹窗
+    if (typeof this.getTabBar === 'function' && this.getTabBar()) {
+      this.getTabBar().setData({ visible: false })
+    }
   },
 
   hideEditShareModal: function () {
     this.setData({ showEditShareModal: false })
+    // 恢复tab-bar显示（即使 onShow 也会兜底保证 visible: true）
+    if (typeof this.getTabBar === 'function' && this.getTabBar()) {
+      this.getTabBar().setData({ visible: true })
+    }
   },
 
   stopPropagation: function () {
     // 阻止冒泡
+  },
+
+  toggleWechatPublic: function (e) {
+    const shareInfo = { ...this.data.shareInfo, wechatPublic: e.detail.value }
+    this.setData({ shareInfo })
+    wx.setStorageSync('shareInfo', shareInfo)
+  },
+
+  toggleLicense: function (e) {
+    const shareInfo = { ...this.data.shareInfo, hasLicense: e.detail.value }
+    // 若关闭营业执照开关，同时清空执照图片
+    if (!e.detail.value) {
+      shareInfo.licenseImage = ''
+    }
+    this.setData({ shareInfo })
+    wx.setStorageSync('shareInfo', shareInfo)
+  },
+
+  chooseLicenseImage: function () {
+    const that = this
+    wx.chooseMedia({
+      count: 1,
+      mediaType: ['image'],
+      sourceType: ['album', 'camera'],
+      success: function (res) {
+        const licenseImage = res.tempFiles[0].tempFilePath
+        const shareInfo = { ...that.data.shareInfo, licenseImage }
+        that.setData({ shareInfo })
+        wx.setStorageSync('shareInfo', shareInfo)
+        wx.showToast({ title: '营业执照已更新', icon: 'success' })
+      }
+    })
+  },
+
+  chooseRegion: function (e) {
+    const [province, city, district] = e.detail.value
+    let region = ''
+    // 过滤重复或为空的层级（省市区三级可能有相同值或"全部"占位）
+    const parts = []
+    if (province) parts.push(province)
+    if (city && city !== province) parts.push(city)
+    if (district && district !== city) parts.push(district)
+    region = parts.join(' ')
+    const shareInfo = { ...this.data.shareInfo, region }
+    this.setData({ shareInfo })
+    wx.setStorageSync('shareInfo', shareInfo)
   },
 
   editField: function (e) {
@@ -399,46 +662,403 @@ Page({
       const saved = wx.getStorageSync('shareInfo')
       if (saved) {
         this.setData({ shareInfo: saved })
+        // 异步刷新所有图片 URL（临时签名可能已过期）
+        this.refreshShareInfoImages(saved)
       }
     } catch (e) {
       console.error('加载分享信息失败:', e)
     }
   },
 
-  chooseAvatar: function () {
-    wx.chooseImage({
-      count: 1,
-      success: (res) => {
-        const avatar = res.tempFilePaths[0]
-        const userInfo = { ...this.data.userInfo, avatar }
-        this.setData({ userInfo })
-        wx.setStorageSync('userInfo', userInfo)
-        wx.showToast({ title: '头像已更新', icon: 'success' })
+  // ==============================================================
+  // 跨宠物提醒汇总（数据 Tab 使用）
+  // ==============================================================
+
+  // 格式化日期 yyyy-mm-dd
+  _reminderFormatDate: function (d) {
+    if (!(d instanceof Date)) d = new Date(d)
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  },
+
+  // 安全解析 YYYY-MM-DD 格式日期
+  _reminderParseDate: function (dateStr) {
+    if (!dateStr || typeof dateStr !== 'string') return null
+    const m = dateStr.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+    if (!m) return null
+    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0)
+  },
+
+  // 计算单个提醒的状态、剩余天数、下次提醒日
+  _reminderComputeStatus: function (r) {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const nowStr = this._reminderFormatDate(today)
+    let statusText
+    let statusClass
+    let daysLeft
+    const interval = Number(r.intervalDays) || 1
+
+    if (!r.lastDone) {
+      // 从未执行过 → 从今天开始算 nextDue
+      const nextDueFromToday = new Date(today)
+      nextDueFromToday.setDate(nextDueFromToday.getDate() + interval)
+      daysLeft = Math.round((nextDueFromToday.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
+      if (daysLeft < 0) {
+        statusText = '超期 ' + Math.abs(daysLeft) + ' 天'
+        statusClass = 'overdue'
+      } else if (daysLeft === 0) {
+        statusText = '今天'
+        statusClass = 'today'
+      } else if (daysLeft === 1) {
+        statusText = '明天'
+        statusClass = 'tomorrow'
+      } else {
+        statusText = daysLeft + ' 天后'
+        statusClass = 'normal'
       }
+    } else {
+      const lastDone = this._reminderParseDate(r.lastDone)
+      if (!lastDone) {
+        statusText = '数据异常'
+        statusClass = 'overdue'
+        daysLeft = -999
+      } else {
+        const nextDue = new Date(lastDone)
+        nextDue.setDate(nextDue.getDate() + interval)
+        const diffMs = nextDue.getTime() - today.getTime()
+        daysLeft = Math.round(diffMs / (24 * 60 * 60 * 1000))
+        const isJustDone = (r.lastDone === nowStr)
+
+        if (daysLeft < 0) {
+          statusText = '超期 ' + Math.abs(daysLeft) + ' 天'
+          statusClass = 'overdue'
+        } else if (daysLeft === 0) {
+          statusText = isJustDone ? '已完成' : '今天'
+          statusClass = 'today'
+        } else if (daysLeft === 1) {
+          statusText = isJustDone ? '已完成' : '明天'
+          statusClass = 'tomorrow'
+        } else {
+          statusText = daysLeft + ' 天后'
+          statusClass = 'normal'
+        }
+      }
+    }
+
+    // 下次提醒日
+    const baseDate = r.lastDone ? this._reminderParseDate(r.lastDone) : new Date(nowStr)
+    const nextDueDate = new Date(baseDate || today)
+    nextDueDate.setDate(nextDueDate.getDate() + interval)
+
+    return {
+      ...r,
+      id: r.id || r._id,
+      statusText,
+      statusClass,
+      daysLeft,
+      doneToday: r.lastDone === nowStr,
+      nextDueDate: this._reminderFormatDate(nextDueDate)
+    }
+  },
+
+  // 加载所有宠物的提醒并汇总（纯云端）
+  loadAllPetReminders: async function () {
+    try {
+      const pets = wx.getStorageSync('pets') || []
+      const cloudResult = API.getAllReminders ? await API.getAllReminders() : null
+      let reminderListByPet = {}  // petId -> [reminders]
+
+      if (cloudResult && cloudResult.success) {
+        const list = Array.isArray(cloudResult.data)
+          ? cloudResult.data
+          : (cloudResult.data && Array.isArray(cloudResult.data.list) ? cloudResult.data.list : [])
+
+        for (let i = 0; i < list.length; i++) {
+          const r = list[i]
+          const key = r.petId
+          if (!key) continue
+          if (!reminderListByPet[key]) reminderListByPet[key] = []
+          reminderListByPet[key].push(r)
+        }
+      }
+      // 纯云端：失败不兜底本地存储
+
+      // 汇总
+      const result = []
+      for (let i = 0; i < pets.length; i++) {
+        const pet = pets[i]
+        const petId = pet.id || pet._id
+        if (!petId) continue
+        const reminders = reminderListByPet[petId] || []
+        for (let j = 0; j < reminders.length; j++) {
+          const computed = this._reminderComputeStatus(reminders[j])
+          result.push({
+            ...computed,
+            petId: petId,
+            petName: pet.name || '未命名',
+            petCategory: pet.category || ''
+          })
+        }
+      }
+
+      // 过滤：只保留"待办"（超期/今天/明天），不显示已完成/未到时间的
+      const pending = result.filter(r => 
+        (r.statusClass === 'overdue' || 
+        r.statusClass === 'today' || 
+        r.statusClass === 'tomorrow') && !r.doneToday
+      )
+
+      // 排序：超期 → 今天 → 明天 → 其他
+      const priority = { overdue: 0, today: 1, tomorrow: 2, normal: 3, pending: 4 }
+      pending.sort((a, b) => {
+        const pa = priority[a.statusClass] || 9
+        const pb = priority[b.statusClass] || 9
+        if (pa !== pb) return pa - pb
+        return (a.daysLeft || 0) - (b.daysLeft || 0)
+      })
+
+      this.setData({
+        allReminders: pending,
+        hasAnyReminder: pending.length > 0
+      })
+    } catch (err) {
+      console.error('加载提醒汇总失败:', err)
+      this.setData({ allReminders: [], hasAnyReminder: false })
+    }
+  },
+
+  // 跳转到宠物详情页（点击提醒卡片）
+  gotoPetDetailFromReminder: function (e) {
+    const petId = e.currentTarget.dataset.petId
+    if (!petId) return
+    wx.navigateTo({
+      url: '/pages/pet/detail?petId=' + petId
     })
   },
 
-  selectTheme: function (e) {
-    const theme = e.currentTarget.dataset.theme
-    const switchColor = ThemeManager.getThemeConfig(theme).primary
-    this.setData({ currentTheme: theme, switchColor })
+  // 在我的页面标记提醒为已完成（每次点击向后推进一个周期）
+  markReminderDoneFromMy: async function (e) {
+    const dataset = (e && e.currentTarget && e.currentTarget.dataset) || {}
+    const petId = dataset.petId
+    const reminderId = dataset.reminderId
 
-    ThemeManager.setTheme(theme)
+    // 从 enriched 数据中反查真实 _id
+    const allReminders = this.data.allReminders || []
+    const enrichedItem = allReminders.find(r => String(r.id) === String(reminderId))
+      || allReminders.find(r => String(r._id) === String(reminderId))
+      || allReminders[0]
 
-    // 更新tabBar主题色
-    this.updateTabBarTheme()
+    if (!enrichedItem) {
+      wx.showToast({ title: '未找到该提醒', icon: 'none' })
+      return
+    }
 
-    showSuccess(ThemeManager.getThemeName(theme) + '主题已应用')
+    const cloudId = enrichedItem._id || enrichedItem.id || reminderId
+    if (!petId || !cloudId) {
+      wx.showToast({ title: '缺少参数', icon: 'none' })
+      return
+    }
+
+    const interval = Number(enrichedItem.intervalDays) || 1
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const todayStr = this._reminderFormatDate(today)
+
+    // 两步切换：doneToday=false → 标记今天 / doneToday=true → 推进
+    const isDoneToday = enrichedItem.lastDone === todayStr
+    const newLastDone = isDoneToday
+      ? this._reminderFormatDate(new Date(today.getTime() + interval * 86400000))
+      : todayStr
+
+    try {
+      if (API.markReminderDone) {
+        const res = await API.markReminderDone(cloudId, newLastDone)
+        if (res && res.success) {
+          // 本地立即更新
+          const updated = allReminders.map(r => {
+            if (String(r._id) === String(cloudId)) {
+              return { ...r, lastDone: newLastDone }
+            }
+            return r
+          })
+          const recomputed = updated.map(r => this._reminderComputeStatus(r))
+          const pending = recomputed.filter(r =>
+            r.statusClass === 'overdue' || r.statusClass === 'today' || r.statusClass === 'tomorrow'
+          )
+          const priority = { overdue: 0, today: 1, tomorrow: 2, normal: 3 }
+          pending.sort((a, b) => {
+            const pa = priority[a.statusClass] ?? 9
+            const pb = priority[b.statusClass] ?? 9
+            if (pa !== pb) return pa - pb
+            return (a.daysLeft || 0) - (b.daysLeft || 0)
+          })
+          this.setData({ allReminders: pending, hasAnyReminder: pending.length > 0 })
+          wx.showToast({ title: isDoneToday ? '已推进' : '已标记完成', icon: 'success', duration: 1200 })
+          return
+        }
+      }
+      wx.showToast({ title: '云端更新失败，请重试', icon: 'none' })
+    } catch (err) {
+
+      wx.showToast({ title: '标记失败，请重试', icon: 'none' })
+    }
   },
 
-  // 更新tabBar主题色
-  updateTabBarTheme: function () {
-    if (typeof this.getTabBar === 'function' && this.getTabBar()) {
-      const tabBar = this.getTabBar()
-      if (tabBar && tabBar.applyThemeColor) {
-        tabBar.applyThemeColor()
+  /**
+   * 刷新 shareInfo 中所有图片字段的临时 URL
+   * TCB 云存储的临时签名（?sign=xxx&t=xxx）有时效，
+   * 过期后返回 403，这里统一刷新
+   */
+  refreshShareInfoImages: async function (info) {
+    if (!info) info = this.data.shareInfo
+    if (!info) return
+
+    try {
+      const newInfo = { ...info }
+      let changed = false
+
+      // 封面
+      if (info.cover && (info.cover.includes('tcb.qcloud.la') || info.cover.startsWith('cloud://'))) {
+        const newUrl = await convertSinglePhoto(info.cover)
+        if (newUrl && newUrl !== info.cover) {
+          newInfo.cover = newUrl
+          changed = true
+        }
       }
+
+      // 营业执照
+      if (info.licenseImage && (info.licenseImage.includes('tcb.qcloud.la') || info.licenseImage.startsWith('cloud://'))) {
+        const newUrl = await convertSinglePhoto(info.licenseImage)
+        if (newUrl && newUrl !== info.licenseImage) {
+          newInfo.licenseImage = newUrl
+          changed = true
+        }
+      }
+
+      // 环境图片（数组）
+      if (info.envImages && info.envImages.length) {
+        const envNew = []
+        let envChanged = false
+        for (let i = 0; i < info.envImages.length; i++) {
+          const img = info.envImages[i]
+          if (img && (img.includes('tcb.qcloud.la') || img.startsWith('cloud://'))) {
+            const newUrl = await convertSinglePhoto(img)
+            if (newUrl && newUrl !== img) {
+              envNew.push(newUrl)
+              envChanged = true
+            } else {
+              envNew.push(img)
+            }
+          } else {
+            envNew.push(img)
+          }
+        }
+        if (envChanged) {
+          newInfo.envImages = envNew
+          changed = true
+        }
+      }
+
+      // 种群图片
+      if (info.species && info.species.length) {
+        const spNew = []
+        let spChanged = false
+        for (let i = 0; i < info.species.length; i++) {
+          const item = info.species[i]
+          if (item.image && (item.image.includes('tcb.qcloud.la') || item.image.startsWith('cloud://'))) {
+            const newUrl = await convertSinglePhoto(item.image)
+            if (newUrl && newUrl !== item.image) {
+              spNew.push({ ...item, image: newUrl })
+              spChanged = true
+            } else {
+              spNew.push(item)
+            }
+          } else {
+            spNew.push(item)
+          }
+        }
+        if (spChanged) {
+          newInfo.species = spNew
+          changed = true
+        }
+      }
+
+      if (changed) {
+        this.setData({ shareInfo: newInfo })
+        try { wx.setStorageSync('shareInfo', newInfo) } catch (e) {}
+      }
+    } catch (err) {
+
     }
+  },
+
+  /**
+   * 刷新头像图片 URL
+   */
+  refreshUserAvatar: async function (userInfo) {
+    if (!userInfo || !userInfo.avatar) return
+    const avatar = userInfo.avatar
+    if (!avatar.includes('tcb.qcloud.la') && !avatar.startsWith('cloud://')) return
+    try {
+      const newUrl = await convertSinglePhoto(avatar)
+      if (newUrl && newUrl !== avatar) {
+        const newInfo = { ...userInfo, avatar: newUrl }
+        this.setData({ userInfo: newInfo })
+        try { wx.setStorageSync('userInfo', newInfo) } catch (e) {}
+      }
+    } catch (err) {
+
+    }
+  },
+
+  /**
+   * 保存用户信息到云端（静默，不弹提示）
+   */
+  _saveUserInfoToCloud: function (data) {
+    try {
+      wx.cloud.callFunction({
+        name: 'login',
+        data: { action: 'updateUserInfo', data }
+      }).catch(err => {
+
+      })
+    } catch (err) {
+
+    }
+  },
+
+  chooseAvatar: function () {
+    wx.chooseImage({
+      count: 1,
+      success: async (res) => {
+        const tempPath = res.tempFilePaths[0]
+        // 先显示临时图片
+        const userInfo = { ...this.data.userInfo, avatar: tempPath }
+        this.setData({ userInfo })
+        wx.setStorageSync('userInfo', userInfo)
+        wx.showToast({ title: '头像已更新', icon: 'success' })
+
+        // 上传到云存储
+        try {
+          const openid = wx.getStorageSync('openid') || 'unknown'
+          const ext = tempPath.split('.').pop() || 'jpg'
+          const cloudPath = `avatars/${openid}_${Date.now()}.${ext}`
+          const uploadRes = await wx.cloud.uploadFile({ cloudPath, filePath: tempPath })
+          if (uploadRes && uploadRes.fileID) {
+            const newInfo = { ...this.data.userInfo, avatar: uploadRes.fileID }
+            this.setData({ userInfo: newInfo })
+            wx.setStorageSync('userInfo', newInfo)
+            // 同步到云端数据库
+            this._saveUserInfoToCloud({ avatar: uploadRes.fileID })
+          }
+        } catch (err) {
+
+        }
+      }
+    })
   },
 
   handleLogout: function () {
@@ -456,558 +1076,354 @@ Page({
 
   // （旧分享相关方法已删除：chooseCoverImage / onCoverSwitchChange / showContactModal / hideContactModal / stopPropagation / onContactSwitchChange / onContactPhoneInput / onContactWechatInput / saveContactInfo / startContactVoiceInput / stopContactVoiceInput）
 
+  // ========== 蓝牙打印（微信 BLE API） ==========
+
   scanBluetooth: function () {
     const that = this
+    // 手动扫描时重置失败计数（用户主动操作，给自动连接一次新的机会）
+    const pc = { ...this.data.printerConfig, connectFailCount: 0 }
+    this.setData({ printerConfig: pc })
+    wx.setStorageSync('printerConfig', pc)
     this.setData({ 
       showBluetoothModal: true, 
       isScanning: true, 
       bluetoothDevices: [] 
     })
+    this.lpapi.startBleDiscovery({
+      timeout: 0,
+      deviceFound: function (devices) {
 
-    wx.openBluetoothAdapter({
-      success: function () {
-        wx.startBluetoothDevicesDiscovery({
-          services: [],
-          allowDuplicatesKey: false,
-          interval: 0,
-          success: function () {
-            that.bluetoothDiscovery = setInterval(function () {
-              wx.getBluetoothDevices({
-                success: function (res) {
-                  const devices = res.devices.filter(d => d.name && (d.name.includes('P1') || d.name.includes('Detong') || d.name.includes('德佟')))
-                  that.setData({ bluetoothDevices: devices })
-                }
-              })
-            }, 1000)
-          },
-          fail: function (err) {
-            console.error('蓝牙搜索失败:', err)
-            that.setData({ isScanning: false })
-            wx.showToast({ title: '蓝牙搜索失败', icon: 'none' })
-          }
-        })
+        if (devices && devices.length > 0) {
+          that.setData({ bluetoothDevices: devices })
+        }
       },
-      fail: function (err) {
-        console.error('蓝牙适配器打开失败:', err)
-        that.setData({ isScanning: false })
-        wx.showToast({ title: '请打开蓝牙', icon: 'none' })
+      adapterStateChange: function (res) {
+        if (!res.discovering) {
+          that.setData({ isScanning: false })
+        }
       }
     })
   },
 
   hideBluetoothModal: function () {
     this.setData({ showBluetoothModal: false, isScanning: false })
-    if (this.bluetoothDiscovery) {
-      clearInterval(this.bluetoothDiscovery)
-      this.bluetoothDiscovery = null
-    }
-    wx.stopBluetoothDevicesDiscovery()
+    this.lpapi.stopBleDiscovery()
   },
 
   connectBluetooth: function (e) {
     const that = this
     const deviceId = e.currentTarget.dataset.deviceId
     const deviceName = e.currentTarget.dataset.deviceName
-    
     wx.showLoading({ title: '连接中...' })
-    
-    if (this.bluetoothDiscovery) {
-      clearInterval(this.bluetoothDiscovery)
-      this.bluetoothDiscovery = null
-    }
-    wx.stopBluetoothDevicesDiscovery()
-
-    wx.createBLEConnection({
+    this.lpapi.stopBleDiscovery()
+    this.lpapi.openPrinter({
+      name: deviceName,
       deviceId: deviceId,
       success: function () {
-        wx.getBLEDeviceServices({
-          deviceId: deviceId,
-          success: function (res) {
-            const service = res.services.find(s => s.uuid.startsWith('0000fff0') || s.uuid.startsWith('0000ffe0')) || res.services[0]
-            
-            wx.getBLEDeviceCharacteristics({
-              deviceId: deviceId,
-              serviceId: service.uuid,
-              success: function (res) {
-                let writeChar = null
-                let notifyChar = null
-                
-                res.characteristics.forEach(char => {
-                  if (char.properties.write || char.properties.writeWithoutResponse) {
-                    writeChar = char.uuid
-                  }
-                  if (char.properties.notify) {
-                    notifyChar = char.uuid
-                  }
-                })
-
-                if (notifyChar) {
-                  wx.notifyBLECharacteristicValueChange({
-                    deviceId: deviceId,
-                    serviceId: service.uuid,
-                    characteristicId: notifyChar,
-                    state: true,
-                    success: function () {}
-                  })
-                }
-
-                const printerConfig = {
-                  enabled: true,
-                  autoPrint: that.data.printerConfig.autoPrint,
-                  connected: true,
-                  deviceId: deviceId,
-                  deviceName: deviceName,
-                  serviceId: service.uuid,
-                  writeCharacteristicId: writeChar,
-                  notifyCharacteristicId: notifyChar
-                }
-
-                that.setData({ printerConfig })
-                wx.setStorageSync('printerConfig', printerConfig)
-                
-                wx.hideLoading()
-                that.setData({ showBluetoothModal: false })
-                wx.showToast({ title: '连接成功', icon: 'success' })
-              },
-              fail: function (err) {
-                console.error('获取特征失败:', err)
-                wx.hideLoading()
-                wx.showToast({ title: '获取特征失败', icon: 'none' })
-              }
-            })
-          },
-          fail: function (err) {
-            console.error('获取服务失败:', err)
-            wx.hideLoading()
-            wx.showToast({ title: '获取服务失败', icon: 'none' })
-          }
-        })
-      },
-      fail: function (err) {
-        console.error('连接失败:', err)
         wx.hideLoading()
+        that.setData({ showBluetoothModal: false })
+        const pc = { ...that.data.printerConfig, enabled: true, connected: true, deviceId, deviceName, connectFailCount: 0 }
+        that.setData({ printerConfig: pc })
+        wx.setStorageSync('printerConfig', pc)
+        wx.showToast({ title: '连接成功', icon: 'success' })
+      },
+      fail: function (resp) {
+        wx.hideLoading()
+        console.error('连接失败:', resp)
         wx.showToast({ title: '连接失败', icon: 'none' })
       }
     })
   },
 
   disconnectPrinter: function () {
-    if (!this.data.printerConfig.deviceId) {
-      wx.showToast({ title: '未连接打印机', icon: 'none' })
-      return
-    }
-
+    if (!this.data.printerConfig.deviceId) { wx.showToast({ title: '未连接打印机', icon: 'none' }); return }
     wx.showModal({
-      title: '提示',
-      content: '确定要断开打印机连接吗？',
+      title: '提示', content: '确定要断开打印机连接吗？',
       success: (res) => {
         if (res.confirm) {
-          wx.closeBLEConnection({
-            deviceId: this.data.printerConfig.deviceId,
-            success: () => {
-              const printerConfig = {
-                ...this.data.printerConfig,
-                connected: false
-              }
-              this.setData({ printerConfig })
-              wx.setStorageSync('printerConfig', printerConfig)
-              wx.showToast({ title: '已断开连接', icon: 'success' })
-            },
-            fail: () => {
-              const printerConfig = {
-                ...this.data.printerConfig,
-                connected: false
-              }
-              this.setData({ printerConfig })
-              wx.setStorageSync('printerConfig', printerConfig)
-              wx.showToast({ title: '已断开连接', icon: 'success' })
-            }
-          })
+          this.lpapi.closePrinter()
+          const pc = { ...this.data.printerConfig, connected: false }
+          this.setData({ printerConfig: pc })
+          wx.setStorageSync('printerConfig', pc)
+          wx.showToast({ title: '已断开连接', icon: 'success' })
         }
       }
     })
   },
 
   onPrinterSwitchChange: function (e) {
-    const printerConfig = { ...this.data.printerConfig, enabled: e.detail.value }
-    this.setData({ printerConfig })
-    wx.setStorageSync('printerConfig', printerConfig)
-    
-    if (e.detail.value && !printerConfig.connected) {
-      this.scanBluetooth()
+    const pc = { ...this.data.printerConfig, enabled: e.detail.value }
+    this.setData({ printerConfig: pc })
+    wx.setStorageSync('printerConfig', pc)
+    if (e.detail.value) {
+      // 开启 → 尝试自动连接
+      if (!pc.connected && pc.deviceId) {
+        wx.openBluetoothAdapter({
+          success: () => { this._doAutoConnect(pc) },
+          fail: () => { this.scanBluetooth() }
+        })
+      } else if (!pc.connected && !pc.deviceId) {
+        this.scanBluetooth()
+      }
+    } else {
+      // 关闭 → 断开蓝牙连接
+      if (pc.connected) {
+        this.lpapi.closePrinter()
+        this.lpapi.stopBleDiscovery()
+        wx.closeBluetoothAdapter()
+        const updated = { ...pc, connected: false }
+        this.setData({ printerConfig: updated })
+        wx.setStorageSync('printerConfig', updated)
+        wx.showToast({ title: '已断开连接', icon: 'success' })
+      }
     }
   },
 
   onAutoPrintSwitchChange: function (e) {
-    const printerConfig = { ...this.data.printerConfig, autoPrint: e.detail.value }
-    this.setData({ printerConfig })
-    wx.setStorageSync('printerConfig', printerConfig)
+    const pc = { ...this.data.printerConfig, autoPrint: e.detail.value }
+    this.setData({ printerConfig: pc })
+    wx.setStorageSync('printerConfig', pc)
   },
 
-  testPrint: function () {
-    if (!this.data.printerConfig.enabled || !this.data.printerConfig.connected) {
-      wx.showToast({ title: '请先连接打印机', icon: 'none' })
+  onAutoConnectSwitchChange: function (e) {
+    const pc = { ...this.data.printerConfig, autoConnect: e.detail.value }
+    this.setData({ printerConfig: pc })
+    wx.setStorageSync('printerConfig', pc)
+    // 开启时立即尝试连接
+    if (e.detail.value && !pc.connected && pc.deviceId) {
+      this.tryAutoConnect()
+    }
+  },
+
+  // 自动连接打印机（页面初始化时调用）
+  tryAutoConnect: function () {
+    const pc = this.data.printerConfig
+    if (!pc.autoConnect || !pc.deviceId) {
+
       return
     }
+    if (pc.connected) { return }
+    if (pc.connectFailCount >= 3) { return }
 
-    wx.showLoading({ title: '正在打印...' })
+    const that = this
 
-    const printData = this.generateTestLabel()
-    
-    this.sendPrintData(printData, () => {
-      wx.hideLoading()
-      wx.showToast({ title: '打印成功', icon: 'success' })
-    }, () => {
-      wx.hideLoading()
-      wx.showToast({ title: '打印失败', icon: 'none' })
+    // 先初始化蓝牙适配器（关键！没有这一步 openPrinter 会失败）
+    wx.openBluetoothAdapter({
+      success: function () {
+
+        that._doAutoConnect(pc)
+      },
+      fail: function (err) {
+        console.error('[autoConnect] 蓝牙适配器初始化失败:', err)
+        const newCount = (pc.connectFailCount || 0) + 1
+        const updated = { ...pc, connectFailCount: newCount }
+        that.setData({ printerConfig: updated })
+        wx.setStorageSync('printerConfig', updated)
+      }
     })
   },
 
-  generateTestLabel: function () {
-    const buffer = []
-    
-    buffer.push(0x1B, 0x40)
-    
-    buffer.push(0x1B, 0x61, 0x01)
-    
-    buffer.push(0x1B, 0x21, 0x30)
-    
-    const title = '龟上心 · 宠物档案'
-    for (let i = 0; i < title.length; i++) {
-      const charCode = title.charCodeAt(i)
-      buffer.push(charCode >> 8, charCode & 0xFF)
-    }
-    buffer.push(0x0A, 0x0A)
-    
-    buffer.push(0x1B, 0x21, 0x10)
-    
-    const content = '测试打印 - 德佟P1'
-    for (let i = 0; i < content.length; i++) {
-      const charCode = content.charCodeAt(i)
-      buffer.push(charCode >> 8, charCode & 0xFF)
-    }
-    buffer.push(0x0A)
-    
-    buffer.push(0x1D, 0x56, 0x41, 0x03)
-    
-    return new Uint8Array(buffer)
-  },
-
-  sendPrintData: function (data, success, fail) {
+  _doAutoConnect: function (pc) {
     const that = this
-    const config = this.data.printerConfig
-    
-    const chunkSize = 20
-    let offset = 0
+    this.lpapi.openPrinter({
+      name: pc.deviceName,
+      deviceId: pc.deviceId,
+      success: function () {
 
-    function sendChunk() {
-      if (offset >= data.length) {
-        if (success) success()
-        return
-      }
+        const updated = { ...pc, connected: true, enabled: true, connectFailCount: 0 }
+        that.setData({ printerConfig: updated })
+        wx.setStorageSync('printerConfig', updated)
+      },
+      fail: function (resp) {
+        console.error('[autoConnect] 自动连接失败:', resp)
+        const newCount = (pc.connectFailCount || 0) + 1
+        const updated = { ...pc, connectFailCount: newCount }
+        that.setData({ printerConfig: updated })
+        wx.setStorageSync('printerConfig', updated)
+        if (newCount >= 3) {
 
-      const chunk = data.slice(offset, Math.min(offset + chunkSize, data.length))
-      offset += chunkSize
-
-      wx.writeBLECharacteristicValue({
-        deviceId: config.deviceId,
-        serviceId: config.serviceId,
-        characteristicId: config.writeCharacteristicId,
-        value: chunk.buffer,
-        success: function () {
-          setTimeout(sendChunk, 50)
-        },
-        fail: function (err) {
-          console.error('发送数据失败:', err)
-          if (fail) fail()
         }
-      })
-    }
-
-    sendChunk()
+      }
+    })
   },
 
   printLabel: function (labelData, success, fail) {
-    if (!this.data.printerConfig.enabled || !this.data.printerConfig.connected) {
-      if (fail) fail('打印机未连接')
-      return
-    }
-
-    const buffer = []
-    
-    buffer.push(0x1B, 0x40)
-    
-    buffer.push(0x1B, 0x61, 0x01)
-    
-    buffer.push(0x1B, 0x21, 0x30)
-    
-    const title = labelData.title || '龟上心'
-    for (let i = 0; i < title.length; i++) {
-      const charCode = title.charCodeAt(i)
-      buffer.push(charCode >> 8, charCode & 0xFF)
-    }
-    buffer.push(0x0A, 0x0A)
-    
-    buffer.push(0x1B, 0x21, 0x10)
-    
+    if (!this.data.printerConfig.connected) { if (fail) fail('打印机未连接'); return }
+    const api = this.lpapi
+    const result = api.startJob({ width: 40, height: 20, jobName: 'label-print', gapType: 2 })
+    if (!result) { if (fail) fail('创建打印任务失败'); return }
+    api.drawText({ text: labelData.title || 'GSC', fontHeight: 5, x: 2, y: 2, width: 36 })
     if (labelData.content) {
-      for (let i = 0; i < labelData.content.length; i++) {
-        const charCode = labelData.content.charCodeAt(i)
-        buffer.push(charCode >> 8, charCode & 0xFF)
-      }
-      buffer.push(0x0A)
+      const lines = labelData.content.split('\n')
+      lines.forEach((line, i) => {
+        api.drawText({ text: line, fontHeight: 3, x: 2, y: 10 + i * 5, width: 36 })
+      })
     }
-    
-    if (labelData.qrCode) {
-      buffer.push(0x1D, 0x6B, 0x04, 0x00, 0x00)
-      const qrData = labelData.qrCode
-      const qrLen = qrData.length + 3
-      buffer.push(qrLen >> 8, qrLen & 0xFF)
-      buffer.push(0x49, 0x50, 0x41)
-      for (let i = 0; i < qrData.length; i++) {
-        const charCode = qrData.charCodeAt(i)
-        buffer.push(charCode)
-      }
-      buffer.push(0x0A)
-    }
-    
-    buffer.push(0x1D, 0x56, 0x41, 0x03)
-    
-    this.sendPrintData(new Uint8Array(buffer), success, fail)
+    api.commitJob().then(result => {
+      if (result.statusCode === 0 && success) success()
+      else if (fail) fail('打印失败')
+    }).catch(() => { if (fail) fail('打印失败') })
   },
 
   // （旧分享相关方法已删除：editShareTitle / onShareTitleInput / saveShareTitle / editShareSubtitle / onShareSubtitleInput / saveShareSubtitle / startShareVoiceInput / stopShareVoiceInput）
 
   editNickname: function () {
-    if (this.data.isEditingNickname) return
-    
+    const that = this
     const now = Date.now()
     const lastMonth = now - 30 * 24 * 60 * 60 * 1000
-    
+
     try {
-      const nicknameLog = wx.getStorageSync('nicknameLog') || {
-        count: 0,
-        lastReset: now
-      }
-      
+      const nicknameLog = wx.getStorageSync('nicknameLog') || { count: 0, lastReset: now }
       if (nicknameLog.lastReset < lastMonth) {
         nicknameLog.count = 0
         nicknameLog.lastReset = now
         wx.setStorageSync('nicknameLog', nicknameLog)
       }
-      
-      if (nicknameLog.count >= 3) {
-        wx.showToast({
-          title: '本月已修改3次，下月再试',
-          icon: 'none'
-        })
+
+      const remaining = 3 - nicknameLog.count
+      if (remaining <= 0) {
+        wx.showToast({ title: '本月已修改3次，下月再试', icon: 'none' })
         return
       }
-      
+
       wx.showModal({
         title: '修改昵称',
-        content: `本月还可修改 ${3 - nicknameLog.count} 次，确定要修改吗？`,
+        content: `本月还可修改 ${remaining} 次，确定要修改吗？`,
         success: (res) => {
-          if (res.confirm) {
-            this.setData({
-              isEditingNickname: true,
-              tempNickname: this.data.userInfo.nickname
-            })
-          }
+          if (!res.confirm) return
+          wx.showModal({
+            title: '修改昵称',
+            editable: true,
+            placeholderText: '请输入新昵称',
+            content: that.data.userInfo.nickname || '',
+            success: (editRes) => {
+              if (!editRes.confirm) return
+              const newName = (editRes.content || '').trim()
+              if (!newName) {
+                wx.showToast({ title: '昵称不能为空', icon: 'none' })
+                return
+              }
+              const userInfo = { ...that.data.userInfo, nickname: newName }
+              that.setData({ userInfo })
+              wx.setStorageSync('userInfo', userInfo)
+              // 同步到云端数据库
+              that._saveUserInfoToCloud({ nickname: newName })
+              try {
+                const log = wx.getStorageSync('nicknameLog') || { count: 0, lastReset: now }
+                log.count++
+                wx.setStorageSync('nicknameLog', log)
+                that.setData({ nicknameRemaining: Math.max(0, 3 - log.count) })
+              } catch (err) {
+                console.error('记录昵称修改次数失败:', err)
+              }
+              wx.showToast({ title: '修改成功', icon: 'success' })
+            }
+          })
         }
       })
     } catch (error) {
       console.error('检查昵称修改次数失败:', error)
-      this.setData({
-        isEditingNickname: true,
-        tempNickname: this.data.userInfo.nickname
-      })
     }
   },
 
-  onNicknameInput: function (e) {
-    this.setData({
-      tempNickname: e.detail.value
-    })
+  onLicenseImageLoad: function () {
+    // 营业执照图片加载成功，无需额外处理
   },
 
-  saveNickname: function () {
-    if (!this.data.tempNickname || this.data.tempNickname.trim() === '') {
-      wx.showToast({
-        title: '昵称不能为空',
-        icon: 'none'
-      })
-      this.setData({
-        tempNickname: this.data.userInfo.nickname
-      })
-      return
-    }
-
-    const userInfo = {
-      ...this.data.userInfo,
-      nickname: this.data.tempNickname.trim()
-    }
-
-    this.setData({
-      userInfo,
-      isEditingNickname: false
-    })
-
-    wx.setStorageSync('userInfo', userInfo)
-    
-    try {
-      const nicknameLog = wx.getStorageSync('nicknameLog') || {
-        count: 0,
-        lastReset: Date.now()
-      }
-      nicknameLog.count++
-      wx.setStorageSync('nicknameLog', nicknameLog)
-    } catch (error) {
-      console.error('记录昵称修改次数失败:', error)
-    }
-  },
-
-  startVoiceInput: function () {
-    this.setData({ isRecording: true })
-    wx.showToast({
-      title: '正在录音...',
-      icon: 'none',
-      duration: 15000
-    })
-
-    if (!this.recorderManager) {
-      this.recorderManager = wx.getRecorderManager()
-
-      this.recorderManager.onStop(async (res) => {
-        wx.hideToast()
-        this.setData({ isRecording: false })
-
-        if (this.voiceTimeout) {
-          clearTimeout(this.voiceTimeout)
-          this.voiceTimeout = null
-        }
-
-        const tempFilePath = res.tempFilePath
-        if (!tempFilePath) {
-          return
-        }
-
-        wx.showLoading({ title: '识别中...' })
-
-        try {
-          const cloudPath = 'voice/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.mp3'
-          const uploadResult = await wx.cloud.uploadFile({
-            cloudPath: cloudPath,
-            filePath: tempFilePath
-          })
-
-          const result = await wx.cloud.callFunction({
-            name: 'speech',
-            data: {
-              action: 'recognize',
-              data: {
-                fileID: uploadResult.fileID
-              }
-            }
-          })
-
-          wx.hideLoading()
-
-          if (result.result && result.result.success && result.result.data.text) {
-            const recognizedText = result.result.data.text
-            this.setData({ tempNickname: recognizedText })
-            
-            const userInfo = {
-              ...this.data.userInfo,
-              nickname: recognizedText.trim()
-            }
-            this.setData({
-              userInfo,
-              isEditingNickname: false
-            })
-            wx.setStorageSync('userInfo', userInfo)
-          }
-        } catch (error) {
-          wx.hideLoading()
-          console.error('语音识别失败:', error)
-        }
-      })
-
-      this.recorderManager.onError((err) => {
-        wx.hideToast()
-        this.setData({ isRecording: false })
-        if (this.voiceTimeout) {
-          clearTimeout(this.voiceTimeout)
-          this.voiceTimeout = null
-        }
-        console.error('录音错误:', err)
-      })
-    }
-
-    this.voiceTimeout = setTimeout(() => {
-      if (this.data.isRecording && this.recorderManager) {
-        this.recorderManager.stop()
-        wx.showToast({ title: '录音超时', icon: 'none' })
-      }
-    }, 15000)
-
-    this.recorderManager.start({
-      duration: 15000,
-      sampleRate: 16000,
-      numberOfChannels: 1,
-      encodeBitRate: 48000,
-      format: 'mp3'
-    })
-  },
-
-  stopVoiceInput: function () {
-    if (this.data.isRecording && this.recorderManager) {
-      if (this.voiceTimeout) {
-        clearTimeout(this.voiceTimeout)
-        this.voiceTimeout = null
-      }
-      this.recorderManager.stop()
-    }
-  },
-
+  /**
+   * 通用图片加载失败处理
+   * TCB 云存储临时签名过期 → 403 → 触发此函数
+   * 支持类型：avatar / cover / license / env / species
+   */
   onPhotoError: async function (e) {
-    const { type } = e.currentTarget.dataset
+    const { type, index } = e.currentTarget.dataset
 
+    // ---------- 头像 ----------
     if (type === 'avatar') {
       const avatar = this.data.userInfo.avatar
       if (!avatar) return
-
-      let fileId = null
-      if (avatar.startsWith('cloud://')) {
-        fileId = avatar
-      } else if (avatar.includes('tcb.qcloud.la')) {
-        try {
-          const match = avatar.match(/^https?:\/\/([^\/]+)(\/[^\?]+)/)
-          if (match) {
-            const domainPrefix = match[1].replace('.tcb.qcloud.la', '')
-            fileId = `cloud://cloud1-d0g853l9d7017ea3b.${domainPrefix}${match[2]}`
-          }
-        } catch (err) {
-          console.error('提取fileID失败:', err)
-        }
-      }
-
-      if (fileId) {
-        console.log('头像加载失败，尝试重新获取URL:', fileId)
-        try {
-          const newUrl = await getTempUrl(fileId)
+      try {
+        const newUrl = await convertSinglePhoto(avatar)
+        if (newUrl && newUrl !== avatar) {
           const userInfo = { ...this.data.userInfo, avatar: newUrl }
           this.setData({ userInfo })
           wx.setStorageSync('userInfo', userInfo)
-        } catch (err) {
-          console.error('重新获取头像URL失败:', err)
-          // 文件不存在，清空头像避免无限重试
+        } else {
           const userInfo = { ...this.data.userInfo, avatar: '' }
           this.setData({ userInfo })
           wx.setStorageSync('userInfo', userInfo)
         }
+      } catch (err) {
+
+        const userInfo = { ...this.data.userInfo, avatar: '' }
+        this.setData({ userInfo })
+        wx.setStorageSync('userInfo', userInfo)
       }
       return
+    }
+
+    // ---------- 其他（cover / license / env / species）统一处理 ----------
+    const shareInfo = { ...this.data.shareInfo }
+    let imgUrl = null
+
+    if (type === 'cover') {
+      imgUrl = shareInfo.cover
+    } else if (type === 'license') {
+      imgUrl = shareInfo.licenseImage
+    } else if (type === 'env' && typeof index === 'number') {
+      imgUrl = (shareInfo.envImages || [])[index]
+    } else if (type === 'species' && typeof index === 'number') {
+      imgUrl = ((shareInfo.species || [])[index] || {}).image
+    }
+
+    if (!imgUrl) {
+      if (type === 'license') {
+        shareInfo.licenseImage = ''
+        this.setData({ shareInfo })
+        try { wx.setStorageSync('shareInfo', shareInfo) } catch (e) {}
+      }
+      return
+    }
+
+    try {
+      const newUrl = await convertSinglePhoto(imgUrl)
+
+      if (newUrl && newUrl !== imgUrl) {
+        if (type === 'cover') {
+          shareInfo.cover = newUrl
+        } else if (type === 'license') {
+          shareInfo.licenseImage = newUrl
+        } else if (type === 'env' && typeof index === 'number') {
+          const env = [...(shareInfo.envImages || [])]
+          env[index] = newUrl
+          shareInfo.envImages = env
+        } else if (type === 'species' && typeof index === 'number') {
+          const sp = [...(shareInfo.species || [])]
+          sp[index] = { ...(sp[index] || {}), image: newUrl }
+          shareInfo.species = sp
+        }
+        this.setData({ shareInfo })
+        try { wx.setStorageSync('shareInfo', shareInfo) } catch (e) {}
+      } else {
+        // 文件不存在 → 清空对应字段避免无限重试
+        if (type === 'cover') {
+          shareInfo.cover = ''
+        } else if (type === 'license') {
+          shareInfo.licenseImage = ''
+        } else if (type === 'env' && typeof index === 'number') {
+          const env = [...(shareInfo.envImages || [])]
+          env.splice(index, 1)
+          shareInfo.envImages = env
+        } else if (type === 'species' && typeof index === 'number') {
+          const sp = [...(shareInfo.species || [])]
+          sp.splice(index, 1)
+          shareInfo.species = sp
+        }
+        this.setData({ shareInfo })
+        try { wx.setStorageSync('shareInfo', shareInfo) } catch (e) {}
+      }
+    } catch (err) {
+
     }
   }
 

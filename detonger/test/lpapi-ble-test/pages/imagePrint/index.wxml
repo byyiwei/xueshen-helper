@@ -1,0 +1,46 @@
+<!--pages/imagePrint/index.wxml-->
+<view class="app" style="flex-direction: column;">
+    <!-- header -->
+    <view class="page-section">
+        <!-- 创建一个隐藏的画布，用于绘制打印内容.备注：如果要打印静态图片，页面中必须要有一个 type="2d"的canvas，哪怕不用，而要存在，否则可能无法打印 -->
+        <canvas class="print-canvas" type="2d" id="{{canvasId}}"></canvas>
+        <!-- 打印机列表 -->
+        <picker mode="selector" range="{{deviceList}}" value="{{deviceIndex}}" range-key="name" bindchange="handleDeviceChanged">
+            <view class="picker">打印机：{{deviceList[deviceIndex].name}}</view>
+        </picker>
+        <!-- 出纸方向 -->
+        <picker mode="selector" range="{{orientationList}}" value="{{orientationIndex}}" range-key="name" bindchange="handleOrientationChanged">
+            <view class="picker">出纸方向：{{orientationList[orientationIndex].name}}</view>
+        </picker>
+        <!-- 纸张类型 -->
+        <picker mode="selector" range="{{gapList}}" value="{{gapIndex}}" range-key="name" bindchange="handleGapTypeChanged">
+            <view class="picker">纸张类型：{{gapList[gapIndex].name}}</view>
+        </picker>
+        <!-- 打印浓度 -->
+        <picker mode="selector" range="{{darknessList}}" value="{{darknessIndex}}" range-key="name" bindchange="handleDarknessChanged">
+            <view class="picker">打印浓度：{{darknessList[darknessIndex].name}}</view>
+        </picker>
+        <!-- 打印速度 -->
+        <picker mode="selector" range="{{speedList}}" value="{{speedIndex}}" range-key="name" bindchange="handleSpeedChanged">
+            <view class="picker">打印速度：{{speedList[speedIndex].name}}</view>
+        </picker>
+    </view>
+    <!-- 打印机相关 -->
+    <view class="page-section">
+        <view class="page-section-title">打印机操作</view>
+        <view class="btn-flex-group">
+            <button type="default" plain="true" size="mini" class="btn" bindtap="handleStopDiscovery">停止搜索打印机</button>
+            <button type="primary" plain="true" size="mini" class="btn" bindtap="handleStartDiscovery">开始搜索打印机</button>
+        </view>
+        <view class="btn-flex-group">
+            <button type="warn" plain="true" size="mini" class="btn" bindtap="handleClosePrinter">关闭打印机</button>
+            <button type="primary" plain="true" size="mini" class="btn" bindtap="handleOpenPrinter">打开打印机</button>
+            <button type="primary" size="mini" class="btn" bindtap="handlePrintLabel">打印</button>
+        </view>
+    </view>
+    <!-- 预览效果 -->
+    <view class="page-section" style="text-align: center;padding: 10px;background-color: aliceblue;">
+        <!-- <image src="{{previewImage}}" class="preview-image" mode="widthFix"></image> -->
+        <image wx:for="{{previewList}}" wx:key="{{item.key}}" src="{{item.value}}" mode="widthFix"/>
+    </view>
+</view>

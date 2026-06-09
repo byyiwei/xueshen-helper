@@ -1,0 +1,21 @@
+<!--index.wxml-->
+<view class="app" style="flex-direction: column;">
+    <!-- 绘制相关 -->
+    <view class="page-section">
+        <view class="section-body">
+            <!-- <navigator url="/pages/textPrint/index" open-type="navigate">
+                <button type="primary" plain="true" class="btn">文本打印测试</button>
+            </navigator> -->
+            <button type="primary" plain="true" class="btn" bindtap="textPrintTest">文本打印测试</button>
+            <button type="primary" plain="true" class="btn" bindtap="qrcodePrintTest">QRCode二维码打印测试</button>
+            <button type="primary" plain="true" class="btn" bindtap="barcodePrintTest">一维码打印测试</button>
+            <button type="primary" plain="true" class="btn" bindtap="imagePrintTest">图片打印测试</button>
+            <button type="primary" plain="true" class="btn" bindtap="rectanglePrintTest">矢量图绘制打印测试</button>
+            <button type="primary" plain="true" class="btn" bindtap="alignmentPrintTest">内容旋转对齐打印测试</button>
+            <button type="primary" plain="true" class="btn" bindtap="tablePrintTest">表格打印测试</button>
+            <button type="primary" plain="true" class="btn" bindtap="jsonPrintTest">JSON打印测试</button>
+            <button type="primary" plain="true" class="btn" bindtap="wdfxPrintTest">微打导出JSON打印测试</button>
+            <button type="primary" plain="true" class="btn" bindtap="multiPagePrintTest">多页（循环）打印测试</button>
+        </view>
+    </view>
+</view>

@@ -10,16 +10,40 @@
  *   const filePath = await generateImageFromHTML(html, { width: 750 })
  * 
  *   // 方式2：宠物档案专用（自动调用 theme.js 生成 HTML）
- *   const filePath = await generatePetImage(petData, 'gold')
+ *   const filePath = await generatePetImage(petData)
  */
 
 const { convertHTMLImagesToBase64 } = require('./theme.js');
 
-// 服务配置
-const SERVICE_CONFIG = {
-  endpoint: 'http://192.168.110.29:3000',
-  timeout: 60000,
-};
+// 默认服务配置（云数据库未配置时的兜底值）
+const DEFAULT_ENDPOINT = 'http://192.168.110.29:3000';
+const DEFAULT_TIMEOUT = 60000;
+
+/**
+ * 获取当前图片服务器地址（优先读云数据库配置，其次用默认值）
+ */
+function getEndpoint() {
+  try {
+    const app = getApp();
+    const url = app && app.globalData && app.globalData.systemConfig && app.globalData.systemConfig.imageServerUrl;
+    return url || DEFAULT_ENDPOINT;
+  } catch (e) {
+    return DEFAULT_ENDPOINT;
+  }
+}
+
+/**
+ * 获取当前超时配置
+ */
+function getTimeout() {
+  try {
+    const app = getApp();
+    const timeout = app && app.globalData && app.globalData.systemConfig && app.globalData.systemConfig.imageTimeout;
+    return timeout || DEFAULT_TIMEOUT;
+  } catch (e) {
+    return DEFAULT_TIMEOUT;
+  }
+}
 
 /**
  * 通用接口：将 HTML 渲染为图片并保存到临时文件
@@ -58,12 +82,11 @@ async function generateImageFromHTML(html, options = {}) {
 /**
  * 宠物档案专用：生成宠物预览图
  * @param {Object} petData - 宠物数据 { pet, records, qrcodeUrl, pedigreeData, ... }
- * @param {string} themeName - 主题名称 (gold/mocha/olive)
  * @returns {Promise<string>} 临时文件路径
  */
-async function generatePetImage(petData, themeName = 'gold') {
+async function generatePetImage(petData) {
   const { getTheme, generatePetHTML } = require('./theme.js');
-  const theme = getTheme(themeName);
+  const theme = getTheme();
   const html = generatePetHTML(petData, theme);
   return await generateImageFromHTML(html, { loadingText: '生成预览图...' });
 }
@@ -77,7 +100,7 @@ async function callImageService(html, options, loadingText = '生成图片中...
     wx.showLoading({ title: loadingText, mask: true });
 
     wx.request({
-      url: SERVICE_CONFIG.endpoint,
+      url: getEndpoint(),
       method: 'POST',
       header: { 'Content-Type': 'application/json' },
       data: {
@@ -90,7 +113,7 @@ async function callImageService(html, options, loadingText = '生成图片中...
           quality: options.quality || 90,
         }
       },
-      timeout: SERVICE_CONFIG.timeout,
+      timeout: getTimeout(),
       success: (res) => {
         wx.hideLoading();
         if (res.statusCode === 200 && res.data.success) {

@@ -24,6 +24,21 @@ function errorResponse(message = '操作失败', error = null) {
 exports.main = async (event, context) => {
   const db = cloud.database()
   const { OPENID, APPID, UNIONID } = cloud.getWXContext()
+  const { action, data } = event
+
+  // 更新用户信息（头像、昵称）
+  if (action === 'updateUserInfo' && data) {
+    try {
+      const updateData = { updatedAt: db.serverDate() }
+      if (data.nickname !== undefined) updateData.nickname = data.nickname
+      if (data.avatar !== undefined) updateData.avatar = data.avatar
+      if (data.phone !== undefined) updateData.phone = data.phone
+      await db.collection('users').where({ openid: OPENID }).update({ data: updateData })
+      return successResponse(null, '用户信息已更新')
+    } catch (error) {
+      return errorResponse('更新用户信息失败', error)
+    }
+  }
 
   try {
     // 先查询用户是否存在

@@ -10,19 +10,18 @@ class APIManager {
    */
   async callCloudFunction(name, action, data = {}) {
     try {
-      console.log(`调用云函数 ${name}, action: ${action}, data:`, data)
+
       const result = await wx.cloud.callFunction({
         name,
         data: { action, data }
       })
-      
-      console.log(`云函数 ${name} 返回:`, result)
-      
+
       if (result.result && result.result.success) {
         this.cloudAvailable = true
         return { success: true, data: result.result.data }
       } else {
-        return { success: false, message: result.result?.message || result.result?.warning || '操作失败' }
+        const message = result.result?.message || result.result?.warning || '操作失败'
+        return { success: false, message }
       }
     } catch (error) {
       console.error(`云函数 ${name} 调用失败:`, error)
@@ -40,8 +39,8 @@ class APIManager {
   /**
    * 宠物相关API
    */
-  async getPetList(filter = {}) {
-    return await this.callCloudFunction('pet', 'list', { filter })
+  async getPetList(filter = {}, pageNum = 1, pageSize = 20) {
+    return await this.callCloudFunction('pet', 'list', { filter, pageNum, pageSize })
   }
 
   async getPetById(id) {
@@ -80,10 +79,37 @@ class APIManager {
   }
 
   /**
+   * 提醒事件相关API
+   */
+  async getReminderList(petId) {
+    return await this.callCloudFunction('reminder', 'list', { petId })
+  }
+
+  async getAllReminders() {
+    return await this.callCloudFunction('reminder', 'listAll', {})
+  }
+
+  async createReminder(data) {
+    return await this.callCloudFunction('reminder', 'create', data)
+  }
+
+  async updateReminder(data) {
+    return await this.callCloudFunction('reminder', 'update', data)
+  }
+
+  async deleteReminder(id) {
+    return await this.callCloudFunction('reminder', 'delete', { id })
+  }
+
+  async markReminderDone(id, lastDone) {
+    return await this.callCloudFunction('reminder', 'markDone', { id, lastDone })
+  }
+
+  /**
    * 足迹相关API
    */
-  async getFootprintList(type = 'all') {
-    return await this.callCloudFunction('footprint', 'list', { type })
+  async getFootprintList(type = 'all', pageNum = 1, pageSize = 20) {
+    return await this.callCloudFunction('footprint', 'list', { type, pageNum, pageSize })
   }
 
   async createFootprint(data) {

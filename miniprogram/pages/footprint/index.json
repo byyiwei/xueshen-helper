@@ -1,8 +1,6 @@
 {
-  "navigationBarTitleText": "足迹",
-  "navigationBarBackgroundColor": "#faf8f3",
-  "navigationBarTextStyle": "black",
-  "backgroundColor": "#faf8f3",
-  "enablePullDownRefresh": false,
+  "navigationStyle": "custom",
+  "backgroundColor": "#F8FAFB",
+  "enablePullDownRefresh": true,
   "usingComponents": {}
 }

@@ -1,8 +1,7 @@
 {
-  "navigationBarTitleText": "宠物档案",
-  "navigationBarBackgroundColor": "#ffffff",
-  "navigationBarTextStyle": "black",
-  "backgroundColor": "#f5f0e6",
-  "enablePullDownRefresh": false,
+  "navigationStyle": "custom",
+  "backgroundColor": "#F8FAFB",
+  "enablePullDownRefresh": true,
+  "backgroundTextStyle": "dark",
   "usingComponents": {}
 }

@@ -16,7 +16,7 @@ class VoiceInputManager {
    */
   startRecording(field, onResult) {
     if (this.isRecording) {
-      console.warn('正在录音中...')
+
       return
     }
 
@@ -90,7 +90,7 @@ class VoiceInputManager {
     this.recorderManager.onError((err) => {
       // 忽略短录音的错误，让 onStop 处理结果
       if (err && err.errMsg && err.errMsg.includes('timeout')) {
-        console.log('录音时间太短，等待 onStop 结果')
+
         return
       }
       wx.hideToast()

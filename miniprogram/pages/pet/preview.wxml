@@ -1,12 +1,77 @@
-<view class="page preview-page theme-{{currentTheme}}">
+<view class="page preview-page">
+  <!-- 骨架屏 -->
+  <view wx:if="{{showSkeleton}}" class="skeleton-container">
+    <!-- 图片区骨架 -->
+    <view class="skeleton-photo-banner">
+      <view class="skeleton-photo"></view>
+    </view>
+    
+    <!-- 信息卡片骨架 -->
+    <view class="skeleton-info-card">
+      <view class="skeleton-pet-header">
+        <view class="skeleton-avatar"></view>
+        <view class="skeleton-pet-info">
+          <view class="skeleton-pet-name"></view>
+          <view class="skeleton-pet-tags">
+            <view class="skeleton-tag"></view>
+            <view class="skeleton-tag"></view>
+            <view class="skeleton-tag"></view>
+          </view>
+        </view>
+      </view>
+      <view class="skeleton-parents-row">
+        <view class="skeleton-parent-box"></view>
+        <view class="skeleton-parent-divider"></view>
+        <view class="skeleton-parent-box"></view>
+      </view>
+    </view>
+    
+    <!-- 详细信息骨架 -->
+    <view class="skeleton-detail-card">
+      <view class="skeleton-card-title"></view>
+      <view class="skeleton-detail-grid">
+        <view class="skeleton-detail-item"></view>
+        <view class="skeleton-detail-item"></view>
+        <view class="skeleton-detail-item"></view>
+        <view class="skeleton-detail-item"></view>
+      </view>
+    </view>
+    
+    <!-- 事件记录骨架 -->
+    <view class="skeleton-events-card">
+      <view class="skeleton-card-title"></view>
+      <view class="skeleton-event-tabs">
+        <view class="skeleton-event-tab"></view>
+        <view class="skeleton-event-tab"></view>
+        <view class="skeleton-event-tab"></view>
+        <view class="skeleton-event-tab"></view>
+      </view>
+      <view class="skeleton-event-list">
+        <view class="skeleton-event-card"></view>
+        <view class="skeleton-event-card"></view>
+      </view>
+    </view>
+    
+    <!-- 二维码区域骨架 -->
+    <view class="skeleton-qrcode-section">
+      <view class="skeleton-qrcode-card">
+        <view class="skeleton-qrcode-left">
+          <view class="skeleton-qrcode-title"></view>
+          <view class="skeleton-qrcode-subtitle"></view>
+        </view>
+        <view class="skeleton-qrcode-right"></view>
+      </view>
+    </view>
+  </view>
+
   <!-- 加载中 -->
-  <view wx:if="{{loading}}" class="loading-container">
+  <view wx:elif="{{loading}}" class="loading-container">
     <view class="loading-spinner"></view>
     <text class="loading-text">加载中...</text>
   </view>
 
   <!-- 宠物信息（可截图区域） -->
-  <view id="previewContent" class="preview-content">
+  <view wx:else id="previewContent" class="preview-content">
     <!-- 图片轮播区 -->
     <view wx:if="{{pet.photos && pet.photos.length > 0}}" class="photo-section">
       <swiper class="photo-swiper" indicator-dots="{{pet.photos.length > 1}}" circular autoplay interval="3000">
@@ -398,7 +463,7 @@
 
       <!-- 事件列表 -->
       <view wx:if="{{filteredRecords.length > 0}}" class="event-list">
-        <view wx:for="{{filteredRecords}}" wx:key="id" class="event-card">
+        <view wx:for="{{filteredRecords}}" wx:key="id" class="event-card" bindtap="showEventDetail" data-event="{{item}}">
           <view class="event-icon {{item.type === '产蛋' ? 'event-icon-lay' : ''}}">
             <text class="icon-emoji">{{item.type === '建档' ? '📁' : item.type === '交配' ? '💕' : item.type === '产蛋' ? '🥚' : item.type === '换公' ? '🔄' : '📝'}}</text>
           </view>
@@ -407,7 +472,6 @@
             <text class="event-content">{{item.text}}</text>
             <view class="event-date">
               <text class="date">{{item.date}}</text>
-              <text wx:if="{{item.time}}" class="time">{{item.time}}</text>
             </view>
           </view>
         </view>
@@ -420,8 +484,8 @@
       </view>
     </view>
 
-    <!-- 二维码区域 -->
-    <view class="qrcode-section">
+    <!-- 二维码区域（仅非公开模式显示） -->
+    <view class="qrcode-section" wx:if="{{!isPublic}}">
       <view class="qrcode-card">
         <view class="qrcode-left">
           <text class="qrcode-title">扫码查看宠物档案</text>
@@ -430,14 +494,15 @@
         <view class="qrcode-right">
           <image wx:if="{{qrcodeUrl}}" class="qrcode-img" src="{{qrcodeUrl}}" mode="aspectFit" binderror="onPhotoError" data-type="qrcode" data-index="0"/>
           <view wx:else class="qrcode-placeholder">
-            <text class="qrcode-loading">生成中...</text>
+            <text class="qrcode-icon">📱</text>
+            <text class="qrcode-hint">暂无二维码</text>
           </view>
         </view>
       </view>
     </view>
 
-    <!-- 底部操作栏 -->
-    <view class="preview-bottom-bar">
+    <!-- 底部操作栏（仅非公开模式显示） -->
+    <view class="preview-bottom-bar" wx:if="{{!isPublic}}">
       <text class="footer-text">— 预览模式，仅查看 —</text>
       <view class="save-btn" bindtap="saveToAlbum">
         <text class="save-btn-icon">📥</text>
@@ -448,4 +513,35 @@
 
   <!-- Canvas 已停用，改用 imageService.js 公共接口 -->
   <!-- <canvas type="2d" id="previewCanvas" class="preview-canvas"></canvas> -->
+
+  <!-- 事件详情弹窗 -->
+  <view wx:if="{{showEventModal}}" class="event-modal-overlay" bindtap="hideEventModal">
+    <view class="event-modal" catchtap="stopPropagation">
+      <view class="modal-header">
+        <text class="modal-title">事件详情</text>
+        <view class="modal-close" bindtap="hideEventModal">×</view>
+      </view>
+      <view class="modal-body">
+        <view class="event-detail-card">
+          <view class="event-detail-icon {{selectedEvent.type === '产蛋' ? 'event-icon-lay' : ''}}">
+            <text class="icon-emoji">{{selectedEvent.type === '建档' ? '📁' : selectedEvent.type === '交配' ? '💕' : selectedEvent.type === '产蛋' ? '🥚' : selectedEvent.type === '换公' ? '🔄' : '📝'}}</text>
+          </view>
+          <view class="event-detail-info">
+            <view class="event-detail-row">
+              <text class="event-detail-label">事件类型</text>
+              <text class="event-detail-value">{{selectedEvent.type}}</text>
+            </view>
+            <view class="event-detail-row">
+              <text class="event-detail-label">发生日期</text>
+              <text class="event-detail-value">{{selectedEvent.date}}</text>
+            </view>
+            <view class="event-detail-row">
+              <text class="event-detail-label">详细描述</text>
+              <text class="event-detail-text">{{selectedEvent.text}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
 </view>

@@ -23,6 +23,8 @@ exports.main = async (event, context) => {
         return await updateRecord(data, openid)
       case 'delete':
         return await deleteRecord(data.id, openid)
+      case 'updateQrBase64':
+        return await updateQrBase64(data, openid)
       default:
         return errorResponse('未知操作')
     }
@@ -130,4 +132,35 @@ async function deleteRecord(id, openid) {
   await db.collection('records').doc(id).remove()
 
   return successResponse(null, '删除成功')
+}
+
+// 更新记录的 QR 缓存字段（静默操作，不要求 openid 严格匹配）
+async function updateQrBase64(data, openid) {
+  const { id, qrBase64, urlLink } = data
+  if (!id) {
+    throw new Error('记录ID不能为空')
+  }
+
+  // 先验证记录存在
+  const recResult = await db.collection('records').doc(id).get().catch(() => null)
+  if (!recResult || !recResult.data) {
+    // 记录不存在，静默忽略
+    return successResponse(null, '记录不存在，跳过')
+  }
+
+  // 只允许记录创建者更新 QR 缓存
+  if (recResult.data.openid !== openid) {
+    return errorResponse('无权限更新此记录')
+  }
+
+  // 更新 qrBase64 字段（只更新这两个缓存字段，不影响其他数据）
+  await db.collection('records').doc(id).update({
+    data: {
+      qrBase64: qrBase64 || '',
+      urlLink: urlLink || '',
+      updatedAt: db.serverDate()
+    }
+  })
+
+  return successResponse(null, 'QR缓存已更新')
 }

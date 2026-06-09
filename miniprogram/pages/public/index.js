@@ -1,4 +1,3 @@
-const ThemeManager = require('../../utils/theme')
 const { getAPI } = require('../../utils/api')
 const { getTempUrl, convertPhotoIdsToUrls } = require('../../utils/image')
 const API = getAPI()
@@ -9,12 +8,10 @@ Page({
     userInfo: {},
     pets: [],
     isPublicMode: true,
-    currentTheme: 'gold',
     loading: true
   },
 
   onLoad: function (options) {
-    this.loadTheme()
     let userId = ''
 
     if (options && options.scene) {
@@ -33,11 +30,6 @@ Page({
     } else {
       this.setData({ loading: false })
     }
-  },
-
-  loadTheme: function () {
-    const currentTheme = ThemeManager.getCurrentTheme()
-    this.setData({ currentTheme })
   },
 
   loadUserInfo: function (userId) {
@@ -105,7 +97,7 @@ Page({
   viewDetail: function (e) {
     const id = e.currentTarget.dataset.id
     wx.navigateTo({
-      url: `/pages/pet/detail?id=${id}&public=1`
+      url: `/pages/pet/preview?petId=${id}&isPublic=true`
     })
   },
 
@@ -132,7 +124,7 @@ Page({
       }
 
       if (fileId) {
-        console.log('头像加载失败，尝试重新获取URL:', fileId)
+
         try {
           const newUrl = await getTempUrl(fileId)
           const userInfo = { ...this.data.userInfo, avatar: newUrl }
@@ -171,7 +163,7 @@ Page({
     }
 
     if (fileId) {
-      console.log('宠物图片加载失败，尝试重新获取URL:', fileId)
+
       try {
         const newUrl = await getTempUrl(fileId)
         const updatedPets = [...pets]

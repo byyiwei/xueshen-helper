@@ -1,5 +1,4 @@
 const { getAPI } = require('../../utils/api.js')
-const ThemeManager = require('../../utils/theme.js')
 const API = getAPI()
 
 Page({
@@ -11,12 +10,13 @@ Page({
     showModal: false,
     modalTitle: '',
     agreementContent: [],
-    currentTheme: 'gold'
+    canGoBack: false  // 是否有页面可以返回
   },
 
   onLoad: function (options) {
-    const currentTheme = ThemeManager.getCurrentTheme()
-    this.setData({ currentTheme })
+    // 检查是否有页面可以返回
+    const pages = getCurrentPages()
+    this.setData({ canGoBack: pages.length > 1 })
 
     const app = getApp()
     if (app.globalData.isLoggedIn) {
@@ -24,22 +24,24 @@ Page({
       return
     }
 
-    // 本地已有 openid → 已登录过用户 → 静默自动登录
-    try {
-      const openid = wx.getStorageSync('openid')
-      if (openid) {
-        app.globalData.isLoggedIn = true
-        app.globalData.openid = openid
-        this.navigateToHome()
-        return
+    // 延迟检查本地登录状态，避免 too early 错误
+    wx.nextTick(() => {
+      try {
+        const openid = wx.getStorageSync('openid')
+        if (openid) {
+          app.globalData.isLoggedIn = true
+          app.globalData.openid = openid
+          this.navigateToHome()
+          return
+        }
+      } catch (error) {
+        console.error('检查登录状态失败:', error)
       }
-    } catch (error) {
-      console.error('检查登录状态失败:', error)
-    }
 
-    // 没有本地 openid → 尝试自动获取微信 openid 并静默登录
-    // 注意：新用户首次登录仍需要手动勾选协议
-    this.tryAutoLogin()
+      // 没有本地 openid → 尝试自动获取微信 openid 并静默登录
+      // 注意：新用户首次登录仍需要手动勾选协议
+      this.tryAutoLogin()
+    })
   },
 
   /**
@@ -76,7 +78,6 @@ Page({
           console.error('判断老用户失败:', e)
         }
 
-        console.log('已静默获取 openid，等待用户勾选协议后登录')
       }
     } catch (error) {
       console.error('自动获取 openid 失败:', error)
@@ -153,17 +154,27 @@ Page({
   },
 
   /**
-   * 保存用户信息到本地存储（自动生成默认昵称等）
+   * 保存用户信息到本地存储（合并本地与云端，本地优先）
    */
   saveUserInfo: function (user) {
+    let localUser = wx.getStorageSync('userInfo') || {}
     if (user) {
-      if (!user.nickname) {
+      // 云端有值则用云端，否则保留本地
+      if (user.nickname && user.nickname !== '') {
+        localUser.nickname = user.nickname
+      } else if (!localUser.nickname) {
         let userIndex = wx.getStorageSync('userIndex') || 0
         userIndex += 1
         wx.setStorageSync('userIndex', userIndex)
-        user.nickname = '龟上心' + userIndex
+        localUser.nickname = '龟上心' + userIndex
       }
-      wx.setStorageSync('userInfo', user)
+      if (user.avatar && user.avatar !== '') {
+        localUser.avatar = user.avatar
+      }
+      if (user.phone && user.phone !== '') {
+        localUser.phone = user.phone
+      }
+      wx.setStorageSync('userInfo', localUser)
       if (user.createdAt) {
         const registerTime = user.createdAt instanceof Date
           ? user.createdAt.toISOString()
@@ -171,15 +182,16 @@ Page({
         wx.setStorageSync('registerTime', registerTime)
       }
     } else {
-      let userIndex = wx.getStorageSync('userIndex') || 0
-      userIndex += 1
-      wx.setStorageSync('userIndex', userIndex)
-      const newUser = {
-        nickname: '龟上心' + userIndex,
-        avatar: '',
-        phone: ''
+      // 云端无用户数据，保留本地（若无昵称则生成默认）
+      if (!localUser.nickname) {
+        let userIndex = wx.getStorageSync('userIndex') || 0
+        userIndex += 1
+        wx.setStorageSync('userIndex', userIndex)
+        localUser.nickname = '龟上心' + userIndex
       }
-      wx.setStorageSync('userInfo', newUser)
+      if (!localUser.avatar) localUser.avatar = ''
+      if (!localUser.phone) localUser.phone = ''
+      wx.setStorageSync('userInfo', localUser)
     }
   },
 
@@ -281,9 +293,19 @@ Page({
 
   stopPropagation: function () {},
 
+  // 跳过登录，返回上一页
+  goBack: function () {
+    wx.navigateBack()
+  },
+
   navigateToHome: function () {
-    wx.switchTab({
-      url: '/pages/pet/index'
-    })
+    const pages = getCurrentPages()
+    if (pages.length > 1) {
+      wx.navigateBack()
+    } else {
+      wx.switchTab({
+        url: '/pages/pet/index'
+      })
+    }
   }
 })

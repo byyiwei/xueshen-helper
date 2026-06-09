@@ -1,4 +1,4 @@
-<view class="container theme-{{currentTheme || 'gold'}}">
+<view class="container">
   <view class="login-box">
     <!-- Logo 爱心龟壳图片 - 带白色圆角背景框 -->
     <view class="logo-wrapper">
@@ -31,6 +31,11 @@
         <text class="divider">和</text>
         <text class="link" bindtap="showPrivacyPolicy">《隐私政策》</text>
       </view>
+    </view>
+
+    <!-- 返回浏览按钮（从其他页面跳转过来时显示） -->
+    <view wx:if="{{canGoBack}}" class="skip-btn" bindtap="goBack">
+      <text class="skip-text">暂不登录，先看看</text>
     </view>
   </view>
 

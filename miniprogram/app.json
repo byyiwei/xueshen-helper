@@ -1,12 +1,12 @@
 {
   "pages": [
-    "pages/login/index",
-    "pages/footprint/index",
     "pages/pet/index",
+    "pages/footprint/index",
     "pages/pet/detail",
     "pages/pet/preview",
     "pages/my/index",
-    "pages/public/index"
+    "pages/public/index",
+    "pages/login/index"
   ],
   "window": {
     "backgroundTextStyle": "dark",
@@ -17,8 +17,8 @@
   },
   "tabBar": {
     "custom": true,
-    "color": "#999999",
-    "selectedColor": "#B8860B",
+    "color": "#94A3B8",
+    "selectedColor": "#2D6A4F",
     "backgroundColor": "#ffffff",
     "borderStyle": "white",
     "list": [
@@ -36,6 +36,7 @@
       }
     ]
   },
+  "requiredBackgroundModes": [],
   "style": "v2",
   "sitemapLocation": "sitemap.json",
   "lazyCodeLoading": "requiredComponents"

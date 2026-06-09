@@ -1,0 +1,54 @@
+/* pages/textPrint/index.wxss */
+page,
+.app {
+    width: 100%;
+    height: 100%;
+}
+
+.app {
+    display: flex;
+    flex-direction: column;
+}
+
+.app .app-header {
+    height: auto;
+}
+
+.app .app-main {
+    flex: 1;
+}
+
+.app .app-footer {
+    height: auto;
+}
+.btn-flex-group {
+  margin: 0 auto;
+  padding: 0 0.5em;
+  text-align: center;
+  display: flex;
+}
+.btn-flex-group .btn {
+  flex: 1;
+}
+.btn {
+    margin: 0.5em 0.5em;
+}
+
+.section-group {
+    margin: 1em;
+}
+
+.picker {
+    padding: 5px 13px;
+    background-color: #FFFFFF;
+}
+
+.print-canvas {
+    position: fixed;
+    left: -999999rpx;
+    top: -999999rpx;
+}
+
+.preview-image {
+    border: lightgray;
+}

@@ -1,7 +1,11 @@
 {
   "permissions": {
     "openapi": [
-      "wxacode.get"
+      "wxacode.get",
+      "urlLink.generate"
     ]
+  },
+  "envVariables": {
+    "wxcloudEnvId": "cloud1-d0g853l9d7017ea3b"
   }
 }

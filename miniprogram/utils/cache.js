@@ -19,7 +19,7 @@ function setCache(key, value, expireSeconds = 0) {
     console.error('设置缓存失败:', error)
     // 如果是存储满错误，尝试清理旧缓存
     if (error && (error.message || '').includes('storage')) {
-      console.log('尝试清理缓存空间...')
+
       clearOldCache()
       // 重试一次
       try {

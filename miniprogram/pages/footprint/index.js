@@ -1,6 +1,5 @@
 const { getAPI } = require('../../utils/api.js')
 const { getTempUrl } = require('../../utils/image.js')
-const ThemeManager = require('../../utils/theme.js')
 const API = getAPI()
 
 Page({
@@ -9,41 +8,79 @@ Page({
     groupedFootprints: [],
     selectedFootprint: null,
     showPreviewModal: false,
-    currentTheme: 'gold',
     totalPets: 0,
     totalRecords: 0,
     companyDays: 0,
     isEditMode: false,
-    selectedIds: [],
-    allSelected: false
+    selectedMap: {},
+    selectedCount: 0,
+    pageNum: 1,
+    pageSize: 6,
+    hasMore: true,
+    loading: false,
+    loadingMore: false,
+    refreshing: false,
+    statusBarHeight: 0,
+    totalNavHeight: 120,
+    showDescModal: false,
+    descValue: '',
+    tempFilePaths: [],
+    showSkeleton: true,
+    isLoggedIn: false
   },
 
   onLoad: function () {
+    const sysInfo = wx.getSystemInfoSync()
+    const statusBarHeight = Math.max(sysInfo.statusBarHeight || 20, 20)
+    const safeAreaTop = sysInfo.safeArea ? (sysInfo.safeArea.top || statusBarHeight) : statusBarHeight
+    const finalStatusBarHeight = Math.max(statusBarHeight, safeAreaTop)
+    const rpxRatio = 750 / sysInfo.windowWidth
+    const totalNavHeight = Math.round(finalStatusBarHeight * rpxRatio) + 88 + 16
+    this.setData({ statusBarHeight: finalStatusBarHeight, totalNavHeight })
     const app = getApp()
-    if (!app.checkLogin()) return
-    this.loadTheme()
-    this.loadAll()
+    const isLoggedIn = app.globalData.isLoggedIn
+    this.setData({ isLoggedIn })
+    if (isLoggedIn) {
+      this.loadAll()
+    } else {
+      this.setData({ showSkeleton: false })
+    }
   },
 
   onShow: function () {
     const app = getApp()
-    if (!app.globalData.isLoggedIn) return
-    this.loadTheme()
-    this.loadAll()
-
-    // 主动更新 tabBar 选中状态和主题色（足迹是第 2 个 tab，索引 1）
+    const isLoggedIn = app.globalData.isLoggedIn
+    this.setData({ isLoggedIn })
+    // 主动更新 tabBar 选中状态，并确保 tabBar 可见
     if (typeof this.getTabBar === 'function' && this.getTabBar()) {
       const tabBar = this.getTabBar()
-      tabBar.setData({ selected: 1 })
-      if (tabBar.applyThemeColor) {
-        tabBar.applyThemeColor()
-      }
+      tabBar.setData({ selected: 1, visible: true })
+    }
+    // 登录后返回时自动加载数据
+    if (app.globalData.isLoggedIn && this.data.footprints.length === 0) {
+      this.loadAll()
     }
   },
 
-  loadTheme: function () {
-    const currentTheme = ThemeManager.getCurrentTheme()
-    this.setData({ currentTheme })
+  goToLogin: function () {
+    const app = getApp()
+    app.requireLogin()
+  },
+
+  onReachBottom: function () {
+
+    this.loadMoreFootprints()
+  },
+
+  onPullDownRefresh: function () {
+    this.setData({ refreshing: true })
+    this.loadAll().then(() => {
+      this.setData({ refreshing: false })
+      wx.stopPullDownRefresh()
+    }).catch(() => {
+      this.setData({ refreshing: false })
+      wx.stopPullDownRefresh()
+    })
   },
 
   loadAll: async function () {
@@ -51,6 +88,7 @@ Page({
       this.loadFootprints(),
       this.loadStats()
     ])
+    this.setData({ showSkeleton: false })
   },
 
   loadStats: async function () {
@@ -110,24 +148,55 @@ Page({
     return Math.max(diff, 0)
   },
 
-  loadFootprints: async function () {
+  loadFootprints: async function (reset = true) {
+
+    if (reset) {
+      this.setData({ loading: true, pageNum: 1, hasMore: true, footprints: [], groupedFootprints: [] })
+    } else {
+      if (this.data.loadingMore || !this.data.hasMore) {
+
+        return
+      }
+      this.setData({ loadingMore: true })
+    }
+
     try {
-      const result = await API.getFootprintList('all')
+      const result = await API.getFootprintList('all', this.data.pageNum, this.data.pageSize)
+
       if (result.success) {
-        const footprints = (result.data || [])
-          .map((f) => ({ ...f, id: f._id || f.id || f._id }))
+        const newFootprints = (result.data.list || result.data || [])
+          .map((f) => {
+
+            return { ...f, id: f._id || f.id || f._id }
+          })
           .sort((a, b) => this.compareDate(b, a))
+
+        const footprints = reset ? newFootprints : [...this.data.footprints, ...newFootprints]
+        const hasMore = result.data.hasMore !== undefined ? result.data.hasMore : newFootprints.length === this.data.pageSize
+
         this.setData({
-          footprints,
-          groupedFootprints: this.groupFootprintsByPeriod(footprints)
+          footprints: footprints || [],
+          groupedFootprints: this.groupFootprintsByPeriod(footprints) || [],
+          hasMore,
+          pageNum: reset ? 2 : this.data.pageNum + 1
         })
       } else {
-        this.setData({ footprints: [], groupedFootprints: [] })
+        if (reset) {
+          this.setData({ footprints: [], groupedFootprints: [], hasMore: false })
+        }
       }
     } catch (error) {
       console.error('加载足迹失败:', error)
-      this.setData({ footprints: [], groupedFootprints: [] })
+      if (reset) {
+        this.setData({ footprints: [], groupedFootprints: [], hasMore: false })
+      }
+    } finally {
+      this.setData({ loading: false, loadingMore: false })
     }
+  },
+
+  loadMoreFootprints: async function () {
+    await this.loadFootprints(false)
   },
 
   compareDate: function (a, b) {
@@ -214,7 +283,11 @@ Page({
             wx.showToast({ title: '未选择图片', icon: 'none' })
             return
           }
-          that.uploadImages(files.map((f) => f.tempFilePath))
+          that.setData({ 
+            tempFilePaths: files.map((f) => f.tempFilePath),
+            descValue: '',
+            showDescModal: true 
+          })
         },
         fail: (err) => {
           if (err && err.errMsg && err.errMsg.indexOf('cancel') > -1) {
@@ -226,7 +299,11 @@ Page({
             sizeType: ['compressed'],
             sourceType: ['album', 'camera'],
             success: (res2) => {
-              that.uploadImages(res2.tempFilePaths || [])
+              that.setData({ 
+                tempFilePaths: res2.tempFilePaths || [],
+                descValue: '',
+                showDescModal: true 
+              })
             },
             fail: () => {}
           })
@@ -238,10 +315,24 @@ Page({
     }
   },
 
+  hideDescModal: function () {
+    this.setData({ showDescModal: false, tempFilePaths: [], descValue: '' })
+  },
+
+  onDescInput: function (e) {
+    this.setData({ descValue: e.detail.value })
+  },
+
+  confirmDesc: function () {
+    const { tempFilePaths, descValue } = this.data
+    this.setData({ showDescModal: false })
+    this.uploadImages(tempFilePaths, descValue)
+  },
+
   /**
    * 批量上传图片并保存足迹
    */
-  uploadImages: async function (filePaths) {
+  uploadImages: async function (filePaths, description = '') {
     if (!filePaths || filePaths.length === 0) return
     wx.showLoading({ title: '上传中...', mask: true })
 
@@ -272,7 +363,8 @@ Page({
           thumbnail: '',
           duration: 0,
           date: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
-          time: `${pad(now.getHours())}:${pad(now.getMinutes())}`
+          time: `${pad(now.getHours())}:${pad(now.getMinutes())}`,
+          description: description || ''
         }
 
         // 3. 调用云函数保存
@@ -364,44 +456,83 @@ Page({
   /* ======== 批量管理 ======== */
 
   enterEditMode: function () {
-    this.setData({ isEditMode: true, selectedIds: [], allSelected: false })
+    this.setData({
+      isEditMode: true,
+      selectedMap: {},
+      selectedCount: 0,
+      allSelected: false
+    })
   },
 
   exitEditMode: function () {
-    this.setData({ isEditMode: false, selectedIds: [], allSelected: false })
+    this.setData({ isEditMode: false, selectedMap: {}, selectedCount: 0, allSelected: false })
+  },
+
+  onCardTap: function (e) {
+    if (this.data.isEditMode) {
+      const id = e.currentTarget.dataset.id
+      if (id) this.toggleSelectById(id)
+    } else {
+      const fp = e.currentTarget.dataset.footprint
+      this.setData({
+        selectedFootprint: fp,
+        showPreviewModal: true
+      })
+    }
+  },
+
+  toggleSelectById: function (id) {
+    if (!id) return
+    const { selectedMap, footprints } = this.data
+    const newMap = { ...selectedMap }
+
+    if (newMap[id]) {
+      delete newMap[id]
+    } else {
+      newMap[id] = true
+    }
+
+    const selectedCount = Object.keys(newMap).length
+    const allSelected = footprints.length > 0 && selectedCount === footprints.length
+
+    this.setData({
+      selectedMap: newMap,
+      selectedCount,
+      allSelected
+    })
   },
 
   toggleSelect: function (e) {
     const id = e.currentTarget.dataset.id
-    if (!id) return
-    const selectedIds = [...this.data.selectedIds]
-    const index = selectedIds.indexOf(id)
-    if (index >= 0) {
-      selectedIds.splice(index, 1)
-    } else {
-      selectedIds.push(id)
-    }
-    const total = this.data.footprints.length
-    this.setData({
-      selectedIds,
-      allSelected: total > 0 && selectedIds.length === total
-    })
+    if (id) this.toggleSelectById(id)
   },
 
   toggleSelectAll: function () {
     const { footprints, allSelected } = this.data
-    if (allSelected) {
-      this.setData({ selectedIds: [], allSelected: false })
+    const newAllSelected = !allSelected
+
+    if (newAllSelected) {
+      const newMap = {}
+      for (const fp of footprints) {
+        if (fp.id) newMap[fp.id] = true
+      }
+      this.setData({
+        selectedMap: newMap,
+        selectedCount: footprints.length,
+        allSelected: true
+      })
     } else {
       this.setData({
-        selectedIds: footprints.map((f) => f.id),
-        allSelected: true
+        selectedMap: {},
+        selectedCount: 0,
+        allSelected: false
       })
     }
   },
 
   deleteSelected: async function () {
-    const { selectedIds } = this.data
+    const { selectedMap } = this.data
+    const selectedIds = Object.keys(selectedMap)
     if (selectedIds.length === 0) {
       wx.showToast({ title: '请先选择足迹', icon: 'none' })
       return
@@ -432,7 +563,7 @@ Page({
         } else {
           wx.showToast({ title: '删除失败', icon: 'none' })
         }
-        this.setData({ isEditMode: false, selectedIds: [], allSelected: false })
+        this.setData({ isEditMode: false, selectedMap: {}, selectedCount: 0, allSelected: false })
         if (successCount > 0) {
           this.loadAll()
         }

@@ -1,14 +1,34 @@
-# Windows
-[Dd]esktop.ini
-Thumbs.db
-$RECYCLE.BIN/
-
-# macOS
-.DS_Store
-.fseventsd
-.Spotlight-V100
-.TemporaryItems
-.Trashes
-
-# Node.js
+# 依赖
 node_modules/
+
+# 云开发配置（含密钥，绝不提交）
+cloud-config.txt
+*.env
+.env.*
+
+# 上传临时文件
+.uploads/
+
+# 微信开发者工具个人配置
+project.private.config.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log
+npm-debug.log*
+
+# 构建产物
+dist/
+.wrangler/
+
+# 分析报告（非项目代码）
+项目分析报告.md

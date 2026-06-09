@@ -1,19 +1,60 @@
-<view class="page theme-{{currentTheme || 'gold'}}">
-  <view class="header">
-    <view class="header-inner">
-      <view class="back-btn" bindtap="goBack">
-        <text class="back-icon">‹</text>
+<view class="page">
+
+  <view wx:if="{{showSkeleton}}" class="skeleton-container">
+    <!-- 头部骨架 -->
+    <view class="skeleton-header"></view>
+    
+    <!-- 图片区骨架 -->
+    <view class="skeleton-photo-banner">
+      <view class="skeleton-photo"></view>
+    </view>
+    
+    <!-- 宠物信息骨架 -->
+    <view class="skeleton-pet-info">
+      <view class="skeleton-info-row">
+        <view class="skeleton-pet-name"></view>
+        <view class="skeleton-gender-badge"></view>
       </view>
-      <text class="header-title">种龟详情</text>
-      <view wx:if="{{!isPublicMode}}" class="header-actions">
-        <view class="action-btn" bindtap="showMore">⋯</view>
-        <view class="action-btn" bindtap="showDeleteConfirm">−</view>
-        <view class="action-btn" bindtap="editInfo">⟳</view>
+      <view class="skeleton-info-tags">
+        <view class="skeleton-info-tag"></view>
+        <view class="skeleton-info-tag"></view>
+      </view>
+      <view class="skeleton-relation-row">
+        <view class="skeleton-relation-item"></view>
+        <view class="skeleton-relation-divider"></view>
+        <view class="skeleton-relation-item"></view>
+      </view>
+    </view>
+    
+    <!-- 事件区域骨架 -->
+    <view class="skeleton-section">
+      <view class="skeleton-section-title"></view>
+      <view class="skeleton-event-tabs">
+        <view class="skeleton-event-tab"></view>
+        <view class="skeleton-event-tab"></view>
+        <view class="skeleton-event-tab"></view>
+        <view class="skeleton-event-tab"></view>
+      </view>
+      <view class="skeleton-event-list">
+        <view class="skeleton-event-card">
+          <view class="skeleton-event-icon"></view>
+          <view class="skeleton-event-content">
+            <view class="skeleton-event-title"></view>
+            <view class="skeleton-event-date"></view>
+          </view>
+        </view>
+        <view class="skeleton-event-card">
+          <view class="skeleton-event-icon"></view>
+          <view class="skeleton-event-content">
+            <view class="skeleton-event-title"></view>
+            <view class="skeleton-event-date"></view>
+          </view>
+        </view>
       </view>
     </view>
   </view>
 
-  <view wx:if="{{loading}}" class="loading-container">
+  <view wx:elif="{{loading}}" class="loading-container">
     <view class="loading-spinner"></view>
     <text class="loading-text">加载中...</text>
   </view>
@@ -55,6 +96,33 @@
       </view>
     </view>
 
+    <!-- 提醒事件展示区 -->
+    <view wx:if="{{upcomingReminders.length > 0}}" class="reminder-section" bindtap="tapUpcomingReminder">
+      <view class="reminder-header">
+        <text class="reminder-header-title">提醒</text>
+        <text class="reminder-header-count">共 {{upcomingReminders.length}} 项</text>
+      </view>
+      <view class="reminder-list">
+        <view wx:for="{{upcomingReminders}}" wx:for-item="r" wx:key="id" class="reminder-card reminder-{{r.statusClass}}">
+          <view class="reminder-icon-box">
+            <text class="reminder-icon">{{r.type === '换水' ? '💧' : r.type === '喂食' ? '🍽' : r.type === '健康' ? '❤' : '🥚'}}</text>
+          </view>
+          <view class="reminder-main">
+            <view class="reminder-top">
+              <text class="reminder-type">{{r.type}}</text>
+              <text class="reminder-status">{{r.statusText}}</text>
+            </view>
+            <view class="reminder-bottom">
+              <text class="reminder-meta">每 {{r.intervalDays}} 天 · 下次 {{r.nextDueDate}}</text>
+            </view>
+          </view>
+          <view wx:if="{{!isReadOnly}}" class="reminder-action {{r.doneToday ? 'done' : ''}}" catchtap="markReminderDone" data-id="{{r.id}}">
+            <text class="reminder-action-text">{{r.doneToday ? '已完成' : '完成'}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
     <view class="section">
       <view class="section-title">种龟事件</view>
       <view class="event-tabs">
@@ -86,7 +154,6 @@
             <text class="event-content">{{item.text}}</text>
             <view class="event-date">
               <text class="date">{{item.date}}</text>
-              <text class="time">{{item.time}}</text>
             </view>
           </view>
         </view>
@@ -403,7 +470,7 @@
     </view>
   </view>
 
-  <view wx:if="{{!isPublicMode}}" class="bottom-bar">
+  <view wx:if="{{!isPublicMode && !isReadOnly}}" class="bottom-bar">
     <view class="bar-btn" bindtap="showMore">
       <text class="bar-icon">⋯</text>
     </view>
@@ -468,56 +535,65 @@
             </view>
           </view>
           
-          <view class="form-item">
-            <text class="form-label">别名</text>
-            <view class="input-with-voice">
-              <input class="form-input" placeholder="可选" value="{{editForm.alias}}" bindinput="onEditAliasInput" />
-              <view class="voice-btn" bindlongpress="startVoice" bindtouchend="stopVoice" data-field="editAlias">
-                <text class="voice-btn-icon">●</text>
-              </view>
+          <view class="section-title">
+            <text>更多配置</text>
+            <view class="toggle-btn" bindtap="toggleEditManual">
+              <text>{{showEditManual ? '收起-' : '展开-'}}</text>
             </view>
           </view>
           
-          <view class="form-item">
-            <text class="form-label">父本</text>
-            <view class="family-selector" bindtap="openFatherModal">
-              <view wx:if="{{selectedFather}}" class="family-selected">
-                <image wx:if="{{selectedFather.photos && selectedFather.photos[0]}}" class="family-avatar" src="{{selectedFather.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
-                <view class="family-info">
-                  <text class="family-name">{{selectedFather.alias || selectedFather.name}}</text>
-                  <text class="family-desc">公龟</text>
+          <view class="manual-section" wx:if="{{showEditManual}}">
+            <view class="form-item">
+              <text class="form-label">别名</text>
+              <view class="input-with-voice">
+                <input class="form-input" placeholder="可选" value="{{editForm.alias}}" bindinput="onEditAliasInput" />
+                <view class="voice-btn" bindlongpress="startVoice" bindtouchend="stopVoice" data-field="editAlias">
+                  <text class="voice-btn-icon">●</text>
                 </view>
               </view>
-              <text wx:else class="family-placeholder">点击选择父本</text>
             </view>
-            <view wx:if="{{selectedFather}}" class="family-clear" bindtap="clearFather">清空</view>
-          </view>
-          
-          <view class="form-item">
-            <text class="form-label">母本</text>
-            <view class="family-selector" bindtap="openMotherModal">
-              <view wx:if="{{selectedMother}}" class="family-selected">
-                <image wx:if="{{selectedMother.photos && selectedMother.photos[0]}}" class="family-avatar" src="{{selectedMother.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
-                <view class="family-info">
-                  <text class="family-name">{{selectedMother.alias || selectedMother.name}}</text>
-                  <text class="family-desc">母龟</text>
+            
+            <view class="form-item">
+              <text class="form-label">父本</text>
+              <view class="family-selector" bindtap="openFatherModal">
+                <view wx:if="{{selectedFather}}" class="family-selected">
+                  <image wx:if="{{selectedFather.photos && selectedFather.photos[0]}}" class="family-avatar" src="{{selectedFather.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  <view class="family-info">
+                    <text class="family-name">{{selectedFather.alias || selectedFather.name}}</text>
+                    <text class="family-desc">公龟</text>
+                  </view>
                 </view>
+                <text wx:else class="family-placeholder">点击选择父本</text>
               </view>
-              <text wx:else class="family-placeholder">点击选择母本</text>
+              <view wx:if="{{selectedFather}}" class="family-clear" bindtap="clearFather">清空</view>
             </view>
-            <view wx:if="{{selectedMother}}" class="family-clear" bindtap="clearMother">清空</view>
-          </view>
+            
+            <view class="form-item">
+              <text class="form-label">母本</text>
+              <view class="family-selector" bindtap="openMotherModal">
+                <view wx:if="{{selectedMother}}" class="family-selected">
+                  <image wx:if="{{selectedMother.photos && selectedMother.photos[0]}}" class="family-avatar" src="{{selectedMother.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  <view class="family-info">
+                    <text class="family-name">{{selectedMother.alias || selectedMother.name}}</text>
+                    <text class="family-desc">母龟</text>
+                  </view>
+                </view>
+                <text wx:else class="family-placeholder">点击选择母本</text>
+              </view>
+              <view wx:if="{{selectedMother}}" class="family-clear" bindtap="clearMother">清空</view>
+            </view>
 
-          <!-- 图片管理 -->
-          <view class="form-item">
-            <text class="form-label">照片</text>
-            <view class="photo-manager">
-              <view wx:for="{{editPhotoList}}" wx:key="*this" class="photo-thumb-wrap">
-                <image class="photo-thumb" src="{{item}}" mode="aspectFill" binderror="onPhotoError" data-type="hero" data-index="{{index}}" />
-                <view class="photo-del" catchtap="removeEditPhoto" data-index="{{index}}">×</view>
-              </view>
-              <view wx:if="{{editPhotoList.length < 5}}" class="photo-add-btn" bindtap="chooseEditPhoto">
-                <text class="photo-add-icon">+</text>
+            <!-- 图片管理 -->
+            <view class="form-item">
+              <text class="form-label">照片</text>
+              <view class="photo-manager">
+                <view wx:for="{{editPhotoList}}" wx:key="*this" class="photo-thumb-wrap">
+                  <image class="photo-thumb" src="{{item}}" mode="aspectFill" binderror="onPhotoError" data-type="hero" data-index="{{index}}" />
+                  <view class="photo-del" catchtap="removeEditPhoto" data-index="{{index}}">×</view>
+                </view>
+                <view wx:if="{{editPhotoList.length < 5}}" class="photo-add-btn" bindtap="chooseEditPhoto">
+                  <text class="photo-add-icon">+</text>
+                </view>
               </view>
             </view>
           </view>
@@ -533,7 +609,7 @@
 
   <!-- 选择父本弹窗 -->
   <view wx:if="{{showFatherModal}}" class="modal-overlay" bindtap="hideFatherModal">
-    <view class="family-modal" catchtap="stopPropagation">
+    <view class="family-modal-bottom" catchtap="stopPropagation">
       <view class="family-modal-header">
         <text class="family-modal-title">选择父本</text>
         <view class="modal-close" bindtap="hideFatherModal">×</view>
@@ -558,7 +634,7 @@
 
   <!-- 选择母本弹窗 -->
   <view wx:if="{{showMotherModal}}" class="modal-overlay" bindtap="hideMotherModal">
-    <view class="family-modal" catchtap="stopPropagation">
+    <view class="family-modal-bottom" catchtap="stopPropagation">
       <view class="family-modal-header">
         <text class="family-modal-title">选择母本</text>
         <view class="modal-close" bindtap="hideMotherModal">×</view>
@@ -582,11 +658,15 @@
   </view>
 
   <!-- 删除确认弹窗 -->
-  <view wx:if="{{showDeleteConfirm}}" class="modal-overlay" bindtap="hideDeleteConfirm">
+  <view wx:if="{{showDeleteConfirm}}" class="modal-overlay-center" bindtap="hideDeleteConfirm">
     <view class="confirm-modal" catchtap="stopPropagation">
       <view class="confirm-content">
+        <view class="confirm-icon-wrap">
+          <text class="confirm-icon">🗑️</text>
+        </view>
         <text class="confirm-title">确认删除</text>
         <text class="confirm-text">确定要删除"{{pet.name}}"吗？此操作不可恢复。</text>
+        <view class="confirm-divider"></view>
         <view class="confirm-buttons">
           <view class="btn-cancel" bindtap="hideDeleteConfirm">取消</view>
           <view class="btn-delete" bindtap="confirmDelete">删除</view>
@@ -618,34 +698,52 @@
         
         <view class="form-item form-item-content">
           <text class="form-label">记录内容</text>
-          <textarea class="form-textarea" placeholder="输入记录内容..." value="{{newRecord.text}}" bindinput="onRecordTextInput"></textarea>
+          <view class="textarea-wrap">
+            <textarea class="form-textarea" placeholder="输入记录内容..." value="{{newRecord.text}}" bindinput="onRecordTextInput"></textarea>
+            <view class="voice-btn-inline {{isRecording && currentVoiceField === 'recordText' ? 'recording' : ''}}"
+                  bindlongpress="startVoice"
+                  bindtouchend="stopVoice"
+                  data-field="recordText">
+              <text class="voice-btn-inline-icon">●</text>
+            </view>
+          </view>
         </view>
-        
-        <!-- 可拖动悬浮语音按钮 -->
-        <view class="voice-float-btn {{isRecording && currentVoiceField === 'recordText' ? 'recording' : ''}}"
-              style="left: {{voiceBtnX}}px; top: {{voiceBtnY}}px;"
-              bindtouchstart="onVoiceBtnTouchStart"
-              bindtouchmove="onVoiceBtnTouchMove"
-              bindtouchend="onVoiceBtnTouchEnd"
-              data-field="recordText">
-          <text class="voice-float-icon">●</text>
-          <text class="voice-float-hint" wx:if="{{isRecording && currentVoiceField === 'recordText'}}">松开结束</text>
+
+        <!-- 产蛋记录专属字段 -->
+        <view wx:if="{{newRecord.type === '产蛋'}}" class="egg-fields">
+          <text class="form-label">产蛋数据</text>
+          <view class="egg-input-row">
+            <view class="egg-input-group">
+              <text class="egg-label">下蛋总数</text>
+              <input class="egg-input" type="number" placeholder="0" value="{{newRecord.eggCount}}" bindinput="onEggCountInput" />
+              <text class="egg-unit">枚</text>
+            </view>
+            <view class="egg-input-group">
+              <text class="egg-label">受精数</text>
+              <input class="egg-input" type="number" placeholder="0" value="{{newRecord.fertilizedCount}}" bindinput="onFertilizedCountInput" />
+              <text class="egg-unit">枚</text>
+            </view>
+            <view wx:if="{{newRecord.eggCount > 0}}" class="egg-rate">
+              <text class="egg-rate-label">受精率</text>
+              <text class="egg-rate-value {{eggRateLow ? 'rate-low' : ''}}">{{eggRateText}}</text>
+            </view>
+          </view>
         </view>
       </view>
       
       <view class="modal-footer add-record-footer">
-        <view wx:if="{{printerConfig.autoPrint}}" class="btn-print-record" bindtap="printNewRecord">
-          <text class="btn-print-icon">🖨</text>
-          <text class="btn-print-text">打印</text>
-        </view>
         <view class="btn-cancel" bindtap="hideAddRecordModal">取消</view>
-        <view class="btn-confirm" bindtap="confirmAddRecord">确认</view>
+        <view wx:if="{{printerConfig.enabled}}" class="btn-save-only" bindtap="confirmAddRecord">仅保存</view>
+        <view class="btn-confirm" bindtap="{{printerConfig.enabled ? 'printNewRecord' : 'confirmAddRecord'}}">
+          <text wx:if="{{printerConfig.enabled}}" class="btn-confirm-icon">🖨 </text>
+          <text>{{printerConfig.enabled ? '确认并打印' : '确认'}}</text>
+        </view>
       </view>
     </view>
   </view>
 
   <!-- 记录详情弹窗 -->
-  <view wx:if="{{showRecordModal}}" class="modal-overlay" bindtap="hideRecordModal">
+  <view wx:if="{{showRecordModal}}" class="modal-overlay-center" bindtap="hideRecordModal">
     <view class="record-detail-modal" catchtap="stopPropagation">
       <view class="record-detail-header">
         <view class="record-type-badge {{currentRecord.type === '产蛋' ? 'record-badge-lay' : ''}}">
@@ -657,6 +755,21 @@
       
       <view class="record-detail-content">
         <text class="record-detail-text">{{currentRecord.text}}</text>
+        <!-- 产蛋记录数据展示 -->
+        <view wx:if="{{currentRecord.type === '产蛋' && currentRecord.eggCount}}" class="egg-detail-info">
+          <view class="egg-detail-row">
+            <text class="egg-detail-label">下蛋总数</text>
+            <text class="egg-detail-value">{{currentRecord.eggCount}} 枚</text>
+          </view>
+          <view class="egg-detail-row">
+            <text class="egg-detail-label">受精数</text>
+            <text class="egg-detail-value">{{currentRecord.fertilizedCount || 0}} 枚</text>
+          </view>
+          <view class="egg-detail-row">
+            <text class="egg-detail-label">受精率</text>
+            <text class="egg-detail-value {{currentRecord.eggRateLow ? 'rate-low' : ''}}">{{currentRecord.eggRateText || '0%'}}</text>
+          </view>
+        </view>
       </view>
       
       <view class="record-detail-footer">
@@ -665,7 +778,7 @@
           <text class="date-value">{{currentRecord.date}} {{currentRecord.time}}</text>
         </view>
         <view class="record-detail-actions">
-          <view wx:if="{{printerConfig.autoPrint}}" class="btn-print" bindtap="printRecord">
+          <view wx:if="{{printerConfig.enabled}}" class="btn-print" bindtap="printRecord">
             <text class="btn-print-icon">🖨</text>
             <text class="btn-print-text">打印</text>
           </view>
@@ -711,4 +824,128 @@
       </scroll-view>
     </view>
   </view>
+
+  <!-- 提醒事件管理弹窗 -->
+  <view wx:if="{{showReminderModal}}" class="modal-overlay" bindtap="closeReminderModal">
+    <view class="reminder-modal" catchtap="stopPropagation">
+      <view class="safe-area-top"></view>
+      <view class="modal-header">
+        <text class="modal-title">提醒事件管理</text>
+        <view class="modal-close" bindtap="closeReminderModal">×</view>
+      </view>
+
+      <view wx:if="{{reminders.length === 0}}" class="reminder-modal-empty">
+        <text class="reminder-empty-icon">⏰</text>
+        <text class="reminder-empty-text">还没有设置提醒</text>
+        <text class="reminder-empty-hint">为这只宠物添加定期提醒，避免错过换水、喂食、健康检查等。</text>
+      </view>
+
+      <scroll-view wx:else class="reminder-modal-list" scroll-y>
+        <view wx:for="{{allEnrichedReminders}}" wx:key="id" class="reminder-modal-item reminder-{{item.statusClass}}">
+          <view class="reminder-modal-icon">
+            <text>{{item.type === '换水' ? '💧' : item.type === '喂食' ? '🍽' : item.type === '健康' ? '❤' : '🥚'}}</text>
+          </view>
+          <view class="reminder-modal-main">
+            <view class="reminder-modal-title">
+              <text class="reminder-modal-type">{{item.type}}</text>
+              <text class="reminder-modal-status reminder-status-{{item.statusClass}}">{{item.statusText}}</text>
+            </view>
+            <view class="reminder-modal-sub">
+              <text class="reminder-modal-meta">⏱ 每 {{item.intervalDays}} 天 · 下次 {{item.nextDueDate}}</text>
+            </view>
+            <view class="reminder-modal-sub reminder-modal-sub-dim">
+              <text class="reminder-modal-meta">{{item.lastDone ? '上次完成：' + item.lastDone : '尚未开始'}}</text>
+            </view>
+            <view class="reminder-modal-btns">
+              <view class="reminder-modal-btn done" catchtap="markReminderDone" data-id="{{item.id}}">
+                <text>✓ 完成</text>
+              </view>
+              <view class="reminder-modal-btn edit" catchtap="openReminderEdit" data-id="{{item.id}}">
+                <text>编辑</text>
+              </view>
+              <view class="reminder-modal-btn delete" catchtap="deleteReminder" data-id="{{item.id}}">
+                <text>删除</text>
+              </view>
+            </view>
+          </view>
+        </view>
+      </scroll-view>
+
+      <view class="reminder-modal-footer">
+        <view class="reminder-modal-add-btn" bindtap="openReminderEdit">
+          <text class="reminder-modal-add-icon">+</text>
+          <text class="reminder-modal-add-text">新增提醒</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 新增/编辑提醒弹窗 -->
+  <view wx:if="{{showReminderEditModal}}" class="modal-overlay" bindtap="closeReminderEdit">
+    <view class="reminder-edit-modal" catchtap="stopPropagation">
+      <view class="safe-area-top"></view>
+      <view class="modal-header">
+        <text class="modal-title">{{editingReminder ? '编辑提醒' : '新增提醒'}}</text>
+        <view class="modal-close" bindtap="closeReminderEdit">×</view>
+      </view>
+
+      <view class="reminder-edit-form">
+        <view class="reminder-edit-row">
+          <text class="reminder-edit-label">提醒类型</text>
+          <view class="reminder-edit-type-grid">
+            <view wx:for="{{['换水','喂食','健康','繁育']}}" wx:key="*this"
+                  class="reminder-edit-type-chip {{reminderForm.type === item ? 'active' : ''}}"
+                  bindtap="selectReminderType" data-type="{{item}}">
+              <text class="type-chip-icon">{{item === '换水' ? '💧' : item === '喂食' ? '🍽' : item === '健康' ? '❤' : '🥚'}}</text>
+              <text class="type-chip-text">{{item}}</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="reminder-edit-row">
+          <text class="reminder-edit-label">间隔天数</text>
+          <view class="reminder-edit-input-wrap">
+            <input class="reminder-edit-input" type="number" placeholder="如 7" value="{{reminderForm.intervalDays}}" bindinput="onReminderIntervalInput" />
+            <text class="reminder-edit-unit">天</text>
+          </view>
+        </view>
+
+        <view class="reminder-edit-row">
+          <text class="reminder-edit-label">上次完成日期</text>
+          <picker mode="date" value="{{reminderForm.lastDone || today}}" end="{{today}}" bindchange="onReminderLastDoneChange">
+            <view class="reminder-edit-date">
+              <text class="reminder-edit-date-text">{{reminderForm.lastDone || '选择日期（可选）'}}</text>
+              <text class="reminder-edit-date-icon">▾</text>
+            </view>
+          </picker>
+          <text class="reminder-edit-hint">不选则从今天开始计算</text>
+        </view>
+      </view>
+
+      <view class="modal-footer">
+        <view class="btn-cancel btn-full" bindtap="closeReminderEdit">
+          <text>取消</text>
+        </view>
+        <view class="btn-confirm btn-full" bindtap="submitReminder">
+          <text>{{editingReminder ? '保存' : '添加'}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
 </view>
+
+  <!-- 打印调试弹窗 -->
+  <view wx:if="{{showPrintDebugModal}}" class="modal-overlay" catchtap="hidePrintDebugModal">
+    <view class="debug-modal" catchtap="stopPropagation">
+      <view class="modal-header">
+        <text class="modal-title">🔍 打印调试信息</text>
+        <view class="modal-close" bindtap="hidePrintDebugModal">×</view>
+      </view>
+      <scroll-view class="debug-content" scroll-y style="max-height: 400rpx;">
+        <view wx:for="{{printDebugSteps}}" wx:key="index" class="debug-line"
+              style="color:{{item.indexOf('❌')===0 ? '#E53E3E' : (item.indexOf('⚠️')===0 ? '#DD6B20' : '#38A169')}}; font-size: 24rpx; padding: 6rpx 0;">
+          {{item}}
+        </view>
+      </scroll-view>
+    </view>
+  </view>

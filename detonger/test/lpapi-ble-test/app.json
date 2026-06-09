@@ -1,0 +1,35 @@
+{
+    "pages": [
+        "pages/index/index",
+        "pages/textPrint/index",
+        "pages/rectPrint/index",
+        "pages/barcodePrint/index",
+        "pages/qrcodePrint/index",
+        "pages/imagePrint/index",
+        "pages/tablePrint/index",
+        "pages/alignPrint/index",
+        "pages/jsonPrint/index",
+        "pages/wdfxPrint/index"
+    ],
+    "window": {
+        "backgroundTextStyle": "dark",
+        "navigationBarBackgroundColor": "#fff",
+        "navigationBarTitleText": "LPAPI打印测试",
+        "navigationBarTextStyle": "black",
+        "enablePullDownRefresh": true
+    },
+    "permission": {
+        "scope.userLocation": {
+            "desc": "蓝牙搜索"
+        },
+        "scope.bluetooth": {
+            "desc": "蓝牙搜索"
+        }
+    },
+    "sitemapLocation": "sitemap.json",
+    "lazyCodeLoading": "requiredComponents",
+    "useExtendedLib": {
+        "kbone": true,
+        "weui": true
+    }
+}

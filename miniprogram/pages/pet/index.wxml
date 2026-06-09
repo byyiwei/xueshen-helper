@@ -1,111 +1,182 @@
 <wxs src="./index.wxs" module="utils" />
-<view class="page theme-{{currentTheme || 'gold'}}">
-  <!-- 筛选卡片 -->
-  <view class="filter-card theme-{{currentTheme || 'gold'}}">
-    <view class="filter-card-head">
-      <text class="filter-card-title">筛选</text>
-      <view class="more-btn {{showFilters ? 'active' : ''}}" bindtap="toggleFilters">{{showFilters ? '收起' : '更多'}}</view>
-    </view>
+<view class="page" style="padding-top: {{totalNavHeight}}rpx;">
+  <!-- 自定义导航栏（含刷新状态） -->
+  <view class="custom-nav {{refreshing ? 'is-refreshing' : ''}}" style="padding-top: {{statusBarHeight}}px">
+    <block wx:if="{{refreshing}}">
+      <view class="nav-refresh-spinner"></view>
+      <text class="nav-refresh-text">刷新中...</text>
+    </block>
+    <text wx:else class="nav-title">宠物档案</text>
+  </view>
 
-    <view class="filter-group">
-      <text class="filter-group-label">系列</text>
-      <view class="filter-tag-row">
-        <view class="filter-chip {{filter.series === '全部' ? 'active' : ''}}" bindtap="setFilter" data-key="series" data-value="全部">全部</view>
-        <view wx:for="{{categories}}" wx:key="*this" wx:for-item="cat" class="filter-chip {{filter.series === cat ? 'active' : ''}}" bindtap="setFilter" data-key="series" data-value="{{cat}}">{{cat}}</view>
+  <!-- 骨架屏 -->
+  <view wx:if="{{showSkeleton}}" class="skeleton-container">
+    <!-- 筛选卡片骨架 -->
+    <view class="skeleton-filter-card">
+      <view class="skeleton-filter-head">
+        <view class="skeleton-title"></view>
+        <view class="skeleton-more-btn"></view>
       </view>
-    </view>
-
-    <view wx:if="{{showFilters}}" class="filter-group">
-      <text class="filter-group-label">性别</text>
-      <view class="filter-tag-row">
-        <view class="filter-chip {{filter.gender === '全部' ? 'active' : ''}}" bindtap="setFilter" data-key="gender" data-value="全部">全部</view>
-        <view class="filter-chip {{filter.gender === '公' ? 'active' : ''}}" bindtap="setFilter" data-key="gender" data-value="公">公</view>
-        <view class="filter-chip {{filter.gender === '母' ? 'active' : ''}}" bindtap="setFilter" data-key="gender" data-value="母">母</view>
-        <view class="filter-chip {{filter.gender === '未知' ? 'active' : ''}}" bindtap="setFilter" data-key="gender" data-value="未知">未知</view>
+      <view class="skeleton-filter-group">
+        <view class="skeleton-filter-label"></view>
+        <view class="skeleton-filter-chips">
+          <view class="skeleton-chip"></view>
+          <view class="skeleton-chip"></view>
+          <view class="skeleton-chip"></view>
+        </view>
       </view>
+      <view class="skeleton-search"></view>
     </view>
 
-    <view wx:if="{{showFilters}}" class="filter-group">
-      <text class="filter-group-label">状态</text>
-      <view class="filter-tag-row">
-        <view class="filter-chip {{filter.status === '全部' ? 'active' : ''}}" bindtap="setFilter" data-key="status" data-value="全部">全部</view>
-        <view class="filter-chip {{filter.status === '正常' ? 'active' : ''}}" bindtap="setFilter" data-key="status" data-value="正常">正常</view>
-        <view class="filter-chip {{filter.status === '待配' ? 'active' : ''}}" bindtap="setFilter" data-key="status" data-value="待配">待配</view>
-        <view class="filter-chip {{filter.status === '预警' ? 'active' : ''}}" bindtap="setFilter" data-key="status" data-value="预警">预警</view>
+    <!-- 宠物卡片骨架 -->
+    <view class="skeleton-pet-list">
+      <view class="skeleton-pet-card">
+        <view class="skeleton-pet-image"></view>
+        <view class="skeleton-pet-info">
+          <view class="skeleton-pet-name"></view>
+          <view class="skeleton-pet-meta"></view>
+        </view>
       </view>
-    </view>
-
-    <view class="search-wrap">
-      <input class="search-input" placeholder-class="search-placeholder" placeholder="{{searchPlaceholder}}" value="{{searchText}}" bindinput="onSearchInput" bindfocus="onSearchFocus" bindblur="onSearchBlur" confirm-type="search" />
+      <view class="skeleton-pet-card">
+        <view class="skeleton-pet-image"></view>
+        <view class="skeleton-pet-info">
+          <view class="skeleton-pet-name"></view>
+          <view class="skeleton-pet-meta"></view>
+        </view>
+      </view>
+      <view class="skeleton-pet-card">
+        <view class="skeleton-pet-image"></view>
+        <view class="skeleton-pet-info">
+          <view class="skeleton-pet-name"></view>
+          <view class="skeleton-pet-meta"></view>
+        </view>
+      </view>
     </view>
   </view>
-  
-  <view class="content">
-    <view wx:if="{{filteredPets.length === 0}}" class="empty-state">
-      <view class="empty-icon">
-        <view class="empty-circle">
-          <view class="dots">
-            <view class="dot"></view>
-            <view class="dot"></view>
-            <view class="dot"></view>
+
+  <!-- 真实内容（骨架屏隐藏时显示） -->
+  <view wx:else>
+    <!-- 筛选卡片 -->
+    <view class="filter-card">
+      <view class="filter-card-head">
+        <text class="filter-card-title">筛选</text>
+        <view class="more-btn {{showFilters ? 'active' : ''}}" bindtap="toggleFilters">{{showFilters ? '收起' : '更多'}}</view>
+      </view>
+
+      <view class="filter-group">
+        <text class="filter-group-label">系列</text>
+        <view class="filter-tag-row">
+          <view class="filter-chip {{filter.series === '全部' ? 'active' : ''}}" bindtap="setFilter" data-key="series" data-value="全部">全部</view>
+          <view wx:for="{{categories}}" wx:key="*this" wx:for-item="cat" class="filter-chip {{filter.series === cat ? 'active' : ''}}" bindtap="setFilter" data-key="series" data-value="{{cat}}">{{cat}}</view>
+        </view>
+      </view>
+
+      <view wx:if="{{showFilters}}" class="filter-group">
+        <text class="filter-group-label">性别</text>
+        <view class="filter-tag-row">
+          <view class="filter-chip {{filter.gender === '全部' ? 'active' : ''}}" bindtap="setFilter" data-key="gender" data-value="全部">全部</view>
+          <view class="filter-chip {{filter.gender === '公' ? 'active' : ''}}" bindtap="setFilter" data-key="gender" data-value="公">公</view>
+          <view class="filter-chip {{filter.gender === '母' ? 'active' : ''}}" bindtap="setFilter" data-key="gender" data-value="母">母</view>
+          <view class="filter-chip {{filter.gender === '未知' ? 'active' : ''}}" bindtap="setFilter" data-key="gender" data-value="未知">未知</view>
+        </view>
+      </view>
+
+      <view wx:if="{{showFilters}}" class="filter-group">
+        <text class="filter-group-label">状态</text>
+        <view class="filter-tag-row">
+          <view class="filter-chip {{filter.status === '全部' ? 'active' : ''}}" bindtap="setFilter" data-key="status" data-value="全部">全部</view>
+          <view class="filter-chip {{filter.status === '正常' ? 'active' : ''}}" bindtap="setFilter" data-key="status" data-value="正常">正常</view>
+          <view class="filter-chip {{filter.status === '待配' ? 'active' : ''}}" bindtap="setFilter" data-key="status" data-value="待配">待配</view>
+          <view class="filter-chip {{filter.status === '预警' ? 'active' : ''}}" bindtap="setFilter" data-key="status" data-value="预警">预警</view>
+        </view>
+      </view>
+
+      <view class="search-wrap">
+        <input class="search-input" placeholder-class="search-placeholder" placeholder="{{searchPlaceholder}}" value="{{searchText}}" bindinput="onSearchInput" bindfocus="onSearchFocus" bindblur="onSearchBlur" confirm-type="search" />
+        <view class="scan-btn" bindtap="scanQrCode" hover-class="scan-btn-hover">
+          <view class="scan-icon">
+            <view class="scan-corner tl"></view>
+            <view class="scan-corner tr"></view>
+            <view class="scan-corner bl"></view>
+            <view class="scan-corner br"></view>
+            <view class="scan-line"></view>
           </view>
         </view>
       </view>
-      <text class="empty-text">还没有宠物档案</text>
     </view>
     
-    <view wx:else class="pet-list">
-      <!-- 批量操作栏 -->
-      <view wx:if="{{isEditMode}}" class="edit-bar">
-        <view class="edit-bar-left">
-          <view class="select-all-btn" bindtap="toggleSelectAll">
-            <view class="checkbox {{allSelected ? 'checked' : ''}}" style="{{allSelected ? 'background-color:' + switchColor + ';border-color:' + switchColor : ''}}">
-              <text wx:if="{{allSelected}}" class="check-mark">✓</text>
+    <view class="content">
+      <view wx:if="{{filteredPets.length === 0}}" class="empty-state">
+        <view class="empty-icon">
+          <view class="empty-circle">
+            <view class="dots">
+              <view class="dot"></view>
+              <view class="dot"></view>
+              <view class="dot"></view>
             </view>
-            <text class="select-all-text">全选</text>
           </view>
-          <text class="selected-count">已选 {{selectedIds.length}} 项</text>
         </view>
-        <view class="edit-bar-right">
-          <view class="edit-bar-btn edit-bar-done" bindtap="exitEditMode">完成</view>
-          <view class="edit-bar-btn" bindtap="deleteSelected" style="color: #e74c3c;">删除</view>
-        </view>
+        <text class="empty-text">还没有宠物档案</text>
       </view>
-
-      <view 
-        wx:for="{{filteredPets}}" 
-        wx:key="id" 
-        class="pet-card {{isEditMode ? 'edit-mode' : ''}} {{item._dragging ? 'dragging' : ''}} {{utils.isSelected(selectedIds, item.id) ? 'selected' : ''}}"
-        style="{{item._dragOffset ? 'transform:translateY(' + item._dragOffset + 'px);z-index:100;' : ''}}"
-      >
-        <!-- 编辑模式选择框 -->
-        <view wx:if="{{isEditMode}}" class="card-checkbox" catchtap="toggleSelect" data-id="{{item.id}}">
-          <view class="checkbox {{utils.isSelected(selectedIds, item.id) ? 'checked' : ''}}" style="{{utils.isSelected(selectedIds, item.id) ? 'background-color:' + switchColor + ';border-color:' + switchColor : ''}}">
-            <text wx:if="{{utils.isSelected(selectedIds, item.id)}}" class="check-mark">✓</text>
+      
+      <view wx:else class="pet-list">
+        <!-- 批量操作栏 -->
+        <view wx:if="{{isEditMode}}" class="edit-bar">
+          <view class="edit-bar-left">
+            <view class="select-all-btn" bindtap="toggleSelectAll">
+              <view class="checkbox {{allSelected ? 'checked' : ''}}" style="{{allSelected ? 'background-color:' + switchColor + ';border-color:' + switchColor : ''}}">
+                <text wx:if="{{allSelected}}" class="check-mark">✓</text>
+              </view>
+              <text class="select-all-text">全选</text>
+            </view>
+            <text class="selected-count">已选 {{selectedIds.length}} 项</text>
+          </view>
+          <view class="edit-bar-right">
+            <view class="edit-bar-btn edit-bar-done" bindtap="exitEditMode">完成</view>
+            <view class="edit-bar-btn" bindtap="deleteSelected" style="color: #E76F51;">删除</view>
           </view>
         </view>
 
-        <!-- 拖动手柄 -->
-        <view wx:if="{{isEditMode}}" class="drag-handle" data-id="{{item.id}}" catchtouchstart="onDragStart" catchtouchmove="onDragMove" catchtouchend="onDragEnd">
-          <text class="drag-dots">⠿</text>
-        </view>
+        <view 
+          wx:for="{{filteredPets}}" 
+          wx:key="id" 
+          class="pet-card {{isEditMode ? 'edit-mode' : ''}} {{item._dragging ? 'dragging' : ''}} {{utils.isSelected(selectedIds, item.id) ? 'selected' : ''}}"
+          style="{{item._dragOffset ? 'transform:translateY(' + item._dragOffset + 'px);z-index:100;' : ''}}"
+        >
+          <!-- 编辑模式选择框 -->
+          <view wx:if="{{isEditMode}}" class="card-checkbox" catchtap="toggleSelect" data-id="{{item.id}}">
+            <view class="checkbox {{utils.isSelected(selectedIds, item.id) ? 'checked' : ''}}" style="{{utils.isSelected(selectedIds, item.id) ? 'background-color:' + switchColor + ';border-color:' + switchColor : ''}}">
+              <text wx:if="{{utils.isSelected(selectedIds, item.id)}}" class="check-mark">✓</text>
+            </view>
+          </view>
 
-        <view class="pet-image-wrapper" bindtap="{{isEditMode ? 'toggleSelect' : 'goToDetail'}}" data-id="{{item.id}}" bindlongpress="{{isEditMode ? '' : 'onCardLongPress'}}" data-pet="{{item}}">
-          <image wx:if="{{item.photos && item.photos.length > 0}}" class="pet-image" src="{{item.photos[0]}}" mode="aspectFill" binderror="onImageError" data-id="{{item.id}}" data-index="{{index}}" />
-          <view wx:else class="pet-placeholder"></view>
-          <view class="pet-gender-badge">
-            <text class="gender-icon">{{item.gender || '未知'}}</text>
+          <!-- 拖动手柄 -->
+          <view wx:if="{{isEditMode}}" class="drag-handle" data-id="{{item.id}}" catchtouchstart="onDragStart" catchtouchmove="onDragMove" catchtouchend="onDragEnd">
+            <text class="drag-dots">⠿</text>
+          </view>
+
+          <view class="pet-image-wrapper" bindtap="{{isEditMode ? 'toggleSelect' : 'goToDetail'}}" data-id="{{item.id}}" bindlongpress="{{isEditMode ? '' : 'onCardLongPress'}}" data-pet="{{item}}">
+            <image wx:if="{{item.photos && item.photos.length > 0}}" class="pet-image" src="{{item.photos[0]}}" mode="aspectFill" binderror="onImageError" data-id="{{item.id}}" data-index="{{index}}" />
+            <view wx:else class="pet-placeholder"></view>
+            <view class="pet-gender-badge">
+              <text class="gender-icon">{{item.gender || '未知'}}</text>
+            </view>
+          </view>
+
+          <!-- 宠物信息 -->
+          <view class="pet-card-info" bindtap="{{isEditMode ? 'toggleSelect' : 'goToDetail'}}" data-id="{{item.id}}">
+            <text class="pet-card-name">{{item.alias || item.name}}</text>
+            <view class="pet-card-meta-row">
+              <text class="pet-card-meta">{{item.category || '未分类'}}</text>
+              <text class="pet-status-tag pet-status-{{item.statusClass || 'normal'}}">{{item.computedStatus || item.status || '正常'}}</text>
+            </view>
           </view>
         </view>
-
-        <!-- 宠物信息 -->
-        <view class="pet-card-info">
-          <text class="pet-card-name">{{item.alias || item.name}}</text>
-          <text class="pet-card-meta">{{item.category || '未分类'}}</text>
+        <view class="load-more">
+          <view wx:if="{{loadingMore}}" class="load-more-spinner"></view>
+          <text wx:if="{{loadingMore}}" class="load-more-text">加载中...</text>
+          <text wx:elif="{{!hasMore && filteredPets.length > 0}}" class="load-more-text">已加载全部可用宠物</text>
         </view>
-      </view>
-      <view class="load-more">
-        <text class="load-more-text">已加载全部可用宠物</text>
       </view>
     </view>
   </view>
@@ -122,6 +193,7 @@
         <view class="modal-close" bindtap="hideAddModal">×</view>
       </view>
       
+      <scroll-view class="modal-scroll" scroll-y enhanced show-scrollbar="{{false}}">
       <view class="photo-section">
         <view class="photo-grid">
           <view wx:for="{{petForm.photos}}" wx:key="index" class="photo-item">
@@ -223,8 +295,7 @@
           <view wx:if="{{selectedMother}}" class="family-clear" bindtap="clearMother">清空</view>
         </view>
       </view>
-      
-
+      </scroll-view>
       
       <view class="modal-footer">
         <view class="btn-cancel" bindtap="hideAddModal">取消</view>
@@ -293,8 +364,8 @@
   </view>
   
   <!-- 选择父本弹窗 -->
-  <view wx:if="{{showFatherModal}}" class="modal-overlay-center" bindtap="hideFatherModal">
-    <view class="family-modal" catchtap="stopPropagation">
+  <view wx:if="{{showFatherModal}}" class="modal-overlay" bindtap="hideFatherModal">
+    <view class="family-modal-bottom" catchtap="stopPropagation">
       <view class="family-modal-header">
         <text class="family-modal-title">选择父本</text>
         <text class="family-modal-desc">请选择一只公龟作为父本</text>
@@ -323,8 +394,8 @@
   </view>
   
   <!-- 选择母本弹窗 -->
-  <view wx:if="{{showMotherModal}}" class="modal-overlay-center" bindtap="hideMotherModal">
-    <view class="family-modal" catchtap="stopPropagation">
+  <view wx:if="{{showMotherModal}}" class="modal-overlay" bindtap="hideMotherModal">
+    <view class="family-modal-bottom" catchtap="stopPropagation">
       <view class="family-modal-header">
         <text class="family-modal-title">选择母本</text>
         <text class="family-modal-desc">请选择一只母龟作为母本</text>

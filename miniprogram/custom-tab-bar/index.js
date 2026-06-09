@@ -1,10 +1,9 @@
-const ThemeManager = require('../utils/theme')
-
 Component({
   data: {
     selected: 0,
-    color: '#999999',
-    selectedColor: '#B8860B',
+    visible: true,
+    color: '#94A3B8',
+    selectedColor: '#2D6A4F',
     list: [
       { pagePath: '/pages/pet/index', text: '宠物' },
       { pagePath: '/pages/footprint/index', text: '足迹' },
@@ -13,53 +12,40 @@ Component({
   },
 
   attached() {
-    this.applyThemeColor()
-    try {
-      this.getTabBarInfo()
-    } catch (error) {
-      console.error('tabBar init error:', error)
-    }
+    wx.nextTick(() => {
+      try {
+        this.getTabBarInfo()
+      } catch (error) {
+        console.error('tabBar init error:', error)
+      }
+    })
   },
 
+  // 关键修复：每次页面显示时重新检查 tabBar 可见性
   pageLifetimes: {
     show() {
-      this.applyThemeColor()
       this.getTabBarInfo()
     }
   },
 
   methods: {
-    applyThemeColor() {
-      try {
-        const currentTheme = ThemeManager.getCurrentTheme()
-        const themeConfig = ThemeManager.getThemeConfig(currentTheme)
-        const selectedColor = themeConfig.primary
-        const color = this.hexToRgba(selectedColor, 0.45)
-        this.setData({ selectedColor, color })
-      } catch (error) {
-        console.error('tabBar theme error:', error)
-      }
-    },
-
-    // 将 hex 颜色转换为 rgba
-    hexToRgba(hex, alpha) {
-      const r = parseInt(hex.slice(1, 3), 16)
-      const g = parseInt(hex.slice(3, 5), 16)
-      const b = parseInt(hex.slice(5, 7), 16)
-      return `rgba(${r}, ${g}, ${b}, ${alpha})`
-    },
-
     getTabBarInfo() {
       const pages = getCurrentPages()
       if (!pages || pages.length === 0) return
       const currentPage = pages[pages.length - 1]
       if (!currentPage || !currentPage.route) return
       const route = '/' + currentPage.route
-      const index = this.data.list.findIndex(item => item.pagePath === route)
+      const index = this.data.list.findIndex(item => 
+        item.pagePath === route || 
+        item.pagePath === currentPage.route ||
+        route.includes(item.pagePath.replace('/', ''))
+      )
       if (index !== -1) {
-        this.setData({ selected: index })
+        // 当前页面是 tabBar 页面，显示并更新选中
+        this.setData({ selected: index, visible: true })
       } else {
-        console.log('当前页面不在tabBar列表中:', route)
+        // 当前页面不在tabBar列表中，隐藏tab-bar
+        this.setData({ visible: false })
       }
     },
 
