@@ -154,24 +154,26 @@ Page({
   },
 
   /**
-   * 保存用户信息到本地存储（合并本地与云端，本地优先）
+   * 保存用户信息到本地存储（本地优先，云端仅补充空白字段）
+   * 
+   * 策略：用户主动修改过的字段（昵称/头像）以本地为准，
+   * 云端只在本地为空时才补充，避免覆盖用户的最新修改。
    */
   saveUserInfo: function (user) {
     let localUser = wx.getStorageSync('userInfo') || {}
     if (user) {
-      // 云端有值则用云端，否则保留本地
-      if (user.nickname && user.nickname !== '') {
-        localUser.nickname = user.nickname
-      } else if (!localUser.nickname) {
-        let userIndex = wx.getStorageSync('userIndex') || 0
-        userIndex += 1
-        wx.setStorageSync('userIndex', userIndex)
-        localUser.nickname = '龟上心' + userIndex
+      // 昵称：本地已有则保留（用户主动修改过的优先级最高）
+      if (!localUser.nickname) {
+        localUser.nickname = (user.nickname && user.nickname !== '')
+          ? user.nickname
+          : this._generateDefaultNickname()
       }
-      if (user.avatar && user.avatar !== '') {
+      // 头像：本地已有则保留
+      if (!localUser.avatar && user.avatar && user.avatar !== '') {
         localUser.avatar = user.avatar
       }
-      if (user.phone && user.phone !== '') {
+      // 手机号：本地已有则保留
+      if (!localUser.phone && user.phone && user.phone !== '') {
         localUser.phone = user.phone
       }
       wx.setStorageSync('userInfo', localUser)
@@ -184,15 +186,19 @@ Page({
     } else {
       // 云端无用户数据，保留本地（若无昵称则生成默认）
       if (!localUser.nickname) {
-        let userIndex = wx.getStorageSync('userIndex') || 0
-        userIndex += 1
-        wx.setStorageSync('userIndex', userIndex)
-        localUser.nickname = '龟上心' + userIndex
+        localUser.nickname = this._generateDefaultNickname()
       }
       if (!localUser.avatar) localUser.avatar = ''
       if (!localUser.phone) localUser.phone = ''
       wx.setStorageSync('userInfo', localUser)
     }
+  },
+
+  _generateDefaultNickname: function () {
+    let userIndex = wx.getStorageSync('userIndex') || 0
+    userIndex += 1
+    wx.setStorageSync('userIndex', userIndex)
+    return '龟上心' + userIndex
   },
 
   toggleAgreement: function () {

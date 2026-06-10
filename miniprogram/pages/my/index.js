@@ -1015,18 +1015,29 @@ Page({
   },
 
   /**
-   * 保存用户信息到云端（静默，不弹提示）
+   * 保存用户信息到云端（静默，失败时重试一次）
    */
   _saveUserInfoToCloud: function (data) {
     try {
       wx.cloud.callFunction({
         name: 'login',
         data: { action: 'updateUserInfo', data }
+      }).then(res => {
+        if (res.result && !res.result.success) {
+          console.error('[saveUserInfoToCloud] 云端返回失败:', res.result.message)
+        }
       }).catch(err => {
-
+        console.error('[saveUserInfoToCloud] 云端保存失败:', err)
+        // 重试一次
+        setTimeout(() => {
+          wx.cloud.callFunction({
+            name: 'login',
+            data: { action: 'updateUserInfo', data }
+          }).catch(() => {})
+        }, 2000)
       })
     } catch (err) {
-
+      console.error('[saveUserInfoToCloud] 调用失败:', err)
     }
   },
 
