@@ -496,9 +496,10 @@
             <text class="form-label">名称</text>
             <view class="input-with-voice">
               <input class="form-input" placeholder="宠物名称" value="{{editForm.name}}" bindinput="onEditNameInput" />
-              <view class="voice-btn" bindlongpress="startVoice" bindtouchend="stopVoice" data-field="editName">
+              <view class="voice-btn {{isRecording && currentVoiceField === 'editName' ? 'recording' : ''}}" bindtap="toggleVoice" data-field="editName">
                 <text class="voice-btn-icon">●</text>
               </view>
+              <view wx:if="{{isRecording && currentVoiceField === 'editName'}}" class="voice-cancel-btn" bindtap="cancelVoice">✕</view>
             </view>
           </view>
           
@@ -547,9 +548,10 @@
               <text class="form-label">别名</text>
               <view class="input-with-voice">
                 <input class="form-input" placeholder="可选" value="{{editForm.alias}}" bindinput="onEditAliasInput" />
-                <view class="voice-btn" bindlongpress="startVoice" bindtouchend="stopVoice" data-field="editAlias">
+                <view class="voice-btn {{isRecording && currentVoiceField === 'editAlias' ? 'recording' : ''}}" bindtap="toggleVoice" data-field="editAlias">
                   <text class="voice-btn-icon">●</text>
                 </view>
+                <view wx:if="{{isRecording && currentVoiceField === 'editAlias'}}" class="voice-cancel-btn" bindtap="cancelVoice">✕</view>
               </view>
             </view>
             
@@ -698,13 +700,15 @@
         
         <view class="form-item form-item-content">
           <text class="form-label">记录内容</text>
-          <view class="textarea-wrap">
+          <view class="textarea-voice-wrap">
             <textarea class="form-textarea" placeholder="输入记录内容..." value="{{newRecord.text}}" bindinput="onRecordTextInput"></textarea>
-            <view class="voice-btn-inline {{isRecording && currentVoiceField === 'recordText' ? 'recording' : ''}}"
-                  bindlongpress="startVoice"
-                  bindtouchend="stopVoice"
-                  data-field="recordText">
-              <text class="voice-btn-inline-icon">●</text>
+            <view class="voice-row">
+              <view class="voice-btn-inline {{isRecording && currentVoiceField === 'recordText' ? 'recording' : ''}}"
+                    bindtap="toggleVoice"
+                    data-field="recordText">
+                <text class="voice-btn-inline-icon">●</text>
+              </view>
+              <view wx:if="{{isRecording && currentVoiceField === 'recordText'}}" class="voice-cancel-inline" bindtap="cancelVoice">取消</view>
             </view>
           </view>
         </view>
@@ -948,4 +952,10 @@
         </view>
       </scroll-view>
     </view>
+  </view>
+
+  <!-- 录音状态提示条 -->
+  <view wx:if="{{isRecording}}" class="voice-status-bar">
+    <text class="voice-status-text">🎤 录音中... 点击按钮完成识别</text>
+    <text class="voice-status-cancel" bindtap="cancelVoice">取消</text>
   </view>

@@ -299,9 +299,14 @@ Page({
 
   stopPropagation: function () {},
 
-  // 跳过登录，返回上一页
+  // 跳过登录，返回首页浏览
   goBack: function () {
-    wx.navigateBack()
+    const pages = getCurrentPages()
+    if (pages.length > 1) {
+      wx.navigateBack()
+    } else {
+      wx.switchTab({ url: '/pages/pet/index' })
+    }
   },
 
   navigateToHome: function () {

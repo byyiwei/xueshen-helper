@@ -6,6 +6,7 @@ class VoiceInputManager {
     this.recorderManager = null
     this.voiceTimeout = null
     this.isRecording = false
+    this.isCancelling = false
     this.currentField = ''
   }
 
@@ -46,13 +47,23 @@ class VoiceInputManager {
   }
 
   /**
-   * 停止录音
+   * 停止录音（正常完成，触发识别）
    */
   stopRecording() {
     if (!this.isRecording || !this.recorderManager) {
       return
     }
+    this.isCancelling = false
+    this._clearTimeout()
+    this.recorderManager.stop()
+  }
 
+  /**
+   * 取消录音（丢弃结果，不触发识别）
+   */
+  cancelRecording() {
+    if (!this.isRecording || !this.recorderManager) return
+    this.isCancelling = true
     this._clearTimeout()
     this.recorderManager.stop()
   }
@@ -64,8 +75,15 @@ class VoiceInputManager {
   _setupListeners(onResult) {
     this.recorderManager.onStop(async (res) => {
       wx.hideToast()
+      const wasCancelling = this.isCancelling
       this.isRecording = false
+      this.isCancelling = false
       this._clearTimeout()
+
+      // 取消模式：丢弃录音，不触发识别
+      if (wasCancelling) {
+        return
+      }
 
       const tempFilePath = res.tempFilePath
       if (!tempFilePath) {

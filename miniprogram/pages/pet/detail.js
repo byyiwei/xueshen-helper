@@ -80,15 +80,9 @@ Page({
     currentVoiceField: '',
     tempVoicePath: '',
     isRecording: false,
-    voiceBtnX: 60,
-    voiceBtnY: 360,
-    voiceBtnStartX: 0,
-    voiceBtnStartY: 0,
 
     // 保存中标记（防止打印+确认重复保存）
     _isSavingRecord: false,
-    voiceBtnTouchStartX: 0,
-    voiceBtnTouchStartY: 0,
 
     // 打印机配置
     printerConfig: {
@@ -1400,59 +1394,37 @@ Page({
   },
 
   // ============================================================
-  // 语音输入
+  // 语音输入（点击切换模式）
   // ============================================================
 
-  startVoice: function (e) {
+  toggleVoice: function (e) {
     const field = e.currentTarget.dataset.field || 'editName'
-    voiceManager.startRecording(field, (fieldName, text) => {
-      if (fieldName === 'editName') {
-        this.setData({ 'editForm.name': text })
-      } else if (fieldName === 'editAlias') {
-        this.setData({ 'editForm.alias': text })
-      } else if (fieldName === 'recordText') {
-        this.setData({ 'newRecord.text': text })
-      }
-    })
-  },
-
-  stopVoice: function () {
-    voiceManager.stopRecording()
-  },
-
-  // 悬浮可拖动语音按钮（记录弹窗内）
-  onVoiceBtnTouchStart: function (e) {
-    const touch = e.touches[0]
-    this.setData({
-      currentVoiceField: 'recordText',
-      isRecording: true,
-      voiceBtnTouchStartX: touch.clientX,
-      voiceBtnTouchStartY: touch.clientY,
-      voiceBtnStartX: this.data.voiceBtnX,
-      voiceBtnStartY: this.data.voiceBtnY
-    })
-    if (voiceManager && voiceManager.startRecording) {
-      voiceManager.startRecording('recordText', (field, text) => {
-        this.setData({ 'newRecord.text': text })
+    console.log('[toggleVoice] 点击, field:', field, 'isRecording:', this.data.isRecording)
+    if (this.data.isRecording) {
+      // 已在录音 → 停止并识别
+      voiceManager.stopRecording()
+      this.setData({ isRecording: false, currentVoiceField: '' })
+    } else {
+      // 未在录音 → 开始录音
+      this.setData({ currentVoiceField: field, isRecording: true })
+      voiceManager.startRecording(field, (fieldName, text) => {
+        if (fieldName === 'editName') {
+          this.setData({ 'editForm.name': text })
+        } else if (fieldName === 'editAlias') {
+          this.setData({ 'editForm.alias': text })
+        } else if (fieldName === 'recordText') {
+          this.setData({ 'newRecord.text': text })
+        }
+        this.setData({ isRecording: false, currentVoiceField: '' })
       })
     }
   },
 
-  onVoiceBtnTouchMove: function (e) {
-    const touch = e.touches[0]
-    const dx = touch.clientX - this.data.voiceBtnTouchStartX
-    const dy = touch.clientY - this.data.voiceBtnTouchStartY
-    this.setData({
-      voiceBtnX: this.data.voiceBtnStartX + dx,
-      voiceBtnY: this.data.voiceBtnStartY + dy
-    })
-  },
-
-  onVoiceBtnTouchEnd: function (e) {
-    if (voiceManager && voiceManager.stopRecording) {
-      voiceManager.stopRecording()
-    }
+  cancelVoice: function () {
+    if (!this.data.isRecording) return
+    voiceManager.cancelRecording()
     this.setData({ isRecording: false, currentVoiceField: '' })
+    wx.showToast({ title: '已取消', icon: 'none' })
   },
 
   // ============================================================

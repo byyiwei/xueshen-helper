@@ -1767,10 +1767,20 @@
   position: relative;
 }
 
+.textarea-voice-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.voice-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
 .voice-btn-inline {
-  position: absolute;
-  right: 20rpx;
-  bottom: 20rpx;
+  flex-shrink: 0;
   width: 64rpx;
   height: 64rpx;
   border-radius: 50%;
@@ -1779,7 +1789,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 10;
   transition: all 0.2s ease;
 }
 
@@ -1797,24 +1806,22 @@
 }
 
 .form-input {
-  width: 100%;
+  flex: 1;
   height: 88rpx;
   box-sizing: border-box;
-  padding: 0 100rpx 0 24rpx;
+  padding: 0 24rpx;
   border: 2rpx solid #E8F5EE;
   border-radius: 16rpx;
   font-size: 28rpx;
   background-color: #FFFFFF;
   line-height: 88rpx;
+  min-width: 0;
 }
 
 .voice-btn {
-  position: absolute;
-  right: 24rpx;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 56rpx;
-  height: 56rpx;
+  flex-shrink: 0;
+  width: 72rpx;
+  height: 72rpx;
   border-radius: 50%;
   background-color: #F8FAFB;
   border: 2rpx solid #E8F5EE;
@@ -1826,17 +1833,50 @@
 
 .voice-btn:active {
   background-color: #E8F5EE;
-  transform: translateY(-50%) scale(0.9);
+  transform: scale(0.9);
+}
+
+.voice-btn.recording {
+  background: linear-gradient(135deg, #E76F51 0%, #C77D5F 100%);
+  border-color: #E76F51;
+  animation: voice-pulse 1s infinite;
+}
+
+.voice-btn.recording .voice-btn-icon {
+  color: #fff;
+}
+
+.voice-cancel-btn {
+  flex-shrink: 0;
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 50%;
+  background: #E53E3E;
+  color: #fff;
+  font-size: 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.voice-cancel-inline {
+  font-size: 24rpx;
+  color: #E53E3E;
+  padding: 8rpx 20rpx;
+  border: 2rpx solid #E53E3E;
+  border-radius: 24rpx;
 }
 
 .voice-btn-icon {
-  font-size: 20rpx;
+  font-size: 28rpx;
   color: #94A3B8;
   line-height: 1;
 }
 
 .input-with-voice {
-  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
   width: 100%;
 }
 
@@ -3159,4 +3199,37 @@
 
 .edit-form .manual-section {
   margin-bottom: 32rpx;
+}
+
+/* ===== 录音状态提示条 ===== */
+.voice-status-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 88rpx;
+  background: rgba(231, 111, 81, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32rpx;
+  z-index: 9999;
+}
+
+.voice-status-text {
+  font-size: 28rpx;
+  color: #fff;
+}
+
+.voice-status-cancel {
+  font-size: 28rpx;
+  color: #fff;
+  padding: 8rpx 24rpx;
+  border: 2rpx solid rgba(255,255,255,0.6);
+  border-radius: 24rpx;
+}
+
+@keyframes voice-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }

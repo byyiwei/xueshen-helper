@@ -38,6 +38,8 @@ Page({
       isPublic: false,
       photos: []
     },
+    isRecording: false,
+    currentVoiceField: '',
     categories: ['无'],
     showAddCategoryModal: false,
     newCategoryName: '',
@@ -743,19 +745,29 @@ Page({
     }
   },
 
-  startVoice(e) {
+  toggleVoice(e) {
     const field = e.currentTarget.dataset.field
-    voiceManager.startRecording(field, (fieldName, text) => {
-      if (fieldName === 'name') {
-        this.setData({ 'petForm.name': text })
-      } else if (fieldName === 'alias') {
-        this.setData({ 'petForm.alias': text })
-      }
-    })
+    if (this.data.isRecording) {
+      voiceManager.stopRecording()
+      this.setData({ isRecording: false, currentVoiceField: '' })
+    } else {
+      this.setData({ isRecording: true, currentVoiceField: field })
+      voiceManager.startRecording(field, (fieldName, text) => {
+        if (fieldName === 'name') {
+          this.setData({ 'petForm.name': text })
+        } else if (fieldName === 'alias') {
+          this.setData({ 'petForm.alias': text })
+        }
+        this.setData({ isRecording: false, currentVoiceField: '' })
+      })
+    }
   },
 
-  stopVoice() {
-    voiceManager.stopRecording()
+  cancelVoice() {
+    if (!this.data.isRecording) return
+    voiceManager.cancelRecording()
+    this.setData({ isRecording: false, currentVoiceField: '' })
+    wx.showToast({ title: '已取消', icon: 'none' })
   },
 
   async confirmCreate() {

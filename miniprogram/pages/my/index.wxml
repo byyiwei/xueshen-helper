@@ -323,46 +323,6 @@
         </view>
       </view>
     </view>
-    
-    <!-- 联系信息设置弹窗 -->
-    <view wx:if="{{showContactModal}}" class="modal-overlay-center" bindtap="hideContactModal">
-      <view class="contact-modal" catchtap="stopPropagation">
-        <view class="modal-header">
-          <text class="modal-title">联系信息设置</text>
-          <view class="modal-close" bindtap="hideContactModal">×</view>
-        </view>
-        <view class="modal-body">
-          <view class="form-item">
-            <text class="form-label">启用联系信息</text>
-            <view class="switch-wrapper">
-              <switch checked="{{shareInfo.contactEnabled}}" bindchange="onContactSwitchChange" color="{{switchColor}}" />
-            </view>
-          </view>
-          <view class="form-item">
-            <text class="form-label">联系电话</text>
-            <view class="input-with-voice">
-              <input class="form-input" value="{{shareInfo.contactPhone || ''}}" bindinput="onContactPhoneInput" placeholder="请输入联系电话" />
-              <view class="voice-btn" bindlongpress="startContactVoiceInput" bindtouchend="stopContactVoiceInput" data-field="phone">
-                <text class="voice-btn-icon">●</text>
-              </view>
-            </view>
-          </view>
-          <view class="form-item">
-            <text class="form-label">微信号</text>
-            <view class="input-with-voice">
-              <input class="form-input" value="{{shareInfo.contactWechat || ''}}" bindinput="onContactWechatInput" placeholder="请输入微信号" />
-              <view class="voice-btn" bindlongpress="startContactVoiceInput" bindtouchend="stopContactVoiceInput" data-field="wechat">
-                <text class="voice-btn-icon">●</text>
-              </view>
-            </view>
-          </view>
-        </view>
-        <view class="modal-footer">
-          <view class="btn-cancel" bindtap="hideContactModal">取消</view>
-          <view class="btn-confirm" bindtap="saveContactInfo">保存</view>
-        </view>
-      </view>
-    </view>
 
     <!-- 数据 -->
     <view wx:if="{{activeTab === 'data'}}" class="tab-content">

@@ -289,14 +289,18 @@
   font-size: 30rpx;
 }
 
-/* 跳过登录按钮 */
+/* 跳过登录按钮 - 醒目样式，确保审核可见 */
 .skip-btn {
   margin-top: 40rpx;
-  padding: 20rpx 40rpx;
+  padding: 24rpx 60rpx;
   text-align: center;
+  border: 2rpx solid #2D6A4F;
+  border-radius: 48rpx;
+  background: transparent;
 }
 
 .skip-text {
-  font-size: 28rpx;
-  color: #94A3B8;
+  font-size: 30rpx;
+  color: #2D6A4F;
+  font-weight: 500;
 }

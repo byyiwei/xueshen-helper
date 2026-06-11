@@ -104,24 +104,25 @@ App({
               this.globalData.openid = openid
               if (user) {
                 try {
-                  // 合并本地与云端用户信息（本地优先，云端补充）
+                  // 合并本地与云端用户信息（本地优先，云端仅补充空白字段）
                   let localUser = wx.getStorageSync('userInfo') || {}
-                  // 云端有昵称则用云端，否则保留本地
-                  if (user.nickname && user.nickname !== '') {
-                    localUser.nickname = user.nickname
-                  } else if (!localUser.nickname) {
-                    // 云端和本地都没有昵称，生成默认
-                    let idx = wx.getStorageSync('userIndex') || 0
-                    idx += 1
-                    wx.setStorageSync('userIndex', idx)
-                    localUser.nickname = '龟上心' + idx
+                  // 昵称：本地已有则保留（用户主动修改的优先级最高）
+                  if (!localUser.nickname) {
+                    if (user.nickname && user.nickname !== '') {
+                      localUser.nickname = user.nickname
+                    } else {
+                      let idx = wx.getStorageSync('userIndex') || 0
+                      idx += 1
+                      wx.setStorageSync('userIndex', idx)
+                      localUser.nickname = '龟上心' + idx
+                    }
                   }
-                  // 云端有头像则用云端，否则保留本地
-                  if (user.avatar && user.avatar !== '') {
+                  // 头像：本地已有则保留
+                  if (!localUser.avatar && user.avatar && user.avatar !== '') {
                     localUser.avatar = user.avatar
                   }
-                  // 云端有手机则用云端
-                  if (user.phone && user.phone !== '') {
+                  // 手机号：本地已有则保留
+                  if (!localUser.phone && user.phone && user.phone !== '') {
                     localUser.phone = user.phone
                   }
                   wx.setStorageSync('userInfo', localUser)

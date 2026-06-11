@@ -33,9 +33,9 @@
       </view>
     </view>
 
-    <!-- 返回浏览按钮（从其他页面跳转过来时显示） -->
-    <view wx:if="{{canGoBack}}" class="skip-btn" bindtap="goBack">
-      <text class="skip-text">暂不登录，先看看</text>
+    <!-- 跳過登錄按鈕（始終顯示，確保審核員可見） -->
+    <view class="skip-btn" bindtap="goBack">
+      <text class="skip-text">暂不登录，先浏览体验</text>
     </view>
   </view>
 
