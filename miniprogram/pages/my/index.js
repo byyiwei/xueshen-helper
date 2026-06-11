@@ -20,7 +20,7 @@ Page({
       phone: ''
     },
     activeTab: 'data',
-    switchColor: '#2D6A4F',
+    switchColor: '#3A7CFF',
     provinceCityAreaCustomItem: '全部',
     qrcodeImage: '',
     // 跨宠物提醒汇总
@@ -320,7 +320,7 @@ Page({
       this.loadShareInfo()
 
       const { userInfo, shareInfo } = this.data
-      const theme = { primary: '#2D6A4F', primaryDark: '#1B4332', primaryLight: '#E8F5EE', bg: '#F8FAFB', bgLight: '#FFFFFF', accent: '#F4A261', text: '#2C3E50' }
+      const theme = { primary: '#3A7CFF', primaryDark: '#1A5CD6', primaryLight: '#E6F0FF', bg: '#F0F7FF', bgLight: '#FFFFFF', accent: '#FF8C42', text: '#1E293B' }
       const html = generateShareHTML({}, {
         nickname: userInfo.nickname || '龟上心',
         cover: shareInfo.cover || '',

@@ -268,7 +268,7 @@
           </view>
           <view class="edit-item edit-item-switch">
             <text class="edit-label">公开微信号</text>
-            <switch checked="{{shareInfo.wechatPublic}}" bindchange="toggleWechatPublic" color="#2D6A4F" />
+            <switch checked="{{shareInfo.wechatPublic}}" bindchange="toggleWechatPublic" color="#3A7CFF" />
           </view>
           <picker mode="region" bindchange="chooseRegion" custom-item="{{provinceCityAreaCustomItem}}">
             <view class="edit-item">
@@ -279,7 +279,7 @@
           </picker>
           <view class="edit-item edit-item-switch">
             <text class="edit-label">营业执照</text>
-            <switch checked="{{shareInfo.hasLicense}}" bindchange="toggleLicense" color="#2D6A4F" />
+            <switch checked="{{shareInfo.hasLicense}}" bindchange="toggleLicense" color="#3A7CFF" />
           </view>
           <view wx:if="{{shareInfo.hasLicense}}" class="edit-item" bindtap="chooseLicenseImage">
             <text class="edit-label">执照图片</text>

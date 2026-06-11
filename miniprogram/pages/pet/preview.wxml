@@ -516,30 +516,21 @@
 
   <!-- 事件详情弹窗 -->
   <view wx:if="{{showEventModal}}" class="event-modal-overlay" bindtap="hideEventModal">
-    <view class="event-modal" catchtap="stopPropagation">
-      <view class="modal-header">
-        <text class="modal-title">事件详情</text>
+    <view class="record-detail-modal" catchtap="stopPropagation">
+      <view class="record-detail-header">
+        <view class="record-type-badge {{selectedEvent.type === '产蛋' ? 'record-badge-lay' : ''}}">
+          <text class="record-type-icon">{{selectedEvent.type === '建档' ? '📁' : selectedEvent.type === '交配' ? '💕' : selectedEvent.type === '产蛋' ? '🥚' : selectedEvent.type === '换公' ? '🔄' : '📝'}}</text>
+        </view>
+        <text class="record-detail-title">{{selectedEvent.type}}</text>
         <view class="modal-close" bindtap="hideEventModal">×</view>
       </view>
-      <view class="modal-body">
-        <view class="event-detail-card">
-          <view class="event-detail-icon {{selectedEvent.type === '产蛋' ? 'event-icon-lay' : ''}}">
-            <text class="icon-emoji">{{selectedEvent.type === '建档' ? '📁' : selectedEvent.type === '交配' ? '💕' : selectedEvent.type === '产蛋' ? '🥚' : selectedEvent.type === '换公' ? '🔄' : '📝'}}</text>
-          </view>
-          <view class="event-detail-info">
-            <view class="event-detail-row">
-              <text class="event-detail-label">事件类型</text>
-              <text class="event-detail-value">{{selectedEvent.type}}</text>
-            </view>
-            <view class="event-detail-row">
-              <text class="event-detail-label">发生日期</text>
-              <text class="event-detail-value">{{selectedEvent.date}}</text>
-            </view>
-            <view class="event-detail-row">
-              <text class="event-detail-label">详细描述</text>
-              <text class="event-detail-text">{{selectedEvent.text}}</text>
-            </view>
-          </view>
+      <view class="record-detail-content">
+        <text class="record-detail-text">{{selectedEvent.text}}</text>
+      </view>
+      <view class="record-detail-footer">
+        <view class="record-detail-date">
+          <text class="date-label">发生日期</text>
+          <text class="date-value">{{selectedEvent.date}}</text>
         </view>
       </view>
     </view>

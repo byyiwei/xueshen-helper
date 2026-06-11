@@ -134,16 +134,16 @@ async function convertHTMLImagesToBase64(html) {
 
 const WHITE_THEME = {
   name: 'white',
-  primary: '#2D6A4F',
-  primaryDark: '#1B4332',
-  primaryLight: '#E8F5EE',
-  accent: '#F4A261',
-  bg: '#F8FAFB',
+  primary: '#3A7CFF',
+  primaryDark: '#1A5CD6',
+  primaryLight: '#E6F0FF',
+  accent: '#FF8C42',
+  bg: '#F0F7FF',
   bgLight: '#FFFFFF',
-  pageBg: '#F8FAFB',
+  pageBg: '#F0F7FF',
   cardBg: '#ffffff',
-  text: '#2C3E50',
-  textSecondary: '#5A6C7D',
+  text: '#1E293B',
+  textSecondary: '#475569',
   textLight: '#94A3B8',
   border: '#E2E8F0',
 };
@@ -526,7 +526,7 @@ function generatePetHTML(data, theme) {
       right: 24px;
       bottom: 24px;
       padding: 8px 20px;
-      background-color: rgba(45, 106, 79, 0.5);
+      background-color: rgba(58, 124, 255, 0.5);
       border-radius: 24px;
       font-size: 24px;
       color: #ffffff;
@@ -560,7 +560,7 @@ function generatePetHTML(data, theme) {
       padding: 32px;
       background-color: #ffffff;
       border-radius: 24px;
-      box-shadow: 0 4px 20px rgba(45, 106, 79, 0.08);
+      box-shadow: 0 4px 20px rgba(58, 124, 255, 0.08);
       position: relative;
       z-index: 10;
     }
@@ -578,7 +578,7 @@ function generatePetHTML(data, theme) {
       border-radius: 60px;
       overflow: hidden;
       flex-shrink: 0;
-      border: 4px solid #F8FAFB;
+      border: 4px solid #F0F7FF;
     }
     
     .pet-avatar {
@@ -605,7 +605,7 @@ function generatePetHTML(data, theme) {
     .pet-name {
       font-size: 40px;
       font-weight: bold;
-      color: #2D6A4F;
+      color: #3A7CFF;
       margin-bottom: 16px;
       display: block;
     }
@@ -629,12 +629,12 @@ function generatePetHTML(data, theme) {
     
     .category-tag {
       background-color: #EDF2F7;
-      color: #2D6A4F;
+      color: #3A7CFF;
     }
     
     .status-tag {
       background-color: #EDF2F7;
-      color: #2D6A4F;
+      color: #3A7CFF;
     }
     
     .status-sick {
@@ -643,13 +643,13 @@ function generatePetHTML(data, theme) {
     }
     
     .status-dead {
-      background-color: #F8FAFB;
+      background-color: #F0F7FF;
       color: #94A3B8;
     }
     
     .status-sold {
       background-color: #EDF2F7;
-      color: #D4A373;
+      color: #64748B;
     }
     
     .alias-tag {
@@ -704,13 +704,13 @@ function generatePetHTML(data, theme) {
       padding: 32px;
       background-color: #ffffff;
       border-radius: 24px;
-      box-shadow: 0 4px 16px rgba(45, 106, 79, 0.06);
+      box-shadow: 0 4px 16px rgba(58, 124, 255, 0.06);
     }
     
     .card-title {
       font-size: 32px;
       font-weight: bold;
-      color: #2D6A4F;
+      color: #3A7CFF;
       margin-bottom: 24px;
       display: flex;
       align-items: center;
@@ -756,14 +756,14 @@ function generatePetHTML(data, theme) {
     
     .detail-value {
       font-size: 28px;
-      color: #2D6A4F;
+      color: #3A7CFF;
       font-weight: 500;
     }
     
     /* 备注 */
     .notes-content {
       font-size: 28px;
-      color: #5A6C7D;
+      color: #475569;
       line-height: 1.8;
     }
     
@@ -773,13 +773,13 @@ function generatePetHTML(data, theme) {
       border-radius: 24px;
       padding: 24px;
       margin: 0 24px 24px;
-      box-shadow: 0 4px 16px rgba(45, 106, 79, 0.06);
+      box-shadow: 0 4px 16px rgba(58, 124, 255, 0.06);
     }
     
     .section-title {
       font-size: 28px;
       font-weight: bold;
-      color: #2D6A4F;
+      color: #3A7CFF;
     }
     
     .pedigree-badge {
@@ -816,7 +816,7 @@ function generatePetHTML(data, theme) {
       border: 2px solid ${theme.primaryLight};
       border-radius: 24px;
       min-width: 200px;
-      box-shadow: 0 4px 16px rgba(45, 106, 79, 0.06);
+      box-shadow: 0 4px 16px rgba(58, 124, 255, 0.06);
       position: relative;
       overflow: visible;
     }
@@ -835,7 +835,7 @@ function generatePetHTML(data, theme) {
       align-items: center;
       justify-content: center;
       font-weight: 600;
-      box-shadow: 0 4px 12px rgba(45, 106, 79, 0.3);
+      box-shadow: 0 4px 12px rgba(58, 124, 255, 0.3);
       z-index: 1;
       background: linear-gradient(135deg, ${theme.primary} 0%, ${theme.primaryDark} 100%);
     }
@@ -844,7 +844,7 @@ function generatePetHTML(data, theme) {
       width: 120px;
       height: 120px;
       border-radius: 20px;
-      background: linear-gradient(135deg, #F8FAFB 0%, #E8F5EE 100%);
+      background: linear-gradient(135deg, #F0F7FF 0%, #E6F0FF 100%);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -875,7 +875,7 @@ function generatePetHTML(data, theme) {
     
     .card-name {
       font-size: 32px;
-      color: #2D6A4F;
+      color: #3A7CFF;
       font-weight: 600;
       max-width: 200px;
       overflow: hidden;
@@ -887,7 +887,7 @@ function generatePetHTML(data, theme) {
       font-size: 22px;
       color: #94A3B8;
       padding: 4px 16px;
-      background-color: #F8FAFB;
+      background-color: #F0F7FF;
       border-radius: 10px;
     }
     
@@ -910,13 +910,13 @@ function generatePetHTML(data, theme) {
       background-color: #EDF2F7;
       border-radius: 16px;
       font-size: 24px;
-      color: #D4A373;
+      color: #64748B;
       margin-bottom: 24px;
     }
     
     .family-title {
       font-size: 32px;
-      color: #2D6A4F;
+      color: #3A7CFF;
       display: block;
       margin-bottom: 16px;
     }
@@ -972,7 +972,7 @@ function generatePetHTML(data, theme) {
     .bloodline-title .title-text {
       font-size: 30px;
       font-weight: 600;
-      color: #2D6A4F;
+      color: #3A7CFF;
     }
     
     .bloodline-tabs {
@@ -983,8 +983,8 @@ function generatePetHTML(data, theme) {
     .bloodline-tabs .tab {
       padding: 12px 24px;
       font-size: 26px;
-      color: #5A6C7D;
-      background-color: #F8FAFB;
+      color: #475569;
+      background-color: #F0F7FF;
       border-radius: 24px;
       transition: all 0.2s ease;
     }
@@ -1026,7 +1026,7 @@ function generatePetHTML(data, theme) {
       background-color: #ffffff;
       border: 2px solid #EDF2F7;
       border-radius: 16px;
-      box-shadow: 0 2px 8px rgba(45, 106, 79, 0.04);
+      box-shadow: 0 2px 8px rgba(58, 124, 255, 0.04);
       position: relative;
       overflow: visible;
     }
@@ -1059,7 +1059,7 @@ function generatePetHTML(data, theme) {
     .node-name {
       font-size: 30px;
       font-weight: 600;
-      color: #2D6A4F;
+      color: #3A7CFF;
     }
     
     .node-category {
@@ -1088,7 +1088,7 @@ function generatePetHTML(data, theme) {
     .tree-title .title-text {
       font-size: 30px;
       font-weight: 600;
-      color: #2D6A4F;
+      color: #3A7CFF;
     }
     
     .tree-title .tree-hint {
@@ -1149,7 +1149,7 @@ function generatePetHTML(data, theme) {
     
     .tree-node.ancestor {
       background-color: #ffffff;
-      border: 2px solid #E8F5EE;
+      border: 2px solid #E6F0FF;
       min-width: 160px;
     }
     
@@ -1182,7 +1182,7 @@ function generatePetHTML(data, theme) {
       align-items: center;
       justify-content: center;
       font-weight: 600;
-      box-shadow: 0 4px 12px rgba(45, 106, 79, 0.3);
+      box-shadow: 0 4px 12px rgba(58, 124, 255, 0.3);
       z-index: 1;
       background: linear-gradient(135deg, ${theme.primary} 0%, ${theme.primaryDark} 100%);
     }
@@ -1207,7 +1207,7 @@ function generatePetHTML(data, theme) {
       font-size: 28px;
       font-weight: 600;
       border-radius: 28px;
-      box-shadow: 0 4px 16px rgba(45, 106, 79, 0.3);
+      box-shadow: 0 4px 16px rgba(58, 124, 255, 0.3);
       z-index: 1;
     }
     
@@ -1217,7 +1217,7 @@ function generatePetHTML(data, theme) {
       justify-content: center;
       width: 240px;
       height: 240px;
-      background-color: #F8FAFB;
+      background-color: #F0F7FF;
       border-radius: 24px;
       overflow: hidden;
     }
@@ -1233,7 +1233,7 @@ function generatePetHTML(data, theme) {
       width: 100%;
       height: 100%;
       border-radius: 20px;
-      background-color: #F8FAFB;
+      background-color: #F0F7FF;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1253,7 +1253,7 @@ function generatePetHTML(data, theme) {
     
     .tree-node .node-name {
       font-size: 26px;
-      color: #2D6A4F;
+      color: #3A7CFF;
       font-weight: 600;
       max-width: 120px;
       overflow: hidden;
@@ -1326,7 +1326,7 @@ function generatePetHTML(data, theme) {
       background-color: #ffffff;
       border-radius: 24px;
       border: 1px solid #EDF2F7;
-      box-shadow: 0 4px 16px rgba(45, 106, 79, 0.04);
+      box-shadow: 0 4px 16px rgba(58, 124, 255, 0.04);
     }
     
     .event-icon {
@@ -1358,14 +1358,14 @@ function generatePetHTML(data, theme) {
     .event-title {
       font-size: 28px;
       font-weight: 600;
-      color: #2D6A4F;
+      color: #3A7CFF;
       margin-bottom: 8px;
       display: block;
     }
     
     .event-content {
       font-size: 24px;
-      color: #5A6C7D;
+      color: #475569;
       margin-bottom: 12px;
       display: -webkit-box;
       -webkit-line-clamp: 2;
@@ -1416,7 +1416,7 @@ function generatePetHTML(data, theme) {
       padding: 32px;
       background-color: #ffffff;
       border-radius: 24px;
-      box-shadow: 0 4px 16px rgba(45, 106, 79, 0.06);
+      box-shadow: 0 4px 16px rgba(58, 124, 255, 0.06);
     }
     
     .qrcode-left {
@@ -1428,7 +1428,7 @@ function generatePetHTML(data, theme) {
     .qrcode-title {
       font-size: 30px;
       font-weight: bold;
-      color: #2D6A4F;
+      color: #3A7CFF;
     }
     
     .qrcode-subtitle {
@@ -1451,7 +1451,7 @@ function generatePetHTML(data, theme) {
       width: 160px;
       height: 160px;
       border-radius: 12px;
-      border: 2px dashed #E8F5EE;
+      border: 2px dashed #E6F0FF;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1598,15 +1598,15 @@ function generateShareHTML(shareInfo, options = {}) {
   const envDesc = options.envDesc || '';
 
   // 主题色
-  const primary = theme.primary || '#2D6A4F';
-  const primaryDark = theme.primaryDark || '#1B4332';
-  const primaryLight = theme.primaryLight || '#E8F5EE';
+  const primary = theme.primary || '#3A7CFF';
+  const primaryDark = theme.primaryDark || '#1A5CD6';
+  const primaryLight = theme.primaryLight || '#E6F0FF';
 
   // banner 背景：如果没有封面图，使用渐变
   const hasCover = cover && cover.length > 0;
   const bannerStyle = hasCover
     ? ''
-    : `background: linear-gradient(135deg, ${primaryLight} 0%, ${theme.pageBg || '#F8FAFB'} 50%, ${primary} 100%);`;
+    : `background: linear-gradient(135deg, ${primaryLight} 0%, ${theme.pageBg || '#F0F7FF'} 50%, ${primary} 100%);`;
 
   // 标签 HTML
   const tagsHtml = tags.map(t => `<span class="shop-tag">${t}</span>`).join('');
@@ -1691,7 +1691,7 @@ function generateShareHTML(shareInfo, options = {}) {
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-    color: #2D6A4F;
+    color: #3A7CFF;
     background: #FFFFFF;
     -webkit-font-smoothing: antialiased;
   }
@@ -1711,8 +1711,8 @@ function generateShareHTML(shareInfo, options = {}) {
     background: #ffffff;
     border-radius: 24px;
     overflow: hidden;
-    box-shadow: 0 8px 32px rgba(45, 106, 79, 0.08);
-    border: 2px solid #E8F5EE;
+    box-shadow: 0 8px 32px rgba(58, 124, 255, 0.08);
+    border: 2px solid #E6F0FF;
   }
 
   /* 顶部封面 */
@@ -1765,7 +1765,7 @@ function generateShareHTML(shareInfo, options = {}) {
   .shop-name {
     font-size: 32px;
     font-weight: bold;
-    color: #2D6A4F;
+    color: #3A7CFF;
     margin-right: 16px;
   }
 
@@ -1809,7 +1809,7 @@ function generateShareHTML(shareInfo, options = {}) {
     display: flex;
     align-items: center;
     padding: 16px 0;
-    border-bottom: 2px solid #F8FAFB;
+    border-bottom: 2px solid #F0F7FF;
   }
 
   .info-row:last-child {
@@ -1818,7 +1818,7 @@ function generateShareHTML(shareInfo, options = {}) {
 
   .info-label {
     font-size: 22px;
-    color: #5A6C7D;
+    color: #475569;
     width: 120px;
     flex-shrink: 0;
   }
@@ -1831,7 +1831,7 @@ function generateShareHTML(shareInfo, options = {}) {
 
   .info-value {
     font-size: 22px;
-    color: #2D6A4F;
+    color: #3A7CFF;
     font-weight: 500;
     flex: 1;
   }
@@ -1878,7 +1878,7 @@ function generateShareHTML(shareInfo, options = {}) {
     display: flex;
     align-items: center;
     padding: 24px 32px 16px;
-    border-top: 2px solid #F8FAFB;
+    border-top: 2px solid #F0F7FF;
   }
 
   .section-title-bar {
@@ -1892,7 +1892,7 @@ function generateShareHTML(shareInfo, options = {}) {
   .section-title-text {
     font-size: 22px;
     font-weight: 600;
-    color: #2D6A4F;
+    color: #3A7CFF;
   }
 
   .section-title-count {
@@ -1913,7 +1913,7 @@ function generateShareHTML(shareInfo, options = {}) {
     background: #ffffff;
     border-radius: 16px;
     overflow: hidden;
-    box-shadow: 0 2px 10px rgba(45, 106, 79, 0.06);
+    box-shadow: 0 2px 10px rgba(58, 124, 255, 0.06);
     border: 2px solid #EDF2F7;
   }
 
@@ -1947,7 +1947,7 @@ function generateShareHTML(shareInfo, options = {}) {
     display: block;
     font-size: 18px;
     font-weight: 600;
-    color: #2D6A4F;
+    color: #3A7CFF;
     margin-bottom: 4px;
     white-space: nowrap;
     overflow: hidden;
@@ -1972,7 +1972,7 @@ function generateShareHTML(shareInfo, options = {}) {
     aspect-ratio: 1;
     border-radius: 16px;
     overflow: hidden;
-    background: #F8FAFB;
+    background: #F0F7FF;
   }
 
   .env-image {
@@ -1986,7 +1986,7 @@ function generateShareHTML(shareInfo, options = {}) {
     margin: 8px 32px 16px;
     width: 160px;
     height: 160px;
-    background: linear-gradient(135deg, ${primaryLight} 0%, ${theme.pageBg || '#F8FAFB'} 100%);
+    background: linear-gradient(135deg, ${primaryLight} 0%, ${theme.pageBg || '#F0F7FF'} 100%);
     border: 2px dashed ${primary};
     border-radius: 16px;
     display: flex;
@@ -2004,26 +2004,26 @@ function generateShareHTML(shareInfo, options = {}) {
     display: block;
     padding: 0 32px 24px;
     font-size: 20px;
-    color: #5A6C7D;
+    color: #475569;
     line-height: 1.7;
   }
 
   /* 龟友有话说 */
   .shop-intro-section {
     padding: 24px 32px 32px;
-    border-top: 2px solid #F8FAFB;
+    border-top: 2px solid #F0F7FF;
   }
 
   .intro-title {
     font-size: 22px;
-    color: #2D6A4F;
+    color: #3A7CFF;
     font-weight: 600;
     margin-bottom: 16px;
   }
 
   .intro-text {
     font-size: 22px;
-    color: #5A6C7D;
+    color: #475569;
     line-height: 1.8;
   }
 </style>

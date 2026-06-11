@@ -1,6 +1,6 @@
 .container {
   min-height: 100vh;
-  background: linear-gradient(180deg, #FFFFFF 0%, #F8FAFB 100%);
+  background: linear-gradient(180deg, #FFFFFF 0%, #F0F7FF 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -34,7 +34,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8rpx 36rpx rgba(45, 106, 79, 0.08);
+  box-shadow: 0 8rpx 36rpx rgba(58, 124, 255, 0.08);
   margin-bottom: 20rpx;
   overflow: hidden;
 }
@@ -49,11 +49,11 @@
 .logo-text {
   font-size: 64rpx;
   font-weight: bold;
-  background: linear-gradient(135deg, #2D6A4F 0%, #1B4332 100%);
+  background: linear-gradient(135deg, #3A7CFF 0%, #1A5CD6 100%);
   -webkit-background-clip: text;
   color: transparent;
   letter-spacing: 8rpx;
-  text-shadow: 0 4rpx 12rpx rgba(45, 106, 79, 0.1);
+  text-shadow: 0 4rpx 12rpx rgba(58, 124, 255, 0.1);
   white-space: nowrap;
   font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
 }
@@ -74,12 +74,12 @@
 .wechat-btn {
   width: 100% !important;
   height: 96rpx !important;
-  background: linear-gradient(135deg, #2D6A4F 0%, #1B4332 100%) !important;
+  background: linear-gradient(135deg, #3A7CFF 0%, #1A5CD6 100%) !important;
   color: #ffffff !important;
   border-radius: 48rpx !important;
   font-size: 32rpx !important;
   line-height: 96rpx !important;
-  box-shadow: 0 8rpx 24rpx rgba(45, 106, 79, 0.15);
+  box-shadow: 0 8rpx 24rpx rgba(58, 124, 255, 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -116,8 +116,8 @@
 }
 
 .checkbox.checked {
-  background: #2D6A4F;
-  border-color: #2D6A4F;
+  background: #3A7CFF;
+  border-color: #3A7CFF;
 }
 
 .check-icon {
@@ -128,7 +128,7 @@
 
 .agreement-text {
   font-size: 28rpx;
-  color: #5A6C7D;
+  color: #475569;
 }
 
 .agreement-links {
@@ -155,7 +155,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(45, 106, 79, 0.5);
+  background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -176,7 +176,7 @@
 
 .modal-header {
   padding: 32rpx;
-  border-bottom: 1rpx solid #E8F5EE;
+  border-bottom: 1rpx solid #E6F0FF;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -185,7 +185,7 @@
 .modal-title {
   font-size: 30rpx;
   font-weight: bold;
-  color: #2D6A4F;
+  color: #1E293B;
 }
 
 .modal-close {
@@ -219,27 +219,27 @@
 .section-title {
   font-size: 26rpx;
   font-weight: bold;
-  color: #2D6A4F;
+  color: #1E293B;
   text-align: center;
   margin-bottom: 20rpx;
   padding-bottom: 12rpx;
-  border-bottom: 1rpx solid #E8F5EE;
+  border-bottom: 1rpx solid #E6F0FF;
   word-break: break-all;
 }
 
 .section-subtitle {
   font-size: 24rpx;
   font-weight: bold;
-  color: #2D6A4F;
+  color: #1E293B;
   margin-bottom: 12rpx;
   padding-left: 12rpx;
-  border-left: 4rpx solid #2D6A4F;
+  border-left: 4rpx solid #3A7CFF;
   word-break: break-all;
 }
 
 .section-paragraph {
   font-size: 22rpx;
-  color: #5A6C7D;
+  color: #475569;
   line-height: 1.8;
   text-indent: 44rpx;
   margin-bottom: 12rpx;
@@ -257,7 +257,7 @@
 
 .list-number {
   font-size: 22rpx;
-  color: #2D6A4F;
+  color: #3A7CFF;
   font-weight: 500;
   flex-shrink: 0;
   margin-right: 8rpx;
@@ -265,7 +265,7 @@
 
 .list-text {
   font-size: 22rpx;
-  color: #5A6C7D;
+  color: #475569;
   line-height: 1.8;
   flex: 1;
   word-break: break-all;
@@ -273,14 +273,14 @@
 
 .modal-footer {
   padding: 28rpx 36rpx;
-  border-top: 1rpx solid #E8F5EE;
+  border-top: 1rpx solid #E6F0FF;
   flex-shrink: 0;
 }
 
 .modal-btn {
   width: 100%;
   height: 80rpx;
-  background: linear-gradient(135deg, #2D6A4F 0%, #1B4332 100%);
+  background: linear-gradient(135deg, #3A7CFF 0%, #1A5CD6 100%);
   color: #ffffff;
   border-radius: 40rpx;
   display: flex;
@@ -294,13 +294,13 @@
   margin-top: 40rpx;
   padding: 24rpx 60rpx;
   text-align: center;
-  border: 2rpx solid #2D6A4F;
+  border: 2rpx solid #3A7CFF;
   border-radius: 48rpx;
   background: transparent;
 }
 
 .skip-text {
   font-size: 30rpx;
-  color: #2D6A4F;
+  color: #3A7CFF;
   font-weight: 500;
 }

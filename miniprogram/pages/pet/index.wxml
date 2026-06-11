@@ -64,10 +64,10 @@
       </view>
 
       <view class="filter-group">
-        <text class="filter-group-label">系列</text>
+        <text class="filter-group-label">分类</text>
         <view class="filter-tag-row">
-          <view class="filter-chip {{filter.series === '全部' ? 'active' : ''}}" bindtap="setFilter" data-key="series" data-value="全部">全部</view>
-          <view wx:for="{{categories}}" wx:key="*this" wx:for-item="cat" class="filter-chip {{filter.series === cat ? 'active' : ''}}" bindtap="setFilter" data-key="series" data-value="{{cat}}">{{cat}}</view>
+          <view class="filter-chip {{filter.category === '全部' ? 'active' : ''}}" bindtap="setFilter" data-key="category" data-value="全部">全部</view>
+          <view wx:for="{{categories}}" wx:key="*this" wx:for-item="cat" class="filter-chip {{filter.category === cat ? 'active' : ''}}" bindtap="setFilter" data-key="category" data-value="{{cat}}">{{cat}}</view>
         </view>
       </view>
 
@@ -137,12 +137,21 @@
           </view>
         </view>
 
+        <view wx:if="{{isEditMode}}" class="edit-tips">
+          <text class="edit-tips-text">按住右侧图标拖动排序</text>
+        </view>
+
         <view 
           wx:for="{{filteredPets}}" 
           wx:key="id" 
           class="pet-card {{isEditMode ? 'edit-mode' : ''}} {{item._dragging ? 'dragging' : ''}} {{utils.isSelected(selectedIds, item.id) ? 'selected' : ''}}"
           style="{{item._dragOffset ? 'transform:translateY(' + item._dragOffset + 'px);z-index:100;' : ''}}"
         >
+          <!-- 序号显示 -->
+          <view wx:if="{{isEditMode}}" class="item-index">
+            <text class="index-num">{{index + 1}}</text>
+          </view>
+
           <!-- 编辑模式选择框 -->
           <view wx:if="{{isEditMode}}" class="card-checkbox" catchtap="toggleSelect" data-id="{{item.id}}">
             <view class="checkbox {{utils.isSelected(selectedIds, item.id) ? 'checked' : ''}}" style="{{utils.isSelected(selectedIds, item.id) ? 'background-color:' + switchColor + ';border-color:' + switchColor : ''}}">
@@ -150,25 +159,30 @@
             </view>
           </view>
 
-          <!-- 拖动手柄 -->
-          <view wx:if="{{isEditMode}}" class="drag-handle" data-id="{{item.id}}" catchtouchstart="onDragStart" catchtouchmove="onDragMove" catchtouchend="onDragEnd">
-            <text class="drag-dots">⠿</text>
-          </view>
-
           <view class="pet-image-wrapper" bindtap="{{isEditMode ? 'toggleSelect' : 'goToDetail'}}" data-id="{{item.id}}" bindlongpress="{{isEditMode ? '' : 'onCardLongPress'}}" data-pet="{{item}}">
             <image wx:if="{{item.photos && item.photos.length > 0}}" class="pet-image" src="{{item.photos[0]}}" mode="aspectFill" binderror="onImageError" data-id="{{item.id}}" data-index="{{index}}" />
             <view wx:else class="pet-placeholder"></view>
-            <view class="pet-gender-badge">
+            <view class="pet-gender-badge gender-{{item.gender === '公' ? 'male' : item.gender === '母' ? 'female' : 'unknown'}}">
               <text class="gender-icon">{{item.gender || '未知'}}</text>
             </view>
           </view>
 
           <!-- 宠物信息 -->
           <view class="pet-card-info" bindtap="{{isEditMode ? 'toggleSelect' : 'goToDetail'}}" data-id="{{item.id}}">
-            <text class="pet-card-name">{{item.alias || item.name}}</text>
+            <text class="pet-card-name">{{item.name || '未命名'}}</text>
+            <text wx:if="{{item.alias && item.alias !== item.name}}" class="pet-card-alias">{{item.alias}}</text>
             <view class="pet-card-meta-row">
               <text class="pet-card-meta">{{item.category || '未分类'}}</text>
               <text class="pet-status-tag pet-status-{{item.statusClass || 'normal'}}">{{item.computedStatus || item.status || '正常'}}</text>
+            </view>
+          </view>
+
+          <!-- 拖动手柄 -->
+          <view wx:if="{{isEditMode}}" class="drag-handle" data-id="{{item.id}}" data-index="{{index}}" catchtouchstart="onDragStart" catchtouchmove="onDragMove" catchtouchend="onDragEnd">
+            <view class="drag-icon">
+              <view class="drag-line"></view>
+              <view class="drag-line"></view>
+              <view class="drag-line"></view>
             </view>
           </view>
         </view>
@@ -217,6 +231,17 @@
           <view wx:if="{{isRecording && currentVoiceField === 'name'}}" class="voice-cancel-btn" bindtap="cancelVoice">✕</view>
         </view>
       </view>
+
+      <view class="form-item" style="margin-top: 20rpx;">
+        <text class="form-label">别名</text>
+        <view class="input-with-voice">
+          <input class="form-input" placeholder="可选，填写后优先作为展示名字" value="{{petForm.alias}}" bindinput="onAliasInput" />
+          <view class="voice-btn {{isRecording && currentVoiceField === 'alias' ? 'recording' : ''}}" bindtap="toggleVoice" data-field="alias">
+            <text class="voice-btn-icon">●</text>
+          </view>
+          <view wx:if="{{isRecording && currentVoiceField === 'alias'}}" class="voice-cancel-btn" bindtap="cancelVoice">✕</view>
+        </view>
+      </view>
       
       <view class="section-title">
         <text>手动配置</text>
@@ -258,17 +283,6 @@
           </view>
         </view>
 
-        <view class="form-item">
-          <text class="form-label">别名</text>
-          <view class="input-with-voice">
-            <input class="form-input" placeholder="可选，填写后优先作为展示名字" value="{{petForm.alias}}" bindinput="onAliasInput" />
-            <view class="voice-btn {{isRecording && currentVoiceField === 'alias' ? 'recording' : ''}}" bindtap="toggleVoice" data-field="alias">
-              <text class="voice-btn-icon">●</text>
-            </view>
-            <view wx:if="{{isRecording && currentVoiceField === 'alias'}}" class="voice-cancel-btn" bindtap="cancelVoice">✕</view>
-          </view>
-        </view>
-        
         <view class="form-item">
           <text class="form-label">父本</text>
           <view class="family-selector" bindtap="selectParent" data-parent="father">

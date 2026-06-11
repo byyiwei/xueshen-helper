@@ -3,7 +3,7 @@ Component({
     selected: 0,
     visible: true,
     color: '#94A3B8',
-    selectedColor: '#2D6A4F',
+    selectedColor: '#3A7CFF',
     list: [
       { pagePath: '/pages/pet/index', text: '宠物' },
       { pagePath: '/pages/footprint/index', text: '足迹' },

@@ -35,6 +35,7 @@ async function createFootprint(data, openid) {
   const footprint = {
     type: data.type || 'image',
     url: data.url || '',
+    photos: data.photos || [],
     thumbnail: data.thumbnail || '',
     duration: data.duration || 0,
     date: data.date,

@@ -135,11 +135,15 @@
         <view class="group-items">
           <view wx:for="{{group.items}}" wx:for-item="fp" wx:key="id" class="footprint-card {{isEditMode ? 'edit-mode' : ''}} {{selectedMap[fp.id] ? 'selected' : ''}}" catchtap="onCardTap" data-id="{{fp.id}}" data-footprint="{{fp}}">
             <view class="fp-media">
-              <image class="fp-image" src="{{fp.path || fp.url}}" mode="aspectFill" lazy-load="true" binderror="onPhotoError" data-id="{{fp.id}}" />
+              <view wx:if="{{fp.photos && fp.photos.length > 1}}" class="fp-images-grid">
+                <image wx:for="{{fp.photos}}" wx:for-item="photo" wx:key="index" class="fp-grid-image" src="{{photo}}" mode="aspectFill" lazy-load="true" />
+                <view wx:if="{{fp.photos.length > 9}}" class="fp-more-count">{{fp.photos.length}}</view>
+              </view>
+              <image wx:else class="fp-image" src="{{fp.photos && fp.photos[0] || fp.path || fp.url}}" mode="aspectFill" lazy-load="true" binderror="onPhotoError" data-id="{{fp.id}}" />
             </view>
             <view class="fp-content">
               <view class="fp-meta">
-                <text class="fp-type">照片</text>
+                <text class="fp-type">{{fp.action || '照片'}}</text>
                 <text class="fp-date">{{fp.date}} {{fp.time}}</text>
               </view>
               <view wx:if="{{fp.description}}" class="fp-desc">{{fp.description}}</view>
@@ -171,24 +175,43 @@
   <!-- 预览弹窗 -->
   <view wx:if="{{showPreviewModal && selectedFootprint}}" class="preview-modal">
     <view class="preview-overlay" bindtap="hidePreview"></view>
-    <scroll-view class="preview-scroll" scroll-y enhanced show-scrollbar="{{false}}">
-      <view class="preview-content">
-        <view class="preview-header">
-          <text class="preview-title">{{selectedFootprint.date}} {{selectedFootprint.time}}</text>
-          <view class="preview-close" bindtap="hidePreview">
-            <text class="preview-close-icon">✕</text>
-          </view>
-        </view>
-        <view class="preview-image-wrapper">
-          <image class="preview-image" src="{{selectedFootprint.path || selectedFootprint.url}}" mode="widthFix" binderror="onPhotoError" data-id="{{selectedFootprint.id}}" />
-        </view>
-        <view wx:if="{{selectedFootprint.description}}" class="preview-desc">{{selectedFootprint.description}}</view>
-        <view wx:if="{{selectedFootprint.petName}}" class="preview-pet-tag">
-          <text class="fp-pet-icon">🐢</text>
-          <text class="preview-pet-name">{{selectedFootprint.petName}}</text>
-        </view>
+    
+    <!-- 顶部栏 -->
+    <view class="preview-top-bar">
+      <text class="preview-title">{{selectedFootprint.date}} {{selectedFootprint.time}}</text>
+      <view class="preview-close" bindtap="hidePreview">
+        <text class="preview-close-icon">✕</text>
       </view>
-    </scroll-view>
+    </view>
+    
+    <!-- 图片区域 -->
+    <view class="preview-images-area">
+      <swiper 
+        wx:if="{{selectedFootprint.photos && selectedFootprint.photos.length > 1}}" 
+        class="preview-swiper" 
+        indicator-dots 
+        circular
+        current="{{previewCurrent}}"
+        bindchange="onPreviewSwiperChange"
+      >
+        <swiper-item wx:for="{{selectedFootprint.photos}}" wx:for-item="photo" wx:key="index">
+          <image class="preview-image" src="{{photo}}" mode="widthFix" />
+        </swiper-item>
+      </swiper>
+      <image wx:else class="preview-image" src="{{selectedFootprint.photos && selectedFootprint.photos[0] || selectedFootprint.path || selectedFootprint.url}}" mode="widthFix" binderror="onPhotoError" data-id="{{selectedFootprint.id}}" />
+      <view wx:if="{{selectedFootprint.photos && selectedFootprint.photos.length > 1}}" class="preview-pagination">
+        <text class="preview-page-text">{{previewCurrent + 1}} / {{selectedFootprint.photos.length}}</text>
+      </view>
+    </view>
+    
+    <!-- 底部信息 -->
+    <view class="preview-bottom-bar">
+      <view wx:if="{{selectedFootprint.description}}" class="preview-desc">{{selectedFootprint.description}}</view>
+      <view wx:if="{{selectedFootprint.petName}}" class="preview-pet-tag">
+        <text class="fp-pet-icon">🐢</text>
+        <text class="preview-pet-name">{{selectedFootprint.petName}}</text>
+      </view>
+    </view>
   </view>
 
   <!-- 描述输入弹窗 -->

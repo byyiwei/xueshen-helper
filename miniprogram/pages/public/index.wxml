@@ -29,7 +29,7 @@
         <view class="pet-image-wrapper">
           <image wx:if="{{item.photos && item.photos.length > 0}}" class="pet-image" src="{{item.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-index="{{index}}" />
           <view wx:else class="pet-placeholder"></view>
-          <view class="pet-gender-badge">
+          <view class="pet-gender-badge gender-{{item.gender === '公' ? 'male' : item.gender === '母' ? 'female' : 'unknown'}}">
             <text class="gender-icon">{{item.gender || '未知'}}</text>
           </view>
         </view>

@@ -21,10 +21,10 @@ Page({
     showFilters: false,
     searchText: '',
     searchPlaceholder: '搜索别名 / 扫码搜索',
-    switchColor: '#2D6A4F',
+    switchColor: '#3A7CFF',
     showSkeleton: true,
     filter: {
-      series: '全部',
+      category: '全部',
       gender: '全部',
       status: '全部'
     },
@@ -86,6 +86,8 @@ Page({
       const tabBar = this.getTabBar()
       tabBar.setData({ selected: 0, visible: true })
     }
+    // 重新加载分类，确保新增的分类能显示
+    this.loadCategories()
     // 只在没有数据时显示骨架屏，避免频繁显示
     if (this.data.pets.length === 0) {
       this.setData({ showSkeleton: true })
@@ -126,6 +128,23 @@ Page({
     } else {
       if (this.data.loadingMore || !this.data.hasMore) return
       this.setData({ loadingMore: true })
+    }
+
+    // 检查登录状态，未登录用户不显示任何数据
+    const app = getApp()
+    if (!app.globalData.isLoggedIn) {
+      this.setData({
+        pets: [],
+        filteredPets: [],
+        loading: false,
+        loadingMore: false,
+        showSkeleton: false,
+        cloudAvailable: false,
+        hasMore: false,
+        total: 0,
+        pageNum: 1
+      })
+      return
     }
 
     try {
@@ -226,8 +245,8 @@ Page({
     const pets = this.data.pets || []
     let result = [...pets]
 
-    if (this.data.filter.series !== '全部') {
-      result = result.filter(pet => pet.category === this.data.filter.series)
+    if (this.data.filter.category !== '全部') {
+      result = result.filter(pet => pet.category === this.data.filter.category)
     }
 
     if (this.data.filter.gender !== '全部') {
@@ -860,7 +879,7 @@ Page({
         await this.createArchiveRecord(petId, newPet.name, finalPhotos)
         
         // 创建操作足迹
-        await this.createActionFootprint('建档', petId, newPet.name, `为「${newPet.name}」建立了档案`)
+        await this.createActionFootprint('建档', petId, newPet.name, `为「${newPet.name}」建立了档案`, finalPhotos)
 
         setTimeout(() => { this.loadPets() }, 500)
       } else {
@@ -906,7 +925,7 @@ Page({
       this.createLocalArchiveRecord(petId, newPet.name, newPet.photos)
       
       // 本地创建操作足迹
-      this.createLocalActionFootprint('建档', petId, newPet.name, `为「${newPet.name}」建立了档案`)
+      this.createLocalActionFootprint('建档', petId, newPet.name, `为「${newPet.name}」建立了档案`, newPet.photos)
     } catch (error) {
       console.error('创建宠物失败:', error)
       showError('创建失败')
@@ -941,7 +960,7 @@ Page({
   },
 
   // 本地创建操作足迹
-  createLocalActionFootprint(action, petId, petName, description) {
+  createLocalActionFootprint(action, petId, petName, description, photos) {
     try {
       const now = new Date()
       const footprints = wx.getStorageSync('footprints') || []
@@ -952,6 +971,7 @@ Page({
         petId: petId,
         petName: petName,
         description: description,
+        photos: photos && photos.length > 0 ? photos : [],
         date: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
         time: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
       }
@@ -1041,7 +1061,7 @@ Page({
 
     wx.showActionSheet({
       itemList: ['进入编辑模式', '删除该宠物'],
-      itemColor: '#2D6A4F',
+      itemColor: '#3A7CFF',
       success: (res) => {
         if (res.tapIndex === 0) {
           // 进入编辑模式并选中当前卡片
@@ -1117,9 +1137,11 @@ Page({
   // ========== 拖拽排序 ==========
   onDragStart(e) {
     const id = e.currentTarget.dataset.id
+    const index = e.currentTarget.dataset.index
     const touch = e.touches[0]
-    const index = this.data.filteredPets.findIndex(p => p.id === id)
-    if (index < 0) return
+    
+    // 立即振动反馈
+    wx.vibrateShort({ type: 'light' })
 
     // Measure card height once
     const query = wx.createSelectorQuery()
@@ -1140,57 +1162,81 @@ Page({
         index,
         startX: touch.clientX,
         startY: touch.clientY,
-        offsetY: 0
+        offsetY: 0,
+        lastSwapped: -1,
+        lastSwapTime: Date.now()
       }
     })
   },
 
   onDragMove(e) {
     if (!this._dragData) return
+    
     const touch = e.touches[0]
     const dy = touch.clientY - this._dragData.startY
     this._dragData.offsetY = dy
 
-    // Update drag position
-    const index = this._dragData.index
-      const filteredPets = this.data.filteredPets || []
-      const pets = [...filteredPets]
-    pets[index]._dragOffset = dy
+    const filteredPets = this.data.filteredPets || []
+    const pets = [...filteredPets]
+    const currentIndex = this._dragData.index
+    
+    // 更新当前拖动项的偏移
+    pets[currentIndex]._dragOffset = dy
     this.setData({ filteredPets: pets })
 
-    // Calculate target index based on displacement
+    // 计算目标位置
     const cardH = this._cardHeight || 200
     const offsetIndex = Math.round(dy / cardH)
-    const targetIndex = Math.max(0, Math.min(pets.length - 1, index + offsetIndex))
+    const targetIndex = Math.max(0, Math.min(pets.length - 1, currentIndex + offsetIndex))
 
-    // Swap if target differs and hasn't been applied yet
-    if (targetIndex !== index && targetIndex !== this._dragData.lastSwapped) {
-      // Swap items
-      const [moved] = pets.splice(index, 1)
+    // 限制交换频率，提升流畅度
+    const now = Date.now()
+    if (targetIndex !== currentIndex && 
+        targetIndex !== this._dragData.lastSwapped && 
+        now - this._dragData.lastSwapTime > 80) {
+      
+      // 交换项
+      const [moved] = pets.splice(currentIndex, 1)
       pets.splice(targetIndex, 0, moved)
-      // Reset offset and update indices
+      
+      // 重置偏移并更新索引
       moved._dragOffset = 0
       this._dragData.index = targetIndex
       this._dragData.lastSwapped = targetIndex
+      this._dragData.lastSwapTime = now
       this._dragData.startY = touch.clientY
+      
+      // 交换时振动反馈
+      wx.vibrateShort({ type: 'light' })
+      
       this.setData({ filteredPets: pets })
     }
   },
 
   onDragEnd() {
     if (!this._dragData) return
+    
     const filteredPets = this.data.filteredPets || []
     const pets = [...filteredPets]
     const idx = this._dragData.index
-    if (pets[idx]) {
-      pets[idx]._dragging = false
-      pets[idx]._dragOffset = 0
-    }
+    
+    // 重置所有拖动状态
+    pets.forEach((pet) => {
+      pet._dragging = false
+      pet._dragOffset = 0
+    })
+    
     this.setData({
       filteredPets: pets,
       pets: pets
     })
+    
+    // 保存排序到本地存储
     wx.setStorageSync('pets', sanitizePetPhotos(pets))
+    
+    // 排序完成振动反馈
+    wx.vibrateShort({ type: 'medium' })
+    
     this._dragData = null
     this._cardHeight = null
   },
@@ -1286,7 +1332,7 @@ Page({
   },
 
   // 创建操作足迹
-  async createActionFootprint(action, petId, petName, description) {
+  async createActionFootprint(action, petId, petName, description, photos) {
     try {
       const now = new Date()
       const footprintData = {
@@ -1295,6 +1341,7 @@ Page({
         petId: petId,
         petName: petName,
         description: description,
+        photos: photos && photos.length > 0 ? photos : [],
         date: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
         time: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
       }

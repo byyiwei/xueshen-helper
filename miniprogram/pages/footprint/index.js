@@ -8,6 +8,7 @@ Page({
     groupedFootprints: [],
     selectedFootprint: null,
     showPreviewModal: false,
+    previewCurrent: 0,
     totalPets: 0,
     totalRecords: 0,
     companyDays: 0,
@@ -268,15 +269,56 @@ Page({
   },
 
   addFootprint: function () {
-    // 直接调用微信相册/拍照，只支持图片
     const that = this
+    // 先弹出选择框让用户选择拍照或相册
+    wx.showActionSheet({
+      itemList: ['拍照', '从相册选择'],
+      itemColor: '#3A7CFF',
+      success: (res) => {
+        const sourceType = res.tapIndex === 0 ? ['camera'] : ['album']
+        that.chooseImage(sourceType)
+      },
+      fail: () => {}
+    })
+  },
+
+  chooseImage: function (sourceType) {
+    const that = this
+    // 如果是拍照，直接调用相机
+    if (sourceType && sourceType[0] === 'camera') {
+      wx.chooseImage({
+        count: 9,
+        sizeType: ['compressed'],
+        sourceType: ['camera'],
+        camera: 'back',
+        success: (res) => {
+          if (!res.tempFilePaths || res.tempFilePaths.length === 0) {
+            wx.showToast({ title: '未拍照', icon: 'none' })
+            return
+          }
+          that.setData({ 
+            tempFilePaths: res.tempFilePaths,
+            descValue: '',
+            showDescModal: true 
+          })
+        },
+        fail: (err) => {
+          if (err && err.errMsg && err.errMsg.indexOf('cancel') > -1) {
+            return
+          }
+          wx.showToast({ title: '拍照失败', icon: 'none' })
+        }
+      })
+      return
+    }
+    
+    // 相册选择
     try {
       wx.chooseMedia({
         count: 9,
         mediaType: ['image'],
-        sourceType: ['album', 'camera'],
+        sourceType: sourceType,
         sizeType: ['compressed'],
-        camera: 'back',
         success: (res) => {
           const files = res.tempFiles || []
           if (!files.length) {
@@ -297,7 +339,7 @@ Page({
           wx.chooseImage({
             count: 9,
             sizeType: ['compressed'],
-            sourceType: ['album', 'camera'],
+            sourceType: sourceType,
             success: (res2) => {
               that.setData({ 
                 tempFilePaths: res2.tempFilePaths || [],
@@ -330,81 +372,85 @@ Page({
   },
 
   /**
-   * 批量上传图片并保存足迹
+   * 批量上传图片并保存为一个足迹（多张图片创建一条记录）
    */
   uploadImages: async function (filePaths, description = '') {
     if (!filePaths || filePaths.length === 0) return
     wx.showLoading({ title: '上传中...', mask: true })
 
-    let successCount = 0
-    let failCount = 0
+    const photoIDs = []
+    const timestamp = Date.now()
 
+    // 1. 先批量上传所有图片
     for (let i = 0; i < filePaths.length; i++) {
       const path = filePaths[i]
       try {
-        // 1. 上传到云存储
         const fileExt = (path.split('.').pop() || 'jpg').split('?')[0]
-        const cloudPath = `footprints/${Date.now()}_${i}.${fileExt}`
+        // 使用唯一文件名，避免冲突
+        const cloudPath = `footprints/${timestamp}_${i}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`
         const uploadRes = await wx.cloud.uploadFile({
           cloudPath,
           filePath: path
         })
-        if (!uploadRes || !uploadRes.fileID) {
-          failCount++
-          continue
-        }
-
-        // 2. 生成日期时间
-        const now = new Date()
-        const pad = (n) => String(n).padStart(2, '0')
-        const footprintData = {
-          type: 'image',
-          url: uploadRes.fileID,
-          thumbnail: '',
-          duration: 0,
-          date: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
-          time: `${pad(now.getHours())}:${pad(now.getMinutes())}`,
-          description: description || ''
-        }
-
-        // 3. 调用云函数保存
-        const result = await API.createFootprint(footprintData)
-        if (result && result.success) {
-          successCount++
-        } else {
-          failCount++
+        if (uploadRes && uploadRes.fileID) {
+          photoIDs.push(uploadRes.fileID)
         }
       } catch (uploadErr) {
         console.error('单张图片上传失败:', uploadErr)
-        failCount++
       }
     }
 
-    wx.hideLoading()
+    // 2. 用所有上传成功的图片创建一条足迹记录
+    if (photoIDs.length > 0) {
+      const now = new Date()
+      const pad = (n) => String(n).padStart(2, '0')
+      const footprintData = {
+        type: 'image',
+        photos: photoIDs,
+        thumbnail: '',
+        duration: 0,
+        date: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+        time: `${pad(now.getHours())}:${pad(now.getMinutes())}`,
+        description: description || ''
+      }
 
-    if (successCount > 0) {
-      wx.showToast({
-        title: `已添加 ${successCount} 张`,
-        icon: 'success'
-      })
-      this.loadAll()
+      const result = await API.createFootprint(footprintData)
+
+      if (result && result.success) {
+        wx.showToast({
+          title: `已添加 ${photoIDs.length} 张`,
+          icon: 'success'
+        })
+        this.loadAll()
+      } else {
+        wx.showToast({ title: '保存失败，请重试', icon: 'none' })
+      }
     } else {
       wx.showToast({ title: '上传失败，请重试', icon: 'none' })
     }
+    wx.hideLoading()
   },
 
   previewFootprint: function (e) {
     const fp = e.currentTarget.dataset.footprint
     this.setData({
       selectedFootprint: fp,
-      showPreviewModal: true
+      showPreviewModal: true,
+      previewCurrent: 0
     })
   },
 
   hidePreview: function () {
     this.setData({
       showPreviewModal: false,
-      selectedFootprint: null
+      selectedFootprint: null,
+      previewCurrent: 0
+    })
+  },
+
+  onPreviewSwiperChange: function (e) {
+    this.setData({
+      previewCurrent: e.detail.current
     })
   },
 

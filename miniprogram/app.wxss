@@ -23,35 +23,35 @@ page {
 }
 
 .text-dark {
-  color: #2C3E50;
+  color: #1E293B;
 }
 
 .bg-dark {
-  background-color: #2D6A4F;
+  background-color: #3A7CFF;
 }
 
 :root {
-  --primary-color: #2D6A4F;
-  --primary-light: #E8F5EE;
-  --primary-dark: #1B4332;
-  --accent-color: #F4A261;
-  --bg-color: #F8FAFB;
+  --primary-color: #3A7CFF;
+  --primary-light: #E6F0FF;
+  --primary-dark: #1A5CD6;
+  --accent-color: #FF8C42;
+  --bg-color: #F0F7FF;
   --bg-light: #FFFFFF;
   --card-bg: #ffffff;
-  --text-color: #2C3E50;
-  --text-secondary: #5A6C7D;
+  --text-color: #1E293B;
+  --text-secondary: #475569;
   --text-light: #94A3B8;
   --border-color: #E2E8F0;
 }
 
 .btn-primary {
-  background-color: #2D6A4F;
+  background-color: #3A7CFF;
   color: #ffffff;
   border-radius: 40rpx;
   font-size: 28rpx;
   padding: 24rpx 48rpx;
   border: none;
-  box-shadow: 0 4rpx 12rpx rgba(45,106,79,0.2);
+  box-shadow: 0 4rpx 12rpx rgba(58,124,255,0.2);
   transition: opacity 0.2s;
 }
 
@@ -60,8 +60,8 @@ page {
 }
 
 .btn-secondary {
-  background-color: #F8FAFB;
-  color: #2D6A4F;
+  background-color: #F0F7FF;
+  color: #3A7CFF;
   border-radius: 40rpx;
   font-size: 28rpx;
   padding: 24rpx 48rpx;
@@ -74,13 +74,13 @@ page {
 }
 
 .btn-accent {
-  background-color: #F4A261;
+  background-color: #FF8C42;
   color: #ffffff;
   border-radius: 40rpx;
   font-size: 28rpx;
   padding: 24rpx 48rpx;
   border: none;
-  box-shadow: 0 4rpx 12rpx rgba(244,162,97,0.2);
+  box-shadow: 0 4rpx 12rpx rgba(255,140,66,0.2);
   transition: opacity 0.2s;
 }
 
@@ -104,7 +104,7 @@ page {
 
 .btn-outline {
   background-color: transparent;
-  color: #2D6A4F;
+  color: #3A7CFF;
   border: 2rpx solid #E2E8F0;
   border-radius: 40rpx;
   font-size: 28rpx;
@@ -170,7 +170,7 @@ page {
 .not-logged-in-title {
   font-size: 36rpx;
   font-weight: 600;
-  color: #2C3E50;
+  color: #1E293B;
   margin-bottom: 16rpx;
 }
 
@@ -184,7 +184,7 @@ page {
 .not-logged-in-btn {
   width: 320rpx;
   height: 84rpx;
-  background: linear-gradient(135deg, #2D6A4F 0%, #1B4332 100%);
+  background: linear-gradient(135deg, #3A7CFF 0%, #1A5CD6 100%);
   color: #ffffff;
   border-radius: 42rpx;
   display: flex;
@@ -192,7 +192,7 @@ page {
   justify-content: center;
   font-size: 30rpx;
   font-weight: 500;
-  box-shadow: 0 8rpx 24rpx rgba(45, 106, 79, 0.2);
+  box-shadow: 0 8rpx 24rpx rgba(58, 124, 255, 0.2);
 }
 
 .not-logged-in-btn:active {

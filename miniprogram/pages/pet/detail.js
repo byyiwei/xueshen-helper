@@ -39,7 +39,7 @@ Page({
     selectedDate: '',
     endDate: '',
     today: '',
-    switchColor: '#2D6A4F',
+    switchColor: '#3A7CFF',
 
     // 编辑表单
     editForm: {
@@ -55,6 +55,7 @@ Page({
       isPublic: false,
       photos: []
     },
+    categories: ['无'],
     showEditManual: false,
     selectedFather: null,
     selectedMother: null,
@@ -432,6 +433,8 @@ Page({
   editInfo: function () {
     const pet = this.data.pet
     if (!pet) return
+    // 加载最新的分类列表
+    this.loadCategories()
     this.setData({
       showEditModal: true,
       editForm: {
@@ -451,6 +454,17 @@ Page({
       selectedFather: pet.father ? { id: pet.father, name: pet.fatherName || '父本' } : null,
       selectedMother: pet.mother ? { id: pet.mother, name: pet.motherName || '母本' } : null
     })
+  },
+
+  loadCategories() {
+    try {
+      const savedCategories = wx.getStorageSync('categories')
+      if (savedCategories && savedCategories.length > 0) {
+        this.setData({ categories: savedCategories })
+      }
+    } catch (error) {
+      console.error('加载分类失败:', error)
+    }
   },
 
   hideEditModal: function () {
