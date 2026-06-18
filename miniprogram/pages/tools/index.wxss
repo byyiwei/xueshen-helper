@@ -1,0 +1,81 @@
+.page {
+  min-height: 100vh;
+  background-color: #F0F7FF;
+  padding-bottom: calc(120rpx + env(safe-area-inset-bottom));
+}
+
+.custom-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 88rpx;
+  background: #F0F7FF;
+}
+
+.nav-title {
+  font-size: 34rpx;
+  font-weight: 500;
+  color: #1E293B;
+  text-align: center;
+}
+
+.content {
+  padding: 32rpx;
+  padding-top: calc(120rpx + env(safe-area-inset-top));
+}
+
+.tools-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24rpx;
+}
+
+.tool-card {
+  background: #ffffff;
+  border-radius: 24rpx;
+  padding: 32rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 4rpx 20rpx rgba(58, 124, 255, 0.06);
+  border: 2rpx solid #EDF2F7;
+  transition: all 0.2s ease;
+}
+
+.tool-card:active {
+  transform: scale(0.97);
+  background: #F8FAFC;
+}
+
+.tool-icon-wrap {
+  width: 100rpx;
+  height: 100rpx;
+  background: linear-gradient(135deg, #3A7CFF 0%, #2563EB 100%);
+  border-radius: 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20rpx;
+  box-shadow: 0 8rpx 24rpx rgba(58, 124, 255, 0.25);
+}
+
+.tool-icon {
+  font-size: 44rpx;
+}
+
+.tool-name {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #1E293B;
+  margin-bottom: 8rpx;
+}
+
+.tool-desc {
+  font-size: 22rpx;
+  color: #94A3B8;
+}

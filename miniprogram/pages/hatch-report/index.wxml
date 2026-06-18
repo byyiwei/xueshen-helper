@@ -1,0 +1,113 @@
+<view class="hatch-report-page">
+  <!-- 未登录提示栏 -->
+  <view wx:if="{{!isLoggedIn}}" class="login-hint-bar">
+    <text class="login-hint-text">登录后可管理宠物资料、记录和打印标签</text>
+    <view class="login-hint-btn" bindtap="goToLogin">登录</view>
+  </view>
+  <!-- 筛选区域 -->
+  <view class="filter-section">
+    <view class="filter-row">
+      <view class="filter-item">
+        <text class="filter-label">开始</text>
+        <picker mode="date" value="{{startDate}}" bindchange="onStartDateChange">
+          <view class="picker-btn">
+            <text>{{startDate || '开始日期'}}</text>
+            <text class="picker-arrow">▼</text>
+          </view>
+        </picker>
+      </view>
+      <view class="filter-item">
+        <text class="filter-label">结束</text>
+        <picker mode="date" value="{{endDate}}" bindchange="onEndDateChange">
+          <view class="picker-btn">
+            <text>{{endDate || '结束日期'}}</text>
+            <text class="picker-arrow">▼</text>
+          </view>
+        </picker>
+      </view>
+    </view>
+    <view class="filter-row">
+      <view class="filter-item">
+        <text class="filter-label">种母</text>
+        <picker mode="selector" range="{{femaleOptions}}" value="{{femaleIndex}}" bindchange="onFemaleChange">
+          <view class="picker-btn">
+            <text>{{femaleOptions[femaleIndex] || '全部'}}</text>
+            <text class="picker-arrow">▼</text>
+          </view>
+        </picker>
+      </view>
+      <view class="filter-actions">
+        <view class="action-btn primary" bindtap="onQuery">查询</view>
+        <view class="action-btn secondary" bindtap="onMonthStats">月统</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 表格头部 -->
+  <view class="table-header">
+    <text class="th th-serial">序号</text>
+    <view class="th th-date sortable" bindtap="onSortDate">
+      <text>日期</text>
+      <text class="sort-icon">{{sortBy === 'date' ? (sortDesc ? '↑' : '↓') : '↕'}}</text>
+    </view>
+    <text class="th th-female">种母</text>
+    <view class="th th-hatch sortable" bindtap="onSortHatch">
+      <text>破壳</text>
+      <text class="sort-icon">{{sortBy === 'hatch' ? (sortDesc ? '↑' : '↓') : '↕'}}</text>
+    </view>
+    <text class="th th-grade">全品</text>
+    <text class="th th-defect">瑕疵</text>
+    <view class="th th-rate sortable" bindtap="onSortGradeRate">
+      <text>全品率</text>
+      <text class="sort-icon">{{sortBy === 'gradeRate' ? (sortDesc ? '↑' : '↓') : '↕'}}</text>
+    </view>
+  </view>
+
+  <!-- 数据列表 -->
+  <scroll-view scroll-y class="data-scroll">
+    <view class="data-content">
+      <view wx:for="{{groupedRecords}}" wx:key="year" class="year-group">
+        <view class="year-label">{{item.year}}</view>
+        <view wx:for="{{item.records}}" wx:key="index" wx:for-item="record" class="data-row">
+          <text class="td td-serial">{{record.serial}}</text>
+          <text class="td td-date">{{record.date}}</text>
+          <text class="td td-female">{{record.femaleName}}</text>
+          <text class="td td-hatch">{{record.hatchCount}}</text>
+          <text class="td td-grade">{{record.gradeACount}}</text>
+          <text class="td td-defect">{{record.defectCount}}</text>
+          <text class="td td-rate">{{record.gradeARate}}</text>
+        </view>
+      </view>
+      <view wx:if="{{!hasData}}" class="empty-state">
+        <text class="empty-icon">🐣</text>
+        <text class="empty-text">暂无出苗记录</text>
+      </view>
+    </view>
+  </scroll-view>
+
+  <!-- 统计区域 -->
+  <view class="stats-section">
+    <view class="stats-row">
+      <view class="stat-item">
+        <text class="stat-title">出苗</text>
+        <view class="stat-content">
+          <text class="stat-value">{{stats.totalHatches}}窝</text>
+          <text class="stat-divider">|</text>
+          <text class="stat-value">{{stats.totalHatchCount}}只</text>
+        </view>
+      </view>
+      <view class="stat-item">
+        <text class="stat-title">全品/瑕疵</text>
+        <view class="stat-content">
+          <text class="stat-value">{{stats.totalGradeA}}</text>
+          <text class="stat-divider">/</text>
+          <text class="stat-value">{{stats.totalDefect}}</text>
+        </view>
+      </view>
+      <view class="stat-item grade-rate-card">
+        <text class="stat-title">全品率</text>
+        <text class="stat-rate">{{stats.gradeARate}}%</text>
+      </view>
+    </view>
+  </view>
+</view>

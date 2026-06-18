@@ -1,5 +1,11 @@
 <view class="page">
 
+  <!-- 未登录提示栏 -->
+  <view wx:if="{{!isLoggedIn}}" class="login-hint-bar">
+    <text class="login-hint-text">登录后可管理宠物资料、记录和打印标签</text>
+    <view class="login-hint-btn" bindtap="goToLogin">登录</view>
+  </view>
+
   <view wx:if="{{showSkeleton}}" class="skeleton-container">
     <!-- 头部骨架 -->
     <view class="skeleton-header"></view>
@@ -71,7 +77,7 @@
 
     <view class="pet-info">
       <view class="pet-name-row">
-        <text class="pet-name">{{pet.name}}</text>
+        <text class="pet-name">{{pet.alias || pet.name}}</text>
         <view class="gender-tag gender-{{pet.gender === '公' ? 'male' : pet.gender === '母' ? 'female' : 'unknown'}}">
           <text class="gender-text">{{pet.gender}}</text>
         </view>
@@ -80,7 +86,7 @@
       <view class="info-tags">
         <text class="info-tag">{{pet.category}}</text>
         <text class="info-tag status-{{statusClass}}">{{pet.status}}</text>
-        <text wx:if="{{pet.alias}}" class="info-tag alias">{{pet.alias}}</text>
+        <text wx:if="{{pet.alias}}" class="info-tag alias">{{pet.name}}</text>
       </view>
       
       <view class="relation-row">
@@ -92,6 +98,11 @@
         <view class="relation-item">
           <text class="relation-label">母本</text>
           <text class="relation-value {{pet.mother ? 'gender-female' : 'unlinked-red'}}">{{pet.motherName || '未关联'}}</text>
+        </view>
+        <view class="relation-divider"></view>
+        <view class="relation-item">
+          <text class="relation-label">配对</text>
+          <text class="relation-value {{pet.partner ? 'gender-partner' : 'unlinked-gray'}}">{{pet.partnerName || '未配对'}}</text>
         </view>
       </view>
     </view>
@@ -124,7 +135,42 @@
     </view>
 
     <view class="section">
-      <view class="section-title">种龟事件</view>
+      <view class="section-title-row">
+        <text class="section-title">宠物事件</text>
+        <view class="report-entries" wx:if="{{pet.gender === '母' || (pet.gender === '公' && pet.partner)}}">
+          <view class="report-entry" bindtap="goToEggReport">
+            <text class="report-entry-icon">🥚</text>
+            <text class="report-entry-text">产蛋</text>
+          </view>
+          <view class="report-entry" bindtap="goToHatchReport">
+            <text class="report-entry-icon">🐣</text>
+            <text class="report-entry-text">出苗</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 日期筛选栏 -->
+      <view class="date-filter-bar">
+        <picker mode="date" value="{{selectedDate}}" bindchange="onDateChange" class="date-filter-picker">
+          <view class="date-filter-btn {{selectedDate ? 'active' : ''}}">
+            <text class="date-filter-label">开始</text>
+            <text class="date-filter-value">{{selectedDate || '选择日期'}}</text>
+            <text class="date-filter-arrow">▾</text>
+          </view>
+        </picker>
+        <text class="date-filter-sep">~</text>
+        <picker mode="date" value="{{endDate}}" bindchange="onEndDateChange" class="date-filter-picker">
+          <view class="date-filter-btn {{endDate ? 'active' : ''}}">
+            <text class="date-filter-label">结束</text>
+            <text class="date-filter-value">{{endDate || '选择日期'}}</text>
+            <text class="date-filter-arrow">▾</text>
+          </view>
+        </picker>
+        <view wx:if="{{selectedDate || endDate}}" class="date-filter-clear" bindtap="clearDateFilter">
+          <text>清除</text>
+        </view>
+      </view>
+
       <view class="event-tabs">
         <view class="event-tab {{currentEventTab === '全部事件' ? 'active' : ''}}" bindtap="setEventTab" data-tab="全部事件">
           <text class="event-tab-icon">📋</text>
@@ -134,26 +180,27 @@
           <text class="event-tab-icon">💕</text>
           <text class="event-tab-text">交配</text>
         </view>
-        <view class="event-tab {{currentEventTab === '产蛋' ? 'active' : ''}}" bindtap="setEventTab" data-tab="产蛋">
+        <view wx:if="{{pet.gender === '母'}}" class="event-tab {{currentEventTab === '产蛋' ? 'active' : ''}}" bindtap="setEventTab" data-tab="产蛋">
           <text class="event-tab-icon">🥚</text>
           <text class="event-tab-text">产蛋</text>
         </view>
-        <view class="event-tab {{currentEventTab === '换公' ? 'active' : ''}}" bindtap="setEventTab" data-tab="换公">
-          <text class="event-tab-icon">🔄</text>
-          <text class="event-tab-text">换公</text>
+        <view wx:if="{{pet.gender === '母'}}" class="event-tab {{currentEventTab === '出苗' ? 'active' : ''}}" bindtap="setEventTab" data-tab="出苗">
+          <text class="event-tab-icon">🐣</text>
+          <text class="event-tab-text">出苗</text>
         </view>
       </view>
 
       <view wx:if="{{filteredRecords.length > 0}}" class="event-list">
-        <view wx:for="{{filteredRecords}}" wx:key="id" class="event-card" bindtap="showRecordDetail" data-id="{{item.id}}">
-          <view class="event-icon {{item.type === '产蛋' ? 'event-icon-lay' : ''}}">
-            <text class="icon-emoji">{{item.type === '建档' ? '📁' : item.type === '交配' ? '💕' : item.type === '产蛋' ? '🥚' : item.type === '换公' ? '🔄' : '📝'}}</text>
+        <view wx:for="{{filteredRecords}}" wx:key="id" class="event-card" bindtap="showRecordDetail" bindlongpress="onEventCardLongPress" data-id="{{item.id}}">
+          <view class="event-icon {{item.type === '产蛋' ? 'event-icon-lay' : item.type === '出苗' ? 'event-icon-hatch' : ''}}">
+            <text class="icon-emoji">{{item.type === '建档' ? '📁' : item.type === '交配' ? '💕' : item.type === '产蛋' ? '🥚' : item.type === '出苗' ? '🐣' : '📝'}}</text>
           </view>
           <view class="event-info">
             <text class="event-title">{{item.type}}</text>
             <text class="event-content">{{item.text}}</text>
             <view class="event-date">
               <text class="date">{{item.date}}</text>
+              <text wx:if="{{item.photos && item.photos.length > 0}}" class="event-photo-hint">📷 {{item.photos.length}}</text>
             </view>
           </view>
         </view>
@@ -167,24 +214,6 @@
         <view class="timeline-header">
           <text class="timeline-title">记录（{{filteredRecords.length}}条）</text>
           <view class="timeline-actions">
-            <view class="timeline-date-range">
-              <picker mode="date" value="{{selectedDate || today}}" bindchange="onDateChange" class="timeline-date-picker">
-                <view class="timeline-btn {{selectedDate ? 'active' : ''}}">
-                  <text class="timeline-btn-text">{{selectedDate ? selectedDate : '开始'}}</text>
-                  <text class="timeline-btn-icon">▾</text>
-                </view>
-              </picker>
-              <text class="range-separator">~</text>
-              <picker mode="date" value="{{endDate || today}}" bindchange="onEndDateChange" class="timeline-date-picker">
-                <view class="timeline-btn {{endDate ? 'active' : ''}}">
-                  <text class="timeline-btn-text">{{endDate ? endDate : '结束'}}</text>
-                  <text class="timeline-btn-icon">▾</text>
-                </view>
-              </picker>
-            </view>
-            <view wx:if="{{selectedDate || endDate}}" class="timeline-btn timeline-btn-clear" bindtap="clearDateFilter">
-              <text class="timeline-btn-text">清除</text>
-            </view>
             <view class="timeline-btn timeline-btn-expand" bindtap="expandTimeline">展开</view>
           </view>
         </view>
@@ -328,53 +357,52 @@
             <text class="empty-text">暂无家谱数据</text>
           </view>
           <view wx:else class="family-tree-visual">
-            <!-- 第3代：曾祖父母（有条件显示） -->
-            <block wx:if="{{pedigreeData.hasGen3}}">
-              <view class="generation-label">第3代（曾祖父母）</view>
-              <view class="tree-level level-3">
-                <view wx:if="{{pedigreeData.fullTree.father && pedigreeData.fullTree.father.father && pedigreeData.fullTree.father.father.father}}" class="tree-node ancestor" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.father.father.father.id}}">
-                  <view class="node-gender-tag male">曾祖父</view>
-                  <view class="node-avatar-wrapper">
-                    <image wx:if="{{pedigreeData.fullTree.father.father.father.photos && pedigreeData.fullTree.father.father.father.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.father.father.father.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
-                  </view>
-                  <text class="node-name">{{pedigreeData.fullTree.father.father.father.alias || pedigreeData.fullTree.father.father.father.name || '未命名'}}</text>
-                  <text wx:if="{{pedigreeData.fullTree.father.father.father.alias}}" class="node-alias">{{pedigreeData.fullTree.father.father.father.name}}</text>
+            <!-- 当前宠物 -->
+            <view class="tree-level level-0">
+              <view class="tree-node current">
+                <view class="current-badge">当前</view>
+                <view class="node-avatar-wrapper">
+                  <image wx:if="{{pet.photos && pet.photos.length > 0}}" class="node-img" src="{{pet.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  <text wx:else class="node-icon current">🐢</text>
                 </view>
-                <view wx:if="{{pedigreeData.fullTree.father && pedigreeData.fullTree.father.father && pedigreeData.fullTree.father.father.mother}}" class="tree-node ancestor" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.father.father.mother.id}}">
-                  <view class="node-gender-tag female">曾祖母</view>
-                  <view class="node-avatar-wrapper">
-                    <image wx:if="{{pedigreeData.fullTree.father.father.mother.photos && pedigreeData.fullTree.father.father.mother.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.father.father.mother.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
-                  </view>
-                  <text class="node-name">{{pedigreeData.fullTree.father.father.mother.alias || pedigreeData.fullTree.father.father.mother.name || '未命名'}}</text>
-                  <text wx:if="{{pedigreeData.fullTree.father.father.mother.alias}}" class="node-alias">{{pedigreeData.fullTree.father.father.mother.name}}</text>
-                </view>
-                <view wx:if="{{pedigreeData.fullTree.mother && pedigreeData.fullTree.mother.father && pedigreeData.fullTree.mother.father.father}}" class="tree-node ancestor" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.mother.father.father.id}}">
-                  <view class="node-gender-tag male">曾外祖父</view>
-                  <view class="node-avatar-wrapper">
-                    <image wx:if="{{pedigreeData.fullTree.mother.father.father.photos && pedigreeData.fullTree.mother.father.father.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.mother.father.father.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
-                  </view>
-                  <text class="node-name">{{pedigreeData.fullTree.mother.father.father.alias || pedigreeData.fullTree.mother.father.father.name || '未命名'}}</text>
-                  <text wx:if="{{pedigreeData.fullTree.mother.father.father.alias}}" class="node-alias">{{pedigreeData.fullTree.mother.father.father.name}}</text>
-                </view>
-                <view wx:if="{{pedigreeData.fullTree.mother && pedigreeData.fullTree.mother.father && pedigreeData.fullTree.mother.father.mother}}" class="tree-node ancestor" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.mother.father.mother.id}}">
-                  <view class="node-gender-tag female">曾外祖母</view>
-                  <view class="node-avatar-wrapper">
-                    <image wx:if="{{pedigreeData.fullTree.mother.father.mother.photos && pedigreeData.fullTree.mother.father.mother.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.mother.father.mother.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
-                  </view>
-                  <text class="node-name">{{pedigreeData.fullTree.mother.father.mother.alias || pedigreeData.fullTree.mother.father.mother.name || '未命名'}}</text>
-                  <text wx:if="{{pedigreeData.fullTree.mother.father.mother.alias}}" class="node-alias">{{pedigreeData.fullTree.mother.father.mother.name}}</text>
-                </view>
+                <text class="node-name current">{{pet.alias || pet.name || '未命名'}}</text>
+                <text wx:if="{{pet.alias}}" class="node-alias current">{{pet.name}}</text>
+                <text class="node-gender-text">{{pet.gender || '未知'}}</text>
               </view>
-              
-              <!-- 连接线 -->
-              <view class="tree-connections" wx:if="{{pedigreeData.hasGen2}}">
-                <view class="connection-line" wx:if="{{pedigreeData.fullTree.father && pedigreeData.fullTree.father.father && (pedigreeData.fullTree.father.father.father || pedigreeData.fullTree.father.father.mother)}}"></view>
-                <view class="connection-line" wx:if="{{pedigreeData.fullTree.mother && pedigreeData.fullTree.mother.father && (pedigreeData.fullTree.mother.father.father || pedigreeData.fullTree.mother.father.mother)}}"></view>
+            </view>
+
+            <!-- 第1代：父母 -->
+            <block wx:if="{{pedigreeData.hasGen1}}">
+              <view class="tree-connections">
+                <view class="connection-line center"></view>
+              </view>
+              <view class="generation-label">第1代（父母）</view>
+              <view class="tree-level level-1">
+                <view wx:if="{{pedigreeData.fullTree.father}}" class="tree-node parent" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.father.id}}">
+                  <view class="node-gender-tag male">父本</view>
+                  <view class="node-avatar-wrapper">
+                    <image wx:if="{{pedigreeData.fullTree.father.photos && pedigreeData.fullTree.father.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.father.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  </view>
+                  <text class="node-name">{{pedigreeData.fullTree.father.alias || pedigreeData.fullTree.father.name || '未命名'}}</text>
+                  <text wx:if="{{pedigreeData.fullTree.father.alias}}" class="node-alias">{{pedigreeData.fullTree.father.name}}</text>
+                </view>
+                <view wx:if="{{pedigreeData.fullTree.mother}}" class="tree-node parent" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.mother.id}}">
+                  <view class="node-gender-tag female">母本</view>
+                  <view class="node-avatar-wrapper">
+                    <image wx:if="{{pedigreeData.fullTree.mother.photos && pedigreeData.fullTree.mother.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.mother.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  </view>
+                  <text class="node-name">{{pedigreeData.fullTree.mother.alias || pedigreeData.fullTree.mother.name || '未命名'}}</text>
+                  <text wx:if="{{pedigreeData.fullTree.mother.alias}}" class="node-alias">{{pedigreeData.fullTree.mother.name}}</text>
+                </view>
               </view>
             </block>
-            
-            <!-- 第2代：祖父母（有条件显示） -->
+
+            <!-- 第2代：祖父母 -->
             <block wx:if="{{pedigreeData.hasGen2}}">
+              <view class="tree-connections">
+                <view class="connection-line" wx:if="{{pedigreeData.fullTree.father && (pedigreeData.fullTree.father.father || pedigreeData.fullTree.father.mother)}}"></view>
+                <view class="connection-line" wx:if="{{pedigreeData.fullTree.mother && (pedigreeData.fullTree.mother.father || pedigreeData.fullTree.mother.mother)}}"></view>
+              </view>
               <view class="generation-label">第2代（祖父母）</view>
               <view class="tree-level level-2">
                 <view wx:if="{{pedigreeData.fullTree.father && pedigreeData.fullTree.father.father}}" class="tree-node ancestor" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.father.father.id}}">
@@ -410,75 +438,72 @@
                   <text wx:if="{{pedigreeData.fullTree.mother.mother.alias}}" class="node-alias">{{pedigreeData.fullTree.mother.mother.name}}</text>
                 </view>
               </view>
-              
-              <!-- 连接线 -->
-              <view class="tree-connections" wx:if="{{pedigreeData.hasGen1}}">
-                <view class="connection-line" wx:if="{{pedigreeData.fullTree.father && (pedigreeData.fullTree.father.father || pedigreeData.fullTree.father.mother)}}"></view>
-                <view class="connection-line" wx:if="{{pedigreeData.fullTree.mother && (pedigreeData.fullTree.mother.father || pedigreeData.fullTree.mother.mother)}}"></view>
-              </view>
-            </block>
-            
-            <!-- 第1代：父母（有条件显示） -->
-            <block wx:if="{{pedigreeData.hasGen1}}">
-              <view class="generation-label">第1代（父母）</view>
-              <view class="tree-level level-1">
-                <view wx:if="{{pedigreeData.fullTree.father}}" class="tree-node parent" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.father.id}}">
-                  <view class="node-gender-tag male">父本</view>
-                  <view class="node-avatar-wrapper">
-                    <image wx:if="{{pedigreeData.fullTree.father.photos && pedigreeData.fullTree.father.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.father.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
-                  </view>
-                  <text class="node-name">{{pedigreeData.fullTree.father.alias || pedigreeData.fullTree.father.name || '未命名'}}</text>
-                  <text wx:if="{{pedigreeData.fullTree.father.alias}}" class="node-alias">{{pedigreeData.fullTree.father.name}}</text>
-                </view>
-                <view wx:if="{{pedigreeData.fullTree.mother}}" class="tree-node parent" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.mother.id}}">
-                  <view class="node-gender-tag female">母本</view>
-                  <view class="node-avatar-wrapper">
-                    <image wx:if="{{pedigreeData.fullTree.mother.photos && pedigreeData.fullTree.mother.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.mother.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
-                  </view>
-                  <text class="node-name">{{pedigreeData.fullTree.mother.alias || pedigreeData.fullTree.mother.name || '未命名'}}</text>
-                  <text wx:if="{{pedigreeData.fullTree.mother.alias}}" class="node-alias">{{pedigreeData.fullTree.mother.name}}</text>
-                </view>
-              </view>
-              
-              <!-- 连接线 -->
-              <view class="tree-connections">
-                <view class="connection-line center"></view>
-              </view>
             </block>
 
-            <!-- 第0代：当前宠物 -->
-            <view class="tree-level level-0">
-              <view class="tree-node current">
-                <view class="current-badge">当前</view>
-                <view class="node-avatar-wrapper">
-                  <image wx:if="{{pet.photos && pet.photos.length > 0}}" class="node-img" src="{{pet.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
-                  <text wx:else class="node-icon current">🐢</text>
-                </view>
-                <text class="node-name current">{{pet.alias || pet.name || '未命名'}}</text>
-                <text wx:if="{{pet.alias}}" class="node-alias current">{{pet.name}}</text>
-                <text class="node-gender-text">{{pet.gender || '未知'}}</text>
+            <!-- 第3代：曾祖父母 -->
+            <block wx:if="{{pedigreeData.hasGen3}}">
+              <view class="tree-connections">
+                <view class="connection-line" wx:if="{{pedigreeData.fullTree.father && pedigreeData.fullTree.father.father && (pedigreeData.fullTree.father.father.father || pedigreeData.fullTree.father.father.mother)}}"></view>
+                <view class="connection-line" wx:if="{{pedigreeData.fullTree.mother && pedigreeData.fullTree.mother.father && (pedigreeData.fullTree.mother.father.father || pedigreeData.fullTree.mother.father.mother)}}"></view>
               </view>
-            </view>
+              <view class="generation-label">第3代（曾祖父母）</view>
+              <view class="tree-level level-3">
+                <view wx:if="{{pedigreeData.fullTree.father && pedigreeData.fullTree.father.father && pedigreeData.fullTree.father.father.father}}" class="tree-node ancestor" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.father.father.father.id}}">
+                  <view class="node-gender-tag male">曾祖父</view>
+                  <view class="node-avatar-wrapper">
+                    <image wx:if="{{pedigreeData.fullTree.father.father.father.photos && pedigreeData.fullTree.father.father.father.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.father.father.father.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  </view>
+                  <text class="node-name">{{pedigreeData.fullTree.father.father.father.alias || pedigreeData.fullTree.father.father.father.name || '未命名'}}</text>
+                  <text wx:if="{{pedigreeData.fullTree.father.father.father.alias}}" class="node-alias">{{pedigreeData.fullTree.father.father.father.name}}</text>
+                </view>
+                <view wx:if="{{pedigreeData.fullTree.father && pedigreeData.fullTree.father.father && pedigreeData.fullTree.father.father.mother}}" class="tree-node ancestor" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.father.father.mother.id}}">
+                  <view class="node-gender-tag female">曾祖母</view>
+                  <view class="node-avatar-wrapper">
+                    <image wx:if="{{pedigreeData.fullTree.father.father.mother.photos && pedigreeData.fullTree.father.father.mother.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.father.father.mother.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  </view>
+                  <text class="node-name">{{pedigreeData.fullTree.father.father.mother.alias || pedigreeData.fullTree.father.father.mother.name || '未命名'}}</text>
+                  <text wx:if="{{pedigreeData.fullTree.father.father.mother.alias}}" class="node-alias">{{pedigreeData.fullTree.father.father.mother.name}}</text>
+                </view>
+                <view wx:if="{{pedigreeData.fullTree.mother && pedigreeData.fullTree.mother.father && pedigreeData.fullTree.mother.father.father}}" class="tree-node ancestor" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.mother.father.father.id}}">
+                  <view class="node-gender-tag male">曾外祖父</view>
+                  <view class="node-avatar-wrapper">
+                    <image wx:if="{{pedigreeData.fullTree.mother.father.father.photos && pedigreeData.fullTree.mother.father.father.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.mother.father.father.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  </view>
+                  <text class="node-name">{{pedigreeData.fullTree.mother.father.father.alias || pedigreeData.fullTree.mother.father.father.name || '未命名'}}</text>
+                  <text wx:if="{{pedigreeData.fullTree.mother.father.father.alias}}" class="node-alias">{{pedigreeData.fullTree.mother.father.father.name}}</text>
+                </view>
+                <view wx:if="{{pedigreeData.fullTree.mother && pedigreeData.fullTree.mother.father && pedigreeData.fullTree.mother.father.mother}}" class="tree-node ancestor" bindtap="viewAncestorDetail" data-id="{{pedigreeData.fullTree.mother.father.mother.id}}">
+                  <view class="node-gender-tag female">曾外祖母</view>
+                  <view class="node-avatar-wrapper">
+                    <image wx:if="{{pedigreeData.fullTree.mother.father.mother.photos && pedigreeData.fullTree.mother.father.mother.photos.length > 0}}" class="node-img" src="{{pedigreeData.fullTree.mother.father.mother.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  </view>
+                  <text class="node-name">{{pedigreeData.fullTree.mother.father.mother.alias || pedigreeData.fullTree.mother.father.mother.name || '未命名'}}</text>
+                  <text wx:if="{{pedigreeData.fullTree.mother.father.mother.alias}}" class="node-alias">{{pedigreeData.fullTree.mother.father.mother.name}}</text>
+                </view>
+              </view>
+            </block>
           </view>
         </view>
       </view>
     </view>
 
-    <view wx:if="{{currentEventTab === '换公'}}" class="section">
-      <view class="section-title">关联母龟</view>
-      <text class="empty-text">暂无关联母龟</text>
+    <view wx:if="{{currentEventTab === '产蛋'}}" class="section">
+      <view class="section-title">产蛋统计</view>
     </view>
   </view>
 
   <view wx:if="{{!isPublicMode && !isReadOnly}}" class="bottom-bar">
-    <view class="bar-btn" bindtap="showMore">
-      <text class="bar-icon">⋯</text>
+    <view class="bar-btn bar-btn-more" bindtap="showMore">
+      <text class="bar-btn-icon">···</text>
+      <text class="bar-btn-text">更多</text>
     </view>
-    <view class="bar-btn" bindtap="sharePet">
-      <text class="bar-text">分享</text>
+    <view class="bar-btn bar-btn-share" bindtap="sharePet">
+      <image class="bar-share-img" src="/images/share-icon.png"></image>
+      <text class="bar-btn-text">分享</text>
     </view>
-    <view class="bar-btn primary" bindtap="addRecord">
-      <text class="bar-text">记录</text>
+    <view class="bar-btn bar-btn-record" bindtap="addRecord">
+      <image class="bar-record-img" src="/images/record-icon.png"></image>
+      <text class="bar-btn-text bar-record-text">记录</text>
     </view>
   </view>
 
@@ -556,6 +581,11 @@
           
           <view class="manual-section" wx:if="{{showEditManual}}">
             <view class="form-item">
+              <text class="form-label">价格（元/只）</text>
+              <input class="form-input" type="digit" placeholder="可选，公开展示时使用" value="{{editForm.price}}" bindinput="onEditPriceInput" />
+            </view>
+
+            <view class="form-item">
               <text class="form-label">父本</text>
               <view class="family-selector" bindtap="openFatherModal">
                 <view wx:if="{{selectedFather}}" class="family-selected">
@@ -583,6 +613,21 @@
                 <text wx:else class="family-placeholder">点击选择母本</text>
               </view>
               <view wx:if="{{selectedMother}}" class="family-clear" bindtap="clearMother">清空</view>
+            </view>
+
+            <view class="form-item">
+              <text class="form-label">当前配对</text>
+              <view class="family-selector" bindtap="openPartnerModal">
+                <view wx:if="{{selectedPartner}}" class="family-selected">
+                  <image wx:if="{{selectedPartner.photos && selectedPartner.photos[0]}}" class="family-avatar" src="{{selectedPartner.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+                  <view class="family-info">
+                    <text class="family-name">{{selectedPartner.alias || selectedPartner.name}}</text>
+                    <text class="family-desc">{{pet.gender === '公' ? '母龟' : '公龟'}}</text>
+                  </view>
+                </view>
+                <text wx:else class="family-placeholder">点击选择配对对象</text>
+              </view>
+              <view wx:if="{{selectedPartner}}" class="family-clear" bindtap="clearPartner">清空</view>
             </view>
 
             <!-- 图片管理 -->
@@ -659,6 +704,31 @@
     </view>
   </view>
 
+  <!-- 选择配对对象弹窗 -->
+  <view wx:if="{{showPartnerModal}}" class="modal-overlay" bindtap="hidePartnerModal">
+    <view class="family-modal-bottom" catchtap="stopPropagation">
+      <view class="family-modal-header">
+        <text class="family-modal-title">选择配对对象</text>
+        <view class="modal-close" bindtap="hidePartnerModal">×</view>
+      </view>
+      <view class="family-search">
+        <input class="family-search-input" placeholder="搜索宠物" value="{{partnerSearchText}}" bindinput="onPartnerSearchInput" />
+      </view>
+      <scroll-view class="family-list" scroll-y>
+        <view wx:for="{{partnerList}}" wx:key="id" class="family-item" bindtap="selectPartner" data-id="{{item.id}}">
+          <image wx:if="{{item.photos && item.photos[0]}}" class="family-item-avatar" src="{{item.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-type="tree" />
+          <view class="family-item-placeholder" wx:else>宠物</view>
+          <view class="family-item-info">
+            <text class="family-item-name">{{item.alias || item.name}}</text>
+            <text class="family-item-desc">{{item.gender === '公' ? '公龟' : '母龟'}}</text>
+          </view>
+          <text class="family-item-select">选择这只</text>
+        </view>
+        <view wx:if="{{partnerList.length === 0}}" class="empty-text">暂无可配对宠物</view>
+      </scroll-view>
+    </view>
+  </view>
+
   <!-- 删除确认弹窗 -->
   <view wx:if="{{showDeleteConfirm}}" class="modal-overlay-center" bindtap="hideDeleteConfirm">
     <view class="confirm-modal" catchtap="stopPropagation">
@@ -689,15 +759,27 @@
         <view class="form-item">
           <text class="form-label">记录类型</text>
           <view class="record-type-grid">
-            <view wx:for="{{recordTypes}}" wx:for-item="type" wx:key="*this" 
+            <view wx:for="{{addRecordTypes}}" wx:for-item="type" wx:key="*this" 
                   class="record-type-item {{newRecord.type === type ? 'active' : ''}}" 
                   bindtap="selectRecordType" data-type="{{type}}">
-              <text class="record-type-icon">{{type === '全部' ? '📋' : type === '建档' ? '📁' : type === '交配' ? '💕' : type === '产蛋' ? '🥚' : type === '日常' ? '📝' : type === '健康' ? '💊' : type === '繁育' ? '🌱' : type === '换公' ? '🔄' : '📝'}}</text>
+              <text class="record-type-icon">{{type === '全部' ? '📋' : type === '建档' ? '📁' : type === '交配' ? '💕' : type === '产蛋' ? '🥚' : type === '出苗' ? '🐣' : type === '健康' ? '💊' : '📝'}}</text>
               <text class="record-type-text">{{type}}</text>
             </view>
           </view>
         </view>
         
+        <!-- 交配记录配对选择器 -->
+        <view wx:if="{{newRecord.type === '交配'}}" class="form-item form-item-content">
+          <text class="form-label">配对对象</text>
+          <view class="family-selector" bindtap="openRecordPartnerModal">
+            <text class="family-selector-label">{{recordPartner ? (recordPartner.alias || recordPartner.name) : '点击选择配对'}}</text>
+            <view class="family-selector-arrow">
+              <text wx:if="{{recordPartner}}" class="clear-btn" catchtap="clearRecordPartner">✖</text>
+              <text class="arrow-icon">›</text>
+            </view>
+          </view>
+        </view>
+
         <view class="form-item form-item-content">
           <text class="form-label">记录内容</text>
           <view class="textarea-voice-wrap">
@@ -733,6 +815,32 @@
             </view>
           </view>
         </view>
+
+        <!-- 出苗记录专属字段 -->
+        <view wx:if="{{newRecord.type === '出苗'}}" class="egg-fields hatch-fields">
+          <text class="form-label">出苗数据</text>
+          <view class="egg-input-row">
+            <view class="egg-input-group">
+              <text class="egg-label">破壳数</text>
+              <input class="egg-input" type="number" placeholder="0" value="{{newRecord.hatchCount}}" bindinput="onHatchCountInput" />
+              <text class="egg-unit">只</text>
+            </view>
+            <view class="egg-input-group">
+              <text class="egg-label">全品数</text>
+              <input class="egg-input" type="number" placeholder="0" value="{{newRecord.gradeACount}}" bindinput="onGradeAInput" />
+              <text class="egg-unit">只</text>
+            </view>
+            <view class="egg-input-group">
+              <text class="egg-label">瑕疵数</text>
+              <input class="egg-input" type="number" placeholder="0" value="{{newRecord.defectCount}}" bindinput="onDefectInput" />
+              <text class="egg-unit">只</text>
+            </view>
+          </view>
+          <view wx:if="{{newRecord.hatchCount > 0}}" class="egg-rate">
+            <text class="egg-rate-label">全品率</text>
+            <text class="egg-rate-value {{gradeRateLow ? 'rate-low' : ''}}">{{gradeRateText}}</text>
+          </view>
+        </view>
       </view>
       
       <view class="modal-footer add-record-footer">
@@ -746,12 +854,36 @@
     </view>
   </view>
 
+  <!-- 记录配对对象弹窗（必须在添加记录弹窗之后，确保在上层） -->
+  <view wx:if="{{showRecordPartnerModal}}" class="modal-overlay" bindtap="hideRecordPartnerModal">
+    <view class="family-modal-bottom" catchtap="stopPropagation">
+      <view class="family-modal-header">
+        <text class="family-modal-title">选择配对对象</text>
+        <view class="modal-close" bindtap="hideRecordPartnerModal">×</view>
+      </view>
+      <view class="family-search">
+        <input class="family-search-input" placeholder="搜索宠物" value="{{recordPartnerSearchText}}" bindinput="onRecordPartnerSearch" />
+      </view>
+      <scroll-view class="family-list" scroll-y>
+        <view wx:for="{{recordPartnerList}}" wx:key="id" class="family-item" bindtap="selectRecordPartner" data-id="{{item.id}}">
+          <view class="family-item-placeholder">宠物</view>
+          <view class="family-item-info">
+            <text class="family-item-name">{{item.alias || item.name}}</text>
+            <text class="family-item-desc">{{item.gender === '公' ? '公龟' : '母龟'}}</text>
+          </view>
+          <text class="family-item-select">选择这只</text>
+        </view>
+        <view wx:if="{{recordPartnerList.length === 0}}" class="empty-text">暂无可配对宠物</view>
+      </scroll-view>
+    </view>
+  </view>
+
   <!-- 记录详情弹窗 -->
   <view wx:if="{{showRecordModal}}" class="modal-overlay-center" bindtap="hideRecordModal">
     <view class="record-detail-modal" catchtap="stopPropagation">
       <view class="record-detail-header">
-        <view class="record-type-badge {{currentRecord.type === '产蛋' ? 'record-badge-lay' : ''}}">
-          <text class="record-type-icon">{{currentRecord.type === '建档' ? '📁' : currentRecord.type === '交配' ? '💕' : currentRecord.type === '产蛋' ? '🥚' : currentRecord.type === '换公' ? '🔄' : '📝'}}</text>
+        <view class="record-type-badge {{currentRecord.type === '产蛋' ? 'record-badge-lay' : currentRecord.type === '出苗' ? 'record-badge-hatch' : ''}}">
+          <text class="record-type-icon">{{currentRecord.type === '建档' ? '📁' : currentRecord.type === '交配' ? '💕' : currentRecord.type === '产蛋' ? '🥚' : currentRecord.type === '出苗' ? '🐣' : '📝'}}</text>
         </view>
         <text class="record-detail-title">{{currentRecord.type}}</text>
         <view class="modal-close" bindtap="hideRecordModal">×</view>
@@ -774,6 +906,42 @@
             <text class="egg-detail-value {{currentRecord.eggRateLow ? 'rate-low' : ''}}">{{currentRecord.eggRateText || '0%'}}</text>
           </view>
         </view>
+        <!-- 出苗记录数据展示 -->
+        <view wx:if="{{currentRecord.type === '出苗' && currentRecord.hatchCount}}" class="egg-detail-info">
+          <view class="egg-detail-row">
+            <text class="egg-detail-label">破壳数量</text>
+            <text class="egg-detail-value">{{currentRecord.hatchCount}} 只</text>
+          </view>
+          <view class="egg-detail-row">
+            <text class="egg-detail-label">全品数</text>
+            <text class="egg-detail-value">{{currentRecord.gradeACount || 0}} 只</text>
+          </view>
+          <view class="egg-detail-row">
+            <text class="egg-detail-label">瑕疵数</text>
+            <text class="egg-detail-value">{{currentRecord.defectCount || 0}} 只</text>
+          </view>
+          <view class="egg-detail-row">
+            <text class="egg-detail-label">全品率</text>
+            <text class="egg-detail-value">{{currentRecord.gradeRateText || '0%'}}</text>
+          </view>
+        </view>
+        <!-- 交配配对对象展示 -->
+        <view wx:if="{{currentRecord.type === '交配' && currentRecord.partnerName}}" class="egg-detail-info">
+          <view class="egg-detail-row">
+            <text class="egg-detail-label">配对对象</text>
+            <text class="egg-detail-value" style="color:#7C3AED">{{currentRecord.partnerName}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 记录照片 -->
+      <view wx:if="{{currentRecord.photos && currentRecord.photos.length > 0}}" class="record-detail-photos">
+        <text class="record-photos-title">📷 关联照片</text>
+        <scroll-view class="record-photos-scroll" scroll-x>
+          <view class="record-photos-list">
+            <image wx:for="{{currentRecord.photos}}" wx:key="*this" class="record-photo-img" src="{{item}}" mode="aspectFill" bindtap="previewRecordPhoto" data-url="{{item}}" />
+          </view>
+        </scroll-view>
       </view>
       
       <view class="record-detail-footer">
@@ -795,6 +963,7 @@
   <!-- 时间线弹窗 -->
   <view wx:if="{{showTimelineModal}}" class="modal-overlay" bindtap="hideTimelineModal">
     <view class="timeline-modal" catchtap="stopPropagation">
+      <view class="safe-area-top"></view>
       <view class="modal-header">
         <text class="modal-title">时间线</text>
         <view class="modal-close" bindtap="hideTimelineModal">×</view>
@@ -802,7 +971,9 @@
       
       <scroll-view class="timeline-content" scroll-y>
         <view wx:if="{{records.length === 0}}" class="empty-timeline">
+          <text class="empty-icon">📋</text>
           <text class="empty-text">暂无记录</text>
+          <text class="empty-hint">点击下方按钮添加第一条记录</text>
         </view>
         
         <view wx:else class="timeline-list">
@@ -813,14 +984,27 @@
             </view>
             
             <view wx:for="{{item.records}}" wx:for-item="record" wx:key="record.id" class="timeline-item">
-              <view class="timeline-dot"></view>
-              <view class="timeline-line"></view>
-              <view class="timeline-card" bindtap="showRecordDetail" data-id="{{record.id}}">
+              <view class="timeline-dot-wrap">
+                <view class="timeline-dot"></view>
+                <view class="timeline-line"></view>
+              </view>
+              <view class="timeline-card">
                 <view class="timeline-card-header">
-                  <text class="timeline-type">{{record.type}}</text>
-                  <text class="timeline-time">{{record.time}}</text>
+                  <view class="timeline-type-wrap">
+                    <text class="timeline-type-icon">{{getRecordIcon(record.type)}}</text>
+                    <text class="timeline-type">{{record.type}}</text>
+                  </view>
+                  <view class="timeline-card-actions">
+                    <text class="timeline-time">{{record.time}}</text>
+                    <view class="timeline-delete-btn" bindtap="deleteRecord" data-id="{{record.id}}">
+                      <text class="delete-icon">🗑</text>
+                    </view>
+                  </view>
                 </view>
-                <text class="timeline-text">{{record.text}}</text>
+                <text class="timeline-text">{{record.text || '-'}}</text>
+                <view wx:if="{{record.type === '产蛋' && record.eggCount}}" class="timeline-egg-info">
+                  <text class="egg-info-text">🥚 {{record.eggCount}}枚 · 受精 {{record.fertilizedCount || 0}}枚</text>
+                </view>
               </view>
             </view>
           </view>

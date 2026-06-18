@@ -31,6 +31,7 @@ Page({
     showBluetoothModal: false,
     isScanning: false,
     bluetoothDevices: [],
+    isAdmin: false, // 是否为管理员
     // 打印机配置 - 德佟P1
     printerConfig: {
       enabled: false,
@@ -42,7 +43,13 @@ Page({
       serviceId: '',
       writeCharacteristicId: '',
       notifyCharacteristicId: '',
-      connectFailCount: 0      // 连续连接失败次数
+      connectFailCount: 0,    // 连续连接失败次数
+      qrPrintTypes: {
+        jiaopei: true,
+        chandan: true,
+        chumiao: true,
+        jiankang: true
+      }
     },
     // 动态统计数据
     refreshing: false,
@@ -71,7 +78,15 @@ Page({
     },
     showEditShareModal: false,
     showSkeleton: true,
-    isLoggedIn: false
+    isLoggedIn: false,
+    allReminders: [],
+    hasAnyReminder: false,
+    // 系统配置
+    systemConfig: {
+      systemName: '龟上心',
+      version: '1.0.0',
+      servicePhone: ''
+    }
   },
 
   onLoad: function () {
@@ -104,22 +119,33 @@ Page({
   onShow: function () {
     const app = getApp()
     const isLoggedIn = app.globalData.isLoggedIn
-    this.setData({ isLoggedIn })
     // 主动更新tabBar选中状态，并确保 tabBar 可见
-    if (typeof this.getTabBar === 'function' && this.getTabBar()) {
-      const tabBar = this.getTabBar()
-      tabBar.setData({ selected: 2, visible: true })
+    const updateTabBar = () => {
+      if (typeof this.getTabBar === 'function' && this.getTabBar()) {
+        const tabBar = this.getTabBar()
+        tabBar.setData({ selected: 2, visible: true })
+      }
     }
+    updateTabBar()
+    setTimeout(updateTabBar, 100)
+    // 同步登录状态到页面
+    this.setData({ isLoggedIn })
+    
+    if (!isLoggedIn) return
+    
+    // 调用云函数检查是否为管理员
+    this.checkAdminPermission()
+    
     // 登录后返回时加载数据
-    if (isLoggedIn && !this._loadedOnce) {
+    if (!this._loadedOnce) {
       this._loadedOnce = true
       this.loadAll()
       this.loadQrcode()
-      return
+    } else {
+      // 每次进入页面都刷新统计数据
+      this.loadStats()
+      this.loadSystemConfig()
     }
-    if (!isLoggedIn) return
-    // 每次进入页面都刷新待办提醒
-    this.loadAllPetReminders()
     // 尝试自动连接打印机
     if (this.data.printerConfig.autoConnect && !this.data.printerConfig.connected) {
       this.tryAutoConnect()
@@ -144,7 +170,149 @@ Page({
     }
   },
 
-  onPullDownRefresh: function () {
+  // 加载用户打印配置（从数据库，以云端为准）
+  loadUserPrintConfig: async function () {
+    try {
+      const db = wx.cloud.database()
+      const openid = wx.getStorageSync('openid')
+      if (!openid) {
+        console.warn('[userPrintConfig] 未登录，跳过云端加载')
+        return
+      }
+      
+      const res = await db.collection('userPrintConfig').where({
+        openid: openid
+      }).get()
+      
+      if (res.data && res.data.length > 0) {
+        const config = res.data[0]
+        let qrPrintTypes = {
+          jiaopei: false,
+          chandan: false,
+          chumiao: false,
+          jiankang: false
+        }
+        if (config.qrPrintTypes && typeof config.qrPrintTypes === 'object') {
+          qrPrintTypes.jiaopei = config.qrPrintTypes.jiaopei === true
+          qrPrintTypes.chandan = config.qrPrintTypes.chandan === true
+          qrPrintTypes.chumiao = config.qrPrintTypes.chumiao === true
+          qrPrintTypes.jiankang = config.qrPrintTypes.jiankang === true
+        }
+        const pc = { ...this.data.printerConfig, qrPrintTypes }
+        this.setData({ printerConfig: pc })
+        wx.setStorageSync('printerConfig', pc)
+        console.log('[userPrintConfig] 从云端加载成功:', qrPrintTypes)
+      } else {
+        const localConfig = this.data.printerConfig.qrPrintTypes
+        if (localConfig) {
+          await this.saveUserPrintConfig(localConfig)
+        }
+      }
+    } catch (error) {
+      console.error('[userPrintConfig] 加载失败:', error)
+    }
+  },
+
+  // 保存用户打印配置到数据库（以云端为准，失败则本地也不更新）
+  saveUserPrintConfig: async function (qrPrintTypes) {
+    const db = wx.cloud.database()
+    const openid = wx.getStorageSync('openid')
+    if (!openid) {
+      console.warn('[userPrintConfig] 未登录，跳过云端保存')
+      throw new Error('未登录')
+    }
+    
+    const validConfig = {
+      jiaopei: qrPrintTypes.jiaopei === true,
+      chandan: qrPrintTypes.chandan === true,
+      chumiao: qrPrintTypes.chumiao === true,
+      jiankang: qrPrintTypes.jiankang === true
+    }
+    
+    try {
+      const res = await db.collection('userPrintConfig').where({
+        openid: openid
+      }).get()
+      
+      if (res.data && res.data.length > 0) {
+        await db.collection('userPrintConfig').doc(res.data[0]._id).update({
+          data: {
+            qrPrintTypes: validConfig,
+            updatedAt: new Date()
+          }
+        })
+      } else {
+        await db.collection('userPrintConfig').add({
+          data: {
+            openid: openid,
+            qrPrintTypes: validConfig,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          }
+        })
+      }
+      
+      const pc = { ...this.data.printerConfig, qrPrintTypes: validConfig }
+      this.setData({ printerConfig: pc })
+      wx.setStorageSync('printerConfig', pc)
+      
+      console.log('[userPrintConfig] 保存到云端成功:', validConfig)
+      return true
+    } catch (error) {
+      console.error('[userPrintConfig] 云端保存失败:', error)
+      throw error
+    }
+  },
+
+  // 加载系统配置
+  loadSystemConfig: async function () {
+    try {
+      const res = await wx.cloud.callFunction({
+        name: 'admin',
+        data: { action: 'getConfig' }
+      })
+      
+      if (res.result.success) {
+        this.setData({
+          systemConfig: {
+            systemName: res.result.data.systemName || '龟上心',
+            version: res.result.data.version || '1.0.0',
+            servicePhone: res.result.data.servicePhone || ''
+          }
+        })
+      }
+    } catch (error) {
+      console.error('加载系统配置失败:', error)
+      // 使用本地存储的配置
+      try {
+        const saved = wx.getStorageSync('systemConfig')
+        if (saved) {
+          this.setData({
+            systemConfig: {
+              systemName: saved.systemName || '龟上心',
+              version: saved.version || '1.0.0',
+              servicePhone: saved.servicePhone || ''
+            }
+          })
+        }
+      } catch (e) {}
+    }
+  },
+
+  // 拨打电话
+  callService: function () {
+    const phone = this.data.systemConfig.servicePhone
+    if (!phone) return
+    
+    wx.makePhoneCall({
+      phoneNumber: phone,
+      fail: () => {
+        wx.showToast({ title: '拨打失败', icon: 'none' })
+      }
+    })
+  },
+
+  onUnload: function () {
     this.setData({ refreshing: true })
     this.loadAll().then(() => {
       this.setData({ refreshing: false })
@@ -164,11 +332,12 @@ Page({
         this.loadPrinterConfig(),
         this.loadStats()
       ])
+      // 从数据库加载用户打印配置（会覆盖本地存储）
+      await this.loadUserPrintConfig()
       // 骨架屏在核心数据加载后立即关闭
       this.setData({ showSkeleton: false })
       // 非关键数据延迟加载，不阻塞UI
       wx.nextTick(() => {
-        this.loadAllPetReminders()
         this.tryAutoConnect()
       })
     } catch (error) {
@@ -581,6 +750,7 @@ Page({
     const shareInfo = { ...this.data.shareInfo, wechatPublic: e.detail.value }
     this.setData({ shareInfo })
     wx.setStorageSync('shareInfo', shareInfo)
+    this.syncShareInfoToCloud(shareInfo)
   },
 
   toggleLicense: function (e) {
@@ -621,6 +791,7 @@ Page({
     const shareInfo = { ...this.data.shareInfo, region }
     this.setData({ shareInfo })
     wx.setStorageSync('shareInfo', shareInfo)
+    this.syncShareInfoToCloud(shareInfo)
   },
 
   editField: function (e) {
@@ -652,6 +823,7 @@ Page({
 
           that.setData({ shareInfo })
           wx.setStorageSync('shareInfo', shareInfo)
+          that.syncShareInfoToCloud(shareInfo)
         }
       }
     })
@@ -670,240 +842,35 @@ Page({
     }
   },
 
-  // ==============================================================
-  // 跨宠物提醒汇总（数据 Tab 使用）
-  // ==============================================================
-
-  // 格式化日期 yyyy-mm-dd
-  _reminderFormatDate: function (d) {
-    if (!(d instanceof Date)) d = new Date(d)
-    const y = d.getFullYear()
-    const m = String(d.getMonth() + 1).padStart(2, '0')
-    const day = String(d.getDate()).padStart(2, '0')
-    return `${y}-${m}-${day}`
-  },
-
-  // 安全解析 YYYY-MM-DD 格式日期
-  _reminderParseDate: function (dateStr) {
-    if (!dateStr || typeof dateStr !== 'string') return null
-    const m = dateStr.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
-    if (!m) return null
-    return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0)
-  },
-
-  // 计算单个提醒的状态、剩余天数、下次提醒日
-  _reminderComputeStatus: function (r) {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const nowStr = this._reminderFormatDate(today)
-    let statusText
-    let statusClass
-    let daysLeft
-    const interval = Number(r.intervalDays) || 1
-
-    if (!r.lastDone) {
-      // 从未执行过 → 从今天开始算 nextDue
-      const nextDueFromToday = new Date(today)
-      nextDueFromToday.setDate(nextDueFromToday.getDate() + interval)
-      daysLeft = Math.round((nextDueFromToday.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
-      if (daysLeft < 0) {
-        statusText = '超期 ' + Math.abs(daysLeft) + ' 天'
-        statusClass = 'overdue'
-      } else if (daysLeft === 0) {
-        statusText = '今天'
-        statusClass = 'today'
-      } else if (daysLeft === 1) {
-        statusText = '明天'
-        statusClass = 'tomorrow'
-      } else {
-        statusText = daysLeft + ' 天后'
-        statusClass = 'normal'
-      }
-    } else {
-      const lastDone = this._reminderParseDate(r.lastDone)
-      if (!lastDone) {
-        statusText = '数据异常'
-        statusClass = 'overdue'
-        daysLeft = -999
-      } else {
-        const nextDue = new Date(lastDone)
-        nextDue.setDate(nextDue.getDate() + interval)
-        const diffMs = nextDue.getTime() - today.getTime()
-        daysLeft = Math.round(diffMs / (24 * 60 * 60 * 1000))
-        const isJustDone = (r.lastDone === nowStr)
-
-        if (daysLeft < 0) {
-          statusText = '超期 ' + Math.abs(daysLeft) + ' 天'
-          statusClass = 'overdue'
-        } else if (daysLeft === 0) {
-          statusText = isJustDone ? '已完成' : '今天'
-          statusClass = 'today'
-        } else if (daysLeft === 1) {
-          statusText = isJustDone ? '已完成' : '明天'
-          statusClass = 'tomorrow'
-        } else {
-          statusText = daysLeft + ' 天后'
-          statusClass = 'normal'
-        }
-      }
-    }
-
-    // 下次提醒日
-    const baseDate = r.lastDone ? this._reminderParseDate(r.lastDone) : new Date(nowStr)
-    const nextDueDate = new Date(baseDate || today)
-    nextDueDate.setDate(nextDueDate.getDate() + interval)
-
-    return {
-      ...r,
-      id: r.id || r._id,
-      statusText,
-      statusClass,
-      daysLeft,
-      doneToday: r.lastDone === nowStr,
-      nextDueDate: this._reminderFormatDate(nextDueDate)
-    }
-  },
-
-  // 加载所有宠物的提醒并汇总（纯云端）
-  loadAllPetReminders: async function () {
+  // 将名片公开信息同步到云数据库（供公开档案页使用）
+  syncShareInfoToCloud: function (shareInfo) {
+    const info = shareInfo || this.data.shareInfo
+    if (!info) return
     try {
-      const pets = wx.getStorageSync('pets') || []
-      const cloudResult = API.getAllReminders ? await API.getAllReminders() : null
-      let reminderListByPet = {}  // petId -> [reminders]
-
-      if (cloudResult && cloudResult.success) {
-        const list = Array.isArray(cloudResult.data)
-          ? cloudResult.data
-          : (cloudResult.data && Array.isArray(cloudResult.data.list) ? cloudResult.data.list : [])
-
-        for (let i = 0; i < list.length; i++) {
-          const r = list[i]
-          const key = r.petId
-          if (!key) continue
-          if (!reminderListByPet[key]) reminderListByPet[key] = []
-          reminderListByPet[key].push(r)
+      wx.cloud.callFunction({
+        name: 'login',
+        data: {
+          action: 'updatePublicProfile',
+          data: {
+            specialty: info.specialty || '',
+            wechatId: info.wechatId || '',
+            wechatPublic: !!info.wechatPublic,
+            region: info.region || '',
+            tags: Array.isArray(info.tags) ? info.tags : [],
+            intro: info.intro || ''
+          }
+        },
+        success: (res) => {
+          if (res.result && res.result.success) {
+            console.log('公开名片已同步到云端')
+          }
+        },
+        fail: (err) => {
+          console.error('同步公开名片失败:', err)
         }
-      }
-      // 纯云端：失败不兜底本地存储
-
-      // 汇总
-      const result = []
-      for (let i = 0; i < pets.length; i++) {
-        const pet = pets[i]
-        const petId = pet.id || pet._id
-        if (!petId) continue
-        const reminders = reminderListByPet[petId] || []
-        for (let j = 0; j < reminders.length; j++) {
-          const computed = this._reminderComputeStatus(reminders[j])
-          result.push({
-            ...computed,
-            petId: petId,
-            petName: pet.name || '未命名',
-            petCategory: pet.category || ''
-          })
-        }
-      }
-
-      // 过滤：只保留"待办"（超期/今天/明天），不显示已完成/未到时间的
-      const pending = result.filter(r => 
-        (r.statusClass === 'overdue' || 
-        r.statusClass === 'today' || 
-        r.statusClass === 'tomorrow') && !r.doneToday
-      )
-
-      // 排序：超期 → 今天 → 明天 → 其他
-      const priority = { overdue: 0, today: 1, tomorrow: 2, normal: 3, pending: 4 }
-      pending.sort((a, b) => {
-        const pa = priority[a.statusClass] || 9
-        const pb = priority[b.statusClass] || 9
-        if (pa !== pb) return pa - pb
-        return (a.daysLeft || 0) - (b.daysLeft || 0)
       })
-
-      this.setData({
-        allReminders: pending,
-        hasAnyReminder: pending.length > 0
-      })
-    } catch (err) {
-      console.error('加载提醒汇总失败:', err)
-      this.setData({ allReminders: [], hasAnyReminder: false })
-    }
-  },
-
-  // 跳转到宠物详情页（点击提醒卡片）
-  gotoPetDetailFromReminder: function (e) {
-    const petId = e.currentTarget.dataset.petId
-    if (!petId) return
-    wx.navigateTo({
-      url: '/pages/pet/detail?petId=' + petId
-    })
-  },
-
-  // 在我的页面标记提醒为已完成（每次点击向后推进一个周期）
-  markReminderDoneFromMy: async function (e) {
-    const dataset = (e && e.currentTarget && e.currentTarget.dataset) || {}
-    const petId = dataset.petId
-    const reminderId = dataset.reminderId
-
-    // 从 enriched 数据中反查真实 _id
-    const allReminders = this.data.allReminders || []
-    const enrichedItem = allReminders.find(r => String(r.id) === String(reminderId))
-      || allReminders.find(r => String(r._id) === String(reminderId))
-      || allReminders[0]
-
-    if (!enrichedItem) {
-      wx.showToast({ title: '未找到该提醒', icon: 'none' })
-      return
-    }
-
-    const cloudId = enrichedItem._id || enrichedItem.id || reminderId
-    if (!petId || !cloudId) {
-      wx.showToast({ title: '缺少参数', icon: 'none' })
-      return
-    }
-
-    const interval = Number(enrichedItem.intervalDays) || 1
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const todayStr = this._reminderFormatDate(today)
-
-    // 两步切换：doneToday=false → 标记今天 / doneToday=true → 推进
-    const isDoneToday = enrichedItem.lastDone === todayStr
-    const newLastDone = isDoneToday
-      ? this._reminderFormatDate(new Date(today.getTime() + interval * 86400000))
-      : todayStr
-
-    try {
-      if (API.markReminderDone) {
-        const res = await API.markReminderDone(cloudId, newLastDone)
-        if (res && res.success) {
-          // 本地立即更新
-          const updated = allReminders.map(r => {
-            if (String(r._id) === String(cloudId)) {
-              return { ...r, lastDone: newLastDone }
-            }
-            return r
-          })
-          const recomputed = updated.map(r => this._reminderComputeStatus(r))
-          const pending = recomputed.filter(r =>
-            r.statusClass === 'overdue' || r.statusClass === 'today' || r.statusClass === 'tomorrow'
-          )
-          const priority = { overdue: 0, today: 1, tomorrow: 2, normal: 3 }
-          pending.sort((a, b) => {
-            const pa = priority[a.statusClass] ?? 9
-            const pb = priority[b.statusClass] ?? 9
-            if (pa !== pb) return pa - pb
-            return (a.daysLeft || 0) - (b.daysLeft || 0)
-          })
-          this.setData({ allReminders: pending, hasAnyReminder: pending.length > 0 })
-          wx.showToast({ title: isDoneToday ? '已推进' : '已标记完成', icon: 'success', duration: 1200 })
-          return
-        }
-      }
-      wx.showToast({ title: '云端更新失败，请重试', icon: 'none' })
-    } catch (err) {
-
-      wx.showToast({ title: '标记失败，请重试', icon: 'none' })
+    } catch (e) {
+      console.error('同步公开名片异常:', e)
     }
   },
 
@@ -1042,6 +1009,8 @@ Page({
   },
 
   chooseAvatar: function () {
+    const app = getApp()
+    if (!app.requireLogin()) return
     wx.chooseImage({
       count: 1,
       success: async (res) => {
@@ -1162,6 +1131,52 @@ Page({
     })
   },
 
+  // 切换二维码打印类型（点击卡片触发）
+  toggleQrPrintType: async function (e) {
+    const type = e.currentTarget.dataset.type
+    const oldConfig = { ...this.data.printerConfig.qrPrintTypes }
+    const newConfig = { ...this.data.printerConfig.qrPrintTypes }
+    newConfig[type] = !newConfig[type]
+    
+    try {
+      await this.saveUserPrintConfig(newConfig)
+    } catch (error) {
+      console.error('[userPrintConfig] 保存失败，回滚到旧配置:', error)
+      const pc = { ...this.data.printerConfig, qrPrintTypes: oldConfig }
+      this.setData({ printerConfig: pc })
+      wx.setStorageSync('printerConfig', pc)
+      wx.showToast({
+        title: '保存失败',
+        icon: 'error',
+        duration: 2000
+      })
+    }
+  },
+
+  // 二维码打印类型开关变化
+  onQrPrintTypeChange: async function (e) {
+    const type = e.currentTarget.dataset.type
+    const value = e.detail.value
+    
+    const oldConfig = { ...this.data.printerConfig.qrPrintTypes }
+    const newConfig = { ...this.data.printerConfig.qrPrintTypes }
+    newConfig[type] = value
+    
+    try {
+      await this.saveUserPrintConfig(newConfig)
+    } catch (error) {
+      console.error('[userPrintConfig] 保存失败，回滚到旧配置:', error)
+      const pc = { ...this.data.printerConfig, qrPrintTypes: oldConfig }
+      this.setData({ printerConfig: pc })
+      wx.setStorageSync('printerConfig', pc)
+      wx.showToast({
+        title: '保存失败',
+        icon: 'error',
+        duration: 2000
+      })
+    }
+  },
+
   onPrinterSwitchChange: function (e) {
     const pc = { ...this.data.printerConfig, enabled: e.detail.value }
     this.setData({ printerConfig: pc })
@@ -1188,12 +1203,6 @@ Page({
         wx.showToast({ title: '已断开连接', icon: 'success' })
       }
     }
-  },
-
-  onAutoPrintSwitchChange: function (e) {
-    const pc = { ...this.data.printerConfig, autoPrint: e.detail.value }
-    this.setData({ printerConfig: pc })
-    wx.setStorageSync('printerConfig', pc)
   },
 
   onAutoConnectSwitchChange: function (e) {
@@ -1279,6 +1288,8 @@ Page({
   // （旧分享相关方法已删除：editShareTitle / onShareTitleInput / saveShareTitle / editShareSubtitle / onShareSubtitleInput / saveShareSubtitle / startShareVoiceInput / stopShareVoiceInput）
 
   editNickname: function () {
+    const app = getApp()
+    if (!app.requireLogin()) return
     const that = this
     const now = Date.now()
     const lastMonth = now - 30 * 24 * 60 * 60 * 1000
@@ -1435,6 +1446,93 @@ Page({
       }
     } catch (err) {
 
+    }
+  },
+
+  // 跳转到产蛋报表
+  goToEggReport: function () {
+    wx.navigateTo({ url: '/pages/egg-report/index' })
+  },
+
+  // 跳转到粘缸费用计算器
+  goToCalculator: function () {
+    wx.navigateTo({ url: '/pages/tools/calculator' })
+  },
+
+  // 跳转到宠物公开页面（测试入口）
+  goToPublicPage: function () {
+    const openid = wx.getStorageSync('openid')
+    if (openid) {
+      wx.navigateTo({ url: `/pages/public/index?userId=${openid}` })
+    } else {
+      wx.showToast({ title: '请先登录', icon: 'none' })
+    }
+  },
+
+  // 跳转到出苗报表
+  goToHatchReport: function () {
+    wx.navigateTo({ url: '/pages/hatch-report/index' })
+  },
+
+  // 检查管理员权限（通过云函数验证openid）
+  checkAdminPermission: async function () {
+    try {
+      const result = await wx.cloud.callFunction({
+        name: 'login',
+        data: { action: 'checkAdmin' }
+      })
+      console.log('管理员权限检查结果:', result)
+      const isAdmin = result.result.data.isAdmin || false
+      const adminName = result.result.data.adminName || '未知'
+      console.log('是否为管理员:', isAdmin, '管理员名称:', adminName)
+      this.setData({ isAdmin })
+      // 保存到本地缓存
+      wx.setStorageSync('isAdmin', isAdmin)
+    } catch (error) {
+      console.error('检查管理员权限失败:', error)
+      this.setData({ isAdmin: false })
+    }
+  },
+
+  // 管理后台入口
+  onAdminEntry: function () {
+    wx.navigateTo({ url: '/pages/admin/index' })
+  },
+
+  // 长按头像 - 显示倒计时提示
+  onAvatarLongPress: function () {
+    this._clearAvatarLongPressTimer()
+    
+    // 长按立即触发（bindlongpress默认就是长按）
+    if (this.data.isAdmin) {
+      // 已是管理员，直接进入
+      wx.vibrateShort({ type: 'medium' })
+      this.onAdminEntry()
+    } else {
+      // 非管理员，震动提示但无法进入
+      wx.vibrateShort({ type: 'heavy' })
+      wx.showToast({
+        title: '您不是管理员',
+        icon: 'none',
+        duration: 2000
+      })
+    }
+  },
+
+  // 触摸开始 - 记录开始时间
+  onAvatarTouchStart: function () {
+    this._avatarTouchStartTime = Date.now()
+  },
+
+  // 触摸结束 - 清理状态
+  onAvatarTouchEnd: function () {
+    this._avatarTouchStartTime = null
+  },
+
+  _clearAvatarLongPressTimer: function () {
+    if (this._avatarLongPressTimer) {
+      clearTimeout(this._avatarLongPressTimer)
+      this._avatarLongPressTimer = null
     }
   }
 

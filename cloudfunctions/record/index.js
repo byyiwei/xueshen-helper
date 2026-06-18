@@ -50,6 +50,30 @@ async function createRecord(data, openid) {
     updatedAt: db.serverDate()
   }
 
+  // 产蛋记录追加产蛋数据
+  if (data.type === '产蛋') {
+    record.eggCount = parseInt(data.eggCount) || 0
+    record.fertilizedCount = parseInt(data.fertilizedCount) || 0
+  }
+
+  // 出苗记录追加出苗数据
+  if (data.type === '出苗') {
+    record.hatchCount = parseInt(data.hatchCount) || 0
+    record.gradeACount = parseInt(data.gradeACount) || 0
+    record.defectCount = parseInt(data.defectCount) || 0
+  }
+
+  // 交配记录关联配对对象
+  if (data.type === '交配' && data.partnerId) {
+    record.partnerId = data.partnerId
+    record.partnerName = data.partnerName || ''
+  }
+
+  // 建档/事件记录携带照片
+  if (data.photos && Array.isArray(data.photos) && data.photos.length > 0) {
+    record.photos = data.photos
+  }
+
   const result = await db.collection('records').add({ data: record })
   return successResponse({
     id: result._id,

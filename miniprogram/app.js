@@ -39,21 +39,45 @@ App({
   },
 
   // 从云数据库加载系统配置
-  // 集合: system  文档 _id: config
-  // 字段: imageServerUrl（图片服务器地址）
   loadSystemConfig: function () {
     const db = wx.cloud.database()
-    db.collection('system').doc('config').get({
+    // 先尝试从 systemConfig 集合读取（后台管理配置）
+    db.collection('systemConfig').limit(1).get({
       success: (res) => {
-        if (res.data) {
-          this.globalData.systemConfig = res.data
-          console.log('[systemConfig] 读取成功:', res.data)
+        if (res.data && res.data.length > 0) {
+          this.globalData.systemConfig = res.data[0]
+          console.log('[systemConfig] 从 systemConfig 集合读取成功:', res.data[0])
         } else {
-          console.log('[systemConfig] 文档存在但无数据')
+          // 如果 systemConfig 没有数据，尝试从旧的 system 集合读取
+          db.collection('system').doc('config').get({
+            success: (res) => {
+              if (res.data) {
+                this.globalData.systemConfig = res.data
+                console.log('[systemConfig] 从 system 集合读取成功:', res.data)
+              } else {
+                console.log('[systemConfig] 文档存在但无数据')
+              }
+            },
+            fail: (err) => {
+              console.error('[systemConfig] 读取失败:', err.errMsg || err)
+            }
+          })
         }
       },
       fail: (err) => {
-        console.error('[systemConfig] 读取失败:', err.errMsg || err)
+        console.error('[systemConfig] 从 systemConfig 读取失败:', err.errMsg || err)
+        // 降级到旧的 system 集合
+        db.collection('system').doc('config').get({
+          success: (res) => {
+            if (res.data) {
+              this.globalData.systemConfig = res.data
+              console.log('[systemConfig] 从 system 集合读取成功:', res.data)
+            }
+          },
+          fail: (err) => {
+            console.error('[systemConfig] 降级读取也失败:', err.errMsg || err)
+          }
+        })
       }
     })
   },
@@ -191,6 +215,12 @@ App({
 
   // 检查是否已登录，未登录则跳转登录页（用户可返回）
   requireLogin: function () {
+    // 检查是否允许匿名访问
+    const config = this.globalData.systemConfig || {}
+    if (config.allowAnonymous) {
+      return true // 允许匿名访问，直接返回成功
+    }
+    
     if (!this.globalData.isLoggedIn) {
       wx.navigateTo({
         url: '/pages/login/index'
@@ -198,6 +228,12 @@ App({
       return false
     }
     return true
+  },
+  
+  // 检查是否启用推送通知
+  isPushEnabled: function () {
+    const config = this.globalData.systemConfig || {}
+    return config.enablePush !== undefined ? config.enablePush : false
   },
   
   // 登出：清理所有登录态与自动登录相关标记
@@ -212,9 +248,19 @@ App({
       wx.removeStorageSync('agreedBefore')
       wx.removeStorageSync('userInfo')
       wx.removeStorageSync('registerTime')
+      wx.removeStorageSync('isAdmin') // 清除管理员状态
     } catch (e) {}
+    
     wx.reLaunch({
-      url: '/pages/pet/index'
+      url: '/pages/pet/index',
+      fail: function (err) {
+        console.error('页面跳转失败:', err)
+        // 如果reLaunch失败，尝试用navigateTo或直接显示提示
+        wx.showToast({
+          title: '退出成功',
+          icon: 'success'
+        })
+      }
     })
   },
   

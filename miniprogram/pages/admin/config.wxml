@@ -1,0 +1,145 @@
+<view class="admin-page">
+  <view class="admin-header">
+    <view class="header-back" bindtap="onBackToFront">
+      <text class="back-icon">‹</text>
+      <text class="back-text">返回</text>
+    </view>
+    <view class="header-center">
+      <text class="header-title">系统配置</text>
+      <text class="header-subtitle">System Configuration</text>
+    </view>
+    <view class="header-placeholder"></view>
+  </view>
+
+  <scroll-view scroll-y class="admin-scroll">
+    <view class="admin-content">
+      <view class="config-section">
+        <view class="section-header">
+          <text class="section-title">基础配置</text>
+        </view>
+        <view class="config-item">
+          <text class="config-label">系统名称</text>
+          <input class="config-input" placeholder="请输入系统名称" value="{{config.systemName}}" bindinput="onInputChange" data-key="systemName" />
+        </view>
+        <view class="config-item">
+          <text class="config-label">版本号</text>
+          <input class="config-input" placeholder="请输入版本号" value="{{config.version}}" bindinput="onInputChange" data-key="version" />
+        </view>
+        <view class="config-item">
+          <text class="config-label">客服电话</text>
+          <input class="config-input" placeholder="请输入客服电话" value="{{config.servicePhone}}" bindinput="onInputChange" data-key="servicePhone" />
+        </view>
+      </view>
+
+      <view class="config-section">
+        <view class="section-header">
+          <text class="section-title">业务配置</text>
+        </view>
+        <view class="config-item">
+          <text class="config-label">最大宠物数量</text>
+          <input class="config-input" type="number" placeholder="每个用户最大宠物数" value="{{config.maxPetCount}}" bindinput="onInputChange" data-key="maxPetCount" />
+        </view>
+        <view class="config-item">
+          <text class="config-label">最大足迹图片数</text>
+          <input class="config-input" type="number" placeholder="每条足迹最大图片数" value="{{config.maxFootprintImages}}" bindinput="onInputChange" data-key="maxFootprintImages" />
+        </view>
+      </view>
+
+      <view class="config-section">
+        <view class="section-header">
+          <text class="section-title">功能开关</text>
+        </view>
+        <view class="config-item switch-item">
+          <text class="config-label">允许新用户注册</text>
+          <switch class="config-switch" checked="{{config.allowRegister}}" bindchange="onSwitchChange" data-key="allowRegister" />
+        </view>
+        <view class="config-item switch-item">
+          <text class="config-label">允许匿名访问</text>
+          <switch class="config-switch" checked="{{config.allowAnonymous}}" bindchange="onSwitchChange" data-key="allowAnonymous" />
+        </view>
+        <view class="config-item switch-item">
+          <text class="config-label">启用推送通知</text>
+          <switch class="config-switch" checked="{{config.enablePush}}" bindchange="onSwitchChange" data-key="enablePush" />
+        </view>
+      </view>
+
+
+
+      <view class="config-section">
+        <view class="section-header">
+          <text class="section-title">图片服务配置</text>
+        </view>
+        <view class="config-item">
+          <text class="config-label">图片服务地址</text>
+          <input class="config-input" placeholder="HTML转图片服务地址" value="{{config.imageServerUrl}}" bindinput="onInputChange" data-key="imageServerUrl" />
+        </view>
+        <view class="config-item">
+          <text class="config-label">服务超时时间(ms)</text>
+          <input class="config-input" type="number" placeholder="默认60000" value="{{config.imageTimeout}}" bindinput="onInputChange" data-key="imageTimeout" />
+        </view>
+      </view>
+
+      <view class="config-section">
+        <view class="section-header">
+          <text class="section-title">腾讯云 COS 配置</text>
+        </view>
+        <view class="config-item">
+          <text class="config-label">SecretId</text>
+          <input class="config-input" placeholder="腾讯云 SecretId" value="{{config.qcloudSecretId}}" bindinput="onInputChange" data-key="qcloudSecretId" />
+        </view>
+        <view class="config-item">
+          <text class="config-label">SecretKey</text>
+          <input class="config-input" placeholder="腾讯云 SecretKey" value="{{config.qcloudSecretKey}}" bindinput="onInputChange" data-key="qcloudSecretKey" />
+        </view>
+        <view class="config-item">
+          <text class="config-label">存储桶(Bucket)</text>
+          <input class="config-input" placeholder="例如: bucket-123456789" value="{{config.qcloudBucket}}" bindinput="onInputChange" data-key="qcloudBucket" />
+        </view>
+        <view class="config-item">
+          <text class="config-label">区域(Region)</text>
+          <input class="config-input" placeholder="例如: ap-guangzhou" value="{{config.qcloudRegion}}" bindinput="onInputChange" data-key="qcloudRegion" />
+        </view>
+      </view>
+
+      <view class="config-section">
+        <view class="section-header">
+          <text class="section-title">语音识别配置</text>
+        </view>
+        <view class="config-item">
+          <text class="config-label">SecretId</text>
+          <input class="config-input" placeholder="腾讯云 SecretId" value="{{config.asrSecretId}}" bindinput="onInputChange" data-key="asrSecretId" />
+        </view>
+        <view class="config-item">
+          <text class="config-label">SecretKey</text>
+          <input class="config-input" placeholder="腾讯云 SecretKey" value="{{config.asrSecretKey}}" bindinput="onInputChange" data-key="asrSecretKey" />
+        </view>
+        <view class="config-item">
+          <text class="config-label">区域(Region)</text>
+          <input class="config-input" placeholder="例如: ap-guangzhou" value="{{config.asrRegion}}" bindinput="onInputChange" data-key="asrRegion" />
+        </view>
+      </view>
+
+      <view class="save-section">
+        <button class="save-btn" bindtap="saveConfig">保存配置</button>
+      </view>
+    </view>
+  </scroll-view>
+
+  <view class="admin-nav-bar">
+    <view class="nav-btn" bindtap="goToDashboard">
+      <text class="nav-text">仪表盘</text>
+    </view>
+    <view class="nav-btn active">
+      <text class="nav-text">配置</text>
+    </view>
+    <view class="nav-btn" bindtap="goToPets">
+      <text class="nav-text">宠物</text>
+    </view>
+    <view class="nav-btn" bindtap="goToFootprints">
+      <text class="nav-text">足迹</text>
+    </view>
+    <view class="nav-btn" bindtap="goToUsers">
+      <text class="nav-text">用户</text>
+    </view>
+  </view>
+</view>

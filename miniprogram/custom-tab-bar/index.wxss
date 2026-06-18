@@ -109,6 +109,54 @@
   transform: scale(1);
 }
 
+/* ====== 首页图标：房子 ====== */
+.icon-home {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.home-roof {
+  width: 0;
+  height: 0;
+  border-left: 15rpx solid transparent;
+  border-right: 15rpx solid transparent;
+  border-bottom: 12rpx solid currentColor;
+  transition: border-color 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.home-body {
+  width: 22rpx;
+  height: 16rpx;
+  border: 2.5rpx solid currentColor;
+  border-top: none;
+  border-radius: 0 0 4rpx 4rpx;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  transition:
+    background-color 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+    border-color 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.home-door {
+  width: 7rpx;
+  height: 10rpx;
+  border: 2rpx solid currentColor;
+  border-bottom: none;
+  border-radius: 4rpx 4rpx 0 0;
+  box-sizing: border-box;
+  transition:
+    background-color 0.3s cubic-bezier(0.25, 1, 0.5, 1),
+    border-color 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.tab-item.active .home-body,
+.tab-item.active .home-door {
+  background-color: currentColor;
+}
+
 /* ====== 宠物图标：爪印 ====== */
 .icon-pet {
   position: relative;
@@ -155,40 +203,6 @@
 /* 选中态：填充 */
 .tab-item.active .paw-pad,
 .tab-item.active .toe {
-  background-color: currentColor;
-}
-
-/* ====== 足迹图标：波浪柱状图 ====== */
-.icon-footprint {
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 4rpx;
-  height: 32rpx;
-}
-
-.wave-bar {
-  width: 5rpx;
-  border: 2rpx solid currentColor;
-  border-radius: 3rpx;
-  background-color: transparent;
-  box-sizing: border-box;
-  transition:
-    height 0.35s cubic-bezier(0.25, 1, 0.5, 1),
-    background-color 0.3s cubic-bezier(0.25, 1, 0.5, 1),
-    border-color 0.3s cubic-bezier(0.25, 1, 0.5, 1);
-}
-
-.bar1 { height: 12rpx; }
-.bar2 { height: 22rpx; }
-.bar3 { height: 16rpx; }
-
-/* 选中态：变高 + 填充 */
-.tab-item.active .bar1 { height: 18rpx; }
-.tab-item.active .bar2 { height: 32rpx; }
-.tab-item.active .bar3 { height: 24rpx; }
-
-.tab-item.active .wave-bar {
   background-color: currentColor;
 }
 

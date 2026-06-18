@@ -1,0 +1,112 @@
+<view class="admin-page">
+  <view class="admin-header">
+    <view class="header-back" bindtap="onBackToFront">
+      <text class="back-icon">‹</text>
+      <text class="back-text">返回</text>
+    </view>
+    <view class="header-center">
+      <text class="header-title">用户管理</text>
+      <text class="header-subtitle">User Management</text>
+    </view>
+    <view class="header-placeholder"></view>
+  </view>
+
+  <view class="search-bar">
+    <view class="search-box">
+      <text class="search-icon">🔍</text>
+      <input class="search-input" placeholder="搜索用户名/openid" value="{{searchText}}" bindinput="onSearchInput" />
+    </view>
+  </view>
+
+  <view class="filter-bar">
+    <view class="filter-item {{filterStatus === '' ? 'active' : ''}}" bindtap="setFilterStatus" data-status="">
+      <text>全部</text>
+    </view>
+    <view class="filter-item {{filterStatus === '正常' ? 'active' : ''}}" bindtap="setFilterStatus" data-status="正常">
+      <text>正常</text>
+    </view>
+    <view class="filter-item {{filterStatus === '封禁' ? 'active' : ''}}" bindtap="setFilterStatus" data-status="封禁">
+      <text>封禁</text>
+    </view>
+    
+    <view class="sort-bar">
+      <view class="sort-item {{sortField === 'createdAt' ? 'active' : ''}}" bindtap="setSort" data-field="createdAt">
+        <text>注册时间</text>
+        <text class="sort-icon">{{sortField === 'createdAt' ? (sortOrder === 'desc' ? '↓' : '↑') : ''}}</text>
+      </view>
+      <view class="sort-item {{sortField === 'nickname' ? 'active' : ''}}" bindtap="setSort" data-field="nickname">
+        <text>昵称</text>
+        <text class="sort-icon">{{sortField === 'nickname' ? (sortOrder === 'desc' ? '↓' : '↑') : ''}}</text>
+      </view>
+    </view>
+  </view>
+
+  <scroll-view scroll-y class="admin-scroll">
+    <view class="admin-content">
+      <view wx:if="{{loading}}" class="loading-state">
+        <text>加载中...</text>
+      </view>
+      
+      <view wx:else>
+        <view class="user-list">
+          <view wx:for="{{userList}}" wx:key="id" class="user-card">
+            <view class="user-avatar-wrapper">
+              <image wx:if="{{item.avatar && item.avatar !== ''}}" src="{{item.avatar}}" mode="aspectFill" binderror="onAvatarError" />
+              <text wx:else class="avatar-text">{{item.nickname ? item.nickname.charAt(0) : '👤'}}</text>
+            </view>
+            <view class="user-info">
+              <view class="user-name-row">
+                <text class="user-name">{{item.nickname}}</text>
+                <view class="status-badge {{item.status === '正常' ? 'normal' : 'banned'}}">
+                  <text>{{item.status}}</text>
+                </view>
+              </view>
+              <view class="user-openid-wrapper" bindtap="onCopyOpenid" data-openid="{{item.openid}}">
+                <text class="user-openid">{{item.openid || '未获取'}}</text>
+                <text class="copy-icon">📋</text>
+              </view>
+              <text class="user-meta">注册时间：{{item.createTime}}</text>
+            </view>
+            <view class="user-actions">
+              <view class="action-btn edit" bindtap="onEditUser" data-id="{{item.id}}">
+                <text>编辑</text>
+              </view>
+              <view wx:if="{{item.status === '正常'}}" class="action-btn ban" bindtap="onBanUser" data-id="{{item.id}}" data-openid="{{item.openid}}">
+                <text>封禁</text>
+              </view>
+              <view wx:else class="action-btn unban" bindtap="onUnbanUser" data-id="{{item.id}}" data-openid="{{item.openid}}">
+                <text>解封</text>
+              </view>
+              <view class="action-btn delete" bindtap="onDeleteUser" data-id="{{item.id}}" data-openid="{{item.openid}}">
+                <text>删除</text>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <view class="empty-state" wx:if="{{userList.length === 0}}">
+          <text class="empty-icon">👥</text>
+          <text class="empty-text">暂无用户数据</text>
+        </view>
+      </view>
+    </view>
+  </scroll-view>
+
+  <view class="admin-nav-bar">
+    <view class="nav-btn" bindtap="goToDashboard">
+      <text class="nav-text">仪表盘</text>
+    </view>
+    <view class="nav-btn" bindtap="goToConfig">
+      <text class="nav-text">配置</text>
+    </view>
+    <view class="nav-btn" bindtap="goToPets">
+      <text class="nav-text">宠物</text>
+    </view>
+    <view class="nav-btn" bindtap="goToFootprints">
+      <text class="nav-text">足迹</text>
+    </view>
+    <view class="nav-btn active">
+      <text class="nav-text">用户</text>
+    </view>
+  </view>
+</view>

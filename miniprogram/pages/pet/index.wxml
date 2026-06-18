@@ -9,8 +9,15 @@
     <text wx:else class="nav-title">宠物档案</text>
   </view>
 
+  <!-- 未登录提示栏 -->
+  <view wx:if="{{!isLoggedIn}}" class="login-hint-bar">
+    <text class="login-hint-text">登录后可管理宠物资料、记录和打印标签</text>
+    <view class="login-hint-btn" bindtap="goToLogin">登录</view>
+  </view>
+
   <!-- 骨架屏 -->
   <view wx:if="{{showSkeleton}}" class="skeleton-container">
+    <view class="skeleton-sweep"></view>
     <!-- 筛选卡片骨架 -->
     <view class="skeleton-filter-card">
       <view class="skeleton-filter-head">
@@ -28,27 +35,30 @@
       <view class="skeleton-search"></view>
     </view>
 
-    <!-- 宠物卡片骨架 -->
+    <!-- 宠物卡片骨架（2列网格） -->
     <view class="skeleton-pet-list">
       <view class="skeleton-pet-card">
-        <view class="skeleton-pet-image"></view>
-        <view class="skeleton-pet-info">
-          <view class="skeleton-pet-name"></view>
-          <view class="skeleton-pet-meta"></view>
+        <view class="skeleton-pet-image">
+          <view class="skeleton-overlay-name"></view>
+          <view class="skeleton-overlay-meta"></view>
         </view>
       </view>
       <view class="skeleton-pet-card">
-        <view class="skeleton-pet-image"></view>
-        <view class="skeleton-pet-info">
-          <view class="skeleton-pet-name"></view>
-          <view class="skeleton-pet-meta"></view>
+        <view class="skeleton-pet-image">
+          <view class="skeleton-overlay-name"></view>
+          <view class="skeleton-overlay-meta"></view>
         </view>
       </view>
       <view class="skeleton-pet-card">
-        <view class="skeleton-pet-image"></view>
-        <view class="skeleton-pet-info">
-          <view class="skeleton-pet-name"></view>
-          <view class="skeleton-pet-meta"></view>
+        <view class="skeleton-pet-image">
+          <view class="skeleton-overlay-name"></view>
+          <view class="skeleton-overlay-meta"></view>
+        </view>
+      </view>
+      <view class="skeleton-pet-card">
+        <view class="skeleton-pet-image">
+          <view class="skeleton-overlay-name"></view>
+          <view class="skeleton-overlay-meta"></view>
         </view>
       </view>
     </view>
@@ -165,14 +175,10 @@
             <view class="pet-gender-badge gender-{{item.gender === '公' ? 'male' : item.gender === '母' ? 'female' : 'unknown'}}">
               <text class="gender-icon">{{item.gender || '未知'}}</text>
             </view>
-          </view>
-
-          <!-- 宠物信息 -->
-          <view class="pet-card-info" bindtap="{{isEditMode ? 'toggleSelect' : 'goToDetail'}}" data-id="{{item.id}}">
-            <text class="pet-card-name">{{item.name || '未命名'}}</text>
-            <text wx:if="{{item.alias && item.alias !== item.name}}" class="pet-card-alias">{{item.alias}}</text>
-            <view class="pet-card-meta-row">
-              <text class="pet-card-meta">{{item.category || '未分类'}}</text>
+            <!-- 底部渐变遮挡 + 信息 -->
+            <view class="pet-card-overlay">
+              <text class="pet-card-alias">{{item.alias || item.name || '未命名'}}</text>
+              <text wx:if="{{item.name && item.alias}}" class="pet-card-name">{{item.name}}</text>
               <text class="pet-status-tag pet-status-{{item.statusClass || 'normal'}}">{{item.computedStatus || item.status || '正常'}}</text>
             </view>
           </view>
@@ -241,6 +247,11 @@
           </view>
           <view wx:if="{{isRecording && currentVoiceField === 'alias'}}" class="voice-cancel-btn" bindtap="cancelVoice">✕</view>
         </view>
+      </view>
+
+      <view class="form-item" style="margin-top: 20rpx;">
+        <text class="form-label">价格（元/只）</text>
+        <input class="form-input" type="digit" placeholder="可选，公开展示时使用" value="{{petForm.price}}" bindinput="onPriceInput" />
       </view>
       
       <view class="section-title">
@@ -345,7 +356,7 @@
   <view wx:if="{{showRecordModal && currentPet}}" class="modal-overlay" bindtap="hideRecordModal">
     <view class="record-modal-content" catchtap="stopPropagation">
       <view class="record-header">
-        <text class="record-title">{{currentPet.name}} · 记录</text>
+        <text class="record-title">{{currentPet.alias || currentPet.name}} · 记录</text>
         <view class="record-actions">
           <view class="record-action detail" bindtap="goAddRecord">详情</view>
         </view>
@@ -353,9 +364,7 @@
       
       <view class="record-tabs">
         <view class="record-tab {{recordTab === '全部' ? 'active' : ''}}" bindtap="setRecordTab" data-tab="全部">全部</view>
-        <view class="record-tab {{recordTab === '日常' ? 'active' : ''}}" bindtap="setRecordTab" data-tab="日常">日常</view>
         <view class="record-tab {{recordTab === '健康' ? 'active' : ''}}" bindtap="setRecordTab" data-tab="健康">健康</view>
-        <view class="record-tab {{recordTab === '繁育' ? 'active' : ''}}" bindtap="setRecordTab" data-tab="繁育">繁育</view>
       </view>
       
       <view class="record-list">

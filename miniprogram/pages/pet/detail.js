@@ -15,6 +15,7 @@ Page({
     pet: null,
     petId: '',
     loading: true,
+    isLoggedIn: false,
     isPublicMode: false,
     statusClass: '',
     showSkeleton: true,
@@ -29,6 +30,10 @@ Page({
     showAddRecordModal: false,
     showFatherModal: false,
     showMotherModal: false,
+    showPartnerModal: false,
+    partnerList: [],
+    partnerSearchText: '',
+    selectedPartner: null,
     showTimelineModal: false,
     showRecordModal: false,
     // 打印调试弹窗
@@ -71,11 +76,16 @@ Page({
     filteredRecords: [],
     groupedRecords: [],
     currentRecord: null,
-    recordTypes: ['建档', '交配', '产蛋', '日常', '健康', '繁育', '换公'],
+    recordTypes: ['建档', '交配', '产蛋', '出苗', '健康'],
+    addRecordTypes: ['交配', '产蛋', '出苗', '健康'],
     newRecord: {
-      type: '日常',
+      type: '交配',
       text: ''
     },
+    recordPartner: null, // 交配记录的配对对象
+    showRecordPartnerModal: false,
+    recordPartnerList: [],
+    recordPartnerSearchText: '',
 
     // 语音
     currentVoiceField: '',
@@ -137,9 +147,12 @@ Page({
   // ============================================================
 
   onLoad: function (options) {
-    // 初始化 today
-    const today = this._formatDate(new Date())
-    this.setData({ today })
+    // 初始化 today + 当月默认筛选
+    const now = new Date()
+    const today = this._formatDate(now)
+    const monthStart = this._formatDate(new Date(now.getFullYear(), now.getMonth(), 1))
+    const monthEnd = this._formatDate(new Date(now.getFullYear(), now.getMonth() + 1, 0))
+    this.setData({ today, selectedDate: monthStart, endDate: monthEnd })
 
     // 打印机配置
     this.loadPrinterConfig()
@@ -151,6 +164,11 @@ Page({
     // petId
     const petId = (options && options.petId) || ''
     this.setData({ petId })
+
+    // 预览页跳转过来新增记录
+    if (options && options.action === 'addRecord') {
+      this._pendingAddRecord = true
+    }
 
     // 扫码进入模式（from=scan 表示从标签二维码扫码进入）
     if (options && options.from === 'scan') {
@@ -171,7 +189,9 @@ Page({
 
   onShow: function () {
     const app = getApp()
-    if (!app.globalData.isLoggedIn) return
+    const isLoggedIn = app.globalData.isLoggedIn
+    this.setData({ isLoggedIn })
+    if (!isLoggedIn) return
     // 再次刷新提醒（避免用户从 my 页修改后未同步）
     if (this.data.petId) {
       this.loadReminders(this.data.petId)
@@ -281,6 +301,11 @@ Page({
     }
   },
 
+  goToLogin: function () {
+    const app = getApp()
+    app.requireLogin()
+  },
+
   showMore: function () {
     wx.showActionSheet({
       itemList: ['编辑信息', '删除宠物', '添加提醒'],
@@ -306,10 +331,38 @@ Page({
     })
   },
 
+  goToEggReport: function () {
+    const app = getApp()
+    if (!app.requireLogin()) return
+    const pet = this.data.pet || {}
+    let url = '/pages/egg-report/index'
+    if (pet.gender === '母') {
+      const petId = pet._id || pet.id || this.data.petId
+      url += '?petId=' + petId
+    } else if (pet.gender === '公') {
+      url += '?maleId=' + (this.data.petId)
+    }
+    wx.navigateTo({ url })
+  },
+
+  goToHatchReport: function () {
+    const app = getApp()
+    if (!app.requireLogin()) return
+    const pet = this.data.pet || {}
+    let url = '/pages/hatch-report/index'
+    if (pet.gender === '母') {
+      const petId = pet._id || pet.id || this.data.petId
+      url += '?petId=' + petId
+    } else if (pet.gender === '公') {
+      url += '?maleId=' + (this.data.petId)
+    }
+    wx.navigateTo({ url })
+  },
+
   onShareAppMessage: function () {
     const pet = this.data.pet || {}
     return {
-      title: `${pet.name || '宠物'}的档案`,
+      title: `${pet.alias || pet.name || '宠物'}的档案`,
       path: '/pages/pet/detail?petId=' + (this.data.petId || '')
     }
   },
@@ -391,6 +444,12 @@ Page({
     else statusClass = 'normal'
 
     this.setData({ pet: displayPet, statusClass, showSkeleton: false })
+
+    // 预览页跳转过来时自动打开新增记录弹窗
+    if (this._pendingAddRecord) {
+      this._pendingAddRecord = false
+      wx.nextTick(() => { this.addRecord() })
+    }
   },
 
   onPhotoError: async function (e) {
@@ -442,17 +501,21 @@ Page({
         category: pet.category || '',
         gender: pet.gender || '公',
         alias: pet.alias || '',
+        price: pet.price || '',
         father: pet.father || '',
         fatherName: pet.fatherName || '',
         mother: pet.mother || '',
         motherName: pet.motherName || '',
+        partner: pet.partner || '',
+        partnerName: pet.partnerName || '',
         status: pet.status || '正常',
         isPublic: !!pet.isPublic,
         photos: pet.photos && pet.photos.length ? [...pet.photos] : []
       },
       editPhotoList: pet.photos && pet.photos.length ? [...pet.photos] : [],
       selectedFather: pet.father ? { id: pet.father, name: pet.fatherName || '父本' } : null,
-      selectedMother: pet.mother ? { id: pet.mother, name: pet.motherName || '母本' } : null
+      selectedMother: pet.mother ? { id: pet.mother, name: pet.motherName || '母本' } : null,
+      selectedPartner: pet.partner ? { id: pet.partner, name: pet.partnerName || '配对', alias: pet.partnerName } : null
     })
   },
 
@@ -481,6 +544,10 @@ Page({
 
   onEditAliasInput: function (e) {
     this.setData({ 'editForm.alias': e.detail.value })
+  },
+
+  onEditPriceInput: function (e) {
+    this.setData({ 'editForm.price': e.detail.value })
   },
 
   selectEditCategory: function (e) {
@@ -645,6 +712,142 @@ Page({
     } catch (err) {}
   },
 
+  // ===== 配对对象选择 =====
+
+  openPartnerModal: async function () {
+    const gender = (this.data.pet && this.data.pet.gender) || '公'
+    const oppositeGender = gender === '公' ? '母' : '公'
+    this.setData({ showPartnerModal: true, partnerSearchText: '', partnerList: [] })
+    try {
+      const localPets = wx.getStorageSync('pets') || []
+      const list = localPets
+        .filter(p => p.gender === oppositeGender && (p.id || p._id) !== this.data.petId)
+        .map(p => ({
+          id: p.id || p._id,
+          name: p.name,
+          alias: p.alias,
+          gender: p.gender,
+          photos: p.photos ? p.photos.slice(0, 1) : []
+        }))
+      this.setData({ partnerList: list })
+    } catch (err) {
+      console.error('加载配对列表失败:', err)
+    }
+  },
+
+  hidePartnerModal: function () {
+    this.setData({ showPartnerModal: false })
+  },
+
+  selectPartner: function (e) {
+    const id = e.currentTarget.dataset.id
+    if (!id) return
+    const partner = this.data.partnerList.find(p => p.id === id)
+    if (!partner) return
+    this.setData({
+      selectedPartner: partner,
+      'editForm.partner': partner.id,
+      'editForm.partnerName': partner.alias || partner.name,
+      showPartnerModal: false
+    })
+  },
+
+  clearPartner: function () {
+    this.setData({
+      selectedPartner: null,
+      'editForm.partner': '',
+      'editForm.partnerName': ''
+    })
+  },
+
+  onPartnerSearchInput: function (e) {
+    const searchText = (e.detail.value || '').toLowerCase()
+    const gender = (this.data.pet && this.data.pet.gender) || '公'
+    const oppositeGender = gender === '公' ? '母' : '公'
+    this.setData({ partnerSearchText: searchText })
+    try {
+      const localPets = wx.getStorageSync('pets') || []
+      const list = localPets
+        .filter(p =>
+          p.gender === oppositeGender &&
+          (p.id || p._id) !== this.data.petId &&
+          ((p.name || '').toLowerCase().includes(searchText) ||
+            (p.alias || '').toLowerCase().includes(searchText))
+        )
+        .map(p => ({
+          id: p.id || p._id,
+          name: p.name,
+          alias: p.alias,
+          gender: p.gender,
+          photos: p.photos ? p.photos.slice(0, 1) : []
+        }))
+      this.setData({ partnerList: list })
+    } catch (err) {}
+  },
+
+  // ===== 记录配对对象 =====
+  openRecordPartnerModal: async function () {
+    const gender = (this.data.pet && this.data.pet.gender) || '公'
+    const oppositeGender = gender === '公' ? '母' : '公'
+    this.setData({ showRecordPartnerModal: true, recordPartnerSearchText: '', recordPartnerList: [] })
+    try {
+      const localPets = wx.getStorageSync('pets') || []
+      const list = localPets
+        .filter(p => p.gender === oppositeGender && (p.id || p._id) !== this.data.petId)
+        .map(p => ({
+          id: p.id || p._id,
+          name: p.name,
+          alias: p.alias,
+          gender: p.gender
+        }))
+      this.setData({ recordPartnerList: list })
+    } catch (err) {
+      console.error('加载记录配对列表失败:', err)
+    }
+  },
+
+  hideRecordPartnerModal: function () {
+    this.setData({ showRecordPartnerModal: false })
+  },
+
+  selectRecordPartner: function (e) {
+    const id = e.currentTarget.dataset.id
+    if (!id) return
+    const partner = this.data.recordPartnerList.find(p => p.id === id)
+    if (!partner) return
+    this.setData({
+      recordPartner: partner,
+      showRecordPartnerModal: false
+    })
+  },
+
+  clearRecordPartner: function () {
+    this.setData({ recordPartner: null })
+  },
+
+  onRecordPartnerSearch: function (e) {
+    const searchText = (e.detail.value || '').toLowerCase()
+    const gender = (this.data.pet && this.data.pet.gender) || '公'
+    const oppositeGender = gender === '公' ? '母' : '公'
+    this.setData({ recordPartnerSearchText: searchText })
+    try {
+      const localPets = wx.getStorageSync('pets') || []
+      const list = localPets
+        .filter(p => p.gender === oppositeGender && (p.id || p._id) !== this.data.petId)
+        .filter(p => {
+          if (!searchText) return true
+          return (p.name || '').toLowerCase().includes(searchText) || (p.alias || '').toLowerCase().includes(searchText)
+        })
+        .map(p => ({
+          id: p.id || p._id,
+          name: p.name,
+          alias: p.alias,
+          gender: p.gender
+        }))
+      this.setData({ recordPartnerList: list })
+    } catch (err) {}
+  },
+
   // ===== 图片 =====
 
   chooseEditPhoto: function () {
@@ -691,6 +894,11 @@ Page({
         results.push(filePath)
         continue
       }
+      // 跳过非本地文件路径
+      if (typeof filePath !== 'string' || filePath.startsWith('http://') || filePath.startsWith('https://')) {
+        console.warn('跳过非本地文件上传:', filePath)
+        continue
+      }
       try {
         const res = await API.uploadImage(filePath)
         if (res && res.success && res.fileID) {
@@ -701,6 +909,7 @@ Page({
           results.push(filePath)
         }
       } catch (err) {
+        console.error('上传图片失败，跳过该图片:', filePath, err.message)
         results.push(filePath)
       }
     }
@@ -736,10 +945,13 @@ Page({
         category: form.category,
         gender: form.gender,
         alias: form.alias,
+        price: form.price,
         father: form.father,
         fatherName: form.fatherName,
         mother: form.mother,
         motherName: form.motherName,
+        partner: form.partner,
+        partnerName: form.partnerName,
         status: form.status,
         isPublic: form.isPublic,
         photos: photoIdsOrUrls
@@ -765,10 +977,13 @@ Page({
         category: form.category,
         gender: form.gender,
         alias: form.alias,
+        price: form.price,
         father: form.father,
         fatherName: form.fatherName,
         mother: form.mother,
         motherName: form.motherName,
+        partner: form.partner,
+        partnerName: form.partnerName,
         status: form.status,
         isPublic: form.isPublic,
         photos: this.data.editPhotoList || []
@@ -964,15 +1179,104 @@ Page({
     this.setData({ showTimelineModal: false })
   },
 
+  // 获取记录类型图标
+  getRecordIcon: function (type) {
+    const iconMap = {
+      '建档': '📁',
+      '交配': '💕',
+      '产蛋': '🥚',
+      '健康': '💊'
+    }
+    return iconMap[type] || '📝'
+  },
+
+  // 长按事件卡片
+  onEventCardLongPress: function (e) {
+    const recordId = e.currentTarget.dataset.id
+    const record = this.data.records.find(r => r.id === recordId)
+    
+    if (!record) return
+    
+    // 建档记录不允许删除
+    if (record.type === '建档') {
+      wx.showToast({ title: '建档记录不允许删除', icon: 'none' })
+      return
+    }
+    
+    wx.showActionSheet({
+      itemList: ['删除记录'],
+      itemColor: '#E76F51',
+      success: (res) => {
+        if (res.tapIndex === 0) {
+          // 调用删除记录函数
+          this.deleteRecord(e)
+        }
+      }
+    })
+  },
+
+  // 删除记录
+  deleteRecord: function (e) {
+    const recordId = e.currentTarget.dataset.id
+    const record = this.data.records.find(r => r.id === recordId)
+    
+    // 建档记录不允许删除
+    if (record.type === '建档') {
+      wx.showToast({ title: '建档记录不允许删除', icon: 'none' })
+      return
+    }
+    
+    wx.showModal({
+      title: '确认删除',
+      content: `确定删除「${record.type}」记录吗？`,
+      confirmColor: '#E76F51',
+      success: async (res) => {
+        if (res.confirm) {
+          try {
+            wx.showLoading({ title: '删除中...' })
+            await API.deleteRecord(recordId)
+            
+            // 从本地数据中移除
+            const newRecords = this.data.records.filter(r => r.id !== recordId)
+            const sorted = this.sortRecords(newRecords)
+            this.setData({ records: sorted })
+            
+            // 更新筛选后的记录和时间线分组
+            this.filterAndGroupRecords(sorted)
+            
+            // 同步本地缓存
+            wx.setStorageSync('records', sorted)
+            
+            wx.hideLoading()
+            wx.showToast({ title: '删除成功', icon: 'success' })
+          } catch (error) {
+            wx.hideLoading()
+            console.error('删除记录失败:', error)
+            wx.showToast({ title: '删除失败', icon: 'none' })
+          }
+        }
+      }
+    })
+  },
+
   // ========== 新增 / 查看记录 ==========
 
   addRecord: function () {
     const app = getApp()
     if (!app.requireLogin()) return
 
+    // 根据性别过滤记录类型：公龟不能添加产蛋/出苗
+    const gender = (this.data.pet && this.data.pet.gender) || ''
+    const femaleOnlyTypes = ['产蛋', '出苗']
+    const addRecordTypes = gender === '母'
+      ? this.data.addRecordTypes
+      : this.data.addRecordTypes.filter(t => !femaleOnlyTypes.includes(t))
+
     this.setData({
       showAddRecordModal: true,
-      newRecord: { type: '日常', text: '', eggCount: '', fertilizedCount: '' },
+      addRecordTypes: addRecordTypes,
+      newRecord: { type: addRecordTypes[0] || '交配', text: '', eggCount: '', fertilizedCount: '', hatchCount: '', gradeACount: '', defectCount: '' },
+      recordPartner: null,
       currentVoiceField: '',
       isRecording: false
     })
@@ -1002,6 +1306,20 @@ Page({
     this._updateEggRate()
   },
 
+  onHatchCountInput: function (e) {
+    this.setData({ 'newRecord.hatchCount': e.detail.value })
+    this._updateGradeRate()
+  },
+
+  onGradeAInput: function (e) {
+    this.setData({ 'newRecord.gradeACount': e.detail.value })
+    this._updateGradeRate()
+  },
+
+  onDefectInput: function (e) {
+    this.setData({ 'newRecord.defectCount': e.detail.value })
+  },
+
   _updateEggRate: function () {
     const egg = parseInt(this.data.newRecord.eggCount) || 0
     const fert = parseInt(this.data.newRecord.fertilizedCount) || 0
@@ -1013,6 +1331,17 @@ Page({
     }
   },
 
+  _updateGradeRate: function () {
+    const hatch = parseInt(this.data.newRecord.hatchCount) || 0
+    const gradeA = parseInt(this.data.newRecord.gradeACount) || 0
+    if (hatch > 0) {
+      const rate = Math.round(gradeA / hatch * 100)
+      this.setData({ gradeRateText: rate + '%', gradeRateLow: rate < 50 })
+    } else {
+      this.setData({ gradeRateText: '0%', gradeRateLow: false })
+    }
+  },
+
   confirmAddRecord: async function () {
     // 防止打印已触发保存时的重复保存
     if (this.data._isSavingRecord) return
@@ -1020,7 +1349,7 @@ Page({
 
     const record = this.data.newRecord
     // 产蛋记录允许内容为空（必须有产蛋数据）
-    if (!record.text && record.type !== '产蛋') {
+    if (!record.text && record.type !== '产蛋' && record.type !== '出苗') {
       showError('请输入记录内容')
       this.setData({ _isSavingRecord: false })
       return
@@ -1038,9 +1367,31 @@ Page({
       payload.eggCount = parseInt(record.eggCount) || 0
       payload.fertilizedCount = parseInt(record.fertilizedCount) || 0
     }
+    // 出苗记录追加出苗数据
+    if (record.type === '出苗') {
+      payload.hatchCount = parseInt(record.hatchCount) || 0
+      payload.gradeACount = parseInt(record.gradeACount) || 0
+      payload.defectCount = parseInt(record.defectCount) || 0
+    }
+    // 交配记录关联配对对象
+    if (record.type === '交配') {
+      const rp = this.data.recordPartner
+      if (rp) {
+        payload.partnerId = rp.id
+        payload.partnerName = rp.alias || rp.name
+      } else {
+        const pet = this.data.pet || {}
+        if (pet.partner) {
+          payload.partnerId = pet.partner
+          payload.partnerName = pet.partnerName || ''
+        }
+      }
+    }
 
     try {
+      console.log('[addRecord] payload:', JSON.stringify(payload))
       const result = await API.createRecord(payload)
+      console.log('[addRecord] result:', JSON.stringify(result))
       if (result && result.success) {
         const recordId = (result.data && (result.data.id || result.data._id)) || Date.now().toString()
         const newRecords = [{ ...payload, id: recordId }, ...this.data.records]
@@ -1049,12 +1400,17 @@ Page({
         this.filterAndGroupRecords(sorted)
         wx.setStorageSync('records', sorted)
         this.setData({ showAddRecordModal: false, _isSavingRecord: false })
+        // 交配记录保存后更新当前配对为最新
+        if (record.type === '交配' && payload.partnerId) {
+          this._updateLatestPartner(payload.partnerId, payload.partnerName)
+        }
         showSuccess('记录已添加')
         return
       }
       throw new Error(result && result.message ? result.message : '云端保存失败')
     } catch (err) {
-
+      console.error('云端保存记录失败:', err.message || err)
+      wx.hideLoading()
       // 本地回退
       const recordId = Date.now().toString()
       const newRecords = [{ ...payload, id: recordId }, ...this.data.records]
@@ -1063,8 +1419,35 @@ Page({
       this.filterAndGroupRecords(sorted)
       wx.setStorageSync('records', sorted)
       this.setData({ showAddRecordModal: false, _isSavingRecord: false })
-      showSuccess('已保存到本地')
+      // 交配记录本地回退也更新配对
+      if (record.type === '交配' && payload.partnerId) {
+        this._updateLatestPartner(payload.partnerId, payload.partnerName)
+      }
+      showSuccess('云端保存失败，已存本地')
     }
+  },
+
+  // 更新当前配对为最新（本地+云端）
+  _updateLatestPartner: function (partnerId, partnerName) {
+    const petId = this.data.petId
+    // 更新本地显示
+    this.setData({
+      'pet.partner': partnerId,
+      'pet.partnerName': partnerName
+    })
+    // 更新本地存储
+    try {
+      const pets = wx.getStorageSync('pets') || []
+      const idx = pets.findIndex(p => (p.id || p._id) === petId)
+      if (idx >= 0) {
+        pets[idx].partner = partnerId
+        pets[idx].partnerName = partnerName
+        wx.setStorageSync('pets', pets)
+      }
+    } catch (err) {}
+    // 静默更新云端
+    API.updatePet({ id: petId, partner: partnerId, partnerName: partnerName || '' })
+      .catch(err => console.error('更新配对字段失败:', err.message))
   },
 
   showRecordDetail: function (e) {
@@ -1078,6 +1461,11 @@ Page({
       record.eggRateText = rate + '%'
       record.eggRateLow = rate < 50
     }
+    // 出苗记录预计算全品率
+    if (record.type === '出苗' && record.hatchCount > 0) {
+      const rate = Math.round((parseInt(record.gradeACount) || 0) / parseInt(record.hatchCount) * 100)
+      record.gradeRateText = rate + '%'
+    }
     this.setData({
       currentRecord: record,
       showRecordModal: true
@@ -1086,6 +1474,15 @@ Page({
 
   hideRecordModal: function () {
     this.setData({ showRecordModal: false, currentRecord: null })
+  },
+
+  // 预览记录照片
+  previewRecordPhoto: function (e) {
+    const url = e.currentTarget.dataset.url
+    const photos = (this.data.currentRecord && this.data.currentRecord.photos) || []
+    if (url && photos.length > 0) {
+      wx.previewImage({ current: url, urls: photos })
+    }
   },
 
   // ============================================================
@@ -1189,8 +1586,10 @@ Page({
       }
 
       // 类型 emoji + 类型名 + 内容（截断适配右侧宽度）
-      const typeIcons = { '建档': '📁', '交配': '💕', '产蛋': '🥚', '换公': '🔄', '日常': '📝', '健康': '💊', '繁育': '🌱' }
+      const typeIcons = { '建档': '📁', '交配': '💕', '产蛋': '🥚', '出苗': '🐣', '健康': '💊' }
+      const typeMap = { '交配': 'jiaopei', '产蛋': 'chandan', '出苗': 'chumiao', '健康': 'jiankang' }
       const icon = typeIcons[record.type] || '📝'
+      const typeKey = typeMap[record.type]
       let detail = (record.text || '').substring(0, 18)
       if ((record.text || '').length > 18) detail += '…'
       const typeLine = (icon + (record.type || '') + '·' + detail).substring(0, 22)
@@ -1198,7 +1597,10 @@ Page({
       const timeLine = (record.date || '') + ' ' + (record.time || '')
 
       // ---- 左侧：二维码 ----
-      if (urlLink) {
+      // 根据配置判断是否打印二维码
+      const qrPrintTypes = this.data.printerConfig.qrPrintTypes || {}
+      const shouldPrintQr = typeKey ? (qrPrintTypes[typeKey] !== false) : true
+      if (urlLink && shouldPrintQr) {
         api.draw2DQRCode({ text: urlLink, x: 1, y: 2, width: 16 })
       }
 
@@ -1211,6 +1613,15 @@ Page({
         const rate = Math.round((parseInt(record.fertilizedCount) || 0) / parseInt(record.eggCount) * 100)
         const eggLine = '🥚产蛋 ' + record.eggCount + '-' + (record.fertilizedCount || 0) + '枚 ' + rate + '%'
         api.drawText({ text: eggLine.substring(0, 22), fontHeight: 2.5, x: 19, y: 5.5, width: 19, height: 3 })
+        if (detail) {
+          api.drawText({ text: detail, fontHeight: 2, x: 19, y: 9.5, width: 19, height: 3 })
+        }
+        api.drawText({ text: timeLine.trim(), fontHeight: 2, x: 19, y: detail ? 13.5 : 9.5, width: 19, height: 3 })
+      } else if (record.type === '出苗' && record.hatchCount > 0) {
+        // 出苗记录：4行布局（名称 / 出苗数据 / 内容 / 时间）
+        const gradeRate = Math.round((parseInt(record.gradeACount) || 0) / parseInt(record.hatchCount) * 100)
+        const hatchLine = '🐣出苗 ' + record.hatchCount + '只 全品' + (record.gradeACount || 0) + ' ' + gradeRate + '%'
+        api.drawText({ text: hatchLine.substring(0, 22), fontHeight: 2.5, x: 19, y: 5.5, width: 19, height: 3 })
         if (detail) {
           api.drawText({ text: detail, fontHeight: 2, x: 19, y: 9.5, width: 19, height: 3 })
         }
@@ -1269,7 +1680,7 @@ Page({
       showError('请先连接打印机')
       return
     }
-    if (!this.data.newRecord || (!this.data.newRecord.text && this.data.newRecord.type !== '产蛋')) {
+    if (!this.data.newRecord || (!this.data.newRecord.text && this.data.newRecord.type !== '产蛋' && this.data.newRecord.type !== '出苗')) {
       showError('记录内容为空')
       return
     }
@@ -1293,6 +1704,25 @@ Page({
       payload.eggCount = parseInt(record.eggCount) || 0
       payload.fertilizedCount = parseInt(record.fertilizedCount) || 0
     }
+    if (record.type === '出苗') {
+      payload.hatchCount = parseInt(record.hatchCount) || 0
+      payload.gradeACount = parseInt(record.gradeACount) || 0
+      payload.defectCount = parseInt(record.defectCount) || 0
+    }
+    // 交配记录关联配对对象
+    if (record.type === '交配') {
+      const rp = this.data.recordPartner
+      if (rp) {
+        payload.partnerId = rp.id
+        payload.partnerName = rp.alias || rp.name
+      } else {
+        const pet = this.data.pet || {}
+        if (pet.partner) {
+          payload.partnerId = pet.partner
+          payload.partnerName = pet.partnerName || ''
+        }
+      }
+    }
 
     // 1. 先保存记录到云端
     wx.showLoading({ title: '保存记录...' })
@@ -1314,10 +1744,26 @@ Page({
       this.setData({ records: sorted })
       this.filterAndGroupRecords(sorted)
       wx.setStorageSync('records', sorted)
-    } catch {
+      // 交配记录保存后更新当前配对为最新
+      if (record.type === '交配' && payload.partnerId) {
+        this._updateLatestPartner(payload.partnerId, payload.partnerName)
+      }
+    } catch (err) {
+      console.error('打印-保存记录失败:', err.message || err)
       wx.hideLoading()
-      showError('保存记录失败')
+      // 本地回退
+      const recordId = Date.now().toString()
+      const newRecords = [{ ...payload, id: recordId }, ...this.data.records]
+      const sorted = this.sortRecords(newRecords)
+      this.setData({ records: sorted })
+      this.filterAndGroupRecords(sorted)
+      wx.setStorageSync('records', sorted)
+      // 交配记录本地回退也更新配对
+      if (record.type === '交配' && payload.partnerId) {
+        this._updateLatestPartner(payload.partnerId, payload.partnerName)
+      }
       this.setData({ _isSavingRecord: false })
+      showError('保存失败: ' + (err.message || '请检查云函数部署'))
       return
     }
 
@@ -1360,16 +1806,20 @@ Page({
         if (nameLine.length > 10) nameLine = nameLine.substring(0, 9) + '…'
       }
 
-      const typeIcons = { '建档': '📁', '交配': '💕', '产蛋': '🥚', '换公': '🔄', '日常': '📝', '健康': '💊', '繁育': '🌱' }
+      const typeIcons = { '建档': '📁', '交配': '💕', '产蛋': '🥚', '出苗': '🐣', '健康': '💊' }
+      const typeMap = { '交配': 'jiaopei', '产蛋': 'chandan', '出苗': 'chumiao', '健康': 'jiankang' }
       const icon = typeIcons[payload.type] || '📝'
+      const typeKey = typeMap[payload.type]
       let detail = (payload.text || '').substring(0, 18)
       if ((payload.text || '').length > 18) detail += '…'
       const typeLine = (icon + (payload.type || '') + '·' + detail).substring(0, 22)
 
       const timeLine = dateStr + ' ' + timeStr
 
-      // 左侧：二维码
-      if (urlLink) {
+      // 左侧：二维码（根据配置判断是否打印）
+      const qrPrintTypes = this.data.printerConfig.qrPrintTypes || {}
+      const shouldPrintQr = typeKey ? (qrPrintTypes[typeKey] !== false) : true
+      if (urlLink && shouldPrintQr) {
         api.draw2DQRCode({ text: urlLink, x: 1, y: 2, width: 16 })
       }
 
@@ -1381,6 +1831,15 @@ Page({
         const rate = Math.round((parseInt(payload.fertilizedCount) || 0) / parseInt(payload.eggCount) * 100)
         const eggLine = '🥚产蛋 ' + payload.eggCount + '-' + (payload.fertilizedCount || 0) + '枚 ' + rate + '%'
         api.drawText({ text: eggLine.substring(0, 22), fontHeight: 2.5, x: 19, y: 5.5, width: 19, height: 3 })
+        if (detail) {
+          api.drawText({ text: detail, fontHeight: 2, x: 19, y: 9.5, width: 19, height: 3 })
+        }
+        api.drawText({ text: timeLine.trim(), fontHeight: 2, x: 19, y: detail ? 13.5 : 9.5, width: 19, height: 3 })
+      } else if (payload.type === '出苗' && payload.hatchCount > 0) {
+        // 出苗记录：4行布局
+        const gradeRate = Math.round((parseInt(payload.gradeACount) || 0) / parseInt(payload.hatchCount) * 100)
+        const hatchLine = '🐣出苗 ' + payload.hatchCount + '只 全品' + (payload.gradeACount || 0) + ' ' + gradeRate + '%'
+        api.drawText({ text: hatchLine.substring(0, 22), fontHeight: 2.5, x: 19, y: 5.5, width: 19, height: 3 })
         if (detail) {
           api.drawText({ text: detail, fontHeight: 2, x: 19, y: 9.5, width: 19, height: 3 })
         }

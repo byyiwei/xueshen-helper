@@ -13,20 +13,21 @@
   >
     <view class="tab-icon-wrap">
       <view class="tab-icon">
+        <!-- 首页图标：房子 -->
+        <view wx:if="{{index === 0}}" class="icon-home">
+          <view class="home-roof"></view>
+          <view class="home-body">
+            <view class="home-door"></view>
+          </view>
+        </view>
+
         <!-- 宠物图标：爪印 -->
-        <view wx:if="{{index === 0}}" class="icon-pet">
+        <view wx:elif="{{index === 1}}" class="icon-pet">
           <view class="paw-pad"></view>
           <view class="toe toe-1"></view>
           <view class="toe toe-2"></view>
           <view class="toe toe-3"></view>
           <view class="toe toe-4"></view>
-        </view>
-
-        <!-- 足迹图标：波浪柱状图 -->
-        <view wx:elif="{{index === 1}}" class="icon-footprint">
-          <view class="wave-bar bar1"></view>
-          <view class="wave-bar bar2"></view>
-          <view class="wave-bar bar3"></view>
         </view>
 
         <!-- 我的图标：圆润人形 -->

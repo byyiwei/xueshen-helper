@@ -46,7 +46,7 @@
 .photo-section {
   position: relative;
   width: 100%;
-  height: 500rpx;
+  height: 610rpx;
   background-color: #EDF2F7;
 }
 
@@ -95,13 +95,93 @@
 
 /* 信息卡片 */
 .info-card {
-  margin: -40rpx 24rpx 24rpx;
+  margin: 16rpx 24rpx 24rpx;
   padding: 32rpx;
   background-color: #ffffff;
   border-radius: 24rpx;
   box-shadow: 0 4rpx 20rpx rgba(58, 124, 255, 0.08);
   position: relative;
   z-index: 10;
+}
+
+/* ===== 与详情页一致的信息布局 ===== */
+.pet-name-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32rpx;
+}
+
+.pet-name {
+  font-size: 48rpx;
+  font-weight: bold;
+  color: #1E293B;
+}
+
+.gender-tag {
+  display: flex;
+  align-items: center;
+  padding: 8rpx 20rpx;
+  border-radius: 20rpx;
+  font-size: 26rpx;
+  color: #ffffff;
+}
+.gender-tag.gender-male { background-color: rgba(58, 124, 255, 0.55); }
+.gender-tag.gender-female { background-color: rgba(236, 72, 153, 0.55); }
+.gender-tag.gender-unknown { background-color: rgba(148, 163, 184, 0.55); }
+
+.info-tags {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
+  flex-wrap: wrap;
+}
+.info-tag {
+  padding: 12rpx 24rpx;
+  background-color: #F0F7FF;
+  border-radius: 20rpx;
+  font-size: 24rpx;
+  color: #475569;
+}
+.info-tag.alias {
+  background-color: #E0F2F7;
+  color: #2A6F97;
+}
+.info-tag.status-normal {
+  background-color: #DCFCE7;
+  color: #16A34A;
+}
+.info-tag.status-pending { background-color: #FFF7ED; color: #EA580C; }
+.info-tag.status-warning { background-color: #FEE2E2; color: #DC2626; }
+
+.relation-row {
+  display: flex;
+  align-items: center;
+  padding: 24rpx 0;
+  border-top: 2rpx solid #F0F7FF;
+}
+.relation-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.relation-label {
+  font-size: 24rpx;
+  color: #94A3B8;
+  margin-bottom: 8rpx;
+}
+.relation-value { font-size: 28rpx; }
+.relation-value.unlinked { color: #2A6F97; }
+.relation-value.unlinked-red { color: #E76F51; }
+.relation-value.unlinked-gray { color: #64748B; }
+.relation-value.gender-male { color: #2A6F97; }
+.relation-value.gender-female { color: #BE185D; }
+.relation-value.gender-partner { color: #7C3AED; }
+.relation-divider {
+  width: 2rpx;
+  height: 48rpx;
+  background-color: #F0F7FF;
 }
 
 .pet-header {
@@ -234,6 +314,51 @@
   width: 1rpx;
   height: 60rpx;
   background-color: #EDF2F7;
+}
+
+/* 当前配对 */
+.partner-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 16rpx 24rpx;
+  background: #F0F7FF;
+  border-radius: 16rpx;
+  margin-top: 16rpx;
+}
+
+.partner-label {
+  font-size: 24rpx;
+  color: #64748B;
+  flex-shrink: 0;
+}
+
+.partner-value {
+  font-size: 28rpx;
+  color: #7C3AED;
+  font-weight: 500;
+}
+
+/* 事件弹窗配对信息 */
+.partner-info {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-top: 16rpx;
+  padding: 12rpx 16rpx;
+  background: #F0F7FF;
+  border-radius: 12rpx;
+}
+
+.partner-info-label {
+  font-size: 24rpx;
+  color: #64748B;
+}
+
+.partner-info-value {
+  font-size: 26rpx;
+  color: #7C3AED;
+  font-weight: 500;
 }
 
 /* 详细信息卡片 */
@@ -409,8 +534,16 @@
 }
 
 .event-date {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
   font-size: 18rpx;
   color: #94A3B8;
+}
+.event-photo-hint {
+  font-size: 18rpx;
+  color: #64748B;
 }
 
 .event-date .date {
@@ -603,41 +736,37 @@
   flex-direction: row;
   justify-content: center;
   align-items: stretch;
-  gap: 24rpx;
-  padding: 16rpx 0 24rpx;
+  gap: 40rpx;
+  padding: 24rpx 0 32rpx;
 }
 
 .pedigree-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8rpx;
-  padding: 16rpx 28rpx 12rpx;
-  background-color: #ffffff;
-  border: 2rpx solid var(--primary-light, #EDF2F7);
-  border-radius: 24rpx;
-  min-width: 200rpx;
-  box-shadow: 0 4rpx 16rpx rgba(58, 124, 255, 0.06);
+  gap: 16rpx;
+  padding: 0;
+  min-width: 240rpx;
   position: relative;
   overflow: visible;
 }
 
 .card-gender-tag {
   position: absolute;
-  top: 8rpx;
-  right: 8rpx;
-  min-width: 44rpx;
-  height: 44rpx;
-  padding: 0 10rpx;
-  border-radius: 22rpx;
-  font-size: 22rpx;
+  top: -8rpx;
+  right: -8rpx;
+  min-width: 52rpx;
+  height: 52rpx;
+  padding: 0 14rpx;
+  border-radius: 26rpx;
+  font-size: 24rpx;
   color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 600;
   box-shadow: 0 4rpx 12rpx rgba(58, 124, 255, 0.3);
-  z-index: 1;
+  z-index: 2;
 }
 
 .card-gender-tag.male {
@@ -649,14 +778,16 @@
 }
 
 .card-avatar {
-  width: 120rpx;
-  height: 120rpx;
-  border-radius: 20rpx;
-  background: linear-gradient(135deg, #F0F7FF 0%, #E6F0FF 100%);
+  width: 200rpx;
+  height: 200rpx;
+  border-radius: 28rpx;
+  background: #F0F7FF;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  border: 4rpx solid #E2E8F0;
+  box-shadow: 0 6rpx 20rpx rgba(58, 124, 255, 0.10);
 }
 
 .card-img {
@@ -666,7 +797,7 @@
 }
 
 .card-icon {
-  font-size: 60rpx;
+  font-size: 80rpx;
   color: #CBD5E1;
 }
 
@@ -674,34 +805,34 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4rpx;
+  gap: 8rpx;
 }
 
 .card-label {
-  font-size: 24rpx;
+  font-size: 28rpx;
   color: var(--primary-color, #3A7CFF);
   font-weight: 600;
-  padding: 6rpx 20rpx;
-  background-color: var(--primary-light, #EDF2F7);
-  border-radius: 12rpx;
+  padding: 8rpx 24rpx;
+  background-color: rgba(58, 124, 255, 0.08);
+  border-radius: 14rpx;
 }
 
 .card-name {
-  font-size: 32rpx;
+  font-size: 36rpx;
   color: #1E293B;
-  font-weight: 600;
-  max-width: 200rpx;
+  font-weight: 700;
+  max-width: 240rpx;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .card-more {
-  font-size: 22rpx;
-  color: #94A3B8;
-  padding: 4rpx 16rpx;
+  font-size: 24rpx;
+  color: #64748B;
+  padding: 6rpx 20rpx;
   background-color: #F0F7FF;
-  border-radius: 10rpx;
+  border-radius: 12rpx;
 }
 
 .expand-btn {
@@ -995,41 +1126,49 @@
 }
 
 .tree-level.level-2 {
-  gap: 16rpx;
+  gap: 8rpx;
+  flex-wrap: nowrap;
+}
+
+.tree-level.level-3 {
+  gap: 4rpx;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: 0 8rpx;
 }
 
 .tree-node {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12rpx;
-  padding: 16rpx;
+  gap: 16rpx;
+  padding: 8rpx;
   border-radius: 20rpx;
   transition: all 0.2s ease;
   position: relative;
-  overflow: hidden;
 }
 
 .tree-node.ancestor {
-  background-color: #ffffff;
-  border: 2rpx solid #E6F0FF;
-  min-width: 160rpx;
+  min-width: 155rpx;
 }
 
 .tree-node.parent {
-  background-color: #ffffff;
-  border: 2rpx solid var(--primary-light, #EDF2F7);
-  min-width: 200rpx;
+  min-width: 260rpx;
 }
 
 .tree-node.current {
-  background: linear-gradient(135deg, var(--primary-color, #3A7CFF) 0%, var(--primary-dark, #1A5CD6) 100%);
-  border: 2rpx solid var(--primary-dark, #1A5CD6);
-  min-width: 240rpx;
-  padding: 20rpx;
+  min-width: 440rpx;
+  padding: 8rpx;
   position: relative;
   margin-top: 60rpx;
   padding-top: 60rpx;
+}
+
+.tree-node.current .node-avatar-wrapper {
+  width: 440rpx;
+  height: 440rpx;
+  border: 6rpx solid var(--primary-color, #3A7CFF);
+  box-shadow: 0 8rpx 24rpx rgba(58, 124, 255, 0.18);
 }
 
 /* 卡片外部性别标签 - 相对于tree-node定位 */
@@ -1097,11 +1236,53 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 240rpx;
-  height: 240rpx;
+  width: 200rpx;
+  height: 200rpx;
   background-color: #F0F7FF;
   border-radius: 24rpx;
   overflow: hidden;
+  border: 4rpx solid #E2E8F0;
+  box-shadow: 0 4rpx 16rpx rgba(58, 124, 255, 0.08);
+}
+
+.tree-node.parent .node-avatar-wrapper {
+  width: 260rpx;
+  height: 260rpx;
+  border-color: #2A6F97;
+}
+
+.tree-node.ancestor .node-avatar-wrapper {
+  width: 155rpx;
+  height: 155rpx;
+  border-color: #94A3B8;
+}
+
+.tree-level.level-3 .tree-node.ancestor .node-avatar-wrapper {
+  width: 120rpx;
+  height: 120rpx;
+}
+
+.tree-level.level-3 .tree-node {
+  min-width: 120rpx;
+  gap: 8rpx;
+  padding: 4rpx;
+}
+
+.tree-level.level-3 .node-name {
+  font-size: 20rpx;
+  max-width: 100rpx;
+}
+
+.tree-level.level-3 .node-alias {
+  font-size: 18rpx;
+  max-width: 100rpx;
+}
+
+.tree-level.level-3 .node-gender-tag {
+  min-width: 36rpx;
+  height: 36rpx;
+  font-size: 18rpx;
+  padding: 0 6rpx;
 }
 
 .tree-node .node-gender-text {
@@ -1138,7 +1319,7 @@
   font-size: 26rpx;
   color: #1E293B;
   font-weight: 600;
-  max-width: 120rpx;
+  max-width: 160rpx;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1147,19 +1328,19 @@
 
 .tree-node.parent .node-name {
   font-size: 28rpx;
-  max-width: 140rpx;
+  max-width: 220rpx;
 }
 
 .tree-node.current .node-name {
-  font-size: 30rpx;
-  color: #ffffff;
-  max-width: 160rpx;
+  font-size: 32rpx;
+  color: #1E293B;
+  max-width: 400rpx;
 }
 
 .tree-node .node-alias {
   font-size: 22rpx;
   color: #94A3B8;
-  max-width: 120rpx;
+  max-width: 160rpx;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1168,12 +1349,12 @@
 
 .tree-node.parent .node-alias {
   font-size: 24rpx;
-  max-width: 140rpx;
+  max-width: 220rpx;
 }
 
 .tree-node.current .node-alias {
-  color: rgba(255, 255, 255, 0.8);
-  max-width: 160rpx;
+  color: #94A3B8;
+  max-width: 400rpx;
 }
 
 .tree-connections {
@@ -1192,6 +1373,70 @@
 .connection-line.center {
   width: 2rpx;
   height: 40rpx;
+}
+
+/* 日期筛选栏 */
+.date-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 16rpx 0;
+  margin-bottom: 12rpx;
+}
+
+.date-filter-picker {
+  flex: 1;
+}
+
+.date-filter-btn {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  padding: 14rpx 16rpx;
+  background-color: #F0F7FF;
+  border-radius: 16rpx;
+  border: 1rpx solid #E2E8F0;
+}
+
+.date-filter-btn.active {
+  border-color: #3A7CFF;
+  background-color: #EBF4FF;
+}
+
+.date-filter-label {
+  font-size: 22rpx;
+  color: #94A3B8;
+  flex-shrink: 0;
+}
+
+.date-filter-value {
+  font-size: 24rpx;
+  color: #1E293B;
+  flex: 1;
+}
+
+.date-filter-arrow {
+  font-size: 20rpx;
+  color: #94A3B8;
+  flex-shrink: 0;
+}
+
+.date-filter-sep {
+  font-size: 24rpx;
+  color: #94A3B8;
+  flex-shrink: 0;
+}
+
+.date-filter-clear {
+  padding: 10rpx 16rpx;
+  background-color: #FEE2E2;
+  border-radius: 12rpx;
+  flex-shrink: 0;
+}
+
+.date-filter-clear text {
+  font-size: 22rpx;
+  color: #EF4444;
 }
 
 /* ========== 事件Tab样式 ========== */
@@ -1258,7 +1503,7 @@
 
 .skeleton-photo-banner {
   width: 100%;
-  height: 500rpx;
+  height: 610rpx;
   background: #F0F7FF;
 }
 
@@ -1268,8 +1513,9 @@
   background: #EDF2F7;
 }
 
+/* 信息卡片骨架 */
 .skeleton-info-card {
-  margin: -40rpx 24rpx 24rpx;
+  margin: 16rpx 24rpx 24rpx;
   padding: 32rpx;
   background: #ffffff;
   border-radius: 24rpx;
@@ -1278,66 +1524,76 @@
   z-index: 10;
 }
 
-.skeleton-pet-header {
+.skeleton-name-row {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 24rpx;
-  margin-bottom: 24rpx;
+  margin-bottom: 32rpx;
 }
 
-.skeleton-avatar {
-  width: 120rpx;
-  height: 120rpx;
-  border-radius: 50%;
-  background: #EDF2F7;
-  flex-shrink: 0;
-}
-
-.skeleton-pet-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 16rpx;
-}
-
-.skeleton-pet-name {
-  width: 60%;
-  height: 40rpx;
+.skeleton-name {
+  width: 200rpx;
+  height: 48rpx;
   background: #EDF2F7;
   border-radius: 8rpx;
 }
 
-.skeleton-pet-tags {
+.skeleton-gender-tag {
+  width: 80rpx;
+  height: 40rpx;
+  background: #EDF2F7;
+  border-radius: 20rpx;
+}
+
+.skeleton-tags-row {
   display: flex;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
+}
+
+.skeleton-info-tag {
+  width: 80rpx;
+  height: 40rpx;
+  background: #EDF2F7;
+  border-radius: 20rpx;
+}
+
+.skeleton-relation-row {
+  display: flex;
+  align-items: center;
+  padding-top: 24rpx;
+  border-top: 2rpx solid #F0F7FF;
+}
+
+.skeleton-relation-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 12rpx;
 }
 
-.skeleton-tag {
-  width: 80rpx;
-  height: 36rpx;
+.skeleton-relation-label {
+  width: 60rpx;
+  height: 24rpx;
   background: #EDF2F7;
-  border-radius: 18rpx;
+  border-radius: 6rpx;
 }
 
-.skeleton-parents-row {
-  display: flex;
-  align-items: center;
-  gap: 32rpx;
-}
-
-.skeleton-parent-box {
-  flex: 1;
-  height: 56rpx;
+.skeleton-relation-value {
+  width: 100rpx;
+  height: 28rpx;
   background: #EDF2F7;
-  border-radius: 12rpx;
+  border-radius: 8rpx;
 }
 
-.skeleton-parent-divider {
+.skeleton-relation-divider {
   width: 2rpx;
-  height: 40rpx;
-  background: #EDF2F7;
+  height: 48rpx;
+  background: #F0F7FF;
 }
 
+/* 详细信息骨架 */
 .skeleton-detail-card {
   margin: 0 24rpx 24rpx;
   padding: 32rpx;
@@ -1365,6 +1621,44 @@
   border-radius: 12rpx;
 }
 
+/* 家族谱系骨架 */
+.skeleton-pedigree-card {
+  margin: 0 24rpx 24rpx;
+  padding: 24rpx;
+  background: #ffffff;
+  border-radius: 24rpx;
+  box-shadow: 0 4rpx 16rpx rgba(58, 124, 255, 0.06);
+}
+
+.skeleton-pedigree-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 24rpx 0;
+}
+
+.skeleton-expand-btn {
+  width: 100rpx;
+  height: 48rpx;
+  background: #EDF2F7;
+  border-radius: 24rpx;
+}
+
+.skeleton-pedigree-cards {
+  display: flex;
+  justify-content: center;
+  gap: 24rpx;
+  padding: 16rpx 0 24rpx;
+}
+
+.skeleton-pedigree-card-item {
+  width: 200rpx;
+  height: 180rpx;
+  background: #EDF2F7;
+  border-radius: 24rpx;
+}
+
+/* 事件记录骨架 */
 .skeleton-events-card {
   margin: 0 24rpx 24rpx;
   padding: 32rpx;
@@ -1374,7 +1668,7 @@
 
 .skeleton-event-tabs {
   display: flex;
-  gap: 12rpx;
+  gap: 10rpx;
   margin-bottom: 24rpx;
 }
 
@@ -1387,16 +1681,17 @@
 
 .skeleton-event-list {
   display: flex;
-  flex-direction: column;
-  gap: 16rpx;
+  gap: 12rpx;
 }
 
-.skeleton-event-card {
-  height: 120rpx;
+.skeleton-event-item {
+  flex: 1;
+  height: 140rpx;
   background: #EDF2F7;
   border-radius: 16rpx;
 }
 
+/* 二维码骨架 */
 .skeleton-qrcode-section {
   padding: 0 24rpx;
 }
@@ -1534,6 +1829,32 @@
   font-size: 30rpx;
   color: #1E293B;
   line-height: 1.7;
+}
+
+/* 事件详情弹窗照片 */
+.record-detail-photos {
+  padding: 0 32rpx 24rpx;
+}
+.record-photos-title {
+  font-size: 26rpx;
+  color: #64748B;
+  margin-bottom: 16rpx;
+  display: block;
+}
+.record-photos-scroll {
+  width: 100%;
+  white-space: nowrap;
+}
+.record-photos-list {
+  display: flex;
+  gap: 16rpx;
+}
+.record-photo-img {
+  width: 200rpx;
+  height: 200rpx;
+  border-radius: 16rpx;
+  flex-shrink: 0;
+  background: #EDF2F7;
 }
 
 .record-detail-footer {

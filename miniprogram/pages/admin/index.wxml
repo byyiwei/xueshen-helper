@@ -1,0 +1,130 @@
+<view class="admin-page">
+  <view class="admin-header">
+    <view class="header-back" bindtap="onBackToFront">
+      <text class="back-icon">‹</text>
+      <text class="back-text">返回</text>
+    </view>
+    <view class="header-center">
+      <text class="header-title">管理后台</text>
+      <text class="header-subtitle">Admin Console</text>
+    </view>
+    <view class="header-placeholder"></view>
+  </view>
+
+  <scroll-view scroll-y class="admin-scroll">
+    <view class="admin-content">
+      <!-- 加载状态 -->
+      <view wx:if="{{loading}}" class="loading-state">
+        <text>加载中...</text>
+      </view>
+      
+      <view wx:else>
+        <view class="stats-grid">
+          <view class="stat-card card-blue">
+            <view class="card-info">
+              <text class="card-value">{{stats.totalUsers}}</text>
+              <text class="card-label">总用户数</text>
+              <view class="card-trend up">↑ {{stats.userGrowth}}%</view>
+            </view>
+          </view>
+          
+          <view class="stat-card card-green">
+            <view class="card-info">
+              <text class="card-value">{{stats.totalPets}}</text>
+              <text class="card-label">宠物总数</text>
+              <view class="card-trend up">↑ {{stats.petGrowth}}%</view>
+            </view>
+          </view>
+          
+          <view class="stat-card card-purple">
+            <view class="card-info">
+              <text class="card-value">{{stats.totalFootprints}}</text>
+              <text class="card-label">足迹总数</text>
+            </view>
+          </view>
+          
+          <view class="stat-card card-orange">
+            <view class="card-info">
+              <text class="card-value">{{stats.todayActive}}</text>
+              <text class="card-label">今日活跃</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="chart-card">
+          <view class="chart-header">
+            <text class="chart-title">用户增长趋势</text>
+            <view class="chart-tabs">
+              <text class="tab active">7日</text>
+            </view>
+          </view>
+          <view class="bar-chart">
+            <view wx:for="{{userChartData}}" wx:key="index" class="bar-item">
+              <view class="bar-wrapper">
+                <view class="bar" style="height: {{item.count * 8 > 100 ? 100 : item.count * 8}}%"></view>
+              </view>
+              <text class="bar-label">{{item.day}}</text>
+              <text class="bar-value">{{item.count}}</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="chart-card">
+          <view class="chart-header">
+            <text class="chart-title">宠物类型分布</text>
+          </view>
+          <view wx:if="{{petDistribution.length > 0}}" class="pie-chart">
+            <view class="pie-legend-list">
+              <view wx:for="{{petDistribution}}" wx:key="type" class="legend-item">
+                <view class="legend-dot dot-{{index + 1}}"></view>
+                <text class="legend-type">{{item.type}}</text>
+                <text class="legend-value">{{item.count}}只 ({{item.percentage}}%)</text>
+              </view>
+            </view>
+          </view>
+          <view wx:else class="empty-data">
+            <text>暂无宠物数据</text>
+          </view>
+        </view>
+
+        <view class="activity-card">
+          <view class="activity-header">
+            <text class="activity-title">最近动态</text>
+            <text class="activity-more">查看全部</text>
+          </view>
+          <view wx:if="{{recentActivities.length > 0}}" class="activity-list">
+            <view wx:for="{{recentActivities}}" wx:key="id" class="activity-item">
+              <view class="activity-avatar">{{item.avatar}}</view>
+              <view class="activity-content">
+                <text class="activity-text">{{item.title}}</text>
+                <text class="activity-time">{{item.time}}</text>
+              </view>
+              <view class="activity-type {{item.type}}">{{item.typeText}}</view>
+            </view>
+          </view>
+          <view wx:else class="empty-data">
+            <text>暂无动态</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </scroll-view>
+
+  <view class="admin-nav-bar">
+    <view class="nav-btn active" bindtap="goToDashboard">
+      <text class="nav-text">仪表盘</text>
+    </view>
+    <view class="nav-btn" bindtap="goToConfig">
+      <text class="nav-text">配置</text>
+    </view>
+    <view class="nav-btn" bindtap="goToPets">
+      <text class="nav-text">宠物</text>
+    </view>
+    <view class="nav-btn" bindtap="goToFootprints">
+      <text class="nav-text">足迹</text>
+    </view>
+    <view class="nav-btn" bindtap="goToUsers">
+      <text class="nav-text">用户</text>
+    </view>
+  </view>
+</view>

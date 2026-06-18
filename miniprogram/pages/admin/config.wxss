@@ -1,0 +1,210 @@
+page {
+  height: 100vh;
+  background: #1a1a2e;
+  margin: 0;
+  padding: 0;
+}
+
+.admin-page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #1a1a2e;
+}
+
+.admin-header {
+  padding: 60rpx 32rpx 32rpx;
+  background: linear-gradient(135deg, #1e3a5f 0%, #0f3460 50%, #16213e 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+}
+
+.admin-header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2rpx;
+  background: linear-gradient(90deg, transparent 0%, rgba(58, 124, 255, 0.5) 50%, transparent 100%);
+}
+
+.header-back {
+  display: flex;
+  align-items: center;
+  padding: 8rpx 16rpx;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 20rpx;
+  transition: all 0.2s ease;
+}
+
+.header-back:active {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(0.95);
+}
+
+.back-icon {
+  font-size: 40rpx;
+  color: #fff;
+  font-weight: bold;
+  margin-right: 4rpx;
+  line-height: 1;
+}
+
+.back-text {
+  font-size: 24rpx;
+  color: #fff;
+}
+
+.header-center {
+  flex: 1;
+  text-align: center;
+}
+
+.header-placeholder {
+  width: 120rpx;
+}
+
+.header-title {
+  display: block;
+  font-size: 40rpx;
+  font-weight: bold;
+  color: #fff;
+  margin-bottom: 8rpx;
+}
+
+.header-subtitle {
+  font-size: 26rpx;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.admin-scroll {
+  flex: 1;
+  height: 0;
+}
+
+.admin-content {
+  padding: 24rpx;
+  padding-bottom: 140rpx;
+}
+
+.config-section {
+  background: #16213e;
+  border-radius: 16rpx;
+  padding: 24rpx;
+  margin-bottom: 20rpx;
+}
+
+.section-header {
+  margin-bottom: 20rpx;
+}
+
+.section-title {
+  font-size: 28rpx;
+  font-weight: bold;
+  color: #fff;
+}
+
+.config-item {
+  display: flex;
+  align-items: center;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.1);
+}
+
+.config-item:last-child {
+  border-bottom: none;
+}
+
+.config-item.switch-item {
+  justify-content: space-between;
+}
+
+.config-label {
+  font-size: 28rpx;
+  color: rgba(255, 255, 255, 0.8);
+  flex: 1;
+}
+
+.config-input {
+  flex: 1;
+  height: 72rpx;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12rpx;
+  padding: 0 20rpx;
+  font-size: 26rpx;
+  color: #fff;
+  text-align: right;
+}
+
+.config-textarea {
+  width: 100%;
+  height: 160rpx;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12rpx;
+  padding: 20rpx;
+  font-size: 26rpx;
+  color: #fff;
+}
+
+.config-switch {
+  transform: scale(0.8);
+}
+
+.save-section {
+  padding: 40rpx 0;
+}
+
+.save-btn {
+  width: 100%;
+  height: 88rpx;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  border-radius: 44rpx;
+  font-size: 30rpx;
+  color: #fff;
+  font-weight: bold;
+  border: none;
+}
+
+.save-btn:active {
+  opacity: 0.8;
+}
+
+.admin-nav-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  background: #16213e;
+  padding: 16rpx 0;
+  padding-bottom: calc(16rpx + env(safe-area-inset-bottom));
+  border-top: 1rpx solid rgba(255, 255, 255, 0.1);
+  z-index: 9999;
+}
+
+.nav-btn {
+  flex: 1;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12rpx;
+  margin: 0 4rpx;
+}
+
+.nav-btn.active {
+  background: rgba(74, 222, 128, 0.2);
+}
+
+.nav-btn .nav-text {
+  font-size: 26rpx;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.nav-btn.active .nav-text {
+  color: #4ade80;
+  font-weight: bold;
+}

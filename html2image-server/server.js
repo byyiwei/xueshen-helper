@@ -14,7 +14,7 @@ const config = require('./config');
 const { logger, logRequest, logRequestStart, logRequestEnd } = require('./logger');
 
 const API_DOCS_PATH = path.join(__dirname, 'api-docs.html');
-const PID_FILE = config.process.pidFile;
+const PID_FILE = path.join(__dirname, config.process.pidFile);
 const PORT = config.server.port;
 const HOST = config.server.host;
 

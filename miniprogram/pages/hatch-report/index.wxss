@@ -1,0 +1,261 @@
+.hatch-report-page {
+  min-height: 100vh;
+  background: #F0F7FF;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 筛选区域 */
+.filter-section {
+  padding: 24rpx 32rpx;
+  background: #fff;
+  margin: 20rpx;
+  border-radius: 20rpx;
+  box-shadow: 0 4rpx 20rpx rgba(58, 124, 255, 0.08);
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20rpx;
+}
+
+.filter-row:last-child {
+  margin-bottom: 0;
+}
+
+.filter-item {
+  display: flex;
+  align-items: center;
+}
+
+.filter-label {
+  font-size: 26rpx;
+  color: #475569;
+  margin-right: 16rpx;
+}
+
+.picker-btn {
+  display: flex;
+  align-items: center;
+  padding: 16rpx 24rpx;
+  background: #F0F7FF;
+  border-radius: 12rpx;
+  border: 2rpx solid #E6F0FF;
+}
+
+.picker-btn text {
+  font-size: 26rpx;
+  color: #333;
+}
+
+.picker-arrow {
+  font-size: 20rpx;
+  color: #94A3B8;
+  margin-left: 8rpx;
+}
+
+.filter-actions {
+  display: flex;
+  gap: 16rpx;
+}
+
+.action-btn {
+  padding: 16rpx 32rpx;
+  border-radius: 12rpx;
+  font-size: 26rpx;
+  font-weight: 500;
+}
+
+.action-btn.primary {
+  background: linear-gradient(135deg, #3A7CFF 0%, #1E5AE8 100%);
+  color: #fff;
+}
+
+.action-btn.secondary {
+  background: #F0F7FF;
+  color: #3A7CFF;
+  border: 2rpx solid #E6F0FF;
+}
+
+/* 表格头部 */
+.table-header {
+  display: flex;
+  padding: 20rpx 16rpx;
+  background: #fff;
+  border-bottom: 3rpx solid #3A7CFF;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  margin: 0 20rpx;
+  border-radius: 16rpx 16rpx 0 0;
+}
+
+.th {
+  font-size: 22rpx;
+  font-weight: 600;
+  color: #333333;
+  text-align: center;
+}
+
+.th-serial { width: 10%; }
+.th-date { width: 18%; }
+.th-female { width: 16%; }
+.th-hatch { width: 12%; }
+.th-grade { width: 12%; }
+.th-defect { width: 12%; }
+.th-rate { width: 20%; }
+
+/* 可排序表头 */
+.sortable {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sort-icon {
+  margin-left: 4rpx;
+  font-size: 18rpx;
+  color: #999;
+  transition: color 0.2s;
+}
+
+.sortable:active .sort-icon {
+  color: #3A7CFF;
+}
+
+/* 数据滚动区域 */
+.data-scroll {
+  flex: 1;
+  height: 0;
+}
+
+.data-content {
+  padding: 0 20rpx;
+}
+
+/* 年份分组 */
+.year-group {
+  background: #fff;
+  border-radius: 0 0 16rpx 16rpx;
+  margin-bottom: 20rpx;
+  overflow: hidden;
+}
+
+.year-label {
+  padding: 16rpx 32rpx;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #3A7CFF;
+  background: #F0F7FF;
+  border-bottom: 1rpx dashed #E6F0FF;
+}
+
+/* 数据行 */
+.data-row {
+  display: flex;
+  align-items: center;
+  padding: 20rpx 16rpx;
+  border-bottom: 1rpx solid #F0F0F0;
+}
+
+.data-row:last-child {
+  border-bottom: none;
+}
+
+.td {
+  font-size: 22rpx;
+  color: #334155;
+  text-align: center;
+}
+
+.td-serial { width: 10%; color: #94A3B8; }
+.td-date { width: 18%; }
+.td-female { width: 16%; }
+.td-hatch { width: 12%; color: #3A7CFF; font-weight: 600; }
+.td-grade { width: 12%; color: #10B981; font-weight: 600; }
+.td-defect { width: 12%; color: #F59E0B; }
+.td-rate { width: 20%; color: #3A7CFF; font-weight: 600; }
+
+/* 空状态 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 100rpx 0;
+}
+
+.empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 24rpx;
+}
+
+.empty-text {
+  font-size: 28rpx;
+  color: #94A3B8;
+}
+
+/* 统计区域 */
+.stats-section {
+  padding: 24rpx 32rpx;
+  padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
+  background: #fff;
+  margin: 20rpx;
+  border-radius: 20rpx;
+  box-shadow: 0 4rpx 20rpx rgba(58, 124, 255, 0.08);
+}
+
+.stats-row {
+  display: flex;
+  justify-content: space-around;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20rpx 16rpx;
+  background: #F0F7FF;
+  border-radius: 16rpx;
+  flex: 1;
+  margin: 0 8rpx;
+}
+
+.stat-title {
+  font-size: 22rpx;
+  color: #64748B;
+  margin-bottom: 12rpx;
+}
+
+.stat-content {
+  display: flex;
+  align-items: baseline;
+}
+
+.stat-value {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #333333;
+}
+
+.stat-divider {
+  font-size: 24rpx;
+  color: #CBD5E1;
+  margin: 0 6rpx;
+}
+
+.stat-item.grade-rate-card {
+  background: linear-gradient(135deg, #3A7CFF 0%, #1E5AE8 100%);
+}
+
+.stat-item.grade-rate-card .stat-title {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.stat-rate {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #fff;
+}

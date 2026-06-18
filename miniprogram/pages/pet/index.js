@@ -33,6 +33,7 @@ Page({
       category: '无',
       gender: '公',
       alias: '',
+      price: '',
       father: '',
       mother: '',
       isPublic: false,
@@ -64,7 +65,8 @@ Page({
     pageSize: 4,
     hasMore: true,
     total: 0,
-    refreshing: false
+    refreshing: false,
+    isLoggedIn: false
   },
 
   onLoad() {
@@ -75,25 +77,46 @@ Page({
     const rpxRatio = 750 / sysInfo.windowWidth
     const totalNavHeight = Math.round(finalStatusBarHeight * rpxRatio) + 88 + 24
     this.setData({ statusBarHeight: finalStatusBarHeight, totalNavHeight })
-    this.loadCategories()
-    this.loadPets()
+    // 不在 onLoad 中加载数据，由 onShow 统一控制
+    // 避免 Tab 页面预创建时提前加载导致骨架屏消失
   },
 
   onShow() {
     const app = getApp()
+    // 同步登录状态
+    const isLoggedIn = app.globalData.isLoggedIn
+    this.setData({ isLoggedIn })
     // 主动更新tabBar选中状态，并确保 tabBar 可见
-    if (typeof this.getTabBar === 'function' && this.getTabBar()) {
-      const tabBar = this.getTabBar()
-      tabBar.setData({ selected: 0, visible: true })
+    const updateTabBar = () => {
+      if (typeof this.getTabBar === 'function' && this.getTabBar()) {
+        const tabBar = this.getTabBar()
+        tabBar.setData({ selected: 1, visible: true })
+      }
     }
-    // 重新加载分类，确保新增的分类能显示
+    updateTabBar()
+    setTimeout(updateTabBar, 100)
+    // 重新加载分类
     this.loadCategories()
-    // 只在没有数据时显示骨架屏，避免频繁显示
-    if (this.data.pets.length === 0) {
-      this.setData({ showSkeleton: true })
-    }
-    // 始终加载最新数据
-    this.loadPets()
+    // 展示骨架屏，并设置最小展示时间防止一闪而过
+    this.setData({ showSkeleton: true })
+    this._skeletonShowTime = Date.now()
+    // 加载数据
+    this.loadPets(true)
+  },
+
+  onHide() {
+    // 提前设置骨架屏，这样下次页面显示时微信渲染的初始状态就是骨架屏
+    this.setData({ showSkeleton: true })
+  },
+
+  // 确保骨架屏至少展示 600ms，防止一闪而过
+  _hideSkeleton() {
+    const elapsed = Date.now() - (this._skeletonShowTime || 0)
+    const minDuration = 600
+    const delay = Math.max(0, minDuration - elapsed)
+    setTimeout(() => {
+      this.setData({ showSkeleton: false })
+    }, delay)
   },
 
   onReachBottom() {
@@ -124,26 +147,38 @@ Page({
 
   async loadPets(reset = true) {
     if (reset) {
-      this.setData({ loading: true, pageNum: 1, hasMore: true, pets: [], filteredPets: [] })
+      this.setData({ loading: true, pageNum: 1, hasMore: true })
     } else {
       if (this.data.loadingMore || !this.data.hasMore) return
       this.setData({ loadingMore: true })
     }
 
     // 检查登录状态，未登录用户不显示任何数据
+    // 同时检查 globalData 和本地缓存的 openid，避免异步初始化竞态
     const app = getApp()
-    if (!app.globalData.isLoggedIn) {
+    let isLoggedIn = app.globalData.isLoggedIn
+    if (!isLoggedIn) {
+      try {
+        const openid = wx.getStorageSync('openid')
+        if (openid) {
+          isLoggedIn = true
+          app.globalData.isLoggedIn = true
+          app.globalData.openid = openid
+        }
+      } catch (e) {}
+    }
+    if (!isLoggedIn) {
       this.setData({
         pets: [],
         filteredPets: [],
         loading: false,
         loadingMore: false,
-        showSkeleton: false,
         cloudAvailable: false,
         hasMore: false,
         total: 0,
         pageNum: 1
       })
+      this._hideSkeleton()
       return
     }
 
@@ -179,7 +214,17 @@ Page({
 
         // 新数据 - 确保始终是数组
         const validPetsWithUrls = Array.isArray(petsWithUrls) ? petsWithUrls : []
-        let newPets = reset ? validPetsWithUrls : [...(this.data.pets || []), ...validPetsWithUrls]
+        
+        // 去重处理：合并新数据时避免重复
+        let newPets = []
+        if (reset) {
+          newPets = validPetsWithUrls
+        } else {
+          // 将新数据与已有数据合并，去除重复项
+          const existingIds = new Set((this.data.pets || []).map(p => p.id || p._id))
+          const uniqueNewPets = validPetsWithUrls.filter(p => !existingIds.has(p.id || p._id))
+          newPets = [...(this.data.pets || []), ...uniqueNewPets]
+        }
         
         // 存入缓存时净化图片URL，确保只存储cloud://fileID
         try {
@@ -193,9 +238,9 @@ Page({
           cloudAvailable: true,
           hasMore: result.data.hasMore !== undefined ? result.data.hasMore : petList.length === this.data.pageSize,
           total: result.data.total || (newPets || []).length,
-          pageNum: reset ? 2 : this.data.pageNum + 1,
-          showSkeleton: false
+          pageNum: reset ? 2 : this.data.pageNum + 1
         })
+        this._hideSkeleton()
         this.computePetStatuses()
         this.updateFilteredPets()
       } else {
@@ -234,10 +279,12 @@ Page({
         }
       }
 
-      this.setData({ pets: pets || [], filteredPets: pets || [], cloudAvailable: false, showSkeleton: false })
+      this.setData({ pets: pets || [], filteredPets: pets || [], cloudAvailable: false })
+      this._hideSkeleton()
     } catch (error) {
       console.error('加载宠物列表失败:', error)
-      this.setData({ pets: [], filteredPets: [], showSkeleton: false })
+      this.setData({ pets: [], filteredPets: [] })
+      this._hideSkeleton()
     }
   },
 
@@ -474,6 +521,7 @@ Page({
         category: this.data.categories[1] || '无',
         gender: '公',
         alias: '',
+        price: '',
         father: '',
         fatherName: '',
         mother: '',
@@ -507,6 +555,10 @@ Page({
 
   onAliasInput(e) {
     this.setData({ 'petForm.alias': e.detail.value })
+  },
+
+  onPriceInput(e) {
+    this.setData({ 'petForm.price': e.detail.value })
   },
 
   selectCategory(e) {
@@ -858,7 +910,7 @@ Page({
           name: this.data.petForm.name,
           category: this.data.petForm.category,
           gender: this.data.petForm.gender,
-          alias: this.data.petForm.alias,
+          price: this.data.petForm.price,
           father: this.data.petForm.father,
           fatherName: this.data.petForm.fatherName,
           mother: this.data.petForm.mother,
@@ -866,6 +918,9 @@ Page({
           status: '正常',
           photos: finalPhotos
         }
+
+        // 创建操作足迹
+        await this.createActionFootprint('建档', petId, newPet.name, `为「${newPet.name}」建立了档案`, finalPhotos)
 
         const updatedPets = [newPet, ...this.data.pets]
         wx.setStorageSync('pets', sanitizePetPhotos(updatedPets))
@@ -877,9 +932,6 @@ Page({
 
         // 创建默认"建档"记录
         await this.createArchiveRecord(petId, newPet.name, finalPhotos)
-        
-        // 创建操作足迹
-        await this.createActionFootprint('建档', petId, newPet.name, `为「${newPet.name}」建立了档案`, finalPhotos)
 
         setTimeout(() => { this.loadPets() }, 500)
       } else {
@@ -923,7 +975,6 @@ Page({
 
       // 本地创建建档记录
       this.createLocalArchiveRecord(petId, newPet.name, newPet.photos)
-      
       // 本地创建操作足迹
       this.createLocalActionFootprint('建档', petId, newPet.name, `为「${newPet.name}」建立了档案`, newPet.photos)
     } catch (error) {
@@ -950,7 +1001,7 @@ Page({
         defecation: '',
         state: '正常',
         notes: `${petName}成功建档，开启陪伴之旅！`,
-        photos: photos && photos.length > 0 ? [photos[0]] : []
+        photos: photos && photos.length > 0 ? photos : []
       }
       records.unshift(newRecord)
       wx.setStorageSync('records', records)
@@ -1226,13 +1277,27 @@ Page({
       pet._dragOffset = 0
     })
     
+    // 只更新 filteredPets，不要覆盖原始 pets 数组
     this.setData({
-      filteredPets: pets,
-      pets: pets
+      filteredPets: pets
+    })
+    
+    // 根据 filteredPets 的排序更新完整的 pets 数组
+    const allPets = [...this.data.pets] || []
+    const petIdOrder = pets.map(p => p.id || p._id)
+    
+    // 按照 filteredPets 的顺序重新排列 allPets
+    const sortedPets = allPets.sort((a, b) => {
+      const idA = a.id || a._id
+      const idB = b.id || b._id
+      const indexA = petIdOrder.indexOf(idA)
+      const indexB = petIdOrder.indexOf(idB)
+      // 在排序中的排在前面，不在排序中的放在后面
+      return (indexA === -1 ? petIdOrder.length : indexA) - (indexB === -1 ? petIdOrder.length : indexB)
     })
     
     // 保存排序到本地存储
-    wx.setStorageSync('pets', sanitizePetPhotos(pets))
+    wx.setStorageSync('pets', sanitizePetPhotos(sortedPets))
     
     // 排序完成振动反馈
     wx.vibrateShort({ type: 'medium' })
@@ -1311,7 +1376,7 @@ Page({
         defecation: '',
         state: '正常',
         notes: `${petName}成功建档，开启陪伴之旅！`,
-        photos: photos && photos.length > 0 ? [photos[0]] : []
+        photos: photos && photos.length > 0 ? photos : []
       }
 
       const result = await API.createRecord(recordData)
@@ -1361,6 +1426,15 @@ Page({
     } catch (error) {
       console.error('创建操作足迹失败:', error)
     }
+  },
+
+  goToCalculator: function () {
+    wx.navigateTo({ url: '/pages/tools/calculator' })
+  },
+
+  goToLogin: function () {
+    const app = getApp()
+    app.requireLogin()
   },
 
 })

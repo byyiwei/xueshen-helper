@@ -1,0 +1,85 @@
+<view class="admin-page">
+  <view class="admin-header">
+    <view class="header-back" bindtap="onBackToFront">
+      <text class="back-icon">‹</text>
+      <text class="back-text">返回</text>
+    </view>
+    <view class="header-center">
+      <text class="header-title">宠物管理</text>
+      <text class="header-subtitle">Pet Management</text>
+    </view>
+    <view class="header-placeholder"></view>
+  </view>
+
+  <view class="search-bar">
+    <view class="search-box">
+      <text class="search-icon">🔍</text>
+      <input class="search-input" placeholder="搜索宠物名称" value="{{searchText}}" bindinput="onSearchInput" />
+    </view>
+  </view>
+
+  <view class="filter-bar">
+    <view class="filter-item {{filterCategory === '' ? 'active' : ''}}" bindtap="setFilterCategory" data-category="">
+      <text>全部</text>
+    </view>
+    <view class="filter-item {{filterCategory === '水龟' ? 'active' : ''}}" bindtap="setFilterCategory" data-category="水龟">
+      <text>水龟</text>
+    </view>
+    <view class="filter-item {{filterCategory === '陆龟' ? 'active' : ''}}" bindtap="setFilterCategory" data-category="陆龟">
+      <text>陆龟</text>
+    </view>
+    <view class="filter-item {{filterCategory === '其他' ? 'active' : ''}}" bindtap="setFilterCategory" data-category="其他">
+      <text>其他</text>
+    </view>
+  </view>
+
+  <scroll-view scroll-y class="admin-scroll">
+    <view class="admin-content">
+      <view wx:if="{{loading}}" class="loading-state">
+        <text>加载中...</text>
+      </view>
+      
+      <view wx:else>
+        <view class="pet-list">
+          <view wx:for="{{petList}}" wx:key="id" class="pet-card">
+            <view class="pet-avatar">
+              <image wx:if="{{item.avatar && item.avatar !== ''}}" src="{{item.avatar}}" mode="aspectFill" binderror="onAvatarError" />
+              <view wx:else class="avatar-placeholder">🐢</view>
+            </view>
+            <view class="pet-info">
+              <text class="pet-name">{{item.name}}</text>
+              <text class="pet-meta">{{item.category}} · 建档于 {{item.createTime}}</text>
+              <text class="pet-owner">主人：{{item.owner}}</text>
+            </view>
+            <view class="pet-actions" bindtap="onPetDetail" data-id="{{item.id}}">
+              <text class="action-text">查看</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="empty-state" wx:if="{{petList.length === 0}}">
+          <text class="empty-icon">🐢</text>
+          <text class="empty-text">暂无宠物数据</text>
+        </view>
+      </view>
+    </view>
+  </scroll-view>
+
+  <view class="admin-nav-bar">
+    <view class="nav-btn" bindtap="goToDashboard">
+      <text class="nav-text">仪表盘</text>
+    </view>
+    <view class="nav-btn" bindtap="goToConfig">
+      <text class="nav-text">配置</text>
+    </view>
+    <view class="nav-btn active">
+      <text class="nav-text">宠物</text>
+    </view>
+    <view class="nav-btn" bindtap="goToFootprints">
+      <text class="nav-text">足迹</text>
+    </view>
+    <view class="nav-btn" bindtap="goToUsers">
+      <text class="nav-text">用户</text>
+    </view>
+  </view>
+</view>

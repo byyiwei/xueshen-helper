@@ -1,0 +1,211 @@
+<view class="page">
+  <view class="custom-nav" style="padding-top: {{statusBarHeight}}px">
+    <view class="nav-back" bindtap="goBack">
+      <text class="nav-back-icon">‹</text>
+    </view>
+    <text class="nav-title">玻璃缸用料计算器</text>
+    <view class="nav-placeholder"></view>
+  </view>
+
+  <view wx:if="{{!isLoggedIn}}" class="login-hint-bar">
+    <text class="login-hint-text">登录后可管理宠物资料、记录和打印标签</text>
+    <view class="login-hint-btn" bindtap="goToLogin">登录</view>
+  </view>
+
+  <view class="content" style="padding-top: calc({{statusBarHeight}}px + 88rpx + 32rpx);">
+    <view class="mode-section">
+      <text class="section-label">粘缸方式</text>
+      <view class="mode-switch">
+        <view class="mode-btn {{mode === 'edge' ? 'active' : ''}}" bindtap="setMode" data-mode="edge">
+          <text class="mode-text">边包底</text>
+          <text class="mode-desc">常规</text>
+        </view>
+        <view class="mode-btn {{mode === 'bottom' ? 'active' : ''}}" bindtap="setMode" data-mode="bottom">
+          <text class="mode-text">底包边</text>
+          <text class="mode-desc">底包侧</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="unit-section">
+      <text class="section-label">尺寸单位</text>
+      <view class="unit-switch">
+        <view class="unit-btn {{unit === 'mm' ? 'active' : ''}}" bindtap="setUnit" data-unit="mm">
+          <text class="unit-text">mm</text>
+        </view>
+        <view class="unit-btn {{unit === 'cm' ? 'active' : ''}}" bindtap="setUnit" data-unit="cm">
+          <text class="unit-text">cm</text>
+        </view>
+        <view class="unit-btn {{unit === 'm' ? 'active' : ''}}" bindtap="setUnit" data-unit="m">
+          <text class="unit-text">m</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="input-section">
+      <text class="section-title">缸体尺寸</text>
+      <view class="input-grid">
+        <view class="input-item">
+          <text class="input-label">缸长</text>
+          <view class="input-wrap">
+            <input class="input-field" type="digit" placeholder="800" value="{{displayParams.tankLength}}" bindinput="onInputChange" data-key="tankLength"/>
+            <text class="input-unit">{{unit}}</text>
+          </view>
+        </view>
+        <view class="input-item">
+          <text class="input-label">缸宽</text>
+          <view class="input-wrap">
+            <input class="input-field" type="digit" placeholder="400" value="{{displayParams.tankWidth}}" bindinput="onInputChange" data-key="tankWidth"/>
+            <text class="input-unit">{{unit}}</text>
+          </view>
+        </view>
+        <view class="input-item">
+          <text class="input-label">缸高</text>
+          <view class="input-wrap">
+            <input class="input-field" type="digit" placeholder="400" value="{{displayParams.tankHeight}}" bindinput="onInputChange" data-key="tankHeight"/>
+            <text class="input-unit">{{unit}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view class="input-section">
+      <text class="section-title">玻璃厚度</text>
+      <view class="input-grid">
+        <view class="input-item">
+          <text class="input-label">四周厚度</text>
+          <view class="input-wrap">
+            <input class="input-field" type="digit" placeholder="8" value="{{displayParams.sideThickness}}" bindinput="onInputChange" data-key="sideThickness"/>
+            <text class="input-unit">{{unit}}</text>
+          </view>
+        </view>
+        <view class="input-item">
+          <text class="input-label">底部厚度</text>
+          <view class="input-wrap">
+            <input class="input-field" type="digit" placeholder="10" value="{{displayParams.bottomThickness}}" bindinput="onInputChange" data-key="bottomThickness"/>
+            <text class="input-unit">{{unit}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view class="input-section">
+      <text class="section-title">单价设置</text>
+      <view class="input-grid">
+        <view class="input-item">
+          <text class="input-label">四周玻璃</text>
+          <view class="input-wrap">
+            <input class="input-field" type="digit" placeholder="80" value="{{params.sidePrice}}" bindinput="onInputChange" data-key="sidePrice"/>
+            <text class="input-unit">元/㎡</text>
+          </view>
+        </view>
+        <view class="input-item">
+          <text class="input-label">底部玻璃</text>
+          <view class="input-wrap">
+            <input class="input-field" type="digit" placeholder="100" value="{{params.bottomPrice}}" bindinput="onInputChange" data-key="bottomPrice"/>
+            <text class="input-unit">元/㎡</text>
+          </view>
+        </view>
+        <view class="input-item">
+          <text class="input-label">磨边费用</text>
+          <view class="input-wrap">
+            <input class="input-field" type="digit" placeholder="3" value="{{params.grindPrice}}" bindinput="onInputChange" data-key="grindPrice"/>
+            <text class="input-unit">元/米</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view class="input-section">
+      <text class="section-title">胶水费用</text>
+      <view class="input-grid">
+        <view class="input-item">
+          <text class="input-label">胶水用量</text>
+          <view class="input-wrap">
+            <input class="input-field" type="digit" placeholder="2" value="{{params.glueCount}}" bindinput="onInputChange" data-key="glueCount"/>
+            <text class="input-unit">支</text>
+          </view>
+        </view>
+        <view class="input-item">
+          <text class="input-label">胶水单价</text>
+          <view class="input-wrap">
+            <input class="input-field" type="digit" placeholder="25" value="{{params.gluePrice}}" bindinput="onInputChange" data-key="gluePrice"/>
+            <text class="input-unit">元/支</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view class="calc-btn" bindtap="calculate">
+      <text class="calc-btn-text">开始计算</text>
+    </view>
+
+    <view wx:if="{{warning}}" class="warning-box">
+      <text class="warning-icon">⚠️</text>
+      <text class="warning-text">{{warning}}</text>
+    </view>
+
+    <view wx:if="{{showResult}}" class="result-section">
+      <text class="section-title">计算结果</text>
+      
+      <view class="result-card">
+        <view class="card-header">
+          <text class="card-title">玻璃下料明细</text>
+          <view class="copy-btn" bindtap="copyDetails">
+            <text class="copy-text">复制</text>
+          </view>
+        </view>
+        <view class="table">
+          <view class="table-header">
+            <text class="th">材料</text>
+            <text class="th">规格(mm)</text>
+            <text class="th">数量</text>
+          </view>
+          <view wx:for="{{glassDetails}}" wx:key="name" class="table-row">
+            <text class="td">{{item.name}}</text>
+            <text class="td">{{item.size}}</text>
+            <text class="td">{{item.count}}</text>
+          </view>
+        </view>
+      </view>
+
+      <view class="result-card">
+        <text class="card-title">费用明细</text>
+        <view class="expense-row">
+          <text class="expense-label">玻璃材料费</text>
+          <text class="expense-value">¥{{results.glassMaterialText || '0.00'}}</text>
+        </view>
+        <view class="expense-row">
+          <text class="expense-label">磨边费用</text>
+          <text class="expense-value">¥{{results.grindTotalText || '0.00'}}</text>
+        </view>
+        <view class="expense-row">
+          <text class="expense-label">胶水费用</text>
+          <text class="expense-value">¥{{results.glueTotalText || '0.00'}}</text>
+        </view>
+        <view class="expense-row total">
+          <text class="expense-label">合计</text>
+          <text class="expense-value total-value">¥{{results.totalText || '0.00'}}</text>
+        </view>
+      </view>
+
+      <view class="result-card">
+        <text class="card-title">统计汇总</text>
+        <view class="stats-grid">
+          <view class="stat-item">
+            <text class="stat-value">{{results.totalWeightText || '0.00'}}</text>
+            <text class="stat-label">玻璃总重量(kg)</text>
+          </view>
+          <view class="stat-item">
+            <text class="stat-value">{{results.totalAreaText || '0.0000'}}</text>
+            <text class="stat-label">玻璃总面积(m²)</text>
+          </view>
+          <view class="stat-item">
+            <text class="stat-value">{{results.totalGrindText || '0.00'}}</text>
+            <text class="stat-label">磨边总长度(m)</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

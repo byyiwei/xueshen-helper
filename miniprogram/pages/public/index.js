@@ -5,8 +5,13 @@ const API = getAPI()
 Page({
   data: {
     userId: '',
+    isLoggedIn: false,
     userInfo: {},
+    shareInfo: {},
     pets: [],
+    categories: [],
+    ownerNickname: '',
+    publicShareInfo: {},
     isPublicMode: true,
     loading: true
   },
@@ -14,6 +19,8 @@ Page({
   onLoad: function (options) {
     let userId = ''
 
+    console.log('public/index onLoad options:', options)
+    
     if (options && options.scene) {
       const scene = decodeURIComponent(options.scene)
       // scene 格式: userId=xxx
@@ -23,9 +30,12 @@ Page({
       userId = options.userId
     }
 
+    console.log('public/index userId extracted:', userId)
+
     if (userId) {
       this.setData({ userId, isPublicMode: true })
       this.loadUserInfo(userId)
+      this.loadShareInfo()
       this.loadPublicPets(userId)
     } else {
       this.setData({ loading: false })
@@ -54,17 +64,52 @@ Page({
     })
   },
 
+  loadShareInfo: function () {
+    try {
+      const openid = wx.getStorageSync('openid')
+      if (this.data.userId === openid) {
+        const saved = wx.getStorageSync('shareInfo')
+        if (saved) {
+          this.setData({ shareInfo: saved })
+        }
+      }
+    } catch (e) {
+      console.error('加载分享信息失败:', e)
+    }
+  },
+
   loadPublicPets: async function (userId) {
     this.setData({ loading: true })
+    
+    console.log('loadPublicPets called with userId:', userId)
     
     try {
       // 调用云函数获取公开宠物
       const result = await API.callCloudFunction('pet', 'publicList', { userId })
+      console.log('loadPublicPets API result:', result)
       
       if (result.success) {
-        let pets = result.data || []
-        // 转换图片URL
+        const responseData = result.data || {}
+        let pets = responseData.pets || []
+        const ownerNickname = responseData.ownerNickname || ''
+        const publicShareInfo = responseData.publicShareInfo || {}
+        // 计算微信号是否公开显示
+        publicShareInfo.showWechat = !!(publicShareInfo.wechatPublic && publicShareInfo.wechatId)
+        // 格式化产蛋/配对日期为 MM-DD，并处理记录数据
         for (const pet of pets) {
+          if (pet.latestEgg && pet.latestEgg.date) {
+            const parts = pet.latestEgg.date.split('-')
+            if (parts.length >= 3) {
+              pet.latestEgg.date = parts[1] + '-' + parts[2]
+            }
+          }
+          if (pet.latestPairing && pet.latestPairing.date) {
+            const parts = pet.latestPairing.date.split('-')
+            if (parts.length >= 3) {
+              pet.latestPairing.date = parts[1] + '-' + parts[2]
+            }
+          }
+          // 转换图片URL
           if (pet.photos && pet.photos.length > 0) {
             const needsConversion = pet.photos.some(p => 
               p && (p.startsWith('cloud://') || p.includes('tcb.qcloud.la'))
@@ -80,17 +125,21 @@ Page({
             }
           }
         }
+        const categories = [...new Set(pets.map(p => p.category).filter(c => c))]
         this.setData({ 
           pets: pets,
+          categories: categories,
+          ownerNickname: ownerNickname,
+          publicShareInfo: publicShareInfo,
           loading: false
         })
       } else {
         console.error('获取公开宠物失败:', result.message)
-        this.setData({ pets: [], loading: false })
+        this.setData({ pets: [], categories: [], ownerNickname: '', publicShareInfo: {}, loading: false })
       }
     } catch (error) {
       console.error('获取公开宠物失败:', error)
-      this.setData({ pets: [], loading: false })
+      this.setData({ pets: [], categories: [], ownerNickname: '', publicShareInfo: {}, loading: false })
     }
   },
 
@@ -99,6 +148,22 @@ Page({
     wx.navigateTo({
       url: `/pages/pet/preview?petId=${id}&isPublic=true`
     })
+  },
+
+  goBack: function () {
+    wx.navigateBack({
+      delta: 1
+    })
+  },
+
+  onShow: function () {
+    const app = getApp()
+    this.setData({ isLoggedIn: app.globalData.isLoggedIn })
+  },
+
+  goToLogin: function () {
+    const app = getApp()
+    app.requireLogin()
   },
 
   onPhotoError: async function (e) {

@@ -32,10 +32,21 @@ exports.main = async (event, context) => {
 }
 
 async function createFootprint(data, openid) {
+  // 获取系统配置
+  const configRes = await db.collection('systemConfig').limit(1).get()
+  const config = configRes.data.length > 0 ? configRes.data[0] : {}
+  const maxFootprintImages = parseInt(config.maxFootprintImages) || 9
+
+  // 检查图片数量限制
+  const photos = data.photos || []
+  if (photos.length > maxFootprintImages) {
+    throw new Error(`每张足迹最多只能上传${maxFootprintImages}张图片`)
+  }
+
   const footprint = {
     type: data.type || 'image',
     url: data.url || '',
-    photos: data.photos || [],
+    photos: photos,
     thumbnail: data.thumbnail || '',
     duration: data.duration || 0,
     date: data.date,

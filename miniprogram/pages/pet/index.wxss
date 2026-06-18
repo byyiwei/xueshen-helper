@@ -5,6 +5,34 @@
   padding-bottom: calc(120rpx + env(safe-area-inset-bottom));
 }
 
+/* ====== 未登录轻量提示 ====== */
+.login-hint-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16rpx 32rpx;
+  background: #E6F0FF;
+  margin: 0 24rpx 16rpx;
+  border-radius: 16rpx;
+}
+
+.login-hint-text {
+  font-size: 24rpx;
+  color: #475569;
+  flex: 1;
+}
+
+.login-hint-btn {
+  font-size: 24rpx;
+  color: #ffffff;
+  background: #3A7CFF;
+  padding: 8rpx 28rpx;
+  border-radius: 24rpx;
+  font-weight: 500;
+  flex-shrink: 0;
+  margin-left: 16rpx;
+}
+
 /* ====== 自定义导航栏 ====== */
 .custom-nav {
   position: fixed;
@@ -382,6 +410,7 @@
   padding-bottom: 100%;
   overflow: hidden;
   background: transparent;
+  box-shadow: inset 0 -60rpx 60rpx -30rpx rgba(0, 0, 0, 0.35);
 }
 
 .pet-placeholder {
@@ -434,9 +463,14 @@
   padding: 4rpx 14rpx;
 }
 
-.pet-card.edit-mode .pet-card-info {
-  flex: 1;
+.pet-card.edit-mode .pet-card-overlay {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  right: auto;
   padding: 0;
+  background: transparent;
+  flex: 1;
   gap: 6rpx;
 }
 
@@ -444,11 +478,20 @@
   font-size: 32rpx;
   font-weight: 600;
   color: #1E293B;
+  text-shadow: none;
 }
 
 .pet-card.edit-mode .pet-card-alias {
   font-size: 24rpx;
   color: #94A3B8;
+  text-shadow: none;
+}
+
+.pet-card.edit-mode .pet-card-meta {
+  color: #475569;
+  background: #EDF2F7;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .pet-card.edit-mode .pet-card-meta-row {
@@ -681,44 +724,57 @@
   background-color: rgba(148, 163, 184, 0.55);
 }
 
-/* 宠物信息 - 图片下方 */
-.pet-card-info {
-  padding: 18rpx 20rpx 20rpx;
+/* 底部渐变遮挡 + 信息叠加 */
+.pet-card-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 16rpx;
+  background: rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(8rpx);
+  -webkit-backdrop-filter: blur(8rpx);
   display: flex;
-  flex-direction: column;
-  gap: 8rpx;
+  align-items: center;
+  gap: 12rpx;
+  z-index: 5;
 }
 
 .pet-card-name {
-  font-size: 28rpx;
-  color: #1E293B;
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.7);
+  padding: 4rpx 12rpx;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 8rpx;
+  flex-shrink: 0;
+}
+
+.pet-card-alias {
+  font-size: 30rpx;
+  color: #ffffff;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.pet-card-alias {
-  font-size: 22rpx;
-  color: #94A3B8;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 1;
 }
 
 .pet-card-meta {
   font-size: 20rpx;
-  color: #475569;
-  background: #EDF2F7;
-  padding: 4rpx 14rpx;
-  border-radius: 10rpx;
-  border: 1rpx solid rgba(58, 124, 255, 0.05);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.2);
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+  backdrop-filter: blur(4rpx);
+  -webkit-backdrop-filter: blur(4rpx);
+  flex-shrink: 0;
 }
 
 .pet-card-meta-row {
   display: flex;
   align-items: center;
   gap: 8rpx;
+  flex-shrink: 0;
 }
 
 .pet-status-tag {
@@ -1693,13 +1749,13 @@
 
 /* ========== 骨架屏样式 ========== */
 .skeleton-container {
-  padding: 0 32rpx;
+  padding: 0 24rpx;
   position: relative;
+  min-height: 100vh;
   overflow: hidden;
 }
 
-.skeleton-container::after {
-  content: '';
+.skeleton-sweep {
   position: absolute;
   top: 0;
   left: 0;
@@ -1774,47 +1830,46 @@
 
 .skeleton-pet-list {
   display: flex;
-  flex-direction: column;
-  gap: 24rpx;
+  flex-wrap: wrap;
+  justify-content: space-between;
 }
 
 .skeleton-pet-card {
+  width: calc(50% - 10rpx);
   display: flex;
-  gap: 24rpx;
+  flex-direction: column;
   background: #ffffff;
-  border-radius: 32rpx;
-  padding: 24rpx;
-  box-shadow: 0 2rpx 12rpx rgba(58, 124, 255, 0.04);
+  border-radius: 24rpx;
+  overflow: hidden;
+  box-shadow: 0 4rpx 24rpx rgba(58, 124, 255, 0.08);
+  margin-bottom: 20rpx;
 }
 
 .skeleton-pet-image {
-  width: 180rpx;
-  height: 180rpx;
-  border-radius: 24rpx;
+  width: 100%;
+  padding-bottom: 100%;
   background: #EDF2F7;
-  flex-shrink: 0;
+  position: relative;
 }
 
-.skeleton-pet-info {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 20rpx;
-}
-
-.skeleton-pet-name {
-  width: 60%;
-  height: 40rpx;
-  background: #EDF2F7;
-  border-radius: 10rpx;
-}
-
-.skeleton-pet-meta {
-  width: 40%;
+.skeleton-overlay-name {
+  position: absolute;
+  bottom: 40rpx;
+  left: 16rpx;
+  width: 50%;
   height: 28rpx;
-  background: #EDF2F7;
+  background: rgba(255, 255, 255, 0.3);
   border-radius: 8rpx;
+}
+
+.skeleton-overlay-meta {
+  position: absolute;
+  bottom: 16rpx;
+  left: 16rpx;
+  width: 70%;
+  height: 22rpx;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 6rpx;
 }
 
 @keyframes skeleton-sweep {

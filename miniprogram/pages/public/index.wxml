@@ -1,9 +1,58 @@
 <view class="public-page">
+  <!-- 未登录提示栏 -->
+  <view wx:if="{{!isLoggedIn}}" class="login-hint-bar">
+    <text class="login-hint-text">登录后可管理宠物资料、记录和打印标签</text>
+    <view class="login-hint-btn" bindtap="goToLogin">登录</view>
+  </view>
   <view class="page-wrapper">
-    <!-- 标题栏 -->
-    <view class="section-header" style="margin-bottom: 32rpx;">
-      <text class="section-title">公开宠物列表</text>
-      <text class="section-subtitle">查看 {{userInfo.nickname || '用户'}} 的所有公开宠物</text>
+    <!-- 顶部大图封面 -->
+    <view wx:if="{{shareInfo.cover || ownerNickname}}" class="hero-section">
+      <image wx:if="{{shareInfo.cover}}" class="hero-image" src="{{shareInfo.cover}}" mode="aspectFill" />
+      <view wx:else class="hero-placeholder-bg"></view>
+      <view class="hero-overlay"></view>
+      <view class="hero-content">
+        <text class="hero-label">图鉴</text>
+        <text class="hero-title">{{ownerNickname || userInfo.nickname || '用户'}}</text>
+        <!-- 主玩品种 -->
+        <view wx:if="{{publicShareInfo.specialty}}" class="hero-specialty">
+          <text class="hero-specialty-text">{{publicShareInfo.specialty}}</text>
+        </view>
+        <!-- 地区 + 微信号 -->
+        <view class="hero-info-row">
+          <text wx:if="{{publicShareInfo.region}}" class="hero-info-item hero-region">{{publicShareInfo.region}}</text>
+          <text wx:if="{{publicShareInfo.region && publicShareInfo.showWechat}}" class="hero-info-dot">·</text>
+          <text wx:if="{{publicShareInfo.showWechat}}" class="hero-info-item hero-wechat">微信: {{publicShareInfo.wechatId}}</text>
+          <text wx:if="{{!publicShareInfo.showWechat && !publicShareInfo.region}}" class="hero-info-item hero-info-hint">暂无联系方式</text>
+        </view>
+        <!-- 底部: 个体数 + 标签 -->
+        <view class="hero-bottom">
+          <view class="hero-badge">
+            <text class="badge-num">{{pets.length}}</text>
+            <text class="badge-text">个个体</text>
+          </view>
+          <view wx:if="{{publicShareInfo.tags && publicShareInfo.tags.length > 0}}" class="hero-tags">
+            <text wx:for="{{publicShareInfo.tags}}" wx:key="*this" class="hero-tag">{{item}}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 分类筛选区 -->
+    <view class="filter-section">
+      <text class="filter-label">分类</text>
+      <scroll-view class="filter-scroll" scroll-x enhanced show-scrollbar="{{false}}">
+        <view class="filter-tags">
+          <view class="filter-tag active">全部</view>
+          <view wx:for="{{categories}}" wx:key="*this" class="filter-tag">{{item}}</view>
+        </view>
+      </scroll-view>
+    </view>
+
+    <!-- 返回按钮 -->
+    <view class="action-section">
+      <view class="back-btn" bindtap="goBack">
+        <text class="back-text">返回公开首页</text>
+      </view>
     </view>
 
     <!-- 加载状态 -->
@@ -27,17 +76,32 @@
         data-id="{{item.id}}"
       >
         <view class="pet-image-wrapper">
-          <image wx:if="{{item.photos && item.photos.length > 0}}" class="pet-image" src="{{item.photos[0]}}" mode="aspectFill" binderror="onPhotoError" data-index="{{index}}" />
-          <view wx:else class="pet-placeholder"></view>
+          <image wx:if="{{item.photos && item.photos.length > 0}}" class="pet-image" src="{{item.photos[0]}}" mode="aspectFill" />
+          <view wx:else class="pet-placeholder">
+            <text class="placeholder-text">{{(item.alias && item.alias.charAt(0)) || (item.name && item.name.charAt(0)) || '?'}}</text>
+          </view>
+          <view wx:if="{{item.status === '预警'}}" class="warning-badge">
+            <text class="warning-text">{{item.status}} 第{{item.warningDays || 57}}天</text>
+          </view>
           <view class="pet-gender-badge gender-{{item.gender === '公' ? 'male' : item.gender === '母' ? 'female' : 'unknown'}}">
             <text class="gender-icon">{{item.gender || '未知'}}</text>
           </view>
+          <!-- 底部渐变遮挡 + 别名/用户昵称（与宠物列表一致） -->
+          <view class="pet-card-overlay">
+            <text class="pet-card-alias">{{item.alias || item.name || '未命名'}}</text>
+            <text wx:if="{{ownerNickname}}" class="pet-card-name">{{ownerNickname}}</text>
+          </view>
         </view>
 
-        <!-- 宠物信息 -->
-        <view class="pet-card-info">
-          <text class="pet-card-name">{{item.alias || item.name}}</text>
-          <text class="pet-card-meta">{{item.category || '未分类'}}</text>
+        <!-- 图片下方信息区域 -->
+        <view class="pet-detail-section">
+          <text wx:if="{{item.price}}" class="price-line">{{item.price}} 元/只</text>
+          <!-- 产蛋 + 配对记录（取最新一次） -->
+          <view class="detail-records" wx:if="{{item.latestEgg || item.latestPairing}}">
+            <text wx:if="{{item.latestEgg}}" class="record-item">产蛋 {{item.latestEgg.date}}</text>
+            <text wx:if="{{item.latestPairing}}" class="record-item">配对 {{item.latestPairing.date}}</text>
+            <text wx:if="{{item.eggDaysSince}}" class="record-item">距上次产蛋 {{item.eggDaysSince}}天</text>
+          </view>
         </view>
       </view>
     </view>

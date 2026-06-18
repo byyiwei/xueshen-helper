@@ -153,16 +153,44 @@ async function saveBase64Image(base64Data, format = 'png') {
     const filePath = `${wx.env.USER_DATA_PATH}/${fileName}`;
 
     try {
-      const buffer = wx.base64ToArrayBuffer(base64Data);
-      fs.writeFile({
-        filePath: filePath,
-        data: buffer,
-        encoding: 'binary',
-        success: () => resolve(filePath),
-        fail: (err) => reject(new Error('保存图片失败: ' + err.errMsg))
+      // 确保用户数据目录存在
+      fs.access({
+        path: wx.env.USER_DATA_PATH,
+        success: () => {
+          // 目录已存在，直接写入
+          writeFileToPath();
+        },
+        fail: () => {
+          // 目录不存在，先创建
+          fs.mkdir({
+            dirPath: wx.env.USER_DATA_PATH,
+            recursive: true,
+            success: () => {
+              writeFileToPath();
+            },
+            fail: (err) => {
+              reject(new Error('创建目录失败: ' + err.errMsg));
+            }
+          });
+        }
       });
     } catch (e) {
-      reject(new Error('Base64 解码失败: ' + e.message));
+      reject(new Error('文件系统操作失败: ' + e.message));
+    }
+
+    function writeFileToPath() {
+      try {
+        const buffer = wx.base64ToArrayBuffer(base64Data);
+        fs.writeFile({
+          filePath: filePath,
+          data: buffer,
+          encoding: 'binary',
+          success: () => resolve(filePath),
+          fail: (err) => reject(new Error('保存图片失败: ' + err.errMsg))
+        });
+      } catch (e) {
+        reject(new Error('Base64 解码失败: ' + e.message));
+      }
     }
   });
 }

@@ -1,27 +1,29 @@
 Component({
   data: {
-    selected: 0,
+    selected: -1,
     visible: true,
     color: '#94A3B8',
     selectedColor: '#3A7CFF',
     list: [
+      { pagePath: '/pages/index/index', text: '首页' },
       { pagePath: '/pages/pet/index', text: '宠物' },
-      { pagePath: '/pages/footprint/index', text: '足迹' },
       { pagePath: '/pages/my/index', text: '我的' }
     ]
   },
 
   attached() {
-    wx.nextTick(() => {
+    // 立即同步检测一次，确保首帧渲染时 selected 已正确
+    this.getTabBarInfo()
+    // 延迟兜底，防止 getCurrentPages() 尚未就绪
+    setTimeout(() => {
       try {
         this.getTabBarInfo()
       } catch (error) {
         console.error('tabBar init error:', error)
       }
-    })
+    }, 80)
   },
 
-  // 关键修复：每次页面显示时重新检查 tabBar 可见性
   pageLifetimes: {
     show() {
       this.getTabBarInfo()
@@ -35,16 +37,16 @@ Component({
       const currentPage = pages[pages.length - 1]
       if (!currentPage || !currentPage.route) return
       const route = '/' + currentPage.route
-      const index = this.data.list.findIndex(item => 
-        item.pagePath === route || 
+
+      const index = this.data.list.findIndex(item =>
+        item.pagePath === route ||
         item.pagePath === currentPage.route ||
         route.includes(item.pagePath.replace('/', ''))
       )
+
       if (index !== -1) {
-        // 当前页面是 tabBar 页面，显示并更新选中
         this.setData({ selected: index, visible: true })
       } else {
-        // 当前页面不在tabBar列表中，隐藏tab-bar
         this.setData({ visible: false })
       }
     },

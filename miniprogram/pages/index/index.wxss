@@ -1,0 +1,678 @@
+.page {
+  position: relative;
+  min-height: 100vh;
+  background-color: #F0F7FF;
+  padding-bottom: calc(120rpx + env(safe-area-inset-bottom));
+}
+
+/* ====== 骨架屏动画 ====== */
+.skeleton-container {
+  padding: 24rpx;
+}
+
+.skeleton-quick-cards {
+  display: flex;
+  gap: 20rpx;
+  margin-bottom: 24rpx;
+}
+
+.skeleton-quick-card {
+  flex: 1;
+  height: 200rpx;
+  background: linear-gradient(90deg, #E2E8F0 25%, #F1F5F9 50%, #E2E8F0 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: 28rpx;
+}
+
+.skeleton-reminder {
+  height: 280rpx;
+  background: linear-gradient(90deg, #E2E8F0 25%, #F1F5F9 50%, #E2E8F0 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: 24rpx;
+  margin-bottom: 24rpx;
+}
+
+.skeleton-banner {
+  height: 120rpx;
+  background: linear-gradient(90deg, #E2E8F0 25%, #F1F5F9 50%, #E2E8F0 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: 20rpx;
+  margin-bottom: 24rpx;
+}
+
+.skeleton-func {
+  background: #ffffff;
+  border-radius: 24rpx;
+  padding: 24rpx;
+  box-shadow: 0 4rpx 20rpx rgba(58, 124, 255, 0.06);
+  display: flex;
+  justify-content: space-between;
+}
+
+.skeleton-func-item {
+  width: 22%;
+  height: 120rpx;
+  background: linear-gradient(90deg, #E2E8F0 25%, #F1F5F9 50%, #E2E8F0 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+  border-radius: 22rpx;
+}
+
+@keyframes skeleton-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.custom-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 88rpx;
+  background: linear-gradient(180deg, #F0F7FF 0%, rgba(240, 247, 255, 0.95) 100%);
+}
+
+.nav-title {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #1E293B;
+  text-align: center;
+}
+
+.content {
+  position: relative;
+  padding: 0 24rpx;
+  margin-top: 24rpx;
+}
+
+/* ====== 未登录轻量提示 ====== */
+.login-hint-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16rpx 32rpx;
+  background: #E6F0FF;
+  margin: 0 0 16rpx;
+  border-radius: 16rpx;
+}
+
+.login-hint-text {
+  font-size: 24rpx;
+  color: #475569;
+  flex: 1;
+}
+
+.login-hint-btn {
+  font-size: 24rpx;
+  color: #ffffff;
+  background: #3A7CFF;
+  padding: 8rpx 28rpx;
+  border-radius: 24rpx;
+  font-weight: 500;
+  flex-shrink: 0;
+  margin-left: 16rpx;
+}
+
+/* ====== 精品龟档案 / 我的龟缸 卡片 ====== */
+.quick-cards {
+  display: flex;
+  gap: 20rpx;
+  margin-bottom: 24rpx;
+}
+
+.quick-card {
+  flex: 1;
+}
+
+.quick-card-inner {
+  position: relative;
+  background: #FFFFFF;
+  border-radius: 28rpx;
+  padding: 28rpx 24rpx 20rpx;
+  box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.06), 0 2rpx 8rpx rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+  transition: transform 0.2s ease;
+}
+
+.quick-card:active .quick-card-inner {
+  transform: scale(0.97);
+}
+
+.quick-card-accent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6rpx;
+  border-radius: 28rpx 28rpx 0 0;
+}
+
+.quick-card-green .quick-card-accent {
+  background: linear-gradient(90deg, #22c55e 0%, #4ade80 60%, #86efac 100%);
+}
+
+.quick-card-blue .quick-card-accent {
+  background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 60%, #93c5fd 100%);
+}
+
+.quick-card-body {
+  margin-bottom: 16rpx;
+}
+
+.quick-card-label {
+  font-size: 24rpx;
+  color: #64748B;
+  display: block;
+  margin-bottom: 8rpx;
+}
+
+.quick-card-count {
+  display: flex;
+  align-items: baseline;
+  gap: 4rpx;
+}
+
+.count-num {
+  font-size: 56rpx;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.quick-card-green .count-num {
+  color: #16a34a;
+}
+
+.quick-card-blue .count-num {
+  color: #2563eb;
+}
+
+.count-unit {
+  font-size: 24rpx;
+  color: #94A3B8;
+  margin-left: 4rpx;
+}
+
+.quick-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1rpx solid #F1F5F9;
+  padding-top: 16rpx;
+}
+
+.quick-card-link {
+  font-size: 22rpx;
+  color: #94A3B8;
+}
+
+.quick-card-arrow {
+  font-size: 28rpx;
+  color: #CBD5E1;
+}
+
+/* ====== 待办提醒区域 ====== */
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16rpx;
+}
+
+.section-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #1E293B;
+}
+
+.section-count {
+  font-size: 24rpx;
+  color: #94A3B8;
+}
+
+.section-sub {
+  font-size: 22rpx;
+  color: #94A3B8;
+}
+
+.reminder-section {
+  background: #FFFFFF;
+  border-radius: 24rpx;
+  padding: 24rpx;
+  box-shadow: 0 4rpx 20rpx rgba(58, 124, 255, 0.06);
+  margin-bottom: 24rpx;
+}
+
+.reminder-card {
+  display: flex;
+  align-items: center;
+  padding: 20rpx;
+  border-radius: 16rpx;
+  margin-bottom: 12rpx;
+  background: #F8FAFC;
+}
+
+.reminder-card:last-child {
+  margin-bottom: 0;
+}
+
+.reminder-card.reminder-overdue {
+  background: linear-gradient(135deg, #FEF2F2 0%, #FEE2E2 100%);
+}
+
+.reminder-card.reminder-today {
+  background: linear-gradient(135deg, #FEFCE8 0%, #FEF9C3 100%);
+}
+
+.reminder-icon {
+  width: 64rpx;
+  height: 64rpx;
+  background: #E2E8F0;
+  border-radius: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28rpx;
+  flex-shrink: 0;
+}
+
+.reminder-info {
+  flex: 1;
+  margin-left: 16rpx;
+}
+
+.reminder-top {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 6rpx;
+}
+
+.reminder-type {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #1E293B;
+}
+
+.reminder-status {
+  font-size: 22rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 12rpx;
+  background: #E2E8F0;
+  color: #64748B;
+}
+
+.reminder-overdue .reminder-status {
+  background: #FCA5A5;
+  color: #DC2626;
+}
+
+.reminder-today .reminder-status {
+  background: #FEF08A;
+  color: #CA8A04;
+}
+
+.reminder-bottom {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8rpx;
+}
+
+.reminder-name {
+  font-size: 24rpx;
+  color: #64748B;
+}
+
+.reminder-category {
+  font-size: 22rpx;
+  color: #94A3B8;
+}
+
+.reminder-meta {
+  font-size: 22rpx;
+  color: #94A3B8;
+}
+
+.reminder-done-btn {
+  width: 48rpx;
+  height: 48rpx;
+  background: #3A7CFF;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #FFFFFF;
+  font-size: 24rpx;
+  flex-shrink: 0;
+}
+
+.empty-reminder {
+  padding: 40rpx 24rpx;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 48rpx;
+  display: block;
+  margin-bottom: 16rpx;
+}
+
+.empty-text {
+  font-size: 28rpx;
+  color: #64748B;
+  display: block;
+  margin-bottom: 8rpx;
+}
+
+.empty-hint {
+  font-size: 22rpx;
+  color: #94A3B8;
+  display: block;
+}
+
+/* ====== 疾病防治横幅 ====== */
+.disease-banner {
+  display: flex;
+  align-items: center;
+  background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
+  border-radius: 20rpx;
+  padding: 24rpx 28rpx;
+  margin-bottom: 24rpx;
+  transition: transform 0.15s ease;
+}
+
+.disease-banner:active {
+  transform: scale(0.98);
+}
+
+.disease-icon-wrap {
+  width: 72rpx;
+  height: 72rpx;
+  background: rgba(16, 185, 129, 0.18);
+  border-radius: 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 20rpx;
+  flex-shrink: 0;
+}
+
+.disease-icon-shield {
+  font-size: 36rpx;
+}
+
+.disease-info {
+  flex: 1;
+}
+
+.disease-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #065F46;
+  display: block;
+  margin-bottom: 4rpx;
+}
+
+.disease-desc {
+  font-size: 22rpx;
+  color: #6B7280;
+}
+
+.disease-btn {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  background: rgba(16, 185, 129, 0.15);
+  border-radius: 24rpx;
+  padding: 8rpx 16rpx;
+  flex-shrink: 0;
+}
+
+.disease-btn-text {
+  font-size: 24rpx;
+  color: #059669;
+  font-weight: 600;
+}
+
+.disease-btn-arrow {
+  font-size: 28rpx;
+  color: #059669;
+}
+
+/* ====== 常用功能板块 ====== */
+.func-section {
+  background: #FFFFFF;
+  border-radius: 24rpx;
+  padding: 24rpx;
+  box-shadow: 0 4rpx 20rpx rgba(58, 124, 255, 0.06);
+  margin-bottom: 24rpx;
+}
+
+.func-grid {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.func-card {
+  width: 22%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+  transition: transform 0.15s ease;
+}
+
+.func-card:active {
+  transform: scale(0.93);
+}
+
+.func-icon-wrap {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 22rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.func-icon-calc {
+  background: linear-gradient(135deg, #DBEAFE 0%, #BFDBFE 100%);
+}
+
+.func-icon-egg {
+  background: linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%);
+}
+
+.func-icon-hatch {
+  background: linear-gradient(135deg, #FCE7F3 0%, #FBCFE8 100%);
+}
+
+.func-icon-public {
+  background: linear-gradient(135deg, #D1FAE5 0%, #A7F3D0 100%);
+}
+
+.func-icon-text {
+  font-size: 38rpx;
+}
+
+.func-name {
+  font-size: 22rpx;
+  color: #475569;
+  text-align: center;
+}
+
+/* ===== 待办提醒汇总 ===== */
+.reminder-summary-wrap {
+  margin-bottom: 24rpx;
+  padding: 8rpx 24rpx 24rpx;
+  background: #ffffff;
+  border-radius: 24rpx;
+  box-shadow: 0 4rpx 24rpx rgba(58, 124, 255, 0.06);
+}
+
+.reminder-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 0 16rpx;
+}
+
+.reminder-summary-title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #1E293B;
+}
+
+.reminder-summary-count {
+  font-size: 24rpx;
+  color: #94A3B8;
+  font-weight: 500;
+}
+
+.reminder-summary-card {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border-radius: 20rpx;
+  padding: 24rpx;
+  margin-bottom: 16rpx;
+  box-shadow: 0 2rpx 12rpx rgba(58, 124, 255, 0.03);
+  border: 2rpx solid #EDF2F7;
+  transition: all 0.15s;
+  gap: 16rpx;
+}
+
+.reminder-summary-card:active {
+  background: #FFFFFF;
+  transform: scale(0.99);
+}
+
+.reminder-summary-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.reminder-summary-top {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 6rpx;
+}
+
+.reminder-summary-type {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #1E293B;
+}
+
+.reminder-summary-status {
+  font-size: 22rpx;
+  color: #475569;
+  font-weight: 500;
+}
+
+.reminder-summary-bottom {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.reminder-summary-name {
+  font-size: 24rpx;
+  color: #1E293B;
+  font-weight: 600;
+}
+
+.reminder-summary-category {
+  font-size: 24rpx;
+  color: #475569;
+}
+
+.reminder-summary-meta {
+  font-size: 22rpx;
+  color: #94A3B8;
+}
+
+.reminder-summary-done-btn {
+  flex-shrink: 0;
+  align-self: center;
+  padding: 12rpx 22rpx;
+  border-radius: 28rpx;
+  background: #3A7CFF;
+  color: #ffffff;
+  font-size: 24rpx;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.reminder-summary-card.reminder-overdue {
+  background: #FDF3E0;
+  border-color: #F5E0D0;
+}
+.reminder-summary-card.reminder-overdue .reminder-summary-status {
+  color: #E76F51;
+  font-weight: 700;
+}
+
+.reminder-summary-card.reminder-today {
+  background: #FDF3E0;
+  border-color: #F5D0D0;
+}
+.reminder-summary-card.reminder-today .reminder-summary-status {
+  color: #E76F51;
+  font-weight: 700;
+}
+
+.reminder-summary-card.reminder-tomorrow {
+  background: #FDFBF5;
+  border-color: #F0E8C0;
+}
+.reminder-summary-card.reminder-tomorrow .reminder-summary-status {
+  color: #64748B;
+  font-weight: 700;
+}
+
+.reminder-summary-empty {
+  background: #ffffff;
+  border-radius: 20rpx;
+  padding: 60rpx 32rpx;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 2rpx solid #EDF2F7;
+  box-shadow: 0 2rpx 12rpx rgba(58, 124, 255, 0.03);
+}
+
+.reminder-summary-empty .reminder-empty-icon {
+  font-size: 72rpx;
+  opacity: 0.6;
+  margin-bottom: 16rpx;
+}
+
+.reminder-summary-empty .reminder-empty-text {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #1E293B;
+  margin-bottom: 8rpx;
+}
+
+.reminder-summary-empty .reminder-empty-hint {
+  font-size: 22rpx;
+  color: #94A3B8;
+  line-height: 1.6;
+  max-width: 560rpx;
+}

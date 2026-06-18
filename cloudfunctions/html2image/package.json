@@ -1,0 +1,12 @@
+{
+  "name": "html2image",
+  "version": "1.0.0",
+  "description": "HTML转图片服务",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3",
+    "request": "^2.88.2",
+    "request-promise": "^4.2.6",
+    "cos-nodejs-sdk-v5": "^2.11.0"
+  }
+}

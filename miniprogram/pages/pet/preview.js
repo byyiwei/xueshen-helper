@@ -13,9 +13,12 @@ Page({
     filteredRecords: [],
     loading: true,
     showSkeleton: true,
+    isLoggedIn: false,
     qrcodeUrl: '',
     qrcodeFileId: '',
     currentEventTab: '全部事件',
+    selectedDate: '',
+    endDate: '',
     // 公开模式
     isPublic: false,
     // 家族谱系
@@ -55,7 +58,12 @@ Page({
     const isPublic = (options && options.isPublic === 'true') || isFromScan
     
     if (petId) {
-      this.setData({ petId, isPublic })
+      // 初始化当月默认筛选
+      const now = new Date()
+      const pad = n => String(n).padStart(2, '0')
+      const monthStart = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01`
+      const monthEnd = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()}`
+      this.setData({ petId, isPublic, selectedDate: monthStart, endDate: monthEnd })
       this.loadPetDetail(petId, isPublic)
       this.loadRecords(petId)
       this.loadPedigree()
@@ -127,6 +135,8 @@ Page({
         if (pet.status === '生病') statusClass = 'sick'
         else if (pet.status === '死亡') statusClass = 'dead'
         else if (pet.status === '出售') statusClass = 'sold'
+        else if (pet.status === '预警') statusClass = 'warning'
+        else if (pet.status === '待配') statusClass = 'pending'
         
         pet.statusClass = statusClass
         
@@ -164,17 +174,33 @@ Page({
 
   loadRecords: async function (petId) {
     try {
+      const db = wx.cloud.database()
+      const _ = db.command
+      const res = await db.collection('records')
+        .where({ petId: petId })
+        .orderBy('date', 'desc')
+        .limit(100)
+        .get()
+      const cloudRecords = res.data || []
+      // 云端无数据则回退本地
+      if (cloudRecords.length === 0) {
+        const allRecords = wx.getStorageSync('records') || []
+        const petRecords = allRecords
+          .filter(r => r.petId === petId)
+          .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+        this.setData({ records: petRecords })
+      } else {
+        this.setData({ records: cloudRecords })
+      }
+      this.filterRecords()
+    } catch (error) {
+      console.error('加载记录失败，回退本地:', error)
       const allRecords = wx.getStorageSync('records') || []
       const petRecords = allRecords
         .filter(r => r.petId === petId)
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-      
-      this.setData({ 
-        records: petRecords,
-        filteredRecords: petRecords
-      })
-    } catch (error) {
-      console.error('加载记录失败:', error)
+        .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+      this.setData({ records: petRecords })
+      this.filterRecords()
     }
   },
 
@@ -191,16 +217,39 @@ Page({
       '全部事件': '全部',
       '交配': '交配',
       '产蛋': '产蛋',
-      '换公': '换公'
+      '出苗': '出苗'
     }
     const filterType = tabMap[this.data.currentEventTab] || '全部'
+    const start = this.data.selectedDate
+    const end = this.data.endDate
     let filtered = [...this.data.records]
 
     if (filterType !== '全部') {
       filtered = filtered.filter(r => r.type === filterType)
     }
+    if (start) {
+      filtered = filtered.filter(r => r.date >= start)
+    }
+    if (end) {
+      filtered = filtered.filter(r => r.date <= end)
+    }
 
     this.setData({ filteredRecords: filtered })
+  },
+
+  onDateChange: function (e) {
+    this.setData({ selectedDate: e.detail.value || '' })
+    this.filterRecords()
+  },
+
+  onEndDateChange: function (e) {
+    this.setData({ endDate: e.detail.value || '' })
+    this.filterRecords()
+  },
+
+  clearDateFilter: function () {
+    this.setData({ selectedDate: '', endDate: '' })
+    this.filterRecords()
   },
 
   // ========== 家族谱系相关方法 ==========
@@ -375,6 +424,16 @@ Page({
 
   goBack: function () {
     wx.navigateBack()
+  },
+
+  onShow: function () {
+    const app = getApp()
+    this.setData({ isLoggedIn: app.globalData.isLoggedIn })
+  },
+
+  goToLogin: function () {
+    const app = getApp()
+    app.requireLogin()
   },
 
   previewImage: async function (e) {
@@ -566,6 +625,25 @@ Page({
       showEventModal: false,
       selectedEvent: null
     })
+  },
+
+  // 预览记录照片
+  previewRecordPhoto: function (e) {
+    const url = e.currentTarget.dataset.url
+    const photos = (this.data.selectedEvent && this.data.selectedEvent.photos) || []
+    if (url && photos.length > 0) {
+      wx.previewImage({ current: url, urls: photos })
+    }
+  },
+
+  // 跳转到详情页新增记录
+  gotoAddRecord: function () {
+    const petId = this.data.petId
+    if (petId) {
+      wx.navigateTo({
+        url: '/pages/pet/detail?petId=' + petId + '&action=addRecord'
+      })
+    }
   },
 
   // 阻止事件冒泡

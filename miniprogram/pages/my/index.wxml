@@ -48,19 +48,17 @@
     </view>
   </view>
 
-  <!-- 未登录提示 -->
-  <view wx:elif="{{!isLoggedIn}}" class="not-logged-in">
-    <view class="not-logged-in-icon">👤</view>
-    <view class="not-logged-in-title">登录后查看个人中心</view>
-    <view class="not-logged-in-desc">登录后可使用该工具进行管理宠物资料、产蛋记录和打印标签等功能</view>
-    <view class="not-logged-in-btn" bindtap="goToLogin">立即登录</view>
+  <!-- 未登录轻量提示 -->
+  <view wx:if="{{!isLoggedIn}}" class="login-hint-bar">
+    <text class="login-hint-text">登录后可管理宠物资料、记录和打印标签</text>
+    <view class="login-hint-btn" bindtap="goToLogin">登录</view>
   </view>
-  
-  <!-- 真实内容 -->
-  <view wx:else>
+
+  <!-- 真实内容（始终展示，骨架屏时隐藏） -->
+  <view wx:if="{{!showSkeleton}}">
     <view class="profile-card">
     <view class="avatar-section">
-          <view class="avatar" bindtap="chooseAvatar">
+          <view class="avatar" bindtap="chooseAvatar" bindlongpress="onAvatarLongPress" bindtouchstart="onAvatarTouchStart" bindtouchend="onAvatarTouchEnd" bindtouchcancel="onAvatarTouchEnd">
             <image wx:if="{{userInfo.avatar}}" class="avatar-image" src="{{userInfo.avatar}}" mode="aspectFill" binderror="onPhotoError" data-type="avatar" />
             <text wx:else class="avatar-text">龟</text>
           </view>
@@ -326,45 +324,6 @@
 
     <!-- 数据 -->
     <view wx:if="{{activeTab === 'data'}}" class="tab-content">
-      <!-- 提醒汇总（放在最上面，展示当天/明天/超期事项） -->
-      <view class="reminder-summary-wrap">
-        <view class="reminder-summary-header">
-          <text class="reminder-summary-title">待办提醒</text>
-          <text class="reminder-summary-count">共 {{allReminders.length}} 项</text>
-        </view>
-
-        <block wx:if="{{hasAnyReminder}}">
-          <view wx:for="{{allReminders}}" wx:key="id"
-                class="reminder-summary-card reminder-{{item.statusClass}}"
-                bindtap="gotoPetDetailFromReminder" data-pet-id="{{item.petId}}">
-            <view class="reminder-summary-icon">
-              <text>{{item.type === '换水' ? '💧' : item.type === '喂食' ? '🍽' : item.type === '健康' ? '❤' : '🥚'}}</text>
-            </view>
-            <view class="reminder-summary-main">
-              <view class="reminder-summary-top">
-                <text class="reminder-summary-type">{{item.type}}</text>
-                <text class="reminder-summary-status">{{item.statusText}}</text>
-              </view>
-              <view class="reminder-summary-bottom">
-                <text class="reminder-summary-name">{{item.petName}}</text>
-                <text wx:if="{{item.petCategory}}" class="reminder-summary-category"> · {{item.petCategory}}</text>
-                <text class="reminder-summary-meta"> · 每 {{item.intervalDays}} 天 · 下次 {{item.nextDueDate}}</text>
-              </view>
-            </view>
-            <view class="reminder-summary-done-btn" catchtap="markReminderDoneFromMy"
-                  data-pet-id="{{item.petId}}" data-reminder-id="{{item.id}}">
-              <text>✓ 完成</text>
-            </view>
-          </view>
-        </block>
-
-        <view wx:else class="reminder-summary-empty">
-          <text class="reminder-empty-icon">⏰</text>
-          <text class="reminder-empty-text">暂无待办提醒</text>
-          <text class="reminder-empty-hint">进入宠物详情页 · 右上角「⋯」· 添加提醒 · 即可添加换水 / 喂食 / 健康检查等定期提醒</text>
-        </view>
-      </view>
-
       <view class="stats-grid">
         <view class="stats-row">
           <view class="stat-card">
@@ -403,7 +362,6 @@
           </view>
         </view>
       </view>
-
     </view>
 
     <!-- 配置 -->
@@ -434,29 +392,82 @@
           </view>
           <view class="item">
             <view class="item-left">
-              <text class="item-label">自动打印</text>
-              <text class="item-value">{{printerConfig.autoPrint ? '已开启' : '已关闭'}}</text>
-            </view>
-            <switch checked="{{printerConfig.autoPrint}}" bindchange="onAutoPrintSwitchChange" color="{{switchColor}}" />
-          </view>
-          <view class="item">
-            <view class="item-left">
               <text class="item-label">自动连接</text>
               <text class="item-value">{{printerConfig.autoConnect ? '已开启' : '已关闭'}}</text>
             </view>
             <switch checked="{{printerConfig.autoConnect}}" bindchange="onAutoConnectSwitchChange" color="{{switchColor}}" />
           </view>
-        </view>
-      </view>
-      
-      <view class="section">
-        <view class="section-title">打印机</view>
-        <view class="section-items">
           <view class="action-item" bindtap="disconnectPrinter">
             <text class="action-text danger">断开连接</text>
           </view>
         </view>
       </view>
+      
+      <!-- 二维码打印配置 -->
+      <view class="section">
+        <view class="section-header">
+          <view class="section-title">标签二维码打印</view>
+          <text class="section-desc">开启后，对应类型的事件打印标签会附带二维码，扫码可查看宠物详情</text>
+        </view>
+        <view class="qr-grid">
+          <view class="qr-item {{printerConfig.qrPrintTypes.jiaopei !== false ? 'active' : ''}}" bindtap="toggleQrPrintType" data-type="jiaopei">
+            <view class="qr-icon">
+              <text class="icon-emoji">💕</text>
+            </view>
+            <text class="qr-name">交配</text>
+            <switch checked="{{printerConfig.qrPrintTypes.jiaopei !== false}}" bindchange="onQrPrintTypeChange" data-type="jiaopei" color="#3A7CFF" />
+          </view>
+          <view class="qr-item {{printerConfig.qrPrintTypes.chandan !== false ? 'active' : ''}}" bindtap="toggleQrPrintType" data-type="chandan">
+            <view class="qr-icon">
+              <text class="icon-emoji">🥚</text>
+            </view>
+            <text class="qr-name">产蛋</text>
+            <switch checked="{{printerConfig.qrPrintTypes.chandan !== false}}" bindchange="onQrPrintTypeChange" data-type="chandan" color="#3A7CFF" />
+          </view>
+          <view class="qr-item {{printerConfig.qrPrintTypes.chumiao !== false ? 'active' : ''}}" bindtap="toggleQrPrintType" data-type="chumiao">
+            <view class="qr-icon">
+              <text class="icon-emoji">🐣</text>
+            </view>
+            <text class="qr-name">出苗</text>
+            <switch checked="{{printerConfig.qrPrintTypes.chumiao !== false}}" bindchange="onQrPrintTypeChange" data-type="chumiao" color="#3A7CFF" />
+          </view>
+          <view class="qr-item {{printerConfig.qrPrintTypes.jiankang !== false ? 'active' : ''}}" bindtap="toggleQrPrintType" data-type="jiankang">
+            <view class="qr-icon">
+              <text class="icon-emoji">💊</text>
+            </view>
+            <text class="qr-name">健康</text>
+            <switch checked="{{printerConfig.qrPrintTypes.jiankang !== false}}" bindchange="onQrPrintTypeChange" data-type="jiankang" color="#3A7CFF" />
+          </view>
+        </view>
+      </view>
+
+      <!-- 管理后台入口已移至长按头像触发（隐藏入口） -->
+      
+      <view class="section">
+        <view class="section-title">关于</view>
+        <view class="section-items">
+          <view class="item">
+            <view class="item-left">
+              <text class="item-label">系统名称</text>
+              <text class="item-value">{{systemConfig.systemName || '龟上心'}}</text>
+            </view>
+          </view>
+          <view class="item">
+            <view class="item-left">
+              <text class="item-label">版本号</text>
+              <text class="item-value">{{systemConfig.version || '1.0.0'}}</text>
+            </view>
+          </view>
+          <view class="item" wx:if="{{systemConfig.servicePhone}}" bindtap="callService">
+            <view class="item-left">
+              <text class="item-label">客服电话</text>
+              <text class="item-value">{{systemConfig.servicePhone}}</text>
+            </view>
+            <view class="item-arrow">›</view>
+          </view>
+        </view>
+      </view>
+
     </view>
     
     <!-- 蓝牙设备列表弹窗 -->

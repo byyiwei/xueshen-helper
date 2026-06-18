@@ -78,6 +78,17 @@ async function createPet(data, openid) {
     throw new Error('宠物名称不能为空')
   }
 
+  // 获取系统配置
+  const configRes = await db.collection('systemConfig').limit(1).get()
+  const config = configRes.data.length > 0 ? configRes.data[0] : {}
+  const maxPetCount = parseInt(config.maxPetCount) || 10
+
+  // 检查用户已有的宠物数量
+  const petCountRes = await db.collection('pets').where({ openid }).count()
+  if (petCountRes.total >= maxPetCount) {
+    throw new Error(`已达到最大宠物数量限制（${maxPetCount}只），无法继续添加`)
+  }
+
   // 别名唯一性校验（非空时检查）
   if (data.alias && data.alias.trim()) {
     const existingAlias = await db.collection('pets').where({
@@ -96,8 +107,11 @@ async function createPet(data, openid) {
     alias: data.alias || '',
     father: data.father || '',
     mother: data.mother || '',
+    partner: data.partner || '',
+    partnerName: data.partnerName || '',
+    price: data.price || '',
     status: data.status || '正常',
-    isPublic: data.isPublic || false,
+    isPublic: !!data.isPublic,
     photos: data.photos || [],
     openid,
     createdAt: db.serverDate(),
@@ -185,6 +199,10 @@ async function updatePet(data, openid) {
     }
   }
 
+  if (updateData.isPublic !== undefined) {
+    updateData.isPublic = !!updateData.isPublic
+  }
+  
   await db.collection('pets').doc(id).update({
     data: { ...updateData, updatedAt: db.serverDate() }
   })
@@ -216,13 +234,107 @@ async function getPublicPets(userId) {
     throw new Error('缺少用户ID')
   }
 
+  console.log('getPublicPets called with userId:', userId)
+
+  // 先查询该用户所有宠物（用于调试）
+  const allPetsResult = await db.collection('pets')
+    .where({ openid: userId })
+    .get()
+  console.log('All pets for user:', allPetsResult.data.length)
+  allPetsResult.data.forEach(pet => {
+    console.log('Pet:', pet.name, 'isPublic:', pet.isPublic, 'type:', typeof pet.isPublic)
+  })
+
   // 直接查询该用户公开的宠物
   const result = await db.collection('pets')
     .where({ openid: userId, isPublic: true })
     .orderBy('createdAt', 'desc')
     .get()
 
-  return successResponse(normalizeIds(result.data).map(sanitizePetData))
+  console.log('Public pets found:', result.data.length)
+
+  let pets = normalizeIds(result.data).map(sanitizePetData)
+
+  // 查询宠物主人的名片信息（无论是否有公开宠物都需要）
+  let ownerNickname = ''
+  let publicShareInfo = null
+  try {
+    const userResult = await db.collection('users')
+      .where({ openid: userId })
+      .limit(1)
+      .get()
+    if (userResult.data && userResult.data.length > 0) {
+      const user = userResult.data[0]
+      ownerNickname = user.nickname || ''
+      publicShareInfo = {
+        specialty: user.publicSpecialty || '',
+        wechatId: user.publicWechatId || '',
+        wechatPublic: !!user.publicWechatPublic,
+        region: user.publicRegion || '',
+        tags: user.publicTags || [],
+        intro: user.publicIntro || ''
+      }
+    }
+  } catch (e) {
+    console.log('查询用户名片信息失败:', e)
+  }
+
+  // 为每个宠物附带最新产蛋和配对记录
+  if (pets.length > 0) {
+    const petIds = pets.map(p => p.id)
+
+    // 批量查询产蛋记录（取最新一条）
+    const eggResult = await db.collection('records')
+      .where({ openid: userId, type: '产蛋', petId: _.in(petIds) })
+      .orderBy('date', 'desc')
+      .limit(petIds.length)
+      .get()
+
+    // 批量查询交配记录（取最新一条）
+    const pairResult = await db.collection('records')
+      .where({ openid: userId, type: '交配', petId: _.in(petIds) })
+      .orderBy('date', 'desc')
+      .limit(petIds.length)
+      .get()
+
+    // 构建 petId → 记录的映射
+    const eggMap = {}
+    eggResult.data.forEach(r => {
+      const pid = r.petId
+      if (!eggMap[pid]) eggMap[pid] = normalizeId(r)
+    })
+
+    const pairMap = {}
+    pairResult.data.forEach(r => {
+      const pid = r.petId
+      if (!pairMap[pid]) pairMap[pid] = normalizeId(r)
+    })
+
+    const now = new Date()
+    pets = pets.map(pet => {
+      const latestEgg = eggMap[pet.id] || null
+      const latestPairing = pairMap[pet.id] || null
+
+      // 计算距上次产蛋天数（从最新产蛋日期到今天）
+      let eggDaysSince = ''
+      if (latestEgg && latestEgg.date) {
+        try {
+          const eggDate = new Date(latestEgg.date)
+          const diff = Math.floor((now - eggDate) / (86400000))
+          if (diff >= 0) eggDaysSince = diff
+        } catch (e) {}
+      }
+
+      return {
+        ...pet,
+        latestEgg,
+        latestPairing,
+        eggDaysSince
+      }
+    })
+  }
+
+  return successResponse({ pets, ownerNickname, publicShareInfo })
 }
 
 // 获取公开宠物详情（不需要权限验证）
