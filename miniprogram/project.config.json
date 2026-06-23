@@ -1,0 +1,33 @@
+{
+  "setting": {
+    "es6": true,
+    "postcss": true,
+    "minified": true,
+    "uglifyFileName": false,
+    "enhance": true,
+    "packNpmRelationList": [],
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    },
+    "useCompilerPlugins": false,
+    "minifyWXML": true
+  },
+  "compileType": "miniprogram",
+  "simulatorPluginLibVersion": {},
+  "packOptions": {
+    "ignore": [
+      { "type": "file", "value": "package-lock.json" },
+      { "type": "file", "value": "package.json" },
+      { "type": "file", "value": "sitemap.json" },
+      { "type": "folder", "value": "node_modules/threejs-miniprogram/LICENSE" },
+      { "type": "folder", "value": "node_modules/threejs-miniprogram/README.md" },
+      { "type": "folder", "value": "node_modules/threejs-miniprogram/package.json" },
+      { "type": "folder", "value": "node_modules/.package-lock.json" }
+    ],
+    "include": []
+  },
+  "appid": "wx587a284c068dea2c",
+  "editorSetting": {}
+}

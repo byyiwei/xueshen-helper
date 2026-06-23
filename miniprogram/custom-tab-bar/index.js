@@ -2,8 +2,8 @@ Component({
   data: {
     selected: -1,
     visible: true,
-    color: '#94A3B8',
-    selectedColor: '#3A7CFF',
+    color: '#999999',
+    selectedColor: '#1A1A1A',
     list: [
       { pagePath: '/pages/index/index', text: '首页' },
       { pagePath: '/pages/pet/index', text: '宠物' },
@@ -12,9 +12,7 @@ Component({
   },
 
   attached() {
-    // 立即同步检测一次，确保首帧渲染时 selected 已正确
     this.getTabBarInfo()
-    // 延迟兜底，防止 getCurrentPages() 尚未就绪
     setTimeout(() => {
       try {
         this.getTabBarInfo()

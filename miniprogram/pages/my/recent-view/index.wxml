@@ -1,0 +1,44 @@
+<view class="page-recent-view">
+  <view class="nav-bar nav-bar-detail" style="padding-top:{{statusBarHeight}}px">
+    <view class="nav-back" bindtap="goBack">
+      <image class="nav-back-icon" src="/icons/返回.png" mode="aspectFit"/>
+    </view>
+    <text class="nav-title">最近浏览</text>
+    <view class="nav-action" bindtap="clearRecentViews" wx:if="{{recentViews.length > 0}}">
+      <text class="action-text">清空</text>
+    </view>
+  </view>
+
+  <scroll-view style="padding-top:{{totalNavHeight}}px" scroll-y class="scroll-main">
+    <view class="recent-content">
+    <!-- 空状态 -->
+    <view wx:if="{{recentViews.length === 0}}" class="empty-state">
+      <text class="empty-icon">👁</text>
+      <text class="empty-title">暂无浏览记录</text>
+      <text class="empty-desc">浏览过的宠物会出现在这里</text>
+    </view>
+
+    <!-- 浏览记录列表 -->
+    <view wx:if="{{recentViews.length > 0}}" class="pet-list">
+      <view wx:for="{{recentViews}}" wx:key="index" class="pet-card press" bindtap="viewPetDetail" data-pet="{{item}}">
+        <view class="pet-avatar">
+          <image wx:if="{{item.photos && item.photos.length > 0}}" src="{{item.photos[0]}}" mode="aspectFill"/>
+          <text wx:else class="pet-avatar-text">🐢</text>
+        </view>
+        <view class="pet-info">
+          <text class="pet-name">{{item.name || '未命名'}}</text>
+          <text class="pet-breed">{{item.breed || '未知品种'}}</text>
+          <view class="pet-tags">
+            <text wx:if="{{item.isPublic}}" class="tag public-tag">公开</text>
+            <text wx:else class="tag private-tag">私有</text>
+            <text class="view-time">{{item.viewTime || '未知时间'}}</text>
+          </view>
+        </view>
+        <view class="pet-arrow">
+          <text class="arrow-icon">›</text>
+        </view>
+      </view>
+    </view>
+    </view>
+  </scroll-view>
+</view>

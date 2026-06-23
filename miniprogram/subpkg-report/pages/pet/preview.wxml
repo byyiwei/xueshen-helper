@@ -1,0 +1,75 @@
+<view class="page-preview">
+  <view class="nav-bar" style="padding-top:{{statusBarHeight}}px">
+    <view class="nav-back" bindtap="goBack"><text>‹</text></view>
+    <text class="nav-title">预览档案</text>
+
+  </view>
+
+  <view style="padding-top:{{totalNavHeight}}rpx">
+    <!-- 未登录 -->
+    <view wx:if="{{!isLoggedIn && !isPublic}}" class="login-bar" bindtap="goToLogin">
+      <text class="login-bar-text">登录后可管理宠物资料和分享档案</text>
+      <view class="login-bar-btn"><text>立即登录 ›</text></view>
+    </view>
+
+    <!-- 图片 -->
+    <view wx:if="{{pet.photos&&pet.photos.length}}" class="preview-img">
+      <swiper indicator-dots circular autoplay style="height:500rpx">
+        <swiper-item wx:for="{{pet.photos}}" wx:key="*this">
+          <image src="{{item}}" mode="aspectFill" style="width:100%;height:100%"/>
+        </swiper-item>
+      </swiper>
+    </view>
+    <view wx:else class="photo-empty"><text>🐢</text></view>
+
+    <!-- 信息 -->
+    <view class="card">
+      <view class="info-name-row">
+        <text class="info-name">{{pet.alias||pet.name}}</text>
+        <text class="tag {{pet.gender==='公'?'tag-male':pet.gender==='母'?'tag-female':'tag-primary'}}">{{pet.gender}}</text>
+      </view>
+      <view class="info-tags">
+        <text class="tag tag-primary">{{pet.category}}</text>
+        <text class="tag tag-success">{{pet.status}}</text>
+        <text wx:if="{{pet.alias}}" class="tag">{{pet.name}}</text>
+      </view>
+      <view class="info-relations">
+        <view class="rel-item"><text class="rel-label">父本</text><text class="rel-val">{{pet.fatherName||'--'}}</text></view>
+        <view class="rel-item"><text class="rel-label">母本</text><text class="rel-val">{{pet.motherName||'--'}}</text></view>
+        <view class="rel-item"><text class="rel-label">配对</text><text class="rel-val">{{pet.partnerName||'--'}}</text></view>
+      </view>
+    </view>
+
+    <!-- 详细资料 -->
+    <view wx:if="{{pet.detail}}" class="card">
+      <text class="section-title">详细资料</text>
+      <view class="detail-grid">
+        <view wx:for="{{pet.detail}}" wx:key="label" class="detail-item">
+          <text class="detail-label">{{item.label}}</text>
+          <text class="detail-val">{{item.value}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 事件记录 -->
+    <view wx:if="{{pet.records&&pet.records.length}}" class="card">
+      <text class="section-title">事件记录</text>
+      <view class="event-list">
+        <view wx:for="{{pet.records}}" wx:key="id" class="event-card">
+          <text class="event-time">{{item.date}}</text>
+          <text class="event-icon">{{item.icon||'📋'}}</text>
+          <text class="event-text">{{item.text}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 二维码 -->
+    <view class="card qr-section" style="text-align:center">
+      <text class="section-title">扫码查看完整档案</text>
+      <view class="qr-placeholder">[二维码]</view>
+      <text class="btn btn-primary" style="margin-top:var(--s-md)" bindtap="generatePreviewImage">生成海报</text>
+    </view>
+
+    <view class="safe-bottom" style="height:40rpx"></view>
+  </view>
+</view>

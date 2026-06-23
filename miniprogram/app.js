@@ -1,41 +1,16 @@
 App({
   onLaunch: function () {
-    // 云开发初始化（异步完成，不阻塞后续逻辑）
+    // 云开发初始化
     wx.cloud.init({
       env: 'cloud1-d0g853l9d7017ea3b'
     }).then(() => {
-
-      // 初始化完成后再执行需要云能力的操作
       this.onCloudReady()
-    }).catch((error) => {
-
-    })
-
-    // 延迟执行本地数据恢复，避免 too early 错误
-    wx.nextTick(() => {
-      this.initLocalData()
-    })
+    }).catch(() => {})
   },
 
   // 云开发就绪后的回调
   onCloudReady: function () {
-    // 加载系统配置（图片服务器地址等）
     this.loadSystemConfig()
-
-    // 只有已登录用户才需要恢复云端会话
-    wx.nextTick(() => {
-      try {
-        const openid = wx.getStorageSync('openid')
-        if (openid && !this.globalData.openid) {
-          this.globalData.isLoggedIn = true
-          this.globalData.openid = openid
-          this.generateQrcode(openid)
-
-        }
-      } catch (error) {
-        console.error('恢复会话失败:', error)
-      }
-    })
   },
 
   // 从云数据库加载系统配置
@@ -92,6 +67,7 @@ App({
         // 延迟执行需要云环境的操作
         setTimeout(() => {
           this.generateQrcode(openid)
+          this._checkSecurityNotifications()
         }, 500)
 
         return
@@ -104,7 +80,7 @@ App({
     this.asyncLogin()
   },
 
-  // 异步登录流程
+  // 异步获取 openid 并自动登录
   asyncLogin: function () {
     try {
       wx.cloud.callFunction({
@@ -114,60 +90,44 @@ App({
           if (res.result && res.result.success && res.result.data && res.result.data.openid) {
             const openid = res.result.data.openid
             const user = res.result.data.user
-            let agreedBefore = false
+            // 自动登录
             try {
-              agreedBefore = wx.getStorageSync('agreedBefore')
+              wx.setStorageSync('openid', openid)
             } catch (e) {}
-
-            if (agreedBefore) {
-              // 老用户自动登录
+            this.globalData.isLoggedIn = true
+            this.globalData.openid = openid
+            if (user) {
               try {
-                wx.setStorageSync('openid', openid)
+                let localUser = wx.getStorageSync('userInfo') || {}
+                if (!localUser.nickname) {
+                  if (user.nickname && user.nickname !== '') {
+                    localUser.nickname = user.nickname
+                  } else {
+                    let idx = wx.getStorageSync('userIndex') || 0
+                    idx += 1
+                    wx.setStorageSync('userIndex', idx)
+                    localUser.nickname = '养龟档案' + idx
+                  }
+                }
+                if (!localUser.avatar && user.avatar && user.avatar !== '') {
+                  localUser.avatar = user.avatar
+                }
+                if (!localUser.phone && user.phone && user.phone !== '') {
+                  localUser.phone = user.phone
+                }
+                wx.setStorageSync('userInfo', localUser)
+                if (user.createdAt) {
+                  const t = user.createdAt instanceof Date
+                    ? user.createdAt.toISOString()
+                    : user.createdAt
+                  wx.setStorageSync('registerTime', t)
+                }
               } catch (e) {}
-              this.globalData.isLoggedIn = true
-              this.globalData.openid = openid
-              if (user) {
-                try {
-                  // 合并本地与云端用户信息（本地优先，云端仅补充空白字段）
-                  let localUser = wx.getStorageSync('userInfo') || {}
-                  // 昵称：本地已有则保留（用户主动修改的优先级最高）
-                  if (!localUser.nickname) {
-                    if (user.nickname && user.nickname !== '') {
-                      localUser.nickname = user.nickname
-                    } else {
-                      let idx = wx.getStorageSync('userIndex') || 0
-                      idx += 1
-                      wx.setStorageSync('userIndex', idx)
-                      localUser.nickname = '龟上心' + idx
-                    }
-                  }
-                  // 头像：本地已有则保留
-                  if (!localUser.avatar && user.avatar && user.avatar !== '') {
-                    localUser.avatar = user.avatar
-                  }
-                  // 手机号：本地已有则保留
-                  if (!localUser.phone && user.phone && user.phone !== '') {
-                    localUser.phone = user.phone
-                  }
-                  wx.setStorageSync('userInfo', localUser)
-                  if (user.createdAt) {
-                    const t = user.createdAt instanceof Date
-                      ? user.createdAt.toISOString()
-                      : user.createdAt
-                    wx.setStorageSync('registerTime', t)
-                  }
-                } catch (e) {}
-              }
-              setTimeout(() => {
-                this.generateQrcode(openid)
-              }, 500)
-
-            } else {
-              // 新用户预存 openid
-              this.globalData.pendingOpenid = openid
-              this.globalData.pendingUser = user || null
-
             }
+            setTimeout(() => {
+              this.generateQrcode(openid)
+              this._checkSecurityNotifications()
+            }, 500)
           }
         },
         fail: (err) => {
@@ -193,7 +153,7 @@ App({
         action: 'generate',
         data: {
           scene: 'userId=' + openid,
-          page: '/pages/public/index'
+          page: '/subpkg-report/pages/public/index'
         }
       },
       success: (res) => {
@@ -213,42 +173,73 @@ App({
     })
   },
 
-  // 检查是否已登录，未登录则跳转登录页（用户可返回）
+  // 检查是否已登录，未登录则跳转登录页（用户可返回继续浏览）
   requireLogin: function () {
-    // 检查是否允许匿名访问
-    const config = this.globalData.systemConfig || {}
-    if (config.allowAnonymous) {
-      return true // 允许匿名访问，直接返回成功
-    }
-    
     if (!this.globalData.isLoggedIn) {
-      wx.navigateTo({
-        url: '/pages/login/index'
-      })
+      this.promptLogin()
       return false
     }
     return true
   },
-  
+
+  // 弹窗提示登录
+  promptLogin: function () {
+    wx.showModal({
+      title: '登录提示',
+      content: '登录后才能使用此功能',
+      confirmText: '去登录',
+      cancelText: '取消',
+      success: (res) => {
+        if (res.confirm) {
+          this.forceLogin()
+        }
+      }
+    })
+  },
+
+  // 强制登录（静默获取 openid 并自动登录）
+  forceLogin: function () {
+    wx.showLoading({ title: '登录中...' })
+    wx.cloud.callFunction({
+      name: 'login',
+      data: { action: '', data: {} },
+      success: (res) => {
+        if (res.result && res.result.success && res.result.data && res.result.data.openid) {
+          const openid = res.result.data.openid
+          try { wx.setStorageSync('openid', openid) } catch (e) {}
+          this.globalData.isLoggedIn = true
+          this.globalData.openid = openid
+          // 登录成功后检查审核违规通知
+          this._checkSecurityNotifications()
+          wx.showToast({ title: '登录成功', icon: 'success' })
+        } else {
+          wx.hideLoading()
+          wx.showToast({ title: '登录失败，请重试', icon: 'none' })
+        }
+      },
+      fail: (err) => {
+        wx.hideLoading()
+        wx.showToast({ title: '登录失败：' + (err.errMsg || '网络异常'), icon: 'none' })
+      }
+    })
+  },
+
   // 检查是否启用推送通知
   isPushEnabled: function () {
     const config = this.globalData.systemConfig || {}
     return config.enablePush !== undefined ? config.enablePush : false
   },
   
-  // 登出：清理所有登录态与自动登录相关标记
+  // 登出：清理所有登录态
   logout: function () {
     this.globalData.isLoggedIn = false
     this.globalData.openid = null
-    this.globalData.pendingOpenid = null
-    this.globalData.pendingUser = null
     this.globalData.userInfo = null
     try {
       wx.removeStorageSync('openid')
-      wx.removeStorageSync('agreedBefore')
       wx.removeStorageSync('userInfo')
       wx.removeStorageSync('registerTime')
-      wx.removeStorageSync('isAdmin') // 清除管理员状态
+      wx.removeStorageSync('isAdmin')
     } catch (e) {}
     
     wx.reLaunch({
@@ -265,7 +256,35 @@ App({
   },
   
   onShow: function () {
+    // 每次进入前台时检查是否有审核违规通知
+    this._checkSecurityNotifications()
+  },
 
+  /**
+   * 检查审核违规通知
+   * @private
+   */
+  _checkSecurityNotifications: function () {
+    if (!this.globalData.isLoggedIn) return
+
+    const { getNotificationManager } = require('./utils/notification.js')
+    const nm = getNotificationManager()
+
+    nm.getUnreadNotifications(true).then(data => {
+      if (data.total > 0) {
+        // 展示通知弹窗
+        nm.showNotificationDialog(data.list)
+      }
+    }).catch(err => {
+      console.error('检查审核通知失败:', err)
+    })
+
+    // 同时检查是否有超时未回调的审核记录
+    nm.getPendingChecks().then(list => {
+      if (list.length > 0) {
+        nm.showTimeoutToast(list.length)
+      }
+    }).catch(() => {})
   },
   onHide: function () {
 
@@ -276,6 +295,17 @@ App({
     openid: null,
     systemConfig: {
       imageServerUrl: 'http://192.168.110.29:3000'
-    }
+    },
+    // loading 页预加载的数据
+    dataPreloaded: false,
+    preloadedPets: null,
+    preloadedCategories: null,
+    preloadedReminders: null,
+    preloadedHasReminder: false,
+    preloadedStats: null,
+    preloadedFeaturedPets: null,
+    preloadedMyStats: null,
+    preloadedShareInfo: null,
+    preloadedQrcode: null
   }
 })

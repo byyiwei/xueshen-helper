@@ -1,0 +1,244 @@
+@import "/styles/design.wxss";
+
+/* 页面容器 */
+.page-tank3d {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--c-bg);
+  overflow: hidden;
+}
+
+/* 导航栏 */
+.custom-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: content-box;
+  height: 88rpx;
+  padding-left: 24rpx;
+  padding-right: 24rpx;
+  background: var(--c-surface);
+  box-shadow: 0 1rpx 0 var(--c-border-light);
+}
+
+.nav-back {
+  width: 60rpx;
+  height: 60rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-back-icon {
+  font-size: 40rpx;
+  color: var(--c-text2);
+  font-weight: 300;
+  line-height: 1;
+}
+
+.nav-title {
+  font-size: var(--fs-subtitle);
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.nav-placeholder {
+  width: 60rpx;
+}
+
+/* WebGL 画布容器 */
+.canvas-wrap {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.webgl-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+/* 操作提示覆盖层 */
+.hint-overlay {
+  position: absolute;
+  top: 24rpx;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: var(--r-full);
+  padding: 10rpx 28rpx;
+  pointer-events: none;
+}
+
+.hint-text {
+  font-size: var(--fs-mini);
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+}
+
+/* 容积覆盖层（右上角） */
+.volume-overlay {
+  position: absolute;
+  top: 24rpx;
+  right: 24rpx;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1.5rpx solid var(--c-border);
+  border-radius: var(--r-lg);
+  padding: 14rpx 22rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  pointer-events: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.volume-label {
+  font-size: var(--fs-mini);
+  color: var(--c-text2);
+  line-height: 1.2;
+}
+
+.volume-value {
+  font-size: 36rpx;
+  font-weight: 800;
+  color: var(--c-primary);
+  line-height: 1.2;
+  margin-top: 4rpx;
+}
+
+/* 底部参数面板 */
+.param-panel {
+  background: var(--c-surface);
+  border-top: 1.5rpx solid var(--c-border-light);
+  border-radius: 32rpx 32rpx 0 0;
+  padding: 28rpx 32rpx 0;
+  box-shadow: 0 -8rpx 24rpx rgba(0, 0, 0, 0.06);
+}
+
+.param-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20rpx;
+}
+
+.param-title {
+  font-size: var(--fs-body);
+  font-weight: 700;
+  color: var(--c-text);
+}
+
+/* 单位切换按钮 */
+.unit-chip {
+  padding: 8rpx 20rpx;
+  border-radius: var(--r-full);
+  border: 1.5rpx solid var(--c-border);
+  background: var(--c-surface);
+}
+
+.unit-chip.active {
+  background: var(--c-primary-light);
+  border-color: var(--c-primary);
+}
+
+.unit-chip-text {
+  font-size: var(--fs-mini);
+  color: var(--c-text2);
+  font-weight: 600;
+}
+
+.unit-chip.active .unit-chip-text {
+  color: var(--c-primary);
+}
+
+/* 参数输入网格 */
+.param-grid {
+  display: flex;
+  gap: 20rpx;
+  margin-bottom: 20rpx;
+}
+
+.param-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.param-label {
+  display: block;
+  font-size: var(--fs-mini);
+  color: var(--c-text2);
+  font-weight: 600;
+  margin-bottom: 8rpx;
+}
+
+.param-input-wrap {
+  display: flex;
+  align-items: center;
+  height: 72rpx;
+  padding: 0 16rpx;
+  background: var(--c-bg);
+  border: 1.5rpx solid var(--c-border);
+  border-radius: var(--r-lg);
+}
+
+.param-input {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-body);
+  font-weight: 700;
+  color: var(--c-text);
+  text-align: center;
+}
+
+.param-unit {
+  font-size: var(--fs-mini);
+  color: var(--c-text3);
+  margin-left: 4rpx;
+  flex-shrink: 0;
+}
+
+/* 容积结果卡片 */
+.result-card {
+  background: var(--c-primary-bg);
+  border: 1.5rpx solid rgba(232, 164, 0, 0.36);
+  border-radius: var(--r-xl);
+  padding: 20rpx 24rpx;
+  margin-bottom: 16rpx;
+}
+
+.result-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6rpx 0;
+}
+
+.result-label {
+  font-size: var(--fs-small);
+  color: var(--c-text2);
+}
+
+.result-value {
+  font-size: var(--fs-subtitle);
+  font-weight: 800;
+  color: var(--c-primary);
+}
+
+.result-formula {
+  font-size: var(--fs-mini);
+  color: var(--c-text2);
+  font-weight: 500;
+}
+
+/* 安全底部区 */
+.safe-bottom {
+  padding-bottom: constant(safe-area-inset-bottom);
+  padding-bottom: env(safe-area-inset-bottom);
+}

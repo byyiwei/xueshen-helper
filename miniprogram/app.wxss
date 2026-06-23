@@ -1,3 +1,24 @@
+/* iconfont 图标字体 */
+@font-face {
+  font-family: 'iconfont';
+  src: url('//at.alicdn.com/t/c/font_5198732_5tttzqwgcyu.woff2?t=1782102390848') format('woff2'),
+       url('//at.alicdn.com/t/c/font_5198732_5tttzqwgcyu.woff?t=1782102390848') format('woff'),
+       url('//at.alicdn.com/t/c/font_5198732_5tttzqwgcyu.ttf?t=1782102390848') format('truetype');
+}
+.iconfont {
+  font-family: 'iconfont' !important;
+  font-size: 16px;
+  font-style: normal;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+.icon-gongkai:before {
+  content: '\e61f';
+}
+.icon-jisuanqi:before {
+  content: '\e600';
+}
+
 page {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }

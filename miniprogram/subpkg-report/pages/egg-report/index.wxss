@@ -1,0 +1,291 @@
+.egg-report-page {
+  min-height: 100vh;
+  background: var(--c-bg, #FAF8F5);
+  display: flex;
+  flex-direction: column;
+}
+
+/* 未登录提示栏 */
+.login-hint-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: var(--s-md, 20rpx) var(--s-lg, 28rpx) 0;
+  padding: var(--s-md, 20rpx) var(--s-lg, 28rpx);
+  background: var(--c-text, #1A1A1A);
+  border-radius: var(--r-xl, 20rpx);
+  color: #fff;
+}
+.login-hint-text {
+  font-size: var(--fs-small, 24rpx);
+  flex: 1;
+}
+.login-hint-btn {
+  padding: 10rpx 24rpx;
+  background: rgba(255,255,255,.15);
+  border-radius: var(--r-full, 9999rpx);
+  font-size: var(--fs-mini, 22rpx);
+  font-weight: 600;
+  margin-left: var(--s-md, 20rpx);
+}
+
+/* 筛选区域 */
+.filter-section {
+  padding: var(--s-lg, 28rpx);
+  background: var(--c-surface, #FFFFFF);
+  margin: var(--s-md, 20rpx) var(--s-lg, 28rpx) var(--s-sm, 12rpx);
+  border-radius: var(--r-xl, 20rpx);
+  box-shadow: var(--shadow-sm, 0 1rpx 6rpx rgba(0,0,0,.03));
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--s-md, 20rpx);
+}
+
+.filter-row:last-child {
+  margin-bottom: 0;
+}
+
+.filter-item {
+  display: flex;
+  align-items: center;
+}
+
+.filter-label {
+  font-size: var(--fs-small, 24rpx);
+  color: var(--c-text2, #999999);
+  margin-right: var(--s-sm, 12rpx);
+}
+
+.picker-btn {
+  display: flex;
+  align-items: center;
+  padding: 14rpx 22rpx;
+  background: var(--c-primary-bg, #FFFCF5);
+  border-radius: var(--r-md, 14rpx);
+  border: 2rpx solid var(--c-border, #F0EDE8);
+}
+
+.picker-btn text {
+  font-size: var(--fs-small, 24rpx);
+  color: var(--c-text, #1A1A1A);
+}
+
+.picker-arrow {
+  font-size: 20rpx;
+  color: var(--c-text3, #BFBFBF);
+  margin-left: 8rpx;
+}
+
+.filter-actions {
+  display: flex;
+  gap: var(--s-sm, 12rpx);
+}
+
+.action-btn {
+  padding: 14rpx 28rpx;
+  border-radius: var(--r-full, 9999rpx);
+  font-size: var(--fs-small, 24rpx);
+  font-weight: 600;
+  transition: all .15s;
+}
+
+.action-btn.primary {
+  background: var(--c-primary, #E8A400);
+  color: #fff;
+  box-shadow: var(--shadow-btn, 0 6rpx 20rpx rgba(232,164,0,.18));
+}
+.action-btn.primary:active {
+  background: var(--c-primary-dark, #C98D00);
+  transform: scale(.97);
+}
+
+.action-btn.secondary {
+  background: var(--c-primary-light, #FFF8E7);
+  color: var(--c-primary, #E8A400);
+  border: 2rpx solid var(--c-border-light, #F5F2EE);
+}
+.action-btn.secondary:active {
+  background: var(--c-primary-bg, #FFFCF5);
+  transform: scale(.97);
+}
+
+/* 表格头部 */
+.table-header {
+  display: flex;
+  padding: 20rpx 32rpx;
+  background: var(--c-surface, #FFFFFF);
+  border-bottom: 3rpx solid var(--c-primary, #E8A400);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  margin: var(--s-sm, 12rpx) var(--s-lg, 28rpx) 0;
+  border-radius: var(--r-lg, 16rpx) var(--r-lg, 16rpx) 0 0;
+}
+
+.th {
+  font-size: var(--fs-small, 24rpx);
+  font-weight: 600;
+  color: var(--c-text, #1A1A1A);
+}
+
+.th-serial { width: 15%; text-align: center; }
+.th-date { width: 25%; text-align: center; }
+.th-female { width: 20%; text-align: center; }
+.th-egg { width: 25%; text-align: center; }
+
+/* 可排序表头 */
+.sortable {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sort-icon {
+  margin-left: 8rpx;
+  font-size: 20rpx;
+  color: var(--c-text3, #BFBFBF);
+  transition: color 0.2s;
+}
+
+.sortable:active .sort-icon {
+  color: var(--c-primary, #E8A400);
+}
+.th-remark { width: 15%; text-align: center; }
+
+/* 数据滚动区域 */
+.data-scroll {
+  flex: 1;
+  height: 0;
+}
+
+.data-content {
+  padding: 0 var(--s-lg, 28rpx);
+}
+
+/* 年份分组 */
+.year-group {
+  background: var(--c-surface, #FFFFFF);
+  border-radius: 0 0 var(--r-lg, 16rpx) var(--r-lg, 16rpx);
+  margin-bottom: var(--s-md, 20rpx);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm, 0 1rpx 6rpx rgba(0,0,0,.03));
+}
+
+.year-label {
+  padding: 16rpx 32rpx;
+  font-size: var(--fs-small, 24rpx);
+  font-weight: 600;
+  color: var(--c-primary, #E8A400);
+  background: var(--c-primary-bg, #FFFCF5);
+  border-bottom: 1rpx dashed var(--c-border, #F0EDE8);
+}
+
+/* 数据行 */
+.data-row {
+  display: flex;
+  align-items: center;
+  padding: 24rpx 32rpx;
+  border-bottom: 1rpx solid var(--c-border-light, #F5F2EE);
+}
+
+.data-row:last-child {
+  border-bottom: none;
+}
+
+.td {
+  font-size: var(--fs-small, 24rpx);
+  color: var(--c-text, #1A1A1A);
+}
+
+.td-serial { width: 15%; text-align: center; color: var(--c-text3, #BFBFBF); }
+.td-date { width: 25%; text-align: center; }
+.td-female { width: 20%; text-align: center; }
+.td-egg { width: 25%; text-align: center; color: var(--c-primary, #E8A400); font-weight: 600; }
+.td-remark { width: 15%; text-align: center; color: var(--c-text3, #BFBFBF); }
+
+/* 空状态 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 100rpx 0;
+}
+
+.empty-icon {
+  font-size: 80rpx;
+  margin-bottom: var(--s-md, 20rpx);
+}
+
+.empty-text {
+  font-size: var(--fs-body, 28rpx);
+  color: var(--c-text2, #999999);
+}
+
+/* 统计区域 */
+.stats-section {
+  padding: var(--s-lg, 28rpx);
+  padding-bottom: calc(var(--s-lg, 28rpx) + env(safe-area-inset-bottom));
+  background: var(--c-surface, #FFFFFF);
+  margin: var(--s-md, 20rpx) var(--s-lg, 28rpx);
+  border-radius: var(--r-xl, 20rpx);
+  box-shadow: var(--shadow-sm, 0 1rpx 6rpx rgba(0,0,0,.03));
+}
+
+.stats-row {
+  display: flex;
+  justify-content: space-around;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20rpx 24rpx;
+  background: var(--c-primary-bg, #FFFCF5);
+  border-radius: var(--r-lg, 16rpx);
+  flex: 1;
+  margin: 0 8rpx;
+}
+
+.stat-title {
+  font-size: var(--fs-small, 24rpx);
+  color: var(--c-text2, #999999);
+  margin-bottom: 12rpx;
+}
+
+.stat-content {
+  display: flex;
+  align-items: baseline;
+}
+
+.stat-value {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: var(--c-text, #1A1A1A);
+}
+
+.stat-divider {
+  font-size: 24rpx;
+  color: var(--c-border, #F0EDE8);
+  margin: 0 8rpx;
+}
+
+.stat-item.fertilization-rate {
+  background: var(--c-primary, #E8A400);
+  box-shadow: var(--shadow-btn, 0 6rpx 20rpx rgba(232,164,0,.18));
+}
+
+.stat-item.fertilization-rate .stat-title {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.stat-rate {
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #fff;
+}

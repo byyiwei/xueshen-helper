@@ -1566,8 +1566,8 @@ function generatePetHTML(data, theme) {
       
       <!-- 底部 -->
       <div class="bottom-bar">
-        <span class="footer-text">— 龟上心 —</span>
-        <div class="brand-text">龟上心 · 您的宠物健康管理助手</div>
+        <span class="footer-text">— 养龟档案 —</span>
+        <div class="brand-text">养龟档案 · 您的宠物健康管理助手</div>
       </div>
     </div>
   </div>
@@ -1585,7 +1585,7 @@ function generatePetHTML(data, theme) {
  */
 function generateShareHTML(shareInfo, options = {}) {
   const theme = options.theme || getTheme();
-  const nickname = options.nickname || '龟上心';
+  const nickname = options.nickname || '养龟档案';
   const cover = options.cover || '';
   const specialty = options.specialty || '记录、档案、繁育';
   const hasLicense = options.hasLicense || false;
@@ -2035,10 +2035,10 @@ function generateShareHTML(shareInfo, options = {}) {
       <div class="shop-banner">
         ${hasCover ? `<img class="banner-image" src="${cover}" />` : `
           <div class="banner-placeholder">
-            <span class="banner-hint">龟上心 · 您的宠物健康管理助手</span>
+            <span class="banner-hint">养龟档案 · 您的宠物健康管理助手</span>
           </div>
         `}
-        <div class="banner-watermark">PRESENTED BY 龟上心</div>
+        <div class="banner-watermark">PRESENTED BY 养龟档案</div>
       </div>
 
       <!-- 店名 + 实名标签 -->

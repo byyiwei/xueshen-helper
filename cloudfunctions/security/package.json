@@ -1,0 +1,9 @@
+{
+  "name": "security",
+  "version": "1.0.0",
+  "description": "内容安全审核云函数（图片/音频/文本）",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}

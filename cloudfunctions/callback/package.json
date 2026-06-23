@@ -1,0 +1,9 @@
+{
+  "name": "callback",
+  "version": "1.0.0",
+  "description": "微信异步审核结果回调接收云函数（HTTP触发）",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}

@@ -28,14 +28,9 @@ exports.main = async (event, context) => {
   const { OPENID } = cloud.getWXContext()
   const { action } = event
 
-  console.log('[admin] 收到请求, action:', action, ', OPENID:', OPENID)
-  
   // 验证管理员权限
   const admins = await getAdmins()
-  console.log('[admin] 管理员列表:', JSON.stringify(admins))
-  
   const isAdmin = admins.some(a => a.openid === OPENID)
-  console.log('[admin] 是否管理员:', isAdmin)
   
   if (!isAdmin) {
     console.error('[admin] 无管理员权限, OPENID:', OPENID)
@@ -123,8 +118,6 @@ async function getStats() {
 async function getUsers(event) {
   const { searchText = '', filterStatus = '', page = 1, pageSize = 20, sortField = 'createdAt', sortOrder = 'desc' } = event
   
-  console.log('getUsers params:', { searchText, filterStatus, sortField, sortOrder })
-  
   let query = {}
   
   if (searchText) {
@@ -146,16 +139,12 @@ async function getUsers(event) {
   const field = validSortFields.includes(sortField) ? sortField : 'createdAt'
   const order = sortOrder === 'asc' ? 'asc' : 'desc'
   
-  console.log('OrderBy:', field, order)
-  
   const res = await db.collection('users')
     .where(query)
     .orderBy(field, order)
     .skip((page - 1) * pageSize)
     .limit(pageSize)
     .get()
-  
-  console.log('Users found:', res.data.length)
   
   // 统计每个用户的宠物数和足迹数
   const users = res.data.map(u => {
@@ -289,11 +278,8 @@ async function getPets(event) {
     .limit(pageSize)
     .get()
   
-  console.log('宠物查询结果:', res.data.length, '条记录')
-  
   // 获取所有宠物的openid，批量查询用户信息
   const openids = [...new Set(res.data.map(p => p.openid).filter(Boolean))]
-  console.log('需要查询的openid列表:', openids)
   
   const usersMap = {}
   
@@ -301,8 +287,6 @@ async function getPets(event) {
     const usersRes = await db.collection('users').where({
       openid: db.command.in(openids)
     }).get()
-    
-    console.log('用户查询结果:', usersRes.data.length, '条记录')
     
     usersRes.data.forEach(user => {
       // 优先使用昵称，没有则使用用户名或openid的一部分
@@ -312,7 +296,6 @@ async function getPets(event) {
         nickname = user.openid ? '用户_' + user.openid.slice(-8) : '未知'
       }
       usersMap[user.openid] = nickname
-      console.log('映射:', user.openid, '->', nickname)
     })
   }
   
@@ -322,8 +305,6 @@ async function getPets(event) {
     const avatar = photos.length > 0 ? photos[0] : (p.avatar || '')
     // 根据openid获取主人昵称
     const owner = usersMap[p.openid] || '未知'
-    
-    console.log('宠物:', p.name, ', openid:', p.openid, ', 主人:', owner)
     
     return {
       id: p._id,
@@ -496,18 +477,12 @@ async function updateConfig(config) {
   const { OPENID } = cloud.getWXContext()
   
   try {
-    console.log('[updateConfig] 开始更新配置, OPENID:', OPENID)
-    
     // 删除不能更新的字段（_id、createdAt 等）
     const { _id, createdAt, ...updateData } = config
     
-    console.log('[updateConfig] 配置数据(已过滤):', JSON.stringify(updateData, null, 2))
-    
     const res = await db.collection('systemConfig').limit(1).get()
-    console.log('[updateConfig] 查询现有配置结果:', res.data.length)
     
     if (res.data.length > 0) {
-      console.log('[updateConfig] 更新现有配置, docId:', res.data[0]._id)
       await db.collection('systemConfig').doc(res.data[0]._id).update({
         data: {
           ...updateData,
@@ -516,7 +491,6 @@ async function updateConfig(config) {
         }
       })
     } else {
-      console.log('[updateConfig] 添加新配置')
       await db.collection('systemConfig').add({
         data: {
           ...updateData,
@@ -526,11 +500,9 @@ async function updateConfig(config) {
         }
       })
     }
-    console.log('[updateConfig] 配置更新成功')
     return successResponse(null, '配置已更新')
   } catch (error) {
     console.error('[updateConfig] 更新配置失败:', error)
-    console.error('[updateConfig] 错误详情:', error.message, error.stack)
     return errorResponse('更新配置失败: ' + error.message, error)
   }
 }

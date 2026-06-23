@@ -1,4 +1,4 @@
 {
-  "navigationBarTitleText": "宠物详情",
+  "navigationStyle": "custom",
   "usingComponents": {}
 }

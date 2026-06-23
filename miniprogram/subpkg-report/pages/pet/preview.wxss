@@ -1,0 +1,44 @@
+@import "/styles/design.wxss";
+
+.page-preview { min-height: 100vh; background: var(--c-bg); }
+.photo-empty {
+  width: 100%; height: 420rpx; background: var(--c-primary-light);
+  display: flex; align-items: center; justify-content: center; font-size: 140rpx; opacity: .6;
+}
+
+/* Info */
+.info-name-row { display: flex; align-items: center; gap: var(--s-sm); margin-bottom: var(--s-xs); }
+.info-name { font-size: 42rpx; font-weight: 700; }
+.info-tags { display: flex; gap: var(--s-xs); margin-bottom: var(--s-md); }
+.info-relations { display: flex; padding-top: var(--s-md); border-top: 1rpx solid var(--c-border-light); }
+.rel-item { flex: 1; text-align: center; }
+.rel-label { font-size: var(--fs-mini); color: var(--c-text3); display: block; }
+.rel-val { font-size: var(--fs-small); font-weight: 600; color: var(--c-text); display: block; margin-top: 4rpx; }
+
+/* Detail grid */
+.detail-grid { display: flex; flex-wrap: wrap; gap: var(--s-sm); }
+.detail-item {
+  width: calc(50% - 6rpx); padding: var(--s-sm) var(--s-md);
+  background: var(--c-bg); border-radius: var(--r-lg);
+}
+.detail-label { font-size: var(--fs-mini); color: var(--c-text3); display: block; }
+.detail-val { font-size: var(--fs-small); font-weight: 600; color: var(--c-text); display: block; margin-top: 4rpx; }
+
+/* Timeline events */
+.event-list { display: flex; flex-direction: column; gap: var(--s-sm); }
+.event-card {
+  display: flex; align-items: center; gap: var(--s-sm);
+  padding: var(--s-sm) var(--s-md); border-radius: var(--r-lg);
+  background: var(--c-bg);
+}
+.event-time { font-size: var(--fs-mini); color: var(--c-text3); width: 100rpx; flex-shrink: 0; }
+.event-icon { font-size: 36rpx; flex-shrink: 0; }
+.event-text { font-size: var(--fs-small); color: var(--c-text); flex: 1; }
+
+/* QR */
+.qr-placeholder {
+  width: 200rpx; height: 200rpx; margin: var(--s-md) auto 0;
+  background: var(--c-bg); border-radius: var(--r-lg);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--c-text3); font-size: var(--fs-small);
+}

@@ -1,151 +1,129 @@
 .container {
   min-height: 100vh;
-  background: linear-gradient(180deg, #FFFFFF 0%, #F0F7FF 100%);
+  background: #FFFFFF;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 40rpx;
+  box-sizing: border-box;
 }
 
 .login-box {
   width: 100%;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   align-items: center;
+  padding: 80rpx 0 calc(40rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
 }
 
-/* ===== 心形龟甲+萌芽 Logo（基于 logo.html 的 SVG 实现 - 带白色圆角背景框）===== */
-.logo-wrapper {
-  margin-bottom: 40rpx;
-}
-
-.logo-svg-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  position: relative;
-}
-
-.logo-frame {
-  width: 220rpx;
-  height: 220rpx;
-  background: #ffffff;
-  border-radius: 56rpx;
+/* ===== Logo ===== */
+.logo-section {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8rpx 36rpx rgba(58, 124, 255, 0.08);
-  margin-bottom: 20rpx;
-  overflow: hidden;
+  margin-top: 200rpx;
 }
 
 .logo-img {
-  width: 176rpx;
-  height: 176rpx;
+  width: 440rpx;
+  height: 440rpx;
   display: block;
 }
 
-/* 品牌文字 */
-.logo-text {
-  font-size: 64rpx;
-  font-weight: bold;
-  background: linear-gradient(135deg, #3A7CFF 0%, #1A5CD6 100%);
-  -webkit-background-clip: text;
-  color: transparent;
-  letter-spacing: 8rpx;
-  text-shadow: 0 4rpx 12rpx rgba(58, 124, 255, 0.1);
-  white-space: nowrap;
-  font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+/* ===== 中间留白 ===== */
+.spacer {
+  flex: 1;
 }
 
-/* ===== 副标题 ===== */
-.subtitle {
-  font-size: 28rpx;
-  color: #94A3B8;
-  margin-bottom: 100rpx;
-}
-
-/* ===== 登录按钮 ===== */
-.login-btn {
+/* ===== 底部区域 ===== */
+.bottom-section {
   width: 100%;
-  margin-bottom: 60rpx;
-}
-
-.wechat-btn {
-  width: 100% !important;
-  height: 96rpx !important;
-  background: linear-gradient(135deg, #3A7CFF 0%, #1A5CD6 100%) !important;
-  color: #ffffff !important;
-  border-radius: 48rpx !important;
-  font-size: 32rpx !important;
-  line-height: 96rpx !important;
-  box-shadow: 0 8rpx 24rpx rgba(58, 124, 255, 0.15);
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-}
-
-.btn-text {
-  margin-left: 16rpx;
+  gap: 32rpx;
 }
 
 /* ===== 协议区域 ===== */
 .agreement-section {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16rpx;
-  padding-bottom: 60rpx;
+  justify-content: center;
 }
 
 .checkbox-wrapper {
   display: flex;
   align-items: center;
-  gap: 16rpx;
+  gap: 8rpx;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .checkbox {
-  width: 40rpx;
-  height: 40rpx;
-  border: 2rpx solid #CBD5E1;
-  border-radius: 8rpx;
+  width: 32rpx;
+  height: 32rpx;
+  border: 2rpx solid #D1D5DB;
+  border-radius: 6rpx;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
+  flex-shrink: 0;
 }
 
 .checkbox.checked {
-  background: #3A7CFF;
-  border-color: #3A7CFF;
+  background: #E8A400;
+  border-color: #E8A400;
 }
 
 .check-icon {
   color: #ffffff;
-  font-size: 26rpx;
+  font-size: 22rpx;
   font-weight: bold;
 }
 
 .agreement-text {
-  font-size: 28rpx;
-  color: #475569;
-}
-
-.agreement-links {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
+  font-size: 24rpx;
+  color: #6B7280;
 }
 
 .link {
-  font-size: 28rpx;
-  color: #2A6F97;
-  text-decoration: underline;
+  font-size: 24rpx;
+  color: #576B95;
 }
 
 .divider {
-  font-size: 26rpx;
-  color: #94A3B8;
+  font-size: 24rpx;
+  color: #9CA3AF;
+}
+
+/* ===== 登录按钮 ===== */
+.login-btn {
+  width: 100%;
+}
+
+.wechat-btn {
+  width: 100% !important;
+  height: 96rpx !important;
+  background: linear-gradient(135deg, #E8A400 0%, #C98D00 100%) !important;
+  color: #ffffff !important;
+  border-radius: 48rpx !important;
+  font-size: 32rpx !important;
+  line-height: 96rpx !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none !important;
+  box-shadow: 0 8rpx 24rpx rgba(232, 164, 0, 0.2);
+}
+
+.wechat-btn::after {
+  border: none !important;
+}
+
+.btn-text {
+  margin-left: 16rpx;
 }
 
 /* ===== 协议弹窗 ===== */
@@ -176,7 +154,7 @@
 
 .modal-header {
   padding: 32rpx;
-  border-bottom: 1rpx solid #E6F0FF;
+  border-bottom: 1rpx solid #F3F4F6;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -223,7 +201,7 @@
   text-align: center;
   margin-bottom: 20rpx;
   padding-bottom: 12rpx;
-  border-bottom: 1rpx solid #E6F0FF;
+  border-bottom: 1rpx solid #F3F4F6;
   word-break: break-all;
 }
 
@@ -233,7 +211,7 @@
   color: #1E293B;
   margin-bottom: 12rpx;
   padding-left: 12rpx;
-  border-left: 4rpx solid #3A7CFF;
+  border-left: 4rpx solid #E8A400;
   word-break: break-all;
 }
 
@@ -257,7 +235,7 @@
 
 .list-number {
   font-size: 22rpx;
-  color: #3A7CFF;
+  color: #E8A400;
   font-weight: 500;
   flex-shrink: 0;
   margin-right: 8rpx;
@@ -273,34 +251,18 @@
 
 .modal-footer {
   padding: 28rpx 36rpx;
-  border-top: 1rpx solid #E6F0FF;
+  border-top: 1rpx solid #F3F4F6;
   flex-shrink: 0;
 }
 
 .modal-btn {
   width: 100%;
   height: 80rpx;
-  background: linear-gradient(135deg, #3A7CFF 0%, #1A5CD6 100%);
+  background: linear-gradient(135deg, #E8A400 0%, #C98D00 100%);
   color: #ffffff;
   border-radius: 40rpx;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 30rpx;
-}
-
-/* 跳过登录按钮 - 醒目样式，确保审核可见 */
-.skip-btn {
-  margin-top: 40rpx;
-  padding: 24rpx 60rpx;
-  text-align: center;
-  border: 2rpx solid #3A7CFF;
-  border-radius: 48rpx;
-  background: transparent;
-}
-
-.skip-text {
-  font-size: 30rpx;
-  color: #3A7CFF;
-  font-weight: 500;
 }

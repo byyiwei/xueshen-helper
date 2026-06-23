@@ -1,0 +1,107 @@
+<view class="page-tank3d">
+  <!-- 顶部导航栏 -->
+  <view class="custom-nav" style="padding-top: {{statusBarHeight}}px">
+    <view class="nav-back" bindtap="goBack">
+      <text class="nav-back-icon">‹</text>
+    </view>
+    <text class="nav-title">3D 鱼缸可视化</text>
+    <view class="nav-placeholder"></view>
+  </view>
+
+  <!-- WebGL 画布区域 -->
+  <view class="canvas-wrap" style="padding-top: {{totalNavHeight}}rpx;">
+    <canvas
+      type="webgl"
+      id="webgl"
+      class="webgl-canvas"
+      disable-scroll="{{true}}"
+      catchtouchstart="onTouchStart"
+      catchtouchmove="onTouchMove"
+      catchtouchend="onTouchEnd"
+      catchtouchcancel="onTouchEnd"
+    ></canvas>
+
+    <!-- 操作提示覆盖层 -->
+    <view wx:if="{{showHint}}" class="hint-overlay">
+      <text class="hint-text">单指拖拽旋转 · 双指捏合缩放</text>
+    </view>
+
+    <!-- 容积覆盖层 -->
+    <view class="volume-overlay">
+      <text class="volume-label">水体容积</text>
+      <text class="volume-value">{{volumeText}} L</text>
+    </view>
+  </view>
+
+  <!-- 底部参数输入面板 -->
+  <view class="param-panel">
+    <view class="param-title-row">
+      <text class="param-title">鱼缸尺寸参数</text>
+      <view class="unit-chip {{unit === 'cm' ? 'active' : ''}}" bindtap="toggleUnit">
+        <text class="unit-chip-text">{{unit}}</text>
+      </view>
+    </view>
+
+    <view class="param-grid">
+      <!-- 长度输入 -->
+      <view class="param-item">
+        <text class="param-label">长</text>
+        <view class="param-input-wrap">
+          <input
+            class="param-input"
+            type="digit"
+            value="{{inputLength}}"
+            bindinput="onLengthInput"
+            bindblur="onParamBlur"
+          />
+          <text class="param-unit">{{unit}}</text>
+        </view>
+      </view>
+
+      <!-- 宽度输入 -->
+      <view class="param-item">
+        <text class="param-label">宽</text>
+        <view class="param-input-wrap">
+          <input
+            class="param-input"
+            type="digit"
+            value="{{inputWidth}}"
+            bindinput="onWidthInput"
+            bindblur="onParamBlur"
+          />
+          <text class="param-unit">{{unit}}</text>
+        </view>
+      </view>
+
+      <!-- 高度输入 -->
+      <view class="param-item">
+        <text class="param-label">高</text>
+        <view class="param-input-wrap">
+          <input
+            class="param-input"
+            type="digit"
+            value="{{inputHeight}}"
+            bindinput="onHeightInput"
+            bindblur="onParamBlur"
+          />
+          <text class="param-unit">{{unit}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 容积结果卡片 -->
+    <view class="result-card">
+      <view class="result-row">
+        <text class="result-label">水体容积</text>
+        <text class="result-value">{{volumeText}} L</text>
+      </view>
+      <view class="result-row">
+        <text class="result-label">计算公式</text>
+        <text class="result-formula">{{lengthCm}} × {{widthCm}} × {{heightCm}} ÷ 1000</text>
+      </view>
+    </view>
+
+    <!-- 底部安全区 -->
+    <view class="safe-bottom"></view>
+  </view>
+</view>

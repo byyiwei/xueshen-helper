@@ -1,5 +1,6 @@
 const { getAPI } = require('../../utils/api.js')
 const { showError, showSuccess } = require('../../utils/error.js')
+const { convertSinglePhoto } = require('../../utils/image.js')
 
 const API = getAPI()
 
@@ -12,6 +13,7 @@ Page({
     isLoggedIn: false,
     allReminders: [],
     hasAnyReminder: false,
+    featuredPets: [],
     stats: {
       petCount: 0,
       eggCount: 0,
@@ -25,48 +27,47 @@ Page({
     this.setNavHeight()
     this.setGreetingText()
     const app = getApp()
-    const isLoggedIn = app.globalData.isLoggedIn
-    this.setData({ isLoggedIn })
-    this.loadUserData()
-    if (isLoggedIn) {
-      this.loadReminders()
-      this.loadStats()
-    }
+    this.setData({ isLoggedIn: app.globalData.isLoggedIn })
+    // Tab 页会被预创建，数据加载统一在 onShow 中处理
+  },
+
+  _applyPreloadedData: function (app) {
+    this.setData({
+      allReminders: app.globalData.preloadedReminders || [],
+      hasAnyReminder: !!app.globalData.preloadedHasReminder,
+      stats: app.globalData.preloadedStats || {
+        petCount: 0,
+        eggCount: 0,
+        pairEvents: 0,
+        warningCount: 0
+      },
+      featuredPets: app.globalData.preloadedFeaturedPets || []
+    })
   },
 
   onShow: function () {
     const app = getApp()
     const isLoggedIn = app.globalData.isLoggedIn
-    const loginFromIndex = app.globalData.loginFromIndex
-    
-    if (isLoggedIn && loginFromIndex) {
-      app.globalData.loginFromIndex = false
-      this.setData({ isLoggedIn: true, showSkeleton: true })
-      setTimeout(async () => {
-        await this.loadReminders()
-        await this.loadStats()
-        await this.loadUserData()
-        this.setData({ showSkeleton: false })
-      }, 800)
-    } else {
-      this.setData({ isLoggedIn })
-      if (isLoggedIn) {
-        this.loadReminders()
-        this.loadStats()
-      } else {
-        this.setData({
-          allReminders: [],
-          hasAnyReminder: false,
-          stats: {
-            petCount: 0,
-            eggCount: 0,
-            pairEvents: 0,
-            warningCount: 0
-          }
-        })
-      }
+    this.setData({ isLoggedIn })
+
+    // loading 页完成后首次进入：直接使用预加载数据
+    if (app.globalData.dataPreloaded && !this._preloadedApplied) {
+      this._applyPreloadedData(app)
+      this._preloadedApplied = true
+      this.loadUserData()
+    } else if (this._preloadedApplied && isLoggedIn) {
+      // 后续返回首页时刷新
+      this.loadReminders()
+      this.loadStats()
+      this.loadUserData()
+    } else if (!this._preloadedApplied && !app.globalData.dataPreloaded && isLoggedIn) {
+      // 未经过 loading 页的直接进入（兜底）
+      this.loadReminders()
+      this.loadStats()
+      this.loadUserData()
+      this._preloadedApplied = true
     }
-    
+
     const updateTabBar = () => {
       if (typeof this.getTabBar === 'function' && this.getTabBar()) {
         const tabBar = this.getTabBar()
@@ -102,9 +103,68 @@ Page({
     try {
       const userInfo = wx.getStorageSync('userInfo') || {}
       this.setData({ userInfo })
+      // 异步刷新头像临时 URL（云存储签名可能已过期）
+      if (userInfo.avatar) {
+        this.refreshUserAvatar(userInfo)
+      }
     } catch (error) {
       console.error('加载用户信息失败:', error)
     }
+  },
+
+  /**
+   * 刷新头像图片 URL
+   * TCB 云存储的临时签名有时效，过期后返回 403，这里统一刷新
+   */
+  refreshUserAvatar: async function (userInfo) {
+    if (!userInfo || !userInfo.avatar) return
+    const avatar = userInfo.avatar
+    if (!avatar.includes('tcb.qcloud.la') && !avatar.startsWith('cloud://')) return
+    try {
+      const newUrl = await convertSinglePhoto(avatar)
+      if (newUrl && newUrl !== avatar) {
+        const newInfo = { ...userInfo, avatar: newUrl }
+        this.setData({ userInfo: newInfo })
+        try { wx.setStorageSync('userInfo', newInfo) } catch (e) {}
+      }
+    } catch (err) {
+      console.error('刷新头像 URL 失败:', err)
+    }
+  },
+
+  /**
+   * 头像图片加载失败处理
+   * 尝试刷新临时 URL，若仍失败则清空头像显示默认占位
+   */
+  onAvatarError: async function () {
+    const avatar = this.data.userInfo.avatar
+    if (!avatar) return
+    try {
+      const newUrl = await convertSinglePhoto(avatar)
+      if (newUrl && newUrl !== avatar) {
+        const userInfo = { ...this.data.userInfo, avatar: newUrl }
+        this.setData({ userInfo })
+        wx.setStorageSync('userInfo', userInfo)
+        return
+      }
+    } catch (err) {}
+    // 刷新仍失败，清空头像显示默认占位
+    const userInfo = { ...this.data.userInfo, avatar: '' }
+    this.setData({ userInfo })
+    wx.setStorageSync('userInfo', userInfo)
+  },
+
+  onPullDown: async function () {
+    if (this.data.isLoggedIn) {
+      await Promise.all([
+        this.loadReminders(),
+        this.loadStats(),
+        this.loadUserData()
+      ])
+    } else {
+      await this.loadUserData()
+    }
+    wx.stopPullDownRefresh()
   },
 
   // ========== 日期工具 ==========
@@ -197,6 +257,7 @@ Page({
 
   // ========== 加载提醒（云端 + 本地） ==========
   async loadReminders() {
+    const loadId = ++this._reminderLoadId
     try {
       const pets = wx.getStorageSync('pets') || []
 
@@ -257,6 +318,8 @@ Page({
         if (pa !== pb) return pa - pb
         return (a.daysLeft || 0) - (b.daysLeft || 0)
       })
+
+      if (loadId !== this._reminderLoadId) return
 
       this.setData({
         allReminders: pending,
@@ -333,35 +396,39 @@ Page({
   },
 
   goToDiseasePrevention: function () {
-    wx.navigateTo({ url: '/pages/tools/calculator' })
+    wx.navigateTo({ url: '/subpkg-tools/pages/tools/calculator' })
   },
 
   goToEggReport: function () {
-    wx.navigateTo({ url: '/pages/egg-report/index' })
+    wx.navigateTo({ url: '/subpkg-report/pages/egg-report/index' })
   },
 
   goToHatchReport: function () {
-    wx.navigateTo({ url: '/pages/hatch-report/index' })
+    wx.navigateTo({ url: '/subpkg-report/pages/hatch-report/index' })
   },
 
   goToCalculator: function () {
-    wx.navigateTo({ url: '/pages/tools/calculator' })
+    wx.navigateTo({ url: '/subpkg-tools/pages/tools/calculator' })
   },
 
   goToPublic: function () {
-    wx.navigateTo({ url: '/pages/public/index' })
+    const openid = wx.getStorageSync('openid')
+    if (openid) {
+      wx.navigateTo({ url: `/subpkg-report/pages/public/index?userId=${openid}` })
+    } else {
+      const app = getApp()
+      app.promptLogin()
+    }
   },
 
   goToLogin: function () {
     const app = getApp()
-    app.globalData.loginFromIndex = true
-    wx.navigateTo({
-      url: '/pages/login/index'
-    })
+    app.requireLogin()
   },
 
   // ========== 加载统计 ==========
   async loadStats() {
+    const loadId = ++this._statsLoadId
     try {
       const pets = wx.getStorageSync('pets') || []
       const records = wx.getStorageSync('records') || []
@@ -374,6 +441,15 @@ Page({
         if (pet.status === '预警') warningCount++
       })
 
+      const featuredPets = pets.slice(0, 3).map((pet, index) => {
+        const name = pet.alias || pet.name || `龟${index + 1}`
+        return {
+          id: pet.id || pet._id || index,
+          cover: pet.photos && pet.photos.length ? pet.photos[0] : '',
+          shortName: String(name).slice(0, 1)
+        }
+      })
+
       records.forEach(record => {
         if (record.type === '产蛋') {
           eggCount += parseInt(record.eggCount) || 0
@@ -382,13 +458,16 @@ Page({
         }
       })
 
+      if (loadId !== this._statsLoadId) return
+
       this.setData({
         stats: {
           petCount: pets.length,
           eggCount,
           pairEvents,
           warningCount
-        }
+        },
+        featuredPets
       })
     } catch (error) {
       console.error('加载统计数据失败:', error)

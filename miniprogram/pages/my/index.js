@@ -6,6 +6,7 @@ const { getVoiceManager } = require('../../utils/voice.js')
 const { getTempUrl, convertSinglePhoto } = require('../../utils/image.js')
 const { generateShareHTML } = require('../../utils/theme.js')
 const { generateImageFromHTML } = require('../../utils/imageService.js')
+const cacheManager = require('../../utils/cache.js')
 
 const API = getAPI()
 const voiceManager = getVoiceManager()
@@ -15,12 +16,12 @@ Page({
     statusBarHeight: 0,
     totalNavHeight: 120,
     userInfo: {
-      nickname: '龟上心',
+      nickname: '养龟档案',
       avatar: '',
       phone: ''
     },
     activeTab: 'data',
-    switchColor: '#3A7CFF',
+    switchColor: '#E8A400',
     provinceCityAreaCustomItem: '全部',
     qrcodeImage: '',
     // 跨宠物提醒汇总
@@ -81,9 +82,13 @@ Page({
     isLoggedIn: false,
     allReminders: [],
     hasAnyReminder: false,
+    // 回收站数据
+    recycleBin: [],
+    // 最近浏览数据
+    recentViews: [],
     // 系统配置
     systemConfig: {
-      systemName: '龟上心',
+      systemName: '养龟档案',
       version: '1.0.0',
       servicePhone: ''
     }
@@ -91,35 +96,33 @@ Page({
 
   onLoad: function () {
     const sysInfo = wx.getSystemInfoSync()
-    // 获取状态栏高度，确保至少 20px（兜底保护）
     const statusBarHeight = Math.max(sysInfo.statusBarHeight || 20, 20)
-    // 获取安全区顶部间距（刘海屏设备）
     const safeAreaTop = sysInfo.safeArea ? (sysInfo.safeArea.top || statusBarHeight) : statusBarHeight
-    // 取较大值：状态栏高度 vs 安全区顶部
     const finalStatusBarHeight = Math.max(statusBarHeight, safeAreaTop)
     const rpxRatio = 750 / sysInfo.windowWidth
-    // 导航栏高度 = 状态栏高度(rpx) + 导航栏内容区(88rpx)
     const totalNavHeight = Math.round(finalStatusBarHeight * rpxRatio) + 88
     this.setData({ statusBarHeight: finalStatusBarHeight, totalNavHeight })
-    // 初始化德佟打印SDK（离屏Canvas模式）
+    // 初始化德佟打印SDK
     this.lpapi = LPAPIFactory.getInstance({ showLog: 4 })
     this.setData({ lpapi: this.lpapi })
-    // 检查登录状态，已登录才加载数据
+
     const app = getApp()
     const isLoggedIn = app.globalData.isLoggedIn
     this.setData({ isLoggedIn })
-    if (isLoggedIn) {
-      this.loadAll()
-      this.loadQrcode()
-    } else {
-      this.setData({ showSkeleton: false })
-    }
+    // Tab 页会被预创建，数据加载统一在 onShow 中处理
   },
-  
+
+  _applyPreloadedData: function (app) {
+    this.setData({
+      stats: app.globalData.preloadedMyStats || this.data.stats,
+      qrcodeImage: app.globalData.preloadedQrcode || '',
+      showSkeleton: false
+    })
+  },
+
   onShow: function () {
     const app = getApp()
     const isLoggedIn = app.globalData.isLoggedIn
-    // 主动更新tabBar选中状态，并确保 tabBar 可见
     const updateTabBar = () => {
       if (typeof this.getTabBar === 'function' && this.getTabBar()) {
         const tabBar = this.getTabBar()
@@ -128,25 +131,26 @@ Page({
     }
     updateTabBar()
     setTimeout(updateTabBar, 100)
-    // 同步登录状态到页面
     this.setData({ isLoggedIn })
-    
+
     if (!isLoggedIn) return
-    
-    // 调用云函数检查是否为管理员
+
     this.checkAdminPermission()
-    
-    // 登录后返回时加载数据
-    if (!this._loadedOnce) {
-      this._loadedOnce = true
+
+    if (app.globalData.dataPreloaded && !this._preloadedApplied) {
+      this._applyPreloadedData(app)
+      this._preloadedApplied = true
       this.loadAll()
-      this.loadQrcode()
-    } else {
-      // 每次进入页面都刷新统计数据
+    } else if (!this._preloadedApplied && !app.globalData.dataPreloaded) {
+      return
+    } else if (this._preloadedApplied) {
       this.loadStats()
       this.loadSystemConfig()
     }
-    // 尝试自动连接打印机
+
+    this.loadRecycleBin()
+    this.loadRecentViews()
+
     if (this.data.printerConfig.autoConnect && !this.data.printerConfig.connected) {
       this.tryAutoConnect()
     }
@@ -275,7 +279,7 @@ Page({
       if (res.result.success) {
         this.setData({
           systemConfig: {
-            systemName: res.result.data.systemName || '龟上心',
+            systemName: res.result.data.systemName || '养龟档案',
             version: res.result.data.version || '1.0.0',
             servicePhone: res.result.data.servicePhone || ''
           }
@@ -289,7 +293,7 @@ Page({
         if (saved) {
           this.setData({
             systemConfig: {
-              systemName: saved.systemName || '龟上心',
+              systemName: saved.systemName || '养龟档案',
               version: saved.version || '1.0.0',
               servicePhone: saved.servicePhone || ''
             }
@@ -357,7 +361,7 @@ Page({
             let userIndex = wx.getStorageSync('userIndex') || 0;
             userIndex += 1;
             wx.setStorageSync('userIndex', userIndex);
-            savedUser.nickname = '龟上心' + userIndex;
+            savedUser.nickname = '养龟档案' + userIndex;
             wx.setStorageSync('userInfo', savedUser);
           }
           this.setData({ userInfo: savedUser });
@@ -381,7 +385,7 @@ Page({
   },
 
   loadQrcode: async function () {
-    // 优先从本地缓存读取小程序码（v2 版本：指向 pages/public/index）
+    // 优先从本地缓存读取小程序码（v2 版本：指向 subpkg-report/pages/public/index）
     try {
       const qrcodeVersion = wx.getStorageSync('qrcodeImageVersion')
       const cachedQrcode = wx.getStorageSync('qrcodeImage')
@@ -404,7 +408,7 @@ Page({
             action: 'generate',
             data: {
               scene: 'userId=' + (wx.getStorageSync('openid') || 'guest'),
-              page: 'pages/public/index'
+              page: 'subpkg-report/pages/public/index'
             }
           }
         })
@@ -491,7 +495,7 @@ Page({
       const { userInfo, shareInfo } = this.data
       const theme = { primary: '#3A7CFF', primaryDark: '#1A5CD6', primaryLight: '#E6F0FF', bg: '#F0F7FF', bgLight: '#FFFFFF', accent: '#FF8C42', text: '#1E293B' }
       const html = generateShareHTML({}, {
-        nickname: userInfo.nickname || '龟上心',
+        nickname: userInfo.nickname || '养龟档案',
         cover: shareInfo.cover || '',
         specialty: shareInfo.specialty || '记录、档案、繁育',
         hasLicense: shareInfo.hasLicense || false,
@@ -621,17 +625,48 @@ Page({
     }
   },
 
+  goSetting: function () {
+    wx.showToast({ title: '设置功能开发中', icon: 'none' })
+  },
+
+  clearCache: function () {
+    wx.showModal({
+      title: '清除缓存',
+      content: '只清理临时缓存，不会删除登录信息和龟档案。',
+      confirmText: '清除',
+      success: (res) => {
+        if (!res.confirm) return
+        cacheManager.clearCache()
+        showSuccess('缓存已清理')
+      }
+    })
+  },
+
   chooseCover: function () {
     wx.chooseMedia({
       count: 1,
       mediaType: ['image'],
       sourceType: ['album', 'camera'],
-      success: (res) => {
+      success: async (res) => {
         const cover = res.tempFiles[0].tempFilePath
         const shareInfo = { ...this.data.shareInfo, cover }
         this.setData({ shareInfo })
         wx.setStorageSync('shareInfo', shareInfo)
         wx.showToast({ title: '封面已更新', icon: 'success' })
+
+        // 上传到云存储并同步到云端
+        try {
+          const openid = wx.getStorageSync('openid') || 'unknown'
+          const uploadRes = await API.uploadImage(cover, 'covers', openid, { scene: 'cover' })
+          if (uploadRes && uploadRes.fileID) {
+            const newShareInfo = { ...this.data.shareInfo, cover: uploadRes.fileID }
+            this.setData({ shareInfo: newShareInfo })
+            wx.setStorageSync('shareInfo', newShareInfo)
+            this.syncShareInfoToCloud(newShareInfo)
+          }
+        } catch (err) {
+          console.error('封面上传失败:', err)
+        }
       }
     })
   },
@@ -663,6 +698,22 @@ Page({
         wx.showToast({ title: '已上传 ' + combined.length + ' 张', icon: 'success' })
       }
     })
+  },
+
+  removeEnvImage: function (e) {
+    const index = e.currentTarget.dataset.index
+    const envImages = [...(this.data.shareInfo.envImages || [])]
+    envImages.splice(index, 1)
+    const shareInfo = { ...this.data.shareInfo, envImages }
+    this.setData({ shareInfo })
+    wx.setStorageSync('shareInfo', shareInfo)
+  },
+
+  previewEnvImage: function (e) {
+    const index = e.currentTarget.dataset.index
+    const urls = this.data.shareInfo.envImages || []
+    if (!urls.length) return
+    wx.previewImage({ current: urls[index], urls })
   },
 
   addSpeciesImage: function () {
@@ -857,7 +908,8 @@ Page({
             wechatPublic: !!info.wechatPublic,
             region: info.region || '',
             tags: Array.isArray(info.tags) ? info.tags : [],
-            intro: info.intro || ''
+            intro: info.intro || '',
+            cover: info.cover || ''
           }
         },
         success: (res) => {
@@ -1024,9 +1076,7 @@ Page({
         // 上传到云存储
         try {
           const openid = wx.getStorageSync('openid') || 'unknown'
-          const ext = tempPath.split('.').pop() || 'jpg'
-          const cloudPath = `avatars/${openid}_${Date.now()}.${ext}`
-          const uploadRes = await wx.cloud.uploadFile({ cloudPath, filePath: tempPath })
+          const uploadRes = await API.uploadImage(tempPath, 'avatars', openid, { scene: 'avatar' })
           if (uploadRes && uploadRes.fileID) {
             const newInfo = { ...this.data.userInfo, avatar: uploadRes.fileID }
             this.setData({ userInfo: newInfo })
@@ -1035,7 +1085,7 @@ Page({
             this._saveUserInfoToCloud({ avatar: uploadRes.fileID })
           }
         } catch (err) {
-
+          console.error('头像上传失败:', err)
         }
       }
     })
@@ -1451,19 +1501,19 @@ Page({
 
   // 跳转到产蛋报表
   goToEggReport: function () {
-    wx.navigateTo({ url: '/pages/egg-report/index' })
+    wx.navigateTo({ url: '/subpkg-report/pages/egg-report/index' })
   },
 
   // 跳转到粘缸费用计算器
   goToCalculator: function () {
-    wx.navigateTo({ url: '/pages/tools/calculator' })
+    wx.navigateTo({ url: '/subpkg-tools/pages/tools/calculator' })
   },
 
   // 跳转到宠物公开页面（测试入口）
   goToPublicPage: function () {
     const openid = wx.getStorageSync('openid')
     if (openid) {
-      wx.navigateTo({ url: `/pages/public/index?userId=${openid}` })
+      wx.navigateTo({ url: `/subpkg-report/pages/public/index?userId=${openid}` })
     } else {
       wx.showToast({ title: '请先登录', icon: 'none' })
     }
@@ -1471,8 +1521,48 @@ Page({
 
   // 跳转到出苗报表
   goToHatchReport: function () {
-    wx.navigateTo({ url: '/pages/hatch-report/index' })
+    wx.navigateTo({ url: '/subpkg-report/pages/hatch-report/index' })
   },
+
+  // 加载回收站数据
+  loadRecycleBin: function () {
+    try {
+      const recycleBin = wx.getStorageSync('recycleBin') || []
+      this.setData({ recycleBin })
+    } catch (e) {
+      console.error('加载回收站数据失败:', e)
+    }
+  },
+
+  // 加载最近浏览数据
+  loadRecentViews: function () {
+    try {
+      const recentViews = wx.getStorageSync('recentViews') || []
+      // 只保留最近20条记录
+      const recent = recentViews.slice(0, 20)
+      this.setData({ recentViews: recent })
+    } catch (e) {
+      console.error('加载最近浏览数据失败:', e)
+    }
+  },
+
+  // 跳转到回收站页面
+  goToRecycleBin: function () {
+    wx.navigateTo({ url: '/pages/my/recycle-bin/index' })
+  },
+
+  // 跳转到最近浏览页面
+  goToRecentView: function () {
+    wx.navigateTo({ url: '/pages/my/recent-view/index' })
+  },
+
+  // 跳转到宠物档案
+  goToPetProfile: function () {
+    wx.switchTab({ url: '/pages/pet/index' })
+  },
+
+  // 跳转到客服帮助（已迁移至 WXML 的 button open-type="contact"）
+  // goToCustomerService 函数已移除，用 button 原生客服会话替代
 
   // 检查管理员权限（通过云函数验证openid）
   checkAdminPermission: async function () {
@@ -1496,7 +1586,7 @@ Page({
 
   // 管理后台入口
   onAdminEntry: function () {
-    wx.navigateTo({ url: '/pages/admin/index' })
+    wx.navigateTo({ url: '/subpkg-admin/pages/admin/index' })
   },
 
   // 长按头像 - 显示倒计时提示

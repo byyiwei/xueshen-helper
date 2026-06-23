@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>龟上心 - 首页重构预览</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: #E5E7EB;
+      display: flex;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 40px 0;
+    }
+    .phone {
+      width: 375px;
+      min-height: 812px;
+      background: linear-gradient(180deg, #F0F7FF 0%, #F8FAFC 35%, #F8FAFC 100%);
+      border-radius: 40px;
+      box-shadow: 0 25px 80px rgba(0,0,0,0.15);
+      overflow: hidden;
+      position: relative;
+      padding-bottom: 120px;
+    }
+    .status-bar {
+      height: 44px;
+      background: rgba(240,247,255,0.92);
+      backdrop-filter: blur(16px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding-top: 0;
+      position: relative;
+      z-index: 10;
+    }
+    .nav-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: #1E293B;
+      letter-spacing: 0.5px;
+    }
+    .content {
+      padding: 12px 12px 0;
+    }
+    .hero-card {
+      position: relative;
+      border-radius: 18px;
+      padding: 18px;
+      margin-bottom: 12px;
+      overflow: hidden;
+      box-shadow: 0 6px 20px rgba(58,124,255,0.18);
+      color: #fff;
+    }
+    .hero-bg {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, #3A7CFF 0%, #1A5CD6 100%);
+      z-index: 0;
+    }
+    .hero-blob {
+      position: absolute;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.08);
+      z-index: 1;
+    }
+    .hero-blob-1 { width: 120px; height: 120px; top: -40px; right: -30px; }
+    .hero-blob-2 { width: 80px; height: 80px; bottom: -20px; left: 20px; background: rgba(255,255,255,0.05); }
+    .hero-main {
+      position: relative;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .hero-greeting { font-size: 14px; opacity: 0.85; font-weight: 500; }
+    .hero-name { font-size: 22px; font-weight: 800; margin: 4px 0; }
+    .hero-desc { font-size: 12px; opacity: 0.7; }
+    .hero-avatar {
+      width: 48px; height: 48px; border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.3);
+      background: rgba(255,255,255,0.2);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px;
+    }
+    .hero-login-bar {
+      position: relative;
+      z-index: 2;
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 14px;
+      padding: 9px 12px;
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 12px;
+      backdrop-filter: blur(8px);
+    }
+    .hero-login-text { font-size: 12px; opacity: 0.9; flex: 1; line-height: 1.4; }
+    .hero-login-btn {
+      display: flex; align-items: center; gap: 2px;
+      margin-left: 8px; padding: 5px 11px;
+      background: #fff; border-radius: 12px;
+      font-size: 12px; color: #3A7CFF; font-weight: 600;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    }
+    .stats-grid {
+      display: flex; gap: 8px; margin-bottom: 12px;
+    }
+    .stat-card {
+      flex: 1;
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      padding: 12px 6px;
+      background: #fff; border-radius: 14px;
+      box-shadow: 0 2px 10px rgba(58,124,255,0.06);
+    }
+    .stat-icon {
+      width: 32px; height: 32px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+    .stat-icon-pet { background: linear-gradient(135deg, #D1FAE5, #A7F3D0); }
+    .stat-icon-egg { background: linear-gradient(135deg, #FEF3C7, #FDE68A); }
+    .stat-icon-pair { background: linear-gradient(135deg, #FCE7F3, #FBCFE8); }
+    .stat-icon-warning { background: linear-gradient(135deg, #FEE2E2, #FECACA); }
+    .stat-num { font-size: 20px; font-weight: 800; color: #1E293B; }
+    .stat-label { font-size: 11px; color: #94A3B8; font-weight: 500; }
+    .section-card {
+      background: #fff; border-radius: 14px; padding: 14px;
+      box-shadow: 0 2px 10px rgba(58,124,255,0.06); margin-bottom: 12px;
+    }
+    .section-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .section-header-left { display: flex; align-items: center; gap: 6px; }
+    .section-title { font-size: 15px; font-weight: 700; color: #1E293B; }
+    .section-badge { font-size: 11px; color: #3A7CFF; background: #E6F0FF; padding: 2px 7px; border-radius: 8px; }
+    .section-more { font-size: 12px; color: #3A7CFF; font-weight: 500; }
+    .reminder-card {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 11px 12px; border-radius: 10px; margin-bottom: 8px;
+      background: #F8FAFC; border: 1px solid #EDF2F7;
+    }
+    .reminder-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+    .reminder-type-icon {
+      width: 32px; height: 32px; border-radius: 9px; background: #fff;
+      display: flex; align-items: center; justify-content: center; font-size: 16px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04); flex-shrink: 0;
+    }
+    .reminder-info { flex: 1; min-width: 0; }
+    .reminder-top { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+    .reminder-type { font-size: 14px; font-weight: 700; color: #1E293B; }
+    .reminder-status { font-size: 11px; padding: 2px 6px; border-radius: 6px; background: #E2E8F0; color: #64748B; }
+    .reminder-bottom { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: 11px; color: #94A3B8; }
+    .reminder-pet { color: #475569; font-weight: 600; }
+    .reminder-done-btn {
+      width: 26px; height: 26px; border-radius: 50%; background: #3A7CFF;
+      display: flex; align-items: center; justify-content: center; color: #fff;
+      font-size: 13px; flex-shrink: 0; box-shadow: 0 2px 6px rgba(58,124,255,0.25);
+    }
+    .disease-banner {
+      display: flex; align-items: center; justify-content: space-between;
+      background: linear-gradient(135deg, #ECFDF5, #D1FAE5);
+      border-radius: 14px; padding: 13px 14px; margin-bottom: 12px;
+      box-shadow: 0 2px 10px rgba(16,185,129,0.08);
+    }
+    .disease-left { display: flex; align-items: center; gap: 10px; }
+    .disease-icon-wrap {
+      width: 38px; height: 38px; border-radius: 11px; background: rgba(255,255,255,0.8);
+      display: flex; align-items: center; justify-content: center; font-size: 19px;
+    }
+    .disease-title { font-size: 15px; font-weight: 700; color: #065F46; }
+    .disease-desc { font-size: 11px; color: #6B7280; }
+    .disease-arrow {
+      width: 26px; height: 26px; border-radius: 50%; background: #fff;
+      display: flex; align-items: center; justify-content: center;
+      color: #059669; font-size: 16px; font-weight: 600;
+    }
+    .func-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+    .func-item {
+      width: calc((100% - 16px) / 3);
+      display: flex; flex-direction: column; align-items: center; gap: 5px;
+      padding: 12px 6px; background: #F8FAFC; border-radius: 12px;
+    }
+    .func-icon {
+      width: 40px; height: 40px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center; font-size: 19px;
+      margin-bottom: 2px;
+    }
+    .func-icon-calc { background: linear-gradient(135deg, #DBEAFE, #BFDBFE); }
+    .func-icon-egg { background: linear-gradient(135deg, #FEF3C7, #FDE68A); }
+    .func-icon-hatch { background: linear-gradient(135deg, #FCE7F3, #FBCFE8); }
+    .func-icon-public { background: linear-gradient(135deg, #D1FAE5, #A7F3D0); }
+    .func-icon-tank { background: linear-gradient(135deg, #E0E7FF, #C7D2FE); }
+    .func-icon-pet-list { background: linear-gradient(135deg, #FFEDD5, #FED7AA); }
+    .func-name { font-size: 12px; color: #1E293B; font-weight: 600; }
+    .func-desc { font-size: 10px; color: #94A3B8; }
+    .tab-bar {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      height: 84px; background: rgba(255,255,255,0.72);
+      backdrop-filter: blur(20px);
+      display: flex; justify-content: space-around; align-items: flex-start;
+      padding-top: 10px; border-radius: 18px 18px 0 0;
+    }
+    .tab-item { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #94A3B8; font-size: 11px; }
+    .tab-item.active { color: #3A7CFF; }
+    .tab-icon { width: 26px; height: 22px; display: flex; align-items: center; justify-content: center; }
+    .tab-dot { width: 3px; height: 3px; border-radius: 50%; background: currentColor; margin-top: 2px; }
+  </style>
+</head>
+<body>
+  <div class="phone">
+    <div class="status-bar">
+      <div class="nav-title">龟上心</div>
+    </div>
+    <div class="content">
+      <div class="hero-card">
+        <div class="hero-bg"></div>
+        <div class="hero-blob hero-blob-1"></div>
+        <div class="hero-blob hero-blob-2"></div>
+        <div class="hero-main">
+          <div>
+            <div class="hero-greeting">早上好，</div>
+            <div class="hero-name">龟友</div>
+            <div class="hero-desc">记录每一只龟的成长故事</div>
+          </div>
+          <div class="hero-avatar">🐢</div>
+        </div>
+        <div class="hero-login-bar">
+          <div class="hero-login-text">登录后可管理宠物资料、记录和打印标签</div>
+          <div class="hero-login-btn">立即登录 ›</div>
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon stat-icon-pet">🐢</div>
+          <div class="stat-num">12</div>
+          <div class="stat-label">宠物</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon stat-icon-egg">🥚</div>
+          <div class="stat-num">36</div>
+          <div class="stat-label">产蛋</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon stat-icon-pair">🐣</div>
+          <div class="stat-num">8</div>
+          <div class="stat-label">交配</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon stat-icon-warning">⚠️</div>
+          <div class="stat-num">1</div>
+          <div class="stat-label">预警</div>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-header-left">
+            <div class="section-title">待办提醒</div>
+            <div class="section-badge">3 项</div>
+          </div>
+          <div class="section-more">查看全部</div>
+        </div>
+        <div class="reminder-card">
+          <div class="reminder-left">
+            <div class="reminder-type-icon">💧</div>
+            <div class="reminder-info">
+              <div class="reminder-top">
+                <span class="reminder-type">换水</span>
+                <span class="reminder-status" style="background:#FECACA;color:#DC2626">超期 2 天</span>
+              </div>
+              <div class="reminder-bottom">
+                <span class="reminder-pet">小黄</span>
+                <span>· 巴西龟</span>
+                <span>· 2026-06-17</span>
+              </div>
+            </div>
+          </div>
+          <div class="reminder-done-btn">✓</div>
+        </div>
+        <div class="reminder-card">
+          <div class="reminder-left">
+            <div class="reminder-type-icon">🍤</div>
+            <div class="reminder-info">
+              <div class="reminder-top">
+                <span class="reminder-type">喂食</span>
+                <span class="reminder-status" style="background:#FEF08A;color:#CA8A04">今天</span>
+              </div>
+              <div class="reminder-bottom">
+                <span class="reminder-pet">大黑</span>
+                <span>· 草龟</span>
+                <span>· 2026-06-19</span>
+              </div>
+            </div>
+          </div>
+          <div class="reminder-done-btn">✓</div>
+        </div>
+      </div>
+
+      <div class="disease-banner">
+        <div class="disease-left">
+          <div class="disease-icon-wrap">🛡️</div>
+          <div>
+            <div class="disease-title">疾病防治</div>
+            <div class="disease-desc">常见治疗方案及用药计算器</div>
+          </div>
+        </div>
+        <div class="disease-arrow">›</div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title">常用功能</div>
+        </div>
+        <div class="func-grid">
+          <div class="func-item">
+            <div class="func-icon func-icon-calc">🔢</div>
+            <div class="func-name">粘缸计算器</div>
+            <div class="func-desc">水量计算</div>
+          </div>
+          <div class="func-item">
+            <div class="func-icon func-icon-egg">🥚</div>
+            <div class="func-name">产蛋报表</div>
+            <div class="func-desc">周期统计</div>
+          </div>
+          <div class="func-item">
+            <div class="func-icon func-icon-hatch">🐣</div>
+            <div class="func-name">出苗报表</div>
+            <div class="func-desc">孵化记录</div>
+          </div>
+          <div class="func-item">
+            <div class="func-icon func-icon-public">🌐</div>
+            <div class="func-name">公开档案</div>
+            <div class="func-desc">分享展示</div>
+          </div>
+          <div class="func-item">
+            <div class="func-icon func-icon-tank">🫧</div>
+            <div class="func-name">我的龟缸</div>
+            <div class="func-desc">敬请期待</div>
+          </div>
+          <div class="func-item">
+            <div class="func-icon func-icon-pet-list">📋</div>
+            <div class="func-name">宠物列表</div>
+            <div class="func-desc">全部档案</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-bar">
+      <div class="tab-item active">
+        <div class="tab-icon">🏠</div>
+        <span>首页</span>
+        <div class="tab-dot"></div>
+      </div>
+      <div class="tab-item">
+        <div class="tab-icon">🐾</div>
+        <span>宠物</span>
+      </div>
+      <div class="tab-item">
+        <div class="tab-icon">👤</div>
+        <span>我的</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

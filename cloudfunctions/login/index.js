@@ -43,16 +43,12 @@ exports.main = async (event, context) => {
   // 检查是否为管理员
   if (action === 'checkAdmin') {
     const admins = await getAdmins(db)
-    console.log('管理员列表:', admins)
-    console.log('当前用户openid:', OPENID)
     const admin = admins.find(a => a.openid === OPENID)
     const isAdmin = !!admin
-    console.log('是否为管理员:', isAdmin, '管理员信息:', admin)
     return successResponse({ 
       isAdmin, 
       openid: OPENID,
-      adminName: admin ? admin.name : null,
-      debugAdmins: admins // 调试用：返回管理员列表
+      adminName: admin ? admin.name : null
     })
   }
 
@@ -80,6 +76,7 @@ exports.main = async (event, context) => {
       if (data.region !== undefined) updateData.publicRegion = data.region
       if (data.tags !== undefined) updateData.publicTags = Array.isArray(data.tags) ? data.tags : []
       if (data.intro !== undefined) updateData.publicIntro = data.intro
+      if (data.cover !== undefined) updateData.publicCover = data.cover
       await db.collection('users').where({ openid: OPENID }).update({ data: updateData })
       return successResponse(null, '公开名片已更新')
     } catch (error) {

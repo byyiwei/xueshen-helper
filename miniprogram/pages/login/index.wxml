@@ -1,41 +1,32 @@
 <view class="container">
   <view class="login-box">
-    <!-- Logo 爱心龟壳图片 - 带白色圆角背景框 -->
-    <view class="logo-wrapper">
-      <view class="logo-svg-container">
-        <!-- Logo 图片 -->
-        <view class="logo-frame">
-          <image class="logo-img" src="/images/logo.png" mode="aspectFit"></image>
-        </view>
-        <!-- 品牌文字 -->
-        <view class="logo-text">龟上心</view>
-      </view>
-    </view>
-    <view class="subtitle">用心记录龟的每一刻</view>
-    
-    <view class="login-btn" bindtap="handleLogin">
-      <button class="wechat-btn" loading="{{loading}}">
-        <text class="btn-text">微信一键登录</text>
-      </button>
-    </view>
-    
-    <view class="agreement-section">
-      <view class="checkbox-wrapper" bindtap="toggleAgreement">
-        <view class="checkbox {{agreed ? 'checked' : ''}}">
-          <text wx:if="{{agreed}}" class="check-icon">✓</text>
-        </view>
-        <text class="agreement-text">我已阅读并同意</text>
-      </view>
-      <view class="agreement-links">
-        <text class="link" bindtap="showUserAgreement">《用户协议》</text>
-        <text class="divider">和</text>
-        <text class="link" bindtap="showPrivacyPolicy">《隐私政策》</text>
-      </view>
+    <!-- Logo -->
+    <view class="logo-section">
+      <image class="logo-img" src="/images/logo-new.png" mode="aspectFit"/>
     </view>
 
-    <!-- 跳過登錄按鈕（始終顯示，確保審核員可見） -->
-    <view class="skip-btn" bindtap="goBack">
-      <text class="skip-text">暂不登录，先浏览体验</text>
+    <!-- 中间留白区域 -->
+    <view class="spacer"></view>
+
+    <!-- 底部区域：协议 + 登录 -->
+    <view class="bottom-section">
+      <view class="agreement-section">
+        <view class="checkbox-wrapper" bindtap="toggleAgreement">
+          <view class="checkbox {{agreed ? 'checked' : ''}}">
+            <text wx:if="{{agreed}}" class="check-icon">✓</text>
+          </view>
+          <text class="agreement-text">我已阅读并同意</text>
+          <text class="link" bindtap="showUserAgreement">《用户协议》</text>
+          <text class="divider">和</text>
+          <text class="link" bindtap="showPrivacyPolicy">《隐私政策》</text>
+        </view>
+      </view>
+
+      <view class="login-btn" bindtap="handleLogin">
+        <button class="wechat-btn" loading="{{loading}}">
+          <text class="btn-text">微信一键登录</text>
+        </button>
+      </view>
     </view>
   </view>
 

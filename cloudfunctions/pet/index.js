@@ -64,6 +64,14 @@ exports.main = async (event, context) => {
         return await getPedigree(data.id, openid, data.maxGeneration || 3)
       case 'publicGet':
         return await getPublicPetById(data.id)
+      case 'getCategories':
+        return await getCategories(openid)
+      case 'addCategory':
+        return await addCategory(data, openid)
+      case 'updateCategory':
+        return await updateCategory(data, openid)
+      case 'deleteCategory':
+        return await deleteCategory(data, openid)
       default:
         return errorResponse('未知操作')
     }
@@ -100,9 +108,10 @@ async function createPet(data, openid) {
     }
   }
 
+  const category = data.category || '无'
   const pet = {
     name: data.name,
-    category: data.category || '无',
+    category,
     gender: data.gender || '未知',
     alias: data.alias || '',
     father: data.father || '',
@@ -119,6 +128,12 @@ async function createPet(data, openid) {
   }
 
   const result = await db.collection('pets').add({ data: pet })
+
+  // 同步分类到 categories 集合
+  if (category && category !== '无') {
+    await syncCategoryToDb(category, openid)
+  }
+
   return successResponse({ id: result._id, ...pet })
 }
 
@@ -202,6 +217,12 @@ async function updatePet(data, openid) {
   if (updateData.isPublic !== undefined) {
     updateData.isPublic = !!updateData.isPublic
   }
+
+  // 同步分类到 categories 集合
+  const newCategory = updateData.category
+  if (newCategory && newCategory !== '无') {
+    await syncCategoryToDb(newCategory, openid)
+  }
   
   await db.collection('pets').doc(id).update({
     data: { ...updateData, updatedAt: db.serverDate() }
@@ -234,29 +255,17 @@ async function getPublicPets(userId) {
     throw new Error('缺少用户ID')
   }
 
-  console.log('getPublicPets called with userId:', userId)
-
-  // 先查询该用户所有宠物（用于调试）
-  const allPetsResult = await db.collection('pets')
-    .where({ openid: userId })
-    .get()
-  console.log('All pets for user:', allPetsResult.data.length)
-  allPetsResult.data.forEach(pet => {
-    console.log('Pet:', pet.name, 'isPublic:', pet.isPublic, 'type:', typeof pet.isPublic)
-  })
-
-  // 直接查询该用户公开的宠物
+  // 查询该用户公开的宠物
   const result = await db.collection('pets')
     .where({ openid: userId, isPublic: true })
     .orderBy('createdAt', 'desc')
     .get()
 
-  console.log('Public pets found:', result.data.length)
-
   let pets = normalizeIds(result.data).map(sanitizePetData)
 
   // 查询宠物主人的名片信息（无论是否有公开宠物都需要）
   let ownerNickname = ''
+  let ownerAvatar = ''
   let publicShareInfo = null
   try {
     const userResult = await db.collection('users')
@@ -266,13 +275,15 @@ async function getPublicPets(userId) {
     if (userResult.data && userResult.data.length > 0) {
       const user = userResult.data[0]
       ownerNickname = user.nickname || ''
+      ownerAvatar = user.avatar || ''
       publicShareInfo = {
         specialty: user.publicSpecialty || '',
         wechatId: user.publicWechatId || '',
         wechatPublic: !!user.publicWechatPublic,
         region: user.publicRegion || '',
         tags: user.publicTags || [],
-        intro: user.publicIntro || ''
+        intro: user.publicIntro || '',
+        cover: user.publicCover || ''
       }
     }
   } catch (e) {
@@ -334,7 +345,7 @@ async function getPublicPets(userId) {
     })
   }
 
-  return successResponse({ pets, ownerNickname, publicShareInfo })
+  return successResponse({ pets, ownerNickname, ownerAvatar, publicShareInfo })
 }
 
 // 获取公开宠物详情（不需要权限验证）
@@ -404,7 +415,8 @@ async function getPedigree(petId, openid, maxGeneration = 3, envId) {
  * 递归构建家谱树
  */
 async function buildFamilyTree(pet, openid, generation, maxGeneration) {
-  if (!pet || generation >= maxGeneration) {
+  // maxGeneration = 祖先代数（父母=1，祖父母=2，曾祖父母=3）；generation 0 为当前个体
+  if (!pet || generation > maxGeneration) {
     return null
   }
 
@@ -500,6 +512,179 @@ function extractMaternalLine(tree) {
   }
   
   return line
+}
+
+async function getCategories(openid) {
+  if (!openid) {
+    throw new Error('用户未登录')
+  }
+
+  const categories = await buildCategoryList(openid)
+  return successResponse({ categories })
+}
+
+async function addCategory(data, openid) {
+  if (!openid) {
+    throw new Error('用户未登录')
+  }
+  if (!data || !data.name || !data.name.trim()) {
+    throw new Error('分类名称不能为空')
+  }
+
+  const name = data.name.trim()
+
+  // 检查是否已存在同名分类
+  const existing = await db.collection('categories')
+    .where({ openid, name })
+    .limit(1)
+    .get()
+
+  if (existing.data && existing.data.length > 0) {
+    throw new Error('分类「' + name + '」已存在')
+  }
+
+  await db.collection('categories').add({
+    data: {
+      openid,
+      name,
+      createdAt: db.serverDate()
+    }
+  })
+
+  const categories = await getCategoryList(openid)
+  return successResponse({ categories }, '添加成功')
+}
+
+async function updateCategory(data, openid) {
+  if (!openid) {
+    throw new Error('用户未登录')
+  }
+  if (!data || !data.oldName || !data.newName) {
+    throw new Error('分类名称不能为空')
+  }
+
+  const oldName = data.oldName.trim()
+  const newName = data.newName.trim()
+
+  if (oldName === '无') {
+    throw new Error('不能修改默认分类')
+  }
+  if (newName === '无') {
+    throw new Error('分类名称不能为"无"')
+  }
+  if (oldName === newName) {
+    return successResponse({ categories: await getCategoryList(openid) })
+  }
+
+  // 检查新名称是否已存在
+  const existing = await db.collection('categories')
+    .where({ openid, name: newName })
+    .limit(1)
+    .get()
+  if (existing.data && existing.data.length > 0) {
+    throw new Error('分类「' + newName + '」已存在')
+  }
+
+  // 更新 categories 集合
+  const catResult = await db.collection('categories')
+    .where({ openid, name: oldName })
+    .limit(1)
+    .get()
+  if (catResult.data && catResult.data.length > 0) {
+    await db.collection('categories').doc(catResult.data[0]._id).update({
+      data: { name: newName, updatedAt: db.serverDate() }
+    })
+  }
+
+  // 同步更新 pets 集合中使用了该分类的宠物
+  await db.collection('pets')
+    .where({ openid, category: oldName })
+    .update({
+      data: { category: newName, updatedAt: db.serverDate() }
+    })
+
+  const categories = await getCategoryList(openid)
+  return successResponse({ categories }, '修改成功')
+}
+
+async function deleteCategory(data, openid) {
+  if (!openid) {
+    throw new Error('用户未登录')
+  }
+  if (!data || !data.name) {
+    throw new Error('分类名称不能为空')
+  }
+
+  const name = data.name
+
+  // 删除指定 openid + name 的记录
+  await db.collection('categories')
+    .where({ openid, name })
+    .remove()
+
+  // 同步更新 pets 集合中使用了该分类的宠物，改为"无"
+  await db.collection('pets')
+    .where({ openid, category: name })
+    .update({
+      data: { category: '无', updatedAt: db.serverDate() }
+    })
+
+  const categories = await getCategoryList(openid)
+  return successResponse({ categories }, '删除成功')
+}
+
+// 辅助函数：获取分类列表（categories 集合 + 宠物已使用的分类）
+async function buildCategoryList(openid) {
+  const [catResult, petsResult] = await Promise.all([
+    db.collection('categories')
+      .where({ openid })
+      .orderBy('createdAt', 'asc')
+      .get(),
+    db.collection('pets')
+      .where({ openid })
+      .field({ category: true })
+      .get()
+  ])
+
+  const seen = new Set()
+  const ordered = []
+  const add = (name) => {
+    const n = String(name || '').trim()
+    if (!n || seen.has(n)) return
+    seen.add(n)
+    ordered.push(n)
+  }
+
+  add('无')
+  catResult.data.forEach(item => add(item.name))
+  petsResult.data.forEach(pet => {
+    if (pet.category && pet.category !== '无') add(pet.category)
+  })
+
+  return ordered.length > 0 ? ordered : ['无']
+}
+
+// 辅助函数：获取分类列表
+async function getCategoryList(openid) {
+  return buildCategoryList(openid)
+}
+
+// 辅助函数：将分类同步到 categories 集合（如果不存在）
+async function syncCategoryToDb(category, openid) {
+  if (!openid || !category || category === '无') return
+  try {
+    const existing = await db.collection('categories')
+      .where({ openid, name: category })
+      .limit(1)
+      .get()
+    if (existing.data && existing.data.length === 0) {
+      await db.collection('categories').add({
+        data: { openid, name: category, createdAt: db.serverDate() }
+      })
+    }
+  } catch (err) {
+    console.error('同步分类到数据库失败:', err)
+  }
 }
 
 /**

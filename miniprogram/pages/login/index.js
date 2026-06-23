@@ -198,7 +198,7 @@ Page({
     let userIndex = wx.getStorageSync('userIndex') || 0
     userIndex += 1
     wx.setStorageSync('userIndex', userIndex)
-    return '龟上心' + userIndex
+    return '养龟档案' + userIndex
   },
 
   toggleAgreement: function () {
@@ -208,7 +208,7 @@ Page({
   showUserAgreement: function () {
     const content = [
       { type: 'title', content: '用户协议' },
-      { type: 'paragraph', content: '欢迎使用「龟上心」小程序！' },
+      { type: 'paragraph', content: '欢迎使用「养龟档案」小程序！' },
       { type: 'subtitle', content: '一、服务条款' },
       { type: 'list', items: [
         '用户必须是年满18周岁的成年人，或在监护人的指导下使用本服务。',
@@ -249,7 +249,7 @@ Page({
   showPrivacyPolicy: function () {
     const content = [
       { type: 'title', content: '隐私政策' },
-      { type: 'paragraph', content: '「龟上心」重视用户隐私保护，以下是我们的隐私政策：' },
+      { type: 'paragraph', content: '「养龟档案」重视用户隐私保护，以下是我们的隐私政策：' },
       { type: 'subtitle', content: '一、收集的信息' },
       { type: 'list', items: [
         '用户信息：包括昵称、头像、手机号码等。',

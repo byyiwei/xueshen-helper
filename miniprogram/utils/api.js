@@ -1,4 +1,5 @@
 const { handleError } = require('./error.js')
+const { getSecurityChecker } = require('./securityChecker.js')
 
 class APIManager {
   constructor() {
@@ -61,6 +62,22 @@ class APIManager {
 
   async getPedigree(id, maxGeneration = 3) {
     return await this.callCloudFunction('pet', 'getPedigree', { id, maxGeneration })
+  }
+
+  async getCategories() {
+    return await this.callCloudFunction('pet', 'getCategories', {})
+  }
+
+  async addCategory(name) {
+    return await this.callCloudFunction('pet', 'addCategory', { name })
+  }
+
+  async updateCategory(oldName, newName) {
+    return await this.callCloudFunction('pet', 'updateCategory', { oldName, newName })
+  }
+
+  async deleteCategory(name) {
+    return await this.callCloudFunction('pet', 'deleteCategory', { name })
   }
 
   /**
@@ -128,15 +145,31 @@ class APIManager {
   }
 
   /**
-   * 上传图片到云存储
+   * 上传图片到云存储（含安全审核）
+   * @param {string} filePath - 本地文件路径
+   * @param {string} prefix - 路径前缀，如 'pets'、'covers'、'avatars'
+   * @param {string} subPath - 子目录，如宠物ID、用户ID等，用于分类存储
+   * @param {object} options - 可选参数
+   * @param {string} options.scene - 审核场景：avatar/cover/pet/footprint
+   * @param {boolean} options.skipCheck - 是否跳过审核（默认false）
    */
-  async uploadImage(filePath, prefix = 'pets') {
+  async uploadImage(filePath, prefix = 'pets', subPath = '', options = {}) {
     try {
-      const cloudPath = `${prefix}/${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`
+      const filename = `${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`
+      const cloudPath = subPath
+        ? `${prefix}/${subPath}/${filename}`
+        : `${prefix}/${filename}`
       const result = await wx.cloud.uploadFile({
         cloudPath,
         filePath
       })
+
+      // 上传成功后进行图片安全审核（异步，不阻塞上传流程）
+      if (!options.skipCheck && result.fileID) {
+        const checker = getSecurityChecker()
+        checker.checkImage(result.fileID, options.scene || prefix)
+      }
+
       return { success: true, fileID: result.fileID }
     } catch (error) {
       console.error('上传图片失败:', error)

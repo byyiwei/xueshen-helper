@@ -4,6 +4,7 @@ const { getAPI } = require('../../utils/api.js')
 const { showError, showSuccess, showLoading, hideLoading, showConfirm } = require('../../utils/error.js')
 const { getVoiceManager } = require('../../utils/voice.js')
 const { convertPhotoIdsToUrls, getTempUrl, convertPetPhotosToUrls, sanitizePetPhotos } = require('../../utils/image.js')
+const { mergeCategories, syncMissingCategoriesToCloud } = require('../../utils/category.js')
 const API = getAPI()
 const voiceManager = getVoiceManager()
 
@@ -11,6 +12,7 @@ Page({
   data: {
     // Tab / 状态
     currentEventTab: '全部事件',
+    eventCollapsed: true,
     pressedTab: '',
     pet: null,
     petId: '',
@@ -44,7 +46,7 @@ Page({
     selectedDate: '',
     endDate: '',
     today: '',
-    switchColor: '#3A7CFF',
+    switchColor: '#E8A400',
 
     // 编辑表单
     editForm: {
@@ -61,6 +63,11 @@ Page({
       photos: []
     },
     categories: ['无'],
+    showAddCategoryModal: false,
+    newCategoryName: '',
+    showEditCategoryModal: false,
+    editCategoryOldName: '',
+    editCategoryNewName: '',
     showEditManual: false,
     selectedFather: null,
     selectedMother: null,
@@ -86,6 +93,8 @@ Page({
     showRecordPartnerModal: false,
     recordPartnerList: [],
     recordPartnerSearchText: '',
+    // 换公记录（母龟的交配公龟列表）
+    mateMaleList: [],
 
     // 语音
     currentVoiceField: '',
@@ -165,9 +174,25 @@ Page({
     const petId = (options && options.petId) || ''
     this.setData({ petId })
 
+    // 导航栏高度
+    const sysInfo = wx.getSystemInfoSync()
+    const navContentHeight = 44
+    this.setData({
+      statusBarHeight: sysInfo.statusBarHeight,
+      totalNavHeight: sysInfo.statusBarHeight + navContentHeight
+    })
+
     // 预览页跳转过来新增记录
     if (options && options.action === 'addRecord') {
       this._pendingAddRecord = true
+    }
+
+    // 公开浏览模式（从公开档案或分享链接进入）
+    if (options && (options.isPublic === 'true' || options.isPublic === true)) {
+      this.setData({
+        isReadOnly: true,
+        isPublicMode: true
+      })
     }
 
     // 扫码进入模式（from=scan 表示从标签二维码扫码进入）
@@ -185,6 +210,9 @@ Page({
 
     // 谱系
     this.loadPedigree(petId)
+
+    // 添加最近浏览记录
+    this.addToRecentViews(petId, options)
   },
 
   onShow: function () {
@@ -313,9 +341,9 @@ Page({
         if (res.tapIndex === 0) {
           this.editInfo()
         } else if (res.tapIndex === 1) {
-          this.showDeleteConfirm()
+          this.confirmDelete()
         } else if (res.tapIndex === 2) {
-          this.openReminderModal()
+          this.openReminderEdit()
         }
       }
     })
@@ -323,11 +351,15 @@ Page({
 
   sharePet: function () {
     if (!this.data.pet) return
-    wx.navigateTo({
-      url: '/pages/pet/preview?petId=' + this.data.petId,
-      fail: () => {
-        wx.showToast({ title: '无法打开预览页', icon: 'none' })
-      }
+    const pet = this.data.pet
+    const petId = this.data.petId
+    const title = (pet.alias || pet.name || '宠物') + ' - 养龟档案'
+    const imageUrl = (pet.photos && pet.photos.length) ? pet.photos[0] : ''
+    wx.showShareMenu({ withShareTicket: true })
+    wx.shareAppMessage({
+      title: title,
+      path: '/pages/pet/detail?petId=' + petId + '&isPublic=true',
+      imageUrl: imageUrl
     })
   },
 
@@ -335,7 +367,7 @@ Page({
     const app = getApp()
     if (!app.requireLogin()) return
     const pet = this.data.pet || {}
-    let url = '/pages/egg-report/index'
+    let url = '/subpkg-report/pages/egg-report/index'
     if (pet.gender === '母') {
       const petId = pet._id || pet.id || this.data.petId
       url += '?petId=' + petId
@@ -349,7 +381,7 @@ Page({
     const app = getApp()
     if (!app.requireLogin()) return
     const pet = this.data.pet || {}
-    let url = '/pages/hatch-report/index'
+    let url = '/subpkg-report/pages/hatch-report/index'
     if (pet.gender === '母') {
       const petId = pet._id || pet.id || this.data.petId
       url += '?petId=' + petId
@@ -361,9 +393,23 @@ Page({
 
   onShareAppMessage: function () {
     const pet = this.data.pet || {}
+    const photos = pet.photos || []
+    const imageUrl = photos.length > 0 ? photos[0] : ''
     return {
       title: `${pet.alias || pet.name || '宠物'}的档案`,
-      path: '/pages/pet/detail?petId=' + (this.data.petId || '')
+      path: '/pages/pet/detail?petId=' + (this.data.petId || '') + '&isPublic=true',
+      imageUrl: imageUrl
+    }
+  },
+
+  onShareTimeline: function () {
+    const pet = this.data.pet || {}
+    const photos = pet.photos || []
+    const imageUrl = photos.length > 0 ? photos[0] : ''
+    return {
+      title: `${pet.alias || pet.name || '宠物'}的档案`,
+      query: 'petId=' + (this.data.petId || '') + '&isPublic=true',
+      imageUrl: imageUrl
     }
   },
 
@@ -378,14 +424,20 @@ Page({
     }
     this.setData({ loading: true })
     try {
-      const result = await API.getPetById(petId)
+      let result
+      if (this.data.isPublicMode) {
+        // 公开模式：调用公开接口
+        result = await API.callCloudFunction('pet', 'publicGet', { id: petId })
+      } else {
+        result = await API.getPetById(petId)
+      }
       if (result && result.success && result.data) {
         const pet = result.data
         // 规范化 father/mother 名称显示
         if (!pet.fatherName && pet.father) pet.fatherName = '父本'
         if (!pet.motherName && pet.mother) pet.motherName = '母本'
         // 扫码进入时验证所有权
-        if (this.data.isReadOnly) {
+        if (this.data.isReadOnly && !this.data.isPublicMode) {
           const currentOpenid = wx.getStorageSync('openid')
           if (currentOpenid && pet._openid && currentOpenid === pet._openid) {
             this.setData({ isReadOnly: false })
@@ -408,8 +460,14 @@ Page({
 
   loadLocalPetDetail: function (petId) {
     try {
+      // 优先从 pets 缓存查找
       const pets = wx.getStorageSync('pets') || []
-      const pet = pets.find(p => (p.id || p._id) === petId)
+      let pet = pets.find(p => (p.id || p._id) === petId)
+      // pets 没有则从回收站查找（刚删除又进入详情页的场景）
+      if (!pet) {
+        const recycleBin = wx.getStorageSync('recycleBin') || []
+        pet = recycleBin.find(p => (p.id || p._id) === petId)
+      }
       if (pet) {
         this.setPetData(pet)
       } else {
@@ -444,6 +502,9 @@ Page({
     else statusClass = 'normal'
 
     this.setData({ pet: displayPet, statusClass, showSkeleton: false })
+    if (this.data.records && this.data.records.length) {
+      this.filterAndGroupRecords(this.data.records)
+    }
 
     // 预览页跳转过来时自动打开新增记录弹窗
     if (this._pendingAddRecord) {
@@ -489,16 +550,20 @@ Page({
   // 编辑 / 删除宠物
   // ============================================================
 
-  editInfo: function () {
+  editInfo: async function () {
     const pet = this.data.pet
     if (!pet) return
-    // 加载最新的分类列表
-    this.loadCategories()
+    let categories = await this._loadCategoriesFromCloud()
+    const petCategory = (pet.category || '').trim()
+    if (petCategory && !categories.includes(petCategory)) {
+      categories = [...categories, petCategory]
+    }
     this.setData({
+      categories,
       showEditModal: true,
       editForm: {
         name: pet.name || '',
-        category: pet.category || '',
+        category: petCategory || '无',
         gender: pet.gender || '公',
         alias: pet.alias || '',
         price: pet.price || '',
@@ -519,15 +584,35 @@ Page({
     })
   },
 
-  loadCategories() {
+  async _loadCategoriesFromCloud() {
+    const localCategories = wx.getStorageSync('categories') || []
+    const petCategory = (this.data.pet && this.data.pet.category) ? [this.data.pet.category] : []
+
     try {
+      const result = await API.getCategories()
+      if (result && result.success && result.data && result.data.categories) {
+        let categories = mergeCategories(result.data.categories, localCategories, petCategory)
+        categories = await syncMissingCategoriesToCloud(categories, API)
+        wx.setStorageSync('categories', categories)
+        getApp().globalData.preloadedCategories = categories
+        return categories
+      }
+    } catch (err) {
+      console.error('从数据库加载分类失败:', err)
+    }
+    const savedCategories = wx.getStorageSync('categories')
+    return mergeCategories(savedCategories, petCategory)
+  },
+
+  loadCategories() {
+    this._loadCategoriesFromCloud().then(categories => {
+      this.setData({ categories })
+    }).catch(() => {
       const savedCategories = wx.getStorageSync('categories')
       if (savedCategories && savedCategories.length > 0) {
         this.setData({ categories: savedCategories })
       }
-    } catch (error) {
-      console.error('加载分类失败:', error)
-    }
+    })
   },
 
   hideEditModal: function () {
@@ -554,6 +639,169 @@ Page({
     const category = e.currentTarget.dataset.category
     if (category === undefined) return
     this.setData({ 'editForm.category': category })
+  },
+
+  addCategory: function () {
+    this.setData({
+      showAddCategoryModal: true,
+      newCategoryName: ''
+    })
+  },
+
+  hideAddCategoryModal: function () {
+    this.setData({ showAddCategoryModal: false })
+  },
+
+  onCategoryInput: function (e) {
+    this.setData({ newCategoryName: e.detail.value })
+  },
+
+  confirmAddCategory: async function () {
+    const name = (this.data.newCategoryName || '').trim()
+    if (!name) {
+      showError('请输入分类名称')
+      return
+    }
+    if (name === '无') {
+      showError('分类名称不能为"无"')
+      return
+    }
+    if (this.data.categories.includes(name)) {
+      showError('分类已存在')
+      return
+    }
+
+    try {
+      const result = await API.addCategory(name)
+      if (result && result.success && result.data && result.data.categories) {
+        const categories = result.data.categories
+        this.setData({
+          categories,
+          showAddCategoryModal: false,
+          'editForm.category': name
+        })
+        wx.setStorageSync('categories', categories)
+        getApp().globalData.preloadedCategories = categories
+        showSuccess('添加成功')
+      } else {
+        showError(result?.message || '添加失败，请重试')
+      }
+    } catch (err) {
+      console.error('分类同步到数据库失败:', err)
+      showError('添加失败，请检查网络后重试')
+    }
+  },
+
+  // 编辑分类名称
+  editCategory: function (e) {
+    const category = e.currentTarget.dataset.category
+    if (category === '无') {
+      showError('不能修改默认分类')
+      return
+    }
+    this.setData({
+      showEditCategoryModal: true,
+      editCategoryOldName: category,
+      editCategoryNewName: category
+    })
+  },
+
+  hideEditCategoryModal: function () {
+    this.setData({ showEditCategoryModal: false })
+  },
+
+  onEditCategoryInput: function (e) {
+    this.setData({ editCategoryNewName: e.detail.value })
+  },
+
+  confirmEditCategory: async function () {
+    const oldName = this.data.editCategoryOldName
+    const newName = this.data.editCategoryNewName.trim()
+
+    if (!newName) {
+      showError('请输入分类名称')
+      return
+    }
+    if (newName === '无') {
+      showError('分类名称不能为"无"')
+      return
+    }
+    if (oldName === newName) {
+      this.setData({ showEditCategoryModal: false })
+      return
+    }
+    if (this.data.categories.includes(newName)) {
+      showError('分类已存在')
+      return
+    }
+
+    // 更新本地UI
+    const categories = this.data.categories.map(c => c === oldName ? newName : c)
+    let newCategory = this.data.editForm.category
+    if (newCategory === oldName) {
+      newCategory = newName
+    }
+
+    this.setData({
+      categories,
+      'editForm.category': newCategory,
+      showEditCategoryModal: false
+    })
+
+    try {
+      const result = await API.updateCategory(oldName, newName)
+      if (result && result.success && result.data && result.data.categories) {
+        const synced = result.data.categories
+        this.setData({ categories: synced, 'editForm.category': newCategory })
+        wx.setStorageSync('categories', synced)
+        getApp().globalData.preloadedCategories = synced
+        showSuccess('修改成功')
+      } else {
+        wx.setStorageSync('categories', categories)
+        showError(result?.message || '修改同步失败')
+      }
+    } catch (err) {
+      wx.setStorageSync('categories', categories)
+      console.error('分类修改同步到数据库失败:', err)
+      showError('修改同步失败，请重试')
+    }
+  },
+
+  deleteCategory: async function (e) {
+    const category = e.currentTarget.dataset.category
+    if (category === '无') {
+      showError('不能删除默认分类')
+      return
+    }
+    const confirmed = await showConfirm('删除分类', `确定要删除分类"${category}"吗？`)
+    if (!confirmed) return
+    const categories = (this.data.categories || []).filter(c => c !== category)
+    let newCategory = this.data.editForm.category
+    if (newCategory === category) {
+      newCategory = '无'
+    }
+    this.setData({
+      categories,
+      'editForm.category': newCategory
+    })
+
+    try {
+      const result = await API.deleteCategory(category)
+      if (result && result.success && result.data && result.data.categories) {
+        const synced = result.data.categories
+        this.setData({ categories: synced, 'editForm.category': newCategory })
+        wx.setStorageSync('categories', synced)
+        getApp().globalData.preloadedCategories = synced
+        showSuccess('删除成功')
+      } else {
+        wx.setStorageSync('categories', categories)
+        showSuccess('删除成功')
+      }
+    } catch (err) {
+      wx.setStorageSync('categories', categories)
+      console.error('分类删除同步到数据库失败:', err)
+      showSuccess('删除成功')
+    }
   },
 
   selectEditGender: function (e) {
@@ -798,7 +1046,8 @@ Page({
           id: p.id || p._id,
           name: p.name,
           alias: p.alias,
-          gender: p.gender
+          gender: p.gender,
+          photos: p.photos || []
         }))
       this.setData({ recordPartnerList: list })
     } catch (err) {
@@ -900,7 +1149,7 @@ Page({
         continue
       }
       try {
-        const res = await API.uploadImage(filePath)
+        const res = await API.uploadImage(filePath, 'pets', petId, { scene: 'pet' })
         if (res && res.success && res.fileID) {
           results.push(res.fileID)
         } else if (res && res.fileID) {
@@ -964,6 +1213,7 @@ Page({
         // 重新加载
         await this.setPetData(payload)
         this.setData({ showEditModal: false })
+        this.loadPedigree(this.data.petId)
         showSuccess('保存成功')
       } else {
         throw new Error(result && result.message ? result.message : '保存失败')
@@ -991,6 +1241,7 @@ Page({
       this._updateLocalPetCache(payload)
       await this.setPetData(payload)
       this.setData({ showEditModal: false })
+      this.loadPedigree(this.data.petId)
       showSuccess('已保存到本地')
     } finally {
       this.setData({ photoUploading: false })
@@ -1045,13 +1296,26 @@ Page({
 
     }
 
-    // 本地删除
+    // 本地删除，同时放入回收站
     try {
-      const pets = (wx.getStorageSync('pets') || []).filter(p => (p.id || p._id) !== petId)
+      const allPets = wx.getStorageSync('pets') || []
+      const deletedPet = allPets.find(p => (p.id || p._id) === petId)
+      const pets = allPets.filter(p => (p.id || p._id) !== petId)
       wx.setStorageSync('pets', sanitizePetPhotos(pets))
 
       const records = (wx.getStorageSync('records') || []).filter(r => r.petId !== petId)
       wx.setStorageSync('records', records)
+
+      // 放入回收站
+      if (deletedPet) {
+        let recycleBin = wx.getStorageSync('recycleBin') || []
+        deletedPet.deleteTime = this._formatDateTime(new Date())
+        recycleBin.unshift(deletedPet)
+        if (recycleBin.length > 50) {
+          recycleBin = recycleBin.slice(0, 50)
+        }
+        wx.setStorageSync('recycleBin', recycleBin)
+      }
     } catch (err) {
       console.error('本地删除失败:', err)
     }
@@ -1149,9 +1413,125 @@ Page({
         records: byDate[date].sort((a, b) => ((a.time || '') < (b.time || '') ? 1 : -1))
       }))
 
+    const decorated = this.decorateTimelineRecords(filtered)
+
+    // 构建换公列表（母龟的交配公龟，去重，按时间倒序）
+    this.buildMateMaleList(records)
+
     this.setData({
-      filteredRecords: filtered,
+      filteredRecords: decorated,
       groupedRecords: grouped
+    })
+  },
+
+  // 构建换公记录列表
+  buildMateMaleList: function (records) {
+    const pet = this.data.pet || {}
+    if (pet.gender !== '母') {
+      this.setData({ mateMaleList: [] })
+      return
+    }
+
+    // 提取所有交配记录，按时间倒序
+    const mateRecords = (records || [])
+      .filter(r => r.type === '交配' && r.partnerId)
+      .sort((a, b) => {
+        const da = (a.date || '') + ' ' + (a.time || '')
+        const db = (b.date || '') + ' ' + (b.time || '')
+        return da < db ? 1 : -1
+      })
+
+    // 去重：同一公龟只保留最新一次
+    const seen = new Set()
+    const uniqueMales = []
+    mateRecords.forEach(r => {
+      if (!seen.has(r.partnerId)) {
+        seen.add(r.partnerId)
+        uniqueMales.push({
+          partnerId: r.partnerId,
+          partnerName: r.partnerName || '未知',
+          date: r.date,
+          time: r.time
+        })
+      }
+    })
+
+    // 从本地缓存获取公龟照片
+    const localPets = wx.getStorageSync('pets') || []
+    const photoMap = {}
+    localPets.forEach(p => {
+      const pid = p.id || p._id
+      if (pid && p.photos && p.photos.length) {
+        photoMap[pid] = p.photos[0]
+        if (p.id && p._id && p.id !== p._id) {
+          photoMap[p._id] = p.photos[0]
+          photoMap[p.id] = p.photos[0]
+        }
+      }
+    })
+
+    const mateMaleList = uniqueMales.map((m, index) => ({
+      ...m,
+      photo: photoMap[m.partnerId] || '',
+      isLatest: index === 0
+    }))
+
+    this.setData({ mateMaleList })
+  },
+
+  decorateTimelineRecords: function (records) {
+    const pet = this.data.pet || {}
+    const petCover = pet.photos && pet.photos.length ? pet.photos[0] : ''
+    // 构建配对对象照片索引（用 id 和 _id 双重匹配）
+    const localPets = wx.getStorageSync('pets') || []
+    const partnerPhotoMap = {}
+    localPets.forEach(p => {
+      const pid = p.id || p._id
+      if (pid) {
+        // photos 可能是 cloud:// ID 或已转换的 URL，直接取第一张
+        const photo = (p.photos && p.photos.length) ? p.photos[0] : ''
+        partnerPhotoMap[pid] = photo
+        // 同时用 _id 和 id 互为 key，确保匹配
+        if (p.id && p._id && p.id !== p._id) {
+          partnerPhotoMap[p._id] = photo
+          partnerPhotoMap[p.id] = photo
+        }
+      }
+    })
+    let lastYear = ''
+
+    return (records || []).map((record) => {
+      const date = record.date || ''
+      const dateParts = date.split('-')
+      const year = dateParts[0] || '未知'
+      const displayDate = dateParts.length >= 3 ? `${dateParts[1]}-${dateParts[2]}` : (date || '')
+      const recordPhotos = record.photos || record.images || []
+      // 交配记录优先显示配对对象的图片
+      let coverImage = ''
+      if (record.type === '交配' && record.partnerId) {
+        coverImage = partnerPhotoMap[record.partnerId] || ''
+      }
+      // 其次用记录自带的照片
+      if (!coverImage) {
+        coverImage = (Array.isArray(recordPhotos) && recordPhotos.length ? recordPhotos[0] : '') || record.photo || record.image || ''
+      }
+      // 最后回退到当前宠物封面
+      if (!coverImage) {
+        coverImage = petCover
+      }
+      const displayText = record.text || (record.type === '建档' ? '宠物档案已创建' : `${record.type || '事件'}记录`)
+      const showYear = year !== lastYear
+      lastYear = year
+
+      return {
+        ...record,
+        displayYear: year,
+        displayDate,
+        displayText,
+        coverImage,
+        showYear,
+        recordIcon: this.getRecordIcon(record.type)
+      }
     })
   },
 
@@ -1170,6 +1550,10 @@ Page({
     this.filterAndGroupRecords(this.data.records)
   },
 
+  toggleEventCollapsed: function () {
+    this.setData({ eventCollapsed: !this.data.eventCollapsed })
+  },
+
   expandTimeline: function () {
     this.filterAndGroupRecords(this.data.records)
     this.setData({ showTimelineModal: true })
@@ -1185,6 +1569,7 @@ Page({
       '建档': '📁',
       '交配': '💕',
       '产蛋': '🥚',
+      '出苗': '🐣',
       '健康': '💊'
     }
     return iconMap[type] || '📝'
@@ -1193,7 +1578,7 @@ Page({
   // 长按事件卡片
   onEventCardLongPress: function (e) {
     const recordId = e.currentTarget.dataset.id
-    const record = this.data.records.find(r => r.id === recordId)
+    const record = this.data.records.find(r => (r.id || r._id) === recordId)
     
     if (!record) return
     
@@ -1218,7 +1603,8 @@ Page({
   // 删除记录
   deleteRecord: function (e) {
     const recordId = e.currentTarget.dataset.id
-    const record = this.data.records.find(r => r.id === recordId)
+    const record = this.data.records.find(r => (r.id || r._id) === recordId)
+    if (!record) return
     
     // 建档记录不允许删除
     if (record.type === '建档') {
@@ -1237,7 +1623,7 @@ Page({
             await API.deleteRecord(recordId)
             
             // 从本地数据中移除
-            const newRecords = this.data.records.filter(r => r.id !== recordId)
+            const newRecords = this.data.records.filter(r => (r.id || r._id) !== recordId)
             const sorted = this.sortRecords(newRecords)
             this.setData({ records: sorted })
             
@@ -1453,21 +1839,22 @@ Page({
   showRecordDetail: function (e) {
     const id = e.currentTarget.dataset.id
     if (!id) return
-    const record = this.data.records.find(r => r.id === id)
+    const record = this.data.records.find(r => (r.id || r._id) === id)
     if (!record) return
+    const detailRecord = { ...record, recordIcon: this.getRecordIcon(record.type) }
     // 产蛋记录预计算受精率
-    if (record.type === '产蛋' && record.eggCount > 0) {
-      const rate = Math.round((parseInt(record.fertilizedCount) || 0) / parseInt(record.eggCount) * 100)
-      record.eggRateText = rate + '%'
-      record.eggRateLow = rate < 50
+    if (detailRecord.type === '产蛋' && detailRecord.eggCount > 0) {
+      const rate = Math.round((parseInt(detailRecord.fertilizedCount) || 0) / parseInt(detailRecord.eggCount) * 100)
+      detailRecord.eggRateText = rate + '%'
+      detailRecord.eggRateLow = rate < 50
     }
     // 出苗记录预计算全品率
-    if (record.type === '出苗' && record.hatchCount > 0) {
-      const rate = Math.round((parseInt(record.gradeACount) || 0) / parseInt(record.hatchCount) * 100)
-      record.gradeRateText = rate + '%'
+    if (detailRecord.type === '出苗' && detailRecord.hatchCount > 0) {
+      const rate = Math.round((parseInt(detailRecord.gradeACount) || 0) / parseInt(detailRecord.hatchCount) * 100)
+      detailRecord.gradeRateText = rate + '%'
     }
     this.setData({
-      currentRecord: record,
+      currentRecord: detailRecord,
       showRecordModal: true
     })
   },
@@ -1904,12 +2291,73 @@ Page({
   // 家谱 / 谱系
   // ============================================================
 
+  // 格式化日期时间
+  _formatDateTime: function (date) {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hour = String(date.getHours()).padStart(2, '0')
+    const minute = String(date.getMinutes()).padStart(2, '0')
+    return `${year}-${month}-${day} ${hour}:${minute}`
+  },
+
+  // 添加最近浏览记录
+  addToRecentViews: function (petId, options) {
+    if (!petId) return
+
+    try {
+      let recentViews = wx.getStorageSync('recentViews') || []
+      
+      // 检查是否已存在该宠物的浏览记录
+      const existIndex = recentViews.findIndex(item => item._id === petId)
+      if (existIndex > -1) {
+        // 如果已存在，移除旧的记录
+        recentViews.splice(existIndex, 1)
+      }
+
+      // 获取宠物信息
+      const pets = wx.getStorageSync('pets') || []
+      let pet = pets.find(p => p._id === petId)
+      
+      // 如果是公开模式，尝试从公开数据获取
+      let isPublic = false
+      let userId = ''
+      if (options && (options.isPublic === 'true' || options.isPublic === true)) {
+        isPublic = true
+        userId = options.userId || ''
+      }
+
+      // 构建浏览记录
+      const viewRecord = {
+        _id: petId,
+        name: pet ? pet.name : '未命名',
+        breed: pet ? pet.breed : '未知品种',
+        photos: pet ? pet.photos : [],
+        isPublic: isPublic,
+        userId: userId,
+        viewTime: this._formatDateTime(new Date())
+      }
+
+      // 添加到列表开头
+      recentViews.unshift(viewRecord)
+      
+      // 只保留最近20条记录
+      if (recentViews.length > 20) {
+        recentViews = recentViews.slice(0, 20)
+      }
+
+      wx.setStorageSync('recentViews', recentViews)
+    } catch (e) {
+      console.error('添加最近浏览记录失败:', e)
+    }
+  },
+
   loadPedigree: async function (petId) {
     if (!petId) return
     try {
       const result = await API.getPedigree(petId, 3)
       if (result && result.success && result.data) {
-        this._setPedigreeData(result.data)
+        await this._setPedigreeData(result.data)
       } else {
         this._loadLocalPedigree(petId)
       }
@@ -1919,7 +2367,23 @@ Page({
     }
   },
 
-  _loadLocalPedigree: function (petId) {
+  _buildLocalPedigreeNode: function (pet, byId, depth = 0) {
+    if (!pet || depth >= 3) return null
+    const id = pet.id || pet._id
+    const fatherPet = pet.father ? byId[pet.father] : null
+    const motherPet = pet.mother ? byId[pet.mother] : null
+    return {
+      id,
+      name: pet.name,
+      alias: pet.alias,
+      gender: pet.gender,
+      photos: pet.photos ? pet.photos.slice(0, 1) : [],
+      father: this._buildLocalPedigreeNode(fatherPet, byId, depth + 1),
+      mother: this._buildLocalPedigreeNode(motherPet, byId, depth + 1)
+    }
+  },
+
+  _loadLocalPedigree: async function (petId) {
     try {
       const pets = wx.getStorageSync('pets') || []
       const self = pets.find(p => (p.id || p._id) === petId)
@@ -1927,26 +2391,38 @@ Page({
       const byId = {}
       pets.forEach(p => { byId[p.id || p._id] = p })
 
-      const father = self.father ? byId[self.father] : null
-      const mother = self.mother ? byId[self.mother] : null
-      const grandFather = father && father.father ? byId[father.father] : null
-      const grandMother = father && father.mother ? byId[father.mother] : null
-      const grandFatherM = mother && mother.father ? byId[mother.father] : null
-      const grandMotherM = mother && mother.mother ? byId[mother.mother] : null
+      const father = self.father ? this._buildLocalPedigreeNode(byId[self.father], byId) : null
+      const mother = self.mother ? this._buildLocalPedigreeNode(byId[self.mother], byId) : null
 
-      this._setPedigreeData({
-        fullTree: {
-          father: father ? { id: father.id || father._id, name: father.name, alias: father.alias, gender: father.gender, photos: father.photos ? father.photos.slice(0, 1) : [], father: grandFather ? { id: grandFather.id || grandFather._id, name: grandFather.name, alias: grandFather.alias, photos: grandFather.photos ? grandFather.photos.slice(0, 1) : [] } : null, mother: grandMother ? { id: grandMother.id || grandMother._id, name: grandMother.name, alias: grandMother.alias, photos: grandMother.photos ? grandMother.photos.slice(0, 1) : [] } : null } : null,
-          mother: mother ? { id: mother.id || mother._id, name: mother.name, alias: mother.alias, gender: mother.gender, photos: mother.photos ? mother.photos.slice(0, 1) : [], father: grandFatherM ? { id: grandFatherM.id || grandFatherM._id, name: grandFatherM.name, alias: grandFatherM.alias, photos: grandFatherM.photos ? grandFatherM.photos.slice(0, 1) : [] } : null, mother: grandMotherM ? { id: grandMotherM.id || grandMotherM._id, name: grandMotherM.name, alias: grandMotherM.alias, photos: grandMotherM.photos ? grandMotherM.photos.slice(0, 1) : [] } : null } : null
-        }
+      await this._setPedigreeData({
+        fullTree: { father, mother }
       })
     } catch (err) {
       console.error('加载本地谱系失败:', err)
     }
   },
 
-  _setPedigreeData: function (data) {
-    const tree = (data && data.fullTree) || {}
+  _convertPedigreePhotos: async function (node) {
+    if (!node) return null
+    const copy = { ...node }
+    if (copy.photos && copy.photos.length) {
+      try {
+        copy.photos = await convertPhotoIdsToUrls(copy.photos.slice(0, 1))
+      } catch (err) {}
+    }
+    if (copy.father) copy.father = await this._convertPedigreePhotos(copy.father)
+    if (copy.mother) copy.mother = await this._convertPedigreePhotos(copy.mother)
+    return copy
+  },
+
+  _setPedigreeData: async function (data) {
+    let tree = (data && data.fullTree) || {}
+    if (tree.father || tree.mother) {
+      tree = {
+        father: await this._convertPedigreePhotos(tree.father),
+        mother: await this._convertPedigreePhotos(tree.mother)
+      }
+    }
     const hasGen1 = !!(tree.father || tree.mother)
     const hasGen2 = !!(
       (tree.father && (tree.father.father || tree.father.mother)) ||
@@ -2025,6 +2501,24 @@ Page({
         wx.showToast({ title: '无法查看该祖先', icon: 'none' })
       }
     })
+  },
+
+  onFatherTreeTap: function () {
+    const father = this.data.pedigreeData && this.data.pedigreeData.fullTree && this.data.pedigreeData.fullTree.father
+    if (father && father.id) {
+      this.viewAncestorDetail({ currentTarget: { dataset: { id: father.id } } })
+      return
+    }
+    if (!this.data.isReadOnly) this.openFatherModal()
+  },
+
+  onMotherTreeTap: function () {
+    const mother = this.data.pedigreeData && this.data.pedigreeData.fullTree && this.data.pedigreeData.fullTree.mother
+    if (mother && mother.id) {
+      this.viewAncestorDetail({ currentTarget: { dataset: { id: mother.id } } })
+      return
+    }
+    if (!this.data.isReadOnly) this.openMotherModal()
   },
 
   // ============================================================

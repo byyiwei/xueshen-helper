@@ -86,30 +86,23 @@ async function getTempUrl(fileID) {
  */
 async function convertSinglePhoto(photo) {
   if (!photo) return photo
-  
-  // 如果是 cloud:// 格式，直接转换
+
+  // 如果已经是临时URL（非cloud://），直接返回
+  if (photo.startsWith('http')) {
+    return photo
+  }
+
+  // 如果是 cloud:// 格式，转换为临时URL
   if (photo.startsWith('cloud://')) {
     try {
       return await getTempUrl(photo)
     } catch (error) {
-      console.error('转换cloud://图片失败:', error)
-      return '' // 文件不存在，返回空字符串触发占位图
+      console.error('转换cloud://图片失败:', photo, error)
+      // 转换失败时保留原始fileID，不返回空字符串
+      return photo
     }
   }
-  
-  // 如果是腾讯云临时URL，尝试提取fileID并重新获取
-  if (photo.includes('tcb.qcloud.la')) {
-    const fileID = extractFileIdFromTempUrl(photo)
-    if (fileID) {
-      try {
-        return await getTempUrl(fileID)
-      } catch (error) {
-        console.error('从临时URL转换失败:', error)
-        return '' // 文件不存在或转换失败，返回空字符串触发占位图
-      }
-    }
-  }
-  
+
   // 其他格式直接返回
   return photo
 }

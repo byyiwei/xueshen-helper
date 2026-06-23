@@ -1,0 +1,45 @@
+<view class="page-recycle-bin">
+  <view class="nav-bar nav-bar-detail" style="padding-top:{{statusBarHeight}}px">
+    <view class="nav-back" bindtap="goBack">
+      <image class="nav-back-icon" src="/icons/返回.png" mode="aspectFit"/>
+    </view>
+    <text class="nav-title">回收站</text>
+    <view class="nav-action" bindtap="clearRecycleBin" wx:if="{{recycleBin.length > 0}}">
+      <text class="action-text">清空</text>
+    </view>
+  </view>
+
+  <scroll-view style="padding-top:{{totalNavHeight}}px" scroll-y class="scroll-main">
+    <view class="recycle-content">
+    <!-- 空状态 -->
+    <view wx:if="{{recycleBin.length === 0}}" class="empty-state">
+      <text class="empty-icon">🗑</text>
+      <text class="empty-title">回收站是空的</text>
+      <text class="empty-desc">删除的宠物会出现在这里</text>
+    </view>
+
+    <!-- 宠物列表 -->
+    <view wx:if="{{recycleBin.length > 0}}" class="pet-list">
+      <view wx:for="{{recycleBin}}" wx:key="index" class="pet-card press" bindtap="viewPetDetail" data-pet="{{item}}">
+        <view class="pet-avatar">
+          <image wx:if="{{item.photos && item.photos.length > 0}}" src="{{item.photos[0]}}" mode="aspectFill"/>
+          <text wx:else class="pet-avatar-text">🐢</text>
+        </view>
+        <view class="pet-info">
+          <text class="pet-name">{{item.name || '未命名'}}</text>
+          <text class="pet-breed">{{item.breed || '未知品种'}}</text>
+          <text class="pet-delete-time">删除时间：{{item.deleteTime || '未知'}}</text>
+        </view>
+        <view class="pet-actions">
+          <view class="action-btn restore-btn" catchtap="restorePet" data-index="{{index}}">
+            <text>恢复</text>
+          </view>
+          <view class="action-btn delete-btn" catchtap="permanentDelete" data-index="{{index}}">
+            <text>删除</text>
+          </view>
+        </view>
+      </view>
+    </view>
+    </view>
+  </scroll-view>
+</view>

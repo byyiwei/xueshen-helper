@@ -148,7 +148,9 @@ class VoiceInputManager {
    */
   async _recognizeVoice(tempFilePath) {
     try {
-      const cloudPath = 'voice/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.mp3'
+      const openid = wx.getStorageSync('openid') || 'unknown'
+      const filename = Date.now() + '_' + Math.random().toString(36).slice(2) + '.mp3'
+      const cloudPath = `voice/${openid}/${filename}`
       const uploadResult = await wx.cloud.uploadFile({
         cloudPath: cloudPath,
         filePath: tempFilePath

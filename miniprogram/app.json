@@ -1,36 +1,54 @@
 {
   "pages": [
+    "pages/loading/index",
     "pages/index/index",
     "pages/pet/index",
-    "pages/footprint/index",
     "pages/pet/detail",
-    "pages/pet/preview",
     "pages/my/index",
-    "pages/public/index",
-    "pages/login/index",
-    "pages/admin/index",
-    "pages/admin/config",
-    "pages/admin/pets",
-    "pages/admin/footprints",
-    "pages/admin/users",
-    "pages/egg-report/index",
-    "pages/hatch-report/index",
-    "pages/tools/index",
-    "pages/tools/calculator"
+    "pages/my/recycle-bin/index",
+    "pages/my/recent-view/index"
+  ],
+  "subpackages": [
+    {
+      "root": "subpkg-admin",
+      "pages": [
+        "pages/admin/index",
+        "pages/admin/config",
+        "pages/admin/pets",
+        "pages/admin/footprints",
+        "pages/admin/users"
+      ]
+    },
+    {
+      "root": "subpkg-tools",
+      "pages": [
+        "pages/tools/index",
+        "pages/tools/calculator",
+        "pages/tools/tank3d/index"
+      ]
+    },
+    {
+      "root": "subpkg-report",
+      "pages": [
+        "pages/egg-report/index",
+        "pages/hatch-report/index",
+        "pages/footprint/index",
+        "pages/public/index",
+        "pages/pet/preview"
+      ]
+    }
   ],
   "window": {
     "backgroundTextStyle": "dark",
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "宠物档案",
     "navigationBarBackgroundColor": "#ffffff",
-    "navigationBarTextStyle": "black",
-    "navigationBarBackgroundColor": "#ffffff",
-    "backgroundColor": "#ffffff"
+    "backgroundColor": "#FAF8F5"
   },
   "tabBar": {
     "custom": true,
-    "color": "#94A3B8",
-    "selectedColor": "#3A7CFF",
+    "color": "#999999",
+    "selectedColor": "#1A1A1A",
     "backgroundColor": "#ffffff",
     "borderStyle": "white",
     "list": [

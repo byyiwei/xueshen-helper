@@ -1,452 +1,337 @@
-<wxs src="./index.wxs" module="utils" />
-<view class="page" style="padding-top: {{totalNavHeight}}rpx;">
-  <!-- 自定义导航栏（含刷新状态） -->
-  <view class="custom-nav {{refreshing ? 'is-refreshing' : ''}}" style="padding-top: {{statusBarHeight}}px">
-    <block wx:if="{{refreshing}}">
-      <view class="nav-refresh-spinner"></view>
-      <text class="nav-refresh-text">刷新中...</text>
-    </block>
-    <text wx:else class="nav-title">宠物档案</text>
+<view class="page-pet-list">
+  <view class="nav-bar" style="padding-top:{{statusBarHeight}}px">
+    <text class="nav-title">宠物档案</text>
   </view>
 
-  <!-- 未登录提示栏 -->
-  <view wx:if="{{!isLoggedIn}}" class="login-hint-bar">
-    <text class="login-hint-text">登录后可管理宠物资料、记录和打印标签</text>
-    <view class="login-hint-btn" bindtap="goToLogin">登录</view>
-  </view>
-
-  <!-- 骨架屏 -->
-  <view wx:if="{{showSkeleton}}" class="skeleton-container">
-    <view class="skeleton-sweep"></view>
-    <!-- 筛选卡片骨架 -->
-    <view class="skeleton-filter-card">
-      <view class="skeleton-filter-head">
-        <view class="skeleton-title"></view>
-        <view class="skeleton-more-btn"></view>
-      </view>
-      <view class="skeleton-filter-group">
-        <view class="skeleton-filter-label"></view>
-        <view class="skeleton-filter-chips">
-          <view class="skeleton-chip"></view>
-          <view class="skeleton-chip"></view>
-          <view class="skeleton-chip"></view>
-        </view>
-      </view>
-      <view class="skeleton-search"></view>
+  <view style="padding-top:{{totalNavHeight}}rpx">
+    <!-- 刷新中提示 -->
+    <view wx:if="{{refreshing}}" class="refreshing-bar">
+      <view class="refreshing-spinner"></view>
+      <text class="refreshing-text">刷新中...</text>
     </view>
 
-    <!-- 宠物卡片骨架（2列网格） -->
-    <view class="skeleton-pet-list">
-      <view class="skeleton-pet-card">
-        <view class="skeleton-pet-image">
-          <view class="skeleton-overlay-name"></view>
-          <view class="skeleton-overlay-meta"></view>
-        </view>
+    <!-- 未登录提示 -->
+    <view wx:if="{{!isLoggedIn}}" class="login-bar" bindtap="goToLogin">
+      <text class="login-bar-text">登录后可管理宠物资料、记录和打印标签</text>
+      <view class="login-bar-btn"><text>立即登录 ›</text></view>
+    </view>
+
+    <!-- 筛选区 -->
+    <view class="filter-bar">
+      <view class="filter-left">
+        <text class="filter-label">系列</text>
+        <scroll-view scroll-x class="chip-scroll" show-scrollbar="{{false}}">
+          <text class="chip {{filter.category==='全部'?'active':''}}" bindtap="setFilter" data-key="category" data-value="全部">全部</text>
+          <block wx:for="{{categories}}" wx:key="*this">
+            <text class="chip {{filter.category===item?'active':''}}" bindtap="setFilter" data-key="category" data-value="{{item}}">{{item}}</text>
+          </block>
+        </scroll-view>
       </view>
-      <view class="skeleton-pet-card">
-        <view class="skeleton-pet-image">
-          <view class="skeleton-overlay-name"></view>
-          <view class="skeleton-overlay-meta"></view>
-        </view>
-      </view>
-      <view class="skeleton-pet-card">
-        <view class="skeleton-pet-image">
-          <view class="skeleton-overlay-name"></view>
-          <view class="skeleton-overlay-meta"></view>
-        </view>
-      </view>
-      <view class="skeleton-pet-card">
-        <view class="skeleton-pet-image">
-          <view class="skeleton-overlay-name"></view>
-          <view class="skeleton-overlay-meta"></view>
-        </view>
+      <view class="filter-more press" bindtap="toggleFilters">
+        <text>更多</text>
       </view>
     </view>
-  </view>
 
-  <!-- 真实内容（骨架屏隐藏时显示） -->
-  <view wx:else>
-    <!-- 筛选卡片 -->
-    <view class="filter-card">
-      <view class="filter-card-head">
-        <text class="filter-card-title">筛选</text>
-        <view class="more-btn {{showFilters ? 'active' : ''}}" bindtap="toggleFilters">{{showFilters ? '收起' : '更多'}}</view>
+    <!-- 展开筛选 -->
+    <view wx:if="{{showFilters}}" class="filter-expand card-flush">
+      <view class="expand-row">
+        <text class="expand-label">性别</text>
+        <text class="chip-sm {{filter.gender==='全部'?'active':''}}" bindtap="setFilter" data-key="gender" data-value="全部">全部</text>
+        <text class="chip-sm {{filter.gender==='公'?'active':''}}" bindtap="setFilter" data-key="gender" data-value="公">公</text>
+        <text class="chip-sm {{filter.gender==='母'?'active':''}}" bindtap="setFilter" data-key="gender" data-value="母">母</text>
+        <text class="chip-sm {{filter.gender==='未知'?'active':''}}" bindtap="setFilter" data-key="gender" data-value="未知">未知</text>
       </view>
-
-      <view class="filter-group">
-        <text class="filter-group-label">分类</text>
-        <view class="filter-tag-row">
-          <view class="filter-chip {{filter.category === '全部' ? 'active' : ''}}" bindtap="setFilter" data-key="category" data-value="全部">全部</view>
-          <view wx:for="{{categories}}" wx:key="*this" wx:for-item="cat" class="filter-chip {{filter.category === cat ? 'active' : ''}}" bindtap="setFilter" data-key="category" data-value="{{cat}}">{{cat}}</view>
-        </view>
+      <view class="expand-row">
+        <text class="expand-label">状态</text>
+        <text class="chip-sm {{filter.status==='全部'?'active':''}}" bindtap="setFilter" data-key="status" data-value="全部">全部</text>
+        <text class="chip-sm {{filter.status==='正常'?'active':''}}" bindtap="setFilter" data-key="status" data-value="正常">正常</text>
+        <text class="chip-sm {{filter.status==='待配'?'active':''}}" bindtap="setFilter" data-key="status" data-value="待配">待配</text>
+        <text class="chip-sm {{filter.status==='预警'?'active':''}}" bindtap="setFilter" data-key="status" data-value="预警">预警</text>
       </view>
-
-      <view wx:if="{{showFilters}}" class="filter-group">
-        <text class="filter-group-label">性别</text>
-        <view class="filter-tag-row">
-          <view class="filter-chip {{filter.gender === '全部' ? 'active' : ''}}" bindtap="setFilter" data-key="gender" data-value="全部">全部</view>
-          <view class="filter-chip {{filter.gender === '公' ? 'active' : ''}}" bindtap="setFilter" data-key="gender" data-value="公">公</view>
-          <view class="filter-chip {{filter.gender === '母' ? 'active' : ''}}" bindtap="setFilter" data-key="gender" data-value="母">母</view>
-          <view class="filter-chip {{filter.gender === '未知' ? 'active' : ''}}" bindtap="setFilter" data-key="gender" data-value="未知">未知</view>
-        </view>
-      </view>
-
-      <view wx:if="{{showFilters}}" class="filter-group">
-        <text class="filter-group-label">状态</text>
-        <view class="filter-tag-row">
-          <view class="filter-chip {{filter.status === '全部' ? 'active' : ''}}" bindtap="setFilter" data-key="status" data-value="全部">全部</view>
-          <view class="filter-chip {{filter.status === '正常' ? 'active' : ''}}" bindtap="setFilter" data-key="status" data-value="正常">正常</view>
-          <view class="filter-chip {{filter.status === '待配' ? 'active' : ''}}" bindtap="setFilter" data-key="status" data-value="待配">待配</view>
-          <view class="filter-chip {{filter.status === '预警' ? 'active' : ''}}" bindtap="setFilter" data-key="status" data-value="预警">预警</view>
-        </view>
-      </view>
-
-      <view class="search-wrap">
-        <input class="search-input" placeholder-class="search-placeholder" placeholder="{{searchPlaceholder}}" value="{{searchText}}" bindinput="onSearchInput" bindfocus="onSearchFocus" bindblur="onSearchBlur" confirm-type="search" />
-        <view class="scan-btn" bindtap="scanQrCode" hover-class="scan-btn-hover">
+      <!-- 搜索 -->
+      <view class="search-row">
+        <input class="search-input" placeholder="搜索名称别名/扫码搜索" value="{{searchText}}" bindinput="onSearchInput"/>
+        <view class="scan-btn press" bindtap="scanQrCode">
           <view class="scan-icon">
-            <view class="scan-corner tl"></view>
-            <view class="scan-corner tr"></view>
-            <view class="scan-corner bl"></view>
-            <view class="scan-corner br"></view>
+            <view class="scan-frame"></view>
             <view class="scan-line"></view>
           </view>
         </view>
       </view>
     </view>
-    
-    <view class="content">
-      <view wx:if="{{filteredPets.length === 0}}" class="empty-state">
-        <view class="empty-icon">
-          <view class="empty-circle">
-            <view class="dots">
-              <view class="dot"></view>
-              <view class="dot"></view>
-              <view class="dot"></view>
-            </view>
+
+    <!-- 宠物网格 -->
+    <view wx:if="{{filteredPets.length===0}}" class="empty-box">
+      <text class="empty-icon">🐢</text>
+      <text class="empty-text">还没有宠物档案</text>
+      <text class="empty-hint">点击下方 + 添加你的第一只龟</text>
+    </view>
+
+    <view wx:else class="pet-grid">
+      <view wx:for="{{filteredPets}}" wx:key="id" class="pet-card press" bindtap="goToDetail" data-id="{{item.id}}">
+        <view class="pet-img-wrap {{item.photos&&item.photos.length&&item.photos[0]?'':'pet-img-wrap-empty'}}">
+          <image wx:if="{{item.photos&&item.photos.length&&item.photos[0]}}" src="{{item.photos[0]}}" mode="aspectFill" binderror="onImageError" data-index="{{index}}"/>
+          <view wx:else class="pet-noimg"></view>
+          <text class="overlay-gender" wx:if="{{item.gender==='公'}}">公</text>
+          <text class="overlay-gender" wx:elif="{{item.gender==='母'}}">母</text>
+          <text class="overlay-gender" wx:else>?</text>
+          <!-- 图片内信息叠加层 -->
+          <view class="pet-overlay-info">
+            <text class="overlay-category">{{item.category||'宠物'}}</text>
           </view>
+          <!-- 浮动记录按钮 -->
+          <view class="pet-record-btn" catchtap="showRecordModal" data-pet="{{item}}" stop-propagation><text>记录</text></view>
         </view>
-        <text class="empty-text">还没有宠物档案</text>
-      </view>
-      
-      <view wx:else class="pet-list">
-        <!-- 批量操作栏 -->
-        <view wx:if="{{isEditMode}}" class="edit-bar">
-          <view class="edit-bar-left">
-            <view class="select-all-btn" bindtap="toggleSelectAll">
-              <view class="checkbox {{allSelected ? 'checked' : ''}}" style="{{allSelected ? 'background-color:' + switchColor + ';border-color:' + switchColor : ''}}">
-                <text wx:if="{{allSelected}}" class="check-mark">✓</text>
-              </view>
-              <text class="select-all-text">全选</text>
-            </view>
-            <text class="selected-count">已选 {{selectedIds.length}} 项</text>
-          </view>
-          <view class="edit-bar-right">
-            <view class="edit-bar-btn edit-bar-done" bindtap="exitEditMode">完成</view>
-            <view class="edit-bar-btn" bindtap="deleteSelected" style="color: #E76F51;">删除</view>
-          </view>
-        </view>
-
-        <view wx:if="{{isEditMode}}" class="edit-tips">
-          <text class="edit-tips-text">按住右侧图标拖动排序</text>
-        </view>
-
-        <view 
-          wx:for="{{filteredPets}}" 
-          wx:key="id" 
-          class="pet-card {{isEditMode ? 'edit-mode' : ''}} {{item._dragging ? 'dragging' : ''}} {{utils.isSelected(selectedIds, item.id) ? 'selected' : ''}}"
-          style="{{item._dragOffset ? 'transform:translateY(' + item._dragOffset + 'px);z-index:100;' : ''}}"
-        >
-          <!-- 序号显示 -->
-          <view wx:if="{{isEditMode}}" class="item-index">
-            <text class="index-num">{{index + 1}}</text>
-          </view>
-
-          <!-- 编辑模式选择框 -->
-          <view wx:if="{{isEditMode}}" class="card-checkbox" catchtap="toggleSelect" data-id="{{item.id}}">
-            <view class="checkbox {{utils.isSelected(selectedIds, item.id) ? 'checked' : ''}}" style="{{utils.isSelected(selectedIds, item.id) ? 'background-color:' + switchColor + ';border-color:' + switchColor : ''}}">
-              <text wx:if="{{utils.isSelected(selectedIds, item.id)}}" class="check-mark">✓</text>
-            </view>
-          </view>
-
-          <view class="pet-image-wrapper" bindtap="{{isEditMode ? 'toggleSelect' : 'goToDetail'}}" data-id="{{item.id}}" bindlongpress="{{isEditMode ? '' : 'onCardLongPress'}}" data-pet="{{item}}">
-            <image wx:if="{{item.photos && item.photos.length > 0}}" class="pet-image" src="{{item.photos[0]}}" mode="aspectFill" binderror="onImageError" data-id="{{item.id}}" data-index="{{index}}" />
-            <view wx:else class="pet-placeholder"></view>
-            <view class="pet-gender-badge gender-{{item.gender === '公' ? 'male' : item.gender === '母' ? 'female' : 'unknown'}}">
-              <text class="gender-icon">{{item.gender || '未知'}}</text>
-            </view>
-            <!-- 底部渐变遮挡 + 信息 -->
-            <view class="pet-card-overlay">
-              <text class="pet-card-alias">{{item.alias || item.name || '未命名'}}</text>
-              <text wx:if="{{item.name && item.alias}}" class="pet-card-name">{{item.name}}</text>
-              <text class="pet-status-tag pet-status-{{item.statusClass || 'normal'}}">{{item.computedStatus || item.status || '正常'}}</text>
-            </view>
-          </view>
-
-          <!-- 拖动手柄 -->
-          <view wx:if="{{isEditMode}}" class="drag-handle" data-id="{{item.id}}" data-index="{{index}}" catchtouchstart="onDragStart" catchtouchmove="onDragMove" catchtouchend="onDragEnd">
-            <view class="drag-icon">
-              <view class="drag-line"></view>
-              <view class="drag-line"></view>
-              <view class="drag-line"></view>
-            </view>
-          </view>
-        </view>
-        <view class="load-more">
-          <view wx:if="{{loadingMore}}" class="load-more-spinner"></view>
-          <text wx:if="{{loadingMore}}" class="load-more-text">加载中...</text>
-          <text wx:elif="{{!hasMore && filteredPets.length > 0}}" class="load-more-text">已加载全部可用宠物</text>
+        <view class="pet-card-info">
+          <text class="pet-card-name">{{item.alias||item.name}}</text>
         </view>
       </view>
     </view>
-  </view>
-  
-  <view class="fab {{isEditMode ? 'fab-hidden' : ''}}" bindtap="showAddModal">
-    <view class="fab-icon">+</view>
-  </view>
-  
-  <!-- 新建宠物弹窗 -->
-  <view wx:if="{{showModal}}" class="modal-overlay" bindtap="hideAddModal">
-    <view class="modal-content" catchtap="stopPropagation">
-      <view class="modal-header">
-        <text class="modal-title">新建宠物</text>
-        <view class="modal-close" bindtap="hideAddModal">×</view>
+
+    <!-- 加载状态 -->
+    <view wx:if="{{loadingMore}}" class="load-more">
+      <view class="load-more-spinner"></view>
+      <text class="load-more-text">加载中...</text>
+    </view>
+    <view wx:elif="{{hasMore && filteredPets.length>0}}" class="load-more-btn-wrap">
+      <view class="load-more-btn press" bindtap="loadMorePets">
+        <text>加载更多</text>
       </view>
-      
-      <scroll-view class="modal-scroll" scroll-y enhanced show-scrollbar="{{false}}">
-      <view class="photo-section">
-        <view class="photo-grid">
-          <view wx:for="{{petForm.photos}}" wx:key="index" class="photo-item">
-            <image class="photo-image" src="{{item}}" mode="aspectFill" binderror="onImageError" data-index="{{index}}" />
-            <view class="photo-delete" bindtap="deletePhoto" data-index="{{index}}">×</view>
-          </view>
-          <view wx:if="{{petForm.photos.length < 9}}" class="photo-upload" bindtap="chooseImage">
-            <view class="upload-icon">+</view>
-            <text class="upload-text">添加照片</text>
-          </view>
-        </view>
-        <text class="photo-count">{{petForm.photos.length || 0}}/9</text>
-      </view>
-      
-      <view class="input-section">
-        <view class="input-with-voice">
-          <input class="pet-input" placeholder="输入宠物名称" value="{{petForm.name}}" bindinput="onNameInput" />
-          <view class="voice-btn {{isRecording && currentVoiceField === 'name' ? 'recording' : ''}}" bindtap="toggleVoice" data-field="name">
-            <text class="voice-btn-icon">●</text>
-          </view>
-          <view wx:if="{{isRecording && currentVoiceField === 'name'}}" class="voice-cancel-btn" bindtap="cancelVoice">✕</view>
-        </view>
+    </view>
+    <view wx:elif="{{filteredPets.length>0 && !hasMore}}" class="load-all">
+      <text>已加载全部 {{total}} 只宠物</text>
+    </view>
+
+    <view class="safe-bottom" style="height:120rpx"></view>
+  </view>
+
+  <!-- 悬浮新增按钮 -->
+  <view class="fab-add press" bindtap="showAddModal">
+    <text class="fab-add-icon">＋</text>
+  </view>
+
+  <!-- 新增宠物模态框 -->
+  <view wx:if="{{showModal}}" class="modal-mask" bindtap="hideAddModal">
+    <view class="modal-sheet" catchtap="stopPropagation">
+      <view class="modal-head">
+        <text class="modal-title">新增宠物</text>
+        <text class="modal-close" bindtap="hideAddModal">×</text>
       </view>
 
-      <view class="form-item" style="margin-top: 20rpx;">
-        <text class="form-label">别名</text>
-        <view class="input-with-voice">
-          <input class="form-input" placeholder="可选，填写后优先作为展示名字" value="{{petForm.alias}}" bindinput="onAliasInput" />
-          <view class="voice-btn {{isRecording && currentVoiceField === 'alias' ? 'recording' : ''}}" bindtap="toggleVoice" data-field="alias">
-            <text class="voice-btn-icon">●</text>
+      <scroll-view scroll-y class="modal-body">
+        <!-- 照片选择 -->
+        <view class="form-photos">
+          <view wx:for="{{petForm.photos}}" wx:key="*this" class="form-photo-item">
+            <image src="{{item}}" mode="aspectFill" class="form-photo-img"/>
+            <view class="form-photo-del press" catchtap="deletePhoto" data-index="{{index}}"><text>×</text></view>
           </view>
-          <view wx:if="{{isRecording && currentVoiceField === 'alias'}}" class="voice-cancel-btn" bindtap="cancelVoice">✕</view>
+          <view wx:if="{{petForm.photos.length<9}}" class="form-photo-add press" bindtap="chooseImage">
+            <text>＋</text>
+          </view>
         </view>
-      </view>
 
-      <view class="form-item" style="margin-top: 20rpx;">
-        <text class="form-label">价格（元/只）</text>
-        <input class="form-input" type="digit" placeholder="可选，公开展示时使用" value="{{petForm.price}}" bindinput="onPriceInput" />
-      </view>
-      
-      <view class="section-title">
-        <text>手动配置</text>
-        <view class="toggle-btn" bindtap="toggleManual">
-          <text>{{showManual ? '收起' : '展开'}}-</text>
+        <!-- 名称 -->
+        <view class="form-field">
+          <text class="form-label">名称</text>
+          <input class="form-input" placeholder="请输入宠物名称" value="{{petForm.name}}" bindinput="onNameInput"/>
         </view>
-      </view>
-      
-      <view class="manual-section" wx:if="{{showManual}}">
-        
-        <view class="form-item">
-          <text class="form-label">分类</text>
-          <view class="form-options">
-            <view wx:for="{{categories}}" wx:key="item" class="option-wrapper">
-              <view class="option {{petForm.category === item ? 'active' : ''}} {{isEditingCategories ? 'editing' : ''}}" bindtap="{{isEditingCategories ? '' : 'selectCategory'}}" bindlongpress="startEditCategories" data-category="{{item}}">
-                {{item}}
-                <view wx:if="{{isEditingCategories && item !== '无'}}" class="delete-btn" catchtap="deleteCategory" data-category="{{item}}">×</view>
-              </view>
-            </view>
-            <view class="option add" bindtap="addCategory">新增分类</view>
+
+        <!-- 别名 -->
+        <view class="form-field">
+          <text class="form-label">别名</text>
+          <input class="form-input" placeholder="可选" value="{{petForm.alias}}" bindinput="onAliasInput"/>
+        </view>
+
+        <!-- 分类 -->
+        <view class="form-field">
+          <view class="form-label-row">
+            <text class="form-label">分类</text>
+            <text class="form-hint">点击分类选中，长按编辑名称</text>
           </view>
-          <view wx:if="{{isEditingCategories}}" class="exit-edit-btn" bindtap="exitEditCategories">完成</view>
+          <view class="form-chips">
+            <view wx:for="{{categories}}" wx:key="*this" class="chip {{petForm.category===item?'active':''}}" bindtap="selectCategory" bindlongpress="editCategory" data-category="{{item}}">{{item}}</view>
+            <view class="chip chip-add press" bindtap="addCategory">＋</view>
+          </view>
         </view>
-        
-        <view class="form-item">
+
+        <!-- 性别 -->
+        <view class="form-field">
           <text class="form-label">性别</text>
-          <view class="form-options">
-            <view class="option {{petForm.gender === '公' ? 'active' : ''}}" bindtap="selectGender" data-gender="公">公</view>
-            <view class="option {{petForm.gender === '母' ? 'active' : ''}}" bindtap="selectGender" data-gender="母">母</view>
-            <view class="option {{petForm.gender === '未知' ? 'active' : ''}}" bindtap="selectGender" data-gender="未知">未知</view>
+          <view class="form-chips">
+            <text class="chip {{petForm.gender==='公'?'active':''}}" bindtap="selectGender" data-gender="公">公</text>
+            <text class="chip {{petForm.gender==='母'?'active':''}}" bindtap="selectGender" data-gender="母">母</text>
+            <text class="chip {{petForm.gender==='未知'?'active':''}}" bindtap="selectGender" data-gender="未知">未知</text>
           </view>
         </view>
 
-        <view class="form-item">
-          <text class="form-label">公开展示</text>
-          <view class="form-switch-row">
-            <text class="switch-hint">允许他人通过分享码查看此宠物</text>
-            <switch checked="{{petForm.isPublic}}" bindchange="onPublicSwitchChange" color="{{switchColor}}" />
+        <!-- 价格 -->
+        <view class="form-field">
+          <text class="form-label">价格</text>
+          <input class="form-input" type="digit" placeholder="可选" value="{{petForm.price}}" bindinput="onPriceInput"/>
+        </view>
+
+        <!-- 状态 -->
+        <view class="form-field">
+          <text class="form-label">状态</text>
+          <view class="form-chips">
+            <text class="chip {{petForm.status==='正常'?'active':''}}" bindtap="selectStatus" data-status="正常">正常</text>
+            <text class="chip {{petForm.status==='待配'?'active':''}}" bindtap="selectStatus" data-status="待配">待配</text>
+            <text class="chip {{petForm.status==='预警'?'active':''}}" bindtap="selectStatus" data-status="预警">预警</text>
           </view>
         </view>
 
-        <view class="form-item">
+        <!-- 父本 -->
+        <view class="form-field">
           <text class="form-label">父本</text>
-          <view class="family-selector" bindtap="selectParent" data-parent="father">
-            <view wx:if="{{selectedFather}}" class="family-selected">
-              <image wx:if="{{selectedFather.photos && selectedFather.photos[0]}}" class="family-avatar" src="{{selectedFather.photos[0]}}" mode="aspectFill" binderror="onImageError" data-index="0" />
-              <view class="family-info">
-                <text class="family-name">{{selectedFather.alias || selectedFather.name}}</text>
-                <text class="family-desc">公龟</text>
-              </view>
-            </view>
-            <text wx:else class="family-placeholder">点击选择父本</text>
+          <view class="form-parent-row" bindtap="selectParent" data-parent="father">
+            <text class="form-parent-value {{petForm.fatherName?'':'empty'}}">{{petForm.fatherName||'点击选择父本'}}</text>
+            <text class="form-parent-arrow">›</text>
           </view>
-          <view wx:if="{{selectedFather}}" class="family-clear" bindtap="clearFather">清空</view>
         </view>
-        
-        <view class="form-item">
+
+        <!-- 母本 -->
+        <view class="form-field">
           <text class="form-label">母本</text>
-          <view class="family-selector" bindtap="selectParent" data-parent="mother">
-            <view wx:if="{{selectedMother}}" class="family-selected">
-              <image wx:if="{{selectedMother.photos && selectedMother.photos[0]}}" class="family-avatar" src="{{selectedMother.photos[0]}}" mode="aspectFill" binderror="onImageError" data-index="0" />
-              <view class="family-info">
-                <text class="family-name">{{selectedMother.alias || selectedMother.name}}</text>
-                <text class="family-desc">母龟</text>
-              </view>
-            </view>
-            <text wx:else class="family-placeholder">点击选择母本</text>
+          <view class="form-parent-row" bindtap="selectParent" data-parent="mother">
+            <text class="form-parent-value {{petForm.motherName?'':'empty'}}">{{petForm.motherName||'点击选择母本'}}</text>
+            <text class="form-parent-arrow">›</text>
           </view>
-          <view wx:if="{{selectedMother}}" class="family-clear" bindtap="clearMother">清空</view>
         </view>
-      </view>
+
+        <!-- 配偶 -->
+        <view class="form-field">
+          <text class="form-label">配偶</text>
+          <view class="form-parent-row" bindtap="selectParent" data-parent="partner">
+            <text class="form-parent-value {{petForm.partnerName?'':'empty'}}">{{petForm.partnerName||'点击选择配偶'}}</text>
+            <text class="form-parent-arrow">›</text>
+          </view>
+        </view>
+
+        <!-- 公开展示 -->
+        <view class="form-field form-switch-row">
+          <view>
+            <text class="form-label">公开展示</text>
+            <text class="form-hint">允许通过分享页查看这只宠物</text>
+          </view>
+          <switch checked="{{petForm.isPublic}}" bindchange="onPublicSwitchChange" color="{{switchColor}}"/>
+        </view>
       </scroll-view>
-      
-      <view class="modal-footer">
-        <view class="btn-cancel" bindtap="hideAddModal">取消</view>
-        <view class="btn-confirm" bindtap="confirmCreate">确认创建</view>
+
+      <view class="modal-actions">
+        <view class="modal-btn modal-cancel press" bindtap="hideAddModal">取消</view>
+        <view class="modal-btn modal-confirm press" bindtap="confirmCreate">创建</view>
       </view>
     </view>
   </view>
-  
-  <!-- 新增分类弹窗 -->
-  <view wx:if="{{showAddCategoryModal}}" class="modal-overlay" bindtap="hideAddCategoryModal">
-    <view class="modal-content small" catchtap="stopPropagation">
-      <view class="modal-header">
+
+  <!-- 父本选择弹窗 -->
+  <view wx:if="{{showFatherModal}}" class="modal-mask" bindtap="hideFatherModal">
+    <view class="modal-sheet modal-sheet-sm" catchtap="stopPropagation">
+      <view class="modal-head">
+        <text class="modal-title">选择父本</text>
+        <text class="modal-close" bindtap="hideFatherModal">×</text>
+      </view>
+      <view class="modal-body-sm">
+        <input class="form-input" placeholder="搜索名称" value="{{fatherSearchText}}" bindinput="onFatherSearch"/>
+        <scroll-view scroll-y class="parent-list">
+          <view wx:for="{{fatherList}}" wx:key="id" class="parent-item press" catchtap="selectFather" data-id="{{item.id||item._id}}">
+            <image wx:if="{{item.photos&&item.photos[0]}}" src="{{item.photos[0]}}" mode="aspectFill" class="parent-avatar"/>
+            <view wx:else class="parent-avatar parent-avatar-placeholder"></view>
+            <text class="parent-name">{{item.alias||item.name}}</text>
+          </view>
+          <view wx:if="{{fatherList.length===0}}" class="parent-empty">暂无可选父本</view>
+        </scroll-view>
+      </view>
+      <view class="modal-actions">
+        <view class="modal-btn modal-cancel press" bindtap="hideFatherModal">取消</view>
+        <view wx:if="{{petForm.fatherName}}" class="modal-btn modal-confirm press" bindtap="clearFather">清除选择</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 母本选择弹窗 -->
+  <view wx:if="{{showMotherModal}}" class="modal-mask" bindtap="hideMotherModal">
+    <view class="modal-sheet modal-sheet-sm" catchtap="stopPropagation">
+      <view class="modal-head">
+        <text class="modal-title">选择母本</text>
+        <text class="modal-close" bindtap="hideMotherModal">×</text>
+      </view>
+      <view class="modal-body-sm">
+        <input class="form-input" placeholder="搜索名称" value="{{motherSearchText}}" bindinput="onMotherSearch"/>
+        <scroll-view scroll-y class="parent-list">
+          <view wx:for="{{motherList}}" wx:key="id" class="parent-item press" catchtap="selectMother" data-id="{{item.id||item._id}}">
+            <image wx:if="{{item.photos&&item.photos[0]}}" src="{{item.photos[0]}}" mode="aspectFill" class="parent-avatar"/>
+            <view wx:else class="parent-avatar parent-avatar-placeholder"></view>
+            <text class="parent-name">{{item.alias||item.name}}</text>
+          </view>
+          <view wx:if="{{motherList.length===0}}" class="parent-empty">暂无可选母本</view>
+        </scroll-view>
+      </view>
+      <view class="modal-actions">
+        <view class="modal-btn modal-cancel press" bindtap="hideMotherModal">取消</view>
+        <view wx:if="{{petForm.motherName}}" class="modal-btn modal-confirm press" bindtap="clearMother">清除选择</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 配偶选择弹窗 -->
+  <view wx:if="{{showPartnerModal}}" class="modal-mask" bindtap="hidePartnerModal">
+    <view class="modal-sheet modal-sheet-sm" catchtap="stopPropagation">
+      <view class="modal-head">
+        <text class="modal-title">选择配偶</text>
+        <text class="modal-close" bindtap="hidePartnerModal">×</text>
+      </view>
+      <view class="modal-body-sm">
+        <input class="form-input" placeholder="搜索名称" value="{{partnerSearchText}}" bindinput="onPartnerSearch"/>
+        <scroll-view scroll-y class="parent-list">
+          <view wx:for="{{partnerList}}" wx:key="id" class="parent-item press" catchtap="selectPartner" data-id="{{item.id||item._id}}">
+            <image wx:if="{{item.photos&&item.photos[0]}}" src="{{item.photos[0]}}" mode="aspectFill" class="parent-avatar"/>
+            <view wx:else class="parent-avatar parent-avatar-placeholder"></view>
+            <text class="parent-name">{{item.alias||item.name}}</text>
+          </view>
+          <view wx:if="{{partnerList.length===0}}" class="parent-empty">暂无可选宠物</view>
+        </scroll-view>
+      </view>
+      <view class="modal-actions">
+        <view class="modal-btn modal-cancel press" bindtap="hidePartnerModal">取消</view>
+        <view wx:if="{{petForm.partnerName}}" class="modal-btn modal-confirm press" bindtap="clearPartner">清除选择</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 添加分类模态框 -->
+  <view wx:if="{{showAddCategoryModal}}" class="modal-mask" bindtap="hideAddCategoryModal">
+    <view class="modal-sheet modal-sheet-sm" catchtap="stopPropagation">
+      <view class="modal-head">
         <text class="modal-title">新增分类</text>
-        <view class="modal-close" bindtap="hideAddCategoryModal">×</view>
+        <text class="modal-close" bindtap="hideAddCategoryModal">×</text>
       </view>
-      
-      <view class="input-section">
-        <input class="pet-input" placeholder="请输入分类名称" value="{{newCategoryName}}" bindinput="onCategoryInput" />
+      <view class="modal-body-sm">
+        <input class="form-input" placeholder="输入分类名称" value="{{newCategoryName}}" bindinput="onCategoryInput"/>
       </view>
-      
-      <view class="modal-footer">
-        <view class="btn-cancel" bindtap="hideAddCategoryModal">取消</view>
-        <view class="btn-confirm" bindtap="confirmAddCategory">确认添加</view>
+      <view class="modal-actions">
+        <view class="modal-btn modal-cancel press" bindtap="hideAddCategoryModal">取消</view>
+        <view class="modal-btn modal-confirm press" bindtap="confirmAddCategory">添加</view>
       </view>
     </view>
   </view>
-  
-  <!-- 记录弹窗 -->
-  <view wx:if="{{showRecordModal && currentPet}}" class="modal-overlay" bindtap="hideRecordModal">
-    <view class="record-modal-content" catchtap="stopPropagation">
-      <view class="record-header">
-        <text class="record-title">{{currentPet.alias || currentPet.name}} · 记录</text>
-        <view class="record-actions">
-          <view class="record-action detail" bindtap="goAddRecord">详情</view>
-        </view>
+
+  <!-- 编辑分类模态框 -->
+  <view wx:if="{{showEditCategoryModal}}" class="modal-mask" bindtap="hideEditCategoryModal">
+    <view class="modal-sheet modal-sheet-sm" catchtap="stopPropagation">
+      <view class="modal-head">
+        <text class="modal-title">编辑分类</text>
+        <text class="modal-close" bindtap="hideEditCategoryModal">×</text>
       </view>
-      
-      <view class="record-tabs">
-        <view class="record-tab {{recordTab === '全部' ? 'active' : ''}}" bindtap="setRecordTab" data-tab="全部">全部</view>
-        <view class="record-tab {{recordTab === '健康' ? 'active' : ''}}" bindtap="setRecordTab" data-tab="健康">健康</view>
+      <view class="modal-body-sm">
+        <input class="form-input" placeholder="输入新名称" value="{{editCategoryNewName}}" bindinput="onEditCategoryInput"/>
       </view>
-      
-      <view class="record-list">
-        <view wx:if="{{currentRecords.length === 0}}" class="record-empty">
-          <text class="record-empty-title">还没有符合筛选的记录</text>
-          <text class="record-empty-hint">先补一条记录，时光会按日期自动沉淀在这里。</text>
-          <view class="record-empty-btn" bindtap="goAddRecord">记录第一条</view>
-        </view>
-        
-        <view wx:else>
-          <view wx:for="{{currentRecords}}" wx:key="id" class="record-item">
-            <view class="record-dot"></view>
-            <view class="record-tag">{{item.type}}</view>
-            <text class="record-text">{{item.text}}</text>
-            <text class="record-time">{{item.time}}</text>
-          </view>
-        </view>
-      </view>
-      
-      <view class="record-footer">
-        <view class="record-btn" bindtap="goAddRecord">记录一下</view>
+      <view class="modal-actions">
+        <view class="modal-btn modal-cancel press" bindtap="hideEditCategoryModal">取消</view>
+        <view class="modal-btn modal-danger press" bindtap="deleteCategory" data-category="{{editCategoryOldName}}">删除</view>
+        <view class="modal-btn modal-confirm press" bindtap="confirmEditCategory">保存</view>
       </view>
     </view>
   </view>
-  
-  <!-- 选择父本弹窗 -->
-  <view wx:if="{{showFatherModal}}" class="modal-overlay" bindtap="hideFatherModal">
-    <view class="family-modal-bottom" catchtap="stopPropagation">
-      <view class="family-modal-header">
-        <text class="family-modal-title">选择父本</text>
-        <text class="family-modal-desc">请选择一只公龟作为父本</text>
-        <view class="modal-close" bindtap="hideFatherModal">×</view>
-      </view>
-      
-      <view class="family-search">
-        <input class="family-search-input" placeholder="搜索公龟..." value="{{fatherSearchText}}" bindinput="onFatherSearch" />
-      </view>
-      
-      <view class="family-list">
-        <view wx:if="{{fatherList.length === 0}}" class="empty-family">
-          <text class="empty-text">暂无符合条件的公龟</text>
-        </view>
-        <view wx:for="{{fatherList}}" wx:key="id" class="family-item" bindtap="selectFather" data-id="{{item.id || item._id}}">
-          <image wx:if="{{item.photos && item.photos[0]}}" class="family-item-avatar" src="{{item.photos[0]}}" mode="aspectFill" binderror="onImageError" data-index="{{index}}" />
-          <view wx:else class="family-item-placeholder"></view>
-          <view class="family-item-info">
-            <text class="family-item-name">{{item.alias || item.name}}</text>
-            <text class="family-item-desc">{{item.category || '未分类'}} · 公</text>
-          </view>
-          <text class="family-item-select">选择</text>
-        </view>
-      </view>
-    </view>
-  </view>
-  
-  <!-- 选择母本弹窗 -->
-  <view wx:if="{{showMotherModal}}" class="modal-overlay" bindtap="hideMotherModal">
-    <view class="family-modal-bottom" catchtap="stopPropagation">
-      <view class="family-modal-header">
-        <text class="family-modal-title">选择母本</text>
-        <text class="family-modal-desc">请选择一只母龟作为母本</text>
-        <view class="modal-close" bindtap="hideMotherModal">×</view>
-      </view>
-      
-      <view class="family-search">
-        <input class="family-search-input" placeholder="搜索母龟..." value="{{motherSearchText}}" bindinput="onMotherSearch" />
-      </view>
-      
-      <view class="family-list">
-        <view wx:if="{{motherList.length === 0}}" class="empty-family">
-          <text class="empty-text">暂无符合条件的母龟</text>
-        </view>
-        <view wx:for="{{motherList}}" wx:key="id" class="family-item" bindtap="selectMother" data-id="{{item.id || item._id}}">
-          <image wx:if="{{item.photos && item.photos[0]}}" class="family-item-avatar" src="{{item.photos[0]}}" mode="aspectFill" binderror="onImageError" data-index="{{index}}" />
-          <view wx:else class="family-item-placeholder"></view>
-          <view class="family-item-info">
-            <text class="family-item-name">{{item.alias || item.name}}</text>
-            <text class="family-item-desc">{{item.category || '未分类'}} · 母</text>
-          </view>
-          <text class="family-item-select">选择</text>
-        </view>
-      </view>
-    </view>
-  </view>
+
 </view>
