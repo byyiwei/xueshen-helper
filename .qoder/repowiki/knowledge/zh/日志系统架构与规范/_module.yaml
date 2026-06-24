@@ -1,0 +1,14 @@
+schema_version: 1
+module_path: logging_system
+title: 日志系统架构与规范
+scope: []
+source_files:
+    - html2image-server/logger.js
+    - html2image-server/server.js
+    - cloudfunctions/common/utils.js
+    - cloudfunctions/pet/index.js
+    - cloudfunctions/admin/index.js
+    - miniprogram/utils/error.js
+    - miniprogram/app.js
+depends_on: []
+related_to: []

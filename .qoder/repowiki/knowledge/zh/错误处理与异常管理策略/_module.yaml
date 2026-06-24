@@ -1,0 +1,15 @@
+schema_version: 1
+module_path: error_handling
+title: 错误处理与异常管理策略
+scope: []
+source_files:
+    - cloudfunctions/common/utils.js
+    - miniprogram/utils/error.js
+    - miniprogram/utils/api.js
+    - html2image-server/server.js
+    - html2image-server/logger.js
+    - cloudfunctions/pet/index.js
+    - cloudfunctions/common/securityChecker.js
+    - cloudflare-worker/src/index.js
+depends_on: []
+related_to: []

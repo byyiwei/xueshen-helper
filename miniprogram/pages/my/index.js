@@ -625,10 +625,6 @@ Page({
     }
   },
 
-  goSetting: function () {
-    wx.showToast({ title: '设置功能开发中', icon: 'none' })
-  },
-
   clearCache: function () {
     wx.showModal({
       title: '清除缓存',

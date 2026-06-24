@@ -1,0 +1,13 @@
+schema_version: 1
+module_path: frontend_style
+title: 养龟档案前端视觉风格与设计系统
+scope: []
+source_files:
+    - miniprogram/styles/design.wxss
+    - miniprogram/app.wxss
+    - miniprogram/custom-tab-bar/index.wxss
+    - miniprogram/utils/theme.js
+    - miniprogram/pages/pet/index.wxss
+    - design-preview/home.html
+depends_on: []
+related_to: []

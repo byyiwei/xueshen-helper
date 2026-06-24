@@ -1,0 +1,180 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: zh-CN
+branch: master
+nodes_managed: true
+exported_at: "2026-06-24T01:29:55Z"
+modules:
+    build_system:
+        dir_name: 多环境混合构建与部署体系
+        title: 多环境混合构建与部署体系
+        scope: []
+        source_files:
+            - server-setup/setup.sh
+            - server-setup/database.sql
+            - server-setup/turtle-archive.nginx
+            - html2image-server/start.js
+            - html2image-server/start-server.sh
+            - cloudflare-worker/wrangler.toml
+            - cloudflare-worker/package.json
+            - miniprogram/project.config.json
+            - miniprogram/package.json
+        children: []
+        depends_on: []
+        related_to: []
+    cloudflare_worker:
+        dir_name: HTML转图片截图服务
+        title: HTML转图片截图服务
+        scope:
+            - cloudflare-worker/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    cloudfunctions:
+        dir_name: 微信小程序云函数后端
+        title: 微信小程序云函数后端
+        scope:
+            - cloudfunctions/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: html2image_server
+    configuration_system:
+        dir_name: 配置系统架构与分层管理
+        title: 配置系统架构与分层管理
+        scope: []
+        source_files:
+            - html2image-server/config.js
+            - html2image-server/config.json
+            - miniprogram/app.js
+            - miniprogram/subpkg-admin/pages/admin/config.js
+            - cloudfunctions/admin/index.js
+            - cloudflare-worker/wrangler.toml
+            - miniprogram/project.config.json
+        children: []
+        depends_on: []
+        related_to: []
+    dependency_management:
+        dir_name: 多环境依赖管理与NPM生态集成
+        title: 多环境依赖管理与NPM生态集成
+        scope: []
+        source_files:
+            - miniprogram/package.json
+            - miniprogram/package-lock.json
+            - html2image-server/package.json
+            - html2image-server/package-lock.json
+            - cloudflare-worker/package.json
+            - cloudflare-worker/package-lock.json
+            - detonger/package.json
+            - cloudfunctions/admin/package.json
+            - cloudfunctions/pet/package.json
+        children: []
+        depends_on: []
+        related_to: []
+    design_preview:
+        dir_name: 设计预览页面
+        title: 设计预览页面
+        scope:
+            - design-preview/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    detonger_ble_sdk:
+        dir_name: 微信小程序蓝牙打印SDK
+        title: 微信小程序蓝牙打印SDK
+        scope:
+            - detonger/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    error_handling:
+        dir_name: 错误处理与异常管理策略
+        title: 错误处理与异常管理策略
+        scope: []
+        source_files:
+            - cloudfunctions/common/utils.js
+            - miniprogram/utils/error.js
+            - miniprogram/utils/api.js
+            - html2image-server/server.js
+            - html2image-server/logger.js
+            - cloudfunctions/pet/index.js
+            - cloudfunctions/common/securityChecker.js
+            - cloudflare-worker/src/index.js
+        children: []
+        depends_on: []
+        related_to: []
+    frontend_style:
+        dir_name: 养龟档案前端视觉风格与设计系统
+        title: 养龟档案前端视觉风格与设计系统
+        scope: []
+        source_files:
+            - miniprogram/styles/design.wxss
+            - miniprogram/app.wxss
+            - miniprogram/custom-tab-bar/index.wxss
+            - miniprogram/utils/theme.js
+            - miniprogram/pages/pet/index.wxss
+            - design-preview/home.html
+        children: []
+        depends_on: []
+        related_to: []
+    html2image_server:
+        dir_name: HTML转图像服务
+        title: HTML转图像服务
+        scope:
+            - html2image-server/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: cloudfunctions
+            - path: server_setup
+    logging_system:
+        dir_name: 日志系统架构与规范
+        title: 日志系统架构与规范
+        scope: []
+        source_files:
+            - html2image-server/logger.js
+            - html2image-server/server.js
+            - cloudfunctions/common/utils.js
+            - cloudfunctions/pet/index.js
+            - cloudfunctions/admin/index.js
+            - miniprogram/utils/error.js
+            - miniprogram/app.js
+        children: []
+        depends_on: []
+        related_to: []
+    miniprogram:
+        dir_name: 养龟档案小程序前端
+        title: 养龟档案小程序前端
+        scope:
+            - miniprogram/
+        source_files: []
+        children:
+            - miniprogram/app_shell
+        depends_on: []
+        related_to: []
+    miniprogram/app_shell:
+        dir_name: 小程序应用入口与全局状态管理
+        title: 小程序应用入口与全局状态管理
+        scope:
+            - miniprogram/app.js
+            - miniprogram/app.json
+            - miniprogram/app.wxss
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    server_setup:
+        dir_name: 服务器环境初始化与部署配置
+        title: 服务器环境初始化与部署配置
+        scope:
+            - server-setup/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: html2image_server

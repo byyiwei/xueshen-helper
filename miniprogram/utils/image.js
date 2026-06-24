@@ -72,10 +72,12 @@ async function getTempUrl(fileID) {
     }
     // fileID 可能无效，打印详细信息
     const errMsg = file ? (file.status + ' ' + (file.errMsg || '')) : 'fileList为空'
-    throw new Error('获取临时链接失败: ' + errMsg + ', fileID: ' + fileID)
+    console.warn('获取临时链接失败:', errMsg, 'fileID:', fileID)
+    return fileID
   } catch (error) {
-    console.error('获取临时URL失败:', error.message || error)
-    throw error
+    // 网络错误（如 Failed to fetch）直接返回原 fileID，不抛出不阻塞
+    console.error('获取临时URL失败:', error.message || error, 'fileID:', fileID)
+    return fileID
   }
 }
 

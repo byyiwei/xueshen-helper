@@ -79,7 +79,8 @@ Page({
       if (wx.cloud) {
         wx.cloud.init({ env: 'cloud1-d0g853l9d7017ea3b' })
       }
-      setTimeout(resolve, 200)
+      // 给云初始化足够的完成时间（app.js 中已在 onLaunch 时调用过一次）
+      setTimeout(resolve, 500)
     })
   },
 
@@ -263,14 +264,22 @@ Page({
             action: 'generate',
             data: { scene: 'userId=' + openid, page: 'subpkg-report/pages/public/index' }
           }
+        }).catch(err => {
+          console.error('云函数 qrcode 调用失败:', err)
+          return null
         })
-        if (result.result && result.result.success && result.result.data) {
+        if (result && result.result && result.result.success && result.result.data) {
           const fileID = result.result.data.fileID || result.result.data
           if (fileID && typeof fileID === 'string' && fileID.startsWith('cloud://')) {
-            const tempFileRes = await wx.cloud.downloadFile({ fileID })
-            app.globalData.preloadedQrcode = tempFileRes.tempFilePath
-            wx.setStorageSync('qrcodeImage', tempFileRes.tempFilePath)
-            wx.setStorageSync('qrcodeImageVersion', 2)
+            const tempFileRes = await wx.cloud.downloadFile({ fileID }).catch(err => {
+              console.error('下载二维码图片失败:', err)
+              return null
+            })
+            if (tempFileRes && tempFileRes.tempFilePath) {
+              app.globalData.preloadedQrcode = tempFileRes.tempFilePath
+              wx.setStorageSync('qrcodeImage', tempFileRes.tempFilePath)
+              wx.setStorageSync('qrcodeImageVersion', 2)
+            }
           }
         }
       }

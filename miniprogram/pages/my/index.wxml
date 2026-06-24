@@ -241,11 +241,6 @@
               <text class="section-sub">账户与本地数据管理</text>
             </view>
           </view>
-          <view class="config-item press" bindtap="goSetting">
-            <text class="config-icon">⚙</text>
-            <text class="config-name">设置</text>
-            <text class="config-arrow">›</text>
-          </view>
           <view class="config-item press" bindtap="clearCache">
             <text class="config-icon">🗑</text>
             <text class="config-name">清除缓存</text>
