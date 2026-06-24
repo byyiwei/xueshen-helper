@@ -1,0 +1,446 @@
+@import "/styles/design.wxss";
+
+.page {
+  min-height: 100vh;
+  background: var(--c-bg);
+  box-sizing: border-box;
+}
+
+.custom-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 88rpx;
+  background: var(--c-surface);
+  padding-left: 24rpx;
+  padding-right: 24rpx;
+  border-bottom: 2rpx solid var(--c-border-light);
+}
+
+.nav-back {
+  width: 56rpx;
+  height: 56rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--c-primary-light);
+  border-radius: 50%;
+  border: 2rpx solid var(--c-border);
+}
+
+.nav-back-icon {
+  font-size: 36rpx;
+  color: var(--c-primary);
+  font-weight: 300;
+  line-height: 1;
+  margin-top: -4rpx;
+}
+
+.nav-title {
+  font-size: var(--fs-subtitle);
+  font-weight: 700;
+  color: var(--c-text);
+}
+
+.nav-placeholder {
+  width: 56rpx;
+}
+
+.content {
+  padding: 24rpx 28rpx 0;
+}
+
+/* 搜索栏 */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 20rpx;
+}
+
+.search-input-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  padding: 18rpx 24rpx;
+  background: var(--c-surface);
+  border-radius: var(--r-full);
+  border: 2rpx solid var(--c-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.search-icon-img {
+  width: 36rpx;
+  height: 36rpx;
+  margin-right: 16rpx;
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  font-size: var(--fs-body);
+  color: var(--c-text);
+  height: 44rpx;
+  line-height: 44rpx;
+}
+
+.search-input::placeholder {
+  color: var(--c-text3);
+}
+
+.search-clear {
+  width: 36rpx;
+  height: 36rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--c-border);
+  border-radius: 50%;
+  margin-left: 12rpx;
+}
+
+.search-clear text {
+  color: var(--c-text2);
+  font-size: 24rpx;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.calc-entry {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 84rpx;
+  padding: 0 22rpx;
+  background: var(--c-primary-light);
+  border: 2rpx solid rgba(232, 164, 0, 0.2);
+  border-radius: var(--r-full);
+  box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
+}
+
+.calc-entry text {
+  font-size: var(--fs-small);
+  color: var(--c-primary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.calc-entry:active {
+  transform: scale(0.96);
+  opacity: 0.85;
+}
+
+/* 分类标签 */
+.category-scroll {
+  width: 100%;
+  white-space: nowrap;
+  margin-bottom: 24rpx;
+}
+
+.category-list {
+  display: inline-flex;
+  padding: 4rpx 0;
+}
+
+.category-item {
+  display: inline-flex;
+  align-items: center;
+  padding: 14rpx 28rpx;
+  margin-right: 16rpx;
+  border-radius: var(--r-full);
+  background: var(--c-surface);
+  border: 2rpx solid var(--c-border);
+  color: var(--c-text2);
+  font-size: var(--fs-small);
+  font-weight: 500;
+  transition: all 0.15s;
+}
+
+.category-item.active {
+  background: var(--c-primary-light);
+  border-color: var(--c-primary);
+  color: var(--c-primary);
+  font-weight: 600;
+}
+
+.category-item:last-child {
+  margin-right: 0;
+}
+
+/* 药品列表 */
+.medicine-list {
+  padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
+}
+
+.medicine-card {
+  margin-bottom: 20rpx;
+  padding: 28rpx;
+  background: var(--c-surface);
+  border-radius: var(--r-xl);
+  border: 1.5rpx solid var(--c-border-light);
+  box-shadow: var(--shadow-sm);
+  transition: all 0.15s;
+}
+
+.medicine-card.expanded {
+  border-color: rgba(232, 164, 0, 0.35);
+  box-shadow: 0 4rpx 20rpx rgba(232, 164, 0, 0.08);
+}
+
+.medicine-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.medicine-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.medicine-name {
+  display: block;
+  font-size: var(--fs-subtitle);
+  font-weight: 700;
+  color: var(--c-text);
+  margin-bottom: 14rpx;
+}
+
+.medicine-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.tag-ghost {
+  background: var(--c-bg);
+  color: var(--c-text2);
+  border: 1.5rpx solid var(--c-border);
+}
+
+.expand-icon {
+  font-size: 40rpx;
+  color: var(--c-text3);
+  font-weight: 300;
+  transform: rotate(-90deg);
+  transition: transform 0.2s;
+}
+
+.medicine-card.expanded .expand-icon {
+  transform: rotate(90deg);
+}
+
+.medicine-body {
+  margin-top: 22rpx;
+  padding-top: 22rpx;
+  border-top: 2rpx solid var(--c-border-light);
+}
+
+.info-row {
+  margin-bottom: 16rpx;
+}
+
+.info-row:last-child {
+  margin-bottom: 0;
+}
+
+.info-label {
+  display: block;
+  font-size: var(--fs-small);
+  color: var(--c-text2);
+  margin-bottom: 8rpx;
+}
+
+.info-value {
+  display: block;
+  font-size: var(--fs-body);
+  color: var(--c-text);
+  line-height: 1.55;
+}
+
+.info-value.highlight {
+  color: var(--c-primary-dark);
+  font-weight: 600;
+}
+
+/* 计算面板 */
+.calc-panel {
+  margin-top: 24rpx;
+  padding: 24rpx;
+  background: var(--c-primary-bg);
+  border-radius: var(--r-lg);
+  border: 2rpx solid rgba(232, 164, 0, 0.18);
+}
+
+.calc-title {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20rpx;
+}
+
+.calc-title text {
+  font-size: var(--fs-body);
+  font-weight: 700;
+  color: var(--c-text);
+}
+
+.calc-title::before {
+  content: '';
+  display: inline-block;
+  width: 6rpx;
+  height: 26rpx;
+  background: var(--c-primary);
+  border-radius: 9999rpx;
+  margin-right: 12rpx;
+}
+
+.calc-input-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 20rpx;
+}
+
+.calc-input {
+  flex: 1;
+  height: 80rpx;
+  padding: 0 24rpx;
+  background: var(--c-surface);
+  border-radius: var(--r-md);
+  border: 2rpx solid var(--c-border);
+  font-size: var(--fs-body);
+  color: var(--c-text);
+  box-sizing: border-box;
+}
+
+.calc-input:focus {
+  border-color: var(--c-primary);
+}
+
+.calc-unit {
+  font-size: var(--fs-small);
+  color: var(--c-text2);
+  white-space: nowrap;
+}
+
+.calc-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 8rpx;
+}
+
+.calc-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 18rpx 0;
+  background: var(--c-surface);
+  border-radius: var(--r-md);
+  border: 2rpx solid var(--c-border);
+}
+
+.calc-btn text {
+  font-size: var(--fs-body);
+  color: var(--c-text);
+  font-weight: 600;
+}
+
+.calc-btn-sub {
+  margin-top: 6rpx;
+  font-size: var(--fs-mini) !important;
+  color: var(--c-text2) !important;
+  font-weight: 500 !important;
+}
+
+.calc-btn.primary {
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+}
+
+.calc-btn.primary text {
+  color: #fff;
+}
+
+.calc-btn.primary .calc-btn-sub {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+.calc-result {
+  margin-top: 24rpx;
+  padding: 24rpx;
+  background: var(--c-surface);
+  border-radius: var(--r-md);
+  text-align: center;
+  border: 2rpx dashed var(--c-primary);
+}
+
+.result-label {
+  display: block;
+  font-size: var(--fs-small);
+  color: var(--c-text2);
+  margin-bottom: 8rpx;
+}
+
+.result-value-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8rpx;
+  margin-bottom: 8rpx;
+}
+
+.result-number {
+  font-size: 48rpx;
+  font-weight: 800;
+  color: var(--c-primary);
+  line-height: 1;
+}
+
+.result-unit {
+  font-size: var(--fs-small);
+  color: var(--c-text2);
+}
+
+.result-formula {
+  display: block;
+  font-size: var(--fs-mini);
+  color: var(--c-text3);
+}
+
+/* 空状态 */
+.empty-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 100rpx 48rpx;
+}
+
+.empty-box .empty-icon {
+  font-size: 72rpx;
+  margin-bottom: 24rpx;
+}
+
+.empty-box .empty-text {
+  font-size: var(--fs-body);
+  color: var(--c-text);
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.empty-box .empty-hint {
+  font-size: var(--fs-small);
+  color: var(--c-text2);
+}
+
+.safe-bottom {
+  padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
+}

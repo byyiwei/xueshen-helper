@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: detonger_ble_sdk
+title: 微信小程序蓝牙打印SDK
+scope:
+    - detonger/
+source_files: []
+depends_on: []
+related_to: []

@@ -1,0 +1,309 @@
+@import "/styles/design.wxss";
+
+.page {
+  min-height: 100vh;
+  background: var(--c-bg);
+  box-sizing: border-box;
+  padding-bottom: calc(140rpx + env(safe-area-inset-bottom));
+}
+
+.custom-nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 88rpx;
+  background: var(--c-surface);
+  padding-left: 24rpx;
+  padding-right: 24rpx;
+  border-bottom: 2rpx solid var(--c-border-light);
+}
+
+.nav-back {
+  width: 56rpx;
+  height: 56rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--c-primary-light);
+  border-radius: 50%;
+  border: 2rpx solid var(--c-border);
+}
+
+.nav-back-icon {
+  font-size: 36rpx;
+  color: var(--c-primary);
+  font-weight: 300;
+  line-height: 1;
+  margin-top: -4rpx;
+}
+
+.nav-title {
+  font-size: var(--fs-subtitle);
+  font-weight: 700;
+  color: var(--c-text);
+}
+
+.nav-placeholder {
+  width: 56rpx;
+}
+
+.content {
+  padding: 24rpx 28rpx 0;
+}
+
+.card {
+  margin-bottom: 20rpx;
+  padding: 28rpx;
+  background: var(--c-surface);
+  border-radius: var(--r-xl);
+  border: 1.5rpx solid var(--c-border-light);
+  box-shadow: var(--shadow-sm);
+}
+
+.card-label {
+  display: block;
+  font-size: var(--fs-body);
+  color: var(--c-text2);
+  font-weight: 600;
+  margin-bottom: 24rpx;
+}
+
+/* 药物选择 */
+.picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22rpx 24rpx;
+  background: var(--c-primary-bg);
+  border-radius: var(--r-md);
+  border: 2rpx solid rgba(232, 164, 0, 0.2);
+}
+
+.picker-value {
+  font-size: var(--fs-subtitle);
+  font-weight: 700;
+  color: var(--c-primary-dark);
+}
+
+.picker-arrow {
+  font-size: 24rpx;
+  color: var(--c-primary);
+  margin-left: 16rpx;
+}
+
+/* 用药方式 */
+.route-list {
+  display: flex;
+  flex-direction: column;
+  gap: 28rpx;
+}
+
+.route-row {
+  display: flex;
+  align-items: center;
+}
+
+.route-name {
+  width: 90rpx;
+  font-size: var(--fs-body);
+  color: var(--c-text2);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.route-row.disabled .route-name {
+  color: var(--c-text3);
+}
+
+.route-row.active .route-name {
+  color: var(--c-primary);
+}
+
+.form-options {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16rpx;
+}
+
+.form-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 18rpx 0;
+  background: var(--c-surface);
+  border-radius: var(--r-md);
+  border: 2rpx solid var(--c-border);
+  transition: all 0.15s;
+}
+
+.form-btn .form-name {
+  font-size: var(--fs-body);
+  color: var(--c-text);
+  font-weight: 600;
+}
+
+.form-btn .form-unit {
+  margin-top: 6rpx;
+  font-size: var(--fs-small);
+  color: var(--c-text2);
+}
+
+.form-btn.active {
+  background: var(--c-primary-light);
+  border-color: var(--c-primary);
+}
+
+.form-btn.active .form-name {
+  color: var(--c-primary-dark);
+}
+
+.form-btn.disabled {
+  opacity: 0.35;
+  background: var(--c-bg);
+}
+
+.form-btn.disabled .form-name,
+.form-btn.disabled .form-unit {
+  color: var(--c-text3);
+}
+
+/* 输入区域 */
+.input-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 0;
+  border-bottom: 2rpx solid var(--c-border-light);
+}
+
+.input-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.input-label {
+  font-size: var(--fs-subtitle);
+  color: var(--c-text);
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-right: 24rpx;
+}
+
+.input-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16rpx;
+}
+
+.input-field {
+  flex: 1;
+  text-align: right;
+  font-size: var(--fs-body);
+  color: var(--c-text);
+  height: 60rpx;
+  line-height: 60rpx;
+}
+
+.input-field::placeholder {
+  color: var(--c-text3);
+}
+
+.input-unit {
+  font-size: var(--fs-body);
+  color: var(--c-text2);
+  font-weight: 500;
+}
+
+/* 结果卡片 */
+.result-card {
+  background: var(--c-primary-bg);
+  border-color: rgba(232, 164, 0, 0.2);
+}
+
+.result-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 12rpx;
+  margin-bottom: 24rpx;
+}
+
+.result-amount {
+  font-size: 72rpx;
+  font-weight: 800;
+  color: var(--c-primary);
+  line-height: 1;
+}
+
+.result-unit {
+  font-size: var(--fs-subtitle);
+  color: var(--c-primary-dark);
+  font-weight: 600;
+}
+
+.result-detail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.result-detail text {
+  font-size: var(--fs-small);
+  color: var(--c-text2);
+}
+
+.result-formula {
+  margin-top: 8rpx;
+  padding: 10rpx 20rpx;
+  background: var(--c-surface);
+  border-radius: var(--r-full);
+  color: var(--c-primary) !important;
+  font-weight: 600;
+}
+
+/* 底部计算按钮 */
+.footer-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 90;
+  padding: 20rpx 28rpx calc(20rpx + env(safe-area-inset-bottom));
+  background: var(--c-surface);
+  border-top: 2rpx solid var(--c-border-light);
+}
+
+.calc-submit-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 92rpx;
+  background: var(--c-primary);
+  border-radius: var(--r-full);
+  box-shadow: var(--shadow-btn);
+}
+
+.calc-submit-btn text {
+  font-size: var(--fs-body);
+  color: #fff;
+  font-weight: 700;
+}
+
+.calc-submit-btn:active {
+  background: var(--c-primary-dark);
+  transform: scale(0.98);
+}
+
+.safe-bottom {
+  padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
+}

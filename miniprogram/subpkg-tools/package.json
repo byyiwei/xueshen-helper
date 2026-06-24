@@ -1,0 +1,8 @@
+{
+  "name": "subpkg-tools",
+  "version": "1.0.0",
+  "description": "工具类子包",
+  "dependencies": {
+    "threejs-miniprogram": "^0.0.8"
+  }
+}

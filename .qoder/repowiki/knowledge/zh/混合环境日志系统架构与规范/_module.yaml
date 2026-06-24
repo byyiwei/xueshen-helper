@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: logging_system
+title: 混合环境日志系统架构与规范
+scope: []
+source_files:
+    - html2image-server/logger.js
+    - html2image-server/server.js
+    - cloudfunctions/common/utils.js
+    - miniprogram/utils/error.js
+    - .qoder/repowiki/knowledge/zh/日志系统架构与规范/logging_system.md
+depends_on: []
+related_to: []

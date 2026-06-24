@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: miniprogram
+title: 宠物档案小程序核心
+scope:
+    - miniprogram/
+source_files: []
+depends_on: []
+related_to: []

@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: server_setup
+title: 服务器环境初始化与部署配置
+scope:
+    - server-setup/
+source_files: []
+depends_on: []
+related_to:
+    - path: html2image_server

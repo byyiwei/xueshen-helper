@@ -24,7 +24,9 @@
       "pages": [
         "pages/tools/index",
         "pages/tools/calculator",
-        "pages/tools/tank3d/index"
+        "pages/tools/tank3d/index",
+        "pages/tools/medicine/index",
+        "pages/tools/medicine/calculator"
       ]
     },
     {

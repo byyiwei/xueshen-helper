@@ -1,0 +1,132 @@
+<view class="page" style="padding-top: {{totalNavHeight}}rpx;">
+  <view class="custom-nav" style="padding-top: {{statusBarHeight}}px">
+    <view class="nav-back" bindtap="goBack">
+      <text class="nav-back-icon">‹</text>
+    </view>
+    <text class="nav-title">疾病防治</text>
+    <view class="nav-placeholder"></view>
+  </view>
+
+  <view class="content">
+    <!-- 搜索栏 -->
+    <view class="search-bar">
+      <view class="search-input-wrap">
+        <image class="search-icon-img" src="/icons/medicine-search.png" mode="aspectFit"></image>
+        <input
+          class="search-input"
+          type="text"
+          placeholder="搜索药品名称、适应症"
+          value="{{keyword}}"
+          bindinput="onSearchInput"
+          confirm-type="search"
+          bindconfirm="onSearchConfirm"
+        />
+        <view wx:if="{{keyword}}" class="search-clear" bindtap="clearSearch">
+          <text>×</text>
+        </view>
+      </view>
+      <view class="calc-entry" bindtap="goToCalculator">
+        <text>计算器</text>
+      </view>
+    </view>
+
+    <!-- 分类标签 -->
+    <scroll-view class="category-scroll" scroll-x enhanced show-scrollbar="{{false}}">
+      <view class="category-list">
+        <view
+          wx:for="{{categories}}"
+          wx:key="id"
+          class="category-item {{activeCategory === item.id ? 'active' : ''}}"
+          bindtap="switchCategory"
+          data-id="{{item.id}}"
+        >
+          <text>{{item.name}}</text>
+        </view>
+      </view>
+    </scroll-view>
+
+    <!-- 药品列表 -->
+    <view class="medicine-list">
+      <view
+        wx:for="{{filteredMedicines}}"
+        wx:key="id"
+        class="medicine-card {{selectedMedicineId === item.id ? 'expanded' : ''}}"
+        bindtap="selectMedicine"
+        data-id="{{item.id}}"
+      >
+        <view class="medicine-header">
+          <view class="medicine-main">
+            <text class="medicine-name">{{item.name}}</text>
+            <view class="medicine-tags">
+              <text class="tag tag-primary">{{item.category}}</text>
+              <text class="tag tag-ghost">{{item.form}}</text>
+            </view>
+          </view>
+          <text class="expand-icon">{{selectedMedicineId === item.id ? '›' : '‹'}}</text>
+        </view>
+
+        <view class="medicine-body">
+          <view class="info-row">
+            <text class="info-label">适应症</text>
+            <text class="info-value">{{item.indications}}</text>
+          </view>
+          <view class="info-row">
+            <text class="info-label">用法用量</text>
+            <text class="info-value highlight">{{item.dosage}}</text>
+          </view>
+          <view class="info-row">
+            <text class="info-label">注意事项</text>
+            <text class="info-value">{{item.notes}}</text>
+          </view>
+        </view>
+
+        <!-- 用量计算面板 -->
+        <view wx:if="{{selectedMedicineId === item.id}}" class="calc-panel" catchtap="noop">
+          <view class="calc-title">
+            <text>用药量计算</text>
+          </view>
+
+          <view class="calc-input-row">
+            <input
+              class="calc-input"
+              type="digit"
+              placeholder="请输入数值"
+              value="{{calcValue}}"
+              bindinput="onCalcInput"
+            />
+            <text class="calc-unit">{{item.calcModes.length > 1 && item.defaultMode === 'weight' ? 'kg（龟体重）' : 'L（水体体积）'}}</text>
+          </view>
+
+          <view class="calc-actions">
+            <view wx:if="{{item.waterDose}}" class="calc-btn {{item.defaultMode === 'water' ? 'primary' : ''}}" bindtap="calcByWater">
+              <text>按水体计算</text>
+              <text class="calc-btn-sub">{{item.waterDose.value}} {{item.waterDose.unit}}</text>
+            </view>
+            <view wx:if="{{item.weightDose}}" class="calc-btn {{item.defaultMode === 'weight' ? 'primary' : ''}}" bindtap="calcByWeight">
+              <text>按体重计算</text>
+              <text class="calc-btn-sub">{{item.weightDose.value}} {{item.weightDose.unit}}</text>
+            </view>
+          </view>
+
+          <view wx:if="{{calcResult && selectedMedicineId === item.id}}" class="calc-result">
+            <text class="result-label">建议用量</text>
+            <view class="result-value-row">
+              <text class="result-number">{{calcResult.totalAmount}}</text>
+              <text class="result-unit">{{calcResult.unit}}</text>
+            </view>
+            <text class="result-formula">按 {{calcResult.mode === 'water' ? '水体 ' + calcResult.volume + ' L' : '体重 ' + calcResult.weight + ' kg'}} × {{calcResult.dose}} {{calcResult.unit}} 计算</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 空状态 -->
+      <view wx:if="{{filteredMedicines.length === 0}}" class="empty-box">
+        <text class="empty-icon">💊</text>
+        <text class="empty-text">未找到相关药品</text>
+        <text class="empty-hint">换个关键词或分类试试</text>
+      </view>
+    </view>
+
+    <view class="safe-bottom"></view>
+  </view>
+</view>

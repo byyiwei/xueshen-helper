@@ -8,8 +8,5 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
-  "dependencies": {
-    "threejs-miniprogram": "^0.0.8"
-  }
+  "description": ""
 }

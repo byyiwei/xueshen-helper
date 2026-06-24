@@ -396,7 +396,7 @@ Page({
   },
 
   goToDiseasePrevention: function () {
-    wx.navigateTo({ url: '/subpkg-tools/pages/tools/calculator' })
+    wx.navigateTo({ url: '/subpkg-tools/pages/tools/medicine/index' })
   },
 
   goToEggReport: function () {

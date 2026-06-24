@@ -1,0 +1,8 @@
+schema_version: 1
+module_path: cloudflare_worker
+title: HTML转图片截图服务
+scope:
+    - cloudflare-worker/
+source_files: []
+depends_on: []
+related_to: []

@@ -1,0 +1,103 @@
+<view class="page" style="padding-top: {{totalNavHeight}}rpx;">
+  <view class="custom-nav" style="padding-top: {{statusBarHeight}}px">
+    <view class="nav-back" bindtap="goBack">
+      <text class="nav-back-icon">‹</text>
+    </view>
+    <text class="nav-title">用药计算器</text>
+    <view class="nav-placeholder"></view>
+  </view>
+
+  <view class="content">
+    <!-- 选择药物 -->
+    <view class="card">
+      <text class="card-label">选择药物</text>
+      <picker mode="selector" range="{{medicines}}" range-key="name" bindchange="onPickMedicine">
+        <view class="picker-row">
+          <text class="picker-value">{{selectedMedicine.name}}</text>
+          <text class="picker-arrow">▼</text>
+        </view>
+      </picker>
+    </view>
+
+    <!-- 用药方式 -->
+    <view class="card">
+      <text class="card-label">用药方式</text>
+      <view class="route-list">
+        <view
+          wx:for="{{formRows}}"
+          wx:key="route.id"
+          class="route-row {{item.active ? 'active' : ''}} {{item.disabled ? 'disabled' : ''}}"
+        >
+          <text class="route-name" bindtap="selectRoute" data-id="{{item.route.id}}">{{item.route.name}}</text>
+          <view class="form-options">
+            <view
+              wx:for="{{item.forms}}"
+              wx:for-item="formItem"
+              wx:key="id"
+              class="form-btn {{formItem.active ? 'active' : ''}} {{formItem.supported ? '' : 'disabled'}}"
+              bindtap="selectForm"
+              data-id="{{formItem.id}}"
+            >
+              <text class="form-name">{{formItem.name}}</text>
+              <text class="form-unit">{{formItem.unit}}</text>
+            </view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 药品规格与体重 -->
+    <view class="card">
+      <view class="input-row">
+        <text class="input-label">{{formDefs[selectedForm].specLabel}}</text>
+        <view class="input-wrap">
+          <input
+            class="input-field"
+            type="{{formDefs[selectedForm].inputType}}"
+            placeholder="{{formDefs[selectedForm].specPlaceholder}}"
+            value="{{specValue}}"
+            bindinput="onSpecInput"
+          />
+          <text class="input-unit">{{formDefs[selectedForm].unit}}</text>
+        </view>
+      </view>
+      <view class="input-row">
+        <text class="input-label">龟龟体重</text>
+        <view class="input-wrap">
+          <input
+            class="input-field"
+            type="digit"
+            placeholder="请填写重量"
+            value="{{weightValue}}"
+            bindinput="onWeightInput"
+          />
+          <text class="input-unit">g</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 计算结果 -->
+    <view wx:if="{{result}}" class="card result-card">
+      <text class="card-label">计算结果</text>
+      <view class="result-main">
+        <text class="result-amount">{{result.amountText}}</text>
+        <text class="result-unit">{{result.unit}}</text>
+      </view>
+      <view class="result-detail">
+        <text>{{result.medicineName}} · {{result.routeName}} · {{result.formName}}</text>
+        <text>体重 {{result.weightG}} g（{{result.weightKgText}} kg）</text>
+        <text>有效剂量 {{result.effectiveDoseText}} {{result.doseUnit}}</text>
+        <text class="result-formula">{{result.formula}}</text>
+      </view>
+    </view>
+
+    <view class="safe-bottom"></view>
+  </view>
+
+  <!-- 底部计算按钮 -->
+  <view class="footer-bar">
+    <view class="calc-submit-btn" bindtap="calculate">
+      <text>计算</text>
+    </view>
+  </view>
+</view>
