@@ -2,8 +2,11 @@
 .env
 config.local.py
 config.ini
+config.json
+providers.json
 *.key
 *.pem
+jwt_secret.key
 
 # 数据库文件
 *.db
