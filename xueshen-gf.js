@@ -2,6 +2,8 @@
 // @name         🚀学神助手｜学习通｜超星·智慧树全能学习
 // @namespace    oolikeABC
 // @version      5.0.0
+// @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/xueshen-gf.js
+// @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/xueshen-gf.js
 // @author       oolikeABC
 // @description  超星学习通/智慧树自动学习助手｜DeepSeek AI智能答题｜视频倍速学习｜自动切换任务点｜作业考试全自动｜字体加密解析｜海量题库每日更新
 // @description:zh-CN 超星学习通/智慧树自动学习助手｜DeepSeek AI智能答题｜视频倍速学习｜自动切换任务点｜作业考试全自动｜字体加密解析｜海量题库每日更新
