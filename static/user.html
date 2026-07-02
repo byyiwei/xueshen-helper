@@ -1,0 +1,2247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学神助手 - 用户中心</title>
+    <script src="/static/vue.global.js?v=2"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --v-primary: #10b981;
+            --v-primary-dark: #059669;
+            --v-primary-darker: #047857;
+            --v-primary-light: #34d399;
+            --v-primary-soft: rgba(16, 185, 129, .14);
+            --v-cyan: #06b6d4;
+            --v-green: #22c55e;
+            --v-red: #f43f5e;
+            --v-warning: #f59e0b;
+            --v-bg: #0a0e1a;
+            --v-card: rgba(22, 30, 48, .55);
+            --v-text: #e6edf6;
+            --v-text-2: #9aa7bd;
+            --v-muted: #5f6c82;
+            --v-border: rgba(148, 163, 184, .14);
+            --v-border-2: rgba(148, 163, 184, .08);
+            --v-shadow: 0 12px 40px rgba(0, 0, 0, .45);
+            --v-shadow-sm: 0 4px 16px rgba(16, 185, 129, .14);
+            --v-glow: 0 0 28px rgba(16, 185, 129, .35);
+            --v-radius: 18px;
+            --v-radius-lg: 24px;
+            --v-radius-sm: 12px;
+        }
+        * { box-sizing: border-box; }
+        html, body { height: 100%; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            min-height: 100dvh;
+            color: var(--v-text);
+            font-family: "Sora", "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background:
+                radial-gradient(900px 600px at 12% -8%, rgba(16, 185, 129, .18), transparent 60%),
+                radial-gradient(800px 600px at 100% 0%, rgba(6, 182, 212, .14), transparent 55%),
+                radial-gradient(700px 700px at 80% 110%, rgba(16, 185, 129, .10), transparent 60%),
+                #0a0e1a;
+            background-attachment: fixed;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* ===================== SHELL (登录/注册/找回) ===================== */
+        .shell {
+            width: min(1080px, 100%);
+            display: grid;
+            grid-template-columns: 1.05fr .95fr;
+            gap: 0;
+            align-items: stretch;
+            border-radius: var(--v-radius-lg);
+            overflow: hidden;
+            box-shadow: var(--v-shadow), 0 0 0 1px rgba(148, 163, 184, .08);
+            background: var(--v-card);
+            backdrop-filter: blur(24px) saturate(150%);
+            -webkit-backdrop-filter: blur(24px) saturate(150%);
+        }
+        .hero {
+            position: relative;
+            padding: 44px 40px;
+            min-height: 640px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            overflow: hidden;
+            color: #eafff6;
+            background: linear-gradient(150deg, #047857 0%, #065f46 42%, #0b3b3a 100%);
+        }
+        .hero::before {
+            content: "";
+            position: absolute;
+            width: 460px;
+            height: 460px;
+            right: -170px;
+            top: -170px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(16, 185, 129, .55), transparent 70%);
+            filter: blur(6px);
+        }
+        .hero::after {
+            content: "学";
+            position: absolute;
+            right: -30px;
+            bottom: -90px;
+            font-size: 280px;
+            font-weight: 800;
+            color: rgba(255, 255, 255, .06);
+            line-height: 1;
+            font-family: "Noto Sans SC", serif;
+        }
+        .hero > * { position: relative; z-index: 1; }
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 700;
+            letter-spacing: .3px;
+            font-size: 18px;
+        }
+        .logo {
+            width: 46px;
+            height: 46px;
+            border-radius: 14px;
+            display: grid;
+            place-items: center;
+            color: #042620;
+            background: linear-gradient(135deg, #34d399, #10b981);
+            box-shadow: 0 10px 30px rgba(16, 185, 129, .45);
+            font-size: 23px;
+            font-weight: 800;
+        }
+        .hero h1 {
+            margin: 56px 0 18px;
+            font-size: clamp(32px, 4.4vw, 52px);
+            line-height: 1.1;
+            letter-spacing: -1px;
+            font-weight: 700;
+        }
+        .lead {
+            max-width: 480px;
+            color: rgba(234, 255, 246, .8);
+            line-height: 1.8;
+            font-size: 15px;
+            margin: 0;
+        }
+        .chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 26px;
+        }
+        .chip {
+            padding: 8px 14px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, .08);
+            border: 1px solid rgba(52, 211, 153, .3);
+            color: #d1fae5;
+            font-size: 13px;
+            font-weight: 600;
+            backdrop-filter: blur(8px);
+        }
+
+        .panel {
+            padding: 36px 38px;
+            min-height: 640px;
+            background: rgba(13, 19, 33, .55);
+            backdrop-filter: blur(20px) saturate(140%);
+            -webkit-backdrop-filter: blur(20px) saturate(140%);
+            display: flex;
+            flex-direction: column;
+        }
+        .tabs {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 4px;
+            padding: 5px;
+            border-radius: var(--v-radius-sm);
+            background: rgba(148, 163, 184, .08);
+            margin-bottom: 26px;
+            border: 1px solid var(--v-border-2);
+        }
+        .tab {
+            border: 0;
+            border-radius: 8px;
+            padding: 10px 8px;
+            background: transparent;
+            color: var(--v-text-2);
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            font-family: inherit;
+            transition: all .2s ease;
+        }
+        .tab:hover { color: var(--v-primary-light); }
+        .tab.active {
+            color: #042620;
+            background: linear-gradient(135deg, #34d399, #10b981);
+            box-shadow: 0 4px 16px rgba(16, 185, 129, .4);
+        }
+        .view { display: none; animation: rise .35s ease both; }
+        .view.active { display: block; }
+        @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .title {
+            font-size: 25px;
+            margin: 2px 0 6px;
+            font-weight: 700;
+            color: var(--v-text);
+            letter-spacing: -.4px;
+        }
+        .hint {
+            color: var(--v-text-2);
+            margin: 0 0 20px;
+            line-height: 1.7;
+            font-size: 13.5px;
+        }
+        label {
+            display: block;
+            color: var(--v-text);
+            font-size: 13px;
+            margin: 16px 0 7px;
+            font-weight: 600;
+        }
+        input, select {
+            width: 100%;
+            border: 1px solid var(--v-border);
+            border-radius: var(--v-radius-sm);
+            padding: 12px 14px;
+            outline: none;
+            background: rgba(10, 16, 28, .6);
+            color: var(--v-text);
+            font-size: 15px;
+            font-family: inherit;
+            transition: border-color .2s, box-shadow .2s, background .2s;
+        }
+        input::placeholder { color: var(--v-muted); }
+        input:focus, select:focus {
+            border-color: var(--v-primary);
+            box-shadow: 0 0 0 4px rgba(16, 185, 129, .18), 0 0 18px rgba(16, 185, 129, .2);
+            background: rgba(10, 16, 28, .85);
+        }
+        select { cursor: pointer; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 38px; }
+        .row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 10px;
+            align-items: end;
+        }
+        button.primary, button.secondary {
+            width: 100%;
+            margin-top: 20px;
+            border: 0;
+            border-radius: var(--v-radius-sm);
+            padding: 12px 16px;
+            min-height: 46px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14.5px;
+            font-family: inherit;
+            touch-action: manipulation;
+            transition: transform .15s, box-shadow .2s, opacity .2s, background .2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        button.primary {
+            color: #042620;
+            background: linear-gradient(135deg, #34d399, #10b981);
+            box-shadow: 0 8px 24px rgba(16, 185, 129, .4), 0 0 0 1px rgba(52, 211, 153, .3);
+        }
+        button.primary:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(16, 185, 129, .5), 0 0 24px rgba(16, 185, 129, .35); }
+        button.secondary {
+            color: var(--v-text);
+            background: rgba(148, 163, 184, .08);
+            border: 1px solid var(--v-border);
+            box-shadow: var(--v-shadow-sm);
+            backdrop-filter: blur(8px);
+        }
+        button.secondary:hover { transform: translateY(-2px); border-color: var(--v-primary); color: var(--v-primary-light); background: rgba(16, 185, 129, .1); }
+        button:disabled { opacity: .5; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+        .code-btn {
+            white-space: nowrap;
+            height: 46px;
+            padding: 0 16px;
+            border-radius: var(--v-radius-sm);
+            border: 1px solid rgba(16, 185, 129, .4);
+            background: rgba(16, 185, 129, .12);
+            color: var(--v-primary-light);
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13.5px;
+            font-family: inherit;
+            transition: all .2s ease;
+            touch-action: manipulation;
+        }
+        .code-btn:hover { background: linear-gradient(135deg, #34d399, #10b981); color: #042620; border-color: transparent; box-shadow: 0 6px 18px rgba(16, 185, 129, .4); }
+        .msg {
+            display: none;
+            margin: 14px 0 0;
+            padding: 11px 14px;
+            border-radius: var(--v-radius-sm);
+            font-size: 13px;
+            line-height: 1.5;
+            font-weight: 600;
+        }
+        .msg.ok { display: block; color: var(--v-green); background: rgba(34, 197, 94, .12); border: 1px solid rgba(34, 197, 94, .3); }
+        .msg.err { display: block; color: var(--v-red); background: rgba(244, 63, 94, .12); border: 1px solid rgba(244, 63, 94, .3); }
+
+        /* ===================== 密码查看切换 ===================== */
+        .pwd-wrap { position: relative; }
+        .pwd-wrap input { padding-right: 56px; }
+        .pwd-toggle {
+            position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+            font-size: 12px; color: var(--v-primary-light); cursor: pointer; user-select: none;
+            white-space: nowrap; line-height: 1;
+        }
+        .pwd-toggle:hover { color: var(--v-primary); }
+
+        /* ===================== 滑块验证 ===================== */
+        .slider-verify {
+            margin: 16px 0 0;
+            padding: 14px;
+            border: 1px solid var(--v-border);
+            border-radius: var(--v-radius);
+            background: rgba(10, 16, 28, .5);
+            user-select: none;
+        }
+        .slider-verify .slider-top {
+            display: flex;
+            justify-content: space-between;
+            color: var(--v-text-2);
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        .slider-verify.done {
+            border-color: rgba(34, 197, 94, .4);
+            background: rgba(34, 197, 94, .08);
+        }
+        .slider-verify.done .slider-state { color: var(--v-green); }
+        .puzzle-box { position: relative; height: 76px; border-radius: var(--v-radius-sm); overflow: hidden; background: linear-gradient(135deg, rgba(16, 185, 129, .12), rgba(6, 182, 212, .1)); border: 1px solid rgba(16, 185, 129, .2); margin-bottom: 10px; }
+        .puzzle-box::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 18% 30%, rgba(16, 185, 129, .2), transparent 26%), radial-gradient(circle at 85% 50%, rgba(6, 182, 212, .18), transparent 28%); }
+        .puzzle-gap { position: absolute; top: 21px; width: 34px; height: 34px; border-radius: 10px; background: rgba(148, 163, 184, .14); box-shadow: inset 0 0 0 2px rgba(34, 197, 94, .75); }
+        .puzzle-piece { position: absolute; top: 21px; left: 0; width: 34px; height: 34px; border-radius: 10px; background: linear-gradient(135deg, #34d399, #059669); box-shadow: 0 8px 20px rgba(16, 185, 129, .4); }
+        .slider-verify.done .puzzle-piece { background: linear-gradient(135deg, #22c55e, #15803d); }
+        .puzzle-track { position: relative; height: 42px; border-radius: 999px; background: rgba(148, 163, 184, .1); border: 1px solid var(--v-border); overflow: hidden; }
+        .puzzle-progress { position: absolute; left: 0; top: 0; height: 100%; background: linear-gradient(90deg, rgba(16, 185, 129, .35), rgba(34, 197, 94, .25)); }
+        .puzzle-thumb { position: absolute; left: 0; top: 3px; width: 36px; height: 36px; border: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #34d399, #10b981); color: #042620; cursor: grab; font-weight: 900; box-shadow: 0 5px 16px rgba(16, 185, 129, .4); touch-action: none; }
+        .puzzle-thumb:active { cursor: grabbing; }
+        .puzzle-tip { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--v-muted); font-size: 12px; pointer-events: none; }
+
+        .dash-card {
+            padding: 18px;
+            border: 1px solid var(--v-border);
+            border-radius: var(--v-radius);
+            background: rgba(10, 16, 28, .5);
+            backdrop-filter: blur(12px);
+            margin: 16px 0;
+        }
+        .dash-card b { display: block; margin-bottom: 6px; color: var(--v-text); }
+        .model-preview {
+            color: var(--v-text-2);
+            font-size: 13px;
+            margin-top: 10px;
+            line-height: 1.7;
+        }
+        .links {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 16px;
+            font-size: 13px;
+        }
+        .links a {
+            color: var(--v-primary-light);
+            text-decoration: none;
+            font-weight: 600;
+            transition: opacity .2s, text-shadow .2s;
+        }
+        .links a:hover { opacity: .9; text-shadow: 0 0 12px rgba(16, 185, 129, .6); }
+
+        /* ===================== USER APP (用户中心) ===================== */
+        .user-app {
+            display: none;
+            width: min(1280px, 100%);
+            height: calc(100vh - 48px);
+            height: calc(100dvh - 48px);
+            min-height: 680px;
+            border-radius: var(--v-radius-lg);
+            overflow: hidden;
+            background: rgba(15, 21, 36, .6);
+            border: 1px solid var(--v-border);
+            box-shadow: var(--v-shadow);
+            backdrop-filter: blur(24px) saturate(150%);
+            -webkit-backdrop-filter: blur(24px) saturate(150%);
+            grid-template-columns: 264px 1fr;
+        }
+        .user-app.active { display: grid; }
+        .user-sidebar {
+            background: rgba(10, 16, 28, .5);
+            color: var(--v-text);
+            padding: 24px 18px;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--v-border);
+            backdrop-filter: blur(12px);
+        }
+        .user-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 24px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--v-border-2);
+        }
+        .user-logo {
+            width: 46px;
+            height: 46px;
+            flex: 0 0 46px;
+            border-radius: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #042620;
+            background: linear-gradient(135deg, #34d399, #10b981);
+            box-shadow: 0 8px 22px rgba(16, 185, 129, .4);
+            font-size: 20px;
+            font-weight: 800;
+            line-height: 1;
+        }
+        .user-brand-text { min-width: 0; }
+        .user-brand-text b { display: block; font-size: 16px; font-weight: 700; color: var(--v-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .user-brand-text span { display: block; color: var(--v-muted); font-size: 12px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .user-menu { display: flex; flex-direction: column; gap: 4px; }
+        .user-menu-item {
+            border: 0;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            border-radius: var(--v-radius-sm);
+            background: transparent;
+            color: var(--v-text-2);
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            font-family: inherit;
+            text-align: left;
+            transition: background .18s ease, color .18s ease, transform .18s ease;
+        }
+        .user-menu-item .mi {
+            width: 34px;
+            height: 34px;
+            flex: 0 0 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+            background: rgba(148, 163, 184, .1);
+            color: var(--v-text-2);
+            font-size: 16px;
+            font-weight: 700;
+            transition: all .18s ease;
+        }
+        .user-menu-item:hover {
+            background: var(--v-primary-soft);
+            color: var(--v-primary-light);
+            transform: translateX(2px);
+        }
+        .user-menu-item:hover .mi { background: linear-gradient(135deg, #34d399, #10b981); color: #042620; }
+        .user-menu-item.active {
+            background: linear-gradient(135deg, rgba(16, 185, 129, .22), rgba(6, 182, 212, .12));
+            color: var(--v-primary-light);
+            box-shadow: inset 0 0 0 1px rgba(16, 185, 129, .3), 0 6px 18px rgba(16, 185, 129, .18);
+        }
+        .user-menu-item.active .mi { background: linear-gradient(135deg, #34d399, #10b981); color: #042620; }
+        .user-side-foot {
+            margin-top: auto;
+            padding-top: 18px;
+            color: var(--v-muted);
+            font-size: 12px;
+            border-top: 1px solid var(--v-border-2);
+        }
+        .user-main {
+            min-width: 0;
+            min-height: 0;
+            background: rgba(10, 14, 24, .4);
+            display: flex;
+            flex-direction: column;
+        }
+        .user-header {
+            padding: 20px 28px;
+            background: rgba(10, 16, 28, .5);
+            border-bottom: 1px solid var(--v-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            backdrop-filter: blur(12px);
+        }
+        .user-titlebox { min-width: 0; }
+        .user-header h2 { margin: 0; font-size: 22px; font-weight: 700; color: var(--v-text); letter-spacing: -.3px; }
+        .user-header p { margin: 5px 0 0; color: var(--v-text-2); font-size: 13px; }
+        .user-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            padding: 24px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            overscroll-behavior: contain;
+            scrollbar-gutter: stable;
+            padding-bottom: 44px;
+        }
+        .user-body::-webkit-scrollbar { width: 8px; }
+        .user-body::-webkit-scrollbar-track { background: transparent; }
+        .user-body::-webkit-scrollbar-thumb { background: rgba(16, 185, 129, .3); border-radius: 999px; }
+        .user-body::-webkit-scrollbar-thumb:hover { background: rgba(16, 185, 129, .5); }
+        .user-section { display: none; animation: rise .3s ease both; }
+        .user-section.active { display: block; }
+
+        /* ===================== 统计卡片 ===================== */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(150px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: rgba(18, 26, 44, .55);
+            border: 1px solid var(--v-border);
+            border-radius: var(--v-radius);
+            box-shadow: var(--v-shadow);
+            padding: 18px;
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            backdrop-filter: blur(14px);
+            transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+        }
+        .stat-card:hover { transform: translateY(-3px); border-color: rgba(16, 185, 129, .4); box-shadow: 0 10px 30px rgba(16, 185, 129, .18); }
+        .stat-icon {
+            width: 46px;
+            height: 46px;
+            flex: 0 0 46px;
+            border-radius: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            font-weight: 700;
+        }
+        .stat-icon.bg-primary { background: rgba(16, 185, 129, .16); color: var(--v-primary-light); }
+        .stat-icon.bg-cyan { background: rgba(6, 182, 212, .16); color: #22d3ee; }
+        .stat-icon.bg-green { background: rgba(34, 197, 94, .16); color: #4ade80; }
+        .stat-icon.bg-warning { background: rgba(245, 158, 11, .16); color: #fbbf24; }
+        .stat-icon.bg-red { background: rgba(244, 63, 94, .16); color: #fb7185; }
+        .stat-info { min-width: 0; flex: 1 1 auto; }
+        .stat-card .k { color: var(--v-muted); font-size: 12px; font-weight: 600; letter-spacing: .3px; }
+        .stat-card .v { margin-top: 6px; font-size: 24px; font-weight: 700; color: var(--v-text); line-height: 1.15; }
+        .stat-card .sub { margin-top: 4px; color: var(--v-text-2); font-size: 12px; line-height: 1.45; }
+
+        .user-card {
+            background: rgba(18, 26, 44, .55);
+            border: 1px solid var(--v-border);
+            border-radius: var(--v-radius);
+            box-shadow: var(--v-shadow);
+            padding: 24px;
+            margin-bottom: 18px;
+            backdrop-filter: blur(14px);
+        }
+        .user-card h3 { margin: 0 0 14px; font-size: 17px; font-weight: 700; color: var(--v-text); }
+        .info-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+        .info-item {
+            padding: 16px;
+            border-radius: var(--v-radius-sm);
+            background: rgba(10, 16, 28, .5);
+            border: 1px solid var(--v-border-2);
+        }
+        .info-item span { display: block; color: var(--v-muted); font-size: 12px; margin-bottom: 6px; font-weight: 600; }
+        .info-item b { font-size: 15px; font-weight: 600; color: var(--v-text); }
+        .script-key-box {
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            gap: 10px;
+            align-items: center;
+            margin-top: 14px;
+        }
+        .script-key-box input {
+            margin: 0;
+            font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+            font-size: 12px;
+        }
+        .script-key-tip {
+            color: var(--v-text-2);
+            font-size: 13px;
+            line-height: 1.7;
+            margin-top: 10px;
+        }
+
+        .settings-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+        .setting-pill {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            align-items: center;
+            padding: 14px;
+            border-radius: var(--v-radius-sm);
+            background: rgba(10, 16, 28, .5);
+            border: 1px solid var(--v-border-2);
+            font-size: 13px;
+            color: var(--v-text-2);
+        }
+        .setting-pill code {
+            color: var(--v-primary-light);
+            background: var(--v-primary-soft);
+            padding: 3px 9px;
+            border-radius: 999px;
+            font-family: inherit;
+            font-weight: 700;
+            font-size: 12px;
+        }
+        .form-grid { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 14px; }
+        .form-grid .full { grid-column: 1 / -1; }
+        .setting-checks { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 12px; }
+        .check-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            padding: 14px;
+            border: 1px solid var(--v-border-2);
+            border-radius: var(--v-radius-sm);
+            background: rgba(10, 16, 28, .5);
+            font-weight: 600;
+            color: var(--v-text);
+            cursor: pointer;
+            transition: border-color .18s, background .18s;
+        }
+        .check-card:hover { border-color: rgba(16, 185, 129, .4); }
+        .check-card small { display: block; margin-top: 4px; color: var(--v-muted); font-weight: 500; line-height: 1.5; font-size: 12px; }
+        .check-card input { width: 18px; height: 18px; flex: 0 0 auto; accent-color: var(--v-primary); cursor: pointer; }
+
+        /* ===================== 仪表盘 ===================== */
+        .stat-card-v2 { display: flex; align-items: center; gap: 12px; transition: transform .2s, box-shadow .2s; }
+        .stat-card-v2:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(16, 185, 129, .15); }
+        .stat-card-v2 .stat-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+        .dash-section { margin-top: 20px; }
+        .dash-title { font-size: 15px; font-weight: 700; color: var(--v-text); margin: 0 0 12px; padding-left: 2px; }
+        .stat-mini { padding: 14px 16px; display: flex; align-items: center; gap: 12px; transition: transform .2s, box-shadow .2s; }
+        .stat-mini:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(16, 185, 129, .15); }
+        .stat-mini .stat-icon-sm { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+        .bg-green, .bg-primary, .bg-warning, .bg-cyan, .bg-red { background: rgba(16, 185, 129, .12); color: var(--v-primary-light); }
+        .text-green, .text-primary, .text-cyan { color: var(--v-text) !important; }
+        .chart-wrap { background: rgba(18, 26, 44, .55); border: 1px solid var(--v-border); border-radius: var(--v-radius); padding: 16px; backdrop-filter: blur(14px); }
+        .dash-chart { width: 100%; height: 240px; }
+        .dash-table-wrap { border: 1px solid var(--v-border); border-radius: var(--v-radius-sm); overflow: hidden; }
+        .dash-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .dash-table th { background: rgba(16, 185, 129, .1); padding: 10px 14px; text-align: left; font-weight: 700; color: var(--v-text); border-bottom: 1px solid var(--v-border); }
+        .dash-table td { padding: 10px 14px; color: var(--v-text-2); border-bottom: 1px solid var(--v-border-2); }
+        .dash-table tr:last-child td { border-bottom: none; }
+        .dash-table .tag-paid { color: #4ade80; font-weight: 700; }
+        .dash-table .tag-pending { color: #fbbf24; font-weight: 700; }
+
+        /* ===================== 套餐购买 ===================== */
+        .billing-hero { position: relative; overflow: hidden; padding: 28px 26px; border-radius: var(--v-radius); border: 1px solid rgba(16, 185, 129, .3); background: linear-gradient(135deg, #047857 0%, #0d9488 50%, #06b6d4 100%); color: #ecfdf5; margin-bottom: 18px; box-shadow: 0 16px 40px rgba(13, 148, 136, .35), 0 0 30px rgba(16, 185, 129, .2); }
+        .billing-hero::after { content: ''; position: absolute; width: 240px; height: 240px; right: -80px; top: -80px; border-radius: 50%; background: rgba(255, 255, 255, .12); }
+        .billing-hero::before { content: ''; position: absolute; width: 150px; height: 150px; right: 40px; bottom: -60px; border-radius: 50%; background: rgba(255, 255, 255, .08); }
+        .billing-hero h3 { margin: 0 0 6px; font-size: 24px; font-weight: 700; position: relative; z-index: 1; }
+        .billing-hero h3 .hero-emoji { font-size: 20px; margin-right: 6px; }
+        .billing-hero p { margin: 0; color: rgba(236, 253, 245, .9); line-height: 1.7; font-size: 13.5px; position: relative; z-index: 1; }
+        .billing-hero .hero-urgency { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 6px 14px; border-radius: 999px; background: rgba(255, 255, 255, .18); border: 1px solid rgba(255, 255, 255, .3); font-size: 12px; font-weight: 700; position: relative; z-index: 1; }
+        .billing-hero .hero-urgency .pulse { width: 8px; height: 8px; border-radius: 50%; background: #fde047; animation: pulse-glow 1.5s ease-in-out infinite; }
+        @keyframes pulse-glow { 0%, 100% { opacity: 1; box-shadow: 0 0 4px #fde047; } 50% { opacity: .6; box-shadow: 0 0 14px #fde047; } }
+        .billing-status { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; position: relative; z-index: 1; }
+        .billing-status .bs { padding: 14px 16px; border-radius: var(--v-radius-sm); background: rgba(255, 255, 255, .14); border: 1px solid rgba(255, 255, 255, .2); backdrop-filter: blur(6px); transition: background .2s; }
+        .billing-status .bs:hover { background: rgba(255, 255, 255, .24); }
+        .billing-status span { display: block; font-size: 12px; color: rgba(255, 255, 255, .8); }
+        .billing-status b { display: block; margin-top: 4px; font-size: 20px; font-weight: 700; }
+        .billing-status .bs.active b { color: #fde047; }
+        .plan-benefits { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; position: relative; z-index: 1; }
+        .plan-benefits .benefit { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 999px; background: rgba(255, 255, 255, .14); border: 1px solid rgba(255, 255, 255, .2); font-size: 12px; font-weight: 600; }
+        .plan-benefits .benefit .bi { color: #6ee7b7; font-size: 14px; }
+        .plan-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+        .plan-card { position: relative; overflow: hidden; border: 1px solid var(--v-border); border-radius: var(--v-radius); padding: 22px 20px; background: linear-gradient(180deg, rgba(18, 26, 44, .7), rgba(13, 19, 33, .6)); box-shadow: var(--v-shadow); backdrop-filter: blur(14px); transition: transform .25s, box-shadow .25s, border-color .25s; }
+        .plan-card:hover { transform: translateY(-6px); border-color: rgba(16, 185, 129, .5); box-shadow: 0 18px 44px rgba(16, 185, 129, .25); }
+        .plan-card.monthly { background: linear-gradient(180deg, rgba(6, 182, 212, .16), rgba(8, 47, 73, .5)); border-color: rgba(6, 182, 212, .35); }
+        .plan-card.monthly:hover { border-color: rgba(6, 182, 212, .6); box-shadow: 0 18px 44px rgba(6, 182, 212, .3); }
+        .plan-card::after { content: ''; position: absolute; right: -50px; top: -50px; width: 140px; height: 140px; border-radius: 50%; background: rgba(16, 185, 129, .14); opacity: .6; }
+        .plan-card.monthly::after { background: rgba(6, 182, 212, .16); }
+        .plan-badge { display: inline-flex; align-items: center; padding: 5px 12px; border-radius: 999px; background: var(--v-primary-soft); color: var(--v-primary-light); font-size: 12px; font-weight: 700; position: relative; z-index: 1; border: 1px solid rgba(16, 185, 129, .25); }
+        .plan-card.monthly .plan-badge { background: linear-gradient(135deg, #06b6d4, #0891b2); color: #ecfeff; box-shadow: 0 4px 14px rgba(6, 182, 212, .35); border-color: transparent; }
+        .plan-card .plan-tag { position: absolute; top: 0; right: 0; padding: 4px 14px; background: linear-gradient(135deg, #f43f5e, #e11d48); color: #fff; font-size: 11px; font-weight: 800; border-radius: 0 var(--v-radius) 0 var(--v-radius-sm); z-index: 2; letter-spacing: 1px; }
+        .plan-card b { display: block; font-size: 19px; margin: 12px 0 4px; position: relative; z-index: 1; color: var(--v-text); }
+        .plan-price { font-size: 38px; font-weight: 700; color: var(--v-primary-light); margin: 10px 0; position: relative; z-index: 1; text-shadow: 0 0 24px rgba(16, 185, 129, .4); }
+        .plan-price small { font-size: 13px; color: var(--v-muted); font-weight: 600; }
+        .plan-card.monthly .plan-price { color: #22d3ee; text-shadow: 0 0 24px rgba(6, 182, 212, .4); }
+        .plan-meta { color: var(--v-text-2); font-size: 13px; line-height: 1.7; min-height: 44px; position: relative; z-index: 1; }
+        .plan-features { list-style: none; padding: 0; margin: 12px 0 0; position: relative; z-index: 1; }
+        .plan-features li { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--v-text-2); margin-bottom: 7px; line-height: 1.5; }
+        .plan-features li .fi { color: var(--v-primary-light); font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+        .plan-card.monthly .plan-features li .fi { color: #22d3ee; }
+        .plan-card .primary { position: relative; z-index: 1; box-shadow: 0 8px 20px rgba(16, 185, 129, .3); margin-top: 14px; width: 100%; font-size: 15px; padding: 12px 0; font-weight: 700; }
+        .plan-card.monthly .primary { background: linear-gradient(135deg, #22d3ee, #0891b2); color: #042f2e; box-shadow: 0 8px 22px rgba(6, 182, 212, .4); }
+        .plan-card.monthly .primary:hover { background: linear-gradient(135deg, #06b6d4, #0e7490); }
+        .pay-methods { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0 4px; }
+        .pay-method-card { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border: 2px solid var(--v-border); border-radius: var(--v-radius-sm); background: rgba(10, 16, 28, .5); cursor: pointer; font-weight: 600; color: var(--v-text); font-size: 14px; transition: all .18s; user-select: none; }
+        .pay-method-card:hover { border-color: rgba(16, 185, 129, .4); background: rgba(16, 185, 129, .08); }
+        .pay-method-card.active { border-color: var(--v-primary); background: rgba(16, 185, 129, .12); }
+        .pay-method-card .pm-icon { display: flex; align-items: center; justify-content: center; }
+        .pay-method-card .pm-label { flex: 1; }
+        .pay-method-card .pm-check { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; color: #fff; }
+        .pay-method-card.active .pm-check { background: var(--v-primary); }
+        .qr-panel { display: none; margin-top: 16px; padding: 20px; border: 1px solid rgba(16, 185, 129, .3); border-radius: var(--v-radius); background: rgba(16, 185, 129, .08); text-align: center; backdrop-filter: blur(10px); }
+        .qr-panel.active { display: block; }
+        .qr-panel img { width: 220px; height: 220px; background: #fff; padding: 10px; border-radius: var(--v-radius-sm); box-shadow: var(--v-shadow); }
+        .qr-panel .qr-title { font-weight: 700; margin-bottom: 12px; color: var(--v-text); }
+        .qr-panel .qr-tip { color: var(--v-text-2); font-size: 13px; margin-top: 12px; }
+        .qr-panel .qr-actions { margin-top: 4px; }
+        .qr-panel .qr-link-btn { display: inline-block; margin: 14px auto 0; padding: 12px 30px; border-radius: var(--v-radius-sm); background: linear-gradient(135deg, #10b981, #059669); color: #fff; font-weight: 700; font-size: 15px; text-decoration: none; box-shadow: 0 8px 20px rgba(16, 185, 129, .3); transition: transform .18s, box-shadow .18s; }
+        .qr-panel .qr-link-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 26px rgba(16, 185, 129, .45); }
+
+        /* ===================== 模型设置 ===================== */
+        .model-mode {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .mode-card {
+            position: relative;
+            cursor: pointer;
+            padding: 16px;
+            border-radius: var(--v-radius-sm);
+            border: 1px solid var(--v-border);
+            background: rgba(10, 16, 28, .5);
+            color: var(--v-text);
+            transition: all .18s ease;
+        }
+        .mode-card input { position: absolute; opacity: 0; pointer-events: none; }
+        .mode-card b { display: block; margin-bottom: 5px; font-size: 14.5px; font-weight: 700; }
+        .mode-card span { color: var(--v-muted); font-size: 12px; line-height: 1.6; }
+        .mode-card:has(input:checked) {
+            border-color: var(--v-primary);
+            background: rgba(16, 185, 129, .12);
+            box-shadow: inset 3px 0 0 var(--v-primary), 0 0 20px rgba(16, 185, 129, .15);
+            color: var(--v-primary-light);
+        }
+        .model-custom-box { margin-top: 12px; padding-top: 4px; }
+        .model-custom-box.hidden { display: none; }
+        .backend-model-tip {
+            display: none;
+            margin-top: 12px;
+            padding: 14px 16px;
+            border-radius: var(--v-radius-sm);
+            background: rgba(6, 182, 212, .1);
+            border: 1px solid rgba(6, 182, 212, .3);
+            color: #67e8f9;
+            line-height: 1.7;
+            font-size: 13px;
+        }
+        .backend-model-tip.active { display: block; }
+
+        /* ===================== 响应式 ===================== */
+        @media (max-width: 1180px) {
+            body { padding: 18px; }
+            .shell { grid-template-columns: .9fr 1.1fr; }
+            .hero, .panel { min-height: 600px; }
+            .hero { padding: 32px 28px; }
+            .panel { padding: 28px; }
+            .user-app { grid-template-columns: 224px 1fr; }
+            .user-sidebar { padding: 18px 14px; }
+            .stat-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
+            .form-grid, .setting-checks { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
+        }
+        @media (max-width: 920px) {
+            body { display: block; padding: 14px; }
+            .shell { grid-template-columns: 1fr; max-width: 680px; margin: 0 auto; }
+            .hero { min-height: auto; padding: 28px; }
+            .hero::after { font-size: 180px; right: -10px; bottom: -54px; }
+            .hero h1 { margin-top: 34px; }
+            .panel { min-height: auto; }
+            .user-app {
+                width: 100%;
+                height: calc(100vh - 28px);
+                height: calc(100dvh - 28px);
+                min-height: calc(100vh - 28px);
+                min-height: calc(100dvh - 28px);
+                grid-template-columns: 1fr;
+                overflow: hidden;
+            }
+            .user-sidebar {
+                min-height: auto;
+                padding: 12px 12px 10px;
+                border-right: 0;
+                border-bottom: 1px solid var(--v-border);
+                position: relative;
+                z-index: 6;
+                box-shadow: 0 6px 18px rgba(16, 185, 129, .08);
+            }
+            .user-brand { margin-bottom: 10px; padding-bottom: 10px; }
+            .user-menu {
+                position: fixed;
+                left: 14px;
+                right: 14px;
+                bottom: 12px;
+                z-index: 30;
+                flex-direction: row;
+                justify-content: space-around;
+                gap: 4px;
+                overflow: visible;
+                padding: 8px;
+                border-radius: var(--v-radius);
+                background: rgba(13, 19, 33, .82);
+                border: 1px solid var(--v-border);
+                box-shadow: 0 14px 36px rgba(0, 0, 0, .4), 0 0 0 1px rgba(16, 185, 129, .12);
+                backdrop-filter: blur(20px);
+            }
+            .user-menu::-webkit-scrollbar { display: none; }
+            .user-menu-item {
+                flex: 1 1 0;
+                width: auto;
+                min-width: 0;
+                white-space: nowrap;
+                padding: 7px 4px;
+                justify-content: center;
+                flex-direction: column;
+                gap: 4px;
+                border-radius: var(--v-radius-sm);
+                font-size: 11px;
+                background: transparent;
+            }
+            .user-menu-item .mi { width: 30px; height: 30px; flex-basis: 30px; font-size: 14px; line-height: 1; }
+            .user-menu-item:hover, .user-menu-item.active { transform: none; }
+            .user-menu-item.active { background: var(--v-primary-soft); color: var(--v-primary-light); box-shadow: none; }
+            .user-menu-item.active .mi { background: linear-gradient(135deg, #34d399, #10b981); color: #042620; }
+            #sideLogoutBtn { display: none; }
+            .user-side-foot { display: none; }
+            .user-header { padding: 14px 16px; align-items: center; }
+            .user-header p { margin-top: 3px; line-height: 1.35; }
+            .user-header .secondary { flex: 0 0 auto; padding: 9px 14px; border-radius: var(--v-radius-sm); font-size: 13px; }
+            .user-main { min-width: 0; overflow: hidden; }
+            .user-body { padding: 18px; overflow-x: hidden; padding-bottom: 106px; }
+            .info-list, .settings-grid, .model-mode, .plan-grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 600px) {
+            body { padding: 10px; }
+            .shell { max-width: none; }
+            .hero { padding: 22px; }
+            .hero::after { font-size: 130px; bottom: -42px; }
+            .brand { gap: 9px; font-size: 16px; }
+            .logo { width: 38px; height: 38px; border-radius: 11px; font-size: 19px; }
+            .hero h1 { margin: 24px 0 12px; font-size: 30px; line-height: 1.12; }
+            .lead { font-size: 14px; line-height: 1.65; }
+            .chips { margin-top: 18px; gap: 8px; }
+            .chip { padding: 7px 12px; font-size: 12px; }
+            .panel { padding: 22px; }
+            .tabs { gap: 4px; margin-bottom: 20px; }
+            .tab { padding: 10px 6px; font-size: 13px; }
+            .title { font-size: 21px; }
+            .row { grid-template-columns: 1fr; gap: 8px; }
+            .code-btn { width: 100%; }
+            .links { flex-direction: column; align-items: flex-start; }
+            .user-app { border-radius: var(--v-radius); min-height: calc(100vh - 20px); min-height: calc(100dvh - 20px); }
+            .user-brand-text b { font-size: 15px; }
+            .user-header { flex-direction: row; gap: 10px; }
+            .user-header h2 { font-size: 20px; line-height: 1.15; }
+            .user-header p { font-size: 12px; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+            .user-header .secondary { width: auto !important; margin: 0 !important; white-space: nowrap; padding: 9px 12px; }
+            .user-brand { align-items: center; }
+            .user-logo { width: 38px; height: 38px; flex-basis: 38px; border-radius: 11px; }
+            .user-menu { left: 10px; right: 10px; bottom: 10px; }
+            .user-menu-item { padding: 7px 2px; font-size: 10.5px; }
+            .user-body { padding: 14px; padding-bottom: 106px; }
+            .stat-grid, .info-list, .settings-grid, .form-grid, .setting-checks, .model-mode, .plan-grid { grid-template-columns: 1fr; }
+            .script-key-box { grid-template-columns: 1fr; }
+            .stat-card { padding: 15px; gap: 12px; }
+            .stat-icon { width: 42px; height: 42px; flex-basis: 42px; font-size: 18px; }
+            .stat-card .v { font-size: 21px; }
+            .user-card { padding: 18px; }
+            .mode-card, .check-card, .setting-pill, .info-item { min-width: 0; overflow-wrap: anywhere; }
+            .check-card { align-items: flex-start; }
+            .check-card input { margin-top: 2px; }
+        }
+        @media (max-width: 380px) {
+            .hero { display: none; }
+            .panel { min-height: calc(100vh - 20px); min-height: calc(100dvh - 20px); }
+        }
+    </style>
+</head>
+<body>
+    <main class="shell">
+        <section class="hero">
+            <div>
+                <div class="brand"><span class="logo">学</span><span>学神助手</span></div>
+                <h1>欢迎使用学神助手</h1>
+                <p class="lead">用户可以登录后选择常用模型；脚本内仍保留登录和模型选择能力。</p>
+                <div class="chips">
+                    <span class="chip">自定义账号登录</span>
+                    <span class="chip">邮箱验证码注册</span>
+                    <span class="chip">密码找回</span>
+                    <span class="chip">模型选择</span>
+                </div>
+            </div>
+            <p class="lead">完全免费支持自定义模型答题</p>
+        </section>
+
+        <section class="panel">
+            <div class="tabs">
+                <button class="tab active" data-view="login">登录</button>
+                <button class="tab" data-view="register">注册</button>
+                <button class="tab" data-view="forgot">找回密码</button>
+            </div>
+
+            <div id="login" class="view active">
+                <div class="title">登录账号</div>
+                <p class="hint">登录后可在网页端选择模型，也可以回到脚本浮窗继续使用。</p>
+                <label>用户名或邮箱</label>
+                <input id="loginUser" autocomplete="username" placeholder="请输入用户名或邮箱">
+                <label>密码</label>
+                <div class="pwd-wrap">
+                    <input id="loginPwd" type="password" autocomplete="current-password" placeholder="请输入密码">
+                    <span class="pwd-toggle" data-target="loginPwd">显示</span>
+                </div>
+                <div class="slider-verify" id="userSliderBox">
+                    <div class="slider-top"><span>滑块验证</span><span class="slider-state" id="userSliderState">拖动拼图到缺口</span></div>
+                    <div class="puzzle-box">
+                        <span class="puzzle-gap" id="userPuzzleGap"></span>
+                        <span class="puzzle-piece" id="userPuzzlePiece"></span>
+                    </div>
+                    <div class="puzzle-track" id="userPuzzleTrack">
+                        <div class="puzzle-progress" id="userPuzzleProgress"></div>
+                        <span class="puzzle-tip" id="userPuzzleTip">按住滑块，拖动完成拼图</span>
+                        <button type="button" class="puzzle-thumb" id="userPuzzleThumb">›</button>
+                    </div>
+                </div>
+                <button class="primary" id="loginBtn">登录</button>
+                <div class="links">
+                    <a href="javascript:void(0)" data-jump="register">没有账号？去注册</a>
+                    <a href="javascript:void(0)" data-jump="forgot">忘记密码</a>
+                </div>
+                <div id="loginMsg" class="msg"></div>
+            </div>
+
+            <div id="register" class="view">
+                <div class="title">注册账号</div>
+                <p class="hint">使用邮箱验证码注册，注册完成后会自动登录。</p>
+                <label>用户名</label>
+                <input id="regUser" autocomplete="username" placeholder="建议使用字母、数字或中文">
+                <label>邮箱</label>
+                <div class="row">
+                    <input id="regEmail" type="email" autocomplete="email" placeholder="请输入邮箱">
+                    <button class="code-btn" id="regCodeBtn">发送验证码</button>
+                </div>
+                <label>验证码</label>
+                <input id="regCode" placeholder="请输入邮箱验证码">
+                <label>密码</label>
+                <div class="pwd-wrap">
+                    <input id="regPwd" type="password" autocomplete="new-password" placeholder="至少 6 位">
+                    <span class="pwd-toggle" data-target="regPwd">显示</span>
+                </div>
+                <button class="primary" id="regBtn">注册并登录</button>
+                <div id="regMsg" class="msg"></div>
+            </div>
+
+            <div id="forgot" class="view">
+                <div class="title">找回密码</div>
+                <p class="hint">通过邮箱验证码重置密码，重置后请返回登录。</p>
+                <label>邮箱</label>
+                <div class="row">
+                    <input id="resetEmail" type="email" autocomplete="email" placeholder="请输入注册邮箱">
+                    <button class="code-btn" id="resetCodeBtn">发送验证码</button>
+                </div>
+                <label>验证码</label>
+                <input id="resetCode" placeholder="请输入邮箱验证码">
+                <label>新密码</label>
+                <div class="pwd-wrap">
+                    <input id="resetPwd" type="password" autocomplete="new-password" placeholder="至少 6 位">
+                    <span class="pwd-toggle" data-target="resetPwd">显示</span>
+                </div>
+                <button class="primary" id="resetBtn">重置密码</button>
+                <div id="resetMsg" class="msg"></div>
+            </div>
+
+            <div id="dashboard" class="view">
+                <div class="title">用户中心</div>
+                <p class="hint">你已登录，可以选择网页端默认模型。脚本浮窗中也可以单独选择模型。</p>
+                <div class="dash-card">
+                    <b id="userName">用户：-</b>
+                    <span id="userEmail" class="hint">邮箱：-</span>
+                </div>
+                <label>网页端默认模型</label>
+                <select id="webModel"></select>
+                <div class="model-preview" id="modelTip">模型列表来自后端 AI 配置。</div>
+                <button class="primary" id="saveModelBtn">保存模型选择</button>
+                <button class="secondary" id="logoutBtn">退出登录</button>
+                <div id="dashMsg" class="msg"></div>
+            </div>
+        </section>
+    </main>
+
+    <main id="userApp" class="user-app">
+        <aside class="user-sidebar">
+            <div class="user-brand">
+                <span class="user-logo">学</span>
+                <div class="user-brand-text">
+                    <b>用户中心</b>
+                    <span>学神助手</span>
+                </div>
+            </div>
+            <nav class="user-menu">
+                <button class="user-menu-item active" data-section="home"><span class="mi">⌂</span><span class="user-menu-label">首页</span></button>
+                <button class="user-menu-item" data-section="consumption"><span class="mi">≡</span><span class="user-menu-label">消费记录</span></button>
+                <button class="user-menu-item" data-section="billing"><span class="mi">□</span><span class="user-menu-label">套餐购买</span></button>
+                <button class="user-menu-item" data-section="model"><span class="mi">◇</span><span class="user-menu-label">模型设置</span></button>
+                <button class="user-menu-item" data-section="script"><span class="mi">⌘</span><span class="user-menu-label">脚本设置</span></button>
+                <button class="user-menu-item" data-section="account"><span class="mi">◌</span><span class="user-menu-label">账号信息</span></button>
+                <button class="user-menu-item" id="sideLogoutBtn"><span class="mi">↗</span><span class="user-menu-label">退出登录</span></button>
+            </nav>
+            <div class="user-side-foot">
+                <div id="sideUserName">用户：-</div>
+                <div style="margin-top:6px">用户工作台</div>
+            </div>
+        </aside>
+        <section class="user-main">
+            <header class="user-header">
+                <div class="user-titlebox">
+                    <h2 id="userPageTitle">首页</h2>
+                    <p id="userPageDesc">查看账号状态、默认模型和脚本同步设置。</p>
+                </div>
+                <button class="secondary" style="width:auto;margin:0" id="refreshUserBtn">刷新数据</button>
+            </header>
+            <div class="user-body">
+                <section class="user-section active" id="section-home">
+                    <!-- 状态卡片网格 -->
+                    <div class="stat-grid" id="statGrid">
+                        <!-- 6个优化后的卡片，保留原有 id -->
+                        <div class="stat-card stat-card-v2">
+                            <div class="stat-icon bg-primary"><span>✓</span></div>
+                            <div class="stat-info"><div class="k">账号状态</div><div class="v" id="statStatus">正常</div></div>
+                        </div>
+                        <div class="stat-card stat-card-v2">
+                            <div class="stat-icon bg-primary"><span>≡</span></div>
+                            <div class="stat-info"><div class="k">剩余题数</div><div class="v" id="statPoints">0</div><div class="sub">包月期间保留不扣</div></div>
+                        </div>
+                        <div class="stat-card stat-card-v2">
+                            <div class="stat-icon bg-primary"><span>★</span></div>
+                            <div class="stat-info"><div class="k">包月状态</div><div class="v" id="statMember">未开通</div><div class="sub" id="statMemberUntil">未开通</div></div>
+                        </div>
+                        <div class="stat-card stat-card-v2">
+                            <div class="stat-icon bg-primary"><span>◇</span></div>
+                            <div class="stat-info"><div class="k">默认模型</div><div class="v" id="statModel">自动</div></div>
+                        </div>
+                        <div class="stat-card stat-card-v2">
+                            <div class="stat-icon bg-primary"><span>⚙</span></div>
+                            <div class="stat-info"><div class="k">脚本设置</div><div class="v" id="statSettings">0</div></div>
+                        </div>
+                        <div class="stat-card stat-card-v2">
+                            <div class="stat-icon bg-primary"><span>↻</span></div>
+                            <div class="stat-info"><div class="k">同步状态</div><div class="v" id="statSync">已同步</div></div>
+                        </div>
+                    </div>
+
+                    <!-- 答题统计 -->
+                    <div class="dash-section">
+                        <h4 class="dash-title">📊 答题统计</h4>
+                        <div class="stat-grid">
+                            <div class="stat-card stat-mini"><div class="stat-icon-sm bg-primary"><span>✏</span></div><div class="stat-info"><div class="k">总答题数</div><div class="v" id="dashTotalAnswers">0</div></div></div>
+                            <div class="stat-card stat-mini"><div class="stat-icon-sm bg-primary"><span>✓</span></div><div class="stat-info"><div class="k">题库命中</div><div class="v" id="dashBankHits">0</div></div></div>
+                            <div class="stat-card stat-mini"><div class="stat-icon-sm bg-primary"><span>%</span></div><div class="stat-info"><div class="k">命中率</div><div class="v" id="dashHitRate">0%</div></div></div>
+                            <div class="stat-card stat-mini"><div class="stat-icon-sm bg-primary"><span>◇</span></div><div class="stat-info"><div class="k">AI答题</div><div class="v" id="dashAiAnswers">0</div></div></div>
+                        </div>
+                    </div>
+
+                    <!-- 今日数据 -->
+                    <div class="dash-section">
+                        <h4 class="dash-title">📅 今日数据</h4>
+                        <div class="stat-grid">
+                            <div class="stat-card stat-mini"><div class="stat-icon-sm bg-primary">📝</div><div class="stat-info"><div class="k">答题</div><div class="v" id="dashTodayAnswers">0</div></div></div>
+                            <div class="stat-card stat-mini"><div class="stat-icon-sm bg-cyan">🎬</div><div class="stat-info"><div class="k">视频</div><div class="v" id="dashTodayVideos">0</div></div></div>
+                            <div class="stat-card stat-mini"><div class="stat-icon-sm bg-warning">📡</div><div class="stat-info"><div class="k">直播</div><div class="v" id="dashTodayLives">0</div></div></div>
+                            <div class="stat-card stat-mini"><div class="stat-icon-sm bg-green">📄</div><div class="stat-info"><div class="k">阅读</div><div class="v" id="dashTodayReadings">0</div></div></div>
+                            <div class="stat-card stat-mini"><div class="stat-icon-sm bg-red">📝</div><div class="stat-info"><div class="k">考试</div><div class="v" id="dashTodayExams">0</div></div></div>
+                        </div>
+                    </div>
+
+                    <!-- 7天答题趋势图 -->
+                    <div class="dash-section">
+                        <h4 class="dash-title">📈 7天答题趋势</h4>
+                        <div class="chart-wrap" id="answerChartWrap">
+                            <svg id="answerChart" class="dash-chart" viewBox="0 0 700 240" preserveAspectRatio="xMidYMid meet"></svg>
+                        </div>
+                    </div>
+
+                    <!-- 7天活动趋势图 -->
+                    <div class="dash-section">
+                        <h4 class="dash-title">📈 7天活动趋势</h4>
+                        <div class="chart-wrap" id="activityChartWrap">
+                            <svg id="activityChart" class="dash-chart" viewBox="0 0 700 240" preserveAspectRatio="xMidYMid meet"></svg>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="user-section" id="section-account">
+                    <div class="user-card">
+                        <h3>账号信息</h3>
+                        <div class="info-list">
+                            <div class="info-item"><span>用户名</span><b id="accountName">-</b></div>
+                            <div class="info-item"><span>邮箱</span><b id="accountEmail">-</b></div>
+                            <div class="info-item"><span>验证状态</span><b id="accountVerified">-</b></div>
+                            <div class="info-item"><span>剩余题数</span><b id="accountPoints">0</b></div>
+                            <div class="info-item"><span>包月到期</span><b id="accountMemberUntil">未开通</b></div>
+                            <div class="info-item"><span>登录来源</span><b>用户中心</b></div>
+                        </div>
+                    </div>
+                    <div class="user-card">
+                        <h3>脚本密钥</h3>
+                        <p class="hint">学神助手脚本点击“点我获取密钥”会来到这里。复制下面的密钥，回到脚本“配置密钥”页面填入“密钥”栏即可使用云端AI答题服务。</p>
+                        <div class="script-key-box">
+                            <input id="scriptKeyInput" readonly placeholder="登录后点击生成脚本密钥">
+                            <button class="secondary" style="width:auto;margin:0" id="copyScriptKeyBtn">复制密钥</button>
+                            <button class="primary" style="width:auto;margin:0" id="regenScriptKeyBtn">生成/刷新</button>
+                        </div>
+                        <div class="script-key-tip" id="scriptKeyTip">密钥有效期 180 天。重新生成后，请把新密钥重新填入脚本设置。</div>
+                        <div id="scriptKeyMsg" class="msg"></div>
+                    </div>
+                </section>
+
+                <section class="user-section" id="section-consumption">
+                    <div class="user-card">
+                        <h3>消费记录</h3>
+                        <p class="hint">查看充值记录、消费明细和订单状态。</p>
+                        <div class="stat-grid" style="margin-bottom:18px">
+                            <div class="stat-card stat-card-v2">
+                                <div class="stat-icon bg-primary"><span>￥</span></div>
+                                <div class="stat-info"><div class="k">累计充值</div><div class="v" id="dashTotalRecharged">￥0.00</div></div>
+                            </div>
+                        </div>
+                        <h4 class="dash-title" style="margin-top:20px">消费明细</h4>
+                        <div class="dash-table-wrap">
+                            <table class="dash-table" id="dashUsageTable">
+                                <thead><tr><th>消费项目</th><th>数量</th></tr></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                        <h4 class="dash-title" style="margin-top:20px">最近订单</h4>
+                        <div class="dash-table-wrap">
+                            <table class="dash-table" id="dashOrderTable">
+                                <thead><tr><th>套餐</th><th>金额</th><th>状态</th><th>时间</th></tr></thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="user-section" id="section-billing">
+                    <div class="user-card">
+                        <div class="billing-hero">
+                            <h3><span class="hero-emoji">🚀</span>开通套餐，畅享无限答题</h3>
+                            <p>AI 智能答题 + 海量题库，作业考试一键搞定。包月有效期内不限题数，题数额度永久保留不扣减。</p>
+                            <div class="hero-urgency"><span class="pulse"></span>限时优惠 · 包月畅答低至日均不到 1 元</div>
+                            <div class="plan-benefits">
+                                <span class="benefit"><span class="bi">✓</span>不限题数</span>
+                                <span class="benefit"><span class="bi">✓</span>AI 智能答题</span>
+                                <span class="benefit"><span class="bi">✓</span>海量题库</span>
+                                <span class="benefit"><span class="bi">✓</span>自动提交</span>
+                                <span class="benefit"><span class="bi">✓</span>视频秒过</span>
+                            </div>
+                            <div class="billing-status">
+                                <div class="bs"><span>当前剩余题数</span><b id="billingPoints">0</b></div>
+                                <div class="bs" id="billingMemberBox"><span>包月到期时间</span><b id="billingMemberUntil">未开通</b></div>
+                            </div>
+                        </div>
+                        <div id="payMethods" class="pay-methods"></div>
+                        <div id="planGrid" class="plan-grid"></div>
+                        <div id="qrPanel" class="qr-panel">
+                            <div class="qr-title" id="payQrTitle">请扫码完成付款</div>
+                            <img id="payQrImg" alt="支付二维码">
+                            <div class="qr-actions" id="payQrActions"></div>
+                            <div class="qr-tip" id="payQrTip">付款完成后系统会自动确认到账。</div>
+                        </div>
+                        <div id="billingMsg" class="msg"></div>
+                    </div>
+                </section>
+
+                <section class="user-section" id="section-model">
+                    <div class="user-card">
+                        <h3>模型设置</h3>
+                        <p class="hint">这里配置脚本使用“自动模型”还是“自有模型”。自动模型使用后台配置的模型池；自有模型使用你自己的接口配置。</p>
+                        <div class="model-mode">
+                            <label class="mode-card">
+                                <input type="radio" name="ucModelMode" value="auto" id="ucModelAuto">
+                                <b>自动模型</b>
+                                <span>由后端自动选择可用模型，适合大多数情况。</span>
+                            </label>
+                            <label class="mode-card">
+                                <input type="radio" name="ucModelMode" value="custom" id="ucModelCustom">
+                                <b>自有模型</b>
+                                <span>使用你自己配置的协议、地址、模型 ID 和 API Key。</span>
+                            </label>
+                        </div>
+                        <div class="backend-model-tip" id="backendModelTip">
+                            当前选择的是自动模型，将直接使用后端后台配置的模型池，不需要填写 Base URL、模型 ID 或 API Key。
+                        </div>
+                        <div class="model-custom-box" id="customModelBox">
+                            <div class="form-grid">
+                                <div>
+                                    <label>协议</label>
+                                    <select id="ucCustomProtocol">
+                                        <option value="openai">OpenAI 兼容</option>
+                                        <option value="claude">Claude</option>
+                                        <option value="gemini">Gemini</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label>模型 ID</label>
+                                    <input id="ucCustomModel" placeholder="如：sensenova-6.7-flash-lite">
+                                </div>
+                                <div class="full">
+                                    <label>Base URL</label>
+                                    <input id="ucCustomBaseUrl" placeholder="如：https://api.xxx.com/v1">
+                                </div>
+                                <div class="full">
+                                    <label>API Key</label>
+                                    <div class="pwd-wrap">
+                                        <input id="ucCustomApiKey" type="password" placeholder="sk-xxxxxxxx">
+                                        <span class="pwd-toggle" data-target="ucCustomApiKey">显示</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <button class="primary" id="saveModelPanelBtn">保存模型设置</button>
+                        <div id="modelPanelMsg" class="msg"></div>
+                    </div>
+                </section>
+
+                <section class="user-section" id="section-script">
+                    <div class="user-card">
+                        <h3>脚本设置</h3>
+                        <p class="hint">以下选项与脚本浮窗设置保持同步，保存后写入云端，脚本登录后自动读取。</p>
+                        <div class="form-grid">
+                            <div>
+                                <label>答题模式</label>
+                                <select id="abcAnswerMode">
+                                    <option value="questionBankAndAI">题库 + AI</option>
+                                    <option value="questionBank">纯题库</option>
+                                    <option value="ai">纯 AI</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label>搜题间隔（秒）</label>
+                                <input id="abcReqIntervalTime" type="number" min="1" max="3" step="1" placeholder="如：2">
+                            </div>
+                            <div>
+                                <label>视频倍速</label>
+                                <select id="abcVideoPlayrate">
+                                    <option value="1">1 x</option>
+                                    <option value="1.5">1.5 x</option>
+                                    <option value="2">2 x</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label>正确率（%）</label>
+                                <input id="abcAccuracy" type="number" min="0" max="100" step="1" placeholder="如：80">
+                            </div>
+                        </div>
+                        <div class="setting-checks" style="margin-top:16px">
+                            <label class="check-card"><span>自动答题<small>章节测验/作业自动查询答案</small></span><input id="abcAutoAnswer" type="checkbox"></label>
+                            <label class="check-card"><span>章节作业自动提交<small>答题完成后自动提交</small></span><input id="abcAutoSubmit" type="checkbox"></label>
+                            <label class="check-card"><span>自动切换章节<small>当前章节完成后进入下一章</small></span><input id="abcAutoNextChapter" type="checkbox"></label>
+                            <label class="check-card"><span>考试自动交卷<small>考试完成后自动提交试卷</small></span><input id="abcAutoSubmitPapers" type="checkbox"></label>
+                            <label class="check-card"><span>定时刷新<small>每 30 分钟刷新防卡死</small></span><input id="abcAutoRefresh" type="checkbox"></label>
+                            <label class="check-card"><span>划词搜题<small>选中文本后在线搜题</small></span><input id="abcSearchBySelectedText" type="checkbox"></label>
+                            <label class="check-card"><span>自定义输入框<small>显示手动编辑答案入口</small></span><input id="abcShowCustomEditor" type="checkbox"></label>
+                            <label class="check-card"><span>人脸识别提醒<small>检测到识别弹窗时提醒</small></span><input id="abcFaceRecognitionNotify" type="checkbox"></label>
+                        </div>
+                        <button class="primary" id="saveScriptSettingsBtn">保存脚本设置</button>
+                        <button class="secondary" id="reloadSettingsBtn">重新读取云端设置</button>
+                        <div id="settingsMsg" class="msg"></div>
+                    </div>
+                </section>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const TOKEN_KEY = 'xxt_user_token';
+        const USER_KEY = 'xxt_user_info';
+        const MODEL_KEY = 'xxt_selected_model';
+        let cloudSettings = {};
+        let profileTimer = null;
+        let initialUserSection = '';
+        const userSlider = { id: '', target: 130, x: 0, token: '', verified: false, dragging: false };
+
+        function $(id) { return document.getElementById(id); }
+        function msg(id, text, ok) {
+            const el = $(id);
+            if (!el) return;
+            el.textContent = text;
+            el.className = 'msg ' + (ok ? 'ok' : 'err');
+        }
+        function setPageTitle(title, desc) {
+            $('userPageTitle').textContent = title;
+            $('userPageDesc').textContent = desc || '';
+        }
+        function setBusy(btn, busy, text) {
+            if (!btn) return;
+            btn.disabled = busy;
+            if (busy) {
+                btn.dataset.oldText = btn.textContent;
+                btn.textContent = text || '处理中...';
+            } else if (btn.dataset.oldText) {
+                btn.textContent = btn.dataset.oldText;
+            }
+        }
+        async function post(url, data, token) {
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers.Authorization = 'Bearer ' + token;
+            const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(data || {}) });
+            let json = {};
+            try { json = await res.json(); } catch (_) { json = {}; }
+            if (!res.ok && !json.code) json = { code: res.status, msg: '请求失败：HTTP ' + res.status };
+            return json;
+        }
+        async function initUserSlider() {
+            userSlider.loading = true;
+            userSlider.x = 0;
+            userSlider.token = '';
+            userSlider.verified = false;
+            userSlider.dragging = false;
+            updateUserPuzzle();
+            try {
+                const res = await fetch('/api/slider-captcha/start?scope=user');
+                const data = await res.json();
+                const c = data.captcha || {};
+                userSlider.id = c.id || '';
+                userSlider.target = Number(c.target_hint || 130);
+                userSlider.x = 0;
+                userSlider.token = '';
+                userSlider.verified = false;
+                updateUserPuzzle();
+                $('userSliderState').textContent = '拖动拼图到缺口';
+                $('userPuzzleTip').textContent = '按住滑块，拖动完成拼图';
+                $('userSliderBox').classList.remove('done');
+            } catch (_) {
+                msg('loginMsg', '滑块验证初始化失败，请刷新页面', false);
+            } finally {
+                userSlider.loading = false;
+            }
+        }
+        async function resetUserSlider(messageText) {
+            userSlider.id = '';
+            userSlider.target = 130;
+            userSlider.x = 0;
+            userSlider.token = '';
+            userSlider.verified = false;
+            userSlider.dragging = false;
+            updateUserPuzzle();
+            $('userSliderState').textContent = '拖动拼图到缺口';
+            $('userPuzzleTip').textContent = '按住滑块，拖动完成拼图';
+            $('userSliderBox').classList.remove('done');
+            if (messageText) msg('loginMsg', messageText, false);
+            await initUserSlider();
+        }
+        function updateUserPuzzle() {
+            const xPct = Math.max(0, Math.min(100, userSlider.x / 260 * 100));
+            const targetPct = Math.max(0, Math.min(100, userSlider.target / 260 * 100));
+            $('userPuzzleGap').style.left = targetPct + '%';
+            $('userPuzzleGap').style.transform = 'translateX(-50%)';
+            $('userPuzzlePiece').style.left = xPct + '%';
+            $('userPuzzlePiece').style.transform = 'translateX(-50%)';
+            $('userPuzzleProgress').style.width = xPct + '%';
+            $('userPuzzleThumb').style.left = 'calc(' + xPct + '% - 18px)';
+        }
+        async function verifyUserSlider() {
+            if (userSlider.verified || !userSlider.id) return;
+            userSlider.loading = true;
+            try {
+                const res = await post('/api/slider-captcha/verify', { scope: 'user', id: userSlider.id, x: userSlider.x });
+                if (res.code === 200) {
+                    userSlider.token = res.token;
+                    userSlider.verified = true;
+                    $('userSliderState').textContent = '验证通过';
+                    $('userPuzzleTip').textContent = '验证通过';
+                    $('userSliderBox').classList.add('done');
+                    msg('loginMsg', '滑块验证通过', true);
+                } else {
+                    await resetUserSlider(res.msg || '滑块验证失败，请重新拖动');
+                }
+            } catch (_) {
+                await resetUserSlider('滑块验证失败，请重新拖动');
+            } finally {
+                userSlider.loading = false;
+            }
+        }
+        async function ensureUserSliderVerified() {
+            if (userSlider.verified && userSlider.token) return true;
+            if (userSlider.loading) {
+                for (let i = 0; i < 20 && userSlider.loading; i++) await new Promise(r => setTimeout(r, 100));
+                if (userSlider.verified && userSlider.token) return true;
+            }
+            if (userSlider.id) {
+                await verifyUserSlider();
+                return !!(userSlider.verified && userSlider.token);
+            }
+            return false;
+        }
+        function beginUserPuzzle(e) {
+            if (userSlider.verified) return;
+            userSlider.dragging = true;
+            const track = $('userPuzzleTrack');
+            const move = (ev) => {
+                if (!userSlider.dragging) return;
+                const point = ev.touches ? ev.touches[0] : ev;
+                const rect = track.getBoundingClientRect();
+                const ratio = Math.max(0, Math.min(1, (point.clientX - rect.left) / rect.width));
+                userSlider.x = Math.round(ratio * 260);
+                updateUserPuzzle();
+            };
+            const up = async () => {
+                userSlider.dragging = false;
+                document.removeEventListener('mousemove', move);
+                document.removeEventListener('mouseup', up);
+                document.removeEventListener('touchmove', move);
+                document.removeEventListener('touchend', up);
+                await verifyUserSlider();
+            };
+            document.addEventListener('mousemove', move);
+            document.addEventListener('mouseup', up);
+            document.addEventListener('touchmove', move, { passive: false });
+            document.addEventListener('touchend', up);
+            move(e);
+        }
+        function saveSession(token, user) {
+            localStorage.setItem(TOKEN_KEY, token);
+            localStorage.setItem(USER_KEY, JSON.stringify(user || {}));
+        }
+        function getUser() {
+            try { return JSON.parse(localStorage.getItem(USER_KEY) || '{}'); } catch (_) { return {}; }
+        }
+        async function syncSessionToBackend() {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) return false;
+            try {
+                const res = await post('/api/auth/sync-session', {}, token);
+                if (res.code === 200) {
+                    if (res.user) localStorage.setItem(USER_KEY, JSON.stringify(res.user));
+                    return true;
+                }
+                if (res.code === 401 || res.code === 403) return handleAuthExpired(res.msg || '登录已过期，请重新登录');
+            } catch (_) { }
+            return false;
+        }
+        // 密码查看切换
+        document.addEventListener('click', function(e) {
+            if (e.target && e.target.classList && e.target.classList.contains('pwd-toggle')) {
+                const targetId = e.target.getAttribute('data-target');
+                const input = document.getElementById(targetId);
+                if (!input) return;
+                if (input.type === 'password') {
+                    input.type = 'text';
+                    e.target.textContent = '隐藏';
+                } else {
+                    input.type = 'password';
+                    e.target.textContent = '显示';
+                }
+            }
+        });
+
+        function importSessionFromQuery() {
+            const params = new URLSearchParams(location.search || '');
+            const token = params.get('token');
+            const userText = params.get('user');
+            initialUserSection = params.get('section') || initialUserSection || '';
+            if (!token) return false;
+            let user = {};
+            try { user = userText ? JSON.parse(userText) : {}; } catch (_) { user = {}; }
+            saveSession(token, user);
+            history.replaceState(null, '', '/user');
+            return true;
+        }
+        function showView(name) {
+            $('userApp').classList.remove('active');
+            document.querySelector('.shell').style.display = 'grid';
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === name));
+            const el = $(name);
+            if (el) el.classList.add('active');
+            const url = name === 'login' ? '/login' : name === 'register' ? '/register' : name === 'forgot' ? '/forgot' : '/user';
+            history.replaceState(null, '', url);
+            if (name === 'login' && (!userSlider.id || userSlider.verified)) initUserSlider();
+        }
+        function handleAuthExpired(text) {
+            localStorage.removeItem(TOKEN_KEY);
+            localStorage.removeItem(USER_KEY);
+            cloudSettings = {};
+            showView('login');
+            msg('loginMsg', text || '登录已过期，请重新登录', false);
+            return false;
+        }
+        async function showDashboard() {
+            await syncSessionToBackend();
+            const user = getUser();
+            $('userName').textContent = '用户：' + (user.username || '-');
+            $('userEmail').textContent = '邮箱：' + (user.email || '-');
+            $('sideUserName').textContent = '用户：' + (user.username || '-');
+            $('accountName').textContent = user.username || '-';
+            $('accountEmail').textContent = user.email || '-';
+            $('accountVerified').textContent = user.is_verified === false ? '未验证' : '已验证';
+            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelector('.shell').style.display = 'none';
+            $('userApp').classList.add('active');
+            if (!profileTimer) profileTimer = setInterval(loadProfile, 8000);
+            const section = ['home', 'account', 'billing', 'model', 'script', 'consumption'].includes(initialUserSection) ? initialUserSection : 'home';
+            initialUserSection = '';
+            showUserSection(section);
+            history.replaceState(null, '', '/user');
+            await loadModels();
+            await loadScriptSettings();
+            await loadProfile();
+            await loadDashboard();
+            await loadScriptKey(false);
+            await loadPlans();
+        }
+        async function loadModels() {
+            try {
+                const res = await fetch('/api/v1/auth');
+                const data = await res.json();
+                if ($('webModel')) $('webModel').innerHTML = data.data && data.data.models ? data.data.models : '<option value="">暂无模型，请联系管理员配置</option>';
+                const saved = localStorage.getItem(MODEL_KEY);
+                if (saved && $('webModel')) $('webModel').value = saved;
+            } catch (_) {
+                if ($('webModel')) $('webModel').innerHTML = '<option value="">模型列表加载失败</option>';
+            }
+        }
+        function showUserSection(name) {
+            const titles = {
+                home: ['首页', '查看账号状态、答题统计和活动趋势。'],
+                consumption: ['消费记录', '查看充值记录、消费明细和订单状态。'],
+                account: ['账号信息', '查看当前登录账号与邮箱状态。'],
+                billing: ['套餐购买', '购买包月或题数套餐，权益可叠加保留。'],
+                model: ['模型设置', '配置自动模型或自有模型。'],
+                script: ['脚本设置', '编辑脚本同步到账号的云端记忆。']
+            };
+            document.querySelectorAll('.user-section').forEach(v => v.classList.remove('active'));
+            document.querySelectorAll('.user-menu-item[data-section]').forEach(v => v.classList.toggle('active', v.dataset.section === name));
+            const el = $('section-' + name);
+            if (el) el.classList.add('active');
+            setPageTitle((titles[name] || titles.home)[0], (titles[name] || titles.home)[1]);
+            if (name === 'script') loadScriptSettings();
+            if (name === 'model') loadScriptSettings();
+            if (name === 'account') loadScriptKey(false);
+            if (name === 'home') loadDashboard();
+            if (name === 'consumption') loadDashboard();
+            if (name === 'billing') { loadProfile(); loadPlans(); }
+        }
+        let dashboardTimer = null;
+        async function loadDashboard() {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) return;
+            try {
+                const res = await fetch('/api/user/dashboard', { headers: { Authorization: 'Bearer ' + token } });
+                const data = await res.json().catch(() => ({}));
+                if (data.code !== 200) return;
+                const d = data.dashboard || {};
+                // 答题统计
+                const u = d.usage || {};
+                $('dashTotalAnswers').textContent = u.total_answers || 0;
+                $('dashBankHits').textContent = u.bank_hits || 0;
+                $('dashHitRate').textContent = (u.bank_hit_rate || 0) + '%';
+                $('dashAiAnswers').textContent = u.ai_answers || 0;
+                // 今日数据
+                const t = d.today || {};
+                $('dashTodayAnswers').textContent = t.answers || 0;
+                $('dashTodayVideos').textContent = t.videos || 0;
+                $('dashTodayLives').textContent = t.lives || 0;
+                $('dashTodayExams').textContent = t.exams || 0;
+                $('dashTodayReadings').textContent = t.readings || 0;
+                // 消费
+                const c = d.consumption || {};
+                $('dashTotalRecharged').textContent = '¥' + (c.total_recharged || 0).toFixed(2);
+                // 消费明细
+                const ut = $('dashUsageTable').querySelector('tbody');
+                ut.innerHTML = (c.usage_breakdown || []).length
+                    ? c.usage_breakdown.map(r => '<tr><td>' + (r.reason || '-') + '</td><td>' + r.count + '</td></tr>').join('')
+                    : '<tr><td colspan="2" style="text-align:center;color:var(--v-muted)">暂无消费记录</td></tr>';
+                // 最近订单
+                const ot = $('dashOrderTable').querySelector('tbody');
+                ot.innerHTML = (c.recent_orders || []).length
+                    ? c.recent_orders.map(o => '<tr><td>' + (o.plan_name || '-') + '</td><td>¥' + (o.price || 0).toFixed(2) + '</td><td class="tag-' + (o.status === 'paid' ? 'paid' : 'pending') + '">' + (o.status === 'paid' ? '已支付' : o.status || '-') + '</td><td>' + (o.created_at || '-') + '</td></tr>').join('')
+                    : '<tr><td colspan="4" style="text-align:center;color:var(--v-muted)">暂无订单</td></tr>';
+                // 图表
+                renderLineChart('answerChart', d.answers_7d || [], ['bank', 'ai'], ['#10b981', '#06b6d4'], ['题库', 'AI']);
+                renderLineChart('activityChart', d.activity_7d || [], ['answers', 'videos', 'exams', 'readings'], ['#10b981', '#06b6d4', '#34d399', '#67e8f9'], ['答题', '视频', '考试', '阅读']);
+            } catch (_) {}
+            // 自动刷新：每30秒刷新一次dashboard数据
+            if (dashboardTimer) clearInterval(dashboardTimer);
+            dashboardTimer = setTimeout(function autoRefresh() {
+                loadDashboard();
+                dashboardTimer = setTimeout(autoRefresh, 30000);
+            }, 30000);
+        }
+
+        function renderLineChart(svgId, data, keys, colors, labels) {
+            const svg = document.getElementById(svgId);
+            if (!svg) return;
+            const W = 700, H = 240, PL = 40, PR = 20, PT = 30, PB = 35;
+            const cw = W - PL - PR, ch = H - PT - PB;
+            let html = '';
+            // 背景网格
+            for (let i = 0; i <= 4; i++) {
+                const y = PT + (ch / 4) * i;
+                html += '<line x1="' + PL + '" y1="' + y + '" x2="' + (W - PR) + '" y2="' + y + '" stroke="#eee" stroke-width="1"/>';
+            }
+            // 计算最大值
+            let maxVal = 1;
+            data.forEach(d => keys.forEach(k => { if (d[k] > maxVal) maxVal = d[k]; }));
+            // 日期标签
+            const n = data.length || 1;
+            const step = cw / Math.max(n - 1, 1);
+            data.forEach((d, i) => {
+                const x = PL + step * i;
+                html += '<text x="' + x + '" y="' + (H - 10) + '" text-anchor="middle" fill="#999" font-size="11">' + (d.date || '') + '</text>';
+            });
+            // Y轴标签
+            for (let i = 0; i <= 4; i++) {
+                const val = Math.round(maxVal * (1 - i / 4));
+                const y = PT + (ch / 4) * i;
+                html += '<text x="' + (PL - 6) + '" y="' + (y + 4) + '" text-anchor="end" fill="#999" font-size="11">' + val + '</text>';
+            }
+            // 折线
+            keys.forEach((k, ki) => {
+                let pts = '';
+                data.forEach((d, i) => {
+                    const x = PL + step * i;
+                    const y = PT + ch - (d[k] / maxVal) * ch;
+                    pts += (i === 0 ? 'M' : 'L') + x + ',' + y + ' ';
+                    html += '<circle cx="' + x + '" cy="' + y + '" r="3" fill="' + colors[ki] + '"/>';
+                });
+                html += '<path d="' + pts + '" fill="none" stroke="' + colors[ki] + '" stroke-width="2" stroke-linejoin="round"/>';
+            });
+            // 图例
+            labels.forEach((lb, i) => {
+                const lx = PL + i * 80;
+                html += '<rect x="' + lx + '" y="8" width="12" height="3" rx="1.5" fill="' + colors[i] + '"/>';
+                html += '<text x="' + (lx + 18) + '" y="13" fill="#666" font-size="11">' + lb + '</text>';
+            });
+            // 空数据提示
+            if (!data.length) {
+                html += '<text x="' + (W / 2) + '" y="' + (H / 2) + '" text-anchor="middle" fill="#ccc" font-size="14">暂无数据</text>';
+            }
+            svg.innerHTML = html;
+        }
+        function fillProfile(profile) {
+            if (!profile) return;
+            const points = String(profile.points_balance || 0);
+            const member = profile.active_member ? '包月中' : '未开通';
+            const until = profile.member_until || '未开通';
+            $('statPoints').textContent = points;
+            $('statMember').textContent = member;
+            $('statMemberUntil').textContent = profile.active_member ? ('到期：' + until) : '购买包月后显示到期时间';
+            $('statStatus').textContent = profile.is_banned ? '已封禁' : '正常';
+            $('accountPoints').textContent = points;
+            $('accountMemberUntil').textContent = until;
+            $('billingPoints').textContent = points;
+            $('billingMemberUntil').textContent = until;
+            if (profile.email) $('accountEmail').textContent = profile.email;
+        }
+        let payMethodsList = [];
+        let currentPayMethod = 'wechat';
+        let payPollTimer = null;
+        async function loadProfile() {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) return false;
+            try {
+                const res = await fetch('/api/user/profile', { headers: { Authorization: 'Bearer ' + token } });
+                const data = await res.json().catch(() => ({}));
+                if (data.code === 200) fillProfile(data.profile);
+                return data.code === 200;
+            } catch (_) { return false; }
+        }
+        async function loadScriptKey(showMessage) {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) {
+                if (showMessage) msg('scriptKeyMsg', '请先登录后再生成脚本密钥', false);
+                return false;
+            }
+            try {
+                const res = await fetch('/api/user/script-key', { headers: { Authorization: 'Bearer ' + token } });
+                const data = await res.json().catch(() => ({}));
+                if (data.code === 200 && data.script_key) {
+                    $('scriptKeyInput').value = data.script_key;
+                    $('scriptKeyTip').textContent = '密钥有效期 ' + (data.expires_in_days || 180) + ' 天。复制后填入 ABC 脚本“配置密钥”的“密钥”栏。';
+                    if (showMessage) msg('scriptKeyMsg', '脚本密钥已生成，请复制后填入脚本配置', true);
+                    return true;
+                }
+                if (data.code === 401 || data.code === 403) return handleAuthExpired(data.msg || '登录已过期，请重新登录');
+                if (showMessage) msg('scriptKeyMsg', data.msg || '脚本密钥生成失败', false);
+            } catch (_) {
+                if (showMessage) msg('scriptKeyMsg', '脚本密钥生成失败，请检查后端服务是否运行', false);
+            }
+            return false;
+        }
+        async function regenerateScriptKey() {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) return msg('scriptKeyMsg', '请先登录', false);
+            setBusy($('regenScriptKeyBtn'), true, '生成中...');
+            try {
+                const res = await post('/api/user/script-key/regenerate', {}, token);
+                if (res.code === 200 && res.script_key) {
+                    $('scriptKeyInput').value = res.script_key;
+                    $('scriptKeyTip').textContent = '密钥有效期 ' + (res.expires_in_days || 180) + ' 天。请把新密钥重新填入脚本设置。';
+                    msg('scriptKeyMsg', '脚本密钥已生成，请复制后填入脚本配置', true);
+                } else {
+                    if (res.code === 401 || res.code === 403) return handleAuthExpired(res.msg || '登录已过期，请重新登录');
+                    msg('scriptKeyMsg', res.msg || '脚本密钥生成失败', false);
+                }
+            } catch (_) {
+                msg('scriptKeyMsg', '脚本密钥生成失败，请检查后端服务是否运行', false);
+            } finally {
+                setBusy($('regenScriptKeyBtn'), false);
+            }
+        }
+        async function loadPlans() {
+            try {
+                await loadPaymentMethods();
+                const res = await fetch('/api/payment/plans');
+                const data = await res.json();
+                const plans = data.plans || [];
+                $('planGrid').innerHTML = plans.length ? plans.map(p => {
+                    const isMonthly = p.plan_type === 'monthly';
+                    const features = isMonthly ? [
+                        '有效期内不限题数，畅刷无忧',
+                        'AI 智能答题 + 海量题库',
+                        '视频音频自动倍速完成',
+                        '作业考试自动答题提交',
+                        '题数余额永久保留不扣减'
+                    ] : [
+                        '购买后实时到账，立即使用',
+                        'AI 智能答题 + 海量题库',
+                        '包月期间不消耗题数',
+                        '永久有效，用完为止',
+                        '支持所有题型自动解答'
+                    ];
+                    const featHtml = features.map(f => `<li><span class="fi">✓</span>${f}</li>`).join('');
+                    return `
+                    <div class="plan-card ${isMonthly ? 'monthly' : 'points'}">
+                        ${isMonthly ? '<span class="plan-tag">推荐</span>' : ''}
+                        <span class="plan-badge">${isMonthly ? '包月畅答' : '题数加油包'}</span>
+                        <b>${p.name}</b>
+                        <div class="plan-price">￥${p.price || 0}<small> / ${isMonthly ? (p.days || 30) + '天' : (p.points || 0) + '题'}</small></div>
+                        <ul class="plan-features">${featHtml}</ul>
+                        <button class="primary" data-buy-plan="${p.id}" data-plan-price="${p.price || 0}">${isMonthly ? '立即开通包月' : '立即购买题数'}</button>
+                    </div>`;
+                }).join('') : '<p class="hint">暂无可购买套餐，请联系管理员配置。</p>';
+                document.querySelectorAll('[data-buy-plan]').forEach(btn => btn.onclick = () => buyPlan(btn.dataset.buyPlan, btn, Number(btn.dataset.planPrice || 0)));
+            } catch (_) {
+                $('planGrid').innerHTML = '<p class="hint">套餐加载失败，请稍后重试。</p>';
+            }
+        }
+        async function loadPaymentMethods() {
+            try {
+                const res = await fetch('/api/payment/methods');
+                const data = await res.json();
+                payMethodsList = data.methods || [];
+                // 默认微信支付
+                if (payMethodsList.length && !payMethodsList.find(m => m.value === currentPayMethod)) {
+                    currentPayMethod = (payMethodsList[0] || {}).value || 'wechat';
+                }
+                // 渲染带图标的支付方式卡片
+                const icons = {
+                    wechat: '<svg viewBox="0 0 1228 1024" width="28" height="28"><path d="M530.8928 703.1296a41.472 41.472 0 0 1-35.7376-19.8144l-2.7136-5.5808L278.272 394.752a18.7392 18.7392 0 0 1-2.048-8.1408 19.968 19.968 0 0 1 20.48-19.3536c4.608 0 8.8576 1.4336 12.288 3.84l234.3936 139.9296a64.4096 64.4096 0 0 0 54.528 5.9392L1116.2624 204.8C1004.9536 80.896 821.76 0 614.4 0 275.0464 0 0 216.576 0 483.6352c0 145.7152 82.7392 276.8896 212.2752 365.5168a38.1952 38.1952 0 0 1 17.2032 31.488 44.4928 44.4928 0 0 1-2.1504 12.3904l-27.6992 97.4848c-1.3312 4.608-3.328 9.3696-3.328 14.1312 0 10.752 9.216 19.3536 20.48 19.3536 4.4032 0 8.0384-1.536 11.776-3.584l134.5536-73.3184c10.1376-5.5296 20.7872-8.96 32.6144-8.96 6.2976 0 12.288 0.9216 18.0736 2.5088 62.72 17.0496 130.4576 26.5728 200.5504 26.5728C953.7024 967.168 1228.8 750.592 1228.8 483.6352c0-80.9472-25.4464-157.1328-70.0416-224.1024l-604.9792 436.992-4.4544 2.4064a42.1376 42.1376 0 0 1-18.432 4.1984z" fill="#15BA11"/></svg>',
+                    alipay: '<svg viewBox="0 0 1024 1024" width="28" height="28"><path d="M1024.0512 701.0304V196.864A196.9664 196.9664 0 0 0 827.136 0H196.864A196.9664 196.9664 0 0 0 0 196.864v630.272A196.9152 196.9152 0 0 0 196.864 1024h630.272a197.12 197.12 0 0 0 193.8432-162.0992c-52.224-22.6304-278.528-120.32-396.4416-176.64-89.7024 108.6976-183.7056 173.9264-325.3248 173.9264s-236.1856-87.2448-224.8192-194.048c7.4752-70.0416 55.552-184.576 264.2944-164.9664 110.08 10.3424 160.4096 30.8736 250.1632 60.5184 23.1936-42.5984 42.496-89.4464 57.1392-139.264H248.064v-39.424h196.9152V311.1424H204.8V267.776h240.128V165.632s2.1504-15.9744 19.8144-15.9744h98.4576V267.776h256v43.4176h-256V381.952h208.8448a805.9904 805.9904 0 0 1-84.8384 212.6848c60.672 22.016 336.7936 106.3936 336.7936 106.3936zM283.5456 791.6032c-149.6576 0-173.312-94.464-165.376-133.9392 7.8336-39.3216 51.2-90.624 134.4-90.624 95.5904 0 181.248 24.4736 284.0576 74.5472-72.192 94.0032-160.9216 150.016-253.0816 150.016z" fill="#009FE8"/></svg>'
+                };
+                $('payMethods').innerHTML = payMethodsList.length ? payMethodsList.map(m => {
+                    const checked = m.value === currentPayMethod ? 'checked' : '';
+                    return `<label class="pay-method-card ${checked ? 'active' : ''}" data-pay-method="${m.value}">
+                        <span class="pm-icon">${icons[m.value] || ''}</span>
+                        <span class="pm-label">${m.label}</span>
+                        <span class="pm-check">${checked ? '✓' : ''}</span>
+                    </label>`;
+                }).join('') : '<p class="hint">暂无可用支付方式，请联系管理员配置支付通道。</p>';
+                document.querySelectorAll('.pay-method-card').forEach(el => el.onclick = () => {
+                    currentPayMethod = el.dataset.payMethod;
+                    document.querySelectorAll('.pay-method-card').forEach(c => { c.classList.remove('active'); c.querySelector('.pm-check').textContent = ''; });
+                    el.classList.add('active');
+                    el.querySelector('.pm-check').textContent = '✓';
+                });
+            } catch (_) {
+                $('payMethods').innerHTML = '<p class="hint">支付方式加载失败，请稍后重试。</p>';
+            }
+        }
+        async function buyPlan(planId, btn, price) {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) return msg('billingMsg', '请先登录', false);
+            if (Number(price || 0) > 0 && !payMethodsList.length) return msg('billingMsg', '暂无可用支付方式，请联系管理员启用支付通道', false);
+            setBusy(btn, true, '购买中...');
+            try {
+                const res = await post('/api/payment/purchase', { plan_id: Number(planId), pay_method: currentPayMethod }, token);
+                if (res.code === 200) {
+                    if (res.paying) {
+                        if (res.pay_url) {
+                            showPayQr(res.order_no, null, res.pay_url);
+                            msg('billingMsg', res.msg || '订单已创建，请点击支付链接完成付款', true);
+                        } else if (res.qr_code) {
+                            showPayQr(res.order_no, res.qr_code, null);
+                            msg('billingMsg', res.msg || '订单已创建，请扫码付款', true);
+                        } else {
+                            msg('billingMsg', res.msg || '订单已创建', true);
+                        }
+                    } else {
+                        fillProfile(res.profile);
+                        msg('billingMsg', res.msg || '购买成功，权益已到账', true);
+                    }
+                } else {
+                    msg('billingMsg', res.msg || '购买失败', false);
+                }
+            } catch (_) { msg('billingMsg', '购买失败，请检查后端服务是否运行', false); }
+            finally { setBusy(btn, false); }
+        }
+        function renderPayPanel(orderNo, qrCode, payUrl) {
+            const img = $('payQrImg');
+            const actions = $('payQrActions');
+            const title = $('payQrTitle');
+            if (qrCode) {
+                title.textContent = '请扫码完成付款';
+                img.style.display = '';
+                img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=' + encodeURIComponent(qrCode);
+                actions.innerHTML = '';
+                actions.style.display = 'none';
+            } else if (payUrl) {
+                title.textContent = '请点击下方按钮前往支付';
+                img.style.display = 'none';
+                img.removeAttribute('src');
+                actions.style.display = '';
+                actions.innerHTML = `<a class="qr-link-btn" href="${payUrl}" target="_blank" rel="noopener noreferrer">前往支付页面</a>`;
+            }
+            $('payQrTip').textContent = '订单号：' + orderNo + '，付款完成后系统会自动确认到账。';
+        }
+        function showPayQr(orderNo, qrCode, payUrl) {
+            if (payPollTimer) clearInterval(payPollTimer);
+            $('qrPanel').classList.add('active');
+            renderPayPanel(orderNo, qrCode, payUrl);
+            payPollTimer = setInterval(() => checkOrderStatus(orderNo), 3000);
+            checkOrderStatus(orderNo);
+        }
+        async function checkOrderStatus(orderNo) {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) return;
+            try {
+                const res = await fetch('/api/payment/order-status?order_no=' + encodeURIComponent(orderNo), { headers: { Authorization: 'Bearer ' + token } });
+                const data = await res.json().catch(() => ({}));
+                if (data.paid) {
+                    if (payPollTimer) clearInterval(payPollTimer);
+                    payPollTimer = null;
+                    $('qrPanel').classList.remove('active');
+                    fillProfile(data.profile);
+                    msg('billingMsg', data.msg || '支付成功，权益已到账', true);
+                } else {
+                    const img = $('payQrImg');
+                    const actions = $('payQrActions');
+                    const inQrMode = img.style.display !== 'none' && img.getAttribute('src');
+                    const inUrlMode = actions.style.display !== 'none' && actions.innerHTML;
+                    if (data.pay_url && !inUrlMode) {
+                        renderPayPanel(orderNo, null, data.pay_url);
+                    } else if (data.qr_code && !inQrMode) {
+                        renderPayPanel(orderNo, data.qr_code, null);
+                    }
+                    if (data.msg) {
+                        $('payQrTip').textContent = data.msg + '，请完成付款。';
+                    }
+                }
+            } catch (_) { }
+        }
+        function boolValue(v) { return String(v) === 'true'; }
+        function abcValue(settings, section, key, fallback) {
+            const abc = settings.abcConfig || {};
+            if (abc[section] && abc[section][key] !== undefined) return abc[section][key];
+            return fallback;
+        }
+        function updateModelModeView() {
+            const isCustom = $('ucModelCustom').checked;
+            $('customModelBox').classList.toggle('hidden', !isCustom);
+            $('backendModelTip').classList.toggle('active', !isCustom);
+        }
+        function fillCloudForms(settings) {
+            const mode = settings.modelMode || settings.model || 'auto';
+            $('ucModelAuto').checked = mode !== 'custom';
+            $('ucModelCustom').checked = mode === 'custom';
+            $('ucCustomProtocol').value = settings.customProtocol || 'openai';
+            $('ucCustomBaseUrl').value = settings.customBaseUrl || '';
+            $('ucCustomModel').value = settings.customModel || '';
+            $('ucCustomApiKey').value = settings.customApiKey || '';
+            $('abcAnswerMode').value = abcValue(settings, 'basicConfig', 'answerMode', 'questionBankAndAI');
+            $('abcReqIntervalTime').value = abcValue(settings, 'basicConfig', 'reqIntervalTime', 2);
+            $('abcVideoPlayrate').value = String(abcValue(settings, 'basicConfig', 'videoPlayrate', 2));
+            $('abcAccuracy').value = abcValue(settings, 'basicConfig', 'accuracy', 80);
+            $('abcAutoAnswer').checked = !!abcValue(settings, 'basicConfig', 'autoAnswer', true);
+            $('abcAutoSubmit').checked = !!abcValue(settings, 'basicConfig', 'autoSubmit', true);
+            $('abcAutoNextChapter').checked = !!abcValue(settings, 'basicConfig', 'autoChangeChapter', true);
+            $('abcAutoSubmitPapers').checked = !!abcValue(settings, 'examConfig', 'autoSubmit', false);
+            $('abcAutoRefresh').checked = !!abcValue(settings, 'basicConfig', 'autoRefresh', true);
+            $('abcSearchBySelectedText').checked = !!abcValue(settings, 'searchConfig', 'searchBySelectedText', false);
+            $('abcShowCustomEditor').checked = !!abcValue(settings, 'cxConfig', 'showCustomEditor', true);
+            $('abcFaceRecognitionNotify').checked = !!abcValue(settings, 'cxConfig', 'faceRecognitionNotify', true);
+            $('statModel').textContent = mode === 'custom' ? '自有模型' : '自动模型';
+            updateModelModeView();
+        }
+        async function loadScriptSettings(msgId) {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) {
+                if (msgId) msg(msgId, '请先登录', false);
+                return false;
+            }
+            try {
+                const res = await fetch('/api/user/settings', { headers: { Authorization: 'Bearer ' + token } });
+                const data = await res.json().catch(() => ({}));
+                if (res.status === 401 || res.status === 403 || data.code === 401 || data.code === 403) return handleAuthExpired(data.msg || '登录已过期，请重新登录');
+                if (!res.ok) {
+                    if (msgId) msg(msgId, data.msg || '读取失败，请稍后重试', false);
+                    return false;
+                }
+                const settings = data.settings || {};
+                cloudSettings = { ...settings };
+                const keys = Object.keys(settings);
+                $('statSettings').textContent = String(keys.length);
+                $('statSync').textContent = keys.length ? '已同步' : '未上传';
+                fillCloudForms(settings);
+                if (msgId) msg(msgId, '云端设置读取成功', true);
+                return true;
+            } catch (_) {
+                if (msgId) msg(msgId, '脚本设置读取失败，请检查后端服务是否运行', false);
+                return false;
+            }
+        }
+        async function saveCloudSettings(patch, msgId, okText) {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) return msg(msgId, '请先登录', false);
+            try {
+                const settings = { ...cloudSettings, ...patch };
+                const res = await post('/api/user/settings', { settings }, token);
+                if (res.code === 200) {
+                    cloudSettings = settings;
+                    fillCloudForms(settings);
+                    $('statSettings').textContent = String(Object.keys(settings).length);
+                    $('statSync').textContent = '已同步';
+                    msg(msgId, okText || '保存成功，脚本下次同步后生效', true);
+                    return true;
+                } else {
+                    if (res.code === 401 || res.code === 403) return handleAuthExpired(res.msg || '登录已过期，请重新登录');
+                    msg(msgId, res.msg || '保存失败', false);
+                    return false;
+                }
+            } catch (_) {
+                msg(msgId, '保存失败，请检查后端服务是否运行', false);
+                return false;
+            }
+        }
+        async function syncSystemKeepAwake(enabled, msgId) {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) return false;
+            try {
+                const res = await post('/api/power/keep-awake', { enabled: !!enabled }, token);
+                if (res.code === 200) {
+                    if (msgId) msg(msgId, res.msg || (enabled ? '系统级防休眠/防息屏已开启' : '系统级防休眠/防息屏已关闭'), true);
+                    return true;
+                }
+                if (msgId) msg(msgId, res.msg || '系统级防休眠设置失败', false);
+            } catch (_) {
+                if (msgId) msg(msgId, '系统级防休眠接口调用失败，请检查后端服务是否运行', false);
+            }
+            return false;
+        }
+        function collectModelSettings() {
+            const mode = $('ucModelCustom').checked ? 'custom' : 'auto';
+            if (mode === 'custom') {
+                if (!$('ucCustomBaseUrl').value.trim()) {
+                    msg('modelPanelMsg', '请填写自有模型 Base URL', false);
+                    return null;
+                }
+                if (!$('ucCustomModel').value.trim()) {
+                    msg('modelPanelMsg', '请填写自有模型 ID', false);
+                    return null;
+                }
+                if (!$('ucCustomApiKey').value.trim()) {
+                    msg('modelPanelMsg', '请填写自有模型 API Key', false);
+                    return null;
+                }
+            }
+            return {
+                modelMode: mode,
+                model: mode,
+                customProtocol: $('ucCustomProtocol').value || 'openai',
+                customBaseUrl: $('ucCustomBaseUrl').value.trim(),
+                customModel: $('ucCustomModel').value.trim(),
+                customApiKey: $('ucCustomApiKey').value.trim()
+            };
+        }
+        function collectScriptSettings() {
+            return {
+                abcConfig: {
+                    basicConfig: {
+                        answerMode: $('abcAnswerMode').value || 'questionBankAndAI',
+                        reqIntervalTime: Number($('abcReqIntervalTime').value || 2),
+                        videoPlayrate: Number($('abcVideoPlayrate').value || 2),
+                        accuracy: Number($('abcAccuracy').value || 80),
+                        autoSubmit: $('abcAutoSubmit').checked,
+                        autoChangeChapter: $('abcAutoNextChapter').checked,
+                        autoAnswer: $('abcAutoAnswer').checked,
+                        autoRefresh: $('abcAutoRefresh').checked
+                    },
+                    examConfig: {
+                        autoSubmit: $('abcAutoSubmitPapers').checked
+                    },
+                    cxConfig: {
+                        faceRecognitionNotify: $('abcFaceRecognitionNotify').checked,
+                        showCustomEditor: $('abcShowCustomEditor').checked
+                    },
+                    searchConfig: {
+                        searchBySelectedText: $('abcSearchBySelectedText').checked
+                    }
+                }
+            };
+        }
+        function startByPath() {
+            try {
+                const section = new URLSearchParams(location.search || '').get('section');
+                if (section) initialUserSection = section;
+            } catch (_) { }
+            if (importSessionFromQuery()) return showDashboard();
+            const token = localStorage.getItem(TOKEN_KEY);
+            const path = location.pathname;
+            if (token && (path === '/' || path === '/user' || path === '/user/')) return showDashboard();
+            if (path === '/register') return showView('register');
+            if (path === '/forgot') return showView('forgot');
+            showView('login');
+        }
+
+        document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', () => showView(btn.dataset.view)));
+        document.querySelectorAll('[data-jump]').forEach(a => a.addEventListener('click', () => showView(a.dataset.jump)));
+        document.querySelectorAll('.user-menu-item[data-section]').forEach(btn => btn.addEventListener('click', () => showUserSection(btn.dataset.section)));
+        $('userPuzzleThumb').addEventListener('mousedown', beginUserPuzzle);
+        $('userPuzzleThumb').addEventListener('touchstart', function(e){ e.preventDefault(); beginUserPuzzle(e); });
+        ['loginUser', 'loginPwd'].forEach(id => {
+            $(id).addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    $('loginBtn').click();
+                }
+            });
+        });
+        ['regUser', 'regEmail', 'regCode', 'regPwd'].forEach(id => {
+            $(id).addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    $('regBtn').click();
+                }
+            });
+        });
+        ['resetEmail', 'resetCode', 'resetPwd'].forEach(id => {
+            $(id).addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    $('resetBtn').click();
+                }
+            });
+        });
+        $('refreshUserBtn').onclick = async function () {
+            setBusy(this, true, '刷新中...');
+            msg('homeMsg', '正在刷新用户数据...', true);
+            try {
+                await loadModels();
+                const ok = await loadScriptSettings();
+                await loadProfile();
+                await loadDashboard();
+                await loadPlans();
+                msg('homeMsg', ok ? '用户数据刷新成功' : '用户数据刷新失败', !!ok);
+            } catch (_) {
+                msg('homeMsg', '刷新失败，请检查后端服务是否运行', false);
+            }
+            setBusy(this, false);
+        };
+
+        $('loginBtn').onclick = async function () {
+            const username = $('loginUser').value.trim();
+            const password = $('loginPwd').value.trim();
+            if (!username || !password) return msg('loginMsg', '请填写用户名和密码', false);
+            const sliderOk = await ensureUserSliderVerified();
+            if (!sliderOk) return resetUserSlider('请重新完成滑块验证');
+            setBusy(this, true, '登录中...');
+            try {
+                // 安全：密码前端 SHA-256 加密传输，避免明文被抓包
+                const encoder = new TextEncoder();
+                const hashBuf = await crypto.subtle.digest('SHA-256', encoder.encode(password));
+                const passwordHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+                const res = await post('/api/auth/login', { username, password_hash: passwordHash, login_scene: 'web', slider_token: userSlider.token });
+                if (res.code === 200) {
+                    saveSession(res.token, res.user);
+                    msg('loginMsg', '登录成功', true);
+                    setTimeout(showDashboard, 350);
+                } else { await resetUserSlider(res.msg || '登录失败，请重新完成滑块验证'); }
+            } catch (_) { await resetUserSlider('网络请求失败，请重新完成滑块验证'); }
+            setBusy(this, false);
+        };
+
+        $('regCodeBtn').onclick = async function () {
+            const email = $('regEmail').value.trim();
+            if (!email) return msg('regMsg', '请先填写邮箱', false);
+            setBusy(this, true, '发送中...');
+            try {
+                const res = await post('/api/auth/send-verify', { email, type: 'register' });
+                msg('regMsg', res.msg || '验证码已发送', res.code === 200);
+            } catch (_) { msg('regMsg', '网络请求失败', false); }
+            setBusy(this, false);
+        };
+
+        $('regBtn').onclick = async function () {
+            const rawPwd = $('regPwd').value.trim();
+            const data = {
+                username: $('regUser').value.trim(),
+                email: $('regEmail').value.trim(),
+                code: $('regCode').value.trim()
+            };
+            if (!data.username || !data.email || !data.code || !rawPwd) return msg('regMsg', '请填写完整注册信息', false);
+            setBusy(this, true, '注册中...');
+            try {
+                // 安全：密码前端 SHA-256 加密传输
+                const encoder = new TextEncoder();
+                const hashBuf = await crypto.subtle.digest('SHA-256', encoder.encode(rawPwd));
+                data.password_hash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+                const res = await post('/api/auth/register', data);
+                if (res.code === 200) {
+                    saveSession(res.token, res.user || { username: data.username, email: data.email });
+                    msg('regMsg', '注册成功，正在进入用户中心', true);
+                    setTimeout(showDashboard, 450);
+                } else msg('regMsg', res.msg || '注册失败', false);
+            } catch (_) { msg('regMsg', '网络请求失败', false); }
+            setBusy(this, false);
+        };
+
+        $('resetCodeBtn').onclick = async function () {
+            const email = $('resetEmail').value.trim();
+            if (!email) return msg('resetMsg', '请先填写邮箱', false);
+            setBusy(this, true, '发送中...');
+            try {
+                const res = await post('/api/auth/send-verify', { email, type: 'reset' });
+                msg('resetMsg', res.msg || '验证码已发送', res.code === 200);
+            } catch (_) { msg('resetMsg', '网络请求失败', false); }
+            setBusy(this, false);
+        };
+
+        $('resetBtn').onclick = async function () {
+            const rawPwd = $('resetPwd').value.trim();
+            const data = {
+                email: $('resetEmail').value.trim(),
+                code: $('resetCode').value.trim()
+            };
+            if (!data.email || !data.code || !rawPwd) return msg('resetMsg', '请填写完整重置信息', false);
+            setBusy(this, true, '重置中...');
+            try {
+                // 安全：密码前端 SHA-256 加密传输
+                const encoder = new TextEncoder();
+                const hashBuf = await crypto.subtle.digest('SHA-256', encoder.encode(rawPwd));
+                data.new_password_hash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
+                const res = await post('/api/auth/reset-password', data);
+                if (res.code === 200) {
+                    msg('resetMsg', '密码重置成功，请重新登录', true);
+                    setTimeout(() => showView('login'), 650);
+                } else msg('resetMsg', res.msg || '重置失败', false);
+            } catch (_) { msg('resetMsg', '网络请求失败', false); }
+            setBusy(this, false);
+        };
+
+        $('saveModelBtn').onclick = function () {
+            setBusy(this, true, '保存中...');
+            try {
+                const value = $('webModel').value || '';
+                if (!$('webModel').options.length) {
+                    msg('dashMsg', '暂无可保存的模型，请先联系管理员配置模型', false);
+                    return;
+                }
+                localStorage.setItem(MODEL_KEY, value);
+                $('statModel').textContent = value || '自动';
+                msg('dashMsg', '网页端模型选择已保存。脚本内模型仍可在脚本浮窗单独选择。', true);
+            } catch (_) {
+                msg('dashMsg', '保存失败，请刷新页面后重试', false);
+            } finally {
+                setBusy(this, false);
+            }
+        };
+        $('saveModelPanelBtn').onclick = async function () {
+            setBusy(this, true, '保存中...');
+            msg('modelPanelMsg', '正在保存模型设置...', true);
+            const modelSettings = collectModelSettings();
+            if (modelSettings) await saveCloudSettings(modelSettings, 'modelPanelMsg', '模型设置已保存，脚本同步后生效');
+            setBusy(this, false);
+        };
+        $('ucModelAuto').onchange = updateModelModeView;
+        $('ucModelCustom').onchange = updateModelModeView;
+        $('saveScriptSettingsBtn').onclick = async function () {
+            setBusy(this, true, '保存中...');
+            msg('settingsMsg', '正在保存脚本设置...', true);
+            const scriptSettings = collectScriptSettings();
+            const ok = await saveCloudSettings(scriptSettings, 'settingsMsg', '脚本设置已保存，脚本同步后生效');
+            if (ok && scriptSettings.preventSleep === 'true') {
+                await syncSystemKeepAwake(true, 'settingsMsg');
+            } else if (ok) {
+                await syncSystemKeepAwake(false, 'settingsMsg');
+            }
+            setBusy(this, false);
+        };
+        $('reloadSettingsBtn').onclick = async function () {
+            setBusy(this, true, '读取中...');
+            msg('settingsMsg', '正在读取云端设置...', true);
+            await loadScriptSettings('settingsMsg');
+            setBusy(this, false);
+        };
+        $('copyScriptKeyBtn').onclick = async function () {
+            const key = $('scriptKeyInput').value.trim();
+            if (!key) {
+                await loadScriptKey(true);
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(key);
+                msg('scriptKeyMsg', '已复制密钥，请回到 ABC 脚本“配置密钥”页面粘贴', true);
+            } catch (_) {
+                $('scriptKeyInput').select();
+                document.execCommand('copy');
+                msg('scriptKeyMsg', '已选中密钥，如未复制请手动 Ctrl+C', true);
+            }
+        };
+        $('regenScriptKeyBtn').onclick = regenerateScriptKey;
+        async function logout() {
+            if (profileTimer) { clearInterval(profileTimer); profileTimer = null; }
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (token) {
+                try { await post('/api/auth/logout', {}, token); } catch (_) { }
+            }
+            localStorage.removeItem(TOKEN_KEY);
+            localStorage.removeItem(USER_KEY);
+            showView('login');
+            msg('loginMsg', '已退出登录', true);
+        }
+        $('logoutBtn').onclick = logout;
+        $('sideLogoutBtn').onclick = logout;
+
+        initUserSlider();
+        startByPath();
+    </script>
+</body>
+</html>

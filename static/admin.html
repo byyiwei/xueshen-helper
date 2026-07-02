@@ -1,0 +1,2191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>学神助手 - AI 后端管理</title>
+<script src="/static/vue.global.js?v=2"></script>
+<style>
+:root{
+  --bg:#0a0e1a;
+  --bg2:#111827;
+  --bg3:#1a2332;
+  --bg4:#0f1724;
+  --border:#1f2937;
+  --border2:#2d3a4f;
+  --text:#e5e7eb;
+  --text2:#9ca3af;
+  --text3:#6b7280;
+  --accent:#3b82f6;
+  --accent2:#60a5fa;
+  --success:#10b981;
+  --warn:#f59e0b;
+  --danger:#ef4444;
+  --radius:12px;
+  --radius-sm:8px;
+  --sidebar-w:220px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  font-family:'PingFang SC','Microsoft YaHei','Hiragino Sans GB','WenQuanYi Micro Hei',sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  min-height:100vh;
+  line-height:1.6;
+  overflow:hidden;
+}
+
+/* Layout */
+.app-layout{display:flex;height:100vh;overflow:hidden}
+
+/* Sidebar */
+.sidebar{
+  width:var(--sidebar-w);background:var(--bg2);
+  border-right:1px solid var(--border);display:flex;flex-direction:column;
+  flex-shrink:0;
+}
+.sidebar-header{
+  padding:20px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;gap:10px;
+}
+.sidebar-header .logo{
+  width:36px;height:36px;border-radius:10px;
+  background:var(--bg3);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;font-size:15px;color:var(--text);
+}
+.sidebar-header h1{font-size:14px;font-weight:700}
+.sidebar-header p{font-size:11px;color:var(--text2);margin-top:2px}
+.sidebar-menu{flex:1;padding:12px;overflow-y:auto}
+.menu-item{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 14px;border-radius:var(--radius-sm);
+  color:var(--text2);font-size:13px;cursor:pointer;
+  transition:all .2s;margin-bottom:4px;
+}
+.menu-item:hover{background:var(--bg3);color:var(--text)}
+.menu-item.active{background:rgba(59,130,246,.12);color:var(--accent2);font-weight:500}
+.menu-item .icon{width:20px;text-align:center;font-size:14px;color:currentColor;font-family:"SF Mono","Cascadia Code",Consolas,monospace}
+.profile-avatar img,.top-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+.profile-avatar{width:72px;height:72px;border-radius:22px;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:24px;color:var(--text2)}
+.avatar-row{display:flex;gap:16px;align-items:center;margin-bottom:16px}
+
+/* Main content */
+.main-content{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.main-header{
+  height:56px;background:var(--bg2);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;padding:0 96px 0 24px;
+  flex-shrink:0;position:relative;
+}
+.main-header h2{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
+.main-header .breadcrumb{font-size:13px;color:var(--text2)}
+.main-body{flex:1;overflow-y:auto;padding:24px}
+.top-account{position:fixed;right:22px;top:10px;z-index:80;padding-bottom:10px}
+.top-avatar{width:40px;height:40px;border-radius:16px;background:linear-gradient(135deg,var(--accent),#2563eb);border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;overflow:hidden;color:#fff;cursor:pointer;box-shadow:0 10px 24px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.22);transition:transform .18s,box-shadow .18s}
+.top-avatar:hover{transform:translateY(-1px);box-shadow:0 14px 30px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.25)}
+.top-menu{position:absolute;right:0;top:50px;min-width:156px;padding:8px;background:rgba(17,24,39,.98);border:1px solid rgba(96,165,250,.18);border-radius:16px;box-shadow:0 20px 48px rgba(0,0,0,.42);display:none}
+.top-menu::before{content:'';position:absolute;right:14px;top:-6px;width:10px;height:10px;background:rgba(17,24,39,.98);border-left:1px solid rgba(96,165,250,.18);border-top:1px solid rgba(96,165,250,.18);transform:rotate(45deg)}
+.top-account:hover .top-menu{display:block}
+.top-menu button{width:100%;display:flex;align-items:center;justify-content:flex-start;gap:8px;padding:9px 10px;border:0;border-radius:10px;background:transparent;color:var(--text2);cursor:pointer;font-size:13px}
+.top-menu button:hover{background:var(--bg3);color:var(--text)}
+.top-menu .danger{color:#fca5a5}
+
+/* Cards */
+.card{
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:var(--radius);margin-bottom:20px;overflow:hidden;
+}
+.card:hover{border-color:var(--border2)}
+.card-header{
+  padding:16px 20px;background:var(--bg3);
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  gap:12px;
+}
+.card-header h3{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
+.provider-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.card-body{padding:20px}
+
+/* Form */
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.form-group label{display:block;font-size:13px;font-weight:500;color:var(--text2);margin-bottom:6px}
+.form-group input,.form-group select,.form-group textarea{
+  width:100%;padding:10px 14px;background:var(--bg4);
+  border:1px solid var(--border);border-radius:var(--radius-sm);
+  color:var(--text);font-size:14px;
+  transition:border-color .2s,box-shadow .2s;
+}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{
+  outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(59,130,246,.15);
+}
+.form-group input::placeholder{color:var(--text3)}
+.form-group textarea{min-height:80px;resize:vertical}
+
+/* Toggle */
+.toggle{
+  width:44px;height:24px;border-radius:12px;background:var(--border2);
+  position:relative;cursor:pointer;transition:background .3s;
+}
+.toggle.on{background:var(--accent)}
+.toggle::after{
+  content:'';position:absolute;width:18px;height:18px;border-radius:50%;
+  background:#fff;top:3px;left:3px;transition:left .3s;
+  box-shadow:0 1px 4px rgba(0,0,0,.3);
+}
+.toggle.on::after{left:23px}
+
+/* Buttons */
+.btn{
+  padding:9px 18px;border:none;border-radius:var(--radius-sm);
+  font-size:13px;font-weight:500;cursor:pointer;transition:all .2s;
+}
+.btn:active{transform:scale(.97)}
+.btn-primary{
+  background:linear-gradient(135deg,var(--accent),#2563eb);color:#fff;
+}
+.btn-primary:hover{opacity:.9;box-shadow:0 4px 16px rgba(59,130,246,.3)}
+.btn-secondary{
+  background:var(--bg3);color:var(--text2);border:1px solid var(--border);
+}
+.btn-secondary:hover{border-color:var(--border2);color:var(--text)}
+.btn-success{background:var(--success);color:#fff}
+.btn-success:hover{opacity:.9}
+.btn-warning{background:var(--warn);color:#111827}
+.btn-warning:hover{opacity:.9}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-danger:hover{opacity:.9}
+.btn-sm{padding:6px 12px;font-size:12px}
+.btn-add{
+  width:100%;padding:10px;border:1px dashed var(--border2);border-radius:var(--radius-sm);
+  background:transparent;color:var(--text2);cursor:pointer;font-size:13px;
+  transition:all .2s;margin-top:6px;
+}
+.btn-add:hover{border-color:var(--accent);color:var(--accent)}
+
+/* Models */
+.models-title{font-size:13px;font-weight:500;color:var(--text2);margin:16px 0 10px}
+.model-row{
+  display:flex;align-items:center;gap:8px;
+  margin-bottom:8px;
+}
+.model-row input{
+  padding:8px 12px;background:var(--bg4);border:1px solid var(--border);
+  border-radius:var(--radius-sm);color:var(--text);font-size:13px;
+  box-sizing:border-box;
+}
+.model-row input:focus{outline:none;border-color:var(--accent)}
+.btn-del{
+  width:32px;height:32px;border:none;border-radius:6px;
+  background:transparent;color:var(--danger);cursor:pointer;font-size:16px;
+  display:flex;align-items:center;justify-content:center;transition:background .2s;
+  flex:none;
+}
+.btn-del:hover{background:rgba(239,68,68,.1)}
+
+/* Provider tag */
+.provider-tag{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:3px 10px;border-radius:20px;font-size:12px;font-weight:500;
+}
+.tag-openai{background:rgba(59,130,246,.1);color:var(--accent2);border:1px solid rgba(59,130,246,.2)}
+.tag-claude{background:rgba(245,158,11,.1);color:var(--warn);border:1px solid rgba(245,158,11,.2)}
+.tag-gemini{background:rgba(16,185,129,.1);color:var(--success);border:1px solid rgba(16,185,129,.2)}
+
+/* Message */
+.msg{
+  padding:10px 14px;border-radius:var(--radius-sm);font-size:13px;
+  margin-bottom:16px;display:none;animation:slideIn .3s ease;
+}
+.msg.show{display:block}
+.msg.success{background:rgba(16,185,129,.1);color:var(--success);border:1px solid rgba(16,185,129,.2)}
+.msg.error{background:rgba(239,68,68,.1);color:var(--danger);border:1px solid rgba(239,68,68,.2)}
+.msg.warn{background:rgba(245,158,11,.1);color:var(--warn);border:1px solid rgba(245,158,11,.2)}
+@keyframes slideIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+
+/* Status */
+.status-bar{
+  display:flex;align-items:center;gap:8px;padding:10px 14px;
+  background:var(--bg3);border-radius:var(--radius-sm);margin-bottom:16px;font-size:13px;
+}
+.status-dot{width:8px;height:8px;border-radius:50%}
+.status-dot.on{background:var(--success);box-shadow:0 0 8px rgba(16,185,129,.4)}
+.status-dot.off{background:var(--text3)}
+
+/* Modal */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.6);
+  display:flex;align-items:center;justify-content:center;z-index:9999;
+  padding:16px;overflow:auto;
+  animation:fadeIn .2s;
+}
+.modal{
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:var(--radius);width:min(480px,calc(100vw - 32px));max-width:480px;padding:24px;
+  animation:slideUp .3s;
+}
+.modal h3{margin-bottom:16px;font-size:17px}
+.modal .form-row{grid-template-columns:1fr}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+
+/* Info list */
+.info-list .info-row{
+  display:flex;align-items:center;padding:12px 0;
+  border-bottom:1px solid var(--border);
+}
+.info-list .info-row:last-child{border-bottom:none}
+.info-list .info-label{color:var(--text2);font-size:13px;width:120px;flex-shrink:0}
+.info-list .info-value{flex:1;font-size:13px;color:var(--text);word-break:break-all}
+.info-list .info-value .mask{color:var(--text3);font-family:'SF Mono','Cascadia Code','Consolas','Microsoft YaHei Mono',monospace}
+
+/* Login */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:var(--bg)}
+.login-card{
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:var(--radius);width:100%;max-width:380px;padding:36px;
+}
+.login-card h2{text-align:center;margin-bottom:24px;font-size:20px;display:flex;align-items:center;justify-content:center;gap:8px}
+.login-card input{width:100%;margin-bottom:14px}
+.login-card .footer-links{display:flex;justify-content:space-between;margin-top:12px;font-size:12px}
+.login-card .footer-links a{color:var(--accent2);cursor:pointer;text-decoration:none}
+.login-card .footer-links a:hover{text-decoration:underline}
+.slider-verify{margin:4px 0 14px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--bg4);user-select:none}
+.slider-verify .slider-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-size:12px;color:var(--text2)}
+.slider-verify .slider-state{color:var(--text3)}
+.slider-verify.done{border-color:rgba(16,185,129,.45);background:rgba(16,185,129,.08)}
+.slider-verify.done .slider-state{color:var(--success)}
+.puzzle-box{position:relative;height:76px;border-radius:12px;overflow:hidden;background:linear-gradient(135deg,#172238,#0f1724);border:1px solid rgba(96,165,250,.16);margin-bottom:10px}
+.puzzle-box::before{content:'';position:absolute;inset:0;background:linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(0deg,rgba(255,255,255,.035) 1px,transparent 1px);background-size:24px 24px}
+.puzzle-gap{position:absolute;top:20px;width:34px;height:34px;border-radius:9px;background:rgba(10,14,26,.78);box-shadow:inset 0 0 0 2px rgba(16,185,129,.8),0 0 18px rgba(16,185,129,.16)}
+.puzzle-piece{position:absolute;top:20px;left:0;width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent2),var(--accent));box-shadow:0 8px 20px rgba(59,130,246,.32);transition:box-shadow .2s}
+.slider-verify.done .puzzle-piece{background:linear-gradient(135deg,#34d399,#059669);box-shadow:0 8px 20px rgba(16,185,129,.28)}
+.puzzle-track{position:relative;height:42px;border-radius:999px;background:rgba(15,23,36,.9);border:1px solid var(--border);overflow:hidden}
+.puzzle-progress{position:absolute;left:0;top:0;height:100%;background:linear-gradient(90deg,rgba(59,130,246,.25),rgba(16,185,129,.18))}
+.puzzle-thumb{position:absolute;left:0;top:3px;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#fff;color:#0f1724;cursor:grab;font-weight:900;box-shadow:0 5px 14px rgba(0,0,0,.25);touch-action:none}
+.puzzle-thumb:active{cursor:grabbing}
+.puzzle-tip{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px;pointer-events:none}
+
+/* Section title */
+.section-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+/* Collapsible section (pay api config etc.) */
+.collapsible-section{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:18px;overflow:hidden}
+.collapsible-section:hover{border-color:var(--border2)}
+.collapsible-section .section-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0;padding:16px 20px;border-bottom:none;cursor:pointer;user-select:none;background:var(--bg3)}
+.collapsible-section .section-title:hover{background:var(--bg4)}
+.collapsible-section .section-title .st-text{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:700}
+.collapsible-section .section-title .st-right{display:flex;align-items:center;gap:12px}
+.collapsible-section .section-title .st-arrow{font-size:12px;color:var(--text3);min-width:56px;text-align:right;white-space:nowrap}
+.collapsible-section .section-body{padding:20px}
+.filter-grid{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:10px;margin-bottom:14px}
+.filter-grid input,.filter-grid select{padding:8px 10px;background:var(--bg4);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px}
+.pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px;color:var(--text2);font-size:12px}
+.log-detail{margin-top:8px;padding:10px;background:var(--bg4);border:1px solid var(--border);border-radius:8px;white-space:pre-wrap;word-break:break-word;color:var(--text2)}
+.chip{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;background:rgba(59,130,246,.12);color:var(--accent2);font-size:11px}
+
+/* Dashboard */
+.dashboard-hero{position:relative;overflow:hidden;border:1px solid rgba(96,165,250,.16);border-radius:18px;padding:22px;margin-bottom:18px;background:radial-gradient(circle at 12% 10%,rgba(59,130,246,.28),transparent 32%),linear-gradient(135deg,#0f1724,#111827 62%,#0b1120)}
+.dashboard-hero::after{content:'';position:absolute;inset:0;background:linear-gradient(120deg,transparent,rgba(255,255,255,.06),transparent);transform:translateX(-70%);animation:dashSweep 5s infinite}
+.dashboard-hero h2{position:relative;font-size:24px;margin-bottom:6px;letter-spacing:.5px}
+.dashboard-hero p{position:relative;color:var(--text2);font-size:13px}
+@keyframes dashSweep{50%,100%{transform:translateX(120%)}}
+.metric-grid{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:14px;margin-bottom:18px}
+.metric-card{position:relative;overflow:hidden;background:linear-gradient(180deg,rgba(26,35,50,.92),rgba(15,23,36,.92));border:1px solid rgba(96,165,250,.12);border-radius:16px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+.metric-card::before{content:'';position:absolute;right:-28px;top:-28px;width:72px;height:72px;border-radius:50%;background:rgba(96,165,250,.1)}
+.metric-label{font-size:12px;color:var(--text2);margin-bottom:8px}
+.metric-value{font-size:28px;font-weight:800;letter-spacing:.5px}
+.metric-sub{font-size:11px;color:var(--text3);margin-top:4px}
+.dash-grid{display:grid;grid-template-columns:1.45fr .9fr;gap:18px}
+      .dash-toolbar{margin-bottom:18px}
+      .date-range{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:12px 16px}
+      .date-field{display:flex;align-items:center;gap:6px}
+      .date-label{font-size:12px;color:var(--text3);font-weight:600;white-space:nowrap}
+      .date-input{background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer;outline:none;transition:border-color .2s;color-scheme:dark;min-width:130px}
+      .date-input::-webkit-calendar-picker-indicator{filter:invert(.7);cursor:pointer;opacity:.8;transition:opacity .2s}
+      .date-input::-webkit-calendar-picker-indicator:hover{opacity:1}
+      .date-input:hover{border-color:var(--accent)}
+      .date-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(59,130,246,.15)}
+      .date-sep{color:var(--text3);font-size:14px}
+      .date-quicks{display:flex;gap:6px;margin-left:8px;padding-left:12px;border-left:1px solid var(--border)}
+      .date-quick{background:transparent;color:var(--text2);border:1px solid var(--border);border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer;transition:all .2s;white-space:nowrap}
+      .date-quick:hover{border-color:var(--accent);color:var(--accent);background:rgba(59,130,246,.06)}
+      .date-quick.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+      .revenue-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+      .revenue-card{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center}
+      .revenue-label{font-size:12px;color:var(--text3);margin-bottom:6px}
+      .revenue-value{font-size:26px;font-weight:800;letter-spacing:.5px}
+      .revenue-sub{font-size:11px;color:var(--text3);margin-top:4px}
+.chart-card{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:18px;overflow:hidden}
+.chart-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.chart-title h3{font-size:15px}
+.chart-title span{font-size:12px;color:var(--text3)}
+.line-chart{width:100%;height:240px;background:linear-gradient(180deg,rgba(59,130,246,.06),transparent);border-radius:14px}
+.bar-list{display:flex;flex-direction:column;gap:12px}
+.bar-row{display:grid;grid-template-columns:130px 1fr 44px;align-items:center;gap:10px;font-size:12px}
+.bar-name{color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar-track{height:10px;border-radius:999px;background:var(--bg4);overflow:hidden}
+.bar-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,var(--accent),var(--success))}
+.stack-bars{display:flex;align-items:end;gap:10px;height:190px;padding-top:12px}
+.stack-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px}
+.stack-col{height:145px;width:100%;display:flex;align-items:end;gap:2px;justify-content:center}
+.stack-ok,.stack-bad{width:18px;border-radius:8px 8px 3px 3px;min-height:3px}
+.stack-ok{background:var(--success)}
+.stack-bad{background:var(--danger)}
+.stack-label{font-size:11px;color:var(--text3)}
+
+/* Responsive */
+@media(max-width:768px){
+  .app-layout{display:block;height:100vh;height:100dvh}
+  .sidebar{
+    position:fixed;left:10px;right:10px;bottom:10px;z-index:50;
+    width:auto;height:66px;overflow:hidden;border:1px solid rgba(96,165,250,.18);
+    border-radius:22px;background:rgba(17,24,39,.92);backdrop-filter:blur(18px);
+    box-shadow:0 18px 46px rgba(0,0,0,.38);
+  }
+  .sidebar-header{display:none}
+  .sidebar-menu{
+    height:100%;display:flex;align-items:center;gap:6px;padding:8px;
+    overflow-x:auto;overflow-y:hidden;scrollbar-width:none;
+  }
+  .sidebar-menu::-webkit-scrollbar{display:none}
+  .menu-item{
+    flex:0 0 auto;min-width:62px;height:50px;justify-content:center;flex-direction:column;
+    padding:7px 8px;font-size:11px;line-height:1.15;gap:4px;margin:0;border-radius:16px;
+    color:#9ca3af;text-align:center;
+  }
+  .menu-item .icon{width:auto;font-size:16px;line-height:1}
+  .menu-item.active{
+    background:linear-gradient(180deg,rgba(59,130,246,.28),rgba(37,99,235,.18));
+    color:#dbeafe;box-shadow:inset 0 0 0 1px rgba(96,165,250,.22);
+  }
+  .main-content{height:100vh;height:100dvh}
+  .top-account{right:12px;top:8px}
+  .main-header{padding:0 70px 0 16px}
+  .main-header .breadcrumb{display:none}
+  .form-row{grid-template-columns:1fr}
+  .model-row{flex-wrap:wrap}
+  .model-row input{flex:1 1 100% !important;width:100% !important}
+  .model-row .btn-del{width:100%;height:34px}
+  .status-bar{align-items:flex-start;flex-wrap:wrap}
+  .status-bar>span:last-child{margin-left:0!important;width:100%;justify-content:flex-start}
+  .card-header{align-items:flex-start;flex-direction:column}
+  .provider-actions{width:100%;justify-content:flex-start}
+  .metric-grid,.dash-grid{grid-template-columns:1fr}
+  .main-body{padding:16px 16px 96px}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- ==================== LOGIN ==================== -->
+  <div v-if="page==='login'" class="login-wrap">
+    <!-- Normal Login -->
+    <div v-if="loginMode==='login'" class="login-card">
+      <h2>后台管理登录</h2>
+      <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+      <div class="form-group"><input type="text" v-model="loginForm.username" placeholder="管理员用户名" autocomplete="username"></div>
+      <div class="form-group"><input type="password" v-model="loginForm.password" placeholder="管理密码" autocomplete="current-password" @keydown.enter="doLogin"></div>
+      <div :class="['slider-verify',adminSlider.verified&&'done']">
+        <div class="slider-top">
+          <span>滑块验证</span>
+          <span class="slider-state">{{adminSlider.verified?'验证通过':'拖动拼图到缺口'}}</span>
+        </div>
+        <div class="puzzle-box">
+          <span class="puzzle-gap" :style="{left:'calc('+(adminSlider.target/260*100)+'%)',transform:'translateX(-50%)'}"></span>
+          <span class="puzzle-piece" :style="{left:'calc('+(adminSlider.x/260*100)+'%)',transform:'translateX(-50%)'}"></span>
+        </div>
+        <div class="puzzle-track">
+          <div class="puzzle-progress" :style="{width:(adminSlider.x/260*100)+'%'}"></div>
+          <span class="puzzle-tip">{{adminSlider.verified?'验证通过':'按住滑块，拖动完成拼图'}}</span>
+          <button type="button" class="puzzle-thumb" :style="{left:'calc('+(adminSlider.x/260*100)+'% - 18px)'}" @mousedown="beginAdminPuzzle" @touchstart.prevent="beginAdminPuzzle">›</button>
+        </div>
+      </div>
+      <button class="btn btn-primary" style="width:100%" @click="doLogin">登 录</button>
+      <div class="footer-links">
+        <a @click="loginMode='forgot'">忘记密码？</a>
+      </div>
+    </div>
+    <!-- Forgot Password -->
+    <div v-else-if="loginMode==='forgot'" class="login-card">
+      <h2>找回密码</h2>
+      <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+      <p style="font-size:12px;color:var(--text2);margin-bottom:12px">输入已绑定的管理员邮箱，系统将发送重置验证码</p>
+      <div class="form-group"><input type="email" v-model="forgotForm.email" placeholder="邮箱地址" @keydown.enter="doForgot"></div>
+      <button class="btn btn-primary" style="width:100%" @click="doForgot">发送验证码</button>
+      <div class="footer-links">
+        <a @click="loginMode='login'">← 返回登录</a>
+      </div>
+    </div>
+    <!-- Reset Password -->
+    <div v-else-if="loginMode==='reset'" class="login-card">
+      <h2>重置密码</h2>
+      <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+      <div class="form-group"><input type="email" v-model="resetForm.email" placeholder="绑定邮箱"></div>
+      <div class="form-group"><input v-model="resetForm.code" placeholder="邮箱验证码"></div>
+      <div class="form-group"><input type="password" v-model="resetForm.newPassword" placeholder="新密码"></div>
+      <div class="form-group"><input type="password" v-model="resetForm.confirmPassword" placeholder="确认新密码" @keydown.enter="doReset"></div>
+      <button class="btn btn-primary" style="width:100%" @click="doReset">确认重置</button>
+    </div>
+  </div>
+
+  <!-- ==================== MAIN ==================== -->
+  <div v-else class="app-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">◎</div>
+        <div>
+          <h1>后台管理</h1>
+          <p>AI 答题服务</p>
+        </div>
+      </div>
+      <nav class="sidebar-menu">
+        <div class="menu-item" :class="{active:page==='dashboard'}" @click="page='dashboard';loadDashboard()">
+          <span class="icon">⌂</span>运营概览
+        </div>
+        <div class="menu-item" :class="{active:page==='user-mgmt'}" @click="page='user-mgmt';loadUsers()">
+          <span class="icon">◯</span>用户管理
+        </div>
+        <div class="menu-item" :class="{active:page==='login-locks'}" @click="page='login-locks';loadLoginLocks()">
+          <span class="icon">⊘</span>解除锁定
+        </div>
+        <div class="menu-item" :class="{active:page==='question-bank'}" @click="page='question-bank';loadQuestionBank()">
+          <span class="icon">▤</span>题库中心
+        </div>
+        <div class="menu-item" :class="{active:page==='script-logs'}" @click="page='script-logs';loadScriptLogs()">
+          <span class="icon">⌘</span>脚本日志
+        </div>
+        <div class="menu-item" :class="{active:page==='ai-logs'}" @click="page='ai-logs';loadAiLogs()">
+          <span class="icon">☰</span>模型日志
+        </div>
+        <div class="menu-item" :class="{active:page==='ai-config'}" @click="page='ai-config';loadConfig()">
+          <span class="icon">◇</span>模型配置
+        </div>
+        <div class="menu-item" :class="{active:page==='email-config'}" @click="page='email-config';loadEmailConfig()">
+          <span class="icon">✉</span>邮箱配置
+        </div>
+        <div class="menu-item" :class="{active:page==='payment'}" @click="page='payment';loadPaymentConfig()">
+          <span class="icon">□</span>付费配置
+        </div>
+        <div class="menu-item" :class="{active:page==='pay-api'}" @click="page='pay-api';loadPayApiConfig()">
+          <span class="icon">⌁</span>支付接口
+        </div>
+        <div class="menu-item" :class="{active:page==='log-cleanup'}" @click="page='log-cleanup';loadLogCleanup()">
+          <span class="icon">∅</span>日志清理
+        </div>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <div class="top-account">
+        <div class="top-avatar"><img v-if="accountConfig.avatar_data" :src="accountConfig.avatar_data"><span v-else>◌</span></div>
+        <div class="top-menu">
+          <button @click="page='profile';loadAdminAccount();loadEmailConfig()">个人中心</button>
+          <button class="danger" @click="logout">退出登录</button>
+        </div>
+      </div>
+      <!-- Dashboard Page -->
+      <template v-if="page==='dashboard'">
+        <header class="main-header">
+          <h2>运营概览</h2>
+          <span class="breadcrumb">系统运行数据与模型调用趋势</span>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="dashboard-hero">
+            <h2>后端运行概览</h2>
+            <p>活跃数按所选时间范围内有模型请求的不同客户端统计，趋势图展示所选时间范围内的调用与题库命中情况。</p>
+          </div>
+          <div class="dash-toolbar">
+            <div class="date-range">
+              <div class="date-field">
+                <span class="date-label">开始</span>
+                <input type="date" v-model="dashStartDate" @change="loadDashboard()" class="date-input">
+              </div>
+              <span class="date-sep">—</span>
+              <div class="date-field">
+                <span class="date-label">结束</span>
+                <input type="date" v-model="dashEndDate" @change="loadDashboard()" class="date-input">
+              </div>
+              <div class="date-quicks">
+                <button class="date-quick" :class="{active:dashStartDate===todayStr&&dashEndDate===todayStr}" @click="setQuickRange('today')">今天</button>
+                <button class="date-quick" :class="{active:dashStartDate===d7ago&&dashEndDate===todayStr}" @click="setQuickRange('7')">近7天</button>
+                <button class="date-quick" :class="{active:dashStartDate===d30ago&&dashEndDate===todayStr}" @click="setQuickRange('30')">近30天</button>
+                <button class="date-quick" :class="{active:dashStartDate===d90ago&&dashEndDate===todayStr}" @click="setQuickRange('90')">近90天</button>
+              </div>
+            </div>
+          </div>
+          <div class="metric-grid">
+            <div class="metric-card"><div class="metric-label">用户数</div><div class="metric-value">{{dashboard.cards.users||0}}</div><div class="metric-sub">注册账户总数</div></div>
+            <div class="metric-card"><div class="metric-label">活跃数</div><div class="metric-value">{{dashboard.cards.active||0}}</div><div class="metric-sub">近 24 小时客户端</div></div>
+            <div class="metric-card"><div class="metric-label">题库总数</div><div class="metric-value">{{dashboard.cards.question_bank||0}}</div><div class="metric-sub">已沉淀题目</div></div>
+            <div class="metric-card"><div class="metric-label">题库命中数</div><div class="metric-value" style="color:var(--success)">{{dashboard.cards.bank_hits||0}}</div><div class="metric-sub">题库直接返回答案</div></div>
+            <div class="metric-card"><div class="metric-label">题库命中率</div><div class="metric-value" style="color:var(--accent2)">{{dashboard.cards.bank_hit_rate||0}}%</div><div class="metric-sub">占成功答题比例</div></div>
+            <div class="metric-card"><div class="metric-label">模型调用数</div><div class="metric-value">{{dashboard.cards.calls||0}}</div><div class="metric-sub">累计请求</div></div>
+            <div class="metric-card"><div class="metric-label">成功数</div><div class="metric-value" style="color:var(--success)">{{dashboard.cards.success||0}}</div><div class="metric-sub">成功返回答案</div></div>
+            <div class="metric-card"><div class="metric-label">失败数</div><div class="metric-value" style="color:var(--danger)">{{dashboard.cards.error||0}}</div><div class="metric-sub">接口失败或异常</div></div>
+          </div>
+          <div class="dash-grid">
+            <div class="chart-card">
+              <div class="chart-title"><h3>调用折线图</h3><span>总调用 / 成功 / 失败</span></div>
+              <div style="display:flex;gap:16px;margin-bottom:8px;font-size:12px">
+                <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:3px;background:#60a5fa;border-radius:2px"></span>总调用</span>
+                <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:3px;background:#10b981;border-radius:2px"></span>成功</span>
+                <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:3px;background:#ef4444;border-radius:2px"></span>失败</span>
+              </div>
+              <svg class="line-chart" viewBox="0 0 700 240" preserveAspectRatio="xMidYMid meet" style="width:100%;height:260px">
+                <g stroke="rgba(255,255,255,.06)" stroke-width="1">
+                  <line x1="40" y1="35" x2="680" y2="35"></line>
+                  <line x1="40" y1="80" x2="680" y2="80"></line>
+                  <line x1="40" y1="125" x2="680" y2="125"></line>
+                  <line x1="40" y1="170" x2="680" y2="170"></line>
+                  <line x1="40" y1="205" x2="680" y2="205"></line>
+                </g>
+                <g fill="#6b7280" font-size="10" text-anchor="end">
+                  <text x="34" y="38">{{Math.ceil(trendMax())}}</text>
+                  <text x="34" y="128">{{Math.ceil(trendMax()/2)}}</text>
+                  <text x="34" y="208">0</text>
+                </g>
+                <template v-if="dashboard.trend.length>1">
+                  <polyline :points="trendPoints('total')" fill="none" stroke="#60a5fa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                  <polyline :points="trendPoints('success')" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                  <polyline :points="trendPoints('error')" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                </template>
+                <g v-for="(r,i) in dashboard.trend" :key="r.day">
+                  <template v-if="dashboard.trend.length<=1">
+                    <rect :x="trendX(i)-25" :y="trendY(r.total)" width="16" :height="205-trendY(r.total)" fill="#60a5fa" rx="2"></rect>
+                    <rect :x="trendX(i)-7" :y="trendY(r.success)" width="16" :height="205-trendY(r.success)" fill="#10b981" rx="2"></rect>
+                    <rect :x="trendX(i)+11" :y="trendY(r.error)" width="16" :height="205-trendY(r.error)" fill="#ef4444" rx="2"></rect>
+                    <text :x="trendX(i)-17" :y="trendY(r.total)-5" fill="#60a5fa" font-size="10" text-anchor="middle" font-weight="700">{{r.total}}</text>
+                    <text :x="trendX(i)+1" :y="trendY(r.success)-5" fill="#10b981" font-size="10" text-anchor="middle" font-weight="700">{{r.success}}</text>
+                    <text :x="trendX(i)+19" :y="trendY(r.error)-5" fill="#ef4444" font-size="10" text-anchor="middle" font-weight="700">{{r.error}}</text>
+                  </template>
+                  <template v-else>
+                    <circle :cx="trendX(i)" :cy="trendY(r.total)" r="3" fill="#60a5fa"></circle>
+                    <circle :cx="trendX(i)" :cy="trendY(r.success)" r="3" fill="#10b981"></circle>
+                    <circle :cx="trendX(i)" :cy="trendY(r.error)" r="3" fill="#ef4444"></circle>
+                  </template>
+                  <text v-if="dashboard.trend.length<=14 || i%2===0" :x="trendX(i)" y="225" fill="#6b7280" font-size="10" text-anchor="middle">{{r.label}}</text>
+                </g>
+                <text v-if="!dashboard.trend.length" x="350" y="120" fill="var(--text3)" font-size="13" text-anchor="middle">暂无调用数据</text>
+              </svg>
+            </div>
+            <div class="chart-card">
+              <div class="chart-title"><h3>成功/失败组合图</h3><span>按所选时间</span></div>
+              <div style="display:flex;gap:16px;margin-bottom:8px;font-size:12px">
+                <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;background:#10b981;border-radius:3px"></span>成功</span>
+                <span style="display:flex;align-items:center;gap:4px"><span style="width:12px;height:12px;background:#ef4444;border-radius:3px"></span>失败</span>
+              </div>
+              <svg class="line-chart" viewBox="0 0 700 240" preserveAspectRatio="xMidYMid meet" style="width:100%;height:240px">
+                <g stroke="rgba(255,255,255,.06)" stroke-width="1">
+                  <line x1="40" y1="35" x2="680" y2="35"></line>
+                  <line x1="40" y1="80" x2="680" y2="80"></line>
+                  <line x1="40" y1="125" x2="680" y2="125"></line>
+                  <line x1="40" y1="170" x2="680" y2="170"></line>
+                  <line x1="40" y1="205" x2="680" y2="205"></line>
+                </g>
+                <g fill="#6b7280" font-size="10" text-anchor="end">
+                  <text x="34" y="38">{{Math.ceil(trendMax())}}</text>
+                  <text x="34" y="128">{{Math.ceil(trendMax()/2)}}</text>
+                  <text x="34" y="208">0</text>
+                </g>
+                <g v-for="(r,i) in dashboard.trend" :key="r.day">
+                  <rect :x="stackBarX(i)" :y="stackBarY(r.success)" width="14" :height="stackBarH(r.success)" fill="#10b981" rx="2"></rect>
+                  <rect :x="stackBarX(i)+16" :y="stackBarY(r.error)" width="14" :height="stackBarH(r.error)" fill="#ef4444" rx="2"></rect>
+                  <text v-if="r.success>0" :x="stackBarX(i)+7" :y="stackBarY(r.success)-4" fill="#10b981" font-size="9" text-anchor="middle" font-weight="600">{{r.success}}</text>
+                  <text v-if="r.error>0" :x="stackBarX(i)+23" :y="stackBarY(r.error)-4" fill="#ef4444" font-size="9" text-anchor="middle" font-weight="600">{{r.error}}</text>
+                  <text v-if="dashboard.trend.length<=14 || i%2===0" :x="stackBarX(i)+15" y="225" fill="#6b7280" font-size="10" text-anchor="middle">{{r.label}}</text>
+                </g>
+                <text v-if="!dashboard.trend.length" x="350" y="120" fill="var(--text3)" font-size="13" text-anchor="middle">暂无数据</text>
+              </svg>
+            </div>
+          </div>
+          <div class="chart-card" style="margin-top:18px">
+            <div class="chart-title"><h3>模型调用分布</h3><span>按成功 AI 调用统计，不含题库命中</span></div>
+            <div class="bar-list">
+              <div class="bar-row" v-for="m in dashboard.models" :key="m.model">
+                <div class="bar-name" :title="m.model">{{m.model}}</div>
+                <div class="bar-track"><div class="bar-fill" :style="{width:modelBarWidth(m.total)}"></div></div>
+                <div style="color:var(--text2);text-align:right">{{m.total}}</div>
+              </div>
+              <div v-if="!dashboard.models.length" style="color:var(--text3);font-size:13px;padding:20px;text-align:center">暂无模型调用数据</div>
+            </div>
+          </div>
+          <div class="chart-card" style="margin-top:18px">
+            <div class="chart-title"><h3>模型Token消耗</h3><span>所选时间范围累计 · 今日用量实时更新</span></div>
+            <table v-if="(dashboard.token_usage||[]).length" style="width:100%;border-collapse:collapse;font-size:13px">
+              <thead>
+                <tr style="border-bottom:1px solid var(--border)">
+                  <th style="text-align:left;padding:8px">模型</th>
+                  <th style="text-align:right;padding:8px">累计Token</th>
+                  <th style="text-align:right;padding:8px">调用次数</th>
+                  <th style="text-align:right;padding:8px">今日已用</th>
+                  <th style="text-align:right;padding:8px">每日限额</th>
+                  <th style="text-align:right;padding:8px">今日剩余</th>
+                  <th style="text-align:center;padding:8px">状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="t in dashboard.token_usage" :key="t.model" style="border-bottom:1px solid var(--border)">
+                  <td style="padding:8px">{{t.model}}</td>
+                  <td style="padding:8px;text-align:right">{{t.total_tokens.toLocaleString()}}</td>
+                  <td style="padding:8px;text-align:right">{{t.call_count}}</td>
+                  <td style="padding:8px;text-align:right;color:#60a5fa">{{t.today_tokens.toLocaleString()}}</td>
+                  <td style="padding:8px;text-align:right">{{t.daily_limit>0?t.daily_limit.toLocaleString():'不限'}}</td>
+                  <td style="padding:8px;text-align:right" :style="{color:t.today_remaining===0?'#ef4444':t.daily_limit>0&&t.today_remaining<10000?'#f59e0b':'var(--text2)'}">{{t.daily_limit>0?t.today_remaining.toLocaleString():'—'}}</td>
+                  <td style="padding:8px;text-align:center">
+                    <span v-if="t.daily_limit<=0" style="color:var(--text3)">未限额</span>
+                    <span v-else-if="t.today_remaining===0" style="color:#ef4444">已耗尽</span>
+                    <span v-else style="color:#10b981">可用</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-if="!(dashboard.token_usage||[]).length" style="color:var(--text3);font-size:13px;padding:20px;text-align:center">暂无Token消耗数据</div>
+          </div>
+          <div class="chart-card" style="margin-top:18px">
+            <div class="chart-title"><h3>收入概况</h3><span>所选时间范围内已支付订单</span></div>
+            <div class="revenue-grid">
+              <div class="revenue-card">
+                <div class="revenue-label">总收入</div>
+                <div class="revenue-value" style="color:var(--success)">¥{{dashboard.revenue?.total?.toFixed(2)||'0.00'}}</div>
+                <div class="revenue-sub">{{dashboard.revenue?.orders||0}} 笔订单</div>
+              </div>
+              <div class="revenue-card">
+                <div class="revenue-label">包月收入</div>
+                <div class="revenue-value">¥{{dashboard.revenue?.monthly_revenue?.toFixed(2)||'0.00'}}</div>
+                <div class="revenue-sub">{{dashboard.revenue?.monthly_orders||0}} 笔</div>
+              </div>
+              <div class="revenue-card">
+                <div class="revenue-label">题数收入</div>
+                <div class="revenue-value">¥{{dashboard.revenue?.points_revenue?.toFixed(2)||'0.00'}}</div>
+                <div class="revenue-sub">{{dashboard.revenue?.points_orders||0}} 笔</div>
+              </div>
+            </div>
+            <div class="chart-title" style="margin-top:18px"><h4 style="font-size:14px;color:var(--text2)">收入趋势</h4><span>每日收入（元）</span></div>
+            <svg class="line-chart" viewBox="0 0 700 200" preserveAspectRatio="xMidYMid meet" style="width:100%;height:200px">
+              <g stroke="rgba(255,255,255,.06)" stroke-width="1">
+                <line x1="40" y1="30" x2="680" y2="30"></line>
+                <line x1="40" y1="70" x2="680" y2="70"></line>
+                <line x1="40" y1="110" x2="680" y2="110"></line>
+                <line x1="40" y1="150" x2="680" y2="150"></line>
+                <line x1="40" y1="170" x2="680" y2="170"></line>
+              </g>
+              <g fill="#6b7280" font-size="10" text-anchor="end">
+                <text x="34" y="33">¥{{revMax().toFixed(0)}}</text>
+                <text x="34" y="113">¥{{(revMax()/2).toFixed(0)}}</text>
+                <text x="34" y="173">0</text>
+              </g>
+              <template v-if="(dashboard.revenue?.trend||[]).length>1">
+                <polyline :points="revTrendArea()" fill="rgba(16,185,129,.08)" stroke="none"></polyline>
+                <polyline :points="revTrendPoints()" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+              </template>
+              <g v-for="(r,i) in (dashboard.revenue?.trend||[])" :key="r.day">
+                <template v-if="(dashboard.revenue?.trend||[]).length<=1 && r.revenue>0">
+                  <rect :x="revTrendX(i)-15" :y="revY(r.revenue)" width="30" :height="170-revY(r.revenue)" fill="#10b981" rx="2" opacity="0.8"></rect>
+                  <text :x="revTrendX(i)" :y="revY(r.revenue)-8" fill="#10b981" font-size="11" text-anchor="middle" font-weight="700">¥{{r.revenue}}</text>
+                </template>
+                <template v-else-if="r.revenue>0">
+                  <circle :cx="revTrendX(i)" :cy="revY(r.revenue)" r="3" fill="#10b981"></circle>
+                  <text :x="revTrendX(i)" :y="revY(r.revenue)-8" fill="#10b981" font-size="10" text-anchor="middle" font-weight="700">¥{{r.revenue}}</text>
+                </template>
+                <text v-if="(dashboard.revenue?.trend||[]).length<=14 || i%2===0" :x="revTrendX(i)" y="188" fill="#6b7280" font-size="10" text-anchor="middle">{{r.label}}</text>
+              </g>
+              <text v-if="!(dashboard.revenue?.trend||[]).length || !(dashboard.revenue?.trend||[]).some(r=>r.revenue>0)" x="350" y="100" fill="var(--text3)" font-size="13" text-anchor="middle">暂无收入数据</text>
+            </svg>
+          </div>
+        </div>
+      </template>
+
+      <!-- AI Config Page -->
+      <template v-if="page==='ai-config'">
+        <header class="main-header">
+          <h2>模型配置</h2>
+          <span class="breadcrumb">配置 AI 提供商与模型</span>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="status-bar">
+            <span class="status-dot" :class="enabledCount>0?'on':'off'"></span>
+            <span v-if="enabledCount>0">✓ 已有 {{enabledCount}} 个提供商就绪</span>
+            <span v-else-if="providerTotalCount>0">已读取 {{providerTotalCount}} 个提供商，请展开检查启用状态、API Key 和模型列表</span>
+            <span v-else>⚠ 暂无模型配置，请添加提供商</span>
+            <span style="margin-left:auto;display:flex;gap:8px">
+              <button class="btn btn-secondary btn-sm" @click="collapseAllProviders(true)">全部收起</button>
+              <button class="btn btn-secondary btn-sm" @click="collapseAllProviders(false)">全部展开</button>
+            </span>
+          </div>
+
+          <div v-for="entry in providerEntries" :key="entry.key" class="card provider-card">
+            <div class="card-header">
+              <h3>
+                <span>◇</span>{{entry.info.title||entry.key}}
+                <span class="provider-tag" :class="'tag-'+entry.info.protocol">{{protocolName(entry.info.protocol)}}</span>
+              </h3>
+              <div class="provider-actions">
+                <button class="btn btn-secondary btn-sm" @click="toggleProvider(entry.key)">{{collapsedProviders[entry.key]?'展开':'收起'}}</button>
+                <button class="btn btn-danger btn-sm" @click="removeProvider(entry.key)">删除</button>
+                <div class="toggle" :class="entry.info.enabled?'on':''" @click="entry.info.enabled=!entry.info.enabled"></div>
+              </div>
+            </div>
+            <div class="card-body" v-show="!collapsedProviders[entry.key]">
+              <div class="form-row">
+                <div class="form-group"><label>显示名称</label><input v-model="entry.info.title" placeholder="如：DeepSeek"></div>
+                <div class="form-group">
+                  <label>协议类型</label>
+                  <select v-model="entry.info.protocol">
+                    <option value="openai">OpenAI 兼容格式</option>
+                    <option value="claude">Claude (Anthropic)</option>
+                    <option value="gemini">Gemini (Google)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>API Key</label><input type="password" v-model="entry.info.api_key" placeholder="sk-xxxxxxxx"></div>
+                <div class="form-group"><label>Base URL</label><input v-model="entry.info.base_url" placeholder="https://api.xxx.com/v1"></div>
+              </div>
+              <div class="models-title">模型列表 <span style="font-size:12px;color:var(--text3);font-weight:400">权重越高被调用概率越大（默认100），每日Token限额为0表示不限制</span></div>
+              <div style="display:flex;gap:8px;padding:0 4px 6px;font-size:11px;color:var(--text3);font-weight:600;letter-spacing:.3px">
+                <span style="flex:1.5">模型ID</span>
+                <span style="flex:1.5">显示名称</span>
+                <span style="width:70px;flex:none;text-align:center">调用占比</span>
+                <span style="width:90px;flex:none;text-align:center">每日Token限额</span>
+                <span style="width:30px;flex:none"></span>
+              </div>
+              <div v-for="(m,idx) in entry.info.models" :key="idx" class="model-row">
+                <input v-model="m.value" placeholder="如: deepseek-chat" style="flex:1.5">
+                <input v-model="m.label" placeholder="如: DeepSeek V3" style="flex:1.5">
+                <div style="width:70px;flex:none;display:flex;align-items:center;justify-content:center">
+                  <input v-model.number="m.weight" type="number" min="0" max="100" placeholder="100" title="调用权重(0-100)" style="width:60px;text-align:center">
+                </div>
+                <div style="width:90px;flex:none;display:flex;align-items:center;justify-content:center">
+                  <input v-model.number="m.daily_token_limit" type="number" min="0" placeholder="0" title="每日Token限额(0=不限)" style="width:80px;text-align:center">
+                </div>
+                <button class="btn-del" @click="removeModel(entry.key,idx)">×</button>
+              </div>
+              <button class="btn-add" @click="addModel(entry.key)">+ 添加模型</button>
+            </div>
+          </div>
+          <div v-if="!providerEntries.length" class="card">
+            <div class="card-body" style="text-align:center;color:var(--text2)">未读取到模型配置，请点击“添加提供商”或刷新页面。</div>
+          </div>
+
+          <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal=false">
+            <div class="modal">
+              <h3>添加自定义提供商</h3>
+              <div class="form-row">
+                <div class="form-group"><label>唯一标识（英文）</label><input v-model="newProvider.key" placeholder="如：custom_deepseek"></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>显示名称</label><input v-model="newProvider.title" placeholder="如：我的 DeepSeek"></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>协议类型</label>
+                  <select v-model="newProvider.protocol">
+                    <option value="openai">OpenAI 兼容格式</option>
+                    <option value="claude">Claude (Anthropic)</option>
+                    <option value="gemini">Gemini (Google)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>API Key</label><input type="password" v-model="newProvider.api_key" placeholder="sk-xxxxxxxx"></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>Base URL</label><input v-model="newProvider.base_url" placeholder="https://api.xxx.com/v1"></div>
+              </div>
+              <div class="modal-actions">
+                <button class="btn btn-secondary" @click="showAddModal=false">取消</button>
+                <button class="btn btn-primary" @click="addProvider">确认添加</button>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:10px;justify-content:center;padding:10px 0">
+            <button class="btn btn-secondary" @click="showAddModal=true">添加提供商</button>
+            <button class="btn btn-success" :disabled="saveConfigLoading" @click="saveConfig">{{saveConfigLoading?'保存中...':'保存配置'}}</button>
+          </div>
+        </div>
+      </template>
+
+      <!-- Email Config Page -->
+      <template v-if="page==='email-config'">
+        <header class="main-header">
+          <h2>邮箱配置</h2>
+          <span class="breadcrumb">配置 SMTP 与找回密码</span>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>SMTP 服务器配置</h3>
+              <div class="toggle" :class="emailConfig.enabled?'on':''" @click="emailConfig.enabled=!emailConfig.enabled"></div>
+            </div>
+            <div class="card-body">
+              <div class="form-row">
+                <div class="form-group"><label>SMTP 服务器地址</label><input v-model="emailConfig.smtp_host" placeholder="如：smtp.qq.com"></div>
+                <div class="form-group"><label>SMTP 端口</label><input v-model.number="emailConfig.smtp_port" type="number" placeholder="如：587"></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>SMTP 用户名</label><input v-model="emailConfig.smtp_user" placeholder="如：yourname@qq.com"></div>
+                <div class="form-group"><label>SMTP 密码 / 授权码</label><input type="password" v-model="emailConfig.smtp_pass" placeholder="邮箱授权码"></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>发件人邮箱</label><input v-model="emailConfig.from_addr" placeholder="如：yourname@qq.com"></div>
+                <div class="form-group"><label>测试收件邮箱</label><input v-model="emailConfig.test_recipient" placeholder="测试邮件发送到这个邮箱"></div>
+              </div>
+              <div style="display:flex;gap:10px;margin-top:8px">
+                <button class="btn btn-primary" @click="saveEmailConfig">保存邮箱配置</button>
+                <button class="btn btn-secondary" @click="testEmail">发送测试邮件</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h3>找回密码说明</h3></div>
+            <div class="card-body" style="font-size:13px;color:var(--text2);line-height:1.8">
+              <p>1. 启用 SMTP 后，登录页面会显示「忘记密码」入口</p>
+              <p>2. 用户输入邮箱后，系统将发送包含重置链接的邮件</p>
+              <p>3. 点击邮件中的链接即可重置管理密码</p>
+              <p style="color:var(--warn);margin-top:8px">⚠ 注意：请确保 SMTP 配置正确，否则找回密码功能无法使用</p>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- User Management Page -->
+      <template v-if="page==='user-mgmt'">
+        <header class="main-header">
+          <h2>用户管理</h2>
+          <span class="breadcrumb">充值、扣除、封禁、修改邮箱和密码</span>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>注册用户列表</h3>
+              <button class="btn btn-secondary btn-sm" @click="loadUsers">刷新</button>
+            </div>
+            <div class="card-body">
+              <div v-if="users.length===0" style="text-align:center;color:var(--text3);padding:40px 0;font-size:13px">
+                暂无注册用户
+              </div>
+              <div v-else style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:13px">
+                  <thead>
+                    <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
+                      <th style="text-align:left;padding:10px 8px">ID</th>
+                      <th style="text-align:left;padding:10px 8px">用户名</th>
+                      <th style="text-align:left;padding:10px 8px">邮箱</th>
+                      <th style="text-align:left;padding:10px 8px">权益</th>
+                      <th style="text-align:left;padding:10px 8px">状态</th>
+                      <th style="text-align:left;padding:10px 8px">注册时间</th>
+                      <th style="text-align:left;padding:10px 8px">最近登录</th>
+                      <th style="text-align:left;padding:10px 8px">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="u in users" :key="u.id" style="border-bottom:1px solid var(--border);color:var(--text)">
+                      <td style="padding:10px 8px">{{u.id}}</td>
+                      <td style="padding:10px 8px">{{u.username}}</td>
+                      <td style="padding:10px 8px">{{u.email}}</td>
+                      <td style="padding:10px 8px">
+                        <div>点数：<b>{{u.points_balance||0}}</b></div>
+                        <div style="color:var(--text3)">包月至：{{u.member_until||'未开通'}}</div>
+                      </td>
+                      <td style="padding:10px 8px">
+                        <span v-if="u.is_banned" style="color:var(--danger)">已封禁</span>
+                        <span v-else style="color:var(--success)">正常</span>
+                        <div style="color:var(--text3)">{{u.is_verified?'已验证':'未验证'}}</div>
+                      </td>
+                      <td style="padding:10px 8px;color:var(--text3)">{{u.created_at}}</td>
+                      <td style="padding:10px 8px;color:var(--text3)">{{u.last_login_at||'未登录'}}</td>
+                      <td style="padding:10px 8px;white-space:nowrap">
+                        <button class="btn btn-secondary btn-sm" @click="openUserEdit(u)">管理</button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Payment Config Page -->
+      <template v-if="page==='payment'">
+        <header class="main-header">
+          <h2>付费配置</h2>
+          <span class="breadcrumb">配置包月、题数套餐和注册赠送权益</span>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="card">
+            <div class="card-header"><h3>注册赠送</h3><button class="btn btn-success btn-sm" @click="savePaymentConfig">保存赠送配置</button></div>
+            <div class="card-body">
+              <div class="form-row">
+                <div class="form-group"><label>赠送类型</label><select v-model="paymentConfig.gift_type"><option value="none">不赠送</option><option value="monthly">赠送包月</option><option value="points">赠送点数</option></select></div>
+                <div class="form-group"><label>赠送点数</label><input type="number" min="0" v-model.number="paymentConfig.gift_points"></div>
+                <div class="form-group"><label>赠送包月天数</label><input type="number" min="0" v-model.number="paymentConfig.gift_days"></div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>套餐配置</h3><button class="btn btn-secondary btn-sm" @click="newPlan()">新增套餐</button></div>
+            <div class="card-body">
+              <div class="form-row">
+                <div class="form-group"><label>名称</label><input v-model="planForm.name" placeholder="如：月卡 / 100题包"></div>
+                <div class="form-group"><label>类型</label><select v-model="planForm.plan_type"><option value="monthly">包月套餐</option><option value="points">题数套餐</option></select></div>
+                <div class="form-group"><label>价格</label><input type="number" min="0" step="0.01" v-model.number="planForm.price"></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group" v-if="planForm.plan_type==='points'"><label>题数</label><input type="number" min="0" v-model.number="planForm.points"></div>
+                <div class="form-group" v-if="planForm.plan_type==='monthly'"><label>包月天数</label><input type="number" min="0" v-model.number="planForm.days"></div>
+                <div class="form-group"><label>排序</label><input type="number" v-model.number="planForm.sort_order"></div>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center">
+                <label style="display:flex;gap:8px;align-items:center;color:var(--text2)"><input type="checkbox" v-model="planForm.enabled"> 启用</label>
+                <button class="btn btn-success" @click="savePlan">保存套餐</button>
+              </div>
+              <div style="overflow-x:auto;margin-top:16px">
+                <table style="width:100%;border-collapse:collapse;font-size:13px">
+                  <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2)"><th style="text-align:left;padding:10px 8px">名称</th><th style="text-align:left;padding:10px 8px">类型</th><th style="text-align:left;padding:10px 8px">价格</th><th style="text-align:left;padding:10px 8px">权益</th><th style="text-align:left;padding:10px 8px">状态</th><th style="text-align:left;padding:10px 8px">操作</th></tr></thead>
+                  <tbody>
+                    <tr v-for="p in paymentPlans" :key="p.id" style="border-bottom:1px solid var(--border)">
+                      <td style="padding:10px 8px">{{p.name}}</td><td style="padding:10px 8px">{{p.plan_type==='monthly'?'包月':'题数'}}</td><td style="padding:10px 8px">￥{{p.price}}</td><td style="padding:10px 8px">{{p.plan_type==='monthly'?(p.days+'天 · 不限题数'):(p.points+'题')}}</td>
+                      <td style="padding:10px 8px"><span :style="{color:p.enabled?'var(--success)':'var(--danger)',fontWeight:'700'}">{{p.enabled?'已启用':'已停用'}}</span></td>
+                      <td style="padding:10px 8px"><button class="btn btn-secondary btn-sm" @click="editPlan(p)">编辑</button><button class="btn btn-success btn-sm" v-if="!p.enabled" @click="togglePlan(p,true)">启用</button><button class="btn btn-warning btn-sm" v-if="p.enabled" @click="togglePlan(p,false)">停用</button><button class="btn btn-danger btn-sm" @click="deletePlan(p.id)">删除</button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Pay API Config Page -->
+      <template v-if="page==='pay-api'">
+        <header class="main-header">
+          <h2>支付接口</h2>
+          <span class="breadcrumb">配置支付宝当面付和微信支付接口</span>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="collapsible-section">
+            <div class="section-title" @click="togglePayApiSection('alipay')">
+              <span class="st-text">支付宝官方</span>
+              <span class="st-right">
+                <span class="toggle" :class="payApiConfig.alipay_enabled?'on':''" @click.stop="payApiConfig.alipay_enabled=!payApiConfig.alipay_enabled"></span>
+                <span class="st-arrow">{{payApiCollapsed.alipay?'▸ 展开':'▾ 收起'}}</span>
+              </span>
+            </div>
+            <div class="section-body" v-show="!payApiCollapsed.alipay">
+              <div class="form-row">
+                <div class="form-group"><label>APPID</label><input v-model="payApiConfig.alipay_app_id" placeholder="支付宝开放平台应用 APPID"></div>
+                <div class="form-group"><label>网关地址</label><input v-model="payApiConfig.alipay_gateway" placeholder="https://openapi.alipay.com/gateway.do"></div>
+              </div>
+              <div class="form-group"><label>应用私钥</label><textarea v-model="payApiConfig.alipay_private_key" rows="5" placeholder="支持带 BEGIN/END 的 PEM，或只填写私钥正文"></textarea></div>
+              <div class="form-group"><label>支付宝公钥</label><textarea v-model="payApiConfig.alipay_public_key" rows="4" placeholder="支付宝公钥，用于异步通知验签"></textarea></div>
+              <p style="font-size:12px;color:var(--text3);line-height:1.7">启用后，用户购买付费套餐时可以选择支付宝，系统会调用 alipay.trade.precreate 生成当面付二维码，并轮询订单状态，支付成功后自动到账。</p>
+            </div>
+          </div>
+          <div class="collapsible-section">
+            <div class="section-title" @click="togglePayApiSection('wechat')">
+              <span class="st-text">微信支付官方</span>
+              <span class="st-right">
+                <span class="toggle" :class="payApiConfig.wechat_enabled?'on':''" @click.stop="payApiConfig.wechat_enabled=!payApiConfig.wechat_enabled"></span>
+                <span class="st-arrow">{{payApiCollapsed.wechat?'▸ 展开':'▾ 收起'}}</span>
+              </span>
+            </div>
+            <div class="section-body" v-show="!payApiCollapsed.wechat">
+              <div class="form-row">
+                <div class="form-group"><label>AppID</label><input v-model="payApiConfig.wechat_app_id" placeholder="公众号/小程序/应用 AppID"></div>
+                <div class="form-group"><label>商户号 MCH ID</label><input v-model="payApiConfig.wechat_mch_id" placeholder="微信支付商户号"></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>API Key</label><input v-model="payApiConfig.wechat_api_key" placeholder="微信支付 API 密钥"></div>
+                <div class="form-group"><label>APIv3 密钥</label><input v-model="payApiConfig.wechat_apiv3_key" placeholder="微信支付 APIv3 密钥"></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>证书序列号</label><input v-model="payApiConfig.wechat_cert_serial" placeholder="微信支付平台证书序列号"></div>
+                <div class="form-group"><label>回调通知URL</label><input v-model="payApiConfig.wechat_notify_url" placeholder="https://your-domain.com/pay/wechat/notify"></div>
+              </div>
+              <div class="form-group"><label>商户私钥</label><textarea v-model="payApiConfig.wechat_private_key" rows="5" placeholder="apiclient_key.pem 私钥内容"></textarea></div>
+              <p style="font-size:12px;color:var(--text3);line-height:1.7">配置微信支付 v3 参数后，可接入 Native / JSAPI 下单与异步通知验签。</p>
+            </div>
+          </div>
+          <div class="collapsible-section">
+            <div class="section-title" @click="togglePayApiSection('zhifufm')">
+              <span class="st-text">支付FM-杉德支付</span>
+              <span class="st-right">
+                <span class="toggle" :class="payApiConfig.zhifufm_enabled?'on':''" @click.stop="payApiConfig.zhifufm_enabled=!payApiConfig.zhifufm_enabled"></span>
+                <span class="st-arrow">{{payApiCollapsed.zhifufm?'▸ 展开':'▾ 收起'}}</span>
+              </span>
+            </div>
+            <div class="section-body" v-show="!payApiCollapsed.zhifufm">
+              <div class="form-row">
+                <div class="form-group"><label>接口地址 API URL</label><input v-model="payApiConfig.zhifufm_api_url" placeholder="https://api-xxxxx.zhifu.fm.it88168.com"></div>
+                <div class="form-group"><label>商户号 MerchantNum</label><input v-model="payApiConfig.zhifufm_merchant_num" placeholder="支付FM 商户号"></div>
+              </div>
+              <div class="form-group"><label>接入密钥 Secret</label><input v-model="payApiConfig.zhifufm_secret" placeholder="支付FM 接入密钥"></div>
+              <div class="form-row">
+                <div class="form-group"><label>异步通知URL</label><input v-model="payApiConfig.zhifufm_notify_url" placeholder="https://your-domain.com/pay/zhifufm/notify"></div>
+                <div class="form-group"><label>同步跳转URL</label><input v-model="payApiConfig.zhifufm_return_url" placeholder="https://your-domain.com/pay/zhifufm/return"></div>
+              </div>
+            </div>
+          </div>
+          <div class="collapsible-section">
+            <div class="section-title" @click="togglePayApiSection('sandpay')">
+              <span class="st-text">杉德河马</span>
+              <span class="st-right">
+                <span class="toggle" :class="payApiConfig.sandpay_enabled?'on':''" @click.stop="payApiConfig.sandpay_enabled=!payApiConfig.sandpay_enabled"></span>
+                <span class="st-arrow">{{payApiCollapsed.sandpay?'▸ 展开':'▾ 收起'}}</span>
+              </span>
+            </div>
+            <div class="section-body" v-show="!payApiCollapsed.sandpay">
+              <div class="form-row">
+                <div class="form-group"><label>商户号 MID</label><input v-model="payApiConfig.sandpay_mid" placeholder="杉德商户号"></div>
+                <div class="form-group"><label>接口地址 API URL</label><input v-model="payApiConfig.sandpay_api_url" placeholder="https://sand-api.example.com"></div>
+              </div>
+              <div class="form-group"><label>商户私钥</label><textarea v-model="payApiConfig.sandpay_private_key" rows="5" placeholder="杉德商户私钥（PEM 或正文）"></textarea></div>
+              <div class="form-group"><label>杉德公钥</label><textarea v-model="payApiConfig.sandpay_public_key" rows="4" placeholder="杉德平台公钥，用于验签"></textarea></div>
+              <div class="form-group"><label>异步通知URL</label><input v-model="payApiConfig.sandpay_notify_url" placeholder="https://xs.openget.cn/api/payment/notify/sandpay"></div>
+              <div class="form-group"><label>同步跳转URL</label><input v-model="payApiConfig.sandpay_return_url" placeholder="https://xs.openget.cn/user"></div>
+            </div>
+          </div>
+          <div class="collapsible-section">
+            <div class="section-title" @click="togglePayApiSection('epay')">
+              <span class="st-text">易支付</span>
+              <span class="st-right">
+                <span class="toggle" :class="payApiConfig.epay_enabled?'on':''" @click.stop="payApiConfig.epay_enabled=!payApiConfig.epay_enabled"></span>
+                <span class="st-arrow">{{payApiCollapsed.epay?'▸ 展开':'▾ 收起'}}</span>
+              </span>
+            </div>
+            <div class="section-body" v-show="!payApiCollapsed.epay">
+              <div class="form-group"><label>接口地址 API URL</label><input v-model="payApiConfig.epay_api_url" placeholder="https://epay.example.com"></div>
+              <div class="form-row">
+                <div class="form-group"><label>商户 ID PID</label><input v-model="payApiConfig.epay_pid" placeholder="易支付商户 ID"></div>
+                <div class="form-group"><label>商户密钥 KEY</label><input v-model="payApiConfig.epay_key" placeholder="易支付商户密钥"></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>异步通知URL</label><input v-model="payApiConfig.epay_notify_url" placeholder="https://your-domain.com/pay/epay/notify"></div>
+                <div class="form-group"><label>同步跳转URL</label><input v-model="payApiConfig.epay_return_url" placeholder="https://your-domain.com/pay/epay/return"></div>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;justify-content:center;padding:10px 0">
+            <button class="btn btn-success" @click="savePayApiConfig">保存支付接口</button>
+          </div>
+        </div>
+      </template>
+
+      <!-- AI Call Logs Page -->
+      <template v-if="page==='ai-logs'">
+        <header class="main-header">
+          <h2>模型调用日志</h2>
+          <span class="breadcrumb">查看前端每次调用模型的请求、结果和耗时</span>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>调用记录</h3>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <button class="btn btn-secondary btn-sm" @click="loadAiLogs(1)">查询</button>
+                <button class="btn btn-danger btn-sm" @click="clearAiLogs">按条件清空</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="filter-grid">
+                <input v-model="aiLogFilter.keyword" placeholder="搜索题目/答案/错误">
+                <input v-model="aiLogFilter.model" placeholder="模型 ID">
+                <select v-model="aiLogFilter.status">
+                  <option value="">全部状态</option>
+                  <option value="success">成功</option>
+                  <option value="error">失败</option>
+                </select>
+                <input v-model="aiLogFilter.date_from" placeholder="开始时间 2026-06-26 00:00:00">
+                <input v-model="aiLogFilter.date_to" placeholder="结束时间 2026-06-26 23:59:59">
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;color:var(--text2);font-size:12px">
+                <span class="chip">共 {{aiLogTotal}} 条</span>
+                <select v-model.number="aiLogFilter.limit" @change="loadAiLogs(1)" style="padding:6px 8px;background:var(--bg4);border:1px solid var(--border);border-radius:8px;color:var(--text)">
+                  <option :value="50">50条/页</option>
+                  <option :value="100">100条/页</option>
+                  <option :value="200">200条/页</option>
+                </select>
+              </div>
+              <div v-if="aiLogLoading" style="text-align:center;color:var(--text3);padding:32px 0;font-size:13px">正在加载日志...</div>
+              <div v-else-if="aiLogs.length===0" style="text-align:center;color:var(--text3);padding:40px 0;font-size:13px">
+                暂无模型调用日志
+              </div>
+              <div v-else style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1080px">
+                  <thead>
+                    <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
+                      <th style="text-align:left;padding:10px 8px">时间</th>
+                      <th style="text-align:left;padding:10px 8px">状态</th>
+                      <th style="text-align:left;padding:10px 8px">模型</th>
+                      <th style="text-align:left;padding:10px 8px">耗时</th>
+                      <th style="text-align:left;padding:10px 8px">题目</th>
+                      <th style="text-align:left;padding:10px 8px">返回答案</th>
+                      <th style="text-align:left;padding:10px 8px">错误</th>
+                      <th style="text-align:left;padding:10px 8px">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template v-for="log in aiLogs" :key="log.id">
+                      <tr style="border-bottom:1px solid var(--border);color:var(--text)">
+                        <td style="padding:10px 8px;color:var(--text3);white-space:nowrap">{{log.created_at}}</td>
+                        <td style="padding:10px 8px;white-space:nowrap">
+                          <span :style="{color:log.status==='success'?'var(--success)':'var(--danger)',fontWeight:'600'}">{{statusText(log.status)}}</span>
+                        </td>
+                        <td style="padding:10px 8px;color:var(--accent2);max-width:180px;word-break:break-all">{{log.model||'-'}}</td>
+                        <td style="padding:10px 8px;white-space:nowrap">{{formatDuration(log.duration_ms)}}</td>
+                        <td style="padding:10px 8px;max-width:320px;word-break:break-word;color:var(--text2)">{{shortText(log.question,90)}}</td>
+                        <td style="padding:10px 8px;max-width:260px;word-break:break-word;color:var(--success)">{{shortText(log.answer,80)}}</td>
+                        <td style="padding:10px 8px;max-width:220px;word-break:break-word;color:var(--danger)">{{shortText(log.error,60)}}</td>
+                        <td style="padding:10px 8px"><button class="btn btn-secondary btn-sm" @click="toggleLog(log.id)">{{expandedLogs[log.id]?'收起':'详情'}}</button></td>
+                      </tr>
+                      <tr v-if="expandedLogs[log.id]">
+                        <td colspan="8" style="padding:0 8px 12px">
+                          <div class="log-detail">题目：{{log.question||'-'}}&#10;&#10;答案：{{log.answer||'-'}}&#10;&#10;错误：{{log.error||'-'}}</div>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+                <div class="pager">
+                  <button class="btn btn-secondary btn-sm" :disabled="aiLogFilter.page<=1" @click="loadAiLogs(aiLogFilter.page-1)">上一页</button>
+                  <span>第 {{aiLogFilter.page}} / {{Math.max(1,Math.ceil(aiLogTotal/aiLogFilter.limit))}} 页</span>
+                  <button class="btn btn-secondary btn-sm" :disabled="aiLogFilter.page>=Math.ceil(aiLogTotal/aiLogFilter.limit)" @click="loadAiLogs(aiLogFilter.page+1)">下一页</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Script Logs Page -->
+      <template v-if="page==='script-logs'">
+        <header class="main-header">
+          <h2>脚本日志</h2>
+          <span class="breadcrumb">查看脚本端交互、运行状态和错误日志，用于定位排查问题</span>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="card">
+            <div class="card-header">
+              <h3>脚本运行日志</h3>
+              <button class="btn btn-secondary btn-sm" @click="loadScriptLogs(1)">刷新</button>
+            </div>
+            <div class="card-body">
+              <div class="filter-grid">
+                <input v-model="scriptLogFilter.username" placeholder="用户名">
+                <select v-model="scriptLogFilter.level">
+                  <option value="">全部级别</option>
+                  <option value="green">成功</option>
+                  <option value="orange">警告</option>
+                  <option value="red">错误</option>
+                  <option value="blue">信息</option>
+                </select>
+                <input v-model="scriptLogFilter.keyword" placeholder="搜索日志 / 页面 URL">
+                <input type="date" v-model="scriptLogFilter.date_from">
+                <input type="date" v-model="scriptLogFilter.date_to">
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+                <button class="btn btn-secondary btn-sm" @click="loadScriptLogs(1)">查询</button>
+                <span class="chip">共 {{scriptLogTotal}} 条</span>
+                <span class="chip">按时间、用户、级别建立索引，默认分页加载</span>
+              </div>
+              <div v-if="scriptLogLoading" style="text-align:center;color:var(--text3);padding:32px 0;font-size:13px">正在加载脚本日志...</div>
+              <div v-else-if="scriptLogs.length===0" style="text-align:center;color:var(--text3);padding:40px 0;font-size:13px">暂无脚本日志</div>
+              <div v-else style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:980px">
+                  <thead>
+                    <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
+                      <th style="text-align:left;padding:10px 8px">时间</th>
+                      <th style="text-align:left;padding:10px 8px">用户</th>
+                      <th style="text-align:left;padding:10px 8px">级别</th>
+                      <th style="text-align:left;padding:10px 8px">日志内容</th>
+                      <th style="text-align:left;padding:10px 8px">页面</th>
+                      <th style="text-align:left;padding:10px 8px">IP</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="log in scriptLogs" :key="log.id" style="border-bottom:1px solid var(--border);color:var(--text)">
+                      <td style="padding:10px 8px;white-space:nowrap;color:var(--text3)">{{log.created_at}}</td>
+                      <td style="padding:10px 8px;white-space:nowrap">{{log.username||'-'}}</td>
+                      <td style="padding:10px 8px;white-space:nowrap;color:var(--accent2)">{{log.level||'-'}}</td>
+                      <td style="padding:10px 8px;max-width:420px;word-break:break-word">
+                        <div>{{shortText(log.message,180)}}</div>
+                        <div v-if="formatScriptExtra(log)" style="margin-top:4px;color:var(--text3);font-size:11px">{{formatScriptExtra(log)}}</div>
+                      </td>
+                      <td style="padding:10px 8px;max-width:260px;word-break:break-all;color:var(--text2)">{{shortText(log.page_url,100)}}</td>
+                      <td style="padding:10px 8px;white-space:nowrap;color:var(--text3)">{{log.client_ip||'-'}}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div class="pager">
+                  <button class="btn btn-secondary btn-sm" :disabled="scriptLogFilter.page<=1" @click="loadScriptLogs(scriptLogFilter.page-1)">上一页</button>
+                  <span>第 {{scriptLogFilter.page}} / {{Math.max(1,Math.ceil(scriptLogTotal/scriptLogFilter.limit))}} 页</span>
+                  <button class="btn btn-secondary btn-sm" :disabled="scriptLogFilter.page>=Math.ceil(scriptLogTotal/scriptLogFilter.limit)" @click="loadScriptLogs(scriptLogFilter.page+1)">下一页</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Question Bank Page -->
+      <template v-if="page==='question-bank'">
+        <header class="main-header">
+          <h2>题库中心</h2>
+          <span class="breadcrumb">模型搜索答案会自动沉淀到题库，后续优先题库命中</span>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="card">
+            <div class="card-header">
+              <h3>🔎 题库查询</h3>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <button class="btn btn-secondary btn-sm" @click="loadQuestionBank(1)">查询</button>
+                <button class="btn btn-danger btn-sm" @click="clearQuestionBank">按条件清空</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="filter-grid" style="grid-template-columns:1fr 120px">
+                <input v-model="questionBankFilter.keyword" placeholder="搜索题干 / 选项 / 答案">
+                <select v-model.number="questionBankFilter.limit" @change="loadQuestionBank(1)">
+                  <option :value="50">50条/页</option>
+                  <option :value="100">100条/页</option>
+                  <option :value="200">200条/页</option>
+                </select>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;color:var(--text2);font-size:12px">
+                <span class="chip">共 {{questionBankTotal}} 条</span>
+                <span class="chip">精确哈希优先，关键词模糊查询辅助</span>
+              </div>
+              <div v-if="questionBankLoading" style="text-align:center;color:var(--text3);padding:32px 0;font-size:13px">正在加载题库...</div>
+              <div v-else-if="questionBank.length===0" style="text-align:center;color:var(--text3);padding:40px 0;font-size:13px">暂无题库数据</div>
+              <div v-else style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1080px">
+                  <thead>
+                    <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
+                      <th style="text-align:left;padding:10px 8px">题型</th>
+                      <th style="text-align:left;padding:10px 8px">题目</th>
+                      <th style="text-align:left;padding:10px 8px">答案</th>
+                      <th style="text-align:left;padding:10px 8px">来源模型</th>
+                      <th style="text-align:left;padding:10px 8px">命中</th>
+                      <th style="text-align:left;padding:10px 8px">更新时间</th>
+                      <th style="text-align:left;padding:10px 8px">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template v-for="item in questionBank" :key="item.id">
+                      <tr style="border-bottom:1px solid var(--border);color:var(--text)">
+                        <td style="padding:10px 8px;white-space:nowrap">{{item.question_type||'-'}}</td>
+                        <td style="padding:10px 8px;max-width:380px;word-break:break-word;color:var(--text2)">{{shortText(item.question_text,120)}}</td>
+                        <td style="padding:10px 8px;max-width:260px;word-break:break-word;color:var(--success)">{{shortText(item.answer,100)}}</td>
+                        <td style="padding:10px 8px;color:var(--accent2);max-width:180px;word-break:break-all">{{item.source_model||'-'}}</td>
+                        <td style="padding:10px 8px">{{item.hit_count||0}}</td>
+                        <td style="padding:10px 8px;color:var(--text3);white-space:nowrap">{{item.updated_at}}</td>
+                        <td style="padding:10px 8px"><button class="btn btn-secondary btn-sm" @click="toggleBank(item.id)">{{expandedBank[item.id]?'收起':'详情'}}</button></td>
+                      </tr>
+                      <tr v-if="expandedBank[item.id]">
+                        <td colspan="7" style="padding:0 8px 12px">
+                          <div class="log-detail">题目：{{item.question_text}}&#10;&#10;选项：{{item.options_text||'-'}}&#10;&#10;答案：{{item.answer}}&#10;&#10;题目指纹：{{item.question_hash}}</div>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+                <div class="pager">
+                  <button class="btn btn-secondary btn-sm" :disabled="questionBankFilter.page<=1" @click="loadQuestionBank(questionBankFilter.page-1)">上一页</button>
+                  <span>第 {{questionBankFilter.page}} / {{Math.max(1,Math.ceil(questionBankTotal/questionBankFilter.limit))}} 页</span>
+                  <button class="btn btn-secondary btn-sm" :disabled="questionBankFilter.page>=Math.ceil(questionBankTotal/questionBankFilter.limit)" @click="loadQuestionBank(questionBankFilter.page+1)">下一页</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Login Locks Page -->
+      <template v-if="page==='login-locks'">
+        <header class="main-header">
+          <h2>解除锁定</h2>
+          <span class="breadcrumb">查看密码错误次数过多的用户，并手动解除登录锁定</span>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="card">
+            <div class="card-header">
+              <h3>当前锁定用户</h3>
+              <button class="btn btn-secondary btn-sm" @click="loadLoginLocks">刷新</button>
+            </div>
+            <div class="card-body">
+              <div v-if="loginLockLoading" style="text-align:center;color:var(--text3);padding:32px 0;font-size:13px">正在加载锁定记录...</div>
+              <div v-else-if="loginLocks.length===0" style="text-align:center;color:var(--text3);padding:40px 0;font-size:13px">暂无锁定用户，已到期的锁定不会显示。</div>
+              <div v-else style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:760px">
+                  <thead>
+                    <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
+                      <th style="text-align:left;padding:10px 8px">用户名</th>
+                      <th style="text-align:left;padding:10px 8px">邮箱 / 登录标识</th>
+                      <th style="text-align:left;padding:10px 8px">IP</th>
+                      <th style="text-align:left;padding:10px 8px">错误次数</th>
+                      <th style="text-align:left;padding:10px 8px">锁定到</th>
+                      <th style="text-align:left;padding:10px 8px">原因</th>
+                      <th style="text-align:left;padding:10px 8px">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="item in loginLocks" :key="item.id" style="border-bottom:1px solid var(--border);color:var(--text)">
+                      <td style="padding:10px 8px;white-space:nowrap">{{item.username||'-'}}</td>
+                      <td style="padding:10px 8px;color:var(--text2);word-break:break-all">{{item.email||item.identifier||'-'}}</td>
+                      <td style="padding:10px 8px;color:var(--text3);white-space:nowrap">{{item.client_ip||'-'}}</td>
+                      <td style="padding:10px 8px">{{item.fail_count||0}}</td>
+                      <td style="padding:10px 8px;color:var(--warn);white-space:nowrap">{{item.locked_until}}</td>
+                      <td style="padding:10px 8px;color:var(--text2)">{{item.reason||'-'}}</td>
+                      <td style="padding:10px 8px"><button class="btn btn-success btn-sm" @click="unlockLoginLock(item)">解除锁定</button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Profile Page -->
+      <template v-if="page==='profile'">
+        <header class="main-header">
+          <h2>个人中心</h2>
+          <span class="breadcrumb">账户信息、绑定邮箱与密码管理</span>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+
+          <div class="card">
+            <div class="card-header"><h3>账户信息</h3><button class="btn btn-success btn-sm" @click="saveAdminAccount">保存账号信息</button></div>
+            <div class="card-body">
+              <div class="avatar-row">
+                <div class="profile-avatar"><img v-if="accountConfig.avatar_data" :src="accountConfig.avatar_data"><span v-else>◌</span></div>
+                <div>
+                  <label class="btn btn-secondary btn-sm" style="display:inline-flex;cursor:pointer">上传头像<input type="file" accept="image/*" style="display:none" @change="handleAvatarUpload"></label>
+                  <button v-if="accountConfig.avatar_data" class="btn btn-danger btn-sm" style="margin-left:8px" @click="accountConfig.avatar_data=''">移除头像</button>
+                  <p style="font-size:12px;color:var(--text3);margin-top:8px">建议使用正方形图片，大小控制在 1MB 内。</p>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>管理员用户名</label><input v-model="accountConfig.username" placeholder="admin"></div>
+                <div class="form-group"><label>绑定找回邮箱</label><input type="email" v-model="accountConfig.admin_email" placeholder="用于忘记密码找回"></div>
+              </div>
+              <p style="font-size:12px;color:var(--text3);line-height:1.7">找回密码需要同时配置“邮箱配置”里的 SMTP 服务，并在这里绑定管理员邮箱。</p>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h3>修改密码</h3></div>
+            <div class="card-body">
+              <div class="form-row">
+                <div class="form-group"><label>旧密码</label><input type="password" v-model="pwdForm.old" placeholder="当前密码"></div>
+                <div class="form-group"><label>新密码</label><input type="password" v-model="pwdForm.new" placeholder="新密码"></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>确认新密码</label><input type="password" v-model="pwdForm.confirm" placeholder="再次输入新密码" @keydown.enter="changePassword"></div>
+              </div>
+              <button class="btn btn-primary" @click="changePassword">修改密码</button>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:10px;justify-content:center;padding:10px 0">
+            <button class="btn btn-danger" @click="logout">🚪 退出登录</button>
+          </div>
+        </div>
+      </template>
+      <!-- Log Cleanup Page -->
+      <template v-if="page==='log-cleanup'">
+        <div class="card">
+          <div class="card-body">
+            <h3 style="margin:0 0 8px">日志定时清理</h3>
+            <p style="color:var(--text3);font-size:13px;margin:0 0 20px">设置日志保留天数，系统每天自动清理超过保留期的日志。设为 0 表示不自动清理。</p>
+            <div class="form-row">
+              <div class="form-group">
+                <label>日志保留天数</label>
+                <select v-model="logRetentionDays" class="form-control">
+                  <option value="0">不自动清理</option>
+                  <option value="7">保留 7 天</option>
+                  <option value="14">保留 14 天</option>
+                  <option value="30">保留 30 天</option>
+                  <option value="60">保留 60 天</option>
+                  <option value="90">保留 90 天</option>
+                  <option value="180">保留 180 天</option>
+                </select>
+              </div>
+            </div>
+            <div style="display:flex;gap:10px;margin-top:16px">
+              <button class="btn btn-success" :disabled="logCleanupSaving" @click="saveLogCleanup">{{logCleanupSaving?'保存中...':'保存设置'}}</button>
+              <button class="btn btn-secondary" :disabled="logCleanupRunning" @click="runLogCleanupNow">{{logCleanupRunning?'清理中...':'立即执行清理'}}</button>
+            </div>
+            <div v-if="logCleanupResult" style="margin-top:16px;padding:12px 16px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text2)">
+              <div v-if="logCleanupResult.msg" style="margin-bottom:8px;font-weight:600">{{logCleanupResult.msg}}</div>
+              <template v-if="logCleanupResult.result">
+                <div v-for="(v,k) in logCleanupResult.result" :key="k" style="display:flex;justify-content:space-between;padding:4px 0">
+                  <span>{{k}}</span>
+                  <span :style="{color:v<0?'var(--danger)':'var(--success)'}">{{v<0?'清理失败':'删除 '+v+' 条'}}</span>
+                </div>
+              </template>
+            </div>
+          </div>
+        </div>
+      </template>
+    </main>
+    <div v-if="showUserModal" class="modal-overlay" @click.self="showUserModal=false">
+      <div class="modal">
+        <h3>用户管理：{{userForm.username}}</h3>
+        <div class="form-row">
+          <div class="form-group"><label>邮箱</label><input v-model="userForm.email"></div>
+          <div class="form-group"><label>新密码</label><input type="password" v-model="userForm.password" placeholder="不填则不修改"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>增加/扣除点数</label><input type="number" v-model.number="userForm.points_delta" placeholder="正数充值，负数扣除"></div>
+          <div class="form-group"><label>增加包月天数</label><input type="number" min="0" v-model.number="userForm.member_days_delta"></div>
+        </div>
+        <div class="form-group"><label>包月到期时间</label><input type="datetime-local" v-model="userForm.member_until"><small style="color:var(--text3)">可直接修改用户包月到期时间，清空后保存表示取消包月。</small></div>
+        <div class="form-group"><label>备注</label><input v-model="userForm.reason" placeholder="如：人工充值 / 违规扣除"></div>
+        <label style="display:flex;gap:8px;align-items:center;color:var(--text2);margin:10px 0"><input type="checkbox" v-model="userForm.is_banned"> 封禁该用户</label>
+        <div class="form-group"><label>封禁原因</label><input v-model="userForm.ban_reason" placeholder="封禁时展示给用户"></div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" @click="showUserModal=false">取消</button>
+          <button class="btn btn-primary" @click="saveUserAdmin">保存用户</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const {createApp,ref,computed,reactive}=Vue;
+
+createApp({
+  setup(){
+    const page=ref('login');
+    const loginMode=ref('login');
+    const token=ref(localStorage.getItem('ne21_admin_token')||'');
+    const config=ref({providers:{}});
+    const emailConfig=ref({enabled:false,smtp_host:'',smtp_port:587,smtp_user:'',smtp_pass:'',from_addr:'',test_recipient:''});
+    const msg=reactive({show:false,text:'',type:'success'});
+    const showAddModal=ref(false);
+    const newProvider=reactive({key:'',title:'',protocol:'openai',api_key:'',base_url:'',models:[]});
+    const loginForm=reactive({username:'admin',password:''});
+    const forgotForm=reactive({email:''});
+    const resetForm=reactive({email:'',code:'',newPassword:'',confirmPassword:''});
+    const pwdForm=reactive({old:'',new:'',confirm:''});
+    const accountConfig=reactive({username:'admin',admin_email:'',avatar_data:''});
+    const users=ref([]);
+    const showUserModal=ref(false);
+    const userForm=reactive({username:'',email:'',password:'',points_delta:0,member_days_delta:0,member_until:'',is_banned:false,ban_reason:'',reason:''});
+    const paymentPlans=ref([]);
+    const paymentConfig=reactive({gift_type:'none',gift_points:0,gift_days:0});
+    const payApiConfig=reactive({
+      // 支付宝官方
+      alipay_enabled:false,alipay_app_id:'',alipay_gateway:'https://openapi.alipay.com/gateway.do',alipay_private_key:'',alipay_public_key:'',
+      // 微信支付官方
+      wechat_enabled:false,wechat_app_id:'',wechat_mch_id:'',wechat_api_key:'',wechat_apiv3_key:'',wechat_cert_serial:'',wechat_private_key:'',wechat_notify_url:'',
+      // 支付FM
+      zhifufm_enabled:false,zhifufm_api_url:'',zhifufm_merchant_num:'',zhifufm_secret:'',zhifufm_notify_url:'',zhifufm_return_url:'',
+      // 杉德河马
+      sandpay_enabled:false,sandpay_mid:'',sandpay_api_url:'',sandpay_private_key:'',sandpay_public_key:'',sandpay_notify_url:'',sandpay_return_url:'',
+      // 易支付
+      epay_enabled:false,epay_api_url:'',epay_pid:'',epay_key:'',epay_notify_url:'',epay_return_url:''
+    });
+    const payApiCollapsed=reactive({alipay:true,wechat:true,zhifufm:true,sandpay:true,epay:true});
+    const planForm=reactive({id:null,name:'',plan_type:'points',price:0,points:0,days:30,enabled:true,sort_order:0});
+    const aiLogs=ref([]);
+    const aiLogLoading=ref(false);
+    const aiLogTotal=ref(0);
+    const expandedLogs=reactive({});
+    const aiLogFilter=reactive({status:'',model:'',keyword:'',date_from:'',date_to:'',limit:100,page:1});
+    const scriptLogs=ref([]);
+    const scriptLogLoading=ref(false);
+    const scriptLogTotal=ref(0);
+    const scriptLogFilter=reactive({username:'',level:'',keyword:'',date_from:'',date_to:'',limit:100,page:1});
+    const questionBank=ref([]);
+    const questionBankTotal=ref(0);
+    const questionBankLoading=ref(false);
+    const expandedBank=reactive({});
+    const questionBankFilter=reactive({keyword:'',limit:100,page:1});
+    const loginLocks=ref([]);
+    const loginLockLoading=ref(false);
+    const saveConfigLoading=ref(false);
+    const logRetentionDays=ref(0);
+    const logCleanupSaving=ref(false);
+    const logCleanupRunning=ref(false);
+    const logCleanupResult=ref(null);
+    const collapsedProviders=reactive(JSON.parse(localStorage.getItem('ne21_collapsed_providers')||'{}'));
+    const dashboard=ref({cards:{users:0,active:0,question_bank:0,calls:0,success:0,error:0,bank_hits:0,bank_hit_rate:0},trend:[],models:[]});
+    const dashStartDate=ref(new Date().toISOString().slice(0,10));
+    const dashEndDate=ref(new Date().toISOString().slice(0,10));
+    const todayStr=new Date().toISOString().slice(0,10);
+    const d7ago=new Date(Date.now()-7*86400000).toISOString().slice(0,10);
+    const d30ago=new Date(Date.now()-30*86400000).toISOString().slice(0,10);
+    const d90ago=new Date(Date.now()-90*86400000).toISOString().slice(0,10);
+    const adminSlider=reactive({id:'',target:130,x:0,token:'',verified:false,loading:false,dragging:false,trackEl:null});
+    const providerReadyCount=ref(0);
+    const providerTotalCount=ref(0);
+
+    function providerReadyLocal(p){
+      const enabled=p&&((p.enabled===true)||p.enabled===1||String(p.enabled).toLowerCase()==='true'||String(p.enabled)==='1');
+      return !!(enabled&&String(p.api_key||'').trim()&&(p.models||[]).length);
+    }
+    const providerEntries=computed(()=>Object.entries(config.value?.providers||{}).map(([key,info])=>({
+      key,
+      info:{enabled:false,title:key,protocol:'openai',api_key:'',base_url:'',models:[],...(info||{})}
+    })));
+    const enabledCount=computed(()=>providerReadyCount.value||Object.values(config.value.providers||{}).filter(providerReadyLocal).length);
+
+    function showMsg(text,type='success',duration=3000){
+      msg.text=text;msg.type=type;msg.show=true;
+      if(duration)setTimeout(()=>msg.show=false,duration);
+    }
+    async function safeFetch(url,options){
+      try{
+        return await fetch(url,options);
+      }catch(e){
+        throw new Error('无法连接后端服务，请确认 https://xs.openget.cn 正在运行，并刷新后台页面');
+      }
+    }
+
+    // Auth
+    async function initAdminSlider(){
+      adminSlider.loading=true;
+      Object.assign(adminSlider,{x:0,token:'',verified:false,dragging:false});
+      try{
+        const res=await fetch('/api/slider-captcha/start?scope=admin');
+        const data=await res.json();
+        const c=data.captcha||{};
+        Object.assign(adminSlider,{id:c.id||'',target:Number(c.target_hint||130),x:0,token:'',verified:false});
+      }catch(e){showMsg('滑块验证初始化失败，请刷新页面','error',5000);}
+      finally{adminSlider.loading=false;}
+    }
+    async function resetAdminSlider(message){
+      Object.assign(adminSlider,{id:'',target:130,x:0,token:'',verified:false,dragging:false});
+      if(message)showMsg(message,'error',2200);
+      await initAdminSlider();
+    }
+    async function verifyAdminSlider(){
+      if(adminSlider.verified||!adminSlider.id)return;
+      adminSlider.loading=true;
+      try{
+        const res=await fetch('/api/slider-captcha/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scope:'admin',id:adminSlider.id,x:adminSlider.x})});
+        const data=await res.json();
+        if(data.code===200){adminSlider.token=data.token;adminSlider.verified=true;showMsg('滑块验证通过','success',1200);}
+        else{await resetAdminSlider(data.msg||'滑块验证失败，请重新拖动');}
+      }catch(e){await resetAdminSlider('滑块验证失败，请重新拖动');}
+      finally{adminSlider.loading=false;}
+    }
+    async function ensureAdminSliderVerified(){
+      if(adminSlider.verified&&adminSlider.token)return true;
+      if(adminSlider.loading){
+        for(let i=0;i<20&&adminSlider.loading;i++)await new Promise(r=>setTimeout(r,100));
+        if(adminSlider.verified&&adminSlider.token)return true;
+      }
+      if(adminSlider.id){
+        await verifyAdminSlider();
+        return !!(adminSlider.verified&&adminSlider.token);
+      }
+      return false;
+    }
+    function beginAdminPuzzle(e){
+      if(adminSlider.verified||adminSlider.loading)return;
+      adminSlider.dragging=true;
+      adminSlider.trackEl=e.currentTarget.closest('.puzzle-track');
+      const move=(ev)=>{
+        if(!adminSlider.dragging||!adminSlider.trackEl)return;
+        const point=ev.touches?ev.touches[0]:ev;
+        const rect=adminSlider.trackEl.getBoundingClientRect();
+        const ratio=Math.max(0,Math.min(1,(point.clientX-rect.left)/rect.width));
+        adminSlider.x=Math.round(ratio*260);
+      };
+      const up=async()=>{
+        adminSlider.dragging=false;
+        document.removeEventListener('mousemove',move);
+        document.removeEventListener('mouseup',up);
+        document.removeEventListener('touchmove',move);
+        document.removeEventListener('touchend',up);
+        await verifyAdminSlider();
+      };
+      document.addEventListener('mousemove',move);
+      document.addEventListener('mouseup',up);
+      document.addEventListener('touchmove',move,{passive:false});
+      document.addEventListener('touchend',up);
+      move(e);
+    }
+    async function doLogin(){
+      if(!loginForm.username||!loginForm.password)return showMsg('请输入管理员用户名和密码','error');
+      const sliderOk=await ensureAdminSliderVerified();
+      if(!sliderOk){await resetAdminSlider('请重新完成滑块验证');return;}
+      try{
+        const res=await fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:loginForm.username,password:loginForm.password,slider_token:adminSlider.token})});
+        const data=await res.json();
+        if(data.code===200){token.value=data.token;localStorage.setItem('ne21_admin_token',token.value);page.value='dashboard';loadAll();}
+        else{await resetAdminSlider(data.msg||'用户名或密码错误，请重新完成滑块验证');}
+      }catch(e){await resetAdminSlider('请求失败，请重新完成滑块验证');}
+    }
+    async function doForgot(){
+      if(!forgotForm.email)return showMsg('请输入绑定邮箱','error');
+      try{
+        const res=await fetch('/admin/forgot-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:forgotForm.email})});
+        const data=await res.json();
+        if(data.code===200){resetForm.email=forgotForm.email;loginMode.value='reset';showMsg(data.msg||'验证码已发送');}
+        else showMsg(data.msg||'发送失败','error',6000);
+      }catch(e){showMsg('请求失败: '+e,'error');}
+    }
+    async function doReset(){
+      if(!resetForm.email||!resetForm.code||!resetForm.newPassword)return showMsg('请填写完整','error');
+      if(resetForm.newPassword!==resetForm.confirmPassword)return showMsg('两次密码不一致','error');
+      try{
+        const res=await fetch('/admin/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:resetForm.email,code:resetForm.code,new_password:resetForm.newPassword})});
+        const data=await res.json();
+        if(data.code===200){showMsg('密码已重置，请重新登录');setTimeout(()=>{loginMode.value='login';},1200);}
+        else showMsg(data.msg||'重置失败','error',6000);
+      }catch(e){showMsg('请求失败: '+e,'error');}
+    }
+    async function logout(){
+      const old=token.value;
+      if(old){try{await fetch('/admin/logout',{method:'POST',headers:{'Authorization':old}});}catch(e){}}
+      localStorage.removeItem('ne21_admin_token');token.value='';page.value='login';loginMode.value='login';
+    }
+
+    // Load data
+    async function loadAll(){
+      await loadDashboard();
+      await loadAdminAccount();
+    }
+    async function loadDashboard(){
+      if(!token.value)return;
+      try{
+        const params=new URLSearchParams({start:dashStartDate.value,end:dashEndDate.value});
+        const res=await safeFetch('/admin/dashboard?'+params,{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200&&data.data){dashboard.value=data.data;}
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'获取首页统计失败','error');
+      }catch(e){showMsg('获取首页统计失败: '+(e.message||e),'error',6000);}
+    }
+    function setQuickRange(type){
+      const today=new Date().toISOString().slice(0,10);
+      if(type==='today'){
+        dashStartDate.value=today;
+        dashEndDate.value=today;
+      }else{
+        const d=parseInt(type);
+        const start=new Date(Date.now()-d*86400000).toISOString().slice(0,10);
+        dashStartDate.value=start;
+        dashEndDate.value=today;
+      }
+      loadDashboard();
+    }
+    async function loadUsers(){
+      try{
+        const res=await fetch('/admin/users',{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){users.value=data.users||[];}
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+      }catch(e){showMsg('获取用户列表失败: '+e,'error');}
+    }
+    async function loadPaymentConfig(){
+      try{
+        const res=await fetch('/admin/payment-config',{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){
+          Object.assign(paymentConfig,data.config||{});
+          paymentPlans.value=data.plans||[];
+        }else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'获取付费配置失败','error');
+      }catch(e){showMsg('获取付费配置失败: '+e,'error');}
+    }
+    async function loadPayApiConfig(){
+      try{
+        const res=await fetch('/admin/pay-api-config',{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){
+          const cfg=data.config||{};
+          Object.keys(payApiConfig).forEach(k=>{ if(cfg[k]!==undefined&&cfg[k]!==null)payApiConfig[k]=cfg[k]; });
+        }
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'获取支付接口配置失败','error');
+      }catch(e){showMsg('获取支付接口配置失败: '+e,'error');}
+    }
+    async function loadAiLogs(page=aiLogFilter.page||1){
+      if(!token.value)return;
+      aiLogFilter.page=page;
+      aiLogLoading.value=true;
+      try{
+        const qs=new URLSearchParams();
+        qs.set('limit',String(aiLogFilter.limit||100));
+        qs.set('page',String(aiLogFilter.page||1));
+        if(aiLogFilter.status)qs.set('status',aiLogFilter.status);
+        if(aiLogFilter.model)qs.set('model',aiLogFilter.model);
+        if(aiLogFilter.keyword)qs.set('keyword',aiLogFilter.keyword);
+        if(aiLogFilter.date_from)qs.set('date_from',aiLogFilter.date_from);
+        if(aiLogFilter.date_to)qs.set('date_to',aiLogFilter.date_to);
+        const res=await safeFetch('/admin/ai-logs?'+qs.toString(),{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){aiLogs.value=data.logs||[];aiLogTotal.value=Number(data.total||0);}
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'获取模型日志失败','error');
+      }catch(e){showMsg('获取模型日志失败: '+(e.message||e),'error',6000);}
+      finally{aiLogLoading.value=false;}
+    }
+    async function loadScriptLogs(page=scriptLogFilter.page||1){
+      if(!token.value)return;
+      scriptLogFilter.page=page;
+      scriptLogLoading.value=true;
+      try{
+        const qs=new URLSearchParams();
+        qs.set('limit',String(scriptLogFilter.limit||100));
+        qs.set('page',String(scriptLogFilter.page||1));
+        if(scriptLogFilter.username)qs.set('username',scriptLogFilter.username);
+        if(scriptLogFilter.level)qs.set('level',scriptLogFilter.level);
+        if(scriptLogFilter.keyword)qs.set('keyword',scriptLogFilter.keyword);
+        if(scriptLogFilter.date_from)qs.set('date_from',scriptLogFilter.date_from);
+        if(scriptLogFilter.date_to)qs.set('date_to',scriptLogFilter.date_to);
+        const res=await safeFetch('/admin/script-logs?'+qs.toString(),{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){scriptLogs.value=data.logs||[];scriptLogTotal.value=Number(data.total||0);}
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'获取脚本日志失败','error');
+      }catch(e){showMsg('获取脚本日志失败: '+(e.message||e),'error',6000);}
+      finally{scriptLogLoading.value=false;}
+    }
+    async function loadQuestionBank(page=questionBankFilter.page||1){
+      if(!token.value)return;
+      questionBankFilter.page=page;
+      questionBankLoading.value=true;
+      try{
+        const qs=new URLSearchParams();
+        qs.set('limit',String(questionBankFilter.limit||100));
+        qs.set('page',String(questionBankFilter.page||1));
+        if(questionBankFilter.keyword)qs.set('keyword',questionBankFilter.keyword);
+        const res=await fetch('/admin/question-bank?'+qs.toString(),{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){questionBank.value=data.items||[];questionBankTotal.value=Number(data.total||0);}
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'获取题库失败','error');
+      }catch(e){showMsg('获取题库失败: '+e,'error');}
+      finally{questionBankLoading.value=false;}
+    }
+    async function loadLoginLocks(){
+      if(!token.value)return;
+      loginLockLoading.value=true;
+      try{
+        const res=await fetch('/admin/login-locks',{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){loginLocks.value=data.locks||[];}
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'获取锁定用户失败','error');
+      }catch(e){showMsg('获取锁定用户失败: '+e,'error');}
+      finally{loginLockLoading.value=false;}
+    }
+    async function loadConfig(){
+      try{
+        const res=await fetch('/admin/config',{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){
+          config.value=data.config||{providers:{}};
+          providerReadyCount.value=Number(data.ready_count||0);
+          providerTotalCount.value=Number(data.provider_count||Object.keys(config.value.providers||{}).length);
+          if(providerTotalCount.value>0&&providerReadyCount.value===0)showMsg('已读取到模型配置，但没有可用提供商：请检查是否启用、API Key 是否为空、模型列表是否为空','error',6000);
+        }
+        else{logout();showMsg('登录已过期','error');}
+      }catch(e){showMsg('获取配置失败: '+e,'error');}
+    }
+    async function loadLogCleanup(){
+      if(!token.value)return;
+      try{
+        const res=await fetch('/admin/log-cleanup',{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){logRetentionDays.value=data.retention_days||0;}
+      }catch(e){showMsg('加载清理配置失败','error');}
+    }
+    async function saveLogCleanup(){
+      if(logCleanupSaving.value)return;
+      logCleanupSaving.value=true;
+      try{
+        const res=await fetch('/admin/log-cleanup',{method:'POST',headers:{'Authorization':token.value,'Content-Type':'application/json'},body:JSON.stringify({retention_days:Number(logRetentionDays.value)})});
+        const data=await res.json();
+        if(data.code===200){showMsg('保存成功','success');}
+        else{showMsg(data.msg||'保存失败','error');}
+      }catch(e){showMsg('保存失败','error');}
+      logCleanupSaving.value=false;
+    }
+    async function runLogCleanupNow(){
+      if(logCleanupRunning.value)return;
+      logCleanupRunning.value=true;
+      logCleanupResult.value=null;
+      try{
+        const res=await fetch('/admin/log-cleanup/run',{method:'POST',headers:{'Authorization':token.value}});
+        const data=await res.json();
+        logCleanupResult.value=data;
+        if(data.code===200){showMsg(data.msg||'清理完成','success');}
+        else{showMsg(data.msg||'清理失败','error');}
+      }catch(e){showMsg('清理失败','error');}
+      logCleanupRunning.value=false;
+    }
+    async function loadEmailConfig(){
+      try{
+        const res=await fetch('/admin/email-config',{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200&&data.config){
+          emailConfig.value={...emailConfig.value,...data.config};
+        }
+      }catch(e){/* ignore */}
+    }
+    async function loadAdminAccount(){
+      try{
+        const res=await fetch('/admin/account-config',{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200&&data.config)Object.assign(accountConfig,data.config);
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+      }catch(e){showMsg('获取管理员账号信息失败: '+e,'error');}
+    }
+
+    // Save
+    async function saveConfig(){
+      if(saveConfigLoading.value)return;
+      saveConfigLoading.value=true;
+      try{
+        const res=await safeFetch('/admin/save',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({providers:config.value.providers})});
+        const data=await res.json();
+        if(data.code===200){
+          showMsg('AI 模型配置保存成功，已写入数据库！');
+          alert('AI 模型配置保存成功，已写入数据库！');
+          await loadConfig();
+        }else{
+          const text=data.msg||'保存失败';
+          showMsg(text,'error',6000);
+          alert('AI 模型配置保存失败：'+text);
+        }
+      }catch(e){
+        const text=e.message||String(e);
+        showMsg('请求失败: '+text,'error',6000);
+        alert('AI 模型配置保存失败：'+text);
+      }finally{
+        saveConfigLoading.value=false;
+      }
+    }
+    async function saveEmailConfig(){
+      try{
+        const res=await fetch('/admin/save-email',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify(emailConfig.value)});
+        const data=await res.json();
+        if(data.code===403){logout();showMsg('登录已过期','error');return;}
+        if(data.code===200)showMsg('邮箱配置保存成功');
+        else showMsg(data.msg||'保存失败','error');
+      }catch(e){showMsg('请求失败: '+e,'error');}
+    }
+    async function testEmail(){
+      try{
+        const res=await fetch('/admin/test-email',{method:'POST',headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===403){logout();showMsg('登录已过期','error');return;}
+        if(data.code===200)showMsg('测试邮件发送成功，请查收');
+        else showMsg(data.msg||'发送失败','error');
+      }catch(e){showMsg('请求失败: '+e,'error');}
+    }
+    async function savePaymentConfig(){
+      const data=await adminPost('/admin/save-payment-config',paymentConfig);
+      if(data)showMsg('注册赠送配置已保存');
+    }
+    async function savePayApiConfig(){
+      const data=await adminPost('/admin/save-pay-api-config',payApiConfig);
+      if(data)showMsg('支付接口配置已保存');
+    }
+    async function saveAdminAccount(){
+      const data=await adminPost('/admin/save-account-config',accountConfig);
+      if(data){showMsg('管理员账号信息已保存');loginForm.username=accountConfig.username||'admin';}
+    }
+    function handleAvatarUpload(e){
+      const file=e.target.files&&e.target.files[0];
+      if(!file)return;
+      if(!file.type.startsWith('image/'))return showMsg('请选择图片文件','error');
+      if(file.size>1024*1024)return showMsg('头像图片不能超过 1MB','error');
+      const reader=new FileReader();
+      reader.onload=function(){accountConfig.avatar_data=String(reader.result||'');};
+      reader.readAsDataURL(file);
+    }
+    function newPlan(){Object.assign(planForm,{id:null,name:'',plan_type:'points',price:0,points:100,days:30,enabled:true,sort_order:0});}
+    function editPlan(p){Object.assign(planForm,{...p,enabled:!!p.enabled});}
+    async function savePlan(){
+      const payload={...planForm};
+      if(payload.plan_type==='monthly')payload.points=0;
+      if(payload.plan_type==='points')payload.days=0;
+      const data=await adminPost('/admin/payment-plan/save',payload);
+      if(data){paymentPlans.value=data.plans||[];newPlan();showMsg('套餐已保存');}
+    }
+    async function deletePlan(id){
+      if(!confirm('确定删除该套餐吗？'))return;
+      const data=await adminPost('/admin/payment-plan/delete',{id});
+      if(data){paymentPlans.value=data.plans||[];showMsg('套餐已删除');}
+    }
+    async function togglePlan(p,enabled){
+      const data=await adminPost('/admin/payment-plan/toggle',{id:p.id,enabled});
+      if(data){paymentPlans.value=data.plans||[];showMsg(data.msg||'套餐状态已更新');}
+    }
+    function openUserEdit(u){
+      const memberUntil=(u.member_until||'').replace('T',' ').slice(0,16).replace(' ','T');
+      Object.assign(userForm,{username:u.username,email:u.email,password:'',points_delta:0,member_days_delta:0,member_until:memberUntil,is_banned:!!u.is_banned,ban_reason:u.ban_reason||'',reason:''});
+      showUserModal.value=true;
+    }
+    async function saveUserAdmin(){
+      const data=await adminPost('/admin/user/update',userForm);
+      if(data){showUserModal.value=false;showMsg('用户已更新');loadUsers();}
+    }
+    async function changePassword(){
+      if(!pwdForm.old||!pwdForm.new)return showMsg('请填写完整','error');
+      if(pwdForm.new!==pwdForm.confirm)return showMsg('两次密码不一致','error');
+      try{
+        const res=await fetch('/admin/change-password',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({old_password:pwdForm.old,new_password:pwdForm.new})});
+        const data=await res.json();
+        if(data.code===403){logout();showMsg('登录已过期','error');return;}
+        if(data.code===200){showMsg('密码修改成功，请重新登录');setTimeout(logout,1500);}
+        else showMsg(data.msg||'修改失败','error');
+      }catch(e){showMsg('请求失败: '+e,'error');}
+    }
+    async function clearAiLogs(){
+      const hasFilter=aiLogFilter.status||aiLogFilter.model||aiLogFilter.keyword||aiLogFilter.date_from||aiLogFilter.date_to;
+      if(!confirm(hasFilter?'确定按当前筛选条件清空模型调用日志吗？':'当前没有筛选条件，将清空全部模型调用日志，确定继续吗？'))return;
+      try{
+        const res=await fetch('/admin/ai-logs/clear',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({
+          status:aiLogFilter.status,model:aiLogFilter.model,keyword:aiLogFilter.keyword,date_from:aiLogFilter.date_from,date_to:aiLogFilter.date_to
+        })});
+        const data=await res.json();
+        if(data.code===403){logout();showMsg('登录已过期','error');return;}
+        if(data.code===200){showMsg('模型调用日志已按条件清空');loadAiLogs(1);}
+        else showMsg(data.msg||'清空失败','error');
+      }catch(e){showMsg('清空日志失败: '+e,'error');}
+    }
+    async function clearQuestionBank(){
+      const hasFilter=!!questionBankFilter.keyword;
+      if(!confirm(hasFilter?'确定清空当前关键词匹配的题库记录吗？':'当前没有关键词，将清空全部题库，确定继续吗？'))return;
+      try{
+        const res=await fetch('/admin/question-bank/clear',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({keyword:questionBankFilter.keyword})});
+        const data=await res.json();
+        if(data.code===403){logout();showMsg('登录已过期','error');return;}
+        if(data.code===200){showMsg('题库已按条件清空');loadQuestionBank(1);}
+        else showMsg(data.msg||'清空失败','error');
+      }catch(e){showMsg('清空题库失败: '+e,'error');}
+    }
+    async function unlockLoginLock(item){
+      if(!item||!item.id)return;
+      if(!confirm('确定解除该用户的登录锁定吗？'))return;
+      try{
+        const res=await fetch('/admin/login-locks/unlock',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({id:item.id})});
+        const data=await res.json();
+        if(data.code===403){logout();showMsg('登录已过期','error');return;}
+        if(data.code===200){showMsg('已解除锁定');loadLoginLocks();}
+        else showMsg(data.msg||'解除失败','error');
+      }catch(e){showMsg('解除锁定失败: '+e,'error');}
+    }
+    function toggleLog(id){expandedLogs[id]=!expandedLogs[id];}
+    function toggleBank(id){expandedBank[id]=!expandedBank[id];}
+
+    // Provider
+    function setProviders(nextProviders){
+      config.value={...(config.value||{}),providers:nextProviders||{}};
+    }
+    async function adminPost(url,payload){
+      const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify(payload||{})});
+      const data=await res.json();
+      if(data.code===403){logout();showMsg('登录已过期','error');return null;}
+      if(data.code!==200){showMsg(data.msg||'操作失败','error');return null;}
+      if(data.config){config.value=data.config;}
+      return data;
+    }
+    async function addProvider(){
+      const key=(newProvider.key||'').trim();
+      if(!key||!newProvider.title)return showMsg('请填写完整信息','error');
+      const data=await adminPost('/admin/provider/add',{
+        key,
+        enabled:true,
+        title:newProvider.title,
+        protocol:newProvider.protocol,
+        api_key:newProvider.api_key,
+        base_url:newProvider.base_url,
+        models:[]
+      });
+      if(!data)return;
+      showAddModal.value=false;
+      Object.assign(newProvider,{key:'',title:'',protocol:'openai',api_key:'',base_url:''});
+      showMsg('添加成功，已写入数据库');
+    }
+    async function removeProvider(key){
+      const data=await adminPost('/admin/provider/delete',{key});
+      if(data)showMsg('删除成功，已从数据库删除');
+    }
+    function addModel(key){
+      const oldProviders={...(config.value.providers||{})};
+      const info={...(oldProviders[key]||{})};
+      info.models=[...(info.models||[]),{value:'',label:'',weight:100,daily_token_limit:0}];
+      oldProviders[key]=info;
+      setProviders(oldProviders);
+    }
+    async function removeModel(key,idx){
+      const model=(config.value.providers?.[key]?.models||[])[idx];
+      if(model&&model.value){
+        const data=await adminPost('/admin/model/delete',{key,idx});
+        if(data)showMsg('模型删除成功，已从数据库删除');
+        return;
+      }
+      const oldProviders={...(config.value.providers||{})};
+      const info={...(oldProviders[key]||{})};
+      info.models=(info.models||[]).filter((_,i)=>i!==idx);
+      oldProviders[key]=info;
+      setProviders(oldProviders);
+    }
+    function protocolName(p){const map={openai:'OpenAI 兼容',claude:'Claude',gemini:'Gemini'};return map[p]||p;}
+    function statusText(s){return s==='success'?'成功':'失败';}
+    function formatDuration(ms){
+      ms=Number(ms||0);
+      return ms>=1000?(ms/1000).toFixed(1)+'s':ms+'ms';
+    }
+    function shortText(text,len=160){
+      text=(text==null?'':String(text));
+      return text.length>len?text.slice(0,len)+'...':text;
+    }
+    function formatScriptExtra(log){
+      try{
+        const raw=log&&log.extra_json;
+        if(!raw)return '';
+        const e=typeof raw==='string'?JSON.parse(raw):raw;
+        const parts=[];
+        if(e.progress!=null)parts.push('进度 '+e.progress+'%');
+        if(e.threshold!=null)parts.push('目标 '+e.threshold+'%');
+        if(e.currentTime!=null&&e.duration!=null)parts.push('播放 '+e.currentTime+'/'+e.duration+' 秒');
+        if(e.rate!=null)parts.push('设置倍速 '+e.rate+'×');
+        if(e.actualRate!=null)parts.push('实际倍速 '+e.actualRate+'×');
+        if(e.requirement)parts.push(String(e.requirement));
+        return parts.join('｜');
+      }catch(e){return '';}
+    }
+    function saveCollapsedProviders(){
+      localStorage.setItem('ne21_collapsed_providers',JSON.stringify(collapsedProviders));
+    }
+    function toggleProvider(key){
+      collapsedProviders[key]=!collapsedProviders[key];
+      saveCollapsedProviders();
+    }
+    function collapseAllProviders(collapsed){
+      Object.keys(config.value.providers||{}).forEach(k=>{collapsedProviders[k]=collapsed;});
+      saveCollapsedProviders();
+    }
+    function togglePayApiSection(key){
+      if(payApiCollapsed[key]===undefined)payApiCollapsed[key]=false;
+      payApiCollapsed[key]=!payApiCollapsed[key];
+    }
+    function trendMax(){
+      const vals=(dashboard.value.trend||[]).flatMap(r=>[Number(r.total||0),Number(r.success||0),Number(r.error||0)]);
+      return Math.max(1,...vals);
+    }
+    function trendX(i){
+      const rows=dashboard.value.trend||[];
+      if(rows.length<=1)return 360; // 单点居中
+      return 40+i*(620/Math.max(1,rows.length-1));
+    }
+    function trendY(v){
+      const max=trendMax();
+      return 205-(Number(v||0)/max)*170;
+    }
+    function trendPoints(key){
+      const rows=dashboard.value.trend||[];
+      if(!rows.length)return '';
+      return rows.map((r,i)=>{
+        const x=trendX(i);
+        const y=trendY(r[key]);
+        return x.toFixed(1)+','+y.toFixed(1);
+      }).join(' ');
+    }
+    function stackBarX(i){
+      const rows=dashboard.value.trend||[];
+      const n=rows.length;
+      if(n<=1)return 340;
+      const step=620/Math.max(1,n);
+      return 40+i*step+step/2-15;
+    }
+    function stackBarY(v){
+      return 205-(Number(v||0)/trendMax())*170;
+    }
+    function stackBarH(v){
+      const h=(Number(v||0)/trendMax())*170;
+      return Math.max(2,h);
+    }
+    function modelBarWidth(v){
+      const max=Math.max(1,...(dashboard.value.models||[]).map(m=>Number(m.total||0)));
+      return Math.max(3,(Number(v||0)/max)*100)+'%';
+    }
+    function revMax(){
+      const rows=dashboard.value.revenue?.trend||[];
+      return Math.max(1,...rows.map(r=>Number(r.revenue||0)));
+    }
+    function revTrendX(i){
+      const rows=dashboard.value.revenue?.trend||[];
+      if(rows.length<=1)return 360;
+      return 40+i*(620/Math.max(1,rows.length-1));
+    }
+    function revStep(){
+      const rows=dashboard.value.revenue?.trend||[];
+      return 620/Math.max(1,rows.length-1);
+    }
+    function revY(v){
+      const max=revMax();
+      return 170-(Number(v||0)/max)*140;
+    }
+    function revTrendPoints(){
+      const rows=dashboard.value.revenue?.trend||[];
+      if(!rows.length)return '';
+      return rows.map((r,i)=>{
+        const x=revTrendX(i);
+        const y=revY(r.revenue);
+        return x.toFixed(1)+','+y.toFixed(1);
+      }).join(' ');
+    }
+    function revTrendArea(){
+      const rows=dashboard.value.revenue?.trend||[];
+      if(!rows.length)return '';
+      const pts=rows.map((r,i)=>{
+        const x=40+i*revStep();
+        const y=revY(r.revenue);
+        return x.toFixed(1)+','+y.toFixed(1);
+      }).join(' ');
+      const lastX=40+(rows.length-1)*revStep();
+      return '40,170 '+pts+' '+lastX.toFixed(1)+',170';
+    }
+
+    if(token.value){page.value='dashboard';loadAll();}
+    else initAdminSlider();
+
+    return{
+      page,loginMode,config,emailConfig,msg,showAddModal,newProvider,
+      loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,users,showUserModal,userForm,
+      paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,planForm,
+      aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,
+      questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,
+      doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,testEmail,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
+      loadConfig,loadEmailConfig,loadUsers,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,
+      savePaymentConfig,savePayApiConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,openUserEdit,saveUserAdmin,
+      toggleProvider,collapseAllProviders,togglePayApiSection,
+      addProvider,removeProvider,addModel,removeModel,
+      protocolName,statusText,formatDuration,shortText,formatScriptExtra,trendPoints,trendX,trendY,trendMax,stackBarX,stackBarY,stackBarH,modelBarWidth,revTrendPoints,revTrendArea,revTrendX,revStep,revY,revMax,
+      loadLogCleanup,saveLogCleanup,runLogCleanupNow,logRetentionDays,logCleanupSaving,logCleanupRunning,logCleanupResult
+    };
+  }
+}).mount('#app');
+</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "deepseek": {
+    "enabled": true,
+    "title": "DeepSeek",
+    "protocol": "openai",
+    "api_key": "sk-your-api-key-here",
+    "base_url": "https://api.deepseek.com/v1",
+    "models": [
+      {
+        "value": "deepseek-chat",
+        "label": "DeepSeek-V3 (通用｜推荐)"
+      },
+      {
+        "value": "deepseek-reasoner",
+        "label": "DeepSeek-R1 (思考｜强推理)"
+      }
+    ]
+  }
+}
