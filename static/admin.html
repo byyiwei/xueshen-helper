@@ -469,6 +469,9 @@ body{
         <div class="menu-item" :class="{active:page==='pay-api'}" @click="page='pay-api';loadPayApiConfig()">
           <span class="icon">⌁</span>支付接口
         </div>
+        <div class="menu-item" :class="{active:page==='pay-test'}" @click="page='pay-test'">
+          <span class="icon">◈</span>支付测试
+        </div>
         <div class="menu-item" :class="{active:page==='log-cleanup'}" @click="page='log-cleanup';loadLogCleanup()">
           <span class="icon">∅</span>日志清理
         </div>
@@ -866,7 +869,23 @@ body{
           <div class="card">
             <div class="card-header">
               <h3>注册用户列表</h3>
-              <button class="btn btn-secondary btn-sm" @click="loadUsers">刷新</button>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <input v-model="userSearch" placeholder="搜索用户名/邮箱" style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:13px;width:200px" @keyup.enter="loadUsers()">
+                <select v-model="userSortBy" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:13px" @change="loadUsers()">
+                  <option value="created_at">注册时间</option>
+                  <option value="last_login_at">最近登录</option>
+                  <option value="id">ID</option>
+                  <option value="username">用户名</option>
+                  <option value="points_balance">点数</option>
+                </select>
+                <select v-model="userSortOrder" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:13px" @change="loadUsers()">
+                  <option value="desc">降序</option>
+                  <option value="asc">升序</option>
+                </select>
+                <button class="btn btn-primary btn-sm" @click="loadUsers()">搜索</button>
+                <button class="btn btn-secondary btn-sm" @click="resetUserSearch">重置</button>
+                <button class="btn btn-secondary btn-sm" @click="loadUsers">刷新</button>
+              </div>
             </div>
             <div class="card-body">
               <div v-if="users.length===0" style="text-align:center;color:var(--text3);padding:40px 0;font-size:13px">
@@ -876,13 +895,13 @@ body{
                 <table style="width:100%;border-collapse:collapse;font-size:13px">
                   <thead>
                     <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
-                      <th style="text-align:left;padding:10px 8px">ID</th>
-                      <th style="text-align:left;padding:10px 8px">用户名</th>
+                      <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="setSort('id')">ID {{userSortBy==='id'?(userSortOrder==='asc'?'↑':'↓'):''}}</th>
+                      <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="setSort('username')">用户名 {{userSortBy==='username'?(userSortOrder==='asc'?'↑':'↓'):''}}</th>
                       <th style="text-align:left;padding:10px 8px">邮箱</th>
-                      <th style="text-align:left;padding:10px 8px">权益</th>
+                      <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="setSort('points_balance')">权益 {{userSortBy==='points_balance'?(userSortOrder==='asc'?'↑':'↓'):''}}</th>
                       <th style="text-align:left;padding:10px 8px">状态</th>
-                      <th style="text-align:left;padding:10px 8px">注册时间</th>
-                      <th style="text-align:left;padding:10px 8px">最近登录</th>
+                      <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="setSort('created_at')">注册时间 {{userSortBy==='created_at'?(userSortOrder==='asc'?'↑':'↓'):''}}</th>
+                      <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="setSort('last_login_at')">最近登录 {{userSortBy==='last_login_at'?(userSortOrder==='asc'?'↑':'↓'):''}}</th>
                       <th style="text-align:left;padding:10px 8px">操作</th>
                     </tr>
                   </thead>
@@ -974,6 +993,24 @@ body{
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <!-- 通道调用比例卡片（置顶） -->
+          <div class="weight-card" style="background:linear-gradient(135deg,var(--primary)08,var(--primary)03);border:1px solid var(--primary)30;border-radius:12px;padding:16px 20px;margin-bottom:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <div>
+                <span style="font-size:15px;font-weight:600">通道调用比例</span>
+                <span style="font-size:12px;color:var(--text3);margin-left:8px">设为0则不参与分配</span>
+              </div>
+              <div style="font-size:11px;color:var(--text3)">支付宝总权重:{{payApiWeightTotal.alipay}} | 微信总权重:{{payApiWeightTotal.wechat}}</div>
+            </div>
+            <p style="color:var(--text3);font-size:12px;margin:0 0 12px;line-height:1.6">用户购买时，系统按各通道权重随机分配支付通道。权重越大被选中概率越高，设为0则该通道不参与分配。支付宝官方和微信官方分别只参与对应支付方式的分配，杉德河马/支付FM/易支付同时参与两种支付方式的分配。默认各100（等概率）。</p>
+            <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px">
+              <div v-for="ch in [{k:'alipay',n:'支付宝官方',e:payApiConfig.alipay_enabled,w:payApiConfig.alipay_weight},{k:'wechat',n:'微信官方',e:payApiConfig.wechat_enabled,w:payApiConfig.wechat_weight},{k:'zhifufm',n:'支付FM',e:payApiConfig.zhifufm_enabled,w:payApiConfig.zhifufm_weight},{k:'sandpay',n:'杉德河马',e:payApiConfig.sandpay_enabled,w:payApiConfig.sandpay_weight},{k:'epay',n:'易支付',e:payApiConfig.epay_enabled,w:payApiConfig.epay_weight}]" :key="ch.k" style="text-align:center;padding:8px;border-radius:8px;background:var(--card);border:1px solid var(--border)">
+                <div style="font-size:12px;margin-bottom:2px" :style="{color:ch.e?'var(--text1)':'var(--text3)',textDecoration:ch.e?'':'line-through'}">{{ch.n}}</div>
+                <input v-model.number="payApiConfig[ch.k+'_weight']" type="number" min="0" max="1000" style="width:100%;text-align:center;font-size:16px;font-weight:600;color:var(--text1);border:1px solid var(--border);border-radius:6px;padding:4px;background:var(--bg)">
+                <div style="font-size:11px;margin-top:4px" :style="{color:ch.e&&payApiWeightTotal[ch.k]>0?'var(--primary)':'var(--text3)'}">{{ch.e?payApiWeightPercent(ch.k):'未启用'}}</div>
+              </div>
+            </div>
+          </div>
           <div class="collapsible-section">
             <div class="section-title" @click="togglePayApiSection('alipay')">
               <span class="st-text">支付宝官方</span>
@@ -1048,10 +1085,11 @@ body{
             <div class="section-body" v-show="!payApiCollapsed.sandpay">
               <div class="form-row">
                 <div class="form-group"><label>商户号 MID</label><input v-model="payApiConfig.sandpay_mid" placeholder="杉德商户号"></div>
-                <div class="form-group"><label>接口地址 API URL</label><input v-model="payApiConfig.sandpay_api_url" placeholder="https://sand-api.example.com"></div>
+                <div class="form-group"><label>接口地址 API URL</label><input v-model="payApiConfig.sandpay_api_url" placeholder="https://cashier.sandpay.com.cn"></div>
               </div>
-              <div class="form-group"><label>商户私钥</label><textarea v-model="payApiConfig.sandpay_private_key" rows="5" placeholder="杉德商户私钥（PEM 或正文）"></textarea></div>
-              <div class="form-group"><label>杉德公钥</label><textarea v-model="payApiConfig.sandpay_public_key" rows="4" placeholder="杉德平台公钥，用于验签"></textarea></div>
+              <div class="form-group"><label>商户私钥（你生成的，用于签名）</label><textarea v-model="payApiConfig.sandpay_private_key" rows="5" placeholder="用密钥工具生成的私钥，约1624字符"></textarea></div>
+              <div class="form-group"><label>商户公钥（你生成的，需上传到杉德宝商户平台）</label><textarea v-model="payApiConfig.sandpay_merchant_public_key" rows="4" placeholder="用密钥工具生成的公钥，约392字符，需上传到杉德宝商户平台"></textarea></div>
+              <div class="form-group"><label>杉德平台公钥（杉德给的，用于验签回调）</label><textarea v-model="payApiConfig.sandpay_public_key" rows="4" placeholder="从杉德宝商户平台下载的杉德公钥，约392字符"></textarea></div>
               <div class="form-group"><label>异步通知URL</label><input v-model="payApiConfig.sandpay_notify_url" placeholder="https://xs.openget.cn/api/payment/notify/sandpay"></div>
               <div class="form-group"><label>同步跳转URL</label><input v-model="payApiConfig.sandpay_return_url" placeholder="https://xs.openget.cn/user"></div>
             </div>
@@ -1445,6 +1483,117 @@ body{
           </div>
         </div>
       </template>
+      <template v-if="page==='pay-test'">
+        <header class="main-header">
+          <h2>支付测试</h2>
+          <span class="breadcrumb">独立测试各支付通道，不影响正式环境用户</span>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="card">
+            <div class="card-header"><h3>通道测试</h3></div>
+            <div class="card-body">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>支付通道</label>
+                  <select v-model="payTestForm.channel" class="form-control">
+                    <option value="sandpay">杉德河马</option>
+                    <option value="zhifufm">支付FM-杉德</option>
+                    <option value="epay">易支付</option>
+                    <option value="alipay">支付宝官方</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>支付方式</label>
+                  <select v-model="payTestForm.pay_type" class="form-control">
+                    <option value="alipay">支付宝</option>
+                    <option value="wxpay">微信支付</option>
+                    <option value="sandpayh5">杉德收银台</option>
+                  </select>
+                  <div style="font-size:11px;color:var(--text3);margin-top:4px">支付宝官方仅支持支付宝；杉德河马/易支付支持支付宝和微信；支付FM使用杉德收银台</div>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>测试金额（元）</label>
+                  <input v-model.number="payTestForm.amount" type="number" step="0.01" min="0.01" max="100" class="form-control" placeholder="0.01">
+                </div>
+                <div class="form-group" v-if="payTestForm.channel==='sandpay'">
+                  <label>产品编码 productId</label>
+                  <input v-model="payTestForm.productId" class="form-control" placeholder="手动填写杉德产品编码">
+                </div>
+              </div>
+              <!-- 杉德高级参数 -->
+              <template v-if="payTestForm.channel==='sandpay'">
+                <div style="margin-top:12px">
+                  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text2)">
+                    <input type="checkbox" v-model="payTestForm.sandpayAdvanced" @change="onSandpayAdvancedChange"> 高级参数（自定义请求报文）
+                  </label>
+                  <div v-if="payTestForm.sandpayAdvanced" style="margin-top:12px;padding:12px;border-radius:8px;background:var(--bg4);border:1px solid var(--border)">
+                    <div style="font-size:12px;font-weight:600;color:var(--accent);margin-bottom:8px">公共请求参数 (head)</div>
+                    <div class="form-row" style="grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px">
+                      <div class="form-group"><label style="font-size:11px;margin-bottom:4px">version</label><input v-model="payTestForm.sandpayParams.head.version" class="form-control" style="padding:6px 10px;font-size:12px"></div>
+                      <div class="form-group"><label style="font-size:11px;margin-bottom:4px">method</label><input v-model="payTestForm.sandpayParams.head.method" class="form-control" style="padding:6px 10px;font-size:12px"></div>
+                      <div class="form-group"><label style="font-size:11px;margin-bottom:4px">productId</label><input v-model="payTestForm.sandpayParams.head.productId" class="form-control" style="padding:6px 10px;font-size:12px"></div>
+                      <div class="form-group"><label style="font-size:11px;margin-bottom:4px">accessType</label><input v-model="payTestForm.sandpayParams.head.accessType" class="form-control" style="padding:6px 10px;font-size:12px"></div>
+                    </div>
+                    <div class="form-row" style="grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px">
+                      <div class="form-group"><label style="font-size:11px;margin-bottom:4px">mid</label><input v-model="payTestForm.sandpayParams.head.mid" class="form-control" style="padding:6px 10px;font-size:12px"></div>
+                      <div class="form-group"><label style="font-size:11px;margin-bottom:4px">plMid</label><input v-model="payTestForm.sandpayParams.head.plMid" class="form-control" style="padding:6px 10px;font-size:12px" placeholder="选填"></div>
+                      <div class="form-group"><label style="font-size:11px;margin-bottom:4px">channelType</label><input v-model="payTestForm.sandpayParams.head.channelType" class="form-control" style="padding:6px 10px;font-size:12px"></div>
+                      <div class="form-group"><label style="font-size:11px;margin-bottom:4px">reqTime</label><input v-model="payTestForm.sandpayParams.head.reqTime" class="form-control" style="padding:6px 10px;font-size:12px"></div>
+                    </div>
+                    <div style="font-size:12px;font-weight:600;color:var(--accent);margin:12px 0 8px">请求报文参数 (body)</div>
+                    <div class="form-row" style="grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px">
+                      <div class="form-group"><label style="font-size:11px;margin-bottom:4px">payTool</label><input v-model="payTestForm.sandpayParams.body.payTool" class="form-control" style="padding:6px 10px;font-size:12px"></div>
+                      <div class="form-group"><label style="font-size:11px;margin-bottom:4px">orderCode</label><input v-model="payTestForm.sandpayParams.body.orderCode" class="form-control" style="padding:6px 10px;font-size:12px"></div>
+                      <div class="form-group"><label style="font-size:11px;margin-bottom:4px">totalAmount</label><input v-model="payTestForm.sandpayParams.body.totalAmount" class="form-control" style="padding:6px 10px;font-size:12px"></div>
+                      <div class="form-group"><label style="font-size:11px;margin-bottom:4px">storeCode</label><input v-model="payTestForm.sandpayParams.body.storeCode" class="form-control" style="padding:6px 10px;font-size:12px" placeholder="门店编号"></div>
+                    </div>
+                    <div class="form-row" style="grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px">
+                      <div class="form-group"><label style="font-size:11px;margin-bottom:4px">subject</label><input v-model="payTestForm.sandpayParams.body.subject" class="form-control" style="padding:6px 10px;font-size:12px"></div>
+                      <div class="form-group"><label style="font-size:11px;margin-bottom:4px">body</label><input v-model="payTestForm.sandpayParams.body.body" class="form-control" style="padding:6px 10px;font-size:12px"></div>
+                      <div class="form-group"><label style="font-size:11px;margin-bottom:4px">notifyUrl</label><input v-model="payTestForm.sandpayParams.body.notifyUrl" class="form-control" style="padding:6px 10px;font-size:12px"></div>
+                    </div>
+                    <div style="margin-top:8px">
+                      <button class="btn btn-secondary" @click="refreshSandpayParams" style="font-size:12px;padding:4px 12px">重新生成默认值</button>
+                    </div>
+                  </div>
+                </div>
+              </template>
+              <div style="margin-top:16px">
+                <button class="btn btn-primary" :disabled="payTestLoading" @click="runPayTest">{{payTestLoading?'创建中...':'创建测试订单'}}</button>
+              </div>
+            </div>
+          </div>
+          <div v-if="payTestResult" class="card" style="margin-top:16px">
+            <div class="card-header"><h3>测试结果</h3></div>
+            <div class="card-body">
+              <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:13px">
+                <div style="color:var(--text3)">状态</div>
+                <div :style="{color:payTestResult.code===200?'var(--success)':'var(--danger)'}">{{payTestResult.code===200?'成功':'失败'}}</div>
+                <div style="color:var(--text3)">消息</div>
+                <div>{{payTestResult.msg}}</div>
+                <template v-if="payTestResult.order_no">
+                  <div style="color:var(--text3)">订单号</div>
+                  <div style="font-family:monospace">{{payTestResult.order_no}}</div>
+                </template>
+                <template v-if="payTestResult.pay_url">
+                  <div style="color:var(--text3)">支付链接</div>
+                  <div style="word-break:break-all"><a :href="payTestResult.pay_url" target="_blank" style="color:var(--primary)">{{payTestResult.pay_url}}</a></div>
+                </template>
+                <template v-if="payTestResult.qr_code">
+                  <div style="color:var(--text3)">二维码</div>
+                  <div><img :src="payTestResult.qr_code" style="width:200px;height:200px;background:#fff;padding:8px;border-radius:8px"></div>
+                </template>
+              </div>
+              <div v-if="payTestResult.pay_url" style="margin-top:16px">
+                <a :href="payTestResult.pay_url" target="_blank" class="btn btn-success">前往支付页面</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
     </main>
     <div v-if="showUserModal" class="modal-overlay" @click.self="showUserModal=false">
       <div class="modal">
@@ -1489,6 +1638,9 @@ createApp({
     const pwdForm=reactive({old:'',new:'',confirm:''});
     const accountConfig=reactive({username:'admin',admin_email:'',avatar_data:''});
     const users=ref([]);
+    const userSearch=ref('');
+    const userSortBy=ref('created_at');
+    const userSortOrder=ref('desc');
     const showUserModal=ref(false);
     const userForm=reactive({username:'',email:'',password:'',points_delta:0,member_days_delta:0,member_until:'',is_banned:false,ban_reason:'',reason:''});
     const paymentPlans=ref([]);
@@ -1501,9 +1653,10 @@ createApp({
       // 支付FM
       zhifufm_enabled:false,zhifufm_api_url:'',zhifufm_merchant_num:'',zhifufm_secret:'',zhifufm_notify_url:'',zhifufm_return_url:'',
       // 杉德河马
-      sandpay_enabled:false,sandpay_mid:'',sandpay_api_url:'',sandpay_private_key:'',sandpay_public_key:'',sandpay_notify_url:'',sandpay_return_url:'',
+      sandpay_enabled:false,sandpay_mid:'',sandpay_api_url:'',sandpay_private_key:'',sandpay_merchant_public_key:'',sandpay_public_key:'',sandpay_notify_url:'',sandpay_return_url:'',
       // 易支付
-      epay_enabled:false,epay_api_url:'',epay_pid:'',epay_key:'',epay_notify_url:'',epay_return_url:''
+      epay_enabled:false,epay_api_url:'',epay_pid:'',epay_key:'',epay_notify_url:'',epay_return_url:'',
+      alipay_weight:100,wechat_weight:100,zhifufm_weight:100,sandpay_weight:100,epay_weight:100
     });
     const payApiCollapsed=reactive({alipay:true,wechat:true,zhifufm:true,sandpay:true,epay:true});
     const planForm=reactive({id:null,name:'',plan_type:'points',price:0,points:0,days:30,enabled:true,sort_order:0});
@@ -1526,6 +1679,15 @@ createApp({
     const saveConfigLoading=ref(false);
     const logRetentionDays=ref(0);
     const logCleanupSaving=ref(false);
+    const payTestForm=reactive({
+      channel:'sandpay',pay_type:'alipay',amount:0.01,productId:'',sandpayAdvanced:false,
+      sandpayParams:{
+        head:{version:'1.0',method:'sandpay.trade.precreate',productId:'',accessType:'1',mid:'',plMid:'',channelType:'07',reqTime:''},
+        body:{payTool:'0403',orderCode:'',totalAmount:'',storeCode:'',subject:'',body:'',notifyUrl:''}
+      }
+    });
+    const payTestLoading=ref(false);
+    const payTestResult=ref(null);
     const logCleanupRunning=ref(false);
     const logCleanupResult=ref(null);
     const collapsedProviders=reactive(JSON.parse(localStorage.getItem('ne21_collapsed_providers')||'{}'));
@@ -1694,11 +1856,32 @@ createApp({
     }
     async function loadUsers(){
       try{
-        const res=await fetch('/admin/users',{headers:{'Authorization':token.value}});
+        const params=new URLSearchParams();
+        if(userSearch.value.trim())params.set('search',userSearch.value.trim());
+        if(userSortBy.value)params.set('sort_by',userSortBy.value);
+        if(userSortOrder.value)params.set('sort_order',userSortOrder.value);
+        const qs=params.toString();
+        const url='/admin/users'+(qs?('?'+qs):'');
+        const res=await fetch(url,{headers:{'Authorization':token.value}});
         const data=await res.json();
         if(data.code===200){users.value=data.users||[];}
         else if(data.code===403){logout();showMsg('登录已过期','error');}
       }catch(e){showMsg('获取用户列表失败: '+e,'error');}
+    }
+    function setSort(field){
+      if(userSortBy.value===field){
+        userSortOrder.value=userSortOrder.value==='asc'?'desc':'asc';
+      }else{
+        userSortBy.value=field;
+        userSortOrder.value='desc';
+      }
+      loadUsers();
+    }
+    function resetUserSearch(){
+      userSearch.value='';
+      userSortBy.value='created_at';
+      userSortOrder.value='desc';
+      loadUsers();
     }
     async function loadPaymentConfig(){
       try{
@@ -1838,6 +2021,102 @@ createApp({
         else{showMsg(data.msg||'清理失败','error');}
       }catch(e){showMsg('清理失败','error');}
       logCleanupRunning.value=false;
+    }
+    // 支付通道权重计算
+    const payApiWeightTotal=computed(()=>{
+      const cfg=payApiConfig;
+      // 支付宝通道：支付宝官方 + 支付FM + 杉德 + 易支付
+      const alipayTotal=(
+        (cfg.alipay_enabled?Math.max(0,parseInt(cfg.alipay_weight)||0):0)+
+        (cfg.zhifufm_enabled?Math.max(0,parseInt(cfg.zhifufm_weight)||0):0)+
+        (cfg.sandpay_enabled?Math.max(0,parseInt(cfg.sandpay_weight)||0):0)+
+        (cfg.epay_enabled?Math.max(0,parseInt(cfg.epay_weight)||0):0)
+      );
+      // 微信通道：微信官方 + 支付FM + 杉德 + 易支付
+      const wechatTotal=(
+        (cfg.wechat_enabled?Math.max(0,parseInt(cfg.wechat_weight)||0):0)+
+        (cfg.zhifufm_enabled?Math.max(0,parseInt(cfg.zhifufm_weight)||0):0)+
+        (cfg.sandpay_enabled?Math.max(0,parseInt(cfg.sandpay_weight)||0):0)+
+        (cfg.epay_enabled?Math.max(0,parseInt(cfg.epay_weight)||0):0)
+      );
+      return{
+        alipay:alipayTotal,
+        wechat:wechatTotal,
+        zhifufm:Math.max(0,parseInt(cfg.zhifufm_weight)||0),
+        sandpay:Math.max(0,parseInt(cfg.sandpay_weight)||0),
+        epay:Math.max(0,parseInt(cfg.epay_weight)||0)
+      };
+    });
+    function payApiWeightPercent(channel){
+      const t=payApiWeightTotal.value;
+      let myWeight=0;
+      if(channel==='alipay'){myWeight=payApiConfig.alipay_enabled?Math.max(0,parseInt(payApiConfig.alipay_weight)||0):0;}
+      else if(channel==='wechat'){myWeight=payApiConfig.wechat_enabled?Math.max(0,parseInt(payApiConfig.wechat_weight)||0):0;}
+      else if(channel==='zhifufm'){myWeight=payApiConfig.zhifufm_enabled?Math.max(0,parseInt(payApiConfig.zhifufm_weight)||0):0;}
+      else if(channel==='sandpay'){myWeight=payApiConfig.sandpay_enabled?Math.max(0,parseInt(payApiConfig.sandpay_weight)||0):0;}
+      else if(channel==='epay'){myWeight=payApiConfig.epay_enabled?Math.max(0,parseInt(payApiConfig.epay_weight)||0):0;}
+      // 支付宝和微信共享杉德/支付FM/易支付的权重，需要区分
+      let total;
+      if(channel==='alipay'||channel==='wechat'){
+        total=channel==='alipay'?t.alipay:t.wechat;
+      }else{
+        // 杉德/支付FM/易支付在支付宝和微信场景都参与，显示两个场景的比例
+        total=t.alipay; // 用支付宝总权重作为参考
+      }
+      if(!total)return '0%';
+      const pct=(myWeight/total*100).toFixed(1);
+      return pct+'%';
+    }
+    function refreshSandpayParams(){
+      const now=new Date();
+      const pad=n=>String(n).padStart(2,'0');
+      const reqTime=now.getFullYear()+pad(now.getMonth()+1)+pad(now.getDate())+pad(now.getHours())+pad(now.getMinutes())+pad(now.getSeconds());
+      const orderNo='ORD'+Date.now()+String(Math.floor(Math.random()*9000)+1000);
+      const amountFen=Math.round(payTestForm.amount*100);
+      const totalAmount=String(amountFen).padStart(12,'0');
+      const subject=`学神助手-测试订单-${orderNo.slice(-6)}`;
+      payTestForm.sandpayParams.head.version='1.0';
+      payTestForm.sandpayParams.head.method='sandpay.trade.precreate';
+      payTestForm.sandpayParams.head.productId=payTestForm.productId||'00002000';
+      payTestForm.sandpayParams.head.accessType='1';
+      payTestForm.sandpayParams.head.mid=payApiConfig.sandpay_mid||'';
+      payTestForm.sandpayParams.head.plMid='';
+      payTestForm.sandpayParams.head.channelType='07';
+      payTestForm.sandpayParams.head.reqTime=reqTime;
+      payTestForm.sandpayParams.body.payTool='0403';
+      payTestForm.sandpayParams.body.orderCode=orderNo;
+      payTestForm.sandpayParams.body.totalAmount=totalAmount;
+      payTestForm.sandpayParams.body.storeCode='';
+      payTestForm.sandpayParams.body.subject=subject.slice(0,40);
+      payTestForm.sandpayParams.body.body='学神助手-测试订单';
+      payTestForm.sandpayParams.body.notifyUrl=payApiConfig.sandpay_notify_url||'';
+    }
+    function onSandpayAdvancedChange(e){
+      if(e.target.checked&&(!payTestForm.sandpayParams.head.reqTime||!payTestForm.sandpayParams.body.orderCode)){
+        refreshSandpayParams();
+      }
+    }
+    async function runPayTest(){
+      if(payTestLoading.value)return;
+      payTestLoading.value=true;
+      payTestResult.value=null;
+      try{
+        const body={channel:payTestForm.channel,pay_type:payTestForm.pay_type,amount:payTestForm.amount};
+        if(payTestForm.channel==='sandpay'&&payTestForm.productId) body.productId=payTestForm.productId;
+        if(payTestForm.channel==='sandpay'&&payTestForm.sandpayAdvanced){
+          if(!payTestForm.sandpayParams.head.reqTime) refreshSandpayParams();
+          body.sandpayParams=JSON.parse(JSON.stringify(payTestForm.sandpayParams));
+        }
+        const res=await fetch('/admin/pay-test',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':token.value},
+          body:JSON.stringify(body)
+        });
+        const data=await res.json();
+        payTestResult.value=data;
+        if(data.code!==200){showMsg(data.msg||'测试失败','error');}
+      }catch(e){showMsg('测试请求失败: '+e,'error');}
+      payTestLoading.value=false;
     }
     async function loadEmailConfig(){
       try{
@@ -2172,17 +2451,17 @@ createApp({
 
     return{
       page,loginMode,config,emailConfig,msg,showAddModal,newProvider,
-      loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,users,showUserModal,userForm,
+      loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,users,userSearch,userSortBy,userSortOrder,showUserModal,userForm,
       paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,planForm,
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,
       questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,
       doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,testEmail,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
-      loadConfig,loadEmailConfig,loadUsers,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,
+      loadConfig,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,
       savePaymentConfig,savePayApiConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,openUserEdit,saveUserAdmin,
       toggleProvider,collapseAllProviders,togglePayApiSection,
       addProvider,removeProvider,addModel,removeModel,
       protocolName,statusText,formatDuration,shortText,formatScriptExtra,trendPoints,trendX,trendY,trendMax,stackBarX,stackBarY,stackBarH,modelBarWidth,revTrendPoints,revTrendArea,revTrendX,revStep,revY,revMax,
-      loadLogCleanup,saveLogCleanup,runLogCleanupNow,logRetentionDays,logCleanupSaving,logCleanupRunning,logCleanupResult
+      loadLogCleanup,saveLogCleanup,runLogCleanupNow,logRetentionDays,logCleanupSaving,logCleanupRunning,logCleanupResult,payTestForm,payTestLoading,payTestResult,runPayTest,payApiWeightTotal,payApiWeightPercent,refreshSandpayParams,onSandpayAdvancedChange
     };
   }
 }).mount('#app');

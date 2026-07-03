@@ -32,6 +32,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ADMIN_HTML_FILE = os.path.join(BASE_DIR, "static", "admin.html")
 USER_HTML_FILE = os.path.join(BASE_DIR, "static", "user.html")
 USER_SCRIPT_FILE = os.path.join(BASE_DIR, "xueshen.js")
+XUESHEN_GF_FILE = os.path.join(BASE_DIR, "xueshen-gf.js")
+XUESHEN_SC_FILE = os.path.join(BASE_DIR, "xueshen-sc.js")
 INTRO_HTML_FILE = os.path.join(BASE_DIR, "intro", "index.html")
 USER_SESSION_FILE = os.path.join(BASE_DIR, "user_session.json")
 JWT_SECRET_FILE = os.path.join(BASE_DIR, "jwt_secret.key")
@@ -329,9 +331,42 @@ def normalize_pem_key(key_text, key_type="PRIVATE KEY"):
         return ""
     if "BEGIN " in text:
         return text
+    # 自动检测密钥格式：PKCS#1 以 0x30 0x82 开头，PKCS#8 以 0x30 0x82...0x02 0x01 0x00 开头
+    # 对于杉德河马，私钥通常是 PKCS#1 格式（RSA PRIVATE KEY）
     width = 64
     body = "\n".join(text[i:i + width] for i in range(0, len(text), width))
     return f"-----BEGIN {key_type}-----\n{body}\n-----END {key_type}-----"
+
+def load_private_key_smart(key_text):
+    """智能加载私钥，自动尝试 PKCS#8 和 PKCS#1 格式"""
+    from cryptography.hazmat.primitives import serialization
+    raw = (key_text or "").strip().replace("\\n", "\n")
+    if not raw:
+        raise RuntimeError("私钥为空")
+    # 如果已经是 PEM 格式，直接加载
+    if "BEGIN " in raw:
+        pem = raw.encode("utf-8")
+    else:
+        # 纯 base64 字符串，尝试两种格式
+        width = 64
+        body = "\n".join(raw[i:i + width] for i in range(0, len(raw), width))
+        pem = f"-----BEGIN PRIVATE KEY-----\n{body}\n-----END PRIVATE KEY-----".encode("utf-8")
+    # 先尝试 PKCS#8
+    try:
+        return serialization.load_pem_private_key(pem, password=None)
+    except Exception:
+        pass
+    # 再尝试 PKCS#1 (RSA PRIVATE KEY)
+    if "BEGIN PRIVATE KEY" in pem.decode("utf-8"):
+        pem_pkcs1 = pem.decode("utf-8").replace("PRIVATE KEY", "RSA PRIVATE KEY").encode("utf-8")
+    elif "BEGIN " not in raw:
+        pem_pkcs1 = f"-----BEGIN RSA PRIVATE KEY-----\n{body}\n-----END RSA PRIVATE KEY-----".encode("utf-8")
+    else:
+        pem_pkcs1 = pem
+    try:
+        return serialization.load_pem_private_key(pem_pkcs1, password=None)
+    except Exception as e:
+        raise RuntimeError(f"私钥格式无法识别（已尝试PKCS#8和PKCS#1）：{e}")
 
 def rsa2_sign(params, private_key_text):
     try:
@@ -339,14 +374,30 @@ def rsa2_sign(params, private_key_text):
         from cryptography.hazmat.primitives.asymmetric import padding
     except Exception:
         raise RuntimeError("缺少 cryptography 依赖，无法生成支付宝 RSA2 签名，请先安装 cryptography")
-    private_key = serialization.load_pem_private_key(normalize_pem_key(private_key_text, "PRIVATE KEY").encode("utf-8"), password=None)
+    private_key = load_private_key_smart(private_key_text)
     sign_content = "&".join(f"{k}={params[k]}" for k in sorted(params) if params[k] not in (None, "") and k != "sign")
     signature = private_key.sign(sign_content.encode("utf-8"), padding.PKCS1v15(), hashes.SHA256())
     return base64.b64encode(signature).decode("utf-8")
 
-def alipay_api_call(method, biz_content):
+def rsa2_sign_raw(content_str, private_key_text):
+    """直接对原始字符串做 SHA256WithRSA 签名（用于杉德报文签名）"""
+    return rsa_sign_raw(content_str, private_key_text, "sha256")
+
+def rsa_sign_raw(content_str, private_key_text, hash_algo="sha256"):
+    """直接对原始字符串做 RSA 签名，支持 sha1 和 sha256"""
+    try:
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import padding
+    except Exception:
+        raise RuntimeError("缺少 cryptography 依赖，无法生成签名")
+    private_key = load_private_key_smart(private_key_text)
+    hash_obj = hashes.SHA1() if hash_algo == "sha1" else hashes.SHA256()
+    signature = private_key.sign(content_str.encode("utf-8"), padding.PKCS1v15(), hash_obj)
+    return base64.b64encode(signature).decode("utf-8")
+
+def alipay_api_call(method, biz_content, skip_enabled_check=False):
     admin = db.get_admin_config() or {}
-    if not admin.get("alipay_enabled"):
+    if not skip_enabled_check and not admin.get("alipay_enabled"):
         raise RuntimeError("支付宝接口未启用")
     app_id = (admin.get("alipay_app_id") or "").strip()
     private_key = admin.get("alipay_private_key") or ""
@@ -372,14 +423,14 @@ def alipay_api_call(method, biz_content):
         raise RuntimeError(res.get("sub_msg") or res.get("msg") or "支付宝接口调用失败")
     return res
 
-def create_alipay_precreate_order(username, plan):
+def create_alipay_precreate_order(username, plan, skip_enabled_check=False):
     order_no = db.create_pending_order(username, plan, pay_method="alipay", pay_channel="alipay")
     subject = f"学神助手-{plan.get('name')}"
     res = alipay_api_call("alipay.trade.precreate", {
         "out_trade_no": order_no,
         "total_amount": f"{float(plan.get('price') or 0):.2f}",
         "subject": subject[:256]
-    })
+    }, skip_enabled_check=skip_enabled_check)
     qr_code = res.get("qr_code") or ""
     trade_no = res.get("trade_no") or ""
     db.update_order_payment(order_no, trade_no=trade_no, qr_code=qr_code, status="pending")
@@ -401,9 +452,9 @@ def query_and_apply_alipay_order(order_no):
     return False, "订单状态：" + trade_status, order
 
 # ==================== 支付FM ====================
-def create_zhifufm_order(username, plan, pay_type="alipay"):
+def create_zhifufm_order(username, plan, pay_type="alipay", skip_enabled_check=False):
     admin = db.get_admin_config() or {}
-    if not admin.get("zhifufm_enabled"):
+    if not skip_enabled_check and not admin.get("zhifufm_enabled"):
         raise RuntimeError("支付FM未启用")
     api_url = (admin.get("zhifufm_api_url") or "").strip().rstrip("/")
     merchant_num = (admin.get("zhifufm_merchant_num") or "").strip()
@@ -475,9 +526,9 @@ def verify_zhifufm_notify(params):
     return params.get("sign", "") == expected
 
 # ==================== 杉德河马 ====================
-def create_sandpay_order(username, plan, pay_type="alipay"):
+def create_sandpay_order(username, plan, pay_type="alipay", skip_enabled_check=False, product_id=None, custom_head=None, custom_body=None):
     admin = db.get_admin_config() or {}
-    if not admin.get("sandpay_enabled"):
+    if not skip_enabled_check and not admin.get("sandpay_enabled"):
         raise RuntimeError("杉德支付未启用")
     api_url = (admin.get("sandpay_api_url") or "").strip().rstrip("/")
     mid = (admin.get("sandpay_mid") or "").strip()
@@ -485,65 +536,162 @@ def create_sandpay_order(username, plan, pay_type="alipay"):
     private_key_text = admin.get("sandpay_private_key") or ""
     if not api_url or not mid:
         raise RuntimeError("杉德支付配置不完整")
-    order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="sandpay")
-    amount = f"{float(plan.get('price') or 0):.2f}"
-    # 杉德统一收银台模式 - 返回 cashierUrl 供前端跳转
-    biz_content = {
-        "outReqTime": datetime.now().strftime("%Y%m%d%H%M%S"),
+    # 若传入了自定义body且含orderCode，则使用该orderCode作为数据库订单号
+    custom_order_no = (custom_body or {}).get("orderCode", "") if custom_body else ""
+    if custom_order_no:
+        order_no = custom_order_no
+        # 将自定义订单写入数据库（如果不存在则创建）
+        existing = db.get_order(order_no)
+        if not existing:
+            db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="sandpay", order_no=order_no)
+    else:
+        order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="sandpay")
+    amount_yuan = float(plan.get('price') or 0)
+    # 杉德金额格式：12位数字，单位分，如 000000000001 = 0.01元
+    amount_fen = int(round(amount_yuan * 100))
+    total_amount = f"{amount_fen:012d}"
+    # 聚合码模式：payTool=0403，一个二维码微信/支付宝/银联都能扫
+    # productId=00002000（杉德收银台/聚合码）
+    pay_tool = "0403"
+    if not product_id:
+        product_id = "00002000"
+    # 构造报文 head + body
+    req_time = datetime.now().strftime("%Y%m%d%H%M%S")
+    head = {
+        "version": "1.0",
+        "method": "sandpay.trade.precreate",
+        "productId": product_id,
+        "accessType": "1",
         "mid": mid,
-        "outOrderNo": order_no,
-        "description": f"学神助手-{plan.get('name', '')}"[:128],
-        "goodsClass": "99",
-        "amount": float(amount),
+        "plMid": "",
+        "channelType": "07",
+        "reqTime": req_time,
+    }
+    body = {
+        "payTool": pay_tool,
+        "orderCode": order_no,
+        "totalAmount": total_amount,
+        "subject": f"学神助手-{plan.get('name', '')}"[:40],
+        "body": f"学神助手-{plan.get('name', '')}",
+        "storeCode": "",
         "notifyUrl": notify_url,
-        "payType": pay_type,
-        "payMode": "QR",
+        "extend": "",
+        "accsplitInfo": "",
+        "clearCycle": "",
+        "txnTimeOut": "",
     }
-    # 用商户私钥做 SHA256WithRSA 签名
-    sign = rsa2_sign(biz_content, private_key_text) if private_key_text else ""
+    # 自定义参数覆盖默认值
+    if custom_head and isinstance(custom_head, dict):
+        head.update(custom_head)
+    if custom_body and isinstance(custom_body, dict):
+        body.update(custom_body)
+    data_obj = {"head": head, "body": body}
+    # 杉德老版API signType="01" 对应 SHA1WithRSA，对 data JSON 字符串签名
+    data_str = json.dumps(data_obj, separators=(',', ':'), ensure_ascii=False)
+    sign = rsa_sign_raw(data_str, private_key_text, "sha1") if private_key_text else ""
     payload = {
-        "accessMid": mid,
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "version": "4.0.0",
-        "signType": "RSA",
+        "charset": "utf-8",
+        "signType": "01",
+        "data": data_obj,
         "sign": sign,
-        "bizData": biz_content
     }
-    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(f"{api_url}/gateway/trade", data=data, headers={"Content-Type": "application/json"})
+    req_data = json.dumps(payload, separators=(',', ':'), ensure_ascii=False).encode("utf-8")
+    full_url = f"{api_url}/qr/api/order/create"
+    # 杉德老版API需要 form-urlencoded 格式，不是JSON
+    form_data = urllib.parse.urlencode({
+        "charset": "utf-8",
+        "signType": "01",
+        "data": data_str,
+        "sign": sign,
+    }).encode("utf-8")
+    req = urllib.request.Request(full_url, data=form_data, headers={"Content-Type": "application/x-www-form-urlencoded"})
     try:
         with urlopen(req, timeout=20) as resp:
-            res = json.loads(resp.read().decode("utf-8"))
+            raw = resp.read().decode("utf-8", errors="replace")
+            print(f"[杉德] 响应: {raw[:500]}", flush=True)
+            # 杉德返回URL编码的表单格式，需要先URL解码再解析
+            # 格式: charset=UTF-8&signType=01&sign=xxx&data={"head":{},"body":{}}
+            if raw.startswith("{"):
+                res = json.loads(raw)
+            else:
+                # 先URL解码整个响应
+                from urllib.parse import unquote, parse_qs as _pqs
+                decoded = unquote(raw)
+                parsed_form = _pqs(decoded)
+                res = {}
+                for k, v in parsed_form.items():
+                    res[k] = v[0]
+                # data 字段是JSON字符串，需要再解析
+                if "data" in res and isinstance(res["data"], str):
+                    try:
+                        res["data"] = json.loads(res["data"])
+                    except Exception:
+                        pass
     except Exception as e:
         raise RuntimeError(f"杉德接口请求失败: {e}")
-    if res.get("respCode") != "success":
-        raise RuntimeError(res.get("respDesc") or "杉德创建订单失败")
-    pay_url = (res.get("bizData") or {}).get("cashierUrl") or (res.get("bizData") or {}).get("qrCode") or ""
+    resp_head = (res.get("data") or {}).get("head") or {}
+    resp_code = resp_head.get("respCode", "")
+    if resp_code != "000000":
+        raise RuntimeError(f"杉德创建订单失败: {resp_head.get('respMsg', '')} (code={resp_code})")
+    resp_body = (res.get("data") or {}).get("body") or {}
+    pay_url = resp_body.get("qrCode") or ""
+    if not pay_url:
+        raise RuntimeError("杉德创建订单成功但未返回二维码")
     db.update_order_payment(order_no, pay_url=pay_url, status="pending")
     return order_no, pay_url
 
+def load_public_key_smart(key_text):
+    """智能加载公钥，自动尝试 PUBLIC KEY 和 RSA PUBLIC KEY 格式"""
+    from cryptography.hazmat.primitives import serialization
+    raw = (key_text or "").strip().replace("\\n", "\n")
+    if not raw:
+        raise RuntimeError("公钥为空")
+    if "BEGIN " in raw:
+        pem = raw.encode("utf-8")
+    else:
+        width = 64
+        body = "\n".join(raw[i:i + width] for i in range(0, len(raw), width))
+        pem = f"-----BEGIN PUBLIC KEY-----\n{body}\n-----END PUBLIC KEY-----".encode("utf-8")
+    try:
+        return serialization.load_pem_public_key(pem)
+    except Exception:
+        pass
+    # 尝试 RSA PUBLIC KEY (PKCS#1)
+    if "BEGIN PUBLIC KEY" in pem.decode("utf-8"):
+        pem_pkcs1 = pem.decode("utf-8").replace("PUBLIC KEY", "RSA PUBLIC KEY").encode("utf-8")
+    elif "BEGIN " not in raw:
+        pem_pkcs1 = f"-----BEGIN RSA PUBLIC KEY-----\n{body}\n-----END RSA PUBLIC KEY-----".encode("utf-8")
+    else:
+        pem_pkcs1 = pem
+    return serialization.load_pem_public_key(pem_pkcs1)
+
 def verify_sandpay_notify(params):
+    """验证杉德回调通知，老版API格式：{charset, signType, data:{head,body}, sign}"""
     admin = db.get_admin_config() or {}
     public_key_text = admin.get("sandpay_public_key") or ""
     sign = params.get("sign", "")
     if not sign or not public_key_text:
         return False
     try:
-        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives import hashes
         from cryptography.hazmat.primitives.asymmetric import padding
-        pub_key = serialization.load_pem_public_key(normalize_pem_key(public_key_text, "PUBLIC KEY").encode("utf-8"))
-        biz_data = params.get("bizData", "")
-        if isinstance(biz_data, dict):
-            biz_data = json.dumps(biz_data, ensure_ascii=False)
-        pub_key.verify(base64.b64decode(sign), biz_data.encode("utf-8"), padding.PKCS1v15(), hashes.SHA256())
+        pub_key = load_public_key_smart(public_key_text)
+        # 老版API回调也是 data + sign 结构，signType="01" 对应 SHA1WithRSA
+        data_obj = params.get("data", "")
+        if isinstance(data_obj, dict):
+            data_str = json.dumps(data_obj, separators=(',', ':'), ensure_ascii=False)
+        else:
+            data_str = str(data_obj)
+        hash_obj = hashes.SHA1()  # signType="01" = SHA1WithRSA
+        pub_key.verify(base64.b64decode(sign), data_str.encode("utf-8"), padding.PKCS1v15(), hash_obj)
         return True
     except Exception:
         return False
 
 # ==================== 易支付（支付FM兼容模式） ====================
-def create_epay_order(username, plan, pay_type="alipay"):
+def create_epay_order(username, plan, pay_type="alipay", skip_enabled_check=False):
     admin = db.get_admin_config() or {}
-    if not admin.get("epay_enabled"):
+    if not skip_enabled_check and not admin.get("epay_enabled"):
         raise RuntimeError("易支付未启用")
     api_url = (admin.get("epay_api_url") or "").strip().rstrip("/")
     pid = (admin.get("epay_pid") or "").strip()
@@ -2112,7 +2260,7 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
             print("[连接中断] 客户端在响应返回前断开连接", flush=True)
 
-    def _send_file(self, code, filepath, content_type):
+    def _send_file(self, code, filepath, content_type, disposition=None):
         try:
             with open(filepath, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -2120,6 +2268,8 @@ class Handler(BaseHTTPRequestHandler):
             if "charset" not in content_type.lower():
                 content_type = content_type + "; charset=utf-8"
             self.send_header("Content-Type", content_type)
+            if disposition:
+                self.send_header("Content-Disposition", disposition)
             self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
             self.send_header("Pragma", "no-cache")
             self.send_header("Expires", "0")
@@ -2177,6 +2327,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send_file(200, ADMIN_HTML_FILE, "text/html; charset=utf-8")
         elif path in ("/script.user.js", "/xueshen.user.js", "/xueshen.js"):
             self._send_file(200, USER_SCRIPT_FILE, "application/javascript; charset=utf-8")
+        elif path == "/xueshen-gf.js":
+            self._send_file(200, XUESHEN_GF_FILE, "application/javascript; charset=utf-8", disposition='attachment; filename="xueshen-gf.js"')
+        elif path == "/xueshen-sc.js":
+            self._send_file(200, XUESHEN_SC_FILE, "application/javascript; charset=utf-8", disposition='attachment; filename="xueshen-sc.js"')
         elif path.startswith("/static/") or path.startswith("/libs/"):
             # 安全：防止路径穿越攻击（如 /static/../database.py）
             requested = os.path.normpath(os.path.join(BASE_DIR, path.lstrip("/")))
@@ -2386,25 +2540,56 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 self._send_text(200, "fail")
         elif path == "/api/payment/notify/sandpay":
-            # 杉德河马异步回调
+            # 杉德河马异步回调（老版API格式：表单 charset=UTF-8&signType=01&sign=xxx&data={...}）
             try:
-                qs = parse_qs(parsed.query)
-                params = {k: v[0] for k, v in qs.items()}
-                biz_data_str = params.get("bizData", "")
-                try:
-                    biz_data = json.loads(biz_data_str) if biz_data_str else {}
-                except Exception:
-                    biz_data = {}
-                if verify_sandpay_notify(params) and biz_data.get("orderStatus") == "success":
-                    order_no = biz_data.get("outOrderNo", "")
-                    order = db.get_order(order_no)
-                    if order and order.get("status") != "paid":
-                        db.apply_paid_order(order_no)
-                    self._send_text(200, "respCode=000000")
+                body_raw = self.rfile.read(int(self.headers.get("Content-Length", 0))).decode("utf-8") if self.headers.get("Content-Length") else ""
+                if body_raw:
+                    # 优先尝试JSON
+                    if body_raw.strip().startswith("{"):
+                        params = json.loads(body_raw)
+                    else:
+                        # 表单格式解析（先URL解码）
+                        from urllib.parse import parse_qs as _pqs, unquote as _unq
+                        decoded = _unq(body_raw)
+                        parsed_form = _pqs(decoded)
+                        params = {}
+                        for k, v in parsed_form.items():
+                            params[k] = v[0]
+                        # data字段再解析为JSON
+                        if "data" in params and isinstance(params["data"], str):
+                            try:
+                                params["data"] = json.loads(params["data"])
+                            except Exception:
+                                pass
                 else:
-                    self._send_text(200, "respCode=fail")
+                    qs = parse_qs(parsed.query)
+                    params = {k: v[0] for k, v in qs.items()}
+                    if "data" in params and isinstance(params["data"], str):
+                        try:
+                            params["data"] = json.loads(params["data"])
+                        except Exception:
+                            pass
+                if verify_sandpay_notify(params):
+                    data_obj = params.get("data", {})
+                    if isinstance(data_obj, str):
+                        data_obj = json.loads(data_obj)
+                    body_obj = data_obj.get("body", {}) if isinstance(data_obj, dict) else {}
+                    head_obj = data_obj.get("head", {}) if isinstance(data_obj, dict) else {}
+                    order_status = body_obj.get("orderStatus", "")
+                    resp_code = head_obj.get("respCode", "")
+                    order_no = body_obj.get("orderCode", "")
+                    # 成功条件：respCode=000000 且 orderStatus=paid/success
+                    if resp_code == "000000" and order_status in ("paid", "success"):
+                        order = db.get_order(order_no)
+                        if order and order.get("status") != "paid":
+                            db.apply_paid_order(order_no)
+                        self._send_text(200, "success")
+                    else:
+                        self._send_text(200, "fail")
+                else:
+                    self._send_text(200, "fail")
             except Exception:
-                self._send_text(200, "respCode=fail")
+                self._send_text(200, "fail")
         elif path == "/api/payment/notify/epay":
             # 易支付异步回调
             try:
@@ -2510,6 +2695,7 @@ class Handler(BaseHTTPRequestHandler):
                 "sandpay_api_url": admin.get("sandpay_api_url") or "",
                 "sandpay_private_key": admin.get("sandpay_private_key") or "",
                 "sandpay_public_key": admin.get("sandpay_public_key") or "",
+                "sandpay_merchant_public_key": admin.get("sandpay_merchant_public_key") or "",
                 "sandpay_notify_url": admin.get("sandpay_notify_url") or "",
                 "sandpay_return_url": admin.get("sandpay_return_url") or "",
                 "epay_enabled": bool(admin.get("epay_enabled")),
@@ -2517,15 +2703,41 @@ class Handler(BaseHTTPRequestHandler):
                 "epay_pid": admin.get("epay_pid") or "",
                 "epay_key": admin.get("epay_key") or "",
                 "epay_notify_url": admin.get("epay_notify_url") or "",
-                "epay_return_url": admin.get("epay_return_url") or ""
+                "epay_return_url": admin.get("epay_return_url") or "",
+                "alipay_weight": int(admin.get("alipay_weight") or 100),
+                "wechat_weight": int(admin.get("wechat_weight") or 100),
+                "zhifufm_weight": int(admin.get("zhifufm_weight") or 100),
+                "sandpay_weight": int(admin.get("sandpay_weight") or 100),
+                "epay_weight": int(admin.get("epay_weight") or 100)
             }})
-        elif path == "/admin/users":
+        elif path.startswith("/admin/users"):
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
             try:
-                users = db.fetchall("SELECT id, username, email, is_verified, points_balance, member_until, is_banned, ban_reason, created_at, last_login_at FROM users ORDER BY id DESC")
-                self._send_json(200, {"code": 200, "users": users})
+                # 解析查询参数
+                query_params = urllib.parse.parse_qs(parsed.query)
+                search = (query_params.get("search", [""])[0] or "").strip()
+                sort_by = (query_params.get("sort_by", ["created_at"])[0] or "created_at").strip()
+                sort_order = (query_params.get("sort_order", ["desc"])[0] or "desc").strip().lower()
+                # 白名单校验排序字段
+                allowed_sort = {"created_at", "last_login_at", "id", "username", "points_balance"}
+                if sort_by not in allowed_sort:
+                    sort_by = "created_at"
+                if sort_order not in ("asc", "desc"):
+                    sort_order = "desc"
+                # 处理 last_login_at 排序时 NULL 值问题
+                sort_expr = f"{'COALESCE(last_login_at, created_at)' if sort_by == 'last_login_at' else sort_by} {sort_order}" if sort_by == 'last_login_at' else f"{sort_by} {sort_order}"
+                # 构建查询
+                sql = "SELECT id, username, email, is_verified, points_balance, member_until, is_banned, ban_reason, created_at, last_login_at FROM users"
+                params_list = []
+                if search:
+                    sql += " WHERE username LIKE %s OR email LIKE %s"
+                    like = f"%{search}%"
+                    params_list = [like, like]
+                sql += f" ORDER BY {sort_expr} LIMIT 500"
+                users_list = db.fetchall(sql, tuple(params_list)) if params_list else db.fetchall(sql)
+                self._send_json(200, {"code": 200, "users": users_list})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/login-locks":
@@ -2864,34 +3076,38 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(200, {"code": 200, "msg": "免费套餐已到账", "order_no": order_no, "profile": build_user_profile(user["username"])})
                     return
                 pay_method = (data.get("pay_method") or "wechat").strip()
-                # 前端只传 pay_method=wechat/alipay，后端根据可用通道随机选择
-                import random as _random
+                # 前端只传 pay_method=wechat/alipay，后端根据权重随机选择通道
                 admin = db.get_admin_config() or {}
-                # 收集该支付方式的所有可用通道
-                available = []
+                # 收集该支付方式的所有可用通道及权重
+                available = []  # [(channel, pay_type, weight), ...]
                 if pay_method == "wechat":
                     if admin.get("wechat_enabled") and admin.get("wechat_app_id") and admin.get("wechat_mch_id"):
-                        available.append(("wechat", "wechat"))
+                        available.append(("wechat", "wechat", int(admin.get("wechat_weight") or 100)))
                     if admin.get("zhifufm_enabled") and admin.get("zhifufm_api_url") and admin.get("zhifufm_merchant_num") and admin.get("zhifufm_secret"):
-                        available.append(("zhifufm", "sandpayh5"))
+                        available.append(("zhifufm", "sandpayh5", int(admin.get("zhifufm_weight") or 100)))
                     if admin.get("sandpay_enabled") and admin.get("sandpay_mid") and admin.get("sandpay_api_url"):
-                        available.append(("sandpay", "wxpay"))
+                        available.append(("sandpay", "wxpay", int(admin.get("sandpay_weight") or 100)))
                     if admin.get("epay_enabled") and admin.get("epay_api_url") and admin.get("epay_pid") and admin.get("epay_key"):
-                        available.append(("epay", "wxpay"))
+                        available.append(("epay", "wxpay", int(admin.get("epay_weight") or 100)))
                 elif pay_method == "alipay":
                     if admin.get("alipay_enabled") and admin.get("alipay_app_id") and admin.get("alipay_private_key"):
-                        available.append(("alipay", "alipay"))
+                        available.append(("alipay", "alipay", int(admin.get("alipay_weight") or 100)))
                     if admin.get("zhifufm_enabled") and admin.get("zhifufm_api_url") and admin.get("zhifufm_merchant_num") and admin.get("zhifufm_secret"):
-                        available.append(("zhifufm", "sandpayh5"))
+                        available.append(("zhifufm", "sandpayh5", int(admin.get("zhifufm_weight") or 100)))
                     if admin.get("sandpay_enabled") and admin.get("sandpay_mid") and admin.get("sandpay_api_url"):
-                        available.append(("sandpay", "alipay"))
+                        available.append(("sandpay", "alipay", int(admin.get("sandpay_weight") or 100)))
                     if admin.get("epay_enabled") and admin.get("epay_api_url") and admin.get("epay_pid") and admin.get("epay_key"):
-                        available.append(("epay", "alipay"))
+                        available.append(("epay", "alipay", int(admin.get("epay_weight") or 100)))
                 if not available:
                     self._send_json(400, {"code": 400, "msg": "该支付方式暂无可用通道，请联系管理员配置"})
                     return
-                # 随机选一个通道
-                pay_channel, pay_type = _random.choice(available)
+                # 按权重随机选择通道（权重为0则不参与）
+                weighted = [(ch, pt) for ch, pt, w in available if w > 0]
+                if not weighted:
+                    # 所有权重都为0，降级为等概率
+                    weighted = [(ch, pt) for ch, pt, _ in available]
+                weights = [w for _, _, w in available if w > 0] or [1] * len(weighted)
+                pay_channel, pay_type = random.choices(weighted, weights=weights, k=1)[0]
                 # 根据通道创建订单
                 if pay_channel == "alipay":
                     order_no, qr_code = create_alipay_precreate_order(user["username"], plan)
@@ -3238,6 +3454,44 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        elif path == "/admin/pay-test":
+            # 管理员支付通道测试接口（不影响正式环境）
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                channel = (data.get("channel") or "").strip()
+                pay_type = (data.get("pay_type") or "alipay").strip()
+                amount = float(data.get("amount") or 0.01)
+                if amount < 0.01 or amount > 100:
+                    self._send_json(400, {"code": 400, "msg": "测试金额需在 0.01~100 元之间"})
+                    return
+                # 创建一个测试用的临时套餐
+                test_plan = {"id": 0, "name": "测试订单", "price": amount, "plan_type": "points", "points": 0, "days": 0}
+                admin_cfg = db.get_admin_config() or {}
+                admin_user = admin_cfg.get("username") or "admin"
+                if channel == "sandpay":
+                    product_id = (data.get("productId") or "").strip()
+                    sandpay_params = data.get("sandpayParams")
+                    custom_head = (sandpay_params or {}).get("head") if sandpay_params else None
+                    custom_body = (sandpay_params or {}).get("body") if sandpay_params else None
+                    order_no, pay_url = create_sandpay_order(admin_user, test_plan, pay_type=pay_type, skip_enabled_check=True, product_id=product_id or None, custom_head=custom_head, custom_body=custom_body)
+                    self._send_json(200, {"code": 200, "msg": "杉德河马订单创建成功", "order_no": order_no, "pay_url": pay_url})
+                elif channel == "zhifufm":
+                    order_no, pay_url = create_zhifufm_order(admin_user, test_plan, pay_type=pay_type, skip_enabled_check=True)
+                    self._send_json(200, {"code": 200, "msg": "支付FM订单创建成功", "order_no": order_no, "pay_url": pay_url})
+                elif channel == "epay":
+                    order_no, pay_url = create_epay_order(admin_user, test_plan, pay_type=pay_type, skip_enabled_check=True)
+                    self._send_json(200, {"code": 200, "msg": "易支付订单创建成功", "order_no": order_no, "pay_url": pay_url})
+                elif channel == "alipay":
+                    order_no, qr_code = create_alipay_precreate_order(admin_user, test_plan, skip_enabled_check=True)
+                    self._send_json(200, {"code": 200, "msg": "支付宝订单创建成功", "order_no": order_no, "qr_code": qr_code})
+                else:
+                    self._send_json(400, {"code": 400, "msg": "不支持的支付通道: " + channel})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         elif path == "/admin/save-pay-api-config":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -3254,9 +3508,10 @@ class Handler(BaseHTTPRequestHandler):
                         zhifufm_enabled = {ph}, zhifufm_api_url = {ph}, zhifufm_merchant_num = {ph}, zhifufm_secret = {ph},
                         zhifufm_notify_url = {ph}, zhifufm_return_url = {ph},
                         sandpay_enabled = {ph}, sandpay_mid = {ph}, sandpay_api_url = {ph}, sandpay_private_key = {ph},
-                        sandpay_public_key = {ph}, sandpay_notify_url = {ph}, sandpay_return_url = {ph},
+                        sandpay_public_key = {ph}, sandpay_merchant_public_key = {ph}, sandpay_notify_url = {ph}, sandpay_return_url = {ph},
                         epay_enabled = {ph}, epay_api_url = {ph}, epay_pid = {ph}, epay_key = {ph},
-                        epay_notify_url = {ph}, epay_return_url = {ph}
+                        epay_notify_url = {ph}, epay_return_url = {ph},
+                        alipay_weight = {ph}, wechat_weight = {ph}, zhifufm_weight = {ph}, sandpay_weight = {ph}, epay_weight = {ph}
                     WHERE id = 1""",
                     (
                         1 if data.get("alipay_enabled") else 0,
@@ -3283,6 +3538,7 @@ class Handler(BaseHTTPRequestHandler):
                         data.get("sandpay_api_url") or "",
                         data.get("sandpay_private_key") or "",
                         data.get("sandpay_public_key") or "",
+                        data.get("sandpay_merchant_public_key") or "",
                         data.get("sandpay_notify_url") or "",
                         data.get("sandpay_return_url") or "",
                         1 if data.get("epay_enabled") else 0,
@@ -3290,7 +3546,12 @@ class Handler(BaseHTTPRequestHandler):
                         data.get("epay_pid") or "",
                         data.get("epay_key") or "",
                         data.get("epay_notify_url") or "",
-                        data.get("epay_return_url") or ""
+                        data.get("epay_return_url") or "",
+                        max(0, min(1000, int(data.get("alipay_weight") or 100))),
+                        max(0, min(1000, int(data.get("wechat_weight") or 100))),
+                        max(0, min(1000, int(data.get("zhifufm_weight") or 100))),
+                        max(0, min(1000, int(data.get("sandpay_weight") or 100))),
+                        max(0, min(1000, int(data.get("epay_weight") or 100)))
                     )
                 )
                 self._send_json(200, {"code": 200, "msg": "支付接口配置已保存"})

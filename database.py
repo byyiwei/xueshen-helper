@@ -328,6 +328,38 @@ class Database:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
         # 不在服务启动时执行 ALTER 迁移，避免远程 MySQL 改表阻塞服务启动。
+        # 题库索引优化（提升大数据量下的搜索和排序性能）
+        self._ensure_index("question_bank", "idx_updated_at", "updated_at")
+        self._ensure_index("question_bank", "idx_last_used", "last_used_at")
+        self._ensure_index("question_bank", "idx_source_provider", "source_provider")
+        # 全文索引（大幅提升关键词搜索性能，MySQL 5.7+ 支持 ngram 分词）
+        self._ensure_fulltext_index("question_bank", "ft_question_text", "question_text", "answer")
+
+    def _ensure_index(self, table, index_name, *columns):
+        """确保普通索引存在，不存在则创建"""
+        try:
+            row = self.fetchone(
+                "SELECT COUNT(*) AS cnt FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = %s AND index_name = %s",
+                (table, index_name)
+            )
+            if row and int(row.get("cnt", 0)) == 0:
+                cols = ", ".join(columns)
+                self.execute(f"CREATE INDEX {index_name} ON {table} ({cols})")
+        except Exception:
+            pass
+
+    def _ensure_fulltext_index(self, table, index_name, *columns):
+        """确保全文索引存在，不存在则创建（MySQL 5.7+）"""
+        try:
+            row = self.fetchone(
+                "SELECT COUNT(*) AS cnt FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = %s AND index_name = %s",
+                (table, index_name)
+            )
+            if row and int(row.get("cnt", 0)) == 0:
+                cols = ", ".join(columns)
+                self.execute(f"CREATE FULLTEXT INDEX {index_name} ON {table} ({cols}) WITH PARSER ngram")
+        except Exception:
+            pass
 
     def execute(self, sql, params=()):
         """执行 SQL"""
@@ -428,6 +460,7 @@ class Database:
         self._add_column_if_missing("admin_config", "sandpay_api_url", "sandpay_api_url VARCHAR(255)")
         self._add_column_if_missing("admin_config", "sandpay_private_key", "sandpay_private_key TEXT")
         self._add_column_if_missing("admin_config", "sandpay_public_key", "sandpay_public_key TEXT")
+        self._add_column_if_missing("admin_config", "sandpay_merchant_public_key", "sandpay_merchant_public_key TEXT")
         self._add_column_if_missing("admin_config", "sandpay_notify_url", "sandpay_notify_url VARCHAR(500)")
         self._add_column_if_missing("admin_config", "sandpay_return_url", "sandpay_return_url VARCHAR(500)")
         # 易支付(支付FM兼容模式)
@@ -437,6 +470,12 @@ class Database:
         self._add_column_if_missing("admin_config", "epay_key", "epay_key VARCHAR(128)")
         self._add_column_if_missing("admin_config", "epay_notify_url", "epay_notify_url VARCHAR(500)")
         self._add_column_if_missing("admin_config", "epay_return_url", "epay_return_url VARCHAR(500)")
+        # 支付通道权重（用于多通道随机分配，默认各100）
+        self._add_column_if_missing("admin_config", "alipay_weight", "alipay_weight INT DEFAULT 100")
+        self._add_column_if_missing("admin_config", "wechat_weight", "wechat_weight INT DEFAULT 100")
+        self._add_column_if_missing("admin_config", "zhifufm_weight", "zhifufm_weight INT DEFAULT 100")
+        self._add_column_if_missing("admin_config", "sandpay_weight", "sandpay_weight INT DEFAULT 100")
+        self._add_column_if_missing("admin_config", "epay_weight", "epay_weight INT DEFAULT 100")
 
     def _ensure_order_payment_columns(self):
         self._add_column_if_missing("payment_orders", "pay_method", "pay_method VARCHAR(20)")
@@ -646,9 +685,10 @@ class Database:
         self.apply_paid_order(order_no)
         return order_no
 
-    def create_pending_order(self, username, plan, pay_method="alipay", pay_channel="", trade_no="", qr_code="", pay_url=""):
+    def create_pending_order(self, username, plan, pay_method="alipay", pay_channel="", trade_no="", qr_code="", pay_url="", order_no=None):
         ph = _ph()
-        order_no = f"ORD{int(time.time()*1000)}{abs(hash(username)) % 10000:04d}"
+        if not order_no:
+            order_no = f"ORD{int(time.time()*1000)}{abs(hash(username)) % 10000:04d}"
         self.execute(
             f"""INSERT INTO payment_orders (order_no, username, plan_id, plan_name, plan_type, price, points, days, status, pay_method, pay_channel, trade_no, qr_code, pay_url)
                 VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'pending', {ph}, {ph}, {ph}, {ph}, {ph})""",
@@ -1180,9 +1220,16 @@ class Database:
             where.append(f"question_hash = {ph}")
             params.append(question_hash)
         if keyword:
-            like = f"%{keyword}%"
-            where.append(f"(question_text LIKE {ph} OR options_text LIKE {ph} OR answer LIKE {ph})")
-            params.extend([like, like, like])
+            # 优先使用全文索引（MATCH AGAINST），大幅提升大数据量搜索性能
+            # ngram 分词器支持中文，2字以上可命中
+            kw = keyword.strip()
+            if len(kw) >= 2:
+                where.append(f"(MATCH(question_text, answer) AGAINST({ph} IN BOOLEAN MODE) OR options_text LIKE {ph})")
+                params.extend([kw, f"%{kw}%"])
+            else:
+                like = f"%{kw}%"
+                where.append(f"(question_text LIKE {ph} OR options_text LIKE {ph} OR answer LIKE {ph})")
+                params.extend([like, like, like])
         sql = "SELECT id, question_hash, question_text, question_type, options_text, answer, source_model, source_provider, hit_count, created_at, updated_at, last_used_at FROM question_bank"
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -1199,9 +1246,14 @@ class Database:
             where.append(f"question_hash = {ph}")
             params.append(question_hash)
         if keyword:
-            like = f"%{keyword}%"
-            where.append(f"(question_text LIKE {ph} OR options_text LIKE {ph} OR answer LIKE {ph})")
-            params.extend([like, like, like])
+            kw = keyword.strip()
+            if len(kw) >= 2:
+                where.append(f"(MATCH(question_text, answer) AGAINST({ph} IN BOOLEAN MODE) OR options_text LIKE {ph})")
+                params.extend([kw, f"%{kw}%"])
+            else:
+                like = f"%{kw}%"
+                where.append(f"(question_text LIKE {ph} OR options_text LIKE {ph} OR answer LIKE {ph})")
+                params.extend([like, like, like])
         sql = "SELECT COUNT(*) AS total FROM question_bank"
         if where:
             sql += " WHERE " + " AND ".join(where)
