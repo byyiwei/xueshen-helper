@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         🚀学神助手｜学习通｜超星·智慧树全能学习
 // @namespace    oolikeABC
-// @version      5.0.0
+// @version      5.0.1
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/xueshen-gf.js
 // @author       oolikeABC
