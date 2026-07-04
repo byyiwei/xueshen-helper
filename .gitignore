@@ -7,6 +7,7 @@ providers.json
 *.key
 *.pem
 jwt_secret.key
+README_INTERNAL.md
 
 # 数据库文件
 *.db
