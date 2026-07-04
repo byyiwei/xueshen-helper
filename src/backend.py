@@ -3117,8 +3117,14 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     fallback_subject = "学神助手 - 密码重置验证码"
                     fallback_html = f"<p>您的密码重置验证码是：<b style='font-size:24px;color:#3b82f6;'>{code}</b></p><p>验证码10分钟内有效，请勿泄露给他人。</p>"
-                # 尝试用邮箱前缀作为用户名回退
-                username_fallback = email.split("@")[0] if email and "@" in email else email
+                # 尝试获取真实用户名：重置场景查数据库，注册场景用邮箱前缀回退
+                if vtype == "reset":
+                    existing_user = db.get_user_by_email(email)
+                    username_fallback = (existing_user.get("username") or "").strip() if existing_user else ""
+                else:
+                    username_fallback = ""
+                if not username_fallback:
+                    username_fallback = email.split("@")[0] if email and "@" in email else email
                 success, err = send_email(email, fallback_subject, body_html=fallback_html, scene=scene, variables={"username": username_fallback, "code": code, "subject": fallback_subject})
                 if success:
                     self._send_json(200, {"code": 200, "msg": "验证码已发送"})
@@ -3357,7 +3363,9 @@ class Handler(BaseHTTPRequestHandler):
                 code = generate_code(6)
                 db.save_verify_code(bound_email, code, "admin_reset", expires_minutes=10)
                 fallback_subject = "后台管理 - 管理员密码重置验证码"
-                username_fallback = bound_email.split("@")[0] if bound_email and "@" in bound_email else bound_email
+                # 优先使用管理员真实用户名，查不到再用邮箱前缀回退
+                admin_username = (admin.get("username") or "").strip()
+                username_fallback = admin_username or (bound_email.split("@")[0] if bound_email and "@" in bound_email else bound_email)
                 success, err = send_email(
                     bound_email,
                     fallback_subject,
