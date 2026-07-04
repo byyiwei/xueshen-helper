@@ -161,6 +161,51 @@ body{
 }
 .btn-add:hover{border-color:var(--accent);color:var(--accent)}
 
+/* Data table */
+.data-table{width:100%;border-collapse:collapse;font-size:13px}
+.data-table thead th{
+  text-align:left;padding:10px 12px;
+  color:var(--text2);font-weight:500;font-size:12px;
+  border-bottom:1px solid var(--border);background:var(--bg3);
+  white-space:nowrap;
+}
+.data-table tbody tr{border-bottom:1px solid var(--border);transition:background .15s}
+.data-table tbody tr:hover{background:rgba(59,130,246,.04)}
+.data-table tbody td{padding:12px;vertical-align:middle;color:var(--text)}
+.data-table tbody td .actions{display:flex;gap:6px;flex-wrap:nowrap}
+.data-table .scene-badge{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:4px 10px;border-radius:6px;font-size:12px;font-weight:500;
+}
+.data-table .scene-user_register{background:rgba(59,130,246,.1);color:var(--accent2);border:1px solid rgba(59,130,246,.15)}
+.data-table .scene-user_reset{background:rgba(245,158,11,.1);color:var(--warn);border:1px solid rgba(245,158,11,.15)}
+.data-table .scene-admin_reset{background:rgba(16,185,129,.1);color:var(--success);border:1px solid rgba(16,185,129,.15)}
+.data-table .format-badge{
+  display:inline-flex;align-items:center;gap:4px;
+  padding:3px 8px;border-radius:4px;font-size:11px;font-weight:500;
+  background:var(--bg);border:1px solid var(--border);color:var(--text2);
+}
+
+/* Empty state */
+.empty-state{text-align:center;padding:36px 20px;color:var(--text3)}
+.empty-state .icon{font-size:32px;margin-bottom:10px;opacity:.5}
+.empty-state p{font-size:13px;margin:0}
+
+/* Info tips */
+.info-tips{font-size:13px;color:var(--text2);line-height:1.8}
+.info-tips .tip-row{display:flex;gap:10px;align-items:flex-start;margin-bottom:8px}
+.info-tips .tip-num{
+  width:20px;height:20px;border-radius:50%;
+  background:var(--bg4);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:600;color:var(--text2);flex-shrink:0;margin-top:1px;
+}
+.info-tips .tip-text{flex:1}
+.info-tips .warn{color:var(--warn);margin-top:8px;display:flex;align-items:center;gap:6px}
+
+/* Form actions */
+.form-actions{display:flex;gap:10px;margin-top:12px;align-items:center}
+
 /* Models */
 .models-title{font-size:13px;font-weight:500;color:var(--text2);margin:16px 0 10px}
 .model-row{
@@ -225,6 +270,51 @@ body{
 .modal h3{margin-bottom:16px;font-size:17px}
 .modal .form-row{grid-template-columns:1fr}
 .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+
+/* 邮件模板弹窗 - 优化版 */
+.modal-card{
+  background:var(--bg2);border:1px solid var(--border);
+  border-radius:var(--radius);width:min(520px,calc(100vw - 32px));max-width:520px;padding:0;
+  animation:slideUp .3s;overflow:hidden;display:flex;flex-direction:column;max-height:calc(100vh - 32px);
+}
+.modal-card .modal-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:16px 20px;border-bottom:1px solid var(--border);background:var(--bg3);
+}
+.modal-card .modal-header h3{margin:0;font-size:16px;font-weight:600}
+.modal-card .modal-header .btn-close{
+  width:30px;height:30px;border-radius:8px;border:1px solid var(--border);
+  background:var(--bg2);color:var(--text2);font-size:20px;line-height:1;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:all .2s;flex-shrink:0;margin-left:12px;
+}
+.modal-card .modal-header .btn-close:hover{background:rgba(239,68,68,.15);border-color:rgba(239,68,68,.4);color:var(--danger)}
+.modal-card .modal-body{padding:20px;overflow-y:auto}
+.modal-card .modal-body .form-group{margin-bottom:16px}
+.modal-card .modal-body .form-group:last-child{margin-bottom:0}
+.modal-card .modal-body label{font-size:13px;color:var(--text2);margin-bottom:6px;display:block}
+.modal-card .modal-body input,
+.modal-card .modal-body select,
+.modal-card .modal-body textarea{
+  width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;
+  background:var(--bg);color:var(--text);font-size:13px;outline:none;transition:border-color .2s;
+}
+.modal-card .modal-body input:focus,
+.modal-card .modal-body select:focus,
+.modal-card .modal-body textarea:focus{border-color:var(--brand)}
+.modal-card .modal-body textarea{resize:vertical;min-height:120px;line-height:1.6}
+.modal-card .modal-footer{
+  display:flex;gap:10px;justify-content:flex-end;
+  padding:14px 20px;border-top:1px solid var(--border);background:var(--bg3);
+}
+.modal-card .format-tabs{display:flex;gap:8px}
+.modal-card .format-tabs .btn{flex:1;justify-content:center}
+.modal-card .var-tag{
+  display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:6px;
+  background:var(--bg);border:1px solid var(--border);font-family:monospace;font-size:12px;color:var(--brand);cursor:pointer;
+  transition:all .2s;
+}
+.modal-card .var-tag:hover{border-color:var(--brand);background:rgba(59,130,246,.1)}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 
@@ -460,7 +550,7 @@ body{
         <div class="menu-item" :class="{active:page==='ai-config'}" @click="page='ai-config';loadConfig()">
           <span class="icon">◇</span>模型配置
         </div>
-        <div class="menu-item" :class="{active:page==='email-config'}" @click="page='email-config';loadEmailConfig()">
+        <div class="menu-item" :class="{active:page==='email-config'}" @click="page='email-config';loadEmailConfig();loadEmailTemplates()">
           <span class="icon">✉</span>邮箱配置
         </div>
         <div class="menu-item" :class="{active:page==='payment'}" @click="page='payment';loadPaymentConfig()">
@@ -838,7 +928,7 @@ body{
                 <div class="form-group"><label>发件人邮箱</label><input v-model="emailConfig.from_addr" placeholder="如：yourname@qq.com"></div>
                 <div class="form-group"><label>测试收件邮箱</label><input v-model="emailConfig.test_recipient" placeholder="测试邮件发送到这个邮箱"></div>
               </div>
-              <div style="display:flex;gap:10px;margin-top:8px">
+              <div class="form-actions">
                 <button class="btn btn-primary" @click="saveEmailConfig">保存邮箱配置</button>
                 <button class="btn btn-secondary" @click="testEmail">发送测试邮件</button>
               </div>
@@ -846,12 +936,116 @@ body{
           </div>
 
           <div class="card">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+              <h3>邮件模板管理</h3>
+              <button class="btn btn-primary btn-sm" @click="openTemplateModal(null)">新建模板</button>
+            </div>
+            <div class="card-body">
+              <div v-if="emailTemplates.length===0" class="empty-state">
+                <div class="icon">✉</div>
+                <p>暂无邮件模板，点击右上角「新建模板」添加</p>
+              </div>
+              <div v-else style="overflow-x:auto">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>应用场景</th>
+                      <th>主题</th>
+                      <th>格式</th>
+                      <th>变量</th>
+                      <th style="width:160px">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="t in emailTemplates" :key="t.id">
+                      <td><span :class="['scene-badge','scene-'+t.scene]">{{ templateSceneLabel(t.scene) }}</span></td>
+                      <td>{{ t.subject }}</td>
+                      <td><span class="format-badge">{{ t.content_type==='html'?'HTML':'纯文本' }}</span></td>
+                      <td style="font-size:12px;color:var(--text2)">{{ t.variables||'无' }}</td>
+                      <td>
+                        <div class="actions">
+                          <button class="btn btn-secondary btn-sm" @click="openTemplateModal(t)">编辑</button>
+                          <button class="btn btn-secondary btn-sm" @click="testTemplate(t)">测试</button>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
             <div class="card-header"><h3>找回密码说明</h3></div>
-            <div class="card-body" style="font-size:13px;color:var(--text2);line-height:1.8">
-              <p>1. 启用 SMTP 后，登录页面会显示「忘记密码」入口</p>
-              <p>2. 用户输入邮箱后，系统将发送包含重置链接的邮件</p>
-              <p>3. 点击邮件中的链接即可重置管理密码</p>
-              <p style="color:var(--warn);margin-top:8px">⚠ 注意：请确保 SMTP 配置正确，否则找回密码功能无法使用</p>
+            <div class="card-body info-tips">
+              <div class="tip-row">
+                <span class="tip-num">1</span>
+                <span class="tip-text">启用 SMTP 后，登录页面会显示「忘记密码」入口</span>
+              </div>
+              <div class="tip-row">
+                <span class="tip-num">2</span>
+                <span class="tip-text">用户输入邮箱后，系统将发送包含重置链接的邮件</span>
+              </div>
+              <div class="tip-row">
+                <span class="tip-num">3</span>
+                <span class="tip-text">点击邮件中的链接即可重置管理密码</span>
+              </div>
+              <div class="warn">
+                <span>⚠</span>
+                <span>注意：请确保 SMTP 配置正确，否则找回密码功能无法使用</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 模板编辑弹窗 -->
+          <div v-if="templateModal.show" class="modal-overlay" @click.self="closeTemplateModal">
+            <div class="modal-card">
+              <div class="modal-header">
+                <h3>{{ editingTemplateId?'编辑模板':'新建模板' }}</h3>
+                <button class="btn-close" @click="closeTemplateModal">×</button>
+              </div>
+              <div class="modal-body">
+                <div class="form-group">
+                  <label>应用场景</label>
+                  <select v-model="templateForm.scene" @change="onSceneChange(templateForm.scene)">
+                    <option value="">请选择场景</option>
+                    <option value="user_register">用户注册验证码</option>
+                    <option value="user_reset">用户密码重置验证码</option>
+                    <option value="admin_reset">管理员密码重置验证码</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>邮件主题</label>
+                  <input v-model="templateForm.subject" placeholder="如：学神助手 - 注册验证码">
+                </div>
+                <div class="form-group">
+                  <label>内容格式</label>
+                  <div class="format-tabs">
+                    <button :class="['btn', templateForm.content_type==='text'?'btn-primary':'btn-secondary']" @click="templateForm.content_type='text';templateForm.body_html=''">纯文本</button>
+                    <button :class="['btn', templateForm.content_type==='html'?'btn-primary':'btn-secondary']" @click="templateForm.content_type='html';templateForm.body_text=''">HTML</button>
+                  </div>
+                </div>
+                <div class="form-group" v-if="templateForm.content_type==='text'">
+                  <label>邮件内容</label>
+                  <textarea v-model="templateForm.body_text" placeholder="内容中使用 {{变量名}} 插入变量，如：&#10;尊敬的用户，您的验证码是：{{code}}，10分钟内有效。"></textarea>
+                </div>
+                <div class="form-group" v-if="templateForm.content_type==='html'">
+                  <label>HTML 内容</label>
+                  <textarea v-model="templateForm.body_html" placeholder="HTML 中使用 {{变量名}} 插入变量，如：&#10;<p>您的验证码是：<b>{{code}}</b></p>&#10;<p>10分钟内有效</p>"></textarea>
+                </div>
+                <div class="form-group">
+                  <label>可用变量</label>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px;background:var(--bg);border-radius:8px;border:1px solid var(--border);min-height:36px;align-items:center">
+                    <span v-if="sceneDefaultVars(templateForm.scene).length===0" style="font-size:12px;color:var(--text3)">请先选择应用场景</span>
+                    <span v-for="v in sceneDefaultVars(templateForm.scene)" :key="v" class="var-tag" @click="insertVar(v)" v-text="'{{'+v+'}}'"></span>
+                  </div>
+                  <div style="font-size:11px;color:var(--text3);margin-top:6px">点击变量可插入到内容中</div>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button class="btn btn-secondary" @click="closeTemplateModal">取消</button>
+                <button class="btn btn-primary" @click="saveTemplate">保存</button>
+              </div>
             </div>
           </div>
         </div>
@@ -1629,6 +1823,31 @@ createApp({
     const token=ref(localStorage.getItem('ne21_admin_token')||'');
     const config=ref({providers:{}});
     const emailConfig=ref({enabled:false,smtp_host:'',smtp_port:587,smtp_user:'',smtp_pass:'',from_addr:'',test_recipient:''});
+    const emailTemplates=ref([]);
+    const templateModal=ref({show:false});
+    const templateForm=ref({scene:'',subject:'',body_text:'',body_html:'',content_type:'text'});
+    const editingTemplateId=ref(null);
+    const TEMPLATE_SCENES={user_register:'用户注册验证码',user_reset:'用户密码重置验证码',admin_reset:'管理员密码重置验证码'};
+    const SCENE_VARS={user_register:['username','code','subject','from_addr'],user_reset:['username','code','subject','from_addr'],admin_reset:['username','code','subject','from_addr']};
+    const SCENE_DEFAULTS={
+      user_register:{
+        subject:'学神助手 - 注册验证码',
+        text:'━━━━━━━━━━━━━━━━━━━━\n    学神助手 · {{subject}}\n━━━━━━━━━━━━━━━━━━━━\n\n尊敬的 {{username}}，您好！\n\n欢迎注册学神助手，您的验证码是：\n\n        【 {{code}} 】\n\n⏰ 有效期：10 分钟\n⚠️ 请勿泄露给他人\n\n━━━━━━━━━━━━━━━━━━━━\n如您未进行注册操作，请忽略本邮件。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━',
+        html:'<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}@keyframes glow{0%,100%{box-shadow:0 0 5px rgba(59,130,246,0.3)}50%{box-shadow:0 0 20px rgba(59,130,246,0.5)}}.card{animation:fadeInUp 0.6s ease-out}.code-box{animation:pulse 2.5s ease-in-out infinite,glow 2.5s ease-in-out infinite}</style></head><body style="margin:0;padding:0;background:#f0f4f8;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:40px 20px;"><table class="card" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#3b82f6,#2563eb);padding:28px 32px;text-align:center;"><div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:1px;">学神助手</div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">{{subject}}</div></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 16px;color:#1f2937;font-size:15px;line-height:1.6;">尊敬的 <b>{{username}}</b>，您好！</p><p style="margin:0 0 20px;color:#4b5563;font-size:14px;line-height:1.6;">欢迎注册学神助手，您的验证码是：</p><div style="text-align:center;margin:0 0 24px;"><div class="code-box" style="display:inline-block;background:linear-gradient(135deg,#eff6ff,#dbeafe);border:2px solid #3b82f6;border-radius:12px;padding:18px 36px;"><span style="font-size:34px;font-weight:700;color:#2563eb;letter-spacing:10px;font-family:SF Mono,Courier New,monospace;">{{code}}</span></div></div><p style="margin:0 0 12px;color:#6b7280;font-size:13px;line-height:1.6;">验证码 <b style="color:#dc2626;">10 分钟内</b>有效，请勿泄露给他人。</p><div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:20px;"><p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">如您没有进行注册操作，请忽略本邮件。</p><p style="margin:8px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由 <b style="color:#6b7280;">{{from_addr}}</b> 发送</p></div></td></tr></table></td></tr></table></body></html>'
+      },
+      user_reset:{
+        subject:'学神助手 - 密码重置验证码',
+        text:'━━━━━━━━━━━━━━━━━━━━\n    学神助手 · {{subject}}\n━━━━━━━━━━━━━━━━━━━━\n\n尊敬的 {{username}}，您好！\n\n您正在重置密码，您的验证码是：\n\n        【 {{code}} 】\n\n⏰ 有效期：10 分钟\n⚠️ 请勿泄露给他人\n\n━━━━━━━━━━━━━━━━━━━━\n如您未进行重置密码操作，请忽略本邮件。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━',
+        html:'<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}@keyframes glow{0%,100%{box-shadow:0 0 5px rgba(245,158,11,0.3)}50%{box-shadow:0 0 20px rgba(245,158,11,0.5)}}.card{animation:fadeInUp 0.6s ease-out}.code-box{animation:pulse 2.5s ease-in-out infinite,glow 2.5s ease-in-out infinite}</style></head><body style="margin:0;padding:0;background:#fffbeb;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:40px 20px;"><table class="card" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#f59e0b,#d97706);padding:28px 32px;text-align:center;"><div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:1px;">学神助手</div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">{{subject}}</div></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 16px;color:#1f2937;font-size:15px;line-height:1.6;">尊敬的 <b>{{username}}</b>，您好！</p><p style="margin:0 0 20px;color:#4b5563;font-size:14px;line-height:1.6;">您正在重置密码，您的验证码是：</p><div style="text-align:center;margin:0 0 24px;"><div class="code-box" style="display:inline-block;background:linear-gradient(135deg,#fffbeb,#fef3c7);border:2px solid #f59e0b;border-radius:12px;padding:18px 36px;"><span style="font-size:34px;font-weight:700;color:#b45309;letter-spacing:10px;font-family:SF Mono,Courier New,monospace;">{{code}}</span></div></div><p style="margin:0 0 12px;color:#6b7280;font-size:13px;line-height:1.6;">验证码 <b style="color:#dc2626;">10 分钟内</b>有效，请勿泄露给他人。</p><div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:20px;"><p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">如您没有进行重置密码操作，请忽略本邮件。</p><p style="margin:8px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由 <b style="color:#6b7280;">{{from_addr}}</b> 发送</p></div></td></tr></table></td></tr></table></body></html>'
+      },
+      admin_reset:{
+        subject:'学神助手 - 管理员密码重置验证码',
+        text:'━━━━━━━━━━━━━━━━━━━━\n    学神助手 · {{subject}}\n━━━━━━━━━━━━━━━━━━━━\n\n尊敬的管理员 {{username}}，您好！\n\n您正在重置管理员密码，您的验证码是：\n\n        【 {{code}} 】\n\n⏰ 有效期：10 分钟\n⚠️ 请勿泄露给他人\n\n━━━━━━━━━━━━━━━━━━━━\n如您未进行重置密码操作，请忽略本邮件。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━',
+        html:'<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}@keyframes glow{0%,100%{box-shadow:0 0 5px rgba(16,185,129,0.3)}50%{box-shadow:0 0 20px rgba(16,185,129,0.5)}}.card{animation:fadeInUp 0.6s ease-out}.code-box{animation:pulse 2.5s ease-in-out infinite,glow 2.5s ease-in-out infinite}</style></head><body style="margin:0;padding:0;background:#ecfdf5;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:40px 20px;"><table class="card" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#10b981,#059669);padding:28px 32px;text-align:center;"><div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:1px;">学神助手 · 管理后台</div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">{{subject}}</div></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 16px;color:#1f2937;font-size:15px;line-height:1.6;">尊敬的管理员 <b>{{username}}</b>，您好！</p><p style="margin:0 0 20px;color:#4b5563;font-size:14px;line-height:1.6;">您正在重置管理员密码，您的验证码是：</p><div style="text-align:center;margin:0 0 24px;"><div class="code-box" style="display:inline-block;background:linear-gradient(135deg,#ecfdf5,#d1fae5);border:2px solid #10b981;border-radius:12px;padding:18px 36px;"><span style="font-size:34px;font-weight:700;color:#047857;letter-spacing:10px;font-family:SF Mono,Courier New,monospace;">{{code}}</span></div></div><p style="margin:0 0 12px;color:#6b7280;font-size:13px;line-height:1.6;">验证码 <b style="color:#dc2626;">10 分钟内</b>有效，请勿泄露给他人。</p><div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:20px;"><p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">如您没有进行重置密码操作，请忽略本邮件。</p><p style="margin:8px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由 <b style="color:#6b7280;">{{from_addr}}</b> 发送</p></div></td></tr></table></td></tr></table></body></html>'
+      }
+    };
+    function templateSceneLabel(s){return TEMPLATE_SCENES[s]||s||'未知';}
+    function sceneDefaultVars(s){return SCENE_VARS[s]||[];}
     const msg=reactive({show:false,text:'',type:'success'});
     const showAddModal=ref(false);
     const newProvider=reactive({key:'',title:'',protocol:'openai',api_key:'',base_url:'',models:[]});
@@ -2178,6 +2397,92 @@ createApp({
         else showMsg(data.msg||'发送失败','error');
       }catch(e){showMsg('请求失败: '+e,'error');}
     }
+    async function loadEmailTemplates(){
+      try{
+        const res=await fetch('/admin/email-templates',{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200&&data.templates){emailTemplates.value=data.templates;}
+      }catch(e){/* ignore */}
+    }
+    function openTemplateModal(template){
+      if(template){
+        editingTemplateId.value=template.id;
+        templateForm.value={scene:template.scene||'',subject:template.subject||'',body_text:template.body_text||'',body_html:template.body_html||'',content_type:template.content_type||'text'};
+      }else{
+        editingTemplateId.value=null;
+        templateForm.value={scene:'',subject:'',body_text:'',body_html:'',content_type:'text'};
+      }
+      templateModal.value.show=true;
+    }
+    function onSceneChange(scene){
+      if(!scene||editingTemplateId.value)return;
+      const defs=SCENE_DEFAULTS[scene];
+      if(defs){
+        templateForm.value.subject=defs.subject;
+        templateForm.value.body_text=defs.text;
+        templateForm.value.body_html=defs.html;
+      }
+    }
+    function closeTemplateModal(){
+      templateModal.value.show=false;
+    }
+    function insertVar(v){
+      const tag='{{'+v+'}}';
+      const key=templateForm.value.content_type==='html'?'body_html':'body_text';
+      templateForm.value[key]+=tag;
+    }
+    async function saveTemplate(){
+      try{
+        const f=templateForm.value;
+        if(!f.scene){showMsg('请选择应用场景','error');return;}
+        if(!f.subject){showMsg('请填写邮件主题','error');return;}
+        const vars=sceneDefaultVars(f.scene);
+        const payload={
+          scene:f.scene,
+          subject:f.subject,
+          body_text:f.content_type==='text'?f.body_text:'',
+          body_html:f.content_type==='html'?f.body_html:'',
+          content_type:f.content_type,
+          variables:vars.join(',')
+        };
+        if(editingTemplateId.value)payload.id=editingTemplateId.value;
+        const res=await fetch('/admin/email-template',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify(payload)});
+        const data=await res.json();
+        if(data.code===403){logout();showMsg('登录已过期','error');return;}
+        if(data.code===200){showMsg('模板保存成功');closeTemplateModal();loadEmailTemplates();}
+        else showMsg(data.msg||'保存失败','error');
+      }catch(e){showMsg('请求失败: '+e,'error');}
+    }
+    async function deleteTemplate(id){
+      if(!confirm('确定删除此模板？'))return;
+      try{
+        const res=await fetch('/admin/email-template/'+id,{method:'DELETE',headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===403){logout();showMsg('登录已过期','error');return;}
+        if(data.code===200){showMsg('删除成功');loadEmailTemplates();}
+        else showMsg(data.msg||'删除失败','error');
+      }catch(e){showMsg('请求失败: '+e,'error');}
+    }
+    async function testTemplate(template){
+      const vars={};
+      const varsList=sceneDefaultVars(template.scene);
+      if(varsList.length>0){
+        varsList.forEach(v=>{
+          if(v==='code')vars[v]=String(Math.floor(100000+Math.random()*900000));
+          else if(v==='username')vars[v]='测试用户';
+          else if(v==='subject')vars[v]=template.subject;
+          else if(v==='from_addr')vars[v]='noreply@example.com';
+          else vars[v]='test_'+v;
+        });
+      }
+      try{
+        const res=await fetch('/admin/test-email',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({template_id:template.id,variables:vars})});
+        const data=await res.json();
+        if(data.code===403){logout();showMsg('登录已过期','error');return;}
+        if(data.code===200)showMsg('测试邮件发送成功');
+        else showMsg(data.msg||'发送失败','error');
+      }catch(e){showMsg('请求失败: '+e,'error');}
+    }
     async function savePaymentConfig(){
       const data=await adminPost('/admin/save-payment-config',paymentConfig);
       if(data)showMsg('注册赠送配置已保存');
@@ -2450,12 +2755,12 @@ createApp({
     else initAdminSlider();
 
     return{
-      page,loginMode,config,emailConfig,msg,showAddModal,newProvider,
+      page,loginMode,config,emailConfig,emailTemplates,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,users,userSearch,userSortBy,userSortOrder,showUserModal,userForm,
       paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,planForm,
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,
       questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,
-      doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,testEmail,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
+      doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,deleteTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
       loadConfig,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,
       savePaymentConfig,savePayApiConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,openUserEdit,saveUserAdmin,
       toggleProvider,collapseAllProviders,togglePayApiSection,

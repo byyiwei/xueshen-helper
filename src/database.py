@@ -335,6 +335,40 @@ class Database:
         # 全文索引（大幅提升关键词搜索性能，MySQL 5.7+ 支持 ngram 分词）
         self._ensure_fulltext_index("question_bank", "ft_question_text", "question_text", "answer")
 
+        # AI 答案持久化缓存
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS ai_cache (
+                cache_key VARCHAR(64) PRIMARY KEY,
+                answer TEXT NOT NULL,
+                model VARCHAR(255) NOT NULL DEFAULT '',
+                provider VARCHAR(100) NOT NULL DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                hit_count INT DEFAULT 0,
+                INDEX idx_last_used (last_used_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+        # 邮件模板表
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS email_templates (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                scene VARCHAR(50) NOT NULL COMMENT '应用场景: user_register/user_reset/admin_reset',
+                subject VARCHAR(255) NOT NULL COMMENT '邮件主题',
+                content_type VARCHAR(10) NOT NULL DEFAULT 'text' COMMENT '内容格式: text/html',
+                body_text TEXT COMMENT '纯文本内容',
+                body_html TEXT COMMENT 'HTML内容',
+                variables VARCHAR(500) DEFAULT '' COMMENT '变量列表(逗号分隔)',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE INDEX idx_scene (scene)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        # 迁移：旧表结构 → 新表结构
+        self._migrate_email_templates()
+        # 确保每个场景都有默认模板
+        self._ensure_default_email_templates()
+
     def _ensure_index(self, table, index_name, *columns):
         """确保普通索引存在，不存在则创建"""
         try:
@@ -418,6 +452,95 @@ class Database:
     def _add_column_if_missing(self, table, column, ddl):
         if not self._column_exists(table, column):
             self.execute(f"ALTER TABLE {table} ADD COLUMN {ddl}")
+
+    def _migrate_email_templates(self):
+        """自动迁移 email_templates 表结构（旧 name/is_default → 新 scene/content_type）"""
+        # 检查是否存在旧列 name
+        has_name = self._column_exists("email_templates", "name")
+        # 检查是否存在旧列 is_default
+        has_is_default = self._column_exists("email_templates", "is_default")
+        # 检查是否缺少新列 scene
+        has_scene = self._column_exists("email_templates", "scene")
+        # 检查是否缺少新列 content_type
+        has_content_type = self._column_exists("email_templates", "content_type")
+        # 检查旧唯一索引是否存在
+        has_old_unique = self._index_exists("email_templates", "idx_scene")
+
+        if not has_scene or not has_content_type or has_name or has_is_default:
+            try:
+                # 旧表有数据先备份（如果有 name 列说明是旧结构）
+                if has_name:
+                    rows = self.fetchall("SELECT * FROM email_templates")
+                else:
+                    rows = []
+
+                # 删表重建最安全（CREATE TABLE IF NOT EXISTS 会重建）
+                self.execute("DROP TABLE IF EXISTS email_templates")
+                self.execute("""
+                    CREATE TABLE email_templates (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        scene VARCHAR(50) NOT NULL COMMENT '应用场景',
+                        subject VARCHAR(255) NOT NULL COMMENT '邮件主题',
+                        content_type VARCHAR(10) NOT NULL DEFAULT 'text' COMMENT '内容格式: text/html',
+                        body_text TEXT COMMENT '纯文本内容',
+                        body_html TEXT COMMENT 'HTML内容',
+                        variables VARCHAR(500) DEFAULT '' COMMENT '变量列表',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        UNIQUE INDEX idx_scene (scene)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                """)
+                # 旧数据不恢复（name 无法映射到 scene，旧数据无意义）
+                print(f"[DB迁移] email_templates 表已重建为新的 scene/content_type 结构")
+            except Exception as e:
+                print(f"[DB迁移警告] email_templates 迁移失败（表可能正常工作）: {e}")
+
+    def _ensure_default_email_templates(self):
+        """确保每个场景都有默认邮件模板"""
+        ph = _ph()
+        defaults = [
+            {
+                "scene": "user_register",
+                "subject": "学神助手 - 注册验证码",
+                "body_text": "━━━━━━━━━━━━━━━━━━━━\n    学神助手 · {{subject}}\n━━━━━━━━━━━━━━━━━━━━\n\n尊敬的 {{username}}，您好！\n\n欢迎注册学神助手，您的验证码是：\n\n        【 {{code}} 】\n\n⏰ 有效期：10 分钟\n⚠️ 请勿泄露给他人\n\n━━━━━━━━━━━━━━━━━━━━\n如您未进行注册操作，请忽略本邮件。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━",
+                "body_html": '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}@keyframes glow{0%,100%{box-shadow:0 0 5px rgba(59,130,246,0.3)}50%{box-shadow:0 0 20px rgba(59,130,246,0.5)}}.card{animation:fadeInUp 0.6s ease-out}.code-box{animation:pulse 2.5s ease-in-out infinite,glow 2.5s ease-in-out infinite}</style></head><body style="margin:0;padding:0;background:#f0f4f8;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:40px 20px;"><table class="card" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#3b82f6,#2563eb);padding:28px 32px;text-align:center;"><div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:1px;">学神助手</div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">{{subject}}</div></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 16px;color:#1f2937;font-size:15px;line-height:1.6;">尊敬的 <b>{{username}}</b>，您好！</p><p style="margin:0 0 20px;color:#4b5563;font-size:14px;line-height:1.6;">欢迎注册学神助手，您的验证码是：</p><div style="text-align:center;margin:0 0 24px;"><div class="code-box" style="display:inline-block;background:linear-gradient(135deg,#eff6ff,#dbeafe);border:2px solid #3b82f6;border-radius:12px;padding:18px 36px;"><span style="font-size:34px;font-weight:700;color:#2563eb;letter-spacing:10px;font-family:SF Mono,Courier New,monospace;">{{code}}</span></div></div><p style="margin:0 0 12px;color:#6b7280;font-size:13px;line-height:1.6;">验证码 <b style="color:#dc2626;">10 分钟内</b>有效，请勿泄露给他人。</p><div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:20px;"><p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">如您没有进行注册操作，请忽略本邮件。</p><p style="margin:8px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由 <b style="color:#6b7280;">{{from_addr}}</b> 发送</p></div></td></tr></table></td></tr></table></body></html>',
+                "variables": "username,code,subject,from_addr"
+            },
+            {
+                "scene": "user_reset",
+                "subject": "学神助手 - 密码重置验证码",
+                "body_text": "━━━━━━━━━━━━━━━━━━━━\n    学神助手 · {{subject}}\n━━━━━━━━━━━━━━━━━━━━\n\n尊敬的 {{username}}，您好！\n\n您正在重置密码，您的验证码是：\n\n        【 {{code}} 】\n\n⏰ 有效期：10 分钟\n⚠️ 请勿泄露给他人\n\n━━━━━━━━━━━━━━━━━━━━\n如您未进行重置密码操作，请忽略本邮件。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━",
+                "body_html": '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}@keyframes glow{0%,100%{box-shadow:0 0 5px rgba(245,158,11,0.3)}50%{box-shadow:0 0 20px rgba(245,158,11,0.5)}}.card{animation:fadeInUp 0.6s ease-out}.code-box{animation:pulse 2.5s ease-in-out infinite,glow 2.5s ease-in-out infinite}</style></head><body style="margin:0;padding:0;background:#fffbeb;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:40px 20px;"><table class="card" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#f59e0b,#d97706);padding:28px 32px;text-align:center;"><div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:1px;">学神助手</div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">{{subject}}</div></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 16px;color:#1f2937;font-size:15px;line-height:1.6;">尊敬的 <b>{{username}}</b>，您好！</p><p style="margin:0 0 20px;color:#4b5563;font-size:14px;line-height:1.6;">您正在重置密码，您的验证码是：</p><div style="text-align:center;margin:0 0 24px;"><div class="code-box" style="display:inline-block;background:linear-gradient(135deg,#fffbeb,#fef3c7);border:2px solid #f59e0b;border-radius:12px;padding:18px 36px;"><span style="font-size:34px;font-weight:700;color:#b45309;letter-spacing:10px;font-family:SF Mono,Courier New,monospace;">{{code}}</span></div></div><p style="margin:0 0 12px;color:#6b7280;font-size:13px;line-height:1.6;">验证码 <b style="color:#dc2626;">10 分钟内</b>有效，请勿泄露给他人。</p><div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:20px;"><p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">如您没有进行重置密码操作，请忽略本邮件。</p><p style="margin:8px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由 <b style="color:#6b7280;">{{from_addr}}</b> 发送</p></div></td></tr></table></td></tr></table></body></html>',
+                "variables": "username,code,subject,from_addr"
+            },
+            {
+                "scene": "admin_reset",
+                "subject": "学神助手 - 管理员密码重置验证码",
+                "body_text": "━━━━━━━━━━━━━━━━━━━━\n    学神助手 · {{subject}}\n━━━━━━━━━━━━━━━━━━━━\n\n尊敬的管理员 {{username}}，您好！\n\n您正在重置管理员密码，您的验证码是：\n\n        【 {{code}} 】\n\n⏰ 有效期：10 分钟\n⚠️ 请勿泄露给他人\n\n━━━━━━━━━━━━━━━━━━━━\n如您未进行重置密码操作，请忽略本邮件。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━",
+                "body_html": '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}@keyframes glow{0%,100%{box-shadow:0 0 5px rgba(16,185,129,0.3)}50%{box-shadow:0 0 20px rgba(16,185,129,0.5)}}.card{animation:fadeInUp 0.6s ease-out}.code-box{animation:pulse 2.5s ease-in-out infinite,glow 2.5s ease-in-out infinite}</style></head><body style="margin:0;padding:0;background:#ecfdf5;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:40px 20px;"><table class="card" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#10b981,#059669);padding:28px 32px;text-align:center;"><div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:1px;">学神助手 · 管理后台</div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">{{subject}}</div></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 16px;color:#1f2937;font-size:15px;line-height:1.6;">尊敬的管理员 <b>{{username}}</b>，您好！</p><p style="margin:0 0 20px;color:#4b5563;font-size:14px;line-height:1.6;">您正在重置管理员密码，您的验证码是：</p><div style="text-align:center;margin:0 0 24px;"><div class="code-box" style="display:inline-block;background:linear-gradient(135deg,#ecfdf5,#d1fae5);border:2px solid #10b981;border-radius:12px;padding:18px 36px;"><span style="font-size:34px;font-weight:700;color:#047857;letter-spacing:10px;font-family:SF Mono,Courier New,monospace;">{{code}}</span></div></div><p style="margin:0 0 12px;color:#6b7280;font-size:13px;line-height:1.6;">验证码 <b style="color:#dc2626;">10 分钟内</b>有效，请勿泄露给他人。</p><div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:20px;"><p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">如您没有进行重置密码操作，请忽略本邮件。</p><p style="margin:8px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由 <b style="color:#6b7280;">{{from_addr}}</b> 发送</p></div></td></tr></table></td></tr></table></body></html>',
+                "variables": "username,code,subject,from_addr"
+            }
+        ]
+        for d in defaults:
+            exists = self.fetchone(f"SELECT 1 FROM email_templates WHERE scene = {ph}", (d["scene"],))
+            if not exists:
+                try:
+                    self.execute(
+                        f"INSERT INTO email_templates (scene, subject, body_text, body_html, content_type, variables) "
+                        f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
+                        (d["scene"], d["subject"], d["body_text"], d["body_html"], "html", d["variables"])
+                    )
+                    print(f"[DB初始化] 已创建默认邮件模板: {d['scene']}")
+                except Exception as e:
+                    print(f"[DB初始化警告] 创建默认邮件模板 {d['scene']} 失败: {e}")
+
+    def _index_exists(self, table, index_name):
+        """检查索引是否存在"""
+        try:
+            self.fetchone(f"SHOW INDEX FROM {table} WHERE Key_name = %s", (index_name,))
+            return True
+        except Exception:
+            return False
 
     def _ensure_payment_columns(self):
         self._add_column_if_missing("users", "points_balance", "points_balance INT DEFAULT 0")
@@ -1274,6 +1397,85 @@ class Database:
                 item.get("options_text", ""), item.get("answer", ""), item.get("source_model", ""), item.get("source_provider", "")
             )
         )
+
+    # ==================== AI 持久化缓存 ====================
+
+    def get_ai_cache(self, cache_key):
+        """从数据库获取 AI 缓存"""
+        ph = _ph()
+        row = self.fetchone(
+            f"SELECT cache_key, answer, model, provider, hit_count FROM ai_cache WHERE cache_key = {ph}",
+            (cache_key,)
+        )
+        if row:
+            self.execute(
+                f"UPDATE ai_cache SET hit_count = hit_count + 1, last_used_at = CURRENT_TIMESTAMP WHERE cache_key = {ph}",
+                (cache_key,)
+            )
+            return row
+        return None
+
+    def set_ai_cache(self, cache_key, answer, model="", provider=""):
+        """写入或更新 AI 缓存到数据库"""
+        ph = _ph()
+        self.execute(
+            f"""INSERT INTO ai_cache (cache_key, answer, model, provider, hit_count)
+                VALUES ({ph}, {ph}, {ph}, {ph}, 0)
+                ON DUPLICATE KEY UPDATE answer=VALUES(answer), model=VALUES(model), provider=VALUES(provider), hit_count=hit_count+1""",
+            (cache_key, answer, model, provider)
+        )
+
+    def cleanup_expired_ai_cache(self, days=30):
+        """清理过期的 AI 缓存"""
+        ph = _ph()
+        self.execute(
+            f"DELETE FROM ai_cache WHERE last_used_at < DATE_SUB(NOW(), INTERVAL {ph} DAY)",
+            (days,)
+        )
+
+    # ==================== 邮件模板 ====================
+
+    def list_email_templates(self):
+        """列出所有邮件模板"""
+        return self.fetchall("SELECT id, scene, subject, body_text, body_html, content_type, variables, created_at, updated_at FROM email_templates ORDER BY updated_at DESC")
+
+    def get_email_template(self, template_id):
+        """获取单个邮件模板"""
+        ph = _ph()
+        row = self.fetchone(f"SELECT * FROM email_templates WHERE id = {ph}", (template_id,))
+        return row
+
+    def get_email_template_by_scene(self, scene):
+        """根据场景获取邮件模板"""
+        ph = _ph()
+        return self.fetchone(f"SELECT * FROM email_templates WHERE scene = {ph}", (scene,))
+
+    def create_email_template(self, scene, subject, body_text, body_html, content_type, variables):
+        """创建邮件模板（同场景禁止重复）"""
+        ph = _ph()
+        existing = self.fetchone(f"SELECT id FROM email_templates WHERE scene = {ph}", (scene,))
+        if existing:
+            raise ValueError("该应用场景的模板已存在，请直接编辑")
+        self.execute(
+            f"INSERT INTO email_templates (scene, subject, body_text, body_html, content_type, variables) "
+            f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
+            (scene, subject, body_text, body_html, content_type, variables)
+        )
+        row = self.fetchone(f"SELECT id FROM email_templates WHERE scene = {ph}", (scene,))
+        return row["id"] if row else None
+
+    def update_email_template(self, template_id, scene, subject, body_text, body_html, content_type, variables):
+        """更新邮件模板"""
+        ph = _ph()
+        self.execute(
+            f"UPDATE email_templates SET scene={ph}, subject={ph}, body_text={ph}, body_html={ph}, content_type={ph}, variables={ph} WHERE id={ph}",
+            (scene, subject, body_text, body_html, content_type, variables, template_id)
+        )
+
+    def delete_email_template(self, template_id):
+        """删除邮件模板"""
+        ph = _ph()
+        self.execute(f"DELETE FROM email_templates WHERE id = {ph}", (template_id,))
 
     def cleanup_old_logs(self, days):
         """删除超过指定天数的日志数据，返回各表删除条数"""

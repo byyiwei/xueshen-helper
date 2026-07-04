@@ -19,6 +19,8 @@ import threading
 import queue
 import base64
 import secrets
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from difflib import SequenceMatcher
 from urllib.parse import parse_qs, urlparse, urlencode
 from urllib.request import urlopen
 from email.mime.text import MIMEText
@@ -28,15 +30,15 @@ from datetime import datetime, timedelta
 from database import db, hash_password, verify_password, is_legacy_password
 
 # ==================== 全局配置 ====================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ADMIN_HTML_FILE = os.path.join(BASE_DIR, "static", "admin.html")
 USER_HTML_FILE = os.path.join(BASE_DIR, "static", "user.html")
-USER_SCRIPT_FILE = os.path.join(BASE_DIR, "xueshen.js")
-XUESHEN_GF_FILE = os.path.join(BASE_DIR, "xueshen-gf.js")
-XUESHEN_SC_FILE = os.path.join(BASE_DIR, "xueshen-sc.js")
+USER_SCRIPT_FILE = os.path.join(BASE_DIR, "scripts", "xueshen.js")
+XUESHEN_GF_FILE = os.path.join(BASE_DIR, "scripts", "xueshen-gf.js")
+XUESHEN_SC_FILE = os.path.join(BASE_DIR, "scripts", "xueshen-sc.js")
 INTRO_HTML_FILE = os.path.join(BASE_DIR, "intro", "index.html")
-USER_SESSION_FILE = os.path.join(BASE_DIR, "user_session.json")
-JWT_SECRET_FILE = os.path.join(BASE_DIR, "jwt_secret.key")
+USER_SESSION_FILE = os.path.join(BASE_DIR, "config", "user_session.json")
+JWT_SECRET_FILE = os.path.join(BASE_DIR, "config", "jwt_secret.key")
 PORT = 8360
 
 # 密码重置 token 临时存储 {token: email}
@@ -749,7 +751,7 @@ DEFAULT_PROVIDERS = {
 }
 
 # 加载 providers 配置（优先从数据库读取，数据库为空则回退到文件/默认）
-PROVIDERS_FILE = os.path.join(BASE_DIR, "providers.json")
+PROVIDERS_FILE = os.path.join(BASE_DIR, "config", "providers.json")
 
 def load_providers():
     # 优先从数据库读取
@@ -818,9 +820,27 @@ def save_providers(providers):
 
 PROVIDERS = load_providers()
 
+import re as _re
+
+EMAIL_VAR_PATTERN = _re.compile(r"\{\{([a-zA-Z0-9_]+)\}\}")
+
+def _render_email_template(text, variables):
+    """替换邮件模板中的变量 {{var_name}}"""
+    if not text:
+        return text
+    def _repl(m):
+        key = m.group(1)
+        val = variables.get(key, "")
+        return str(val) if val is not None else ""
+    return EMAIL_VAR_PATTERN.sub(_repl, text)
+
 # ==================== 邮件发送 ====================
-def send_email(to_addr, subject, body):
-    """发送邮件"""
+def send_email(to_addr, subject, body_text=None, body_html=None, template_id=None, scene=None, variables=None):
+    """发送邮件，支持模板和变量替换
+    template_id: 使用指定模板ID
+    scene: 使用指定场景的模板（user_register/user_reset/admin_reset）
+    variables: 变量字典，如 {"code": "123456"}
+    """
     admin = db.get_admin_config()
     if not admin or not admin.get("email_enabled"):
         return False, "邮箱功能未启用"
@@ -831,10 +851,42 @@ def send_email(to_addr, subject, body):
     from_addr = (admin.get("from_addr") or "").strip() or smtp_user
     if not all([smtp_host, smtp_user, smtp_pass]):
         return False, "SMTP 配置不完整"
-    msg = MIMEText(body, "html", "utf-8")
+
+    variables = variables or {}
+    variables["from_addr"] = from_addr
+
+    # 如果使用模板
+    if template_id:
+        template = db.get_email_template(template_id)
+        if not template:
+            return False, "模板不存在"
+        subject = _render_email_template(template.get("subject", ""), variables)
+        body_text = _render_email_template(template.get("body_text", ""), variables)
+        body_html = _render_email_template(template.get("body_html", ""), variables)
+    elif scene:
+        template = db.get_email_template_by_scene(scene)
+        if template:
+            subject = _render_email_template(template.get("subject", ""), variables)
+            body_text = _render_email_template(template.get("body_text", ""), variables)
+            body_html = _render_email_template(template.get("body_html", ""), variables)
+
+    if not subject:
+        return False, "邮件主题不能为空"
+
+    # 构建 multipart 邮件（同时支持纯文本和 HTML）
+    from email.mime.multipart import MIMEMultipart
+    msg = MIMEMultipart("alternative")
     msg["From"] = formataddr(("学神助手", from_addr))
     msg["To"] = to_addr
     msg["Subject"] = subject
+
+    if body_text:
+        msg.attach(MIMEText(body_text, "plain", "utf-8"))
+    if body_html:
+        msg.attach(MIMEText(body_html, "html", "utf-8"))
+    if not body_text and not body_html:
+        return False, "邮件内容不能为空"
+
     try:
         server = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
         server.starttls()
@@ -873,23 +925,46 @@ def get_ai_cache(cache_key):
     with AI_CACHE_LOCK:
         item = AI_CACHE.get(cache_key)
         if not item:
-            return None
-        if now - item.get("ts", 0) > AI_CACHE_TTL_SECONDS:
+            pass  # 内存未命中，查数据库
+        elif now - item.get("ts", 0) > AI_CACHE_TTL_SECONDS:
             AI_CACHE.pop(cache_key, None)
-            return None
-        return item
+            pass  # 内存过期，查数据库
+        else:
+            return item
+    # 内存未命中，查 MySQL 持久化缓存
+    try:
+        row = db.get_ai_cache(cache_key)
+        if row and row.get("answer"):
+            db_item = {
+                "answer": row["answer"],
+                "model": row.get("model") or "",
+                "provider": row.get("provider") or "",
+                "ts": time.time()
+            }
+            with AI_CACHE_LOCK:
+                AI_CACHE[cache_key] = db_item
+            return db_item
+    except Exception as e:
+        print(f"[AI缓存] 数据库查询失败: {e}", flush=True)
+    return None
 
 def set_ai_cache(cache_key, answer, model_name="", provider_name=""):
+    item = {
+        "answer": answer,
+        "model": model_name or "",
+        "provider": provider_name or "",
+        "ts": time.time()
+    }
     with AI_CACHE_LOCK:
         if len(AI_CACHE) >= AI_CACHE_MAX_SIZE:
             oldest_key = min(AI_CACHE, key=lambda k: AI_CACHE[k].get("ts", 0))
             AI_CACHE.pop(oldest_key, None)
-        AI_CACHE[cache_key] = {
-            "answer": answer,
-            "model": model_name or "",
-            "provider": provider_name or "",
-            "ts": time.time()
-        }
+        AI_CACHE[cache_key] = item
+    # 异步写入 MySQL 持久化缓存
+    try:
+        threading.Thread(target=lambda: db.set_ai_cache(cache_key, answer, model_name, provider_name), daemon=True).start()
+    except Exception as e:
+        print(f"[AI缓存] 数据库写入失败: {e}", flush=True)
 
 def normalize_question_text(text):
     text = str(text or "")
@@ -936,7 +1011,7 @@ def _strip_option_prefix(text):
     return text
 
 def options_match(input_options, bank_options_text):
-    """严格匹配选项：选项值必须完全一致（乱序OK），但数量和内容都要相同"""
+    """匹配选项：输入选项是题库选项的子集即可（允许题库有更多选项）"""
     input_clean = [_strip_option_prefix(x) for x in (input_options or [])]
     input_set = {normalize_question_text(x) for x in input_clean if normalize_question_text(x)}
     if not input_set:
@@ -944,8 +1019,10 @@ def options_match(input_options, bank_options_text):
     bank_options = re.split(r"\s*\|\s*|\n+", str(bank_options_text or ""))
     bank_clean = [_strip_option_prefix(x) for x in bank_options]
     bank_set = {normalize_question_text(x) for x in bank_clean if normalize_question_text(x)}
-    # 严格匹配：选项集合必须完全相同（乱序OK）
-    return input_set == bank_set
+    if not bank_set:
+        return True  # 题库无选项视为通配
+    # 放宽：输入选项是题库选项的子集即可（允许题库有额外选项）
+    return input_set.issubset(bank_set)
 
 def is_test_question_for_bank(question):
     info = parse_question_payload(question)
@@ -1007,15 +1084,21 @@ def get_question_bank_match(question):
             candidates = db.search_question_bank(keyword=keyword, limit=20, page=1)
             for item in candidates:
                 item_q_norm = normalize_question_text(item.get("question_text", ""))
-                if item.get("answer") and item_q_norm and (item_q_norm == q_norm or item_q_norm in q_norm or q_norm in item_q_norm):
+                if not item.get("answer") or not item_q_norm:
+                    continue
+                # 精确匹配
+                if item_q_norm == q_norm or item_q_norm in q_norm or q_norm in item_q_norm:
                     if options_match(info.get("options", []), item.get("options_text", "")):
-                        # 题型和选项都匹配才返回
-                        if question_type_matches(current_type, item.get("question_type", "")):
-                            db.get_question_answer_by_hash(item.get("question_hash", ""))
-                            print(f"[题库匹配] 标准化兜底命中 {item.get('question_hash', '')[:12]} type={item.get('question_type','')}", flush=True)
-                            return item, item.get("question_hash", qhash)
-                        else:
-                            print(f"[题库匹配] 同题不同类型跳过: 当前={current_type}, 题库={item.get('question_type','')}", flush=True)
+                        db.get_question_answer_by_hash(item.get("question_hash", ""))
+                        print(f"[题库匹配] 标准化兜底命中 {item.get('question_hash', '')[:12]} type={item.get('question_type','')}", flush=True)
+                        return item, item.get("question_hash", qhash)
+                # 模糊匹配：相似度>=0.85 且选项匹配（不再限制题型）
+                if len(q_norm) >= 4 and len(item_q_norm) >= 4:
+                    ratio = SequenceMatcher(None, q_norm, item_q_norm).ratio()
+                    if ratio >= 0.85 and options_match(info.get("options", []), item.get("options_text", "")):
+                        db.get_question_answer_by_hash(item.get("question_hash", ""))
+                        print(f"[题库匹配] 模糊匹配命中(相似度={ratio:.2f}) {item.get('question_hash', '')[:12]} type={item.get('question_type','')}", flush=True)
+                        return item, item.get("question_hash", qhash)
         except Exception as e:
             print(f"[题库匹配] 兜底查询失败: {e}", flush=True)
     print(f"[题库匹配] 未命中 {qhash[:12]} type={current_type}", flush=True)
@@ -1059,7 +1142,15 @@ def normalize_ai_answer(question, answer):
     options = extract_options_from_question(question)
 
     if options:
-        m = re.match(r"^\s*([A-D])(?:\s+|[:：、.．)])\s*(.*)$", text, re.I)
+        # 匹配各种 "答案格式": "A" "答案是A" "正确答案是A" "选A" "选择A" "A. xxx" "A：xxx" 等
+        m = re.match(r"^\s*(?:正确答案是?|答案是?|选择?|选|应该选|应该选择?)([A-D])", text, re.I)
+        if m:
+            idx = ord(m.group(1).upper()) - ord("A")
+            if 0 <= idx < len(options):
+                return options[idx]
+            return m.group(1).upper()
+        # "A" or "A. xxx" or "A：xxx" or "A、xxx"
+        m = re.match(r"^\s*([A-D])(?:\s*[:：.．、)\）]|[\s]+)(.*)$", text, re.I)
         if m:
             idx = ord(m.group(1).upper()) - ord("A")
             rest = m.group(2).strip()
@@ -1067,6 +1158,21 @@ def normalize_ai_answer(question, answer):
                 return options[idx]
             if rest:
                 return rest
+        # 纯字母答案 "AB" "A,B" "A、B" "A和B"
+        clean = re.sub(r"[\s、,，&+]+", "", text).upper()
+        if re.match(r"^[A-D]{1,4}$", clean) and len(clean) <= len(options):
+            result = []
+            for c in clean:
+                idx = ord(c) - ord("A")
+                if 0 <= idx < len(options):
+                    result.append(options[idx])
+            if result:
+                return ",".join(result) if len(result) > 1 else result[0]
+        # 判断题特殊处理
+        if any(kw in text[:20].lower() for kw in ["正确", "对", "true", "√", "right"]):
+            return "正确"
+        if any(kw in text[:20].lower() for kw in ["错误", "不对", "错", "false", "×", "✗", "wrong"]):
+            return "错误"
 
     # 日日新有时会把最终答案藏在 reasoning/Thinking Process 里，这里从尾部结论区提取。
     if re.search(r"Thinking Process|Analyze the Request|Final Answer|Construct Output|Therefore|最逻辑|最可能|Final Output|Final decision|Decoded question|最终答案", text, re.I):
@@ -1078,6 +1184,7 @@ def normalize_ai_answer(question, answer):
             r"\b([A-D])\s*[:：、.．)]",
             r"Answer:\s*([A-D])\b",
             r"答案[：:]\s*([A-D])\b",
+            r"(?:正确答案是?|答案是?|选择?|选|应该选)\s*([A-D])\b",
         ]:
             m = re.search(pattern, tail, re.I)
             if m:
@@ -1364,8 +1471,13 @@ def build_ai_question_text(question_payload_str):
 
 def call_provider_chat(question, model_name, provider_info):
     system_prompt = (
-        "你是答题助手，只输出答案，禁止输出任何解释、分析、思考过程。"
-        "选择题输出选项字母（多选用逗号分隔），判断题输出正确或错误，填空题输出填空内容，简答题输出简洁答案。"
+        "你是答题助手，只输出最终答案，禁止输出任何解释、分析、思考过程或中间步骤。\n"
+        "规则：\n"
+        "- 选择题：只输出选项字母，多选用逗号分隔（如 A 或 A,B）\n"
+        "- 判断题：只输出 正确 或 错误\n"
+        "- 填空题：只输出填空内容\n"
+        "- 简答题：输出简洁答案，不超过50字\n"
+        "- 不要输出题目、不要重复选项内容、不要输出分析过程"
     )
     # 将题目JSON格式化为简洁文本，减少输入token
     question_text = build_ai_question_text(question)
@@ -1456,57 +1568,83 @@ def ask_ai_auto(question):
         print(f"[自动模型] 429限流冷却中: {', '.join(f'{m}({s}s)' for m,s in cooling_429)}", flush=True)
     if skipped_token:
         print(f"[自动模型] Token限额耗尽: {', '.join(sorted(set(skipped_token)))}", flush=True)
-    # 如果有可用模型，加权选择
-    if active:
-        ordered = weighted_pick(active)
-    elif cooling_429:
-        # 所有模型都在429冷却，等待最短的冷却时间
-        min_wait = min(s for _, s in cooling_429)
-        print(f"[自动模型] 所有模型429限流，等待 {min_wait}s 后重试", flush=True)
-        time.sleep(min_wait + 1)
-        # 重新获取候选
-        now = time.time()
-        active = [item for item in candidates if MODEL_429_COOLDOWN.get(item[2], 0) <= now and MODEL_FAIL_COOLDOWN.get(item[2], 0) <= now]
-        if not active:
-            return None, "所有模型429限流冷却后仍无可用模型", "", ""
-        ordered = weighted_pick(active)
-    else:
+    if not active:
+        if cooling_429:
+            return None, "所有模型429限流冷却中，请稍后重试", "", ""
         return None, "所有模型均不可用（404冷却中）", "", ""
+    # 并行调用所有可用模型，取最先成功的
+    ordered = weighted_pick(active)
+    print(f"[自动模型] 并行请求 {len(ordered)} 个模型", flush=True)
     errors = []
-    for provider_name, provider_info, model_name, weight in ordered:
+    lock = threading.Lock()
+    success_event = threading.Event()
+    success_result = [None]  # [answer, None, model_name, provider_name]
+
+    def _try_model(provider_name, provider_info, model_name, weight):
+        if success_event.is_set():
+            return
         print(f"[自动模型] 尝试 provider={provider_name}, model={model_name}, weight={weight}", flush=True)
         attempt_start = time.time()
-        answer, err, tokens = call_provider_chat(question, model_name, provider_info)
+        try:
+            answer, err, tokens = call_provider_chat(question, model_name, provider_info)
+        except Exception as e:
+            err = str(e)
+            answer = None
+        if success_event.is_set():
+            return
         if answer:
-            MODEL_FAIL_COOLDOWN.pop(model_name, None)
-            MODEL_429_COOLDOWN.pop(model_name, None)
-            record_model_token_usage(model_name, tokens)
-            return answer, None, model_name, provider_name
-        if err:
-            # 检查是否429限流
+            with lock:
+                MODEL_FAIL_COOLDOWN.pop(model_name, None)
+                MODEL_429_COOLDOWN.pop(model_name, None)
+                record_model_token_usage(model_name, tokens)
+            success_result[0] = (answer, None, model_name, provider_name)
+            success_event.set()
+        elif err:
             if err.startswith("__429__:"):
                 parts = err.split(":", 2)
                 cooldown_sec = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else MODEL_429_DEFAULT_SECONDS
-                MODEL_429_COOLDOWN[model_name] = time.time() + cooldown_sec
+                with lock:
+                    MODEL_429_COOLDOWN[model_name] = time.time() + cooldown_sec
                 print(f"[自动模型] 模型 {model_name} 触发429限流，冷却 {cooldown_sec}s", flush=True)
-                errors.append(f"{model_name}: 429限流(冷却{cooldown_sec}s)")
-                continue  # 尝试下一个模型
-            enqueue_ai_log({
-                "provider_key": provider_name or "",
-                "username": "",
-                "model": model_name,
-                "question": question,
-                "answer": "",
-                "status": "error",
-                "error": err,
-                "duration_ms": int((time.time() - attempt_start) * 1000),
-                "client_ip": ""
-            })
-            if "HTTP 404" in err or "model is not found" in err.lower() or "模型" in err and "不存在" in err:
-                MODEL_FAIL_COOLDOWN[model_name] = time.time() + MODEL_FAIL_COOLDOWN_SECONDS
-                print(f"[自动模型] 模型不可用，进入冷却 {MODEL_FAIL_COOLDOWN_SECONDS}s: {model_name}，原因：{err}", flush=True)
-        errors.append(f"{model_name}: {err}")
-    return None, "自动模型全部尝试失败；" + "；".join(errors[-5:]), ordered[-1][2], ordered[-1][0]
+            else:
+                enqueue_ai_log({
+                    "provider_key": provider_name or "",
+                    "username": "",
+                    "model": model_name,
+                    "question": question,
+                    "answer": "",
+                    "status": "error",
+                    "error": err,
+                    "duration_ms": int((time.time() - attempt_start) * 1000),
+                    "client_ip": ""
+                })
+                if "HTTP 404" in err or "model is not found" in err.lower() or "模型" in err and "不存在" in err:
+                    with lock:
+                        MODEL_FAIL_COOLDOWN[model_name] = time.time() + MODEL_FAIL_COOLDOWN_SECONDS
+                    print(f"[自动模型] 模型不可用，进入冷却 {MODEL_FAIL_COOLDOWN_SECONDS}s: {model_name}，原因：{err}", flush=True)
+            with lock:
+                errors.append(f"{model_name}: {err}")
+
+    # 并行调用，最多等待30秒
+    with ThreadPoolExecutor(max_workers=min(len(ordered), 5)) as executor:
+        futures = {}
+        for provider_name, provider_info, model_name, weight in ordered:
+            f = executor.submit(_try_model, provider_name, provider_info, model_name, weight)
+            futures[f] = model_name
+        # 等待第一个成功或全部完成
+        done_count = 0
+        for f in as_completed(futures):
+            done_count += 1
+            if success_event.is_set():
+                # 取消还在运行的（仅标记，无法真正中断urlopen）
+                for remaining_f in futures:
+                    remaining_f.cancel()
+                break
+        if success_result[0]:
+            return success_result[0]
+    # 所有模型都失败
+    last = ordered[-1]
+    return None, "自动模型全部尝试失败；" + "；".join(errors[-5:]), last[2], last[0]
 
 def ask_ai_custom(question, custom_cfg):
     model_name = (custom_cfg.get("model") or "").strip()
@@ -2816,6 +2954,28 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {"code": 200, "items": rows, "total": total, "page": int(page or 1), "limit": int(limit or 100)})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
+
+        # ==================== 邮件模板管理（GET） ====================
+        elif path == "/admin/email-templates":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            self._send_json(200, {"code": 200, "templates": db.list_email_templates()})
+
+        elif path.startswith("/admin/email-template/"):
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            tid = path.split("/")[-1]
+            if not tid.isdigit():
+                self._send_json(400, {"code": 400, "msg": "模板ID无效"})
+                return
+            template = db.get_email_template(int(tid))
+            if template:
+                self._send_json(200, {"code": 200, "template": template})
+            else:
+                self._send_json(404, {"code": 404, "msg": "模板不存在"})
+
         else:
             self._send_json(404, {"code": 404, "msg": "not found"})
 
@@ -2949,14 +3109,17 @@ class Handler(BaseHTTPRequestHandler):
                 # 生成验证码
                 code = generate_code(6)
                 db.save_verify_code(email, code, vtype, expires_minutes=10)
-                # 发送邮件
+                # 发送邮件（优先使用模板，无模板则使用默认内容）
+                scene = "user_register" if vtype == "register" else "user_reset"
                 if vtype == "register":
-                    subject = "学神助手 - 注册验证码"
-                    body = f"<p>您的注册验证码是：<b style='font-size:24px;color:#3b82f6;'>{code}</b></p><p>验证码10分钟内有效，请勿泄露给他人。</p>"
+                    fallback_subject = "学神助手 - 注册验证码"
+                    fallback_html = f"<p>您的注册验证码是：<b style='font-size:24px;color:#3b82f6;'>{code}</b></p><p>验证码10分钟内有效，请勿泄露给他人。</p>"
                 else:
-                    subject = "学神助手 - 密码重置验证码"
-                    body = f"<p>您的密码重置验证码是：<b style='font-size:24px;color:#3b82f6;'>{code}</b></p><p>验证码10分钟内有效，请勿泄露给他人。</p>"
-                success, err = send_email(email, subject, body)
+                    fallback_subject = "学神助手 - 密码重置验证码"
+                    fallback_html = f"<p>您的密码重置验证码是：<b style='font-size:24px;color:#3b82f6;'>{code}</b></p><p>验证码10分钟内有效，请勿泄露给他人。</p>"
+                # 尝试用邮箱前缀作为用户名回退
+                username_fallback = email.split("@")[0] if email and "@" in email else email
+                success, err = send_email(email, fallback_subject, body_html=fallback_html, scene=scene, variables={"username": username_fallback, "code": code, "subject": fallback_subject})
                 if success:
                     self._send_json(200, {"code": 200, "msg": "验证码已发送"})
                 else:
@@ -3193,10 +3356,14 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 code = generate_code(6)
                 db.save_verify_code(bound_email, code, "admin_reset", expires_minutes=10)
+                fallback_subject = "后台管理 - 管理员密码重置验证码"
+                username_fallback = bound_email.split("@")[0] if bound_email and "@" in bound_email else bound_email
                 success, err = send_email(
                     bound_email,
-                    "后台管理 - 管理员密码重置验证码",
-                    f"<p>您的管理员密码重置验证码是：<b style='font-size:24px;color:#3b82f6;'>{code}</b></p><p>验证码 10 分钟内有效。如果不是您本人操作，请忽略本邮件。</p>"
+                    fallback_subject,
+                    body_html=f"<p>您的管理员密码重置验证码是：<b style='font-size:24px;color:#3b82f6;'>{code}</b></p><p>验证码 10 分钟内有效。如果不是您本人操作，请忽略本邮件。</p>",
+                    scene="admin_reset",
+                    variables={"username": username_fallback, "code": code, "subject": fallback_subject}
                 )
                 if success:
                     self._send_json(200, {"code": 200, "msg": "验证码已发送到绑定邮箱"})
@@ -3655,14 +3822,67 @@ class Handler(BaseHTTPRequestHandler):
             if not to_addr:
                 self._send_json(400, {"code": 400, "msg": "请先配置测试收件邮箱"})
                 return
-            success, err = send_email(
-                to_addr, "学神助手 - 邮件测试",
-                f"<p>这是一封测试邮件。</p><p>如果您的邮箱收到了这封邮件，说明 SMTP 配置正确。</p><p>发送时间：{time.strftime('%Y-%m-%d %H:%M:%S')}</p>"
-            )
+            data = json.loads(body or "{}")
+            template_id = data.get("template_id")
+            variables = data.get("variables", {})
+            if template_id:
+                success, err = send_email(to_addr, "", template_id=template_id, variables=variables)
+            else:
+                success, err = send_email(
+                    to_addr, "学神助手 - 邮件测试",
+                    body_html=f"<p>这是一封测试邮件。</p><p>如果您的邮箱收到了这封邮件，说明 SMTP 配置正确。</p><p>发送时间：{time.strftime('%Y-%m-%d %H:%M:%S')}</p>"
+                )
             if success:
                 self._send_json(200, {"code": 200, "msg": "测试邮件已发送"})
             else:
                 self._send_json(500, {"code": 500, "msg": err})
+
+        # ==================== 邮件模板管理（POST） ====================
+        elif path == "/admin/email-template":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            data = json.loads(body or "{}")
+            template_id = data.get("id")
+            scene = (data.get("scene") or "").strip()
+            subject = (data.get("subject") or "").strip()
+            body_text = data.get("body_text", "")
+            body_html = data.get("body_html", "")
+            content_type = (data.get("content_type") or "text").strip()
+            variables = (data.get("variables") or "").strip()
+            if not scene or scene not in ("user_register", "user_reset", "admin_reset"):
+                self._send_json(400, {"code": 400, "msg": "请选择有效的应用场景"})
+                return
+            if not subject:
+                self._send_json(400, {"code": 400, "msg": "邮件主题不能为空"})
+                return
+            if variables and not _re.match(r"^[a-zA-Z0-9_,\s]*$", variables):
+                self._send_json(400, {"code": 400, "msg": "变量名仅支持大小写字母、数字和下划线"})
+                return
+            try:
+                if template_id:
+                    db.update_email_template(template_id, scene, subject, body_text, body_html, content_type, variables)
+                    self._send_json(200, {"code": 200, "msg": "模板已更新"})
+                else:
+                    tid = db.create_email_template(scene, subject, body_text, body_html, content_type, variables)
+                    self._send_json(200, {"code": 200, "msg": "模板已保存", "id": tid})
+            except ValueError as e:
+                self._send_json(400, {"code": 400, "msg": str(e)})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path.startswith("/admin/email-template/"):
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            tid = path.split("/")[-1]
+            if not tid.isdigit():
+                self._send_json(400, {"code": 400, "msg": "模板ID无效"})
+                return
+            if method == "DELETE":
+                self._send_json(400, {"code": 400, "msg": "邮件模板不允许删除，每个场景必须保留一个模板"})
+            else:
+                self._send_json(405, {"code": 405, "msg": "方法不支持"})
 
         elif path == "/admin/change-password":
             if not self._check_admin():
@@ -3924,7 +4144,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def _log_cleanup_worker():
-    """后台线程：每天检查并清理过期日志"""
+    """后台线程：每天检查并清理过期日志和AI缓存"""
     import time as _time
     while True:
         try:
@@ -3934,6 +4154,11 @@ def _log_cleanup_worker():
                 total = sum(v for v in result.values() if v > 0)
                 if total > 0:
                     print(f"[日志清理] 保留{retention}天，已清理 {total} 条记录: {result}", flush=True)
+            # 清理超过30天未使用的AI缓存
+            try:
+                db.cleanup_expired_ai_cache(30)
+            except Exception:
+                pass
         except Exception as e:
             print(f"[日志清理] 异常: {e}", flush=True)
         _time.sleep(86400)  # 24小时
