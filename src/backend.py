@@ -3093,6 +3093,7 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(body)
                 email = data.get("email", "").strip()
                 vtype = data.get("type", "register")  # register or reset
+                req_username = (data.get("username") or "").strip()  # 注册时前端传来的用户名
                 if not email:
                     self._send_json(400, {"code": 400, "msg": "请输入邮箱"})
                     return
@@ -3120,8 +3121,10 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     fallback_subject = "学神助手 - 密码重置验证码"
                     fallback_html = f"<p>您的密码重置验证码是：<b style='font-size:24px;color:#3b82f6;'>{code}</b></p><p>验证码10分钟内有效，请勿泄露给他人。</p>"
-                # 尝试获取真实用户名：重置场景查数据库，注册场景用邮箱前缀回退
-                if vtype == "reset":
+                # 获取真实用户名：注册用前端传入，重置查数据库，都没有才用邮箱前缀回退
+                if vtype == "register":
+                    username_fallback = req_username
+                elif vtype == "reset":
                     existing_user = db.get_user_by_email(email)
                     username_fallback = (existing_user.get("username") or "").strip() if existing_user else ""
                 else:

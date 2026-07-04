@@ -2101,9 +2101,11 @@
         $('regCodeBtn').onclick = async function () {
             const email = $('regEmail').value.trim();
             if (!email) return msg('regMsg', '请先填写邮箱', false);
+            const regUser = $('regUser').value.trim();
+            if (!regUser) return msg('regMsg', '请先填写用户名', false);
             setBusy(this, true, '发送中...');
             try {
-                const res = await post('/api/auth/send-verify', { email, type: 'register' });
+                const res = await post('/api/auth/send-verify', { email, type: 'register', username: regUser });
                 msg('regMsg', res.msg || '验证码已发送', res.code === 200);
             } catch (_) { msg('regMsg', '网络请求失败', false); }
             setBusy(this, false);
