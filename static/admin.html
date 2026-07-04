@@ -2453,16 +2453,6 @@ createApp({
         else showMsg(data.msg||'保存失败','error');
       }catch(e){showMsg('请求失败: '+e,'error');}
     }
-    async function deleteTemplate(id){
-      if(!confirm('确定删除此模板？'))return;
-      try{
-        const res=await fetch('/admin/email-template/'+id,{method:'DELETE',headers:{'Authorization':token.value}});
-        const data=await res.json();
-        if(data.code===403){logout();showMsg('登录已过期','error');return;}
-        if(data.code===200){showMsg('删除成功');loadEmailTemplates();}
-        else showMsg(data.msg||'删除失败','error');
-      }catch(e){showMsg('请求失败: '+e,'error');}
-    }
     async function testTemplate(template){
       const vars={};
       const varsList=sceneDefaultVars(template.scene);
