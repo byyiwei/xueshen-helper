@@ -861,12 +861,15 @@ def send_email(to_addr, subject, body_text=None, body_html=None, template_id=Non
         if not template:
             return False, "模板不存在"
         subject = _render_email_template(template.get("subject", ""), variables)
+        # 同步渲染后的主题到变量，保证内容中的 {{subject}} 与邮件主题一致
+        variables["subject"] = subject
         body_text = _render_email_template(template.get("body_text", ""), variables)
         body_html = _render_email_template(template.get("body_html", ""), variables)
     elif scene:
         template = db.get_email_template_by_scene(scene)
         if template:
             subject = _render_email_template(template.get("subject", ""), variables)
+            variables["subject"] = subject
             body_text = _render_email_template(template.get("body_text", ""), variables)
             body_html = _render_email_template(template.get("body_html", ""), variables)
 
