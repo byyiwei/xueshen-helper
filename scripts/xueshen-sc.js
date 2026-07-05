@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.0.3
+// @version      5.2.0
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @author       IPYIWEI
@@ -10,6 +10,15 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.2.0 更新内容：
+// @changelog    1. 首页新增"推广返利"入口，一键跳转推广赚钱页面
+// @changelog    2. 账号登录区移除推广按钮，精简界面
+// @changelog    3. 推广返利说明动态读取后台配置（佣金比例/冷却天数/最低提现）
+// @changelog    4. 后台推广数据统计新增已提现/待审核金额卡片
+// @changelog    5. 提现申请列表新增今日/已通过/待审核金额合计
+// @changelog    6. 收款信息美化：支付宝/微信双卡片布局，单图替换模式
+// @changelog    7. 提现申请强制校验收款二维码，未上传不可提交
+// @changelog    8. 修复admin页面推广返利模块渲染异常
 // @icon         https://xs.openget.cn/static/icon.jpg
 // @match        *://*.chaoxing.com/*
 // @match        *://*.neauce.com/*
@@ -1890,12 +1899,12 @@
       return (_ctx, _cache) => {
         return vue.openBlock(), vue.createElementBlock("div", _hoisted_1$7, [
           vue.createElementVNode("div", { class: "home-section", style: {"margin-top":"8px"} }, [
-            vue.createElementVNode("div", { class: "section-title" }, "🏠 官网首页"),
+            vue.createElementVNode("div", { class: "section-title" }, "推广返利"),
             vue.createElementVNode("a", {
               class: "home-card-btn",
-              href: vue.unref(shopLink) || "https://xs.openget.cn/",
+              href: "https://xs.openget.cn/user?section=promotion",
               target: "_blank"
-            }, "访问学神助手官网", 8, ["href"])
+            }, "💰 去推广赚钱")
           ]),
           !showLogin.value ? (vue.openBlock(), vue.createElementBlock("div", {
             key: "login-collapsed",

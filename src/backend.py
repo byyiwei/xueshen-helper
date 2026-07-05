@@ -125,7 +125,8 @@ def build_user_profile(username):
         "member_until": member_until or "",
         "active_member": bool(ent.get("active_member")),
         "is_banned": bool(ent.get("is_banned")),
-        "ban_reason": ent.get("ban_reason") or ""
+        "ban_reason": ent.get("ban_reason") or "",
+        "commission_balance": float(ent.get("commission_balance") or 0)
     }
 
 def consume_answer_quota(username, question_hash=""):
@@ -2466,6 +2467,15 @@ class Handler(BaseHTTPRequestHandler):
             self._send_file(200, USER_HTML_FILE, "text/html; charset=utf-8")
         elif path == "/admin" or path == "/admin/":
             self._send_file(200, ADMIN_HTML_FILE, "text/html; charset=utf-8")
+        elif path == "/invite":
+            # 推广邀请链接跳转到注册页，携带邀请码
+            qs = parse_qs(parsed.query)
+            code = qs.get("code", [""])[0]
+            location = f"/register?code={code}" if code else "/register"
+            self.send_response(302)
+            self.send_header("Location", location)
+            self.end_headers()
+            return
         elif path in ("/script.user.js", "/xueshen.user.js", "/xueshen.js"):
             self._send_file(200, USER_SCRIPT_FILE, "application/javascript; charset=utf-8")
         elif path == "/xueshen-gf.js":
@@ -2505,6 +2515,47 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/config":
             PROVIDERS = recover_providers_if_empty(PROVIDERS)
             self._send_json(200, {"code": 200, "models": build_models_html(), "providers": list(PROVIDERS.keys())})
+        elif path == "/api/promotion/profile":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "未登录"})
+                return
+            p = db.get_referral_profile(user["username"])
+            cfg = db.get_admin_config() or {}
+            rate_val = float(cfg.get("referral_rate") or 0.1)
+            days_val = int(cfg.get("referral_settle_days") or 7)
+            min_w_val = float(cfg.get("referral_min_withdraw") or 10)
+            print(f"[promo/profile] cfg raw: rate={cfg.get('referral_rate')} days={cfg.get('referral_settle_days')} min_w={cfg.get('referral_min_withdraw')} | parsed: rate={rate_val} days={days_val} min_w={min_w_val}")
+            self._send_json(200, {"code": 200, "profile": {
+                "invite_code": p["invite_code"],
+                "invite_link": f"https://xs.openget.cn/invite?code={p['invite_code']}",
+                "invited_count": p["invited_count"],
+                "paid_commission": p["paid_commission"],
+                "pending_commission": p["pending_commission"],
+                "balance": p["balance"],
+                "min_withdraw": min_w_val,
+                "referral_rate": rate_val,
+                "referral_settle_days": days_val,
+                "enabled": bool(cfg.get("referral_enabled"))
+            }})
+        elif path == "/api/promotion/withdrawals":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "未登录"})
+                return
+            self._send_json(200, {"code": 200, "withdrawals": db.list_user_withdrawals(user["username"])})
+        elif path == "/api/promotion/payment-info":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "未登录"})
+                return
+            info = db.get_user_payment_info(user["username"]) or {}
+            self._send_json(200, {"code": 200, "info": {
+                "alipay_account": info.get("alipay_account") or "",
+                "alipay_qr": info.get("alipay_qr") or "",
+                "wechat_account": info.get("wechat_account") or "",
+                "wechat_qr": info.get("wechat_qr") or ""
+            }})
         elif path == "/api/v1/auth":
             self._send_json(200, {"code": 200, "msg": "ok", "data": {"status": "running", "models": build_models_html()}})
         elif path == "/api/auth/current-session":
@@ -2958,6 +3009,32 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        # ==================== 推广返利管理（GET） ====================
+        elif path == "/admin/referral/config":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            a = db.get_admin_config() or {}
+            self._send_json(200, {"code": 200, "config": {
+                "referral_enabled": bool(a.get("referral_enabled")),
+                "referral_rate": float(a.get("referral_rate") or 0.1),
+                "referral_min_withdraw": float(a.get("referral_min_withdraw") or 10),
+                "referral_settle_days": int(a.get("referral_settle_days") or 7)
+            }})
+        elif path == "/admin/referral/withdrawals":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            qs = parse_qs(parsed.query)
+            status = qs.get("status", [""])[0]
+            rows = db.list_admin_withdrawals(status if status in ("pending", "approved", "rejected") else None)
+            self._send_json(200, {"code": 200, "withdrawals": rows, "summary": db.withdrawal_summary()})
+        elif path == "/admin/referral/stats":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            self._send_json(200, {"code": 200, "stats": db.referral_stats()})
+
         # ==================== 邮件模板管理（GET） ====================
         elif path == "/admin/email-templates":
             if not self._check_admin():
@@ -3023,7 +3100,8 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(400, {"code": 400, "msg": err})
                     return
                 # 创建用户
-                success, err = db.create_user(username, email, hash_password(password))
+                invite_code = (data.get("invite_code") or "").strip()
+                success, err = db.create_user(username, email, hash_password(password), invite_code=invite_code or None)
                 if not success:
                     self._send_json(400, {"code": 400, "msg": "用户名或邮箱已被注册"})
                     return
@@ -3220,6 +3298,63 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 db.save_user_settings(user["username"], settings)
                 self._send_json(200, {"code": 200, "msg": "设置已同步"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        # ========== 推广返利（用户端 POST） ==========
+        elif path == "/api/promotion/withdraw":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "未登录"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                cfg = db.get_admin_config() or {}
+                if not int(cfg.get("referral_enabled") or 0):
+                    self._send_json(400, {"code": 400, "msg": "推广返利未开启"})
+                    return
+                amount = round(float(data.get("amount") or 0), 2)
+                min_w = float(cfg.get("referral_min_withdraw") or 10)
+                if amount < min_w:
+                    self._send_json(400, {"code": 400, "msg": f"最低提现 {min_w} 元"})
+                    return
+                pay_method = (data.get("pay_method") or "").strip()
+                if pay_method not in ("alipay", "wechat"):
+                    self._send_json(400, {"code": 400, "msg": "收款方式无效"})
+                    return
+                pay_account = (data.get("pay_account") or "").strip()
+                qr = (data.get("qr_code") or "").strip()
+                if not pay_account:
+                    self._send_json(400, {"code": 400, "msg": "请填写收款账号"})
+                    return
+                if qr and (not qr.startswith("data:image/") or len(qr) > 1024 * 1024):
+                    self._send_json(400, {"code": 400, "msg": "二维码格式不正确或过大"})
+                    return
+                ok, msg = db.create_withdrawal(user["username"], amount, pay_method, pay_account, qr)
+                self._send_json(200 if ok else 400, {"code": 200 if ok else 400, "msg": msg})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/api/promotion/payment-info":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "未登录"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                def _clean_qr(v):
+                    v = (v or "").strip()
+                    if v and (not v.startswith("data:image/") or len(v) > 1024 * 1024):
+                        raise ValueError("二维码格式不正确或过大")
+                    return v
+                alipay_account = (data.get("alipay_account") or "").strip()
+                alipay_qr = _clean_qr(data.get("alipay_qr"))
+                wechat_account = (data.get("wechat_account") or "").strip()
+                wechat_qr = _clean_qr(data.get("wechat_qr"))
+                db.save_user_payment_info(user["username"], alipay_account, alipay_qr, wechat_account, wechat_qr)
+                self._send_json(200, {"code": 200, "msg": "收款信息已保存"})
+            except ValueError as e:
+                self._send_json(400, {"code": 400, "msg": str(e)})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -3851,6 +3986,73 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send_json(500, {"code": 500, "msg": err})
 
+        # ==================== 推广返利管理（POST） ====================
+        elif path == "/admin/referral/config":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                enabled = 1 if data.get("referral_enabled") else 0
+                rate = round(float(data.get("referral_rate") or 0), 4)
+                if rate < 0 or rate > 1:
+                    self._send_json(400, {"code": 400, "msg": "费率须在 0~1 之间"})
+                    return
+                min_w = round(float(data.get("referral_min_withdraw") or 10), 2)
+                days = int(data.get("referral_settle_days") or 7)
+                db.execute(
+                    "UPDATE admin_config SET referral_enabled=%s, referral_rate=%s, referral_min_withdraw=%s, referral_settle_days=%s WHERE id=1",
+                    (enabled, rate, min_w, days)
+                )
+                self._send_json(200, {"code": 200, "msg": "配置已保存"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/referral/withdrawal/approve":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                wid = int(data.get("id") or 0)
+                ok = db.approve_withdrawal(wid)
+                if ok:
+                    w = db.get_withdrawal(wid)
+                    if w:
+                        u = db.get_user_by_username(w["username"])
+                        if u and u.get("email"):
+                            send_email(u["email"], "", scene="referral_withdrawal",
+                                       variables={"username": w["username"], "amount": str(w["amount"]),
+                                                  "status": "已通过", "reason": "", "subject": "提现审核结果通知"})
+                    self._send_json(200, {"code": 200, "msg": "已通过，请人工转账"})
+                else:
+                    self._send_json(400, {"code": 400, "msg": "该提现已处理或不存在"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/referral/withdrawal/reject":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                wid = int(data.get("id") or 0)
+                reason = (data.get("reason") or "").strip()
+                ok = db.reject_withdrawal(wid, reason)
+                if ok:
+                    w = db.get_withdrawal(wid)
+                    if w:
+                        u = db.get_user_by_username(w["username"])
+                        if u and u.get("email"):
+                            send_email(u["email"], "", scene="referral_withdrawal",
+                                       variables={"username": w["username"], "amount": str(w["amount"]),
+                                                  "status": "已驳回", "reason": reason, "subject": "提现审核结果通知"})
+                    self._send_json(200, {"code": 200, "msg": "已驳回，余额已退还"})
+                else:
+                    self._send_json(400, {"code": 400, "msg": "该提现已处理或不存在"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         # ==================== 邮件模板管理（POST） ====================
         elif path == "/admin/email-template":
             if not self._check_admin():
@@ -3864,7 +4066,7 @@ class Handler(BaseHTTPRequestHandler):
             body_html = data.get("body_html", "")
             content_type = (data.get("content_type") or "text").strip()
             variables = (data.get("variables") or "").strip()
-            if not scene or scene not in ("user_register", "user_reset", "admin_reset"):
+            if not scene or scene not in ("user_register", "user_reset", "admin_reset", "referral_withdrawal"):
                 self._send_json(400, {"code": 400, "msg": "请选择有效的应用场景"})
                 return
             if not subject:

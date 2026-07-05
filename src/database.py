@@ -369,6 +369,64 @@ class Database:
         # 确保每个场景都有默认模板
         self._ensure_default_email_templates()
 
+        # ===== 推广返利 =====
+        # 邀请关系表
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS referrals (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                inviter_username VARCHAR(50) NOT NULL COMMENT '邀请人',
+                invitee_username VARCHAR(50) NOT NULL COMMENT '被邀请人',
+                invite_code VARCHAR(16) NOT NULL COMMENT '使用的邀请码',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uk_invitee (invitee_username),
+                INDEX idx_inviter (inviter_username)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        # 佣金记录表
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS commission_logs (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                inviter VARCHAR(50) NOT NULL,
+                invitee VARCHAR(50) NOT NULL,
+                order_no VARCHAR(64) NOT NULL,
+                order_amount DECIMAL(10,2) DEFAULT 0,
+                rate DECIMAL(5,4) DEFAULT 0 COMMENT '费率 0.0000-1.0000',
+                commission_amount DECIMAL(10,2) DEFAULT 0,
+                status VARCHAR(20) DEFAULT 'pending' COMMENT 'pending/paid',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uk_order (order_no),
+                INDEX idx_inviter_status (inviter, status)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        # 提现申请表
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS withdrawals (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                username VARCHAR(50) NOT NULL,
+                amount DECIMAL(10,2) NOT NULL,
+                pay_method VARCHAR(20) NOT NULL COMMENT 'alipay/wechat',
+                pay_account VARCHAR(255) NOT NULL,
+                qr_code_path TEXT COMMENT '收款二维码 data-URI',
+                status VARCHAR(20) DEFAULT 'pending' COMMENT 'pending/approved/rejected',
+                reject_reason VARCHAR(255),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                reviewed_at TIMESTAMP NULL DEFAULT NULL,
+                INDEX idx_username_status (username, status),
+                INDEX idx_status_created (status, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        # 用户收款信息表（预存，提现时带入）
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS user_payment_info (
+                username VARCHAR(50) PRIMARY KEY,
+                alipay_account VARCHAR(255) DEFAULT '',
+                alipay_qr TEXT,
+                wechat_account VARCHAR(255) DEFAULT '',
+                wechat_qr TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
     def _ensure_index(self, table, index_name, *columns):
         """确保普通索引存在，不存在则创建"""
         try:
@@ -519,6 +577,13 @@ class Database:
                 "body_text": "━━━━━━━━━━━━━━━━━━━━\n    学神助手 · {{subject}}\n━━━━━━━━━━━━━━━━━━━━\n\n尊敬的管理员 {{username}}，您好！\n\n您正在重置管理员密码，您的验证码是：\n\n        【 {{code}} 】\n\n⏰ 有效期：10 分钟\n⚠️ 请勿泄露给他人\n\n━━━━━━━━━━━━━━━━━━━━\n如您未进行重置密码操作，请忽略本邮件。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━",
                 "body_html": '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}@keyframes glow{0%,100%{box-shadow:0 0 5px rgba(16,185,129,0.3)}50%{box-shadow:0 0 20px rgba(16,185,129,0.5)}}.card{animation:fadeInUp 0.6s ease-out}.code-box{animation:pulse 2.5s ease-in-out infinite,glow 2.5s ease-in-out infinite}</style></head><body style="margin:0;padding:0;background:#ecfdf5;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:40px 20px;"><table class="card" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#10b981,#059669);padding:28px 32px;text-align:center;"><div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:1px;">学神助手 · 管理后台</div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">{{subject}}</div></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 16px;color:#1f2937;font-size:15px;line-height:1.6;">尊敬的管理员 <b>{{username}}</b>，您好！</p><p style="margin:0 0 20px;color:#4b5563;font-size:14px;line-height:1.6;">您正在重置管理员密码，您的验证码是：</p><div style="text-align:center;margin:0 0 24px;"><div class="code-box" style="display:inline-block;background:linear-gradient(135deg,#ecfdf5,#d1fae5);border:2px solid #10b981;border-radius:12px;padding:18px 36px;"><span style="font-size:34px;font-weight:700;color:#047857;letter-spacing:10px;font-family:SF Mono,Courier New,monospace;">{{code}}</span></div></div><p style="margin:0 0 12px;color:#6b7280;font-size:13px;line-height:1.6;">验证码 <b style="color:#dc2626;">10 分钟内</b>有效，请勿泄露给他人。</p><div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:20px;"><p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">如您没有进行重置密码操作，请忽略本邮件。</p><p style="margin:8px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由 <b style="color:#6b7280;">{{from_addr}}</b> 发送</p></div></td></tr></table></td></tr></table></body></html>',
                 "variables": "username,code,subject,from_addr"
+            },
+            {
+                "scene": "referral_withdrawal",
+                "subject": "学神助手 - 提现审核结果通知",
+                "body_text": "━━━━━━━━━━━━━━━━━━━━\n    学神助手 · {{subject}}\n━━━━━━━━━━━━━━━━━━━━\n\n尊敬的 {{username}}，您好！\n\n您的推广返利提现申请有了新进展：\n\n  申请金额：{{amount}} 元\n  审核状态：{{status}}\n{{reason}}\n\n━━━━━━━━━━━━━━━━━━━━\n如有疑问请联系管理员。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━",
+                "body_html": '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}.card{animation:fadeInUp 0.6s ease-out}</style></head><body style="margin:0;padding:0;background:#f0f4f8;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:40px 20px;"><table class="card" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#7c3aed,#5b21b6);padding:28px 32px;text-align:center;"><div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:1px;">学神助手</div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">{{subject}}</div></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 16px;color:#1f2937;font-size:15px;line-height:1.6;">尊敬的 <b>{{username}}</b>，您好！</p><p style="margin:0 0 20px;color:#4b5563;font-size:14px;line-height:1.6;">您的推广返利提现申请审核结果如下：</p><div style="background:#f9fafb;border-radius:12px;padding:20px;margin:0 0 20px;"><p style="margin:0 0 8px;color:#6b7280;font-size:13px;">申请金额</p><p style="margin:0 0 16px;color:#1f2937;font-size:22px;font-weight:700;">¥{{amount}}</p><p style="margin:0 0 8px;color:#6b7280;font-size:13px;">审核状态</p><p style="margin:0;color:#1f2937;font-size:16px;font-weight:600;">{{status}}</p><p style="margin:12px 0 0;color:#6b7280;font-size:13px;line-height:1.6;">{{reason}}</p></div><div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:20px;"><p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">如有疑问请联系管理员。</p><p style="margin:8px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由 <b style="color:#6b7280;">{{from_addr}}</b> 发送</p></div></td></tr></table></td></tr></table></body></html>',
+                "variables": "username,amount,status,reason,subject,from_addr"
             }
         ]
         for d in defaults:
@@ -547,6 +612,13 @@ class Database:
         self._add_column_if_missing("users", "member_until", "member_until TIMESTAMP NULL")
         self._add_column_if_missing("users", "is_banned", "is_banned TINYINT DEFAULT 0")
         self._add_column_if_missing("users", "ban_reason", "ban_reason VARCHAR(255)")
+        # 推广返利
+        self._add_column_if_missing("users", "invite_code", "invite_code VARCHAR(16)")
+        self._add_column_if_missing("users", "commission_balance", "commission_balance DECIMAL(10,2) DEFAULT 0.00")
+        try:
+            self.execute("ALTER TABLE users ADD UNIQUE INDEX uk_invite_code (invite_code)")
+        except Exception:
+            pass
 
     def _ensure_admin_payment_columns(self):
         self._add_column_if_missing("admin_config", "username", "username VARCHAR(50) DEFAULT 'admin'")
@@ -599,6 +671,11 @@ class Database:
         self._add_column_if_missing("admin_config", "zhifufm_weight", "zhifufm_weight INT DEFAULT 100")
         self._add_column_if_missing("admin_config", "sandpay_weight", "sandpay_weight INT DEFAULT 100")
         self._add_column_if_missing("admin_config", "epay_weight", "epay_weight INT DEFAULT 100")
+        # 推广返利配置
+        self._add_column_if_missing("admin_config", "referral_enabled", "referral_enabled TINYINT DEFAULT 0")
+        self._add_column_if_missing("admin_config", "referral_rate", "referral_rate DECIMAL(5,4) DEFAULT 0.1000")
+        self._add_column_if_missing("admin_config", "referral_min_withdraw", "referral_min_withdraw DECIMAL(10,2) DEFAULT 10.00")
+        self._add_column_if_missing("admin_config", "referral_settle_days", "referral_settle_days INT DEFAULT 7")
 
     def _ensure_order_payment_columns(self):
         self._add_column_if_missing("payment_orders", "pay_method", "pay_method VARCHAR(20)")
@@ -609,16 +686,63 @@ class Database:
         self._add_column_if_missing("payment_orders", "paid_at", "paid_at TIMESTAMP NULL")
 
     # ==================== 用户相关 ====================
-    def create_user(self, username, email, password_hash):
+    def create_user(self, username, email, password_hash, invite_code=None):
         ph = _ph()
         try:
+            code = self._gen_unique_invite_code()
             self.execute(
-                f"INSERT INTO users (username, email, password_hash, is_verified) VALUES ({ph}, {ph}, {ph}, 0)",
-                (username, email, password_hash)
+                f"INSERT INTO users (username, email, password_hash, is_verified, invite_code) VALUES ({ph}, {ph}, {ph}, 0, {ph})",
+                (username, email, password_hash, code)
             )
+            # 绑定邀请关系
+            if invite_code:
+                self._bind_referral(username, invite_code)
             return True, None
         except Exception as e:
             return False, str(e)
+
+    def _gen_unique_invite_code(self):
+        import random as _r
+        alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # 去除 0/O/1/I 防误读
+        for _ in range(20):
+            code = "".join(_r.choices(alphabet, k=8))
+            if not self.fetchone("SELECT 1 FROM users WHERE invite_code = %s", (code,)):
+                return code
+        raise RuntimeError("生成邀请码失败：碰撞过多")
+
+    def get_or_create_invite_code(self, username):
+        ph = _ph()
+        row = self.fetchone(f"SELECT invite_code FROM users WHERE username = {ph}", (username,))
+        if row and row.get("invite_code"):
+            return row["invite_code"]
+        code = self._gen_unique_invite_code()
+        self.execute(f"UPDATE users SET invite_code = {ph} WHERE username = {ph} AND (invite_code IS NULL OR invite_code = '')", (code, username))
+        return code
+
+    def _bind_referral(self, invitee_username, invite_code):
+        ph = _ph()
+        inviter = self.fetchone(f"SELECT username FROM users WHERE invite_code = {ph}", (invite_code,))
+        if not inviter:
+            return  # 邀请码无效，静默忽略
+        inviter_username = inviter["username"]
+        if inviter_username == invitee_username:
+            return  # 防自邀
+        # 防重复绑定
+        if self.fetchone(f"SELECT 1 FROM referrals WHERE invitee_username = {ph}", (invitee_username,)):
+            return
+        # 链路回溯防环（上限 10 层）
+        cur = inviter_username
+        for _ in range(10):
+            up = self.fetchone(f"SELECT inviter_username FROM referrals WHERE invitee_username = {ph}", (cur,))
+            if not up:
+                break
+            if up["inviter_username"] == invitee_username:
+                return  # 成环，拒绝
+            cur = up["inviter_username"]
+        self.execute(
+            f"INSERT INTO referrals (inviter_username, invitee_username, invite_code) VALUES ({ph}, {ph}, {ph})",
+            (inviter_username, invitee_username, invite_code)
+        )
 
     def get_user_by_username(self, username):
         ph = _ph()
@@ -704,7 +828,7 @@ class Database:
     def get_user_entitlement(self, username):
         ph = _ph()
         row = self.fetchone(
-            f"SELECT username, email, is_verified, points_balance, member_until, is_banned, ban_reason FROM users WHERE username = {ph}",
+            f"SELECT username, email, is_verified, points_balance, member_until, is_banned, ban_reason, invite_code, commission_balance FROM users WHERE username = {ph}",
             (username,)
         )
         if not row:
@@ -723,6 +847,7 @@ class Database:
         row["points_balance"] = int(row.get("points_balance") or 0)
         row["is_banned"] = bool(row.get("is_banned"))
         row["active_member"] = active_member
+        row["commission_balance"] = float(row.get("commission_balance") or 0)
         return row
 
     def grant_registration_gift(self, username):
@@ -871,6 +996,13 @@ class Database:
         else:
             self.adjust_user_points(order["username"], int(order.get("points") or 0), f"购买套餐：{order.get('plan_name','点数套餐')}")
         self.execute(f"UPDATE payment_orders SET status = 'paid' WHERE order_no = {ph}", (order_no,))
+        # 推广返利：首单佣金结算（仅付费订单 price>0 触发）
+        try:
+            price = float(order.get("price") or 0)
+            if price > 0:
+                self._settle_first_order_commission(order["username"], order_no, price)
+        except Exception as e:
+            print(f"[推广返利] 佣金结算失败 order={order_no}: {e}", flush=True)
         return True, "支付成功，权益已到账"
 
     def adjust_user_points(self, username, delta, reason="", question_hash=""):
@@ -1680,6 +1812,171 @@ class Database:
         }
 
         return result
+
+    # ==================== 推广返利 ====================
+    def _settle_first_order_commission(self, invitee_username, order_no, order_amount):
+        """首单佣金结算：查邀请关系，写 pending 佣金记录"""
+        ph = _ph()
+        ref = self.fetchone(f"SELECT inviter_username FROM referrals WHERE invitee_username = {ph}", (invitee_username,))
+        if not ref:
+            return
+        inviter = ref["inviter_username"]
+        # 防重复：同 order_no 已结算过则跳过
+        if self.fetchone(f"SELECT 1 FROM commission_logs WHERE order_no = {ph}", (order_no,)):
+            return
+        admin = self.get_admin_config() or {}
+        if not int(admin.get("referral_enabled") or 0):
+            return
+        rate = float(admin.get("referral_rate") or 0)
+        if rate <= 0:
+            return
+        commission = round(order_amount * rate, 2)
+        if commission <= 0:
+            return
+        self.execute(
+            f"INSERT INTO commission_logs (inviter, invitee, order_no, order_amount, rate, commission_amount, status) "
+            f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'pending')",
+            (inviter, invitee_username, order_no, order_amount, rate, commission)
+        )
+
+    def settle_pending_commissions(self, inviter_username):
+        """惰性结算：把超过冷却期的 pending 佣金转 paid 并入余额"""
+        ph = _ph()
+        admin = self.get_admin_config() or {}
+        days = int(admin.get("referral_settle_days") or 0)
+        rows = self.fetchall(
+            f"SELECT id, commission_amount FROM commission_logs "
+            f"WHERE inviter = {ph} AND status = 'pending' "
+            f"AND created_at <= (CURRENT_TIMESTAMP - INTERVAL {days} DAY)",
+            (inviter_username,)
+        )
+        for r in (rows or []):
+            amount = float(r.get("commission_amount") or 0)
+            # 原子加余额
+            self.execute(f"UPDATE users SET commission_balance = commission_balance + {ph} WHERE username = {ph}", (amount, inviter_username))
+            # 状态转 paid（带条件防并发重复）
+            self.execute(f"UPDATE commission_logs SET status = 'paid' WHERE id = {ph} AND status = 'pending'", (r["id"],))
+
+    def get_referral_profile(self, username):
+        """返回推广概览"""
+        ph = _ph()
+        self.settle_pending_commissions(username)
+        code = self.get_or_create_invite_code(username)
+        invited = self.fetchone(f"SELECT COUNT(*) c FROM referrals WHERE inviter_username = {ph}", (username,)) or {}
+        paid = self.fetchone(f"SELECT COALESCE(SUM(commission_amount),0) s FROM commission_logs WHERE inviter = {ph} AND status='paid'", (username,)) or {}
+        pend = self.fetchone(f"SELECT COALESCE(SUM(commission_amount),0) s FROM commission_logs WHERE inviter = {ph} AND status='pending'", (username,)) or {}
+        bal = self.fetchone(f"SELECT commission_balance FROM users WHERE username = {ph}", (username,)) or {}
+        return {
+            "invite_code": code,
+            "invited_count": int(invited.get("c") or 0),
+            "paid_commission": float(paid.get("s") or 0),
+            "pending_commission": float(pend.get("s") or 0),
+            "balance": float(bal.get("commission_balance") or 0),
+        }
+
+    def get_user_payment_info(self, username):
+        ph = _ph()
+        return self.fetchone(f"SELECT * FROM user_payment_info WHERE username = {ph}", (username,)) or {}
+
+    def save_user_payment_info(self, username, alipay_account="", alipay_qr="", wechat_account="", wechat_qr=""):
+        ph = _ph()
+        self.execute(
+            f"INSERT INTO user_payment_info (username, alipay_account, alipay_qr, wechat_account, wechat_qr) "
+            f"VALUES ({ph},{ph},{ph},{ph},{ph}) "
+            f"ON DUPLICATE KEY UPDATE alipay_account=VALUES(alipay_account), alipay_qr=VALUES(alipay_qr), "
+            f"wechat_account=VALUES(wechat_account), wechat_qr=VALUES(wechat_qr)",
+            (username, alipay_account, alipay_qr, wechat_account, wechat_qr)
+        )
+
+    def create_withdrawal(self, username, amount, pay_method, pay_account, qr_code):
+        ph = _ph()
+        # 原子扣余额
+        cur = self.execute(
+            f"UPDATE users SET commission_balance = commission_balance - {ph} WHERE username = {ph} AND commission_balance >= {ph}",
+            (amount, username, amount)
+        )
+        if not cur or cur.rowcount == 0:
+            return False, "余额不足"
+        # 防重复 pending
+        if self.fetchone(f"SELECT 1 FROM withdrawals WHERE username = {ph} AND status = 'pending'", (username,)):
+            # 退还
+            self.execute(f"UPDATE users SET commission_balance = commission_balance + {ph} WHERE username = {ph}", (amount, username))
+            return False, "已有待审核提现，请等待处理"
+        self.execute(
+            f"INSERT INTO withdrawals (username, amount, pay_method, pay_account, qr_code_path, status) "
+            f"VALUES ({ph},{ph},{ph},{ph},{ph},'pending')",
+            (username, amount, pay_method, pay_account, qr_code)
+        )
+        return True, "提现申请已提交"
+
+    def list_user_withdrawals(self, username, limit=50):
+        ph = _ph()
+        return self.fetchall(f"SELECT * FROM withdrawals WHERE username = {ph} ORDER BY created_at DESC LIMIT {ph}", (username, limit))
+
+    def list_admin_withdrawals(self, status=None, limit=200):
+        if status:
+            return self.fetchall("SELECT * FROM withdrawals WHERE status=%s ORDER BY created_at DESC LIMIT %s", (status, limit))
+        return self.fetchall("SELECT * FROM withdrawals ORDER BY created_at DESC LIMIT %s", (limit,))
+
+    def get_withdrawal(self, wid):
+        ph = _ph()
+        return self.fetchone(f"SELECT * FROM withdrawals WHERE id = {ph}", (wid,))
+
+    def approve_withdrawal(self, wid):
+        ph = _ph()
+        cur = self.execute(f"UPDATE withdrawals SET status='approved', reviewed_at=CURRENT_TIMESTAMP WHERE id={ph} AND status='pending'", (wid,))
+        return bool(cur and cur.rowcount > 0)
+
+    def reject_withdrawal(self, wid, reason):
+        ph = _ph()
+        row = self.fetchone(f"SELECT username, amount FROM withdrawals WHERE id={ph} AND status='pending'", (wid,))
+        if not row:
+            return False
+        self.execute(f"UPDATE withdrawals SET status='rejected', reject_reason={ph}, reviewed_at=CURRENT_TIMESTAMP WHERE id={ph}", (reason, wid))
+        # 退还余额
+        self.execute(f"UPDATE users SET commission_balance = commission_balance + {ph} WHERE username = {ph}", (row["amount"], row["username"]))
+        return True
+
+    def referral_stats(self):
+        """管理员统计：top10 邀请人 + 总佣金 + 提现统计"""
+        top10 = self.fetchall(
+            "SELECT r.inviter_username AS username, COUNT(*) AS invited_count, "
+            "COALESCE(SUM(c.commission_amount),0) AS total_commission "
+            "FROM referrals r LEFT JOIN commission_logs c ON r.inviter_username = c.inviter "
+            "GROUP BY r.inviter_username ORDER BY invited_count DESC LIMIT 10"
+        )
+        for r in (top10 or []):
+            r["invited_count"] = int(r.get("invited_count") or 0)
+            r["total_commission"] = float(r.get("total_commission") or 0)
+        total = self.fetchone("SELECT COALESCE(SUM(commission_amount),0) AS total, COUNT(*) AS cnt FROM commission_logs") or {}
+        # 提现统计
+        wd_approved = self.fetchone("SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt FROM withdrawals WHERE status='approved'") or {}
+        wd_pending = self.fetchone("SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt FROM withdrawals WHERE status='pending'") or {}
+        return {
+            "top10": top10 or [],
+            "total_commission": float(total.get("total") or 0),
+            "total_logs": int(total.get("cnt") or 0),
+            "withdrawn_total": float(wd_approved.get("total") or 0),
+            "withdrawn_count": int(wd_approved.get("cnt") or 0),
+            "pending_withdraw_total": float(wd_pending.get("total") or 0),
+            "pending_withdraw_count": int(wd_pending.get("cnt") or 0)
+        }
+
+    def withdrawal_summary(self):
+        """提现申请合计：今日申请、已通过金额、待审核金额"""
+        today = self.fetchone(
+            "SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt FROM withdrawals WHERE DATE(created_at)=CURDATE()"
+        ) or {}
+        approved = self.fetchone("SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt FROM withdrawals WHERE status='approved'") or {}
+        pending = self.fetchone("SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt FROM withdrawals WHERE status='pending'") or {}
+        return {
+            "today_total": float(today.get("total") or 0),
+            "today_count": int(today.get("cnt") or 0),
+            "approved_total": float(approved.get("total") or 0),
+            "approved_count": int(approved.get("cnt") or 0),
+            "pending_total": float(pending.get("total") or 0),
+            "pending_count": int(pending.get("cnt") or 0)
+        }
 
 
 def hash_password(password):

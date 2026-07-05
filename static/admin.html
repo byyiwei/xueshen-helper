@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="/favicon.ico?v=20260704" type="image/x-icon">
+<link rel="shortcut icon" href="/favicon.ico?v=20260704" type="image/x-icon">
 <title>学神助手 - AI 后端管理</title>
 <script src="/static/vue.global.js?v=2"></script>
 <style>
@@ -154,6 +156,12 @@ body{
 .btn-danger{background:var(--danger);color:#fff}
 .btn-danger:hover{opacity:.9}
 .btn-sm{padding:6px 12px;font-size:12px}
+.switch{position:relative;display:inline-block;width:42px;height:24px}
+.switch input{opacity:0;width:0;height:0}
+.switch .slider{position:absolute;cursor:pointer;inset:0;background:var(--border2);border-radius:24px;transition:.3s}
+.switch .slider:before{content:"";position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s}
+.switch input:checked+.slider{background:var(--success)}
+.switch input:checked+.slider:before{transform:translateX(18px)}
 .btn-add{
   width:100%;padding:10px;border:1px dashed var(--border2);border-radius:var(--radius-sm);
   background:transparent;color:var(--text2);cursor:pointer;font-size:13px;
@@ -534,6 +542,9 @@ body{
         </div>
         <div class="menu-item" :class="{active:page==='user-mgmt'}" @click="page='user-mgmt';loadUsers()">
           <span class="icon">◯</span>用户管理
+        </div>
+		<div class="menu-item" :class="{active:page==='referral'}" @click="page='referral';loadReferralConfig()">
+          <span class="icon">★</span>推广返利
         </div>
         <div class="menu-item" :class="{active:page==='login-locks'}" @click="page='login-locks';loadLoginLocks()">
           <span class="icon">⊘</span>解除锁定
@@ -1677,6 +1688,135 @@ body{
           </div>
         </div>
       </template>
+      <template v-if="page==='referral'">
+        <header class="main-header">
+          <h2>推广返利</h2>
+          <span class="breadcrumb">配置佣金比例、审核提现申请、查看推广数据</span>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div style="display:flex;gap:0;margin-bottom:18px;border-bottom:2px solid var(--border)">
+            <button :class="['btn',referralTab==='config'?'btn-primary':'btn-secondary']" style="border-radius:0" @click="referralTab='config'">返利比例设置</button>
+            <button :class="['btn',referralTab==='withdrawals'?'btn-primary':'btn-secondary']" style="border-radius:0" @click="referralTab='withdrawals';loadReferralWithdrawals()">提现申请审核</button>
+            <button :class="['btn',referralTab==='stats'?'btn-primary':'btn-secondary']" style="border-radius:0" @click="referralTab='stats';loadReferralStats()">推广数据统计</button>
+          </div>
+          <!-- 比例设置 -->
+          <div v-if="referralTab==='config'" class="card">
+            <div class="card-body">
+              <h3 style="margin:0 0 16px">返利比例设置</h3>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>启用推广返利</label>
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <label class="switch"><input type="checkbox" v-model="referralConfig.referral_enabled"><span class="slider"></span></label>
+                    <span style="font-size:13px;color:var(--text3)">{{referralConfig.referral_enabled?'已开启':'已关闭'}}</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label>佣金比例（0~1，如 0.1 = 10%）</label>
+                  <input type="number" step="0.01" min="0" max="1" v-model.number="referralConfig.referral_rate" class="form-control" placeholder="0.1">
+                </div>
+                <div class="form-group">
+                  <label>最低提现金额（元）</label>
+                  <input type="number" step="0.01" min="0" v-model.number="referralConfig.referral_min_withdraw" class="form-control" placeholder="10">
+                </div>
+                <div class="form-group">
+                  <label>佣金冷却期（天）</label>
+                  <input type="number" step="1" min="0" v-model.number="referralConfig.referral_settle_days" class="form-control" placeholder="7">
+                  <small style="color:var(--text3)">订单完成后等待N天才结算佣金，防退款套利</small>
+                </div>
+              </div>
+              <button class="btn btn-success" :disabled="referralSaving" @click="saveReferralConfig" style="margin-top:16px">{{referralSaving?'保存中...':'保存配置'}}</button>
+            </div>
+          </div>
+          <!-- 提现审核 -->
+          <div v-if="referralTab==='withdrawals'" class="card">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+              <h3>提现申请列表</h3>
+              <div style="display:flex;gap:6px">
+                <button :class="['btn','btn-sm',referralWdFilter===''?'btn-primary':'btn-secondary']" @click="referralWdFilter='';loadReferralWithdrawals()">全部</button>
+                <button :class="['btn','btn-sm',referralWdFilter==='pending'?'btn-primary':'btn-secondary']" @click="referralWdFilter='pending';loadReferralWithdrawals()">待审核</button>
+                <button :class="['btn','btn-sm',referralWdFilter==='approved'?'btn-primary':'btn-secondary']" @click="referralWdFilter='approved';loadReferralWithdrawals()">已通过</button>
+                <button :class="['btn','btn-sm',referralWdFilter==='rejected'?'btn-primary':'btn-secondary']" @click="referralWdFilter='rejected';loadReferralWithdrawals()">已拒绝</button>
+              </div>
+            </div>
+            <div style="display:flex;gap:16px;padding:12px 20px;background:var(--bg);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center">
+              <div style="font-size:13px;color:var(--text3)">今日申请：<b style="color:var(--text);font-size:15px">¥{{Number(referralWdSummary.today_total||0).toFixed(2)}}</b> <span style="color:var(--text3);font-size:12px">({{referralWdSummary.today_count||0}}笔)</span></div>
+              <div style="width:1px;height:20px;background:var(--border)"></div>
+              <div style="font-size:13px;color:var(--text3)">已通过金额：<b style="color:var(--success);font-size:15px">¥{{Number(referralWdSummary.approved_total||0).toFixed(2)}}</b> <span style="color:var(--text3);font-size:12px">({{referralWdSummary.approved_count||0}}笔)</span></div>
+              <div style="width:1px;height:20px;background:var(--border)"></div>
+              <div style="font-size:13px;color:var(--text3)">待审核金额：<b style="color:var(--warning);font-size:15px">¥{{Number(referralWdSummary.pending_total||0).toFixed(2)}}</b> <span style="color:var(--text3);font-size:12px">({{referralWdSummary.pending_count||0}}笔)</span></div>
+            </div>
+            <div class="card-body" style="overflow-x:auto">
+              <table class="data-table" style="width:100%;font-size:13px;border-collapse:collapse">
+                <thead><tr style="text-align:left;color:var(--text3)">
+                  <th style="padding:8px 10px">ID</th><th style="padding:8px 10px">用户</th><th style="padding:8px 10px">金额</th><th style="padding:8px 10px">方式</th><th style="padding:8px 10px">收款账号</th><th style="padding:8px 10px">二维码</th><th style="padding:8px 10px">状态</th><th style="padding:8px 10px">申请时间</th><th style="padding:8px 10px">操作</th>
+                </tr></thead>
+                <tbody>
+                  <tr v-if="!referralWithdrawals.length"><td colspan="9" style="padding:24px;text-align:center;color:var(--text3)">暂无记录</td></tr>
+                  <tr v-for="w in referralWithdrawals" :key="w.id" style="border-top:1px solid var(--border)">
+                    <td style="padding:8px 10px">{{w.id}}</td>
+                    <td style="padding:8px 10px">{{w.username}}</td>
+                    <td style="padding:8px 10px;font-weight:600">¥{{Number(w.amount).toFixed(2)}}</td>
+                    <td style="padding:8px 10px">{{w.pay_method==='alipay'?'支付宝':'微信'}}</td>
+                    <td style="padding:8px 10px">{{w.pay_account}}</td>
+                    <td style="padding:8px 10px"><img v-if="w.qr_code_path" :src="w.qr_code_path" style="width:40px;height:40px;border-radius:4px;cursor:pointer" @click="referralQrPreview=w.qr_code_path"></td>
+                    <td style="padding:8px 10px"><span :style="{color:w.status==='pending'?'var(--warning)':w.status==='approved'?'var(--success)':'var(--danger)'}">{{w.status==='pending'?'待审核':w.status==='approved'?'已通过':'已拒绝'}}</span></td>
+                    <td style="padding:8px 10px">{{(w.created_at||'').toString().replace('T',' ').slice(0,19)}}</td>
+                    <td style="padding:8px 10px">
+                      <template v-if="w.status==='pending'">
+                        <button class="btn btn-sm btn-success" @click="approveWithdrawal(w.id)">通过</button>
+                        <button class="btn btn-sm btn-danger" @click="rejectWithdrawal(w.id)">驳回</button>
+                      </template>
+                      <span v-if="w.reject_reason" style="color:var(--danger);font-size:12px">{{w.reject_reason}}</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <!-- 数据统计 -->
+          <div v-if="referralTab==='stats'" class="card">
+            <div class="card-body">
+              <h3 style="margin:0 0 16px">推广数据统计</h3>
+              <div style="display:flex;gap:16px;margin-bottom:24px;flex-wrap:wrap">
+                <div style="padding:16px 24px;background:var(--bg);border-radius:10px;text-align:center;min-width:130px">
+                  <div style="font-size:13px;color:var(--text3)">返利总额</div>
+                  <div style="font-size:26px;font-weight:700;color:var(--success)">¥{{Number(referralStats.total_commission||0).toFixed(2)}}</div>
+                </div>
+                <div style="padding:16px 24px;background:var(--bg);border-radius:10px;text-align:center;min-width:130px">
+                  <div style="font-size:13px;color:var(--text3)">佣金笔数</div>
+                  <div style="font-size:26px;font-weight:700">{{referralStats.total_logs||0}}</div>
+                </div>
+                <div style="padding:16px 24px;background:var(--bg);border-radius:10px;text-align:center;min-width:130px">
+                  <div style="font-size:13px;color:var(--text3)">已提现金额</div>
+                  <div style="font-size:26px;font-weight:700;color:var(--primary)">¥{{Number(referralStats.withdrawn_total||0).toFixed(2)}}</div>
+                  <div style="font-size:11px;color:var(--text3);margin-top:2px">{{referralStats.withdrawn_count||0}} 笔</div>
+                </div>
+                <div style="padding:16px 24px;background:var(--bg);border-radius:10px;text-align:center;min-width:130px">
+                  <div style="font-size:13px;color:var(--text3)">待审核提现</div>
+                  <div style="font-size:26px;font-weight:700;color:var(--warning)">¥{{Number(referralStats.pending_withdraw_total||0).toFixed(2)}}</div>
+                  <div style="font-size:11px;color:var(--text3);margin-top:2px">{{referralStats.pending_withdraw_count||0}} 笔</div>
+                </div>
+              </div>
+              <h4 style="margin:0 0 12px">推广用户排名（Top 10）</h4>
+              <table class="data-table" style="width:100%;font-size:13px;border-collapse:collapse">
+                <thead><tr style="text-align:left;color:var(--text3)"><th style="padding:8px 10px">排名</th><th style="padding:8px 10px">用户名</th><th style="padding:8px 10px">推广人数</th><th style="padding:8px 10px">累计返利</th></tr></thead>
+                <tbody>
+                  <tr v-if="!referralStats.top10||!referralStats.top10.length"><td colspan="4" style="padding:24px;text-align:center;color:var(--text3)">暂无数据</td></tr>
+                  <tr v-for="(r,i) in referralStats.top10" :key="r.username" style="border-top:1px solid var(--border)">
+                    <td style="padding:8px 10px">{{i+1}}</td><td style="padding:8px 10px">{{r.username}}</td><td style="padding:8px 10px">{{r.invited_count}}</td><td style="padding:8px 10px;font-weight:600">¥{{Number(r.total_commission).toFixed(2)}}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </template>
+      <!-- 二维码放大预览 -->
+      <div v-if="referralQrPreview" style="position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999" @click="referralQrPreview=''">
+        <img :src="referralQrPreview" style="max-width:80%;max-height:80%;border-radius:10px">
+      </div>
       <template v-if="page==='pay-test'">
         <header class="main-header">
           <h2>支付测试</h2>
@@ -1827,8 +1967,8 @@ createApp({
     const templateModal=ref({show:false});
     const templateForm=ref({scene:'',subject:'',body_text:'',body_html:'',content_type:'text'});
     const editingTemplateId=ref(null);
-    const TEMPLATE_SCENES={user_register:'用户注册验证码',user_reset:'用户密码重置验证码',admin_reset:'管理员密码重置验证码'};
-    const SCENE_VARS={user_register:['username','code','subject','from_addr'],user_reset:['username','code','subject','from_addr'],admin_reset:['username','code','subject','from_addr']};
+    const TEMPLATE_SCENES={user_register:'用户注册验证码',user_reset:'用户密码重置验证码',admin_reset:'管理员密码重置验证码',referral_withdrawal:'推广提现通知'};
+    const SCENE_VARS={user_register:['username','code','subject','from_addr'],user_reset:['username','code','subject','from_addr'],admin_reset:['username','code','subject','from_addr'],referral_withdrawal:['username','amount','status','reason','subject','from_addr']};
     const SCENE_DEFAULTS={
       user_register:{
         subject:'学神助手 - 注册验证码',
@@ -1844,6 +1984,11 @@ createApp({
         subject:'学神助手 - 管理员密码重置验证码',
         text:'━━━━━━━━━━━━━━━━━━━━\n    学神助手 · {{subject}}\n━━━━━━━━━━━━━━━━━━━━\n\n尊敬的管理员 {{username}}，您好！\n\n您正在重置管理员密码，您的验证码是：\n\n        【 {{code}} 】\n\n⏰ 有效期：10 分钟\n⚠️ 请勿泄露给他人\n\n━━━━━━━━━━━━━━━━━━━━\n如您未进行重置密码操作，请忽略本邮件。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━',
         html:'<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}@keyframes glow{0%,100%{box-shadow:0 0 5px rgba(16,185,129,0.3)}50%{box-shadow:0 0 20px rgba(16,185,129,0.5)}}.card{animation:fadeInUp 0.6s ease-out}.code-box{animation:pulse 2.5s ease-in-out infinite,glow 2.5s ease-in-out infinite}</style></head><body style="margin:0;padding:0;background:#ecfdf5;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:40px 20px;"><table class="card" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#10b981,#059669);padding:28px 32px;text-align:center;"><div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:1px;">学神助手 · 管理后台</div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">{{subject}}</div></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 16px;color:#1f2937;font-size:15px;line-height:1.6;">尊敬的管理员 <b>{{username}}</b>，您好！</p><p style="margin:0 0 20px;color:#4b5563;font-size:14px;line-height:1.6;">您正在重置管理员密码，您的验证码是：</p><div style="text-align:center;margin:0 0 24px;"><div class="code-box" style="display:inline-block;background:linear-gradient(135deg,#ecfdf5,#d1fae5);border:2px solid #10b981;border-radius:12px;padding:18px 36px;"><span style="font-size:34px;font-weight:700;color:#047857;letter-spacing:10px;font-family:SF Mono,Courier New,monospace;">{{code}}</span></div></div><p style="margin:0 0 12px;color:#6b7280;font-size:13px;line-height:1.6;">验证码 <b style="color:#dc2626;">10 分钟内</b>有效，请勿泄露给他人。</p><div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:20px;"><p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">如您没有进行重置密码操作，请忽略本邮件。</p><p style="margin:8px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由 <b style="color:#6b7280;">{{from_addr}}</b> 发送</p></div></td></tr></table></td></tr></table></body></html>'
+      },
+      referral_withdrawal:{
+        subject:'学神助手 - 提现审核结果通知',
+        text:'━━━━━━━━━━━━━━━━━━━━\n    学神助手 · {{subject}}\n━━━━━━━━━━━━━━━━━━━━\n\n尊敬的 {{username}}，您好！\n\n您的推广返利提现申请有了新进展：\n\n  申请金额：{{amount}} 元\n  审核状态：{{status}}\n{{reason}}\n\n━━━━━━━━━━━━━━━━━━━━\n如有疑问请联系管理员。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━',
+        html:'<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}.card{animation:fadeInUp 0.6s ease-out}</style></head><body style="margin:0;padding:0;background:#f0f4f8;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:40px 20px;"><table class="card" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#7c3aed,#5b21b6);padding:28px 32px;text-align:center;"><div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:1px;">学神助手</div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">{{subject}}</div></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 16px;color:#1f2937;font-size:15px;line-height:1.6;">尊敬的 <b>{{username}}</b>，您好！</p><p style="margin:0 0 20px;color:#4b5563;font-size:14px;line-height:1.6;">您的推广返利提现申请审核结果如下：</p><div style="background:#f9fafb;border-radius:12px;padding:20px;margin:0 0 20px;"><p style="margin:0 0 8px;color:#6b7280;font-size:13px;">申请金额</p><p style="margin:0 0 16px;color:#1f2937;font-size:22px;font-weight:700;">¥{{amount}}</p><p style="margin:0 0 8px;color:#6b7280;font-size:13px;">审核状态</p><p style="margin:0;color:#1f2937;font-size:16px;font-weight:600;">{{status}}</p><p style="margin:12px 0 0;color:#6b7280;font-size:13px;line-height:1.6;">{{reason}}</p></div><div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:20px;"><p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">如有疑问请联系管理员。</p><p style="margin:8px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由 <b style="color:#6b7280;">{{from_addr}}</b> 发送</p></div></td></tr></table></td></tr></table></body></html>'
       }
     };
     function templateSceneLabel(s){return TEMPLATE_SCENES[s]||s||'未知';}
@@ -2741,6 +2886,66 @@ createApp({
       return '40,170 '+pts+' '+lastX.toFixed(1)+',170';
     }
 
+    // ========== 推广返利 ==========
+    const referralTab=ref('config');
+    const referralConfig=ref({referral_enabled:false,referral_rate:0.1,referral_min_withdraw:10,referral_settle_days:7});
+    const referralSaving=ref(false);
+    const referralWithdrawals=ref([]);
+    const referralWdFilter=ref('');
+    const referralWdSummary=ref({today_total:0,today_count:0,approved_total:0,approved_count:0,pending_total:0,pending_count:0});
+    const referralStats=ref({top10:[],total_commission:0,total_logs:0,withdrawn_total:0,withdrawn_count:0,pending_withdraw_total:0,pending_withdraw_count:0});
+    const referralQrPreview=ref('');
+    async function loadReferralConfig(){
+      try{
+        const res=await safeFetch('/admin/referral/config',{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200&&d.config){referralConfig.value={...d.config};}
+      }catch(_){}
+    }
+    async function saveReferralConfig(){
+      referralSaving.value=true;
+      try{
+        const res=await fetch('/admin/referral/config',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify(referralConfig.value)});
+        const d=await res.json();
+        showMsg(d.msg||'保存失败',d.code===200?'success':'error');
+        if(d.code===200)loadReferralConfig();
+      }catch(_){showMsg('网络错误','error');}
+      referralSaving.value=false;
+    }
+    async function loadReferralWithdrawals(){
+      try{
+        const url='/admin/referral/withdrawals'+(referralWdFilter.value?('?status='+referralWdFilter.value):'');
+        const res=await safeFetch(url,{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200){referralWithdrawals.value=d.withdrawals||[]; if(d.summary)referralWdSummary.value=d.summary;}
+      }catch(_){}
+    }
+    async function approveWithdrawal(id){
+      if(!confirm('确认通过该提现申请？通过后请线下打款。'))return;
+      try{
+        const res=await fetch('/admin/referral/withdrawal/approve',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({id})});
+        const d=await res.json();
+        showMsg(d.msg||'操作失败',d.code===200?'success':'error');
+        if(d.code===200)loadReferralWithdrawals();
+      }catch(_){showMsg('网络错误','error');}
+    }
+    async function rejectWithdrawal(id){
+      const reason=prompt('请输入驳回理由（选填）：','')||'';
+      try{
+        const res=await fetch('/admin/referral/withdrawal/reject',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({id,reason})});
+        const d=await res.json();
+        showMsg(d.msg||'操作失败',d.code===200?'success':'error');
+        if(d.code===200)loadReferralWithdrawals();
+      }catch(_){showMsg('网络错误','error');}
+    }
+    async function loadReferralStats(){
+      try{
+        const res=await safeFetch('/admin/referral/stats',{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200){referralStats.value=d.stats||{top10:[],total_commission:0,total_logs:0,withdrawn_total:0,withdrawn_count:0,pending_withdraw_total:0,pending_withdraw_count:0};}
+      }catch(_){}
+    }
+
     if(token.value){page.value='dashboard';loadAll();}
     else initAdminSlider();
 
@@ -2756,7 +2961,9 @@ createApp({
       toggleProvider,collapseAllProviders,togglePayApiSection,
       addProvider,removeProvider,addModel,removeModel,
       protocolName,statusText,formatDuration,shortText,formatScriptExtra,trendPoints,trendX,trendY,trendMax,stackBarX,stackBarY,stackBarH,modelBarWidth,revTrendPoints,revTrendArea,revTrendX,revStep,revY,revMax,
-      loadLogCleanup,saveLogCleanup,runLogCleanupNow,logRetentionDays,logCleanupSaving,logCleanupRunning,logCleanupResult,payTestForm,payTestLoading,payTestResult,runPayTest,payApiWeightTotal,payApiWeightPercent,refreshSandpayParams,onSandpayAdvancedChange
+      loadLogCleanup,saveLogCleanup,runLogCleanupNow,logRetentionDays,logCleanupSaving,logCleanupRunning,logCleanupResult,payTestForm,payTestLoading,payTestResult,runPayTest,payApiWeightTotal,payApiWeightPercent,refreshSandpayParams,onSandpayAdvancedChange,
+      referralTab,referralConfig,referralSaving,referralWithdrawals,referralWdFilter,referralWdSummary,referralStats,referralQrPreview,
+      loadReferralConfig,saveReferralConfig,loadReferralWithdrawals,approveWithdrawal,rejectWithdrawal,loadReferralStats
     };
   }
 }).mount('#app');
