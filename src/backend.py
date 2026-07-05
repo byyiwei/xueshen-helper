@@ -1576,17 +1576,12 @@ def ask_ai_auto(question):
         if cooling_429:
             return None, "所有模型429限流冷却中，请稍后重试", "", ""
         return None, "所有模型均不可用（404冷却中）", "", ""
-    # 并行调用所有可用模型，取最先成功的
+    # 按权重排序，串行依次尝试，权重高的优先调用
     ordered = weighted_pick(active)
-    print(f"[自动模型] 并行请求 {len(ordered)} 个模型", flush=True)
+    print(f"[自动模型] 串行尝试 {len(ordered)} 个模型，顺序: {', '.join(f'{m[2]}(w={m[3]})' for m in ordered)}", flush=True)
     errors = []
-    lock = threading.Lock()
-    success_event = threading.Event()
-    success_result = [None]  # [answer, None, model_name, provider_name]
 
-    def _try_model(provider_name, provider_info, model_name, weight):
-        if success_event.is_set():
-            return
+    for provider_name, provider_info, model_name, weight in ordered:
         print(f"[自动模型] 尝试 provider={provider_name}, model={model_name}, weight={weight}", flush=True)
         attempt_start = time.time()
         try:
@@ -1594,21 +1589,16 @@ def ask_ai_auto(question):
         except Exception as e:
             err = str(e)
             answer = None
-        if success_event.is_set():
-            return
         if answer:
-            with lock:
-                MODEL_FAIL_COOLDOWN.pop(model_name, None)
-                MODEL_429_COOLDOWN.pop(model_name, None)
-                record_model_token_usage(model_name, tokens)
-            success_result[0] = (answer, None, model_name, provider_name)
-            success_event.set()
+            MODEL_FAIL_COOLDOWN.pop(model_name, None)
+            MODEL_429_COOLDOWN.pop(model_name, None)
+            record_model_token_usage(model_name, tokens)
+            return answer, None, model_name, provider_name
         elif err:
             if err.startswith("__429__:"):
                 parts = err.split(":", 2)
                 cooldown_sec = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else MODEL_429_DEFAULT_SECONDS
-                with lock:
-                    MODEL_429_COOLDOWN[model_name] = time.time() + cooldown_sec
+                MODEL_429_COOLDOWN[model_name] = time.time() + cooldown_sec
                 print(f"[自动模型] 模型 {model_name} 触发429限流，冷却 {cooldown_sec}s", flush=True)
             else:
                 enqueue_ai_log({
@@ -1623,31 +1613,12 @@ def ask_ai_auto(question):
                     "client_ip": ""
                 })
                 if "HTTP 404" in err or "model is not found" in err.lower() or "模型" in err and "不存在" in err:
-                    with lock:
-                        MODEL_FAIL_COOLDOWN[model_name] = time.time() + MODEL_FAIL_COOLDOWN_SECONDS
+                    MODEL_FAIL_COOLDOWN[model_name] = time.time() + MODEL_FAIL_COOLDOWN_SECONDS
                     print(f"[自动模型] 模型不可用，进入冷却 {MODEL_FAIL_COOLDOWN_SECONDS}s: {model_name}，原因：{err}", flush=True)
-            with lock:
-                errors.append(f"{model_name}: {err}")
+            errors.append(f"{model_name}: {err}")
 
-    # 并行调用，最多等待30秒
-    with ThreadPoolExecutor(max_workers=min(len(ordered), 5)) as executor:
-        futures = {}
-        for provider_name, provider_info, model_name, weight in ordered:
-            f = executor.submit(_try_model, provider_name, provider_info, model_name, weight)
-            futures[f] = model_name
-        # 等待第一个成功或全部完成
-        done_count = 0
-        for f in as_completed(futures):
-            done_count += 1
-            if success_event.is_set():
-                # 取消还在运行的（仅标记，无法真正中断urlopen）
-                for remaining_f in futures:
-                    remaining_f.cancel()
-                break
-        if success_result[0]:
-            return success_result[0]
     # 所有模型都失败
-    last = ordered[-1]
+    last = ordered[-1] if ordered else (None, None, "", "")
     return None, "自动模型全部尝试失败；" + "；".join(errors[-5:]), last[2], last[0]
 
 def ask_ai_custom(question, custom_cfg):
