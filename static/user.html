@@ -2556,11 +2556,44 @@
                 const cat = FB_CATEGORY_MAP[f.category] || '其他';
                 const st = FB_STATUS_MAP[f.status] || FB_STATUS_MAP.pending;
                 const time = (f.created_at || '').replace('T', ' ').substring(0, 16);
-                const replyHtml = f.admin_reply ? `
-                    <div style="margin-top:10px;padding:12px 14px;background:rgba(59,130,246,.08);border-left:3px solid #3b82f6;border-radius:8px">
-                        <div style="font-size:12px;color:#3b82f6;margin-bottom:4px;font-weight:600">管理员回复 · ${(f.replied_at||'').replace('T',' ').substring(0,16)}</div>
+                const replies = f.replies || [];
+                // 构建对话时间线
+                let timelineHtml = '';
+                // 如果有管理员回复但没有在 replies 里（旧数据兼容），显示 admin_reply
+                if (f.admin_reply && replies.length === 0) {
+                    timelineHtml += `<div style="margin-top:10px;padding:12px 14px;background:rgba(59,130,246,.08);border-left:3px solid #3b82f6;border-radius:8px">
+                        <div style="font-size:12px;color:#3b82f6;margin-bottom:4px;font-weight:600">管理员 · ${(f.replied_at||'').replace('T',' ').substring(0,16)}</div>
                         <div style="font-size:13px;color:var(--v-text);line-height:1.6;white-space:pre-wrap">${escapeHtml(f.admin_reply)}</div>
-                    </div>` : '';
+                    </div>`;
+                }
+                // 渲染 replies 对话记录
+                replies.forEach(rp => {
+                    const isAdmin = rp.sender === 'admin';
+                    const rpTime = (rp.created_at || '').replace('T', ' ').substring(0, 16);
+                    if (isAdmin) {
+                        timelineHtml += `<div style="margin-top:10px;padding:12px 14px;background:rgba(59,130,246,.08);border-left:3px solid #3b82f6;border-radius:8px">
+                            <div style="font-size:12px;color:#3b82f6;margin-bottom:4px;font-weight:600">管理员 · ${rpTime}</div>
+                            <div style="font-size:13px;color:var(--v-text);line-height:1.6;white-space:pre-wrap">${escapeHtml(rp.content)}</div>
+                        </div>`;
+                    } else {
+                        timelineHtml += `<div style="margin-top:10px;padding:12px 14px;background:rgba(16,185,129,.08);border-left:3px solid #10b981;border-radius:8px">
+                            <div style="font-size:12px;color:#10b981;margin-bottom:4px;font-weight:600">我 · ${rpTime}</div>
+                            <div style="font-size:13px;color:var(--v-text);line-height:1.6;white-space:pre-wrap">${escapeHtml(rp.content)}</div>
+                        </div>`;
+                    }
+                });
+                // 追问输入框（非关闭状态才显示）
+                const canReply = f.status !== 'closed';
+                const replyBoxHtml = canReply ? `
+                    <div class="fb-reply-box" data-fid="${f.id}" style="margin-top:10px;display:none">
+                        <textarea rows="2" maxlength="2000" placeholder="输入追问内容..." style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--v-border);background:var(--v-card-bg);color:var(--v-text);font-size:13px;resize:vertical;line-height:1.5"></textarea>
+                        <div style="display:flex;gap:8px;margin-top:6px">
+                            <button class="fb-reply-submit primary" style="padding:5px 16px;font-size:13px">发送</button>
+                            <button class="fb-reply-cancel" style="padding:5px 16px;font-size:13px;border:1px solid var(--v-border);background:transparent;color:var(--v-muted);border-radius:8px;cursor:pointer">取消</button>
+                        </div>
+                    </div>
+                    <button class="fb-reply-toggle" data-fid="${f.id}" style="margin-top:8px;padding:4px 14px;font-size:12px;border:1px solid var(--v-border);background:transparent;color:var(--v-muted);border-radius:8px;cursor:pointer;transition:all .2s" onmouseover="this.style.color='var(--v-text)'" onmouseout="this.style.color='var(--v-muted)'">${replies.length || f.admin_reply ? '继续追问' : '补充信息'}</button>
+                ` : '<div style="margin-top:8px;font-size:12px;color:var(--v-muted)">该反馈已关闭</div>';
                 return `<div style="padding:14px 0;border-bottom:1px solid var(--v-border)">
                     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
                         <span style="font-weight:600;font-size:14px;color:var(--v-text)">${escapeHtml(f.title)}</span>
@@ -2569,9 +2602,58 @@
                     </div>
                     <div style="font-size:13px;color:var(--v-muted);line-height:1.6;white-space:pre-wrap;margin-bottom:4px">${escapeHtml(f.content)}</div>
                     <div style="font-size:12px;color:var(--v-muted)">${time}</div>
-                    ${replyHtml}
+                    ${timelineHtml}
+                    ${replyBoxHtml}
                 </div>`;
             }).join('');
+            // 绑定追问按钮事件
+            bindFbReplyEvents();
+        }
+
+        function bindFbReplyEvents() {
+            // 展开/收起追问框
+            document.querySelectorAll('.fb-reply-toggle').forEach(btn => {
+                btn.addEventListener('click', function () {
+                    const fid = this.dataset.fid;
+                    const box = document.querySelector('.fb-reply-box[data-fid="' + fid + '"]');
+                    if (box) {
+                        box.style.display = box.style.display === 'none' ? 'block' : 'none';
+                        if (box.style.display === 'block') box.querySelector('textarea').focus();
+                    }
+                });
+            });
+            // 取消按钮
+            document.querySelectorAll('.fb-reply-cancel').forEach(btn => {
+                btn.addEventListener('click', function () {
+                    this.closest('.fb-reply-box').style.display = 'none';
+                });
+            });
+            // 发送追问
+            document.querySelectorAll('.fb-reply-submit').forEach(btn => {
+                btn.addEventListener('click', async function () {
+                    const box = this.closest('.fb-reply-box');
+                    const fid = parseInt(box.dataset.fid);
+                    const ta = box.querySelector('textarea');
+                    const content = ta.value.trim();
+                    if (!content) return alert('请输入追问内容');
+                    setBusy(this, true, '发送中...');
+                    try {
+                        const token = localStorage.getItem(TOKEN_KEY);
+                        const res = await fetch('/api/user/feedback/reply', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+                            body: JSON.stringify({ feedback_id: fid, content })
+                        });
+                        const d = await res.json().catch(() => ({}));
+                        if (d.code === 200) {
+                            loadFeedback();
+                        } else {
+                            alert(d.msg || '发送失败');
+                        }
+                    } catch (_) { alert('网络错误'); }
+                    setBusy(this, false);
+                });
+            });
         }
 
         function escapeHtml(s) {

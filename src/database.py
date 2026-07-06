@@ -388,6 +388,18 @@ class Database:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
 
+        # 反馈对话记录表（多轮对话）
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS feedback_replies (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                feedback_id INT NOT NULL COMMENT '关联反馈ID',
+                sender VARCHAR(10) NOT NULL COMMENT '发送者: user/admin',
+                content TEXT NOT NULL COMMENT '回复内容',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_feedback_id (feedback_id)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
         # ===== 推广返利 =====
         # 邀请关系表
         self.execute("""
@@ -1221,6 +1233,34 @@ class Database:
         ph = _ph()
         self.execute(f"UPDATE user_feedback SET admin_reply={ph}, replied_at=NOW(), status='resolved' WHERE id={ph}", (reply_text, fid))
         return True
+
+    def add_feedback_reply(self, feedback_id, sender, content):
+        """添加一条对话记录"""
+        ph = _ph()
+        self.execute(
+            f"INSERT INTO feedback_replies (feedback_id, sender, content) VALUES ({ph},{ph},{ph})",
+            (feedback_id, sender, content)
+        )
+        return True
+
+    def list_feedback_replies(self, feedback_id):
+        """获取反馈的所有对话记录"""
+        ph = _ph()
+        return self.fetchall(
+            f"SELECT * FROM feedback_replies WHERE feedback_id={ph} ORDER BY id ASC",
+            (feedback_id,)
+        ) or []
+
+    def auto_close_expired_feedback(self, days=7):
+        """自动关闭超时的已回复反馈（超过N天无新对话）"""
+        try:
+            self.execute(
+                "UPDATE user_feedback SET status='closed' WHERE status='resolved' "
+                "AND replied_at < DATE_SUB(NOW(), INTERVAL %s DAY)",
+                (days,)
+            )
+        except Exception:
+            pass
 
     # ==================== 验证码相关 ====================
     def save_verify_code(self, email, code, vtype, expires_minutes=10):
