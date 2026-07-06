@@ -369,6 +369,25 @@ class Database:
         # 确保每个场景都有默认模板
         self._ensure_default_email_templates()
 
+        # ===== 用户问题反馈 =====
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS user_feedback (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(50) NOT NULL COMMENT '提交用户',
+                email VARCHAR(100) DEFAULT '' COMMENT '联系邮箱',
+                category VARCHAR(30) NOT NULL DEFAULT 'other' COMMENT '反馈类型: bug/feature/payment/account/other',
+                title VARCHAR(200) NOT NULL COMMENT '问题标题',
+                content TEXT NOT NULL COMMENT '问题描述',
+                status VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT '状态: pending/processing/resolved/closed',
+                admin_reply TEXT COMMENT '管理员回复内容',
+                replied_at TIMESTAMP NULL COMMENT '回复时间',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_username (username),
+                INDEX idx_status (status),
+                INDEX idx_created_at (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
         # ===== 推广返利 =====
         # 邀请关系表
         self.execute("""
@@ -1132,6 +1151,69 @@ class Database:
             "sum_amount": float(sum_row.get("total_amount") or 0),
             "sum_count": int(sum_row.get("cnt") or 0)
         }
+
+    # ==================== 用户问题反馈 ====================
+    def create_feedback(self, username, email, category, title, content):
+        ph = _ph()
+        self.execute(
+            f"INSERT INTO user_feedback (username, email, category, title, content) VALUES ({ph},{ph},{ph},{ph},{ph})",
+            (username, email, category, title, content)
+        )
+        return True
+
+    def list_user_feedback(self, username, limit=20):
+        ph = _ph()
+        return self.fetchall(
+            f"SELECT * FROM user_feedback WHERE username={ph} ORDER BY id DESC LIMIT {int(limit)}",
+            (username,)
+        ) or []
+
+    def list_feedback_admin(self, status="", category="", keyword="", page=1, page_size=20):
+        ph = _ph()
+        where = []
+        params = []
+        if status:
+            where.append(f"status = {ph}")
+            params.append(status)
+        if category:
+            where.append(f"category = {ph}")
+            params.append(category)
+        if keyword:
+            where.append(f"(title LIKE {ph} OR content LIKE {ph} OR username LIKE {ph})")
+            kw = f"%{keyword}%"
+            params.extend([kw, kw, kw])
+        where_clause = (" WHERE " + " AND ".join(where)) if where else ""
+        offset = (max(1, int(page)) - 1) * int(page_size)
+        total_row = self.fetchone(f"SELECT COUNT(*) AS cnt FROM user_feedback{where_clause}", params) or {}
+        total = int(total_row.get("cnt") or 0)
+        rows = self.fetchall(
+            f"SELECT * FROM user_feedback{where_clause} ORDER BY id DESC LIMIT {int(page_size)} OFFSET {offset}",
+            params
+        ) or []
+        stats_row = self.fetchone("SELECT COUNT(*) AS cnt FROM user_feedback WHERE status='pending'") or {}
+        pending_count = int(stats_row.get("cnt") or 0)
+        return {
+            "rows": rows,
+            "total": total,
+            "page": int(page),
+            "page_size": int(page_size),
+            "total_pages": (total + int(page_size) - 1) // int(page_size),
+            "pending_count": pending_count
+        }
+
+    def get_feedback_by_id(self, fid):
+        ph = _ph()
+        return self.fetchone(f"SELECT * FROM user_feedback WHERE id={ph}", (fid,))
+
+    def update_feedback_status(self, fid, status):
+        ph = _ph()
+        self.execute(f"UPDATE user_feedback SET status={ph} WHERE id={ph}", (status, fid))
+        return True
+
+    def reply_feedback(self, fid, reply_text):
+        ph = _ph()
+        self.execute(f"UPDATE user_feedback SET admin_reply={ph}, replied_at=NOW(), status='resolved' WHERE id={ph}", (reply_text, fid))
+        return True
 
     # ==================== 验证码相关 ====================
     def save_verify_code(self, email, code, vtype, expires_minutes=10):

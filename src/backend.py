@@ -2631,6 +2631,19 @@ class Handler(BaseHTTPRequestHandler):
                 })
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
+
+        # ===== 用户问题反馈 =====
+        elif path == "/api/user/feedback":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "请先登录"})
+                return
+            feedback = db.list_user_feedback(user["username"])
+            for r in feedback:
+                r["created_at"] = str(r.get("created_at") or "")
+                r["replied_at"] = str(r.get("replied_at") or "") if r.get("replied_at") else ""
+            self._send_json(200, {"code": 200, "feedback": feedback})
+
         elif path == "/api/payment/methods":
             try:
                 admin = db.get_admin_config() or {}
@@ -3028,6 +3041,40 @@ class Handler(BaseHTTPRequestHandler):
                 r["created_at"] = str(r.get("created_at") or "")
             self._send_json(200, {"code": 200, "data": result})
 
+        # ==================== 问题反馈管理（GET） ====================
+        elif path == "/admin/feedback":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            qs = parse_qs(parsed.query)
+            result = db.list_feedback_admin(
+                status=qs.get("status", [""])[0],
+                category=qs.get("category", [""])[0],
+                keyword=qs.get("keyword", [""])[0],
+                page=int(qs.get("page", ["1"])[0] or 1),
+                page_size=int(qs.get("page_size", ["20"])[0] or 20)
+            )
+            for r in result["rows"]:
+                r["created_at"] = str(r.get("created_at") or "")
+                r["replied_at"] = str(r.get("replied_at") or "") if r.get("replied_at") else ""
+            self._send_json(200, {"code": 200, "data": result})
+
+        elif path.startswith("/admin/feedback/"):
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            fid = path.split("/")[-1]
+            if not fid.isdigit():
+                self._send_json(400, {"code": 400, "msg": "反馈ID无效"})
+                return
+            fb = db.get_feedback_by_id(int(fid))
+            if not fb:
+                self._send_json(404, {"code": 404, "msg": "反馈不存在"})
+                return
+            fb["created_at"] = str(fb.get("created_at") or "")
+            fb["replied_at"] = str(fb.get("replied_at") or "") if fb.get("replied_at") else ""
+            self._send_json(200, {"code": 200, "feedback": fb})
+
         # ==================== 邮件模板管理（GET） ====================
         elif path == "/admin/email-templates":
             if not self._check_admin():
@@ -3291,6 +3338,35 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 db.save_user_settings(user["username"], settings)
                 self._send_json(200, {"code": 200, "msg": "设置已同步"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        # ===== 用户问题反馈 POST =====
+        elif path == "/api/user/feedback":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "请先登录"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                category = (data.get("category") or "other").strip()
+                title = (data.get("title") or "").strip()
+                content = (data.get("content") or "").strip()
+                if not title or not content:
+                    self._send_json(400, {"code": 400, "msg": "标题和内容不能为空"})
+                    return
+                if len(title) > 200:
+                    self._send_json(400, {"code": 400, "msg": "标题不能超过200字"})
+                    return
+                if len(content) > 5000:
+                    self._send_json(400, {"code": 400, "msg": "内容不能超过5000字"})
+                    return
+                allowed_categories = {"bug", "feature", "payment", "account", "other"}
+                if category not in allowed_categories:
+                    category = "other"
+                email = user.get("email") or ""
+                db.create_feedback(user["username"], email, category, title, content)
+                self._send_json(200, {"code": 200, "msg": "提交成功"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -4043,6 +4119,64 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(200, {"code": 200, "msg": "已驳回，余额已退还"})
                 else:
                     self._send_json(400, {"code": 400, "msg": "该提现已处理或不存在"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        # ==================== 问题反馈管理（POST） ====================
+        elif path == "/admin/feedback/reply":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                fid = int(data.get("id") or 0)
+                reply_text = (data.get("reply_text") or "").strip()
+                if not fid or not reply_text:
+                    self._send_json(400, {"code": 400, "msg": "反馈ID和回复内容不能为空"})
+                    return
+                fb = db.get_feedback_by_id(fid)
+                if not fb:
+                    self._send_json(404, {"code": 404, "msg": "反馈不存在"})
+                    return
+                # 发送邮件
+                user_email = fb.get("email") or ""
+                if not user_email:
+                    user = db.get_user_by_username(fb.get("username") or "")
+                    user_email = (user or {}).get("email") or ""
+                if not user_email:
+                    self._send_json(400, {"code": 400, "msg": "用户未绑定邮箱，无法发送邮件"})
+                    return
+                subject = f"[学神助手] 您的问题反馈回复：{fb.get('title','')}"
+                body_html = f"""<html><body style="font-family:sans-serif;line-height:1.8;color:#333">
+<p>您好 <b>{fb.get('username','')}</b>，</p>
+<p>您提交的问题反馈「<b>{fb.get('title','')}</b>」已处理，以下是管理员的回复：</p>
+<div style="background:#f5f5f5;border-left:4px solid #3b82f6;padding:12px 16px;margin:12px 0;border-radius:4px">{reply_text.replace(chr(10),'<br>')}</div>
+<p style="color:#999;font-size:12px">反馈时间：{str(fb.get('created_at',''))}</p>
+<p>如有疑问请继续在用户中心提交反馈。</p>
+</body></html>"""
+                ok, err = send_email(user_email, subject, body_text=reply_text, body_html=body_html)
+                if not ok:
+                    self._send_json(500, {"code": 500, "msg": f"邮件发送失败：{err}"})
+                    return
+                # 保存回复
+                db.reply_feedback(fid, reply_text)
+                self._send_json(200, {"code": 200, "msg": "回复成功，邮件已发送"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/feedback/status":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                fid = int(data.get("id") or 0)
+                status = (data.get("status") or "").strip()
+                if not fid or status not in ("pending", "processing", "resolved", "closed"):
+                    self._send_json(400, {"code": 400, "msg": "参数无效"})
+                    return
+                db.update_feedback_status(fid, status)
+                self._send_json(200, {"code": 200, "msg": "状态更新成功"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 

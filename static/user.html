@@ -1012,6 +1012,7 @@
                 <button class="user-menu-item" data-section="script"><span class="mi">⌘</span><span class="user-menu-label">脚本设置</span></button>
                 <button class="user-menu-item" data-section="account"><span class="mi">◌</span><span class="user-menu-label">账号信息</span></button>
                 <button class="user-menu-item" data-section="promotion"><span class="mi">★</span><span class="user-menu-label">推广返利</span></button>
+                <button class="user-menu-item" data-section="feedback"><span class="mi">✎</span><span class="user-menu-label">问题反馈</span></button>
                 <button class="user-menu-item" id="sideLogoutBtn"><span class="mi">↗</span><span class="user-menu-label">退出登录</span></button>
             </nav>
             <div class="user-side-foot">
@@ -1213,6 +1214,42 @@
                             <thead><tr style="text-align:left;color:var(--t-muted)"><th style="padding:6px 10px">时间</th><th style="padding:6px 10px">金额</th><th style="padding:6px 10px">方式</th><th style="padding:6px 10px">状态</th><th style="padding:6px 10px">备注</th></tr></thead>
                             <tbody id="promoWithdrawTbody"><tr><td colspan="5" style="padding:18px;text-align:center;color:var(--t-muted)">暂无记录</td></tr></tbody>
                         </table></div>
+                    </div>
+                </section>
+
+                <section class="user-section" id="section-feedback">
+                    <div class="user-card">
+                        <h3>提交问题反馈</h3>
+                        <p class="hint">遇到问题或有建议？提交反馈，我们会通过邮件回复您。</p>
+                        <div style="display:grid;gap:14px;margin-top:16px">
+                            <div>
+                                <label style="display:block;font-size:13px;margin-bottom:6px;color:var(--v-text)">反馈类型</label>
+                                <select id="fbCategory" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--v-border);background:var(--v-card-bg);color:var(--v-text);font-size:14px">
+                                    <option value="bug">Bug 反馈</option>
+                                    <option value="feature">功能建议</option>
+                                    <option value="payment">支付问题</option>
+                                    <option value="account">账号问题</option>
+                                    <option value="other">其他</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label style="display:block;font-size:13px;margin-bottom:6px;color:var(--v-text)">问题标题</label>
+                                <input type="text" id="fbTitle" maxlength="100" placeholder="请简要描述问题" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--v-border);background:var(--v-card-bg);color:var(--v-text);font-size:14px">
+                            </div>
+                            <div>
+                                <label style="display:block;font-size:13px;margin-bottom:6px;color:var(--v-text)">问题描述 <span id="fbCharCount" style="color:var(--v-muted);font-size:12px">0/2000</span></label>
+                                <textarea id="fbContent" rows="5" maxlength="2000" placeholder="请详细描述您遇到的问题或建议..." style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--v-border);background:var(--v-card-bg);color:var(--v-text);font-size:14px;resize:vertical;line-height:1.6"></textarea>
+                            </div>
+                            <div>
+                                <button class="primary" id="fbSubmitBtn" style="width:auto;padding:10px 28px">提交反馈</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="user-card" style="margin-top:16px">
+                        <h3>我的反馈记录</h3>
+                        <div id="fbList" style="margin-top:12px">
+                            <div style="padding:24px;text-align:center;color:var(--v-muted)">暂无反馈记录</div>
+                        </div>
                     </div>
                 </section>
 
@@ -1632,7 +1669,8 @@
                 billing: ['套餐购买', '购买包月或题数套餐，权益可叠加保留。'],
                 model: ['模型设置', '配置自动模型或自有模型。'],
                 script: ['脚本设置', '编辑脚本同步到账号的云端记忆。'],
-                promotion: ['推广返利', '邀请好友赚取现金佣金。']
+                promotion: ['推广返利', '邀请好友赚取现金佣金。'],
+                feedback: ['问题反馈', '提交问题或建议，我们通过邮件回复您。']
             };
             document.querySelectorAll('.user-section').forEach(v => v.classList.remove('active'));
             document.querySelectorAll('.user-menu-item[data-section]').forEach(v => v.classList.toggle('active', v.dataset.section === name));
@@ -1646,6 +1684,7 @@
             if (name === 'consumption') loadDashboard();
             if (name === 'billing') { loadProfile(); loadPlans(); }
             if (name === 'promotion') loadPromotion();
+            if (name === 'feedback') loadFeedback();
         }
         let dashboardTimer = null;
         async function loadDashboard() {
@@ -2460,6 +2499,84 @@
                 msg('promoWithdrawMsg', res.msg || '提交失败', res.code === 200);
                 if (res.code === 200) { $('promoWithdrawAmount').value = ''; loadPromotion(); }
             } catch (_) { msg('promoWithdrawMsg', '网络错误', false); }
+            setBusy(this, false);
+        };
+
+        // ===== 问题反馈 =====
+        const FB_CATEGORY_MAP = { bug: 'Bug反馈', feature: '功能建议', payment: '支付问题', account: '账号问题', other: '其他' };
+        const FB_STATUS_MAP = { pending: { label: '待处理', color: '#f59e0b' }, processing: { label: '处理中', color: '#3b82f6' }, resolved: { label: '已回复', color: '#10b981' }, closed: { label: '已关闭', color: '#6b7280' } };
+        let fbList = [];
+
+        async function loadFeedback() {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) return;
+            try {
+                const res = await fetch('/api/user/feedback', { headers: { Authorization: 'Bearer ' + token } });
+                const d = await res.json().catch(() => ({}));
+                if (d.code === 200) {
+                    fbList = d.feedback || [];
+                    renderFeedbackList();
+                }
+            } catch (_) {}
+        }
+
+        function renderFeedbackList() {
+            const el = $('fbList');
+            if (!fbList.length) { el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--v-muted)">暂无反馈记录</div>'; return; }
+            el.innerHTML = fbList.map(f => {
+                const cat = FB_CATEGORY_MAP[f.category] || '其他';
+                const st = FB_STATUS_MAP[f.status] || FB_STATUS_MAP.pending;
+                const time = (f.created_at || '').replace('T', ' ').substring(0, 16);
+                const replyHtml = f.admin_reply ? `
+                    <div style="margin-top:10px;padding:12px 14px;background:rgba(59,130,246,.08);border-left:3px solid #3b82f6;border-radius:8px">
+                        <div style="font-size:12px;color:#3b82f6;margin-bottom:4px;font-weight:600">管理员回复 · ${(f.replied_at||'').replace('T',' ').substring(0,16)}</div>
+                        <div style="font-size:13px;color:var(--v-text);line-height:1.6;white-space:pre-wrap">${escapeHtml(f.admin_reply)}</div>
+                    </div>` : '';
+                return `<div style="padding:14px 0;border-bottom:1px solid var(--v-border)">
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+                        <span style="font-weight:600;font-size:14px;color:var(--v-text)">${escapeHtml(f.title)}</span>
+                        <span style="font-size:11px;padding:2px 8px;border-radius:6px;background:rgba(148,163,184,.15);color:var(--v-muted)">${cat}</span>
+                        <span style="font-size:11px;padding:2px 8px;border-radius:6px;background:${st.color}20;color:${st.color}">${st.label}</span>
+                    </div>
+                    <div style="font-size:13px;color:var(--v-muted);line-height:1.6;white-space:pre-wrap;margin-bottom:4px">${escapeHtml(f.content)}</div>
+                    <div style="font-size:12px;color:var(--v-muted)">${time}</div>
+                    ${replyHtml}
+                </div>`;
+            }).join('');
+        }
+
+        function escapeHtml(s) {
+            return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        $('fbContent').addEventListener('input', function () {
+            $('fbCharCount').textContent = this.value.length + '/2000';
+        });
+        $('fbSubmitBtn').onclick = async function () {
+            const category = $('fbCategory').value;
+            const title = $('fbTitle').value.trim();
+            const content = $('fbContent').value.trim();
+            if (!title) return alert('请输入问题标题');
+            if (!content) return alert('请输入问题描述');
+            setBusy(this, true, '提交中...');
+            try {
+                const token = localStorage.getItem(TOKEN_KEY);
+                const res = await fetch('/api/user/feedback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+                    body: JSON.stringify({ category, title, content })
+                });
+                const d = await res.json().catch(() => ({}));
+                if (d.code === 200) {
+                    $('fbTitle').value = '';
+                    $('fbContent').value = '';
+                    $('fbCharCount').textContent = '0/2000';
+                    loadFeedback();
+                    alert('提交成功！我们会尽快处理并通过邮件回复您。');
+                } else {
+                    alert(d.msg || '提交失败');
+                }
+            } catch (_) { alert('网络错误'); }
             setBusy(this, false);
         };
 

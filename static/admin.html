@@ -643,7 +643,7 @@ body{
 
         <!-- 系统配置组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.config}">
-          <div class="menu-group-header dock-item" :class="{active:['question-bank','ai-config','email-config','login-locks'].includes(page)}" @click="expandedGroups.config=!expandedGroups.config">
+          <div class="menu-group-header dock-item" :class="{active:['question-bank','ai-config','email-config','login-locks','feedback'].includes(page)}" @click="expandedGroups.config=!expandedGroups.config">
             <span class="icon">◇</span>系统配置
             <span class="arrow">▶</span>
           </div>
@@ -659,6 +659,9 @@ body{
             </div>
             <div class="menu-item" :class="{active:page==='login-locks'}" @click="page='login-locks';loadLoginLocks()">
               <span class="icon">⊘</span>解除锁定
+            </div>
+            <div class="menu-item" :class="{active:page==='feedback'}" @click="page='feedback';loadFeedbackList()">
+              <span class="icon">✎</span>问题反馈
             </div>
           </div>
         </div>
@@ -2181,6 +2184,122 @@ body{
           </div>
         </div>
       </template>
+
+      <!-- 问题反馈管理 -->
+      <template v-if="page==='feedback'">
+        <header class="main-header">
+          <h2>问题反馈</h2>
+          <span class="breadcrumb">查看用户反馈，处理后通过邮件回复</span>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <!-- 筛选栏 -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-body" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+              <div class="form-group" style="margin:0;min-width:100px">
+                <label style="font-size:11px;margin-bottom:4px">状态</label>
+                <select v-model="feedbackFilter.status" class="form-control" style="padding:6px 10px;font-size:13px">
+                  <option value="">全部</option>
+                  <option value="pending">待处理</option>
+                  <option value="processing">处理中</option>
+                  <option value="resolved">已回复</option>
+                  <option value="closed">已关闭</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin:0;min-width:100px">
+                <label style="font-size:11px;margin-bottom:4px">类型</label>
+                <select v-model="feedbackFilter.category" class="form-control" style="padding:6px 10px;font-size:13px">
+                  <option value="">全部</option>
+                  <option value="bug">Bug反馈</option>
+                  <option value="feature">功能建议</option>
+                  <option value="payment">支付问题</option>
+                  <option value="account">账号问题</option>
+                  <option value="other">其他</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin:0;min-width:140px">
+                <label style="font-size:11px;margin-bottom:4px">关键词</label>
+                <input v-model="feedbackFilter.keyword" class="form-control" style="padding:6px 10px;font-size:13px" placeholder="搜索标题/内容/用户" @keyup.enter="feedbackSearch()">
+              </div>
+              <button class="btn btn-primary" @click="feedbackSearch()">查询</button>
+            </div>
+          </div>
+          <!-- 统计栏 -->
+          <div style="display:flex;gap:16px;padding:12px 20px;background:var(--bg2);border-radius:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+            <div style="font-size:13px;color:var(--text3)">待处理：<b style="color:var(--warning);font-size:15px">{{feedbackPendingCount}}</b> 条</div>
+            <div style="width:1px;height:20px;background:var(--border)"></div>
+            <div style="font-size:13px;color:var(--text3)">第 <b style="color:var(--text)">{{feedbackPage}}</b> / {{feedbackTotalPages}} 页，共 {{feedbackTotal}} 条</div>
+          </div>
+          <!-- 表格 -->
+          <div class="card">
+            <div class="card-body" style="overflow-x:auto">
+              <table class="data-table" style="width:100%;font-size:13px">
+                <thead>
+                  <tr style="text-align:left;color:var(--text3);border-bottom:1px solid var(--border)">
+                    <th style="padding:10px 12px">用户</th>
+                    <th style="padding:10px 12px">类型</th>
+                    <th style="padding:10px 12px">标题</th>
+                    <th style="padding:10px 12px">状态</th>
+                    <th style="padding:10px 12px">提交时间</th>
+                    <th style="padding:10px 12px">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="f in feedbackList" :key="f.id" style="border-bottom:1px solid var(--border)">
+                    <td style="padding:10px 12px">{{f.username}}</td>
+                    <td style="padding:10px 12px">{{f.category==='bug'?'Bug反馈':f.category==='feature'?'功能建议':f.category==='payment'?'支付问题':f.category==='account'?'账号问题':'其他'}}</td>
+                    <td style="padding:10px 12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{f.title}}</td>
+                    <td style="padding:10px 12px">
+                      <span :style="{color:f.status==='pending'?'var(--warning)':f.status==='processing'?'var(--accent2)':f.status==='resolved'?'var(--success)':'var(--text3)'}">{{f.status==='pending'?'待处理':f.status==='processing'?'处理中':f.status==='resolved'?'已回复':'已关闭'}}</span>
+                    </td>
+                    <td style="padding:10px 12px;color:var(--text3);font-size:12px">{{String(f.created_at||'').replace('T',' ').substring(0,19)}}</td>
+                    <td style="padding:10px 12px;display:flex;gap:6px">
+                      <button class="btn btn-primary" style="padding:3px 10px;font-size:12px" @click="viewFeedbackDetail(f.id)">查看</button>
+                      <select v-if="f.status!=='resolved'" :value="f.status" @change="updateFeedbackStatus(f.id,$event.target.value)" style="padding:3px 6px;font-size:12px;border-radius:6px;background:var(--bg3);color:var(--text);border:1px solid var(--border)">
+                        <option value="pending">待处理</option>
+                        <option value="processing">处理中</option>
+                        <option value="closed">关闭</option>
+                      </select>
+                    </td>
+                  </tr>
+                  <tr v-if="feedbackList.length===0">
+                    <td colspan="6" style="padding:30px;text-align:center;color:var(--text3)">暂无反馈记录</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-top:1px solid var(--border)">
+              <div style="font-size:12px;color:var(--text3)">每页 20 条</div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button class="btn btn-secondary" style="padding:4px 12px" :disabled="feedbackPage<=1" @click="feedbackPrev()">上一页</button>
+                <span style="font-size:13px">{{feedbackPage}} / {{feedbackTotalPages}}</span>
+                <button class="btn btn-secondary" style="padding:4px 12px" :disabled="feedbackPage>=feedbackTotalPages" @click="feedbackNext()">下一页</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- 反馈详情弹窗 -->
+        <div v-if="feedbackDetail" class="modal-overlay" @click.self="feedbackDetail=null">
+          <div class="modal" style="max-width:600px">
+            <h3>反馈详情 #{{feedbackDetail.id}}</h3>
+            <div style="margin:12px 0">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+                <span style="font-size:12px;padding:2px 8px;border-radius:6px;background:rgba(148,163,184,.15);color:var(--text2)">{{feedbackDetail.category==='bug'?'Bug反馈':feedbackDetail.category==='feature'?'功能建议':feedbackDetail.category==='payment'?'支付问题':feedbackDetail.category==='account'?'账号问题':'其他'}}</span>
+                <span :style="{fontSize:'12px',padding:'2px 8px',borderRadius:'6px',background:feedbackDetail.status==='pending'?'rgba(245,158,11,.15)':feedbackDetail.status==='resolved'?'rgba(16,185,129,.15)':'rgba(59,130,246,.15)',color:feedbackDetail.status==='pending'?'var(--warning)':feedbackDetail.status==='resolved'?'var(--success)':'var(--accent2)'}">{{feedbackDetail.status==='pending'?'待处理':feedbackDetail.status==='processing'?'处理中':feedbackDetail.status==='resolved'?'已回复':'已关闭'}}</span>
+              </div>
+              <div style="font-size:13px;color:var(--text3);margin-bottom:4px">用户：{{feedbackDetail.username}} · {{String(feedbackDetail.created_at||'').replace('T',' ').substring(0,19)}}</div>
+              <div style="font-weight:600;font-size:15px;margin-bottom:8px">{{feedbackDetail.title}}</div>
+              <div style="font-size:13px;color:var(--text2);line-height:1.6;white-space:pre-wrap;background:var(--bg2);padding:12px 14px;border-radius:10px;margin-bottom:12px">{{feedbackDetail.content}}</div>
+              <label style="font-size:13px;margin-bottom:6px;display:block">回复内容（将发送邮件到 {{feedbackDetail.email||'用户邮箱'}}）</label>
+              <textarea v-model="feedbackReplyText" rows="5" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;resize:vertical;line-height:1.6" placeholder="输入回复内容..."></textarea>
+            </div>
+            <div class="modal-actions">
+              <button class="btn btn-secondary" @click="feedbackDetail=null">取消</button>
+              <button class="btn btn-primary" @click="replyFeedback()">回复并发送邮件</button>
+            </div>
+          </div>
+        </div>
+      </template>
     </main>
     <div v-if="showUserModal" class="modal-overlay" @click.self="showUserModal=false">
       <div class="modal">
@@ -3174,6 +3293,15 @@ createApp({
     const paymentOrdersTotal=ref(0);
     const paymentOrdersTotalPages=ref(0);
     const paymentOrdersSum=ref({sum_amount:0,sum_count:0});
+    // 问题反馈
+    const feedbackList=ref([]);
+    const feedbackFilter=ref({status:'',category:'',keyword:''});
+    const feedbackPage=ref(1);
+    const feedbackTotalPages=ref(0);
+    const feedbackTotal=ref(0);
+    const feedbackPendingCount=ref(0);
+    const feedbackDetail=ref(null);
+    const feedbackReplyText=ref('');
     const referralConfig=ref({referral_enabled:false,referral_rate:0.1,referral_min_withdraw:10,referral_settle_days:7});
     const referralSaving=ref(false);
     const referralWithdrawals=ref([]);
@@ -3283,6 +3411,71 @@ createApp({
     function paymentOrdersPrev(){if(paymentOrdersPage.value>1){paymentOrdersPage.value--;loadPaymentOrders();}}
     function paymentOrdersNext(){if(paymentOrdersPage.value<paymentOrdersTotalPages.value){paymentOrdersPage.value++;loadPaymentOrders();}}
 
+    // ========== 问题反馈管理 ==========
+    async function loadFeedbackList(){
+      const f=feedbackFilter.value;
+      const params=new URLSearchParams({
+        status:f.status||'',
+        category:f.category||'',
+        keyword:f.keyword||'',
+        page:String(feedbackPage.value),
+        page_size:'20'
+      });
+      try{
+        const res=await safeFetch('/admin/feedback?'+params.toString(),{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200){
+          const data=d.data||{};
+          feedbackList.value=data.rows||[];
+          feedbackTotal.value=data.total||0;
+          feedbackTotalPages.value=data.total_pages||0;
+          feedbackPendingCount.value=data.pending_count||0;
+        }
+      }catch(_){}
+    }
+    function feedbackSearch(){feedbackPage.value=1;loadFeedbackList();}
+    async function viewFeedbackDetail(id){
+      try{
+        const res=await safeFetch('/admin/feedback/'+id,{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200){
+          feedbackDetail.value=d.feedback;
+          feedbackReplyText.value=d.feedback.admin_reply||'';
+        }
+      }catch(_){}
+    }
+    async function replyFeedback(){
+      if(!feedbackDetail.value)return;
+      if(!feedbackReplyText.value.trim()){showMsg('请输入回复内容','error');return;}
+      try{
+        const res=await safeFetch('/admin/feedback/reply',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':token.value},
+          body:JSON.stringify({id:feedbackDetail.value.id,reply_text:feedbackReplyText.value.trim()})
+        });
+        const d=await res.json();
+        if(d.code===200){
+          showMsg('回复成功，邮件已发送','success');
+          feedbackDetail.value=null;
+          loadFeedbackList();
+        }else{showMsg(d.msg||'回复失败','error');}
+      }catch(_){showMsg('网络错误','error');}
+    }
+    async function updateFeedbackStatus(id,status){
+      try{
+        const res=await safeFetch('/admin/feedback/status',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':token.value},
+          body:JSON.stringify({id,status})
+        });
+        const d=await res.json();
+        if(d.code===200){showMsg('状态更新成功','success');loadFeedbackList();}
+        else{showMsg(d.msg||'更新失败','error');}
+      }catch(_){showMsg('网络错误','error');}
+    }
+    function feedbackPrev(){if(feedbackPage.value>1){feedbackPage.value--;loadFeedbackList();}}
+    function feedbackNext(){if(feedbackPage.value<feedbackTotalPages.value){feedbackPage.value++;loadFeedbackList();}}
+
     if(token.value){page.value='dashboard';loadAll();}
     else initAdminSlider();
 
@@ -3303,7 +3496,9 @@ createApp({
       loadReferralConfig,saveReferralConfig,loadReferralWithdrawals,approveWithdrawal,rejectWithdrawal,loadReferralStats,
       expandedGroups,isMobile,mobileSidebarOpen,mobileSubmenu,openMobileSubmenu,handleGroupClick,
        paymentOrders,paymentOrdersFilter,paymentOrdersSort,paymentOrdersPage,paymentOrdersPageSize,paymentOrdersTotal,paymentOrdersTotalPages,paymentOrdersSum,
-       loadPaymentOrders,togglePaymentSort,paymentOrdersSearch,paymentOrdersPrev,paymentOrdersNext
+       loadPaymentOrders,togglePaymentSort,paymentOrdersSearch,paymentOrdersPrev,paymentOrdersNext,
+       feedbackList,feedbackFilter,feedbackPage,feedbackTotalPages,feedbackTotal,feedbackPendingCount,feedbackDetail,feedbackReplyText,
+       loadFeedbackList,feedbackSearch,viewFeedbackDetail,replyFeedback,updateFeedbackStatus,feedbackPrev,feedbackNext
     };
   }
 }).mount('#app');
