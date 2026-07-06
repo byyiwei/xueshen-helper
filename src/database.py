@@ -1209,7 +1209,7 @@ class Database:
             f"SELECT * FROM user_feedback{where_clause} ORDER BY id DESC LIMIT {int(page_size)} OFFSET {offset}",
             params
         ) or []
-        stats_row = self.fetchone("SELECT COUNT(*) AS cnt FROM user_feedback WHERE status='pending'") or {}
+        stats_row = self.fetchone("SELECT COUNT(*) AS cnt FROM user_feedback WHERE status IN ('pending','processing')") or {}
         pending_count = int(stats_row.get("cnt") or 0)
         return {
             "rows": rows,

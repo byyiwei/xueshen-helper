@@ -2288,25 +2288,38 @@ body{
                 <span :style="{fontSize:'12px',padding:'2px 8px',borderRadius:'6px',background:feedbackDetail.status==='pending'?'rgba(245,158,11,.15)':feedbackDetail.status==='resolved'?'rgba(16,185,129,.15)':feedbackDetail.status==='closed'?'rgba(107,114,128,.15)':'rgba(59,130,246,.15)',color:feedbackDetail.status==='pending'?'var(--warning)':feedbackDetail.status==='resolved'?'var(--success)':feedbackDetail.status==='closed'?'var(--text3)':'var(--accent2)'}">{{feedbackDetail.status==='pending'?'待处理':feedbackDetail.status==='processing'?'处理中':feedbackDetail.status==='resolved'?'已回复':'已关闭'}}</span>
               </div>
               <div style="font-size:13px;color:var(--text3);margin-bottom:8px">用户：{{feedbackDetail.username}} · {{String(feedbackDetail.created_at||'').replace('T',' ').substring(0,19)}}</div>
-              <div style="font-weight:600;font-size:15px;margin-bottom:8px">{{feedbackDetail.title}}</div>
-              <!-- 初始反馈内容 -->
-              <div style="font-size:13px;color:var(--text);line-height:1.6;white-space:pre-wrap;background:rgba(16,185,129,.06);border-left:3px solid #10b981;padding:12px 14px;border-radius:8px;margin-bottom:10px">
-                <div style="font-size:11px;color:#10b981;margin-bottom:4px;font-weight:600">用户初始反馈</div>
-                {{feedbackDetail.content}}
-              </div>
-              <!-- 对话时间线 -->
-              <div v-if="feedbackDetail.admin_reply && (!feedbackDetail.replies || feedbackDetail.replies.length===0)" style="font-size:13px;color:var(--text);line-height:1.6;white-space:pre-wrap;background:rgba(59,130,246,.06);border-left:3px solid #3b82f6;padding:12px 14px;border-radius:8px;margin-bottom:10px">
-                <div style="font-size:11px;color:#3b82f6;margin-bottom:4px;font-weight:600">管理员 · {{String(feedbackDetail.replied_at||'').replace('T',' ').substring(0,16)}}</div>
-                {{feedbackDetail.admin_reply}}
-              </div>
-              <div v-for="rp in (feedbackDetail.replies||[])" :key="rp.id" :style="{fontSize:'13px',color:'var(--text)',lineHeight:'1.6',whiteSpace:'pre-wrap',background:rp.sender==='admin'?'rgba(59,130,246,.06)':'rgba(16,185,129,.06)',borderLeft:rp.sender==='admin'?'3px solid #3b82f6':'3px solid #10b981',padding:'12px 14px',borderRadius:'8px',marginBottom:'10px'}">
-                <div :style="{fontSize:'11px',marginBottom:'4px',fontWeight:'600',color:rp.sender==='admin'?'#3b82f6':'#10b981'}">{{rp.sender==='admin'?'管理员':'用户'}} · {{String(rp.created_at||'').replace('T',' ').substring(0,16)}}</div>
-                {{rp.content}}
+              <div style="font-weight:600;font-size:15px;margin-bottom:12px">{{feedbackDetail.title}}</div>
+              <!-- 微信风格对话区 -->
+              <div style="max-height:350px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;margin-bottom:14px">
+                <!-- 用户初始反馈（右侧） -->
+                <div style="display:flex;gap:8px;align-items:flex-start;flex-direction:row-reverse">
+                  <div style="flex:0 0 32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#10b981,#059669);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600">{{(feedbackDetail.username||'').charAt(0).toUpperCase()}}</div>
+                  <div style="flex:1;text-align:right">
+                    <div style="font-size:11px;color:#10b981;margin-bottom:3px">{{feedbackDetail.username}} · {{String(feedbackDetail.created_at||'').replace('T',' ').substring(0,16)}}</div>
+                    <div style="display:inline-block;padding:10px 14px;background:rgba(16,185,129,.1);border-radius:14px 4px 14px 14px;font-size:13px;color:var(--text);line-height:1.6;white-space:pre-wrap;text-align:left;max-width:85%">{{feedbackDetail.content}}</div>
+                  </div>
+                </div>
+                <!-- 旧数据兼容 -->
+                <div v-if="feedbackDetail.admin_reply && (!feedbackDetail.replies || feedbackDetail.replies.length===0)" style="display:flex;gap:8px;align-items:flex-start">
+                  <div style="flex:0 0 32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#2563eb);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600">管</div>
+                  <div style="flex:1">
+                    <div style="font-size:11px;color:#3b82f6;margin-bottom:3px">管理员 · {{String(feedbackDetail.replied_at||'').replace('T',' ').substring(0,16)}}</div>
+                    <div style="display:inline-block;padding:10px 14px;background:rgba(59,130,246,.1);border-radius:4px 14px 14px 14px;font-size:13px;color:var(--text);line-height:1.6;white-space:pre-wrap;max-width:85%">{{feedbackDetail.admin_reply}}</div>
+                  </div>
+                </div>
+                <!-- 对话记录 -->
+                <div v-for="rp in (feedbackDetail.replies||[])" :key="rp.id" :style="{display:'flex',gap:'8px',alignItems:'flex-start',flexDirection:rp.sender==='admin'?'row':'row-reverse'}">
+                  <div :style="{flex:'0 0 32px',height:'32px',borderRadius:'50%',background:rp.sender==='admin'?'linear-gradient(135deg,#3b82f6,#2563eb)':'linear-gradient(135deg,#10b981,#059669)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:'12px',fontWeight:'600'}">{{rp.sender==='admin'?'管':(feedbackDetail.username||'').charAt(0).toUpperCase()}}</div>
+                  <div :style="{flex:'1',textAlign:rp.sender==='admin'?'left':'right'}">
+                    <div :style="{fontSize:'11px',color:rp.sender==='admin'?'#3b82f6':'#10b981',marginBottom:'3px'}">{{rp.sender==='admin'?'管理员':feedbackDetail.username}} · {{String(rp.created_at||'').replace('T',' ').substring(0,16)}}</div>
+                    <div :style="{display:'inline-block',padding:'10px 14px',background:rp.sender==='admin'?'rgba(59,130,246,.1)':'rgba(16,185,129,.1)',borderRadius:rp.sender==='admin'?'4px 14px 14px 14px':'14px 4px 14px 14px',fontSize:'13px',color:'var(--text)',lineHeight:'1.6',whiteSpace:'pre-wrap',maxWidth:'85%',textAlign:'left'}">{{rp.content}}</div>
+                  </div>
+                </div>
               </div>
               <!-- 回复表单 -->
               <div v-if="feedbackDetail.status!=='closed'">
                 <label style="font-size:13px;margin-bottom:6px;display:block">回复内容（将发送邮件到 {{feedbackDetail.email||'用户邮箱'}}）</label>
-                <textarea v-model="feedbackReplyText" rows="4" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;resize:vertical;line-height:1.6" placeholder="输入回复内容..."></textarea>
+                <textarea v-model="feedbackReplyText" rows="3" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;resize:vertical;line-height:1.6" placeholder="输入回复内容..."></textarea>
               </div>
               <div v-else style="padding:12px;background:var(--bg2);border-radius:10px;text-align:center;color:var(--text3);font-size:13px">该反馈已关闭，如需重新处理请修改状态</div>
             </div>

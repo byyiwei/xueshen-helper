@@ -1250,18 +1250,35 @@
                     </div>
                     <div class="user-card" style="margin-top:16px">
                         <h3>我的反馈记录</h3>
-                        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px;margin-bottom:8px">
-                            <div id="fbStatusTabs" style="display:flex;gap:4px;flex-wrap:wrap">
-                                <button class="fb-tab active" data-status="" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:rgba(59,130,246,.15);color:#60a5fa">全部</button>
-                                <button class="fb-tab" data-status="pending" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">待处理</button>
-                                <button class="fb-tab" data-status="processing" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">处理中</button>
-                                <button class="fb-tab" data-status="resolved" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">已回复</button>
-                                <button class="fb-tab" data-status="closed" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">已关闭</button>
+                        <div id="fbListView" style="margin-top:12px">
+                            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+                                <div id="fbStatusTabs" style="display:flex;gap:4px;flex-wrap:wrap">
+                                    <button class="fb-tab active" data-status="" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:rgba(59,130,246,.15);color:#60a5fa">全部</button>
+                                    <button class="fb-tab" data-status="pending" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">待处理</button>
+                                    <button class="fb-tab" data-status="processing" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">处理中</button>
+                                    <button class="fb-tab" data-status="resolved" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">已回复</button>
+                                    <button class="fb-tab" data-status="closed" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">已关闭</button>
+                                </div>
+                                <input type="text" id="fbSearchInput" placeholder="搜索标题或内容..." style="flex:1;min-width:140px;padding:6px 12px;border-radius:8px;border:1px solid var(--v-border);background:var(--v-card-bg);color:var(--v-text);font-size:13px">
                             </div>
-                            <input type="text" id="fbSearchInput" placeholder="搜索标题或内容..." style="flex:1;min-width:140px;padding:6px 12px;border-radius:8px;border:1px solid var(--v-border);background:var(--v-card-bg);color:var(--v-text);font-size:13px">
+                            <div id="fbList" style="margin-top:4px">
+                                <div style="padding:24px;text-align:center;color:var(--v-muted)">暂无反馈记录</div>
+                            </div>
                         </div>
-                        <div id="fbList" style="margin-top:4px">
-                            <div style="padding:24px;text-align:center;color:var(--v-muted)">暂无反馈记录</div>
+                        <!-- 聊天详情视图 -->
+                        <div id="fbChatView" style="display:none">
+                            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--v-border)">
+                                <button id="fbChatBack" style="border:none;background:transparent;color:var(--v-muted);cursor:pointer;font-size:18px;padding:4px 8px">←</button>
+                                <span id="fbChatTitle" style="font-weight:600;font-size:15px;color:var(--v-text)"></span>
+                                <span id="fbChatStatus" style="font-size:11px;padding:2px 8px;border-radius:6px"></span>
+                            </div>
+                            <div id="fbChatBody" style="display:flex;flex-direction:column;gap:12px;min-height:200px"></div>
+                            <div id="fbChatReplyArea" style="margin-top:14px;border-top:1px solid var(--v-border);padding-top:14px">
+                                <textarea id="fbChatInput" rows="2" maxlength="2000" placeholder="输入追问内容..." style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--v-border);background:var(--v-card-bg);color:var(--v-text);font-size:13px;resize:vertical;line-height:1.5"></textarea>
+                                <div style="display:flex;justify-content:flex-end;margin-top:8px">
+                                    <button id="fbChatSend" class="primary" style="padding:6px 20px;font-size:13px">发送</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </section>
@@ -2557,114 +2574,133 @@
                 const st = FB_STATUS_MAP[f.status] || FB_STATUS_MAP.pending;
                 const time = (f.created_at || '').replace('T', ' ').substring(0, 16);
                 const replies = f.replies || [];
-                // 构建对话时间线（微信风格：管理员左，用户右）
-                let timelineHtml = '<div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">';
-                // 如果有管理员回复但没有在 replies 里（旧数据兼容），显示 admin_reply
-                if (f.admin_reply && replies.length === 0) {
-                    timelineHtml += `<div style="display:flex;gap:8px;align-items:flex-start">
-                        <div style="flex:0 0 28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#2563eb);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600">管</div>
-                        <div style="flex:1;max-width:80%">
-                            <div style="font-size:11px;color:var(--v-muted);margin-bottom:3px">管理员 · ${(f.replied_at||'').replace('T',' ').substring(0,16)}</div>
-                            <div style="display:inline-block;padding:10px 14px;background:rgba(59,130,246,.1);border-radius:4px 14px 14px 14px;font-size:13px;color:var(--v-text);line-height:1.6;white-space:pre-wrap">${escapeHtml(f.admin_reply)}</div>
-                        </div>
-                    </div>`;
-                }
-                // 渲染 replies 对话记录
-                replies.forEach(rp => {
-                    const isAdmin = rp.sender === 'admin';
-                    const rpTime = (rp.created_at || '').replace('T', ' ').substring(0, 16);
-                    if (isAdmin) {
-                        timelineHtml += `<div style="display:flex;gap:8px;align-items:flex-start">
-                            <div style="flex:0 0 28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#2563eb);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600">管</div>
-                            <div style="flex:1;max-width:80%">
-                                <div style="font-size:11px;color:var(--v-muted);margin-bottom:3px">管理员 · ${rpTime}</div>
-                                <div style="display:inline-block;padding:10px 14px;background:rgba(59,130,246,.1);border-radius:4px 14px 14px 14px;font-size:13px;color:var(--v-text);line-height:1.6;white-space:pre-wrap">${escapeHtml(rp.content)}</div>
-                            </div>
-                        </div>`;
-                    } else {
-                        timelineHtml += `<div style="display:flex;gap:8px;align-items:flex-start;flex-direction:row-reverse">
-                            <div style="flex:0 0 28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#10b981,#059669);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600">我</div>
-                            <div style="flex:1;max-width:80%;text-align:right">
-                                <div style="font-size:11px;color:var(--v-muted);margin-bottom:3px">${rpTime} · 我</div>
-                                <div style="display:inline-block;padding:10px 14px;background:rgba(16,185,129,.12);border-radius:14px 4px 14px 14px;font-size:13px;color:var(--v-text);line-height:1.6;white-space:pre-wrap;text-align:left">${escapeHtml(rp.content)}</div>
-                            </div>
-                        </div>`;
-                    }
-                });
-                timelineHtml += '</div>';
-                // 追问输入框（非关闭状态才显示）
-                const canReply = f.status !== 'closed';
-                const replyBoxHtml = canReply ? `
-                    <div class="fb-reply-box" data-fid="${f.id}" style="margin-top:10px;display:none">
-                        <textarea rows="2" maxlength="2000" placeholder="输入追问内容..." style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--v-border);background:var(--v-card-bg);color:var(--v-text);font-size:13px;resize:vertical;line-height:1.5"></textarea>
-                        <div style="display:flex;gap:8px;margin-top:6px">
-                            <button class="fb-reply-submit primary" style="padding:5px 16px;font-size:13px">发送</button>
-                            <button class="fb-reply-cancel" style="padding:5px 16px;font-size:13px;border:1px solid var(--v-border);background:transparent;color:var(--v-muted);border-radius:8px;cursor:pointer">取消</button>
-                        </div>
+                const lastReply = replies.length ? replies[replies.length - 1] : null;
+                const lastTime = lastReply ? (lastReply.created_at || '').replace('T', ' ').substring(0, 16) : time;
+                const lastSender = lastReply ? (lastReply.sender === 'admin' ? '管理员' : '我') : '';
+                const preview = lastReply ? lastReply.content.substring(0, 50) : (f.content || '').substring(0, 50);
+                const unreadBadge = (f.status === 'resolved' || (lastReply && lastReply.sender === 'admin')) ? '<span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);width:8px;height:8px;border-radius:50%;background:#3b82f6"></span>' : '';
+                return `<div class="fb-list-item" data-fid="${f.id}" style="position:relative;padding:12px 36px 12px 0;border-bottom:1px solid var(--v-border);cursor:pointer;transition:background .15s" onmouseover="this.style.background='rgba(59,130,246,.04)'" onmouseout="this.style.background='transparent'">
+                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                        <span style="font-weight:600;font-size:14px;color:var(--v-text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(f.title)}</span>
+                        <span style="font-size:10px;padding:1px 6px;border-radius:5px;background:rgba(148,163,184,.15);color:var(--v-muted)">${cat}</span>
+                        <span style="font-size:10px;padding:1px 6px;border-radius:5px;background:${st.color}20;color:${st.color}">${st.label}</span>
                     </div>
-                    <button class="fb-reply-toggle" data-fid="${f.id}" style="margin-top:8px;padding:4px 14px;font-size:12px;border:1px solid var(--v-border);background:transparent;color:var(--v-muted);border-radius:8px;cursor:pointer;transition:all .2s" onmouseover="this.style.color='var(--v-text)'" onmouseout="this.style.color='var(--v-muted)'">${replies.length || f.admin_reply ? '继续追问' : '补充信息'}</button>
-                ` : '<div style="margin-top:8px;font-size:12px;color:var(--v-muted)">该反馈已关闭</div>';
-                return `<div style="padding:14px 0;border-bottom:1px solid var(--v-border)">
-                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
-                        <span style="font-weight:600;font-size:14px;color:var(--v-text)">${escapeHtml(f.title)}</span>
-                        <span style="font-size:11px;padding:2px 8px;border-radius:6px;background:rgba(148,163,184,.15);color:var(--v-muted)">${cat}</span>
-                        <span style="font-size:11px;padding:2px 8px;border-radius:6px;background:${st.color}20;color:${st.color}">${st.label}</span>
-                    </div>
-                    <div style="font-size:13px;color:var(--v-muted);line-height:1.6;white-space:pre-wrap;margin-bottom:4px">${escapeHtml(f.content)}</div>
-                    <div style="font-size:12px;color:var(--v-muted)">${time}</div>
-                    ${timelineHtml}
-                    ${replyBoxHtml}
+                    <div style="font-size:12px;color:var(--v-muted);line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${lastSender ? lastSender + '：' : ''}${escapeHtml(preview)}</div>
+                    <div style="font-size:11px;color:var(--v-muted);margin-top:2px">${lastTime}</div>
+                    ${unreadBadge}
                 </div>`;
             }).join('');
-            // 绑定追问按钮事件
-            bindFbReplyEvents();
+            // 绑定点击进入聊天
+            document.querySelectorAll('.fb-list-item').forEach(item => {
+                item.addEventListener('click', function () {
+                    const fid = parseInt(this.dataset.fid);
+                    openFbChat(fid);
+                });
+            });
         }
 
-        function bindFbReplyEvents() {
-            // 展开/收起追问框
-            document.querySelectorAll('.fb-reply-toggle').forEach(btn => {
-                btn.addEventListener('click', function () {
-                    const fid = this.dataset.fid;
-                    const box = document.querySelector('.fb-reply-box[data-fid="' + fid + '"]');
-                    if (box) {
-                        box.style.display = box.style.display === 'none' ? 'block' : 'none';
-                        if (box.style.display === 'block') box.querySelector('textarea').focus();
-                    }
-                });
-            });
-            // 取消按钮
-            document.querySelectorAll('.fb-reply-cancel').forEach(btn => {
-                btn.addEventListener('click', function () {
-                    this.closest('.fb-reply-box').style.display = 'none';
-                });
-            });
-            // 发送追问
-            document.querySelectorAll('.fb-reply-submit').forEach(btn => {
-                btn.addEventListener('click', async function () {
-                    const box = this.closest('.fb-reply-box');
-                    const fid = parseInt(box.dataset.fid);
-                    const ta = box.querySelector('textarea');
-                    const content = ta.value.trim();
-                    if (!content) return alert('请输入追问内容');
-                    setBusy(this, true, '发送中...');
-                    try {
-                        const token = localStorage.getItem(TOKEN_KEY);
-                        const res = await fetch('/api/user/feedback/reply', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-                            body: JSON.stringify({ feedback_id: fid, content })
-                        });
-                        const d = await res.json().catch(() => ({}));
-                        if (d.code === 200) {
-                            loadFeedback();
-                        } else {
-                            alert(d.msg || '发送失败');
-                        }
-                    } catch (_) { alert('网络错误'); }
-                    setBusy(this, false);
-                });
-            });
+        let fbCurrentChat = null;
+        function openFbChat(fid) {
+            const f = fbList.find(x => x.id === fid);
+            if (!f) return;
+            fbCurrentChat = f;
+            $('fbListView').style.display = 'none';
+            $('fbChatView').style.display = 'block';
+            const cat = FB_CATEGORY_MAP[f.category] || '其他';
+            const st = FB_STATUS_MAP[f.status] || FB_STATUS_MAP.pending;
+            $('fbChatTitle').textContent = f.title;
+            $('fbChatStatus').textContent = st.label + ' · ' + cat;
+            $('fbChatStatus').style.background = st.color + '20';
+            $('fbChatStatus').style.color = st.color;
+            // 已关闭不显示回复区
+            $('fbChatReplyArea').style.display = f.status === 'closed' ? 'none' : 'block';
+            renderFbChat(f);
         }
+
+        function renderFbChat(f) {
+            const body = $('fbChatBody');
+            const replies = f.replies || [];
+            let html = '';
+            // 初始反馈（用户消息，右侧）
+            const time0 = (f.created_at || '').replace('T', ' ').substring(0, 16);
+            html += fbChatBubble('user', f.content, time0);
+            // 旧数据兼容：有 admin_reply 但 replies 为空
+            if (f.admin_reply && replies.length === 0) {
+                const tr = (f.replied_at || '').replace('T', ' ').substring(0, 16);
+                html += fbChatBubble('admin', f.admin_reply, tr);
+            }
+            // 对话记录
+            replies.forEach(rp => {
+                const t = (rp.created_at || '').replace('T', ' ').substring(0, 16);
+                html += fbChatBubble(rp.sender, rp.content, t);
+            });
+            if (f.status === 'closed' && !replies.length && !f.admin_reply) {
+                html += '<div style="text-align:center;color:var(--v-muted);font-size:12px;padding:12px">该反馈已关闭</div>';
+            }
+            body.innerHTML = html;
+            body.scrollTop = body.scrollHeight;
+        }
+
+        function fbChatBubble(sender, content, time) {
+            const isAdmin = sender === 'admin';
+            const avatar = isAdmin
+                ? '<div style="flex:0 0 32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#2563eb);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:600">管</div>'
+                : '<div style="flex:0 0 32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#10b981,#059669);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:600">我</div>';
+            const bubble = isAdmin
+                ? `<div style="display:inline-block;padding:10px 14px;background:rgba(59,130,246,.12);border-radius:4px 14px 14px 14px;font-size:13px;color:var(--v-text);line-height:1.6;white-space:pre-wrap;max-width:100%">${escapeHtml(content)}</div>`
+                : `<div style="display:inline-block;padding:10px 14px;background:rgba(16,185,129,.12);border-radius:14px 4px 14px 14px;font-size:13px;color:var(--v-text);line-height:1.6;white-space:pre-wrap;max-width:100%;text-align:left">${escapeHtml(content)}</div>`;
+            const label = isAdmin ? '管理员 · ' + time : time + ' · 我';
+            const labelColor = isAdmin ? '#3b82f6' : '#10b981';
+            if (isAdmin) {
+                return `<div style="display:flex;gap:8px;align-items:flex-start">
+                    ${avatar}
+                    <div style="flex:1">
+                        <div style="font-size:11px;color:${labelColor};margin-bottom:3px">${label}</div>
+                        ${bubble}
+                    </div>
+                </div>`;
+            } else {
+                return `<div style="display:flex;gap:8px;align-items:flex-start;flex-direction:row-reverse">
+                    ${avatar}
+                    <div style="flex:1;text-align:right">
+                        <div style="font-size:11px;color:${labelColor};margin-bottom:3px">${label}</div>
+                        <div style="display:inline-block;text-align:left">${bubble}</div>
+                    </div>
+                </div>`;
+            }
+        }
+
+        // 聊天返回按钮
+        $('fbChatBack').addEventListener('click', function () {
+            $('fbChatView').style.display = 'none';
+            $('fbListView').style.display = 'block';
+            fbCurrentChat = null;
+        });
+        // 聊天发送
+        $('fbChatSend').addEventListener('click', async function () {
+            if (!fbCurrentChat) return;
+            const content = $('fbChatInput').value.trim();
+            if (!content) return alert('请输入追问内容');
+            setBusy(this, true, '发送中...');
+            try {
+                const token = localStorage.getItem(TOKEN_KEY);
+                const res = await fetch('/api/user/feedback/reply', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+                    body: JSON.stringify({ feedback_id: fbCurrentChat.id, content })
+                });
+                const d = await res.json().catch(() => ({}));
+                if (d.code === 200) {
+                    $('fbChatInput').value = '';
+                    await loadFeedback();
+                    // 重新打开当前聊天
+                    openFbChat(fbCurrentChat.id);
+                } else {
+                    alert(d.msg || '发送失败');
+                }
+            } catch (_) { alert('网络错误'); }
+            setBusy(this, false);
+        });
 
         function escapeHtml(s) {
             return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
