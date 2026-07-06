@@ -2318,7 +2318,13 @@ body{
               </div>
               <!-- 回复表单 -->
               <div v-if="feedbackDetail.status!=='closed'">
-                <label style="font-size:13px;margin-bottom:6px;display:block">回复内容（将发送邮件到 {{feedbackDetail.email||'用户邮箱'}}）</label>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                  <label style="font-size:13px;display:block">回复内容（将发送邮件到 {{feedbackDetail.email||'用户邮箱'}}）</label>
+                  <button class="btn" style="padding:3px 12px;font-size:12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;border:none;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:4px" @click="aiPolishReply" :disabled="aiPolishing">
+                    <span v-if="aiPolishing">✨ 优化中...</span>
+                    <span v-else>✨ AI优化</span>
+                  </button>
+                </div>
                 <textarea v-model="feedbackReplyText" rows="3" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;resize:vertical;line-height:1.6" placeholder="输入回复内容..."></textarea>
               </div>
               <div v-else style="padding:12px;background:var(--bg2);border-radius:10px;text-align:center;color:var(--text3);font-size:13px">该反馈已关闭，如需重新处理请修改状态</div>
@@ -3343,6 +3349,7 @@ createApp({
     const feedbackPendingCount=ref(0);
     const feedbackDetail=ref(null);
     const feedbackReplyText=ref('');
+    const aiPolishing=ref(false);
     const referralConfig=ref({referral_enabled:false,referral_rate:0.1,referral_min_withdraw:10,referral_settle_days:7});
     const referralSaving=ref(false);
     const referralWithdrawals=ref([]);
@@ -3502,6 +3509,28 @@ createApp({
         }else{showMsg(d.msg||'回复失败','error');}
       }catch(_){showMsg('网络错误','error');}
     }
+    async function aiPolishReply(){
+      if(!feedbackDetail.value)return;
+      if(!feedbackReplyText.value.trim()){showMsg('请先输入回复内容','error');return;}
+      aiPolishing.value=true;
+      try{
+        const res=await safeFetch('/admin/feedback/ai-polish',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':token.value},
+          body:JSON.stringify({
+            text:feedbackReplyText.value.trim(),
+            title:feedbackDetail.value.title||'',
+            content:feedbackDetail.value.content||''
+          })
+        });
+        const d=await res.json();
+        if(d.code===200&&d.text){
+          feedbackReplyText.value=d.text;
+          showMsg('AI优化完成','success');
+        }else{showMsg(d.msg||'AI优化失败','error');}
+      }catch(_){showMsg('网络错误','error');}
+      aiPolishing.value=false;
+    }
     async function updateFeedbackStatus(id,status){
       try{
         const res=await safeFetch('/admin/feedback/status',{
@@ -3539,7 +3568,8 @@ createApp({
        paymentOrders,paymentOrdersFilter,paymentOrdersSort,paymentOrdersPage,paymentOrdersPageSize,paymentOrdersTotal,paymentOrdersTotalPages,paymentOrdersSum,
        loadPaymentOrders,togglePaymentSort,paymentOrdersSearch,paymentOrdersPrev,paymentOrdersNext,
        feedbackList,feedbackFilter,feedbackPage,feedbackTotalPages,feedbackTotal,feedbackPendingCount,feedbackDetail,feedbackReplyText,
-       loadFeedbackList,feedbackSearch,viewFeedbackDetail,replyFeedback,updateFeedbackStatus,feedbackPrev,feedbackNext
+       loadFeedbackList,feedbackSearch,viewFeedbackDetail,replyFeedback,updateFeedbackStatus,feedbackPrev,feedbackNext,
+       aiPolishing,aiPolishReply
     };
   }
 }).mount('#app');

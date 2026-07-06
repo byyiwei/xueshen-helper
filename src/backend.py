@@ -4214,6 +4214,41 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        # AI 优化回复内容
+        elif path == "/admin/feedback/ai-polish":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                raw_text = (data.get("text") or "").strip()
+                feedback_title = (data.get("title") or "").strip()
+                feedback_content = (data.get("content") or "").strip()
+                if not raw_text:
+                    self._send_json(400, {"code": 400, "msg": "请输入回复内容后再优化"})
+                    return
+                system_prompt = (
+                    "你是一位专业的客服回复专家。请将用户输入的回复内容优化得更加专业、礼貌、清晰。"
+                    "要求：\n"
+                    "1. 保持原意不变，不要添加用户未提及的承诺\n"
+                    "2. 语气专业、友善、有耐心\n"
+                    "3. 逻辑清晰，分段分明\n"
+                    "4. 只输出优化后的回复内容，不要输出任何解释或前缀\n"
+                    "5. 如果原文已经很好，可以做轻微润色"
+                )
+                user_prompt = f"用户反馈标题：{feedback_title}\n用户反馈内容：{feedback_content}\n\n待优化的回复内容：\n{raw_text}\n\n请优化这段回复："
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ]
+                answer, err, _model, _provider = call_agent_llm(messages)
+                if answer:
+                    self._send_json(200, {"code": 200, "text": answer.strip()})
+                else:
+                    self._send_json(500, {"code": 500, "msg": err or "AI 优化失败"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         elif path == "/admin/feedback/status":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
