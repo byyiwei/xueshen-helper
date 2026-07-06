@@ -1089,6 +1089,50 @@ class Database:
             return self.fetchall(f"SELECT * FROM payment_orders WHERE username = {ph} ORDER BY id DESC LIMIT {int(limit)}", (username,))
         return self.fetchall(f"SELECT * FROM payment_orders ORDER BY id DESC LIMIT {int(limit)}")
 
+    def list_payment_orders_admin(self, username="", status="", plan_type="", date_from="", date_to="", sort="created_at", order="desc", page=1, page_size=20):
+        """管理员支付明细查询，支持筛选/排序/分页"""
+        ph = _ph()
+        where = []
+        params = []
+        if username:
+            where.append(f"username LIKE {ph}")
+            params.append(f"%{username}%")
+        if status:
+            where.append(f"status = {ph}")
+            params.append(status)
+        if plan_type:
+            where.append(f"plan_type = {ph}")
+            params.append(plan_type)
+        if date_from:
+            where.append(f"DATE(created_at) >= {ph}")
+            params.append(date_from)
+        if date_to:
+            where.append(f"DATE(created_at) <= {ph}")
+            params.append(date_to)
+        where_clause = (" WHERE " + " AND ".join(where)) if where else ""
+        # 安全排序字段
+        allowed_sorts = {"created_at": "created_at", "price": "price", "username": "username", "status": "status", "order_no": "order_no", "id": "id"}
+        sort_field = allowed_sorts.get(sort, "created_at")
+        order_dir = "ASC" if order.lower() == "asc" else "DESC"
+        offset = (max(1, int(page)) - 1) * int(page_size)
+        total_row = self.fetchone(f"SELECT COUNT(*) AS cnt FROM payment_orders{where_clause}", params) or {}
+        total = int(total_row.get("cnt") or 0)
+        rows = self.fetchall(
+            f"SELECT * FROM payment_orders{where_clause} ORDER BY {sort_field} {order_dir} LIMIT {int(page_size)} OFFSET {offset}",
+            params
+        )
+        # 统计金额合计
+        sum_row = self.fetchone(f"SELECT COALESCE(SUM(price),0) AS total_amount, COUNT(*) AS cnt FROM payment_orders{where_clause}", params) or {}
+        return {
+            "rows": rows or [],
+            "total": total,
+            "page": int(page),
+            "page_size": int(page_size),
+            "total_pages": (total + int(page_size) - 1) // int(page_size),
+            "sum_amount": float(sum_row.get("total_amount") or 0),
+            "sum_count": int(sum_row.get("cnt") or 0)
+        }
+
     # ==================== 验证码相关 ====================
     def save_verify_code(self, email, code, vtype, expires_minutes=10):
         """保存验证码，默认10分钟过期"""

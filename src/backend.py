@@ -3006,6 +3006,28 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._send_json(200, {"code": 200, "stats": db.referral_stats()})
 
+        # ==================== 支付明细管理 ====================
+        elif path == "/admin/payment-orders":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            qs = parse_qs(parsed.query)
+            result = db.list_payment_orders_admin(
+                username=qs.get("username", [""])[0],
+                status=qs.get("status", [""])[0],
+                plan_type=qs.get("plan_type", [""])[0],
+                date_from=qs.get("date_from", [""])[0],
+                date_to=qs.get("date_to", [""])[0],
+                sort=qs.get("sort", ["created_at"])[0],
+                order=qs.get("order", ["desc"])[0],
+                page=int(qs.get("page", ["1"])[0] or 1),
+                page_size=int(qs.get("page_size", ["20"])[0] or 20)
+            )
+            for r in result["rows"]:
+                r["price"] = float(r.get("price") or 0)
+                r["created_at"] = str(r.get("created_at") or "")
+            self._send_json(200, {"code": 200, "data": result})
+
         # ==================== 邮件模板管理（GET） ====================
         elif path == "/admin/email-templates":
             if not self._check_admin():

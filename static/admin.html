@@ -67,6 +67,15 @@ body{
 .menu-item:hover{background:var(--bg3);color:var(--text)}
 .menu-item.active{background:rgba(59,130,246,.12);color:var(--accent2);font-weight:500}
 .menu-item .icon{width:20px;text-align:center;font-size:14px;color:currentColor;font-family:"SF Mono","Cascadia Code",Consolas,monospace}
+.menu-group{margin-bottom:4px}
+.menu-group-header{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:var(--radius-sm);color:var(--text2);font-size:13px;cursor:pointer;transition:all .2s;user-select:none}
+.menu-group-header:hover{background:var(--bg3);color:var(--text)}
+.menu-group-header .icon{width:20px;text-align:center;font-size:14px;color:currentColor;font-family:"SF Mono","Cascadia Code",Consolas,monospace}
+.menu-group-header .arrow{margin-left:auto;font-size:10px;transition:transform .2s;color:var(--text3)}
+.menu-group.expanded .menu-group-header .arrow{transform:rotate(90deg)}
+.menu-group-items{max-height:0;overflow:hidden;transition:max-height .25s ease}
+.menu-group.expanded .menu-group-items{max-height:500px}
+.menu-group-items .menu-item{padding-left:36px;font-size:12px;padding-top:7px;padding-bottom:7px}
 .profile-avatar img,.top-avatar img{width:100%;height:100%;object-fit:cover;display:block}
 .profile-avatar{width:72px;height:72px;border-radius:22px;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:24px;color:var(--text2)}
 .avatar-row{display:flex;gap:16px;align-items:center;margin-bottom:16px}
@@ -543,38 +552,84 @@ body{
         <div class="menu-item" :class="{active:page==='user-mgmt'}" @click="page='user-mgmt';loadUsers()">
           <span class="icon">◯</span>用户管理
         </div>
-		<div class="menu-item" :class="{active:page==='referral'}" @click="page='referral';loadReferralConfig()">
-          <span class="icon">★</span>推广返利
+
+        <!-- 推广返利组 -->
+        <div class="menu-group" :class="{expanded:expandedGroups.referral}">
+          <div class="menu-group-header" @click="expandedGroups.referral=!expandedGroups.referral">
+            <span class="icon">★</span>推广返利
+            <span class="arrow">▶</span>
+          </div>
+          <div class="menu-group-items">
+            <div class="menu-item" :class="{active:page==='referral'}" @click="page='referral';loadReferralConfig()">
+              <span class="icon">⚙</span>返利配置
+            </div>
+            <div class="menu-item" :class="{active:page==='referral-withdrawals'}" @click="page='referral-withdrawals';loadReferralWithdrawals()">
+              <span class="icon">¥</span>提现审核
+            </div>
+          </div>
         </div>
-        <div class="menu-item" :class="{active:page==='login-locks'}" @click="page='login-locks';loadLoginLocks()">
-          <span class="icon">⊘</span>解除锁定
+
+        <!-- 支付财务组 -->
+        <div class="menu-group" :class="{expanded:expandedGroups.payment}">
+          <div class="menu-group-header" @click="expandedGroups.payment=!expandedGroups.payment">
+            <span class="icon">□</span>支付财务
+            <span class="arrow">▶</span>
+          </div>
+          <div class="menu-group-items">
+            <div class="menu-item" :class="{active:page==='payment-orders'}" @click="page='payment-orders';loadPaymentOrders()">
+              <span class="icon">▤</span>支付明细
+            </div>
+            <div class="menu-item" :class="{active:page==='payment'}" @click="page='payment';loadPaymentConfig()">
+              <span class="icon">◈</span>套餐配置
+            </div>
+            <div class="menu-item" :class="{active:page==='pay-api'}" @click="page='pay-api';loadPayApiConfig()">
+              <span class="icon">⌁</span>支付接口
+            </div>
+            <div class="menu-item" :class="{active:page==='pay-test'}" @click="page='pay-test'">
+              <span class="icon">◎</span>支付测试
+            </div>
+          </div>
         </div>
-        <div class="menu-item" :class="{active:page==='question-bank'}" @click="page='question-bank';loadQuestionBank()">
-          <span class="icon">▤</span>题库中心
+
+        <!-- 日志监控组 -->
+        <div class="menu-group" :class="{expanded:expandedGroups.logs}">
+          <div class="menu-group-header" @click="expandedGroups.logs=!expandedGroups.logs">
+            <span class="icon">☰</span>日志监控
+            <span class="arrow">▶</span>
+          </div>
+          <div class="menu-group-items">
+            <div class="menu-item" :class="{active:page==='script-logs'}" @click="page='script-logs';loadScriptLogs()">
+              <span class="icon">⌘</span>脚本日志
+            </div>
+            <div class="menu-item" :class="{active:page==='ai-logs'}" @click="page='ai-logs';loadAiLogs()">
+              <span class="icon">≡</span>模型日志
+            </div>
+            <div class="menu-item" :class="{active:page==='log-cleanup'}" @click="page='log-cleanup';loadLogCleanup()">
+              <span class="icon">∅</span>日志清理
+            </div>
+          </div>
         </div>
-        <div class="menu-item" :class="{active:page==='script-logs'}" @click="page='script-logs';loadScriptLogs()">
-          <span class="icon">⌘</span>脚本日志
-        </div>
-        <div class="menu-item" :class="{active:page==='ai-logs'}" @click="page='ai-logs';loadAiLogs()">
-          <span class="icon">☰</span>模型日志
-        </div>
-        <div class="menu-item" :class="{active:page==='ai-config'}" @click="page='ai-config';loadConfig()">
-          <span class="icon">◇</span>模型配置
-        </div>
-        <div class="menu-item" :class="{active:page==='email-config'}" @click="page='email-config';loadEmailConfig();loadEmailTemplates()">
-          <span class="icon">✉</span>邮箱配置
-        </div>
-        <div class="menu-item" :class="{active:page==='payment'}" @click="page='payment';loadPaymentConfig()">
-          <span class="icon">□</span>付费配置
-        </div>
-        <div class="menu-item" :class="{active:page==='pay-api'}" @click="page='pay-api';loadPayApiConfig()">
-          <span class="icon">⌁</span>支付接口
-        </div>
-        <div class="menu-item" :class="{active:page==='pay-test'}" @click="page='pay-test'">
-          <span class="icon">◈</span>支付测试
-        </div>
-        <div class="menu-item" :class="{active:page==='log-cleanup'}" @click="page='log-cleanup';loadLogCleanup()">
-          <span class="icon">∅</span>日志清理
+
+        <!-- 系统配置组 -->
+        <div class="menu-group" :class="{expanded:expandedGroups.config}">
+          <div class="menu-group-header" @click="expandedGroups.config=!expandedGroups.config">
+            <span class="icon">◇</span>系统配置
+            <span class="arrow">▶</span>
+          </div>
+          <div class="menu-group-items">
+            <div class="menu-item" :class="{active:page==='question-bank'}" @click="page='question-bank';loadQuestionBank()">
+              <span class="icon">▤</span>题库中心
+            </div>
+            <div class="menu-item" :class="{active:page==='ai-config'}" @click="page='ai-config';loadConfig()">
+              <span class="icon">◈</span>模型配置
+            </div>
+            <div class="menu-item" :class="{active:page==='email-config'}" @click="page='email-config';loadEmailConfig();loadEmailTemplates()">
+              <span class="icon">✉</span>邮箱配置
+            </div>
+            <div class="menu-item" :class="{active:page==='login-locks'}" @click="page='login-locks';loadLoginLocks()">
+              <span class="icon">⊘</span>解除锁定
+            </div>
+          </div>
         </div>
       </nav>
     </aside>
@@ -1697,7 +1752,6 @@ body{
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
           <div style="display:flex;gap:0;margin-bottom:18px;border-bottom:2px solid var(--border)">
             <button :class="['btn',referralTab==='config'?'btn-primary':'btn-secondary']" style="border-radius:0" @click="referralTab='config'">返利比例设置</button>
-            <button :class="['btn',referralTab==='withdrawals'?'btn-primary':'btn-secondary']" style="border-radius:0" @click="referralTab='withdrawals';loadReferralWithdrawals()">提现申请审核</button>
             <button :class="['btn',referralTab==='stats'?'btn-primary':'btn-secondary']" style="border-radius:0" @click="referralTab='stats';loadReferralStats()">推广数据统计</button>
           </div>
           <!-- 比例设置 -->
@@ -1924,6 +1978,177 @@ body{
               <div v-if="payTestResult.pay_url" style="margin-top:16px">
                 <a :href="payTestResult.pay_url" target="_blank" class="btn btn-success">前往支付页面</a>
               </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- 支付明细 -->
+      <template v-if="page==='payment-orders'">
+        <header class="main-header">
+          <h2>支付明细</h2>
+          <span class="breadcrumb">查看用户支付订单，支持筛选与排序</span>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <!-- 筛选栏 -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-body" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+              <div class="form-group" style="margin:0;min-width:140px">
+                <label style="font-size:11px;margin-bottom:4px">用户名</label>
+                <input v-model="paymentOrdersFilter.username" class="form-control" style="padding:6px 10px;font-size:13px" placeholder="搜索用户名" @keyup.enter="paymentOrdersSearch()">
+              </div>
+              <div class="form-group" style="margin:0;min-width:100px">
+                <label style="font-size:11px;margin-bottom:4px">状态</label>
+                <select v-model="paymentOrdersFilter.status" class="form-control" style="padding:6px 10px;font-size:13px">
+                  <option value="">全部</option>
+                  <option value="paid">已支付</option>
+                  <option value="pending">待支付</option>
+                  <option value="cancelled">已取消</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin:0;min-width:100px">
+                <label style="font-size:11px;margin-bottom:4px">套餐类型</label>
+                <select v-model="paymentOrdersFilter.plan_type" class="form-control" style="padding:6px 10px;font-size:13px">
+                  <option value="">全部</option>
+                  <option value="points">点数</option>
+                  <option value="days">天数</option>
+                  <option value="combo">套餐</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin:0">
+                <label style="font-size:11px;margin-bottom:4px">开始日期</label>
+                <input type="date" v-model="paymentOrdersFilter.date_from" class="form-control" style="padding:6px 10px;font-size:13px">
+              </div>
+              <div class="form-group" style="margin:0">
+                <label style="font-size:11px;margin-bottom:4px">结束日期</label>
+                <input type="date" v-model="paymentOrdersFilter.date_to" class="form-control" style="padding:6px 10px;font-size:13px">
+              </div>
+              <button class="btn btn-primary" @click="paymentOrdersSearch()">查询</button>
+              <button class="btn btn-secondary" @click="paymentOrdersFilter={username:'',status:'',plan_type:'',date_from:'',date_to:''};paymentOrdersSearch()">重置</button>
+            </div>
+          </div>
+          <!-- 合计栏 -->
+          <div style="display:flex;gap:16px;padding:12px 20px;background:var(--bg2);border-radius:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+            <div style="font-size:13px;color:var(--text3)">筛选结果合计：<b style="color:var(--text);font-size:15px">¥{{Number(paymentOrdersSum.sum_amount||0).toFixed(2)}}</b> <span style="color:var(--text3);font-size:12px">({{paymentOrdersSum.sum_count||0}}笔)</span></div>
+            <div style="width:1px;height:20px;background:var(--border)"></div>
+            <div style="font-size:13px;color:var(--text3)">当前第 <b style="color:var(--text)">{{paymentOrdersPage}}</b> / {{paymentOrdersTotalPages}} 页，共 {{paymentOrdersTotal}} 条</div>
+          </div>
+          <!-- 表格 -->
+          <div class="card">
+            <div class="card-body" style="overflow-x:auto">
+              <table class="data-table" style="width:100%;font-size:13px">
+                <thead>
+                  <tr style="text-align:left;color:var(--text3);border-bottom:1px solid var(--border)">
+                    <th style="padding:10px 12px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('order_no')">订单号 {{paymentOrdersSort.field==='order_no'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
+                    <th style="padding:10px 12px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('username')">用户名 {{paymentOrdersSort.field==='username'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
+                    <th style="padding:10px 12px;white-space:nowrap">套餐名称</th>
+                    <th style="padding:10px 12px;white-space:nowrap">类型</th>
+                    <th style="padding:10px 12px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('price')">金额 {{paymentOrdersSort.field==='price'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
+                    <th style="padding:10px 12px;white-space:nowrap">点数/天数</th>
+                    <th style="padding:10px 12px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('status')">状态 {{paymentOrdersSort.field==='status'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
+                    <th style="padding:10px 12px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('created_at')">创建时间 {{paymentOrdersSort.field==='created_at'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in paymentOrders" :key="row.id" style="border-bottom:1px solid var(--border)">
+                    <td style="padding:10px 12px;font-family:monospace;font-size:12px">{{row.order_no}}</td>
+                    <td style="padding:10px 12px">{{row.username}}</td>
+                    <td style="padding:10px 12px">{{row.plan_name||'-'}}</td>
+                    <td style="padding:10px 12px">{{row.plan_type||'-'}}</td>
+                    <td style="padding:10px 12px;font-weight:600;color:var(--success)">¥{{Number(row.price||0).toFixed(2)}}</td>
+                    <td style="padding:10px 12px">{{row.points>0?row.points+'点':''}}{{row.days>0?(row.points>0?'/':'')+row.days+'天':''}}{{!row.points&&!row.days?'-':''}}</td>
+                    <td style="padding:10px 12px">
+                      <span :style="{color:row.status==='paid'?'var(--success)':row.status==='pending'?'var(--warning)':'var(--text3)'}">{{row.status==='paid'?'已支付':row.status==='pending'?'待支付':row.status==='cancelled'?'已取消':row.status}}</span>
+                    </td>
+                    <td style="padding:10px 12px;color:var(--text3);font-size:12px">{{String(row.created_at||'').replace('T',' ').substring(0,19)}}</td>
+                  </tr>
+                  <tr v-if="paymentOrders.length===0">
+                    <td colspan="8" style="padding:30px;text-align:center;color:var(--text3)">暂无支付记录</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <!-- 分页 -->
+            <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-top:1px solid var(--border)">
+              <div style="font-size:12px;color:var(--text3)">每页 {{paymentOrdersPageSize}} 条</div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button class="btn btn-secondary" style="padding:4px 12px" :disabled="paymentOrdersPage<=1" @click="paymentOrdersPrev()">上一页</button>
+                <span style="font-size:13px">{{paymentOrdersPage}} / {{paymentOrdersTotalPages}}</span>
+                <button class="btn btn-secondary" style="padding:4px 12px" :disabled="paymentOrdersPage>=paymentOrdersTotalPages" @click="paymentOrdersNext()">下一页</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- 推广返利-提现审核（独立页面） -->
+      <template v-if="page==='referral-withdrawals'">
+        <header class="main-header">
+          <h2>提现审核</h2>
+          <span class="breadcrumb">审核用户提现申请</span>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="card">
+            <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)">
+              <div style="display:flex;gap:12px;align-items:center">
+                <select v-model="referralWdFilter" @change="loadReferralWithdrawals()" class="form-control" style="padding:6px 10px;font-size:13px;width:auto">
+                  <option value="">全部状态</option>
+                  <option value="pending">待审核</option>
+                  <option value="approved">已通过</option>
+                  <option value="rejected">已驳回</option>
+                </select>
+              </div>
+            </div>
+            <div style="display:flex;gap:16px;padding:12px 20px;background:var(--bg);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center">
+              <div style="font-size:13px;color:var(--text3)">今日申请：<b style="color:var(--text);font-size:15px">¥{{Number(referralWdSummary.today_total||0).toFixed(2)}}</b> <span style="color:var(--text3);font-size:12px">({{referralWdSummary.today_count||0}}笔)</span></div>
+              <div style="width:1px;height:20px;background:var(--border)"></div>
+              <div style="font-size:13px;color:var(--text3)">已通过金额：<b style="color:var(--success);font-size:15px">¥{{Number(referralWdSummary.approved_total||0).toFixed(2)}}</b> <span style="color:var(--text3);font-size:12px">({{referralWdSummary.approved_count||0}}笔)</span></div>
+              <div style="width:1px;height:20px;background:var(--border)"></div>
+              <div style="font-size:13px;color:var(--text3)">待审核金额：<b style="color:var(--warning);font-size:15px">¥{{Number(referralWdSummary.pending_total||0).toFixed(2)}}</b> <span style="color:var(--text3);font-size:12px">({{referralWdSummary.pending_count||0}}笔)</span></div>
+            </div>
+            <div class="card-body" style="overflow-x:auto">
+              <table class="data-table" style="width:100%;font-size:13px">
+                <thead>
+                  <tr style="text-align:left;color:var(--text3);border-bottom:1px solid var(--border)">
+                    <th style="padding:10px 12px">用户</th>
+                    <th style="padding:10px 12px">金额</th>
+                    <th style="padding:10px 12px">收款方式</th>
+                    <th style="padding:10px 12px">收款账号</th>
+                    <th style="padding:10px 12px">状态</th>
+                    <th style="padding:10px 12px">申请时间</th>
+                    <th style="padding:10px 12px">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="wd in referralWithdrawals" :key="wd.id" style="border-bottom:1px solid var(--border)">
+                    <td style="padding:10px 12px">{{wd.username}}</td>
+                    <td style="padding:10px 12px;font-weight:600;color:var(--success)">¥{{Number(wd.amount||0).toFixed(2)}}</td>
+                    <td style="padding:10px 12px">{{wd.pay_method==='alipay'?'支付宝':'微信'}}</td>
+                    <td style="padding:10px 12px;font-size:12px">{{wd.pay_account}}</td>
+                    <td style="padding:10px 12px">
+                      <span :style="{color:wd.status==='pending'?'var(--warning)':wd.status==='approved'?'var(--success)':'var(--danger)'}">{{wd.status==='pending'?'待审核':wd.status==='approved'?'已通过':'已驳回'}}</span>
+                    </td>
+                    <td style="padding:10px 12px;color:var(--text3);font-size:12px">{{String(wd.created_at||'').replace('T',' ').substring(0,19)}}</td>
+                    <td style="padding:10px 12px;display:flex;gap:6px">
+                      <button v-if="wd.qr_code" class="btn btn-secondary" style="padding:3px 10px;font-size:12px" @click="referralQrPreview=wd.qr_code">查看二维码</button>
+                      <button v-if="wd.status==='pending'" class="btn btn-success" style="padding:3px 10px;font-size:12px" @click="approveWithdrawal(wd.id)">通过</button>
+                      <button v-if="wd.status==='pending'" class="btn btn-danger" style="padding:3px 10px;font-size:12px" @click="rejectWithdrawal(wd.id)">驳回</button>
+                    </td>
+                  </tr>
+                  <tr v-if="referralWithdrawals.length===0">
+                    <td colspan="7" style="padding:30px;text-align:center;color:var(--text3)">暂无提现申请</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div v-if="referralQrPreview" class="modal-overlay" @click.self="referralQrPreview=''">
+            <div class="modal" style="text-align:center">
+              <h3>收款二维码</h3>
+              <img :src="referralQrPreview" style="max-width:280px;border-radius:10px;margin:12px 0">
+              <div><button class="btn btn-secondary" @click="referralQrPreview=''">关闭</button></div>
             </div>
           </div>
         </div>
@@ -2888,6 +3113,16 @@ createApp({
 
     // ========== 推广返利 ==========
     const referralTab=ref('config');
+    const expandedGroups=ref({referral:false,payment:false,logs:false,config:false});
+    // 支付明细
+    const paymentOrders=ref([]);
+    const paymentOrdersFilter=ref({username:'',status:'',plan_type:'',date_from:'',date_to:''});
+    const paymentOrdersSort=ref({field:'created_at',order:'desc'});
+    const paymentOrdersPage=ref(1);
+    const paymentOrdersPageSize=ref(20);
+    const paymentOrdersTotal=ref(0);
+    const paymentOrdersTotalPages=ref(0);
+    const paymentOrdersSum=ref({sum_amount:0,sum_count:0});
     const referralConfig=ref({referral_enabled:false,referral_rate:0.1,referral_min_withdraw:10,referral_settle_days:7});
     const referralSaving=ref(false);
     const referralWithdrawals=ref([]);
@@ -2946,6 +3181,49 @@ createApp({
       }catch(_){}
     }
 
+    // ========== 支付明细 ==========
+    async function loadPaymentOrders(){
+      const f=paymentOrdersFilter.value;
+      const s=paymentOrdersSort.value;
+      const params=new URLSearchParams({
+        username:f.username||'',
+        status:f.status||'',
+        plan_type:f.plan_type||'',
+        date_from:f.date_from||'',
+        date_to:f.date_to||'',
+        sort:s.field||'created_at',
+        order:s.order||'desc',
+        page:String(paymentOrdersPage.value),
+        page_size:String(paymentOrdersPageSize.value)
+      });
+      try{
+        const res=await safeFetch('/admin/payment-orders?'+params.toString(),{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200){
+          const data=d.data||{};
+          paymentOrders.value=data.rows||[];
+          paymentOrdersTotal.value=data.total||0;
+          paymentOrdersTotalPages.value=data.total_pages||0;
+          paymentOrdersSum.value={sum_amount:data.sum_amount||0,sum_count:data.sum_count||0};
+        }
+      }catch(_){}
+    }
+    function togglePaymentSort(field){
+      if(paymentOrdersSort.value.field===field){
+        paymentOrdersSort.value.order=paymentOrdersSort.value.order==='desc'?'asc':'desc';
+      }else{
+        paymentOrdersSort.value.field=field;
+        paymentOrdersSort.value.order='desc';
+      }
+      loadPaymentOrders();
+    }
+    function paymentOrdersSearch(){
+      paymentOrdersPage.value=1;
+      loadPaymentOrders();
+    }
+    function paymentOrdersPrev(){if(paymentOrdersPage.value>1){paymentOrdersPage.value--;loadPaymentOrders();}}
+    function paymentOrdersNext(){if(paymentOrdersPage.value<paymentOrdersTotalPages.value){paymentOrdersPage.value++;loadPaymentOrders();}}
+
     if(token.value){page.value='dashboard';loadAll();}
     else initAdminSlider();
 
@@ -2963,7 +3241,10 @@ createApp({
       protocolName,statusText,formatDuration,shortText,formatScriptExtra,trendPoints,trendX,trendY,trendMax,stackBarX,stackBarY,stackBarH,modelBarWidth,revTrendPoints,revTrendArea,revTrendX,revStep,revY,revMax,
       loadLogCleanup,saveLogCleanup,runLogCleanupNow,logRetentionDays,logCleanupSaving,logCleanupRunning,logCleanupResult,payTestForm,payTestLoading,payTestResult,runPayTest,payApiWeightTotal,payApiWeightPercent,refreshSandpayParams,onSandpayAdvancedChange,
       referralTab,referralConfig,referralSaving,referralWithdrawals,referralWdFilter,referralWdSummary,referralStats,referralQrPreview,
-      loadReferralConfig,saveReferralConfig,loadReferralWithdrawals,approveWithdrawal,rejectWithdrawal,loadReferralStats
+      loadReferralConfig,saveReferralConfig,loadReferralWithdrawals,approveWithdrawal,rejectWithdrawal,loadReferralStats,
+      expandedGroups,
+      paymentOrders,paymentOrdersFilter,paymentOrdersSort,paymentOrdersPage,paymentOrdersPageSize,paymentOrdersTotal,paymentOrdersTotalPages,paymentOrdersSum,
+      loadPaymentOrders,togglePaymentSort,paymentOrdersSearch,paymentOrdersPrev,paymentOrdersNext
     };
   }
 }).mount('#app');
