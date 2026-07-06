@@ -720,6 +720,7 @@ body{
             <div class="metric-card"><div class="metric-label">模型调用数</div><div class="metric-value">{{dashboard.cards.calls||0}}</div><div class="metric-sub">累计请求</div></div>
             <div class="metric-card"><div class="metric-label">成功数</div><div class="metric-value" style="color:var(--success)">{{dashboard.cards.success||0}}</div><div class="metric-sub">成功返回答案</div></div>
             <div class="metric-card"><div class="metric-label">失败数</div><div class="metric-value" style="color:var(--danger)">{{dashboard.cards.error||0}}</div><div class="metric-sub">接口失败或异常</div></div>
+            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(245,158,11,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='feedback';expandedGroups.config=true;loadFeedbackList()"><div class="metric-label">待处理反馈</div><div class="metric-value" style="color:var(--warning)">{{feedbackPendingCount||0}}</div><div class="metric-sub">点击查看处理 →</div></div>
           </div>
           <div class="dash-grid">
             <div class="chart-card">
@@ -2255,14 +2256,10 @@ body{
                       <span :style="{color:f.status==='pending'?'var(--warning)':f.status==='processing'?'var(--accent2)':f.status==='resolved'?'var(--success)':'var(--text3)'}">{{f.status==='pending'?'待处理':f.status==='processing'?'处理中':f.status==='resolved'?'已回复':'已关闭'}}</span>
                     </td>
                     <td style="padding:10px 12px;color:var(--text3);font-size:12px">{{String(f.created_at||'').replace('T',' ').substring(0,19)}}</td>
-                    <td style="padding:10px 12px;display:flex;gap:6px">
+                    <td style="padding:10px 12px;display:flex;gap:6px;align-items:center">
                       <button class="btn btn-primary" style="padding:3px 10px;font-size:12px" @click="viewFeedbackDetail(f.id)">查看</button>
-                      <select :value="f.status" @change="updateFeedbackStatus(f.id,$event.target.value)" style="padding:3px 6px;font-size:12px;border-radius:6px;background:var(--bg3);color:var(--text);border:1px solid var(--border)">
-                        <option value="pending">待处理</option>
-                        <option value="processing">处理中</option>
-                        <option value="resolved">已回复</option>
-                        <option value="closed">已关闭</option>
-                      </select>
+                      <button v-if="f.status!=='closed'" class="btn btn-secondary" style="padding:3px 10px;font-size:12px;color:var(--text3)" @click="updateFeedbackStatus(f.id,'closed')">关闭工单</button>
+                      <span v-else style="font-size:11px;color:var(--text3)">已关闭</span>
                     </td>
                   </tr>
                   <tr v-if="feedbackList.length===0">
@@ -2602,6 +2599,12 @@ createApp({
         else if(data.code===403){logout();showMsg('登录已过期','error');}
         else showMsg(data.msg||'获取首页统计失败','error');
       }catch(e){showMsg('获取首页统计失败: '+(e.message||e),'error',6000);}
+      // 并行获取待处理反馈数
+      try{
+        const fr=await safeFetch('/admin/feedback?page=1&page_size=1',{headers:{'Authorization':token.value}});
+        const fd=await fr.json();
+        if(fd.code===200){feedbackPendingCount.value=fd.data.pending_count||0;}
+      }catch(_){}
     }
     function setQuickRange(type){
       const today=new Date().toISOString().slice(0,10);

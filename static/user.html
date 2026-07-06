@@ -2557,13 +2557,16 @@
                 const st = FB_STATUS_MAP[f.status] || FB_STATUS_MAP.pending;
                 const time = (f.created_at || '').replace('T', ' ').substring(0, 16);
                 const replies = f.replies || [];
-                // 构建对话时间线
-                let timelineHtml = '';
+                // 构建对话时间线（微信风格：管理员左，用户右）
+                let timelineHtml = '<div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">';
                 // 如果有管理员回复但没有在 replies 里（旧数据兼容），显示 admin_reply
                 if (f.admin_reply && replies.length === 0) {
-                    timelineHtml += `<div style="margin-top:10px;padding:12px 14px;background:rgba(59,130,246,.08);border-left:3px solid #3b82f6;border-radius:8px">
-                        <div style="font-size:12px;color:#3b82f6;margin-bottom:4px;font-weight:600">管理员 · ${(f.replied_at||'').replace('T',' ').substring(0,16)}</div>
-                        <div style="font-size:13px;color:var(--v-text);line-height:1.6;white-space:pre-wrap">${escapeHtml(f.admin_reply)}</div>
+                    timelineHtml += `<div style="display:flex;gap:8px;align-items:flex-start">
+                        <div style="flex:0 0 28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#2563eb);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600">管</div>
+                        <div style="flex:1;max-width:80%">
+                            <div style="font-size:11px;color:var(--v-muted);margin-bottom:3px">管理员 · ${(f.replied_at||'').replace('T',' ').substring(0,16)}</div>
+                            <div style="display:inline-block;padding:10px 14px;background:rgba(59,130,246,.1);border-radius:4px 14px 14px 14px;font-size:13px;color:var(--v-text);line-height:1.6;white-space:pre-wrap">${escapeHtml(f.admin_reply)}</div>
+                        </div>
                     </div>`;
                 }
                 // 渲染 replies 对话记录
@@ -2571,17 +2574,24 @@
                     const isAdmin = rp.sender === 'admin';
                     const rpTime = (rp.created_at || '').replace('T', ' ').substring(0, 16);
                     if (isAdmin) {
-                        timelineHtml += `<div style="margin-top:10px;padding:12px 14px;background:rgba(59,130,246,.08);border-left:3px solid #3b82f6;border-radius:8px">
-                            <div style="font-size:12px;color:#3b82f6;margin-bottom:4px;font-weight:600">管理员 · ${rpTime}</div>
-                            <div style="font-size:13px;color:var(--v-text);line-height:1.6;white-space:pre-wrap">${escapeHtml(rp.content)}</div>
+                        timelineHtml += `<div style="display:flex;gap:8px;align-items:flex-start">
+                            <div style="flex:0 0 28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#2563eb);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600">管</div>
+                            <div style="flex:1;max-width:80%">
+                                <div style="font-size:11px;color:var(--v-muted);margin-bottom:3px">管理员 · ${rpTime}</div>
+                                <div style="display:inline-block;padding:10px 14px;background:rgba(59,130,246,.1);border-radius:4px 14px 14px 14px;font-size:13px;color:var(--v-text);line-height:1.6;white-space:pre-wrap">${escapeHtml(rp.content)}</div>
+                            </div>
                         </div>`;
                     } else {
-                        timelineHtml += `<div style="margin-top:10px;padding:12px 14px;background:rgba(16,185,129,.08);border-left:3px solid #10b981;border-radius:8px">
-                            <div style="font-size:12px;color:#10b981;margin-bottom:4px;font-weight:600">我 · ${rpTime}</div>
-                            <div style="font-size:13px;color:var(--v-text);line-height:1.6;white-space:pre-wrap">${escapeHtml(rp.content)}</div>
+                        timelineHtml += `<div style="display:flex;gap:8px;align-items:flex-start;flex-direction:row-reverse">
+                            <div style="flex:0 0 28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#10b981,#059669);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600">我</div>
+                            <div style="flex:1;max-width:80%;text-align:right">
+                                <div style="font-size:11px;color:var(--v-muted);margin-bottom:3px">${rpTime} · 我</div>
+                                <div style="display:inline-block;padding:10px 14px;background:rgba(16,185,129,.12);border-radius:14px 4px 14px 14px;font-size:13px;color:var(--v-text);line-height:1.6;white-space:pre-wrap;text-align:left">${escapeHtml(rp.content)}</div>
+                            </div>
                         </div>`;
                     }
                 });
+                timelineHtml += '</div>';
                 // 追问输入框（非关闭状态才显示）
                 const canReply = f.status !== 'closed';
                 const replyBoxHtml = canReply ? `

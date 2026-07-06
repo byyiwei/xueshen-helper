@@ -4176,7 +4176,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not fb:
                     self._send_json(404, {"code": 404, "msg": "反馈不存在"})
                     return
-                # 发送邮件（使用 feedback_reply 模板）
+                # 发送邮件（使用 feedback_reply 模板，模板不存在时用 fallback）
                 user_email = fb.get("email") or ""
                 if not user_email:
                     user = db.get_user_by_username(fb.get("username") or "")
@@ -4184,18 +4184,26 @@ class Handler(BaseHTTPRequestHandler):
                 if not user_email:
                     self._send_json(400, {"code": 400, "msg": "用户未绑定邮箱，无法发送邮件"})
                     return
-                ok, err = send_email(
-                    to_addr=user_email,
-                    subject=None,
-                    body_text=None,
-                    body_html=None,
-                    scene="feedback_reply",
-                    variables={
-                        "username": fb.get("username", ""),
-                        "title": fb.get("title", ""),
-                        "reply_text": reply_text
-                    }
-                )
+                # 检查模板是否存在，不存在则用 fallback
+                tpl = db.get_email_template_by_scene("feedback_reply")
+                if tpl:
+                    ok, err = send_email(
+                        to_addr=user_email,
+                        subject=None,
+                        body_text=None,
+                        body_html=None,
+                        scene="feedback_reply",
+                        variables={
+                            "username": fb.get("username", ""),
+                            "title": fb.get("title", ""),
+                            "reply_text": reply_text
+                        }
+                    )
+                else:
+                    # 模板不存在时的 fallback
+                    fb_subject = f"学神助手 - 问题反馈回复：{fb.get('title','')}"
+                    fb_html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;background:#f0f9ff;font-family:sans-serif;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:40px 20px;"><table width="480" cellpadding="0" cellspacing="0" style="max-width:480px;background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#0ea5e9,#0284c7);padding:28px 32px;text-align:center;color:#fff;font-size:18px;font-weight:600;">学神助手</td></tr><tr><td style="padding:32px;"><p style="margin:0 0 16px;color:#1f2937;font-size:15px;">您好 <b>{fb.get('username','')}</b>，</p><p style="margin:0 0 8px;color:#4b5563;font-size:14px;">您提交的问题反馈已处理：</p><div style="background:#f0f9ff;border-left:4px solid #0ea5e9;border-radius:8px;padding:14px 16px;margin:0 0 20px;"><p style="margin:0 0 6px;color:#6b7280;font-size:12px;">反馈标题</p><p style="margin:0;color:#1f2937;font-size:14px;font-weight:600;">{fb.get('title','')}</p></div><p style="margin:0 0 8px;color:#4b5563;font-size:14px;">管理员回复：</p><div style="background:#f9fafb;border-radius:12px;padding:16px 18px;margin:0 0 20px;"><p style="margin:0;color:#1f2937;font-size:14px;line-height:1.7;white-space:pre-wrap;">{reply_text}</p></div><p style="margin:0;color:#9ca3af;font-size:12px;">如有疑问请继续在用户中心提交反馈。</p></td></tr></table></td></tr></table></body></html>"""
+                    ok, err = send_email(user_email, fb_subject, body_text=reply_text, body_html=fb_html)
                 if not ok:
                     self._send_json(500, {"code": 500, "msg": f"邮件发送失败：{err}"})
                     return
