@@ -57,7 +57,11 @@ body{
 }
 .sidebar-header h1{font-size:14px;font-weight:700}
 .sidebar-header p{font-size:11px;color:var(--text2);margin-top:2px}
-.sidebar-menu{flex:1;padding:12px;overflow-y:auto}
+.sidebar-menu{flex:1;padding:12px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.25) transparent}
+.sidebar-menu::-webkit-scrollbar{width:5px;height:5px}
+.sidebar-menu::-webkit-scrollbar-track{background:transparent;margin:4px 0}
+.sidebar-menu::-webkit-scrollbar-thumb{background:rgba(148,163,184,.25);border-radius:10px}
+.sidebar-menu::-webkit-scrollbar-thumb:hover{background:rgba(148,163,184,.4)}
 .menu-item{
   display:flex;align-items:center;gap:10px;
   padding:10px 14px;border-radius:var(--radius-sm);
