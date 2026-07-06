@@ -1224,13 +1224,16 @@
                         <div style="display:grid;gap:14px;margin-top:16px">
                             <div>
                                 <label style="display:block;font-size:13px;margin-bottom:6px;color:var(--v-text)">反馈类型</label>
-                                <select id="fbCategory" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--v-border);background:var(--v-card-bg);color:var(--v-text);font-size:14px">
-                                    <option value="bug">Bug 反馈</option>
-                                    <option value="feature">功能建议</option>
-                                    <option value="payment">支付问题</option>
-                                    <option value="account">账号问题</option>
-                                    <option value="other">其他</option>
-                                </select>
+                                <div style="position:relative">
+                                    <select id="fbCategory" style="width:100%;padding:10px 36px 10px 14px;border-radius:10px;border:1px solid var(--v-border);background:var(--v-card-bg);color:var(--v-text);font-size:14px;appearance:none;-webkit-appearance:none;-moz-appearance:none;cursor:pointer;transition:border-color .2s">
+                                        <option value="bug" style="background:#1a2235;color:#e5e7eb">Bug 反馈</option>
+                                        <option value="feature" style="background:#1a2235;color:#e5e7eb">功能建议</option>
+                                        <option value="payment" style="background:#1a2235;color:#e5e7eb">支付问题</option>
+                                        <option value="account" style="background:#1a2235;color:#e5e7eb">账号问题</option>
+                                        <option value="other" style="background:#1a2235;color:#e5e7eb">其他</option>
+                                    </select>
+                                    <svg style="position:absolute;right:12px;top:50%;transform:translateY(-50%);pointer-events:none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                </div>
                             </div>
                             <div>
                                 <label style="display:block;font-size:13px;margin-bottom:6px;color:var(--v-text)">问题标题</label>
