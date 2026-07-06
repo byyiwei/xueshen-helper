@@ -84,6 +84,17 @@ body{
 .filter-tab{border:none;background:transparent;color:var(--text2);font-size:13px;padding:6px 14px;border-radius:8px;cursor:pointer;transition:all .2s}
 .filter-tab:hover{color:var(--text)}
 .filter-tab.active{background:var(--accent2);color:#fff;font-weight:500;box-shadow:0 2px 6px rgba(59,130,246,.25)}
+/* 手机端二级菜单抽屉（全局样式，不依赖媒体查询） */
+.mobile-submenu-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:300;display:flex;align-items:flex-end;backdrop-filter:blur(2px)}
+.mobile-submenu{width:100%;max-height:70vh;background:rgba(17,24,39,.98);border-radius:20px 20px 0 0;border-top:1px solid rgba(96,165,250,.18);padding:16px 16px calc(28px + env(safe-area-inset-bottom));animation:slideUp .22s ease;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.25) transparent}
+.mobile-submenu::-webkit-scrollbar{width:4px}
+.mobile-submenu::-webkit-scrollbar-thumb{background:rgba(148,163,184,.25);border-radius:10px}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.mobile-submenu-header{display:flex;align-items:center;gap:10px;padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:8px}
+.mobile-submenu-close{margin-left:auto;width:32px;height:32px;border-radius:50%;border:none;background:var(--bg3);color:var(--text2);font-size:14px;cursor:pointer}
+.mobile-submenu-item{display:flex;align-items:center;gap:12px;padding:14px 12px;border-radius:12px;color:var(--text2);font-size:14px;cursor:pointer}
+.mobile-submenu-item.active{background:rgba(59,130,246,.12);color:var(--accent2)}
+.mobile-submenu-item .icon{width:20px;text-align:center;font-size:16px}
 .profile-avatar img,.top-avatar img{width:100%;height:100%;object-fit:cover;display:block}
 .profile-avatar{width:72px;height:72px;border-radius:22px;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:24px;color:var(--text2)}
 .avatar-row{display:flex;gap:16px;align-items:center;margin-bottom:16px}
@@ -486,17 +497,6 @@ body{
   .main-header{padding:0 70px 0 16px}
   .main-header .breadcrumb{display:none}
   .form-row{grid-template-columns:1fr}
-  /* 手机端二级菜单抽屉 */
-  .mobile-submenu-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:flex-end;backdrop-filter:blur(2px)}
-  .mobile-submenu{width:100%;max-height:70vh;background:rgba(17,24,39,.98);border-radius:20px 20px 0 0;border-top:1px solid rgba(96,165,250,.18);padding:16px 16px calc(28px + env(safe-area-inset-bottom));animation:slideUp .22s ease;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.25) transparent}
-  .mobile-submenu::-webkit-scrollbar{width:4px}
-  .mobile-submenu::-webkit-scrollbar-thumb{background:rgba(148,163,184,.25);border-radius:10px}
-  @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
-  .mobile-submenu-header{display:flex;align-items:center;gap:10px;padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:8px}
-  .mobile-submenu-close{margin-left:auto;width:32px;height:32px;border-radius:50%;border:none;background:var(--bg3);color:var(--text2);font-size:14px}
-  .mobile-submenu-item{display:flex;align-items:center;gap:12px;padding:14px 10px;border-radius:12px;color:var(--text2);font-size:14px}
-  .mobile-submenu-item.active{background:rgba(59,130,246,.12);color:var(--accent2)}
-  .mobile-submenu-item .icon{width:20px;text-align:center;font-size:16px}
   .model-row{flex-wrap:wrap}
   .model-row input{flex:1 1 100% !important;width:100% !important}
   .model-row .btn-del{width:100%;height:34px}
@@ -506,6 +506,10 @@ body{
   .provider-actions{width:100%;justify-content:flex-start}
   .metric-grid,.dash-grid{grid-template-columns:1fr}
   .main-body{padding:16px 16px 96px}
+  .data-table{font-size:12px}
+  .data-table th,.data-table td{padding:8px 6px}
+  .filter-tab-group{width:100%;overflow-x:auto;flex-wrap:nowrap}
+  .filter-tab{flex:0 0 auto;white-space:nowrap}
 }
 </style>
 </head>
@@ -583,7 +587,7 @@ body{
 
         <!-- 推广返利组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.referral}">
-          <div class="menu-group-header dock-item" :class="{active:page==='referral'||page==='referral-withdrawals'}" @click.stop="openMobileSubmenu('referral','推广返利','★');if(!isMobile)expandedGroups.referral=!expandedGroups.referral">
+          <div class="menu-group-header dock-item" :class="{active:page==='referral'||page==='referral-withdrawals'}" @click="handleGroupClick('referral','推广返利','★')">
             <span class="icon">★</span>推广返利
             <span class="arrow">▶</span>
           </div>
@@ -599,7 +603,7 @@ body{
 
         <!-- 支付财务组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.payment}">
-          <div class="menu-group-header dock-item" :class="{active:['payment-orders','payment','pay-api','pay-test'].includes(page)}" @click.stop="openMobileSubmenu('payment','支付财务','□');if(!isMobile)expandedGroups.payment=!expandedGroups.payment">
+          <div class="menu-group-header dock-item" :class="{active:['payment-orders','payment','pay-api','pay-test'].includes(page)}" @click="handleGroupClick('payment','支付财务','□')">
             <span class="icon">□</span>支付财务
             <span class="arrow">▶</span>
           </div>
@@ -621,7 +625,7 @@ body{
 
         <!-- 日志监控组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.logs}">
-          <div class="menu-group-header dock-item" :class="{active:['script-logs','ai-logs','log-cleanup'].includes(page)}" @click.stop="openMobileSubmenu('logs','日志监控','☰');if(!isMobile)expandedGroups.logs=!expandedGroups.logs">
+          <div class="menu-group-header dock-item" :class="{active:['script-logs','ai-logs','log-cleanup'].includes(page)}" @click="handleGroupClick('logs','日志监控','☰')">
             <span class="icon">☰</span>日志监控
             <span class="arrow">▶</span>
           </div>
@@ -640,7 +644,7 @@ body{
 
         <!-- 系统配置组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.config}">
-          <div class="menu-group-header dock-item" :class="{active:['question-bank','ai-config','email-config','login-locks'].includes(page)}" @click.stop="openMobileSubmenu('config','系统配置','◇');if(!isMobile)expandedGroups.config=!expandedGroups.config">
+          <div class="menu-group-header dock-item" :class="{active:['question-bank','ai-config','email-config','login-locks'].includes(page)}" @click="handleGroupClick('config','系统配置','◇')">
             <span class="icon">◇</span>系统配置
             <span class="arrow">▶</span>
           </div>
@@ -3164,9 +3168,15 @@ createApp({
       config:{title:'系统配置',icon:'◇',items:[{page:'question-bank',label:'题库中心',icon:'▤',load:loadQuestionBank},{page:'ai-config',label:'模型配置',icon:'◈',load:loadConfig},{page:'email-config',label:'邮箱配置',icon:'✉',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'login-locks',label:'解除锁定',icon:'⊘',load:loadLoginLocks}]}
     };
     function openMobileSubmenu(key,title,icon){
-      if(!isMobile.value)return;
       const cfg=MOBILE_SUBMENU_MAP[key];
       if(cfg)mobileSubmenu.value={key,title:cfg.title||title,icon:cfg.icon||icon,items:cfg.items};
+    }
+    function handleGroupClick(key,title,icon){
+      if(window.innerWidth<=768){
+        openMobileSubmenu(key,title,icon);
+      }else{
+        expandedGroups.value[key]=!expandedGroups.value[key];
+      }
     }
     window.addEventListener('resize',()=>{isMobile.value=window.innerWidth<=768;});
     // 支付明细
@@ -3305,7 +3315,7 @@ createApp({
       loadLogCleanup,saveLogCleanup,runLogCleanupNow,logRetentionDays,logCleanupSaving,logCleanupRunning,logCleanupResult,payTestForm,payTestLoading,payTestResult,runPayTest,payApiWeightTotal,payApiWeightPercent,refreshSandpayParams,onSandpayAdvancedChange,
       referralTab,referralConfig,referralSaving,referralWithdrawals,referralWdFilter,referralWdSummary,referralStats,referralQrPreview,
       loadReferralConfig,saveReferralConfig,loadReferralWithdrawals,approveWithdrawal,rejectWithdrawal,loadReferralStats,
-      expandedGroups,isMobile,mobileSubmenu,openMobileSubmenu,
+      expandedGroups,isMobile,mobileSubmenu,openMobileSubmenu,handleGroupClick,
        paymentOrders,paymentOrdersFilter,paymentOrdersSort,paymentOrdersPage,paymentOrdersPageSize,paymentOrdersTotal,paymentOrdersTotalPages,paymentOrdersSum,
        loadPaymentOrders,togglePaymentSort,paymentOrdersSearch,paymentOrdersPrev,paymentOrdersNext
     };
