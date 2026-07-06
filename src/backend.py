@@ -4138,7 +4138,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not fb:
                     self._send_json(404, {"code": 404, "msg": "反馈不存在"})
                     return
-                # 发送邮件
+                # 发送邮件（使用 feedback_reply 模板）
                 user_email = fb.get("email") or ""
                 if not user_email:
                     user = db.get_user_by_username(fb.get("username") or "")
@@ -4146,15 +4146,18 @@ class Handler(BaseHTTPRequestHandler):
                 if not user_email:
                     self._send_json(400, {"code": 400, "msg": "用户未绑定邮箱，无法发送邮件"})
                     return
-                subject = f"[学神助手] 您的问题反馈回复：{fb.get('title','')}"
-                body_html = f"""<html><body style="font-family:sans-serif;line-height:1.8;color:#333">
-<p>您好 <b>{fb.get('username','')}</b>，</p>
-<p>您提交的问题反馈「<b>{fb.get('title','')}</b>」已处理，以下是管理员的回复：</p>
-<div style="background:#f5f5f5;border-left:4px solid #3b82f6;padding:12px 16px;margin:12px 0;border-radius:4px">{reply_text.replace(chr(10),'<br>')}</div>
-<p style="color:#999;font-size:12px">反馈时间：{str(fb.get('created_at',''))}</p>
-<p>如有疑问请继续在用户中心提交反馈。</p>
-</body></html>"""
-                ok, err = send_email(user_email, subject, body_text=reply_text, body_html=body_html)
+                ok, err = send_email(
+                    to_addr=user_email,
+                    subject=None,
+                    body_text=None,
+                    body_html=None,
+                    scene="feedback_reply",
+                    variables={
+                        "username": fb.get("username", ""),
+                        "title": fb.get("title", ""),
+                        "reply_text": reply_text
+                    }
+                )
                 if not ok:
                     self._send_json(500, {"code": 500, "msg": f"邮件发送失败：{err}"})
                     return
@@ -4193,7 +4196,7 @@ class Handler(BaseHTTPRequestHandler):
             body_html = data.get("body_html", "")
             content_type = (data.get("content_type") or "text").strip()
             variables = (data.get("variables") or "").strip()
-            if not scene or scene not in ("user_register", "user_reset", "admin_reset", "referral_withdrawal"):
+            if not scene or scene not in ("user_register", "user_reset", "admin_reset", "referral_withdrawal", "feedback_reply"):
                 self._send_json(400, {"code": 400, "msg": "请选择有效的应用场景"})
                 return
             if not subject:

@@ -1250,7 +1250,17 @@
                     </div>
                     <div class="user-card" style="margin-top:16px">
                         <h3>我的反馈记录</h3>
-                        <div id="fbList" style="margin-top:12px">
+                        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px;margin-bottom:8px">
+                            <div id="fbStatusTabs" style="display:flex;gap:4px;flex-wrap:wrap">
+                                <button class="fb-tab active" data-status="" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:rgba(59,130,246,.15);color:#60a5fa">全部</button>
+                                <button class="fb-tab" data-status="pending" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">待处理</button>
+                                <button class="fb-tab" data-status="processing" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">处理中</button>
+                                <button class="fb-tab" data-status="resolved" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">已回复</button>
+                                <button class="fb-tab" data-status="closed" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">已关闭</button>
+                            </div>
+                            <input type="text" id="fbSearchInput" placeholder="搜索标题或内容..." style="flex:1;min-width:140px;padding:6px 12px;border-radius:8px;border:1px solid var(--v-border);background:var(--v-card-bg);color:var(--v-text);font-size:13px">
+                        </div>
+                        <div id="fbList" style="margin-top:4px">
                             <div style="padding:24px;text-align:center;color:var(--v-muted)">暂无反馈记录</div>
                         </div>
                     </div>
@@ -2509,6 +2519,8 @@
         const FB_CATEGORY_MAP = { bug: 'Bug反馈', feature: '功能建议', payment: '支付问题', account: '账号问题', other: '其他' };
         const FB_STATUS_MAP = { pending: { label: '待处理', color: '#f59e0b' }, processing: { label: '处理中', color: '#3b82f6' }, resolved: { label: '已回复', color: '#10b981' }, closed: { label: '已关闭', color: '#6b7280' } };
         let fbList = [];
+        let fbFilterStatus = '';
+        let fbSearchKeyword = '';
 
         async function loadFeedback() {
             const token = localStorage.getItem(TOKEN_KEY);
@@ -2523,10 +2535,24 @@
             } catch (_) {}
         }
 
+        function getFilteredFeedback() {
+            let list = fbList;
+            if (fbFilterStatus) list = list.filter(f => f.status === fbFilterStatus);
+            if (fbSearchKeyword) {
+                const kw = fbSearchKeyword.toLowerCase();
+                list = list.filter(f => (f.title || '').toLowerCase().includes(kw) || (f.content || '').toLowerCase().includes(kw));
+            }
+            return list;
+        }
+
         function renderFeedbackList() {
             const el = $('fbList');
-            if (!fbList.length) { el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--v-muted)">暂无反馈记录</div>'; return; }
-            el.innerHTML = fbList.map(f => {
+            const list = getFilteredFeedback();
+            if (!list.length) {
+                el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--v-muted)">' + (fbList.length ? '没有匹配的记录' : '暂无反馈记录') + '</div>';
+                return;
+            }
+            el.innerHTML = list.map(f => {
                 const cat = FB_CATEGORY_MAP[f.category] || '其他';
                 const st = FB_STATUS_MAP[f.status] || FB_STATUS_MAP.pending;
                 const time = (f.created_at || '').replace('T', ' ').substring(0, 16);
@@ -2554,6 +2580,30 @@
 
         $('fbContent').addEventListener('input', function () {
             $('fbCharCount').textContent = this.value.length + '/2000';
+        });
+        // 状态筛选标签
+        document.querySelectorAll('#fbStatusTabs .fb-tab').forEach(btn => {
+            btn.addEventListener('click', function () {
+                document.querySelectorAll('#fbStatusTabs .fb-tab').forEach(b => {
+                    b.classList.remove('active');
+                    b.style.background = 'var(--v-card-bg)';
+                    b.style.color = 'var(--v-muted)';
+                });
+                this.classList.add('active');
+                this.style.background = 'rgba(59,130,246,.15)';
+                this.style.color = '#60a5fa';
+                fbFilterStatus = this.dataset.status;
+                renderFeedbackList();
+            });
+        });
+        // 搜索框
+        let fbSearchTimer = null;
+        $('fbSearchInput').addEventListener('input', function () {
+            clearTimeout(fbSearchTimer);
+            fbSearchTimer = setTimeout(() => {
+                fbSearchKeyword = this.value.trim();
+                renderFeedbackList();
+            }, 300);
         });
         $('fbSubmitBtn').onclick = async function () {
             const category = $('fbCategory').value;
