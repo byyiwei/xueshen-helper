@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -460,42 +460,35 @@ body{
 
 /* Responsive */
 @media(max-width:768px){
-  .app-layout{display:block;height:100vh;height:100dvh}
+  .app-layout{display:flex;flex-direction:column;height:100vh;height:100dvh}
   .sidebar{
-    position:fixed;left:10px;right:10px;bottom:10px;z-index:50;
-    width:auto;height:66px;overflow:hidden;border:1px solid rgba(96,165,250,.18);
-    border-radius:22px;background:rgba(17,24,39,.92);backdrop-filter:blur(18px);
-    box-shadow:0 18px 46px rgba(0,0,0,.38);
+    position:fixed;left:0;top:0;bottom:0;z-index:100;
+    width:240px;overflow:hidden;border-right:1px solid rgba(96,165,250,.18);
+    border-radius:0;background:rgba(17,24,39,.98);backdrop-filter:blur(18px);
+    box-shadow:4px 0 24px rgba(0,0,0,.38);
+    transform:translateX(-100%);transition:transform .25s ease;
   }
-  .sidebar-header{display:none}
+  .sidebar.open{transform:translateX(0)}
+  .sidebar-header{display:flex}
   .sidebar-menu{
-    height:100%;display:flex;align-items:center;gap:6px;padding:8px;
-    overflow-x:auto;overflow-y:hidden;scrollbar-width:none;
+    height:auto;display:block;padding:12px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.25) transparent;
   }
-  .sidebar-menu::-webkit-scrollbar{display:none}
-  .sidebar-menu .menu-item:not(.dock-item){display:none}
-  .menu-group-items{display:none !important}
-  .sidebar-menu .menu-group-header{display:none}
-  .sidebar-menu .menu-group-header.dock-item{
-    display:flex !important;flex:0 0 auto;min-width:62px;height:50px;justify-content:center;flex-direction:column;
-    padding:7px 8px;font-size:11px;line-height:1.15;gap:4px;margin:0;border-radius:16px;
-    color:#9ca3af;text-align:center;background:transparent;
-  }
-  .sidebar-menu .menu-group-header.dock-item .arrow{display:none}
-  .menu-item.dock-item{
-    flex:0 0 auto;min-width:62px;height:50px;justify-content:center;flex-direction:column;
-    padding:7px 8px;font-size:11px;line-height:1.15;gap:4px;margin:0;border-radius:16px;
-    color:#9ca3af;text-align:center;
-  }
-  .menu-item .icon,.menu-group-header.dock-item .icon{width:auto;font-size:16px;line-height:1}
+  .sidebar-menu::-webkit-scrollbar{width:4px}
+  .sidebar-menu::-webkit-scrollbar-thumb{background:rgba(148,163,184,.25);border-radius:10px}
+  .sidebar-menu .menu-item:not(.dock-item){display:flex}
+  .menu-group-items{display:block !important;max-height:none !important}
+  .sidebar-menu .menu-group-header{display:flex}
+  .sidebar-menu .menu-group-header.dock-item{display:flex}
+  .menu-item.dock-item{display:flex}
+  .menu-item .icon,.menu-group-header.dock-item .icon{width:20px;font-size:14px}
   .menu-item.dock-item.active,.menu-group-header.dock-item.active{
-    background:linear-gradient(180deg,rgba(59,130,246,.28),rgba(37,99,235,.18));
-    color:#dbeafe;box-shadow:inset 0 0 0 1px rgba(96,165,250,.22);
+    background:rgba(59,130,246,.12);color:var(--accent2);
   }
-  .main-content{height:100vh;height:100dvh}
+  .main-content{height:100vh;height:100dvh;width:100%}
   .top-account{right:12px;top:8px}
-  .main-header{padding:0 70px 0 16px}
+  .main-header{padding:0 70px 0 48px}
   .main-header .breadcrumb{display:none}
+  .mobile-menu-toggle{display:flex !important}
   .form-row{grid-template-columns:1fr}
   .model-row{flex-wrap:wrap}
   .model-row input{flex:1 1 100% !important;width:100% !important}
@@ -505,12 +498,15 @@ body{
   .card-header{align-items:flex-start;flex-direction:column}
   .provider-actions{width:100%;justify-content:flex-start}
   .metric-grid,.dash-grid{grid-template-columns:1fr}
-  .main-body{padding:16px 16px 96px}
+  .main-body{padding:16px}
   .data-table{font-size:12px}
   .data-table th,.data-table td{padding:8px 6px}
   .filter-tab-group{width:100%;overflow-x:auto;flex-wrap:nowrap}
   .filter-tab{flex:0 0 auto;white-space:nowrap}
 }
+.mobile-menu-toggle{display:none;position:fixed;left:10px;top:10px;z-index:110;width:36px;height:36px;border-radius:10px;border:1px solid rgba(96,165,250,.18);background:rgba(17,24,39,.95);color:var(--text);align-items:center;justify-content:center;font-size:18px;cursor:pointer}
+.mobile-menu-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:90}
+@media(max-width:768px){.mobile-menu-overlay.show{display:block}}
 </style>
 </head>
 <body>
@@ -568,8 +564,11 @@ body{
 
   <!-- ==================== MAIN ==================== -->
   <div v-else class="app-layout">
+    <!-- 手机端汉堡菜单按钮 -->
+    <button class="mobile-menu-toggle" @click="mobileSidebarOpen=!mobileSidebarOpen">☰</button>
+    <div class="mobile-menu-overlay" :class="{show:mobileSidebarOpen}" @click="mobileSidebarOpen=false"></div>
     <!-- Sidebar -->
-    <aside class="sidebar">
+    <aside class="sidebar" :class="{open:mobileSidebarOpen}">
       <div class="sidebar-header">
         <div class="logo">◎</div>
         <div>
@@ -578,24 +577,24 @@ body{
         </div>
       </div>
       <nav class="sidebar-menu">
-        <div class="menu-item dock-item" :class="{active:page==='dashboard'}" @click="page='dashboard';loadDashboard();mobileSubmenu=null">
+        <div class="menu-item dock-item" :class="{active:page==='dashboard'}" @click="page='dashboard';loadDashboard()">
           <span class="icon">⌂</span>运营概览
         </div>
-        <div class="menu-item dock-item" :class="{active:page==='user-mgmt'}" @click="page='user-mgmt';loadUsers();mobileSubmenu=null">
+        <div class="menu-item dock-item" :class="{active:page==='user-mgmt'}" @click="page='user-mgmt';loadUsers()">
           <span class="icon">◯</span>用户管理
         </div>
 
         <!-- 推广返利组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.referral}">
-          <div class="menu-group-header dock-item" :class="{active:page==='referral'||page==='referral-withdrawals'}" @click="handleGroupClick('referral','推广返利','★')">
+          <div class="menu-group-header dock-item" :class="{active:page==='referral'||page==='referral-withdrawals'}" @click="expandedGroups.referral=!expandedGroups.referral">
             <span class="icon">★</span>推广返利
             <span class="arrow">▶</span>
           </div>
           <div class="menu-group-items">
-            <div class="menu-item" :class="{active:page==='referral'}" @click="page='referral';loadReferralConfig();mobileSubmenu=null">
+            <div class="menu-item" :class="{active:page==='referral'}" @click="page='referral';loadReferralConfig()">
               <span class="icon">⚙</span>返利配置
             </div>
-            <div class="menu-item" :class="{active:page==='referral-withdrawals'}" @click="page='referral-withdrawals';loadReferralWithdrawals();mobileSubmenu=null">
+            <div class="menu-item" :class="{active:page==='referral-withdrawals'}" @click="page='referral-withdrawals';loadReferralWithdrawals()">
               <span class="icon">¥</span>提现审核
             </div>
           </div>
@@ -603,21 +602,21 @@ body{
 
         <!-- 支付财务组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.payment}">
-          <div class="menu-group-header dock-item" :class="{active:['payment-orders','payment','pay-api','pay-test'].includes(page)}" @click="handleGroupClick('payment','支付财务','□')">
+          <div class="menu-group-header dock-item" :class="{active:['payment-orders','payment','pay-api','pay-test'].includes(page)}" @click="expandedGroups.payment=!expandedGroups.payment">
             <span class="icon">□</span>支付财务
             <span class="arrow">▶</span>
           </div>
           <div class="menu-group-items">
-            <div class="menu-item" :class="{active:page==='payment-orders'}" @click="page='payment-orders';loadPaymentOrders();mobileSubmenu=null">
+            <div class="menu-item" :class="{active:page==='payment-orders'}" @click="page='payment-orders';loadPaymentOrders()">
               <span class="icon">▤</span>支付明细
             </div>
-            <div class="menu-item" :class="{active:page==='payment'}" @click="page='payment';loadPaymentConfig();mobileSubmenu=null">
+            <div class="menu-item" :class="{active:page==='payment'}" @click="page='payment';loadPaymentConfig()">
               <span class="icon">◈</span>套餐配置
             </div>
-            <div class="menu-item" :class="{active:page==='pay-api'}" @click="page='pay-api';loadPayApiConfig();mobileSubmenu=null">
+            <div class="menu-item" :class="{active:page==='pay-api'}" @click="page='pay-api';loadPayApiConfig()">
               <span class="icon">⌁</span>支付接口
             </div>
-            <div class="menu-item" :class="{active:page==='pay-test'}" @click="page='pay-test';mobileSubmenu=null">
+            <div class="menu-item" :class="{active:page==='pay-test'}" @click="page='pay-test'">
               <span class="icon">◎</span>支付测试
             </div>
           </div>
@@ -625,18 +624,18 @@ body{
 
         <!-- 日志监控组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.logs}">
-          <div class="menu-group-header dock-item" :class="{active:['script-logs','ai-logs','log-cleanup'].includes(page)}" @click="handleGroupClick('logs','日志监控','☰')">
+          <div class="menu-group-header dock-item" :class="{active:['script-logs','ai-logs','log-cleanup'].includes(page)}" @click="expandedGroups.logs=!expandedGroups.logs">
             <span class="icon">☰</span>日志监控
             <span class="arrow">▶</span>
           </div>
           <div class="menu-group-items">
-            <div class="menu-item" :class="{active:page==='script-logs'}" @click="page='script-logs';loadScriptLogs();mobileSubmenu=null">
+            <div class="menu-item" :class="{active:page==='script-logs'}" @click="page='script-logs';loadScriptLogs()">
               <span class="icon">⌘</span>脚本日志
             </div>
-            <div class="menu-item" :class="{active:page==='ai-logs'}" @click="page='ai-logs';loadAiLogs();mobileSubmenu=null">
+            <div class="menu-item" :class="{active:page==='ai-logs'}" @click="page='ai-logs';loadAiLogs()">
               <span class="icon">≡</span>模型日志
             </div>
-            <div class="menu-item" :class="{active:page==='log-cleanup'}" @click="page='log-cleanup';loadLogCleanup();mobileSubmenu=null">
+            <div class="menu-item" :class="{active:page==='log-cleanup'}" @click="page='log-cleanup';loadLogCleanup()">
               <span class="icon">∅</span>日志清理
             </div>
           </div>
@@ -644,42 +643,26 @@ body{
 
         <!-- 系统配置组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.config}">
-          <div class="menu-group-header dock-item" :class="{active:['question-bank','ai-config','email-config','login-locks'].includes(page)}" @click="handleGroupClick('config','系统配置','◇')">
+          <div class="menu-group-header dock-item" :class="{active:['question-bank','ai-config','email-config','login-locks'].includes(page)}" @click="expandedGroups.config=!expandedGroups.config">
             <span class="icon">◇</span>系统配置
             <span class="arrow">▶</span>
           </div>
           <div class="menu-group-items">
-            <div class="menu-item" :class="{active:page==='question-bank'}" @click="page='question-bank';loadQuestionBank();mobileSubmenu=null">
+            <div class="menu-item" :class="{active:page==='question-bank'}" @click="page='question-bank';loadQuestionBank()">
               <span class="icon">▤</span>题库中心
             </div>
-            <div class="menu-item" :class="{active:page==='ai-config'}" @click="page='ai-config';loadConfig();mobileSubmenu=null">
+            <div class="menu-item" :class="{active:page==='ai-config'}" @click="page='ai-config';loadConfig()">
               <span class="icon">◈</span>模型配置
             </div>
-            <div class="menu-item" :class="{active:page==='email-config'}" @click="page='email-config';loadEmailConfig();loadEmailTemplates();mobileSubmenu=null">
+            <div class="menu-item" :class="{active:page==='email-config'}" @click="page='email-config';loadEmailConfig();loadEmailTemplates()">
               <span class="icon">✉</span>邮箱配置
             </div>
-            <div class="menu-item" :class="{active:page==='login-locks'}" @click="page='login-locks';loadLoginLocks();mobileSubmenu=null">
+            <div class="menu-item" :class="{active:page==='login-locks'}" @click="page='login-locks';loadLoginLocks()">
               <span class="icon">⊘</span>解除锁定
             </div>
           </div>
         </div>
       </nav>
-
-      <!-- 手机端二级菜单抽屉 -->
-      <div v-if="mobileSubmenu" class="mobile-submenu-overlay" @click.self="mobileSubmenu=null">
-        <div class="mobile-submenu">
-          <div class="mobile-submenu-header">
-            <span style="font-size:18px">{{mobileSubmenu.icon}}</span>
-            <span style="font-weight:600">{{mobileSubmenu.title}}</span>
-            <button class="mobile-submenu-close" @click="mobileSubmenu=null">✕</button>
-          </div>
-          <div class="mobile-submenu-body">
-            <div class="mobile-submenu-item" v-for="item in mobileSubmenu.items" :key="item.page" :class="{active:page===item.page}" @click="page=item.page;item.load();mobileSubmenu=null">
-              <span class="icon">{{item.icon}}</span>{{item.label}}
-            </div>
-          </div>
-        </div>
-      </div>
     </aside>
 
     <!-- Main Content -->
@@ -2223,7 +2206,7 @@ body{
 </div>
 
 <script>
-const {createApp,ref,computed,reactive}=Vue;
+const {createApp,ref,computed,reactive,watch}=Vue;
 
 createApp({
   setup(){
@@ -3160,6 +3143,7 @@ createApp({
     const referralTab=ref('config');
     const expandedGroups=ref({referral:false,payment:false,logs:false,config:false});
     const isMobile=ref(window.innerWidth<=768);
+    const mobileSidebarOpen=ref(false);
     const mobileSubmenu=ref(null);
     const MOBILE_SUBMENU_MAP={
       referral:{title:'推广返利',icon:'★',items:[{page:'referral',label:'返利配置',icon:'⚙',load:loadReferralConfig},{page:'referral-withdrawals',label:'提现审核',icon:'¥',load:loadReferralWithdrawals}]},
@@ -3178,6 +3162,7 @@ createApp({
         expandedGroups.value[key]=!expandedGroups.value[key];
       }
     }
+    watch(page,(v)=>{mobileSidebarOpen.value=false;});
     window.addEventListener('resize',()=>{isMobile.value=window.innerWidth<=768;});
     // 支付明细
     const paymentOrders=ref([]);
@@ -3315,7 +3300,7 @@ createApp({
       loadLogCleanup,saveLogCleanup,runLogCleanupNow,logRetentionDays,logCleanupSaving,logCleanupRunning,logCleanupResult,payTestForm,payTestLoading,payTestResult,runPayTest,payApiWeightTotal,payApiWeightPercent,refreshSandpayParams,onSandpayAdvancedChange,
       referralTab,referralConfig,referralSaving,referralWithdrawals,referralWdFilter,referralWdSummary,referralStats,referralQrPreview,
       loadReferralConfig,saveReferralConfig,loadReferralWithdrawals,approveWithdrawal,rejectWithdrawal,loadReferralStats,
-      expandedGroups,isMobile,mobileSubmenu,openMobileSubmenu,handleGroupClick,
+      expandedGroups,isMobile,mobileSidebarOpen,mobileSubmenu,openMobileSubmenu,handleGroupClick,
        paymentOrders,paymentOrdersFilter,paymentOrdersSort,paymentOrdersPage,paymentOrdersPageSize,paymentOrdersTotal,paymentOrdersTotalPages,paymentOrdersSum,
        loadPaymentOrders,togglePaymentSort,paymentOrdersSearch,paymentOrdersPrev,paymentOrdersNext
     };
