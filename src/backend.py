@@ -3015,7 +3015,7 @@ class Handler(BaseHTTPRequestHandler):
             result = db.list_payment_orders_admin(
                 username=qs.get("username", [""])[0],
                 status=qs.get("status", [""])[0],
-                plan_type=qs.get("plan_type", [""])[0],
+                plan_name=qs.get("plan_name", [""])[0],
                 date_from=qs.get("date_from", [""])[0],
                 date_to=qs.get("date_to", [""])[0],
                 sort=qs.get("sort", ["created_at"])[0],

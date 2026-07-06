@@ -488,7 +488,9 @@ body{
   .form-row{grid-template-columns:1fr}
   /* 手机端二级菜单抽屉 */
   .mobile-submenu-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:flex-end;backdrop-filter:blur(2px)}
-  .mobile-submenu{width:100%;background:rgba(17,24,39,.98);border-radius:20px 20px 0 0;border-top:1px solid rgba(96,165,250,.18);padding:16px 16px 28px;animation:slideUp .22s ease}
+  .mobile-submenu{width:100%;max-height:70vh;background:rgba(17,24,39,.98);border-radius:20px 20px 0 0;border-top:1px solid rgba(96,165,250,.18);padding:16px 16px calc(28px + env(safe-area-inset-bottom));animation:slideUp .22s ease;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.25) transparent}
+  .mobile-submenu::-webkit-scrollbar{width:4px}
+  .mobile-submenu::-webkit-scrollbar-thumb{background:rgba(148,163,184,.25);border-radius:10px}
   @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
   .mobile-submenu-header{display:flex;align-items:center;gap:10px;padding-bottom:12px;border-bottom:1px solid var(--border);margin-bottom:8px}
   .mobile-submenu-close{margin-left:auto;width:32px;height:32px;border-radius:50%;border:none;background:var(--bg3);color:var(--text2);font-size:14px}
@@ -2049,13 +2051,11 @@ body{
                   <option value="cancelled">已取消</option>
                 </select>
               </div>
-              <div class="form-group" style="margin:0;min-width:100px">
-                <label style="font-size:11px;margin-bottom:4px">套餐类型</label>
-                <select v-model="paymentOrdersFilter.plan_type" class="form-control" style="padding:6px 10px;font-size:13px">
+              <div class="form-group" style="margin:0;min-width:120px">
+                <label style="font-size:11px;margin-bottom:4px">套餐名称</label>
+                <select v-model="paymentOrdersFilter.plan_name" class="form-control" style="padding:6px 10px;font-size:13px">
                   <option value="">全部</option>
-                  <option value="points">点数</option>
-                  <option value="days">天数</option>
-                  <option value="combo">套餐</option>
+                  <option v-for="p in paymentPlans" :key="p.id" :value="p.name">{{p.name}}</option>
                 </select>
               </div>
               <div class="form-group" style="margin:0">
@@ -2067,7 +2067,7 @@ body{
                 <input type="date" v-model="paymentOrdersFilter.date_to" class="form-control" style="padding:6px 10px;font-size:13px">
               </div>
               <button class="btn btn-primary" @click="paymentOrdersSearch()">查询</button>
-              <button class="btn btn-secondary" @click="paymentOrdersFilter={username:'',status:'',plan_type:'',date_from:'',date_to:''};paymentOrdersSearch()">重置</button>
+              <button class="btn btn-secondary" @click="paymentOrdersFilter={username:'',status:'',plan_name:'',date_from:'',date_to:''};paymentOrdersSearch()">重置</button>
             </div>
           </div>
           <!-- 合计栏 -->
@@ -3171,7 +3171,7 @@ createApp({
     window.addEventListener('resize',()=>{isMobile.value=window.innerWidth<=768;});
     // 支付明细
     const paymentOrders=ref([]);
-    const paymentOrdersFilter=ref({username:'',status:'',plan_type:'',date_from:'',date_to:''});
+    const paymentOrdersFilter=ref({username:'',status:'',plan_name:'',date_from:'',date_to:''});
     const paymentOrdersSort=ref({field:'created_at',order:'desc'});
     const paymentOrdersPage=ref(1);
     const paymentOrdersPageSize=ref(20);
@@ -3243,7 +3243,7 @@ createApp({
       const params=new URLSearchParams({
         username:f.username||'',
         status:f.status||'',
-        plan_type:f.plan_type||'',
+        plan_name:f.plan_name||'',
         date_from:f.date_from||'',
         date_to:f.date_to||'',
         sort:s.field||'created_at',
@@ -3262,6 +3262,14 @@ createApp({
           paymentOrdersSum.value={sum_amount:data.sum_amount||0,sum_count:data.sum_count||0};
         }
       }catch(_){}
+      // 加载套餐列表用于筛选项
+      if(!paymentPlans.value.length){
+        try{
+          const res2=await safeFetch('/admin/payment-config',{headers:{'Authorization':token.value}});
+          const d2=await res2.json();
+          if(d2.code===200)paymentPlans.value=d2.plans||[];
+        }catch(_){}
+      }
     }
     function togglePaymentSort(field){
       if(paymentOrdersSort.value.field===field){

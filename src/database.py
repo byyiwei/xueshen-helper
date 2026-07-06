@@ -1089,7 +1089,7 @@ class Database:
             return self.fetchall(f"SELECT * FROM payment_orders WHERE username = {ph} ORDER BY id DESC LIMIT {int(limit)}", (username,))
         return self.fetchall(f"SELECT * FROM payment_orders ORDER BY id DESC LIMIT {int(limit)}")
 
-    def list_payment_orders_admin(self, username="", status="", plan_type="", date_from="", date_to="", sort="created_at", order="desc", page=1, page_size=20):
+    def list_payment_orders_admin(self, username="", status="", plan_name="", date_from="", date_to="", sort="created_at", order="desc", page=1, page_size=20):
         """管理员支付明细查询，支持筛选/排序/分页"""
         ph = _ph()
         where = []
@@ -1100,9 +1100,9 @@ class Database:
         if status:
             where.append(f"status = {ph}")
             params.append(status)
-        if plan_type:
-            where.append(f"plan_type = {ph}")
-            params.append(plan_type)
+        if plan_name:
+            where.append(f"plan_name = {ph}")
+            params.append(plan_name)
         if date_from:
             where.append(f"DATE(created_at) >= {ph}")
             params.append(date_from)
