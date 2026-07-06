@@ -3488,7 +3488,7 @@ createApp({
         const d=await res.json();
         if(d.code===200){
           feedbackDetail.value=d.feedback;
-          feedbackReplyText.value=d.feedback.admin_reply||'';
+          feedbackReplyText.value='';
         }
       }catch(_){}
     }
