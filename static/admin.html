@@ -100,7 +100,7 @@ body{
 .avatar-row{display:flex;gap:16px;align-items:center;margin-bottom:16px}
 
 /* Main content */
-.main-content{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.main-content{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative}
 .main-header{
   height:56px;background:var(--bg2);border-bottom:1px solid var(--border);
   display:flex;align-items:center;justify-content:space-between;padding:0 96px 0 24px;
@@ -476,7 +476,9 @@ body{
   .sidebar-menu::-webkit-scrollbar{width:4px}
   .sidebar-menu::-webkit-scrollbar-thumb{background:rgba(148,163,184,.25);border-radius:10px}
   .sidebar-menu .menu-item:not(.dock-item){display:flex}
-  .menu-group-items{display:block !important;max-height:none !important}
+  .menu-group-items{display:block}
+  .menu-group:not(.expanded) .menu-group-items{max-height:0;overflow:hidden}
+  .menu-group.expanded .menu-group-items{max-height:500px;overflow:hidden}
   .sidebar-menu .menu-group-header{display:flex}
   .sidebar-menu .menu-group-header.dock-item{display:flex}
   .menu-item.dock-item{display:flex}
@@ -504,9 +506,9 @@ body{
   .filter-tab-group{width:100%;overflow-x:auto;flex-wrap:nowrap}
   .filter-tab{flex:0 0 auto;white-space:nowrap}
 }
-.mobile-menu-toggle{display:none;position:fixed;left:10px;top:10px;z-index:110;width:36px;height:36px;border-radius:10px;border:1px solid rgba(96,165,250,.18);background:rgba(17,24,39,.95);color:var(--text);align-items:center;justify-content:center;font-size:18px;cursor:pointer}
+.mobile-menu-toggle{display:none;position:absolute;left:12px;top:8px;z-index:85;width:36px;height:36px;border-radius:10px;border:1px solid rgba(96,165,250,.18);background:rgba(17,24,39,.95);color:var(--text);align-items:center;justify-content:center;font-size:18px;cursor:pointer}
 .mobile-menu-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:90}
-@media(max-width:768px){.mobile-menu-overlay.show{display:block}}
+@media(max-width:768px){.mobile-menu-overlay.show{display:block}.mobile-menu-toggle{display:flex !important}}
 </style>
 </head>
 <body>
@@ -564,8 +566,6 @@ body{
 
   <!-- ==================== MAIN ==================== -->
   <div v-else class="app-layout">
-    <!-- 手机端汉堡菜单按钮 -->
-    <button class="mobile-menu-toggle" @click="mobileSidebarOpen=!mobileSidebarOpen">☰</button>
     <div class="mobile-menu-overlay" :class="{show:mobileSidebarOpen}" @click="mobileSidebarOpen=false"></div>
     <!-- Sidebar -->
     <aside class="sidebar" :class="{open:mobileSidebarOpen}">
@@ -667,6 +667,7 @@ body{
 
     <!-- Main Content -->
     <main class="main-content">
+      <button class="mobile-menu-toggle" @click="mobileSidebarOpen=!mobileSidebarOpen">☰</button>
       <div class="top-account">
         <div class="top-avatar"><img v-if="accountConfig.avatar_data" :src="accountConfig.avatar_data"><span v-else>◌</span></div>
         <div class="top-menu">
