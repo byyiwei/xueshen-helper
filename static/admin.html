@@ -2412,6 +2412,7 @@ createApp({
       const old=token.value;
       if(old){try{await fetch('/admin/logout',{method:'POST',headers:{'Authorization':old}});}catch(e){}}
       localStorage.removeItem('ne21_admin_token');token.value='';page.value='login';loginMode.value='login';
+      resetAdminSlider();
     }
 
     // Load data
