@@ -1302,8 +1302,11 @@ def do_openai_compatible_chat(messages, model, api_key, base_url):
                     except:
                         pass
                 return None, f"__429__:{cooldown}:{err_msg}", 0
-            # 400 错误：尝试降级重试
+            # 400 错误：内容审核类错误不重试，其他错误降级重试
             if e.code == 400 and attempt < 2:
+                # DeepSeek 内容审核错误，重试也没用，直接返回
+                if "Output data may contain" in err_msg or "content_filter" in err_msg.lower():
+                    return None, f"内容审核拦截(模型:{model}): AI 生成的回复可能包含敏感内容，请手动编辑回复", 0
                 continue
             return None, f"API HTTP {e.code} (模型:{model}): {err_msg}", 0
         except Exception as e:
@@ -4242,6 +4245,15 @@ class Handler(BaseHTTPRequestHandler):
                     {"role": "user", "content": user_prompt}
                 ]
                 answer, err, _model, _provider = call_agent_llm(messages)
+                # 内容审核拦截时，用简化 prompt 重试一次
+                if not answer and err and "内容审核拦截" in err:
+                    simple_prompt = f"请将以下客服回复内容润色得更加专业、礼貌、清晰，只输出润色后的内容：\n\n{raw_text}"
+                    answer, err2, _model, _provider = call_agent_llm([
+                        {"role": "user", "content": simple_prompt}
+                    ])
+                    if not answer:
+                        self._send_json(500, {"code": 500, "msg": "AI 内容审核拦截，请手动编辑回复内容"})
+                        return
                 if answer:
                     self._send_json(200, {"code": 200, "text": answer.strip()})
                 else:
