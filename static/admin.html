@@ -1443,6 +1443,7 @@ body{
                   <option value="">全部状态</option>
                   <option value="success">成功</option>
                   <option value="error">失败</option>
+                  <option value="insufficient_quota">余额不足</option>
                 </select>
                 <input v-model="aiLogFilter.date_from" placeholder="开始时间 2026-06-26 00:00:00">
                 <input v-model="aiLogFilter.date_to" placeholder="结束时间 2026-06-26 23:59:59">
@@ -1464,6 +1465,7 @@ body{
                   <thead>
                     <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
                       <th style="text-align:left;padding:10px 8px">时间</th>
+                      <th style="text-align:left;padding:10px 8px">用户</th>
                       <th style="text-align:left;padding:10px 8px">状态</th>
                       <th style="text-align:left;padding:10px 8px">模型</th>
                       <th style="text-align:left;padding:10px 8px">耗时</th>
@@ -1477,8 +1479,9 @@ body{
                     <template v-for="log in aiLogs" :key="log.id">
                       <tr style="border-bottom:1px solid var(--border);color:var(--text)">
                         <td style="padding:10px 8px;color:var(--text3);white-space:nowrap">{{log.created_at}}</td>
+                        <td style="padding:10px 8px;white-space:nowrap;color:var(--accent2)">{{log.username||'-'}}</td>
                         <td style="padding:10px 8px;white-space:nowrap">
-                          <span :style="{color:log.status==='success'?'var(--success)':'var(--danger)',fontWeight:'600'}">{{statusText(log.status)}}</span>
+                          <span :style="{color:log.status==='success'?'var(--success)':log.status==='insufficient_quota'?'var(--warning)':'var(--danger)',fontWeight:'600'}">{{statusText(log.status)}}</span>
                         </td>
                         <td style="padding:10px 8px;color:var(--accent2);max-width:180px;word-break:break-all">{{log.model||'-'}}</td>
                         <td style="padding:10px 8px;white-space:nowrap">{{formatDuration(log.duration_ms)}}</td>
@@ -1488,8 +1491,8 @@ body{
                         <td style="padding:10px 8px"><button class="btn btn-secondary btn-sm" @click="toggleLog(log.id)">{{expandedLogs[log.id]?'收起':'详情'}}</button></td>
                       </tr>
                       <tr v-if="expandedLogs[log.id]">
-                        <td colspan="8" style="padding:0 8px 12px">
-                          <div class="log-detail">题目：{{log.question||'-'}}&#10;&#10;答案：{{log.answer||'-'}}&#10;&#10;错误：{{log.error||'-'}}</div>
+                        <td colspan="9" style="padding:0 8px 12px">
+                          <div class="log-detail">用户：{{log.username||'-'}}&#10;题目：{{log.question||'-'}}&#10;&#10;答案：{{log.answer||'-'}}&#10;&#10;错误：{{log.error||'-'}}</div>
                         </td>
                       </tr>
                     </template>
@@ -3189,7 +3192,7 @@ createApp({
       setProviders(oldProviders);
     }
     function protocolName(p){const map={openai:'OpenAI 兼容',claude:'Claude',gemini:'Gemini'};return map[p]||p;}
-    function statusText(s){return s==='success'?'成功':'失败';}
+    function statusText(s){return s==='success'?'成功':s==='insufficient_quota'?'余额不足':'失败';}
     function formatDuration(ms){
       ms=Number(ms||0);
       return ms>=1000?(ms/1000).toFixed(1)+'s':ms+'ms';

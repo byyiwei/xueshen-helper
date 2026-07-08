@@ -4424,6 +4424,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 if not ent or (not ent.get("active_member") and int(ent.get("points_balance") or 0) <= 0):
                     err = "题数余额不足，请到用户中心购买点数或包月套餐"
+                    status = "insufficient_quota"
                     self._send_json(402, {"code": 402, "msg": err})
                     return
                 if model_mode == "custom":

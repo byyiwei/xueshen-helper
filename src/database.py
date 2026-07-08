@@ -1595,7 +1595,7 @@ class Database:
         page = max(1, page)
         offset = (page - 1) * limit
         where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to)
-        sql = "SELECT id, provider_key, model, question, answer, status, error, duration_ms, client_ip, created_at FROM ai_call_logs"
+        sql = "SELECT id, provider_key, username, model, question, answer, status, error, duration_ms, client_ip, created_at FROM ai_call_logs"
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY id DESC"
