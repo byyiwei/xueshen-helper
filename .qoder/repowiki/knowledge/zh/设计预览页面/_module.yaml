@@ -1,8 +1,0 @@
-schema_version: 1
-module_path: design_preview
-title: 设计预览页面
-scope:
-    - design-preview/
-source_files: []
-depends_on: []
-related_to: []

@@ -1,4 +1,4 @@
-const { medicines: medicineList } = require('./medicines.js')
+const { getAPI } = require('../../../../utils/api.js')
 
 Page({
   data: {
@@ -6,23 +6,17 @@ Page({
     totalNavHeight: 120,
     keyword: '',
     activeCategory: 'all',
-    selectedMedicineId: '',
-    calcValue: '',
-    calcResult: null,
-
-    categories: [
-      { id: 'all', name: '全部' },
-      { id: 'antibiotic', name: '抗生素' },
-      { id: 'disinfectant', name: '消毒杀菌' },
-      { id: 'antiparasite', name: '驱虫药' },
-      { id: 'vitamin', name: '维生素' },
-      { id: 'fungus', name: '真菌处理' },
-      { id: 'other', name: '其他' }
-    ],
-
-    medicines: medicineList,
-
-    filteredMedicines: []
+    loading: false,
+    loadError: false,
+    medicines: [],
+    categories: [{ id: 'all', name: '全部' }],
+    filteredMedicines: [],
+    showReportModal: false,
+    reportSubmitting: false,
+    reportForm: {
+      medicineName: '',
+      email: ''
+    }
   },
 
   onLoad() {
@@ -33,25 +27,49 @@ Page({
     const rpxRatio = 750 / sysInfo.windowWidth
     const totalNavHeight = Math.round(finalStatusBarHeight * rpxRatio) + 88 + 24
 
-    this.setData({
-      statusBarHeight: finalStatusBarHeight,
-      totalNavHeight,
-      filteredMedicines: this.data.medicines
-    })
+    this.setData({ statusBarHeight: finalStatusBarHeight, totalNavHeight })
+    this.loadMedicines()
+  },
+
+  async loadMedicines() {
+    this.setData({ loading: true, loadError: false })
+    try {
+      const api = getAPI()
+      const res = await api.getMedicines()
+      if (res.success && Array.isArray(res.data)) {
+        const cats = [{ id: 'all', name: '全部' }]
+        const seen = new Set()
+        for (const m of res.data) {
+          if (m.category && !seen.has(m.category)) {
+            seen.add(m.category)
+            cats.push({ id: m.category, name: m.category })
+          }
+        }
+        this.setData({
+          medicines: res.data, filteredMedicines: res.data,
+          categories: cats, loading: false
+        })
+        return
+      }
+    } catch (_) {}
+    this.setData({ loading: false, loadError: true })
+  },
+
+  retryLoad() {
+    this.loadMedicines()
   },
 
   goBack() {
     wx.navigateBack()
   },
 
-  goToCalculator() {
-    wx.navigateTo({ url: '/subpkg-tools/pages/tools/medicine/calculator' })
+  goToCalculator(e) {
+    const id = e ? e.currentTarget.dataset.id : ''
+    wx.navigateTo({ url: `/subpkg-tools/pages/tools/medicine/calculator${id ? '?medicineId=' + id : ''}` })
   },
 
   onSearchInput(e) {
-    this.setData({ keyword: e.detail.value || '' }, () => {
-      this.filterMedicines()
-    })
+    this.setData({ keyword: e.detail.value || '' }, () => this.filterMedicines())
   },
 
   onSearchConfirm() {
@@ -59,16 +77,12 @@ Page({
   },
 
   clearSearch() {
-    this.setData({ keyword: '' }, () => {
-      this.filterMedicines()
-    })
+    this.setData({ keyword: '' }, () => this.filterMedicines())
   },
 
   switchCategory(e) {
     const categoryId = e.currentTarget.dataset.id
-    this.setData({ activeCategory: categoryId }, () => {
-      this.filterMedicines()
-    })
+    this.setData({ activeCategory: categoryId }, () => this.filterMedicines())
   },
 
   filterMedicines() {
@@ -76,64 +90,65 @@ Page({
     const lowerKeyword = keyword.trim().toLowerCase()
 
     const filtered = medicines.filter(item => {
-      const matchCategory = activeCategory === 'all' || item.categoryId === activeCategory
+      const matchCategory = activeCategory === 'all' || item.category === activeCategory
       const matchKeyword = !lowerKeyword ||
         item.name.toLowerCase().includes(lowerKeyword) ||
-        item.indications.toLowerCase().includes(lowerKeyword) ||
+        (item.indications || '').toLowerCase().includes(lowerKeyword) ||
         item.category.toLowerCase().includes(lowerKeyword)
       return matchCategory && matchKeyword
     })
-
     this.setData({ filteredMedicines: filtered })
   },
 
-  selectMedicine(e) {
-    const id = e.currentTarget.dataset.id
-    const selected = id === this.data.selectedMedicineId ? '' : id
+  openReportModal() {
     this.setData({
-      selectedMedicineId: selected,
-      calcValue: '',
-      calcResult: null
+      showReportModal: true,
+      reportForm: {
+        medicineName: this.data.keyword || '',
+        email: ''
+      }
     })
   },
 
-  onCalcInput(e) {
-    this.setData({ calcValue: e.detail.value || '' })
+  closeReportModal() {
+    this.setData({ showReportModal: false })
   },
 
-  calcByWater() {
-    const medicine = this.getSelectedMedicine()
-    if (!medicine || !medicine.waterDose) return
+  stopProp() {},
 
-    const volume = parseFloat(this.data.calcValue)
-    if (!volume || volume <= 0) {
-      wx.showToast({ title: '请输入有效水体体积', icon: 'none' })
+  onReportNameInput(e) {
+    this.setData({ 'reportForm.medicineName': e.detail.value })
+  },
+
+  onReportEmailInput(e) {
+    this.setData({ 'reportForm.email': e.detail.value })
+  },
+
+  async submitReport() {
+    const { medicineName, email } = this.data.reportForm
+    if (!medicineName.trim()) {
+      wx.showToast({ title: '请填写药品名称', icon: 'none' })
+      return
+    }
+    if (!email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      wx.showToast({ title: '请填写有效邮箱', icon: 'none' })
       return
     }
 
-    const dose = medicine.waterDose.value
-    const totalAmount = volume * dose
-    this.setData({ calcResult: { mode: 'water', volume, dose, totalAmount, unit: medicine.waterDose.unit } })
-  },
-
-  calcByWeight() {
-    const medicine = this.getSelectedMedicine()
-    if (!medicine || !medicine.weightDose) return
-
-    const weight = parseFloat(this.data.calcValue)
-    if (!weight || weight <= 0) {
-      wx.showToast({ title: '请输入有效体重', icon: 'none' })
-      return
+    this.setData({ reportSubmitting: true })
+    try {
+      const api = getAPI()
+      const res = await api.reportMedicine(medicineName.trim(), email.trim())
+      if (res.success) {
+        wx.showToast({ title: '上报成功', icon: 'success' })
+        this.setData({ showReportModal: false, reportForm: { medicineName: '', email: '' } })
+      } else {
+        wx.showToast({ title: res.message || '上报失败', icon: 'none' })
+      }
+    } catch (_) {
+      wx.showToast({ title: '网络错误，请重试', icon: 'none' })
+    } finally {
+      this.setData({ reportSubmitting: false })
     }
-
-    const dose = medicine.weightDose.value
-    const totalAmount = weight * dose
-    this.setData({ calcResult: { mode: 'weight', weight, dose, totalAmount, unit: medicine.weightDose.unit } })
-  },
-
-  getSelectedMedicine() {
-    return this.data.medicines.find(item => item.id === this.data.selectedMedicineId)
-  },
-
-  noop() {}
+  }
 })

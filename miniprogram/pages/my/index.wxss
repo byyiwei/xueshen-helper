@@ -203,6 +203,10 @@
   gap: 14rpx;
 }
 
+.menu-grid-3 .menu-item {
+  width: calc((100% - 28rpx) / 3);
+}
+
 .menu-item {
   width: calc(25% - 11rpx);
   min-height: 128rpx;

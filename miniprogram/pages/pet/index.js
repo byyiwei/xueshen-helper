@@ -305,7 +305,7 @@ Page({
         this.setData({
           pets: newPets || [],
           cloudAvailable: true,
-          hasMore: result.data.hasMore !== undefined ? result.data.hasMore : petList.length === this.data.pageSize,
+          hasMore: (result.data.hasMore !== undefined ? result.data.hasMore : petList.length === this.data.pageSize) && petList.length >= this.data.pageSize,
           total: result.data.total || (newPets || []).length,
           pageNum: reset ? 2 : this.data.pageNum + 1,
           loading: false,
@@ -325,7 +325,7 @@ Page({
         console.log('[loadPets] 丢弃过期请求错误')
         return
       }
-      console.error('云函数调用失败，使用本地数据:', error)
+      console.error('加载数据失败，使用本地缓存:', error)
       if (reset) {
         this.loadLocalPets()
       }
@@ -360,7 +360,7 @@ Page({
         }
       }
 
-      this.setData({ pets: pets || [], filteredPets: pets || [], cloudAvailable: false })
+      this.setData({ pets: pets || [], filteredPets: pets || [], cloudAvailable: false, hasMore: false, total: (pets || []).length })
       this._hideSkeleton()
     } catch (error) {
       console.error('加载宠物列表失败:', error)

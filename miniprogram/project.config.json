@@ -5,6 +5,7 @@
     "minified": true,
     "uglifyFileName": false,
     "enhance": true,
+    "urlCheck": true,
     "packNpmRelationList": [],
     "babelSetting": {
       "ignore": [],
@@ -12,7 +13,8 @@
       "outputPath": ""
     },
     "useCompilerPlugins": false,
-    "minifyWXML": true
+    "minifyWXML": true,
+    "minifyWXSS": true
   },
   "compileType": "miniprogram",
   "simulatorPluginLibVersion": {},
@@ -21,6 +23,9 @@
       { "type": "file", "value": "package-lock.json" },
       { "type": "file", "value": "package.json" },
       { "type": "file", "value": "sitemap.json" },
+      { "type": "file", "value": "project.private.config.json" },
+      { "type": "file", "value": "subpkg-tools/package.json" },
+      { "type": "file", "value": "subpkg-tools/package-lock.json" },
       { "type": "folder", "value": "node_modules/threejs-miniprogram/LICENSE" },
       { "type": "folder", "value": "node_modules/threejs-miniprogram/README.md" },
       { "type": "folder", "value": "node_modules/threejs-miniprogram/package.json" },

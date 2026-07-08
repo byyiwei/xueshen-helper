@@ -1,0 +1,153 @@
+/* ====== 页面容器 ====== */
+.page-quick {
+  min-height: 100vh;
+  background: #FAF8F5;
+}
+
+/* ====== 导航栏 ====== */
+.nav-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  background: rgba(255,255,255,0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24rpx 20rpx;
+  border-bottom: 1rpx solid rgba(0,0,0,0.06);
+}
+
+.nav-back {
+  width: 60rpx;
+  height: 60rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-back-icon {
+  font-size: 48rpx;
+  color: #1A1A1A;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.nav-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #1A1A1A;
+  flex: 1;
+  text-align: center;
+}
+
+.nav-placeholder { width: 60rpx; }
+
+/* ====== 主体 ====== */
+.body {
+  padding: 28rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ====== 打卡卡片 ====== */
+.check-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12rpx;
+  padding: 48rpx 0;
+}
+
+.check-icon { font-size: 80rpx; }
+
+.check-label {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #1A1A1A;
+}
+
+.check-date {
+  font-size: 24rpx;
+  color: #999;
+}
+
+/* ====== 选项 ====== */
+.option-title {
+  font-size: 26rpx;
+  color: #999;
+  margin-bottom: 20rpx;
+  align-self: flex-start;
+}
+
+.option-list {
+  display: flex;
+  gap: 16rpx;
+  width: 100%;
+  margin-bottom: 40rpx;
+}
+
+.option-item {
+  flex: 1;
+  padding: 28rpx 0;
+  text-align: center;
+  background: #fff;
+  border-radius: 20rpx;
+  font-size: 30rpx;
+  color: #666;
+  border: 3rpx solid transparent;
+  transition: all 0.2s;
+}
+
+.option-item.active {
+  border-color: #E8A400;
+  color: #E8A400;
+  background: #FFF8E7;
+  font-weight: 600;
+}
+
+/* ====== 表单 ====== */
+.form-group {
+  width: 100%;
+  margin-bottom: 24rpx;
+}
+
+.form-label {
+  font-size: 26rpx;
+  color: #999;
+  display: block;
+  margin-bottom: 12rpx;
+}
+
+.form-input {
+  width: 100%;
+  height: 88rpx;
+  background: #fff;
+  border-radius: 16rpx;
+  padding: 0 24rpx;
+  font-size: 30rpx;
+  box-sizing: border-box;
+}
+
+/* ====== 提交按钮 ====== */
+.submit-btn {
+  width: 100%;
+  margin-top: 40rpx;
+  padding: 28rpx 0;
+  text-align: center;
+  background: #E8A400;
+  color: #fff;
+  border-radius: 48rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.submit-btn.disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+/* subpkg-tanks/pages/tanks/quick-check.wxss */

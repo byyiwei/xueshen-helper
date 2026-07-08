@@ -30,6 +30,13 @@
           <view class="toe toe-4"></view>
         </view>
 
+        <!-- 龟缸图标：鱼缸 -->
+        <view wx:elif="{{index === 2}}" class="icon-tank">
+          <view class="tank-outline">
+            <view class="tank-water"></view>
+          </view>
+        </view>
+
         <!-- 我的图标：圆润人形 -->
         <view wx:else class="icon-my">
           <view class="my-head"></view>

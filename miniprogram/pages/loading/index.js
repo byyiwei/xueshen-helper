@@ -1,6 +1,8 @@
 const { getAPI } = require('../../utils/api')
 const { convertPhotoIdsToUrls } = require('../../utils/image')
 const { mergeCategories } = require('../../utils/category')
+// 注意：convertPhotoIdsToUrls 现在是同步函数，不再需要 await
+// 照片 URLs 由 API 层 (api.js) 在返回前已转换为完整 HTTP URL
 const API = getAPI()
 
 Page({
@@ -17,7 +19,7 @@ Page({
 
     // 步骤1：连接服务
     this.setData({ loadingText: '正在连接服务...' })
-    try { await this.initCloud() } catch (e) {}
+    try { await this.initServer() } catch (e) {}
 
     // 步骤2：获取身份
     this.setData({ loadingText: '正在获取身份...' })
@@ -34,6 +36,10 @@ Page({
     // 步骤5：加载个人中心
     this.setData({ loadingText: '正在加载个人中心...' })
     try { await this.loadMyData(app) } catch (e) {}
+
+    // 步骤6：加载龟缸数据
+    this.setData({ loadingText: '正在加载龟缸数据...' })
+    try { await this.loadTankData(app) } catch (e) {}
 
     // 确保预加载标记完整（即使某步失败，Tab 页也能识别预加载已完成）
     this._finalizePreload(app)
@@ -70,16 +76,19 @@ Page({
         recordCount: records.length
       }
     }
+    // 龟缸数据默认值
+    if (!app.globalData.preloadedTanks) {
+      app.globalData.preloadedTanks = []
+    }
+    if (!app.globalData.preloadedTankStats) {
+      app.globalData.preloadedTankStats = { count: 0, totalMale: 0, totalFemale: 0, tanks: [] }
+    }
     app.globalData.dataPreloaded = true
   },
 
-  // 初始化云环境
-  initCloud() {
+  // 初始化服务器连接（替代原云开发初始化）
+  initServer() {
     return new Promise((resolve) => {
-      if (wx.cloud) {
-        wx.cloud.init({ env: 'cloud1-d0g853l9d7017ea3b' })
-      }
-      // 给云初始化足够的完成时间（app.js 中已在 onLaunch 时调用过一次）
       setTimeout(resolve, 500)
     })
   },
@@ -96,13 +105,10 @@ Page({
     }
 
     try {
-      const res = await wx.cloud.callFunction({
-        name: 'login',
-        data: { action: '', data: {} }
-      })
-      if (res.result && res.result.success && res.result.data && res.result.data.openid) {
-        openid = res.result.data.openid
-        const user = res.result.data.user
+      const loginResult = await API.login()
+      if (loginResult && loginResult.success && loginResult.data && loginResult.data.openid) {
+        openid = loginResult.data.openid
+        const user = loginResult.data.user
         try { wx.setStorageSync('openid', openid) } catch (e) {}
         app.globalData.isLoggedIn = true
         app.globalData.openid = openid
@@ -258,28 +264,35 @@ Page({
       if (cachedQrcode) {
         app.globalData.preloadedQrcode = cachedQrcode
       } else {
-        const result = await wx.cloud.callFunction({
-          name: 'qrcode',
-          data: {
-            action: 'generate',
-            data: { scene: 'userId=' + openid, page: 'subpkg-report/pages/public/index' }
-          }
-        }).catch(err => {
-          console.error('云函数 qrcode 调用失败:', err)
-          return null
+        const app = getApp()
+        const config = app?.globalData?.systemConfig || {}
+        const baseUrl = config.apiUrl || config.imageServerUrl || 'https://pets.openget.cn'
+        const token = wx.getStorageSync('token') || ''
+        const result = await new Promise((resolve) => {
+          wx.request({
+            url: baseUrl + '/api/qrcode/generate',
+            method: 'POST',
+            header: { 'Authorization': 'Bearer ' + token },
+            data: { scene: 'userId=' + openid, page: 'subpkg-report/pages/public/index' },
+            success: (res) => resolve(res),
+            fail: (err) => resolve(err)
+          })
         })
-        if (result && result.result && result.result.success && result.result.data) {
-          const fileID = result.result.data.fileID || result.result.data
-          if (fileID && typeof fileID === 'string' && fileID.startsWith('cloud://')) {
-            const tempFileRes = await wx.cloud.downloadFile({ fileID }).catch(err => {
-              console.error('下载二维码图片失败:', err)
-              return null
+        if (result && result.data && result.data.success && result.data.data) {
+          const qrcodePath = result.data.data
+          const qrcodeUrl = typeof qrcodePath === 'string' ? (qrcodePath.startsWith('http') ? qrcodePath : baseUrl + '/' + qrcodePath.replace(/^\/+/, '')) : ''
+          if (qrcodeUrl) {
+            wx.downloadFile({
+              url: qrcodeUrl,
+              success: (downloadRes) => {
+                if (downloadRes.tempFilePath) {
+                  app.globalData.preloadedQrcode = downloadRes.tempFilePath
+                  wx.setStorageSync('qrcodeImage', downloadRes.tempFilePath)
+                  wx.setStorageSync('qrcodeImageVersion', 2)
+                }
+              },
+              fail: (err) => console.error('下载二维码图片失败:', err)
             })
-            if (tempFileRes && tempFileRes.tempFilePath) {
-              app.globalData.preloadedQrcode = tempFileRes.tempFilePath
-              wx.setStorageSync('qrcodeImage', tempFileRes.tempFilePath)
-              wx.setStorageSync('qrcodeImageVersion', 2)
-            }
           }
         }
       }
@@ -293,6 +306,23 @@ Page({
       app.globalData.preloadedMyStats = {
         petCount: pets.length,
         recordCount: records.length
+      }
+    } catch (e) {}
+  },
+
+  // 加载龟缸数据
+  async loadTankData(app) {
+    if (!app.globalData.openid) return
+    try {
+      const tankRes = await API.request('GET', '/api/tanks')
+      if (tankRes && tankRes.success && tankRes.data) {
+        app.globalData.preloadedTanks = tankRes.data
+      }
+    } catch (e) {}
+    try {
+      const statsRes = await API.request('GET', '/api/tanks/stats')
+      if (statsRes && statsRes.success && statsRes.data) {
+        app.globalData.preloadedTankStats = statsRes.data
       }
     } catch (e) {}
   },

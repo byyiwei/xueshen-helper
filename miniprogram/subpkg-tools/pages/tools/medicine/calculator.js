@@ -1,247 +1,183 @@
-const { medicines: medicineList } = require('./medicines.js')
-
-const routeDefs = [
-  { id: 'oral', name: '口服' },
-  { id: 'bath', name: '药浴' },
-  { id: 'inject', name: '注射' }
-]
-
-const formDefs = {
-  tablet: { id: 'tablet', name: '片剂', unit: 'mg/片', specLabel: '含量', specPlaceholder: '阿莫西林含量', inputType: 'digit' },
-  powder: { id: 'powder', name: '粉剂', unit: '%', specLabel: '浓度', specPlaceholder: '有效成分浓度', inputType: 'digit' },
-  dry: { id: 'dry', name: '干粉', unit: 'mg/瓶', specLabel: '含量', specPlaceholder: '每瓶含量', inputType: 'digit' },
-  injection: { id: 'injection', name: '注射液', unit: 'mg/ml', specLabel: '浓度', specPlaceholder: '注射液浓度', inputType: 'digit' }
-}
-
-function buildFormRows(medicine, selectedRoute, selectedForm) {
-  return routeDefs.map(route => {
-    const supportedForms = medicine && medicine.supportedForms[route.id] ? medicine.supportedForms[route.id] : []
-    const hasSupported = supportedForms.length > 0
-    return {
-      route,
-      active: route.id === selectedRoute,
-      disabled: !hasSupported,
-      forms: Object.keys(formDefs).map(formId => {
-        const form = formDefs[formId]
-        const supported = supportedForms.includes(formId)
-        return {
-          ...form,
-          supported,
-          active: route.id === selectedRoute && formId === selectedForm
-        }
-      })
-    }
-  })
-}
+const { getAPI } = require('../../../../utils/api.js')
 
 Page({
   data: {
     statusBarHeight: 0,
-    totalNavHeight: 120,
+    loading: false,
+    loadError: false,
+    errorMsg: '',
 
-    medicines: medicineList,
-    routeDefs,
-    formDefs,
-
-    selectedMedicineId: '',
     selectedMedicine: null,
-    selectedRoute: 'oral',
-    selectedForm: 'tablet',
-    formRows: [],
+    usageDosages: [],
 
-    specValue: '',
+    selectedRouteIdx: 0,
+    selectedRoute: null,
+
     weightValue: '',
+    weightUnit: 'g',
+
     result: null
   },
 
-  onLoad() {
+  onLoad(options) {
     const sysInfo = wx.getSystemInfoSync()
     const statusBarHeight = Math.max(sysInfo.statusBarHeight || 20, 20)
-    const safeAreaTop = sysInfo.safeArea ? (sysInfo.safeArea.top || statusBarHeight) : statusBarHeight
-    const finalStatusBarHeight = Math.max(statusBarHeight, safeAreaTop)
-    const rpxRatio = 750 / sysInfo.windowWidth
-    const totalNavHeight = Math.round(finalStatusBarHeight * rpxRatio) + 88 + 24
+    this.setData({ statusBarHeight })
+    this._medicineId = options.medicineId || ''
+    this.loadMedicines()
+  },
 
-    const defaultMedicine = medicineList.find(m => {
-      return m.supportedForms['oral'] && m.supportedForms['oral'].includes('tablet')
-    }) || medicineList[0]
+  async loadMedicines() {
+    this.setData({ loading: true, loadError: false })
+    let med = null
 
-    const defaultRoute = 'oral'
-    const defaultForm = this.getFirstSupportedForm(defaultMedicine, defaultRoute)
+    try {
+      const api = getAPI()
+      const res = await api.getMedicines()
+      if (res.success && Array.isArray(res.data)) {
+        if (res.data.length === 0) {
+          this.setData({ loading: false, loadError: true, errorMsg: '药品库为空，请先在管理后台添加药品' })
+          return
+        }
+        if (this._medicineId) {
+          const found = res.data.find(m => String(m.id) === String(this._medicineId))
+          if (found) med = this._buildMed(found)
+        } else {
+          med = this._buildMed(res.data[0])
+        }
+      }
+    } catch (_) {}
 
-    this.setData({
-      statusBarHeight: finalStatusBarHeight,
-      totalNavHeight,
-      selectedMedicineId: defaultMedicine.id,
-      selectedMedicine: defaultMedicine,
-      selectedRoute: defaultRoute,
-      selectedForm: defaultForm,
-      formRows: buildFormRows(defaultMedicine, defaultRoute, defaultForm)
-    })
+    if (med) {
+      const dosages = med.usageDosages || []
+      const first = dosages.length > 0 ? dosages[0] : null
+      this.setData({
+        selectedMedicine: med,
+        usageDosages: dosages,
+        selectedRouteIdx: 0,
+        selectedRoute: first,
+        loading: false
+      })
+    } else {
+      this.setData({ loading: false, loadError: true, errorMsg: '加载药品失败，请检查网络' })
+    }
+  },
+
+  _buildMed(found) {
+    const api = getAPI()
+    return {
+      id: found.id, name: found.name, category: found.category,
+      indications: found.indications, notes: found.notes,
+      image: found.image ? (api.getBaseUrl() + '/' + found.image) : '',
+      usageDosages: (found.usageDosages || []).map(d => ({
+        route: d.route, dose: d.dose, unit: d.unit,
+        concentration: d.concentration || 0,
+        concUnit: d.concUnit || 'mg/ml',
+        dilutionNote: d.dilutionNote || ''
+      }))
+    }
   },
 
   goBack() {
     wx.navigateBack()
   },
 
-  getSelectedMedicine() {
-    return this.data.medicines.find(item => item.id === this.data.selectedMedicineId)
-  },
-
-  getFirstSupportedForm(medicine, route) {
-    if (!medicine || !medicine.supportedForms[route] || !medicine.supportedForms[route].length) {
-      return ''
-    }
-    return medicine.supportedForms[route][0]
-  },
-
-  onPickMedicine(e) {
-    const index = parseInt(e.detail.value, 10)
-    const medicine = this.data.medicines[index]
-    if (!medicine) return
-
-    const currentRoute = this.data.selectedRoute
-    let route = currentRoute
-    let form = this.getFirstSupportedForm(medicine, route)
-
-    if (!form) {
-      for (const r of routeDefs) {
-        form = this.getFirstSupportedForm(medicine, r.id)
-        if (form) {
-          route = r.id
-          break
-        }
-      }
-    }
-
-    this.setData({
-      selectedMedicineId: medicine.id,
-      selectedMedicine: medicine,
-      selectedRoute: route,
-      selectedForm: form,
-      formRows: buildFormRows(medicine, route, form),
-      specValue: '',
-      weightValue: '',
-      result: null
-    })
+  retryLoad() {
+    this.loadMedicines()
   },
 
   selectRoute(e) {
-    const route = e.currentTarget.dataset.id
-    const medicine = this.getSelectedMedicine()
-    const form = this.getFirstSupportedForm(medicine, route)
-    if (!form) return
-
+    const idx = parseInt(e.currentTarget.dataset.idx, 10)
+    const route = this.data.usageDosages[idx]
+    if (!route) return
     this.setData({
+      selectedRouteIdx: idx,
       selectedRoute: route,
-      selectedForm: form,
-      formRows: buildFormRows(medicine, route, form),
-      specValue: '',
-      weightValue: '',
       result: null
     })
-  },
-
-  selectForm(e) {
-    const form = e.currentTarget.dataset.id
-    const medicine = this.getSelectedMedicine()
-    const route = this.data.selectedRoute
-    const supported = medicine.supportedForms[route] && medicine.supportedForms[route].includes(form)
-    if (!supported) return
-
-    this.setData({
-      selectedForm: form,
-      formRows: buildFormRows(medicine, route, form),
-      specValue: '',
-      weightValue: '',
-      result: null
-    })
-  },
-
-  onSpecInput(e) {
-    this.setData({ specValue: e.detail.value || '' })
   },
 
   onWeightInput(e) {
-    this.setData({ weightValue: e.detail.value || '' })
+    this.setData({ weightValue: e.detail.value || '', result: null })
+  },
+
+  toggleWeightUnit() {
+    this.setData({ weightUnit: this.data.weightUnit === 'g' ? 'kg' : 'g', result: null })
   },
 
   calculate() {
-    const medicine = this.getSelectedMedicine()
-    if (!medicine) {
-      wx.showToast({ title: '请选择药物', icon: 'none' })
+    const { selectedRoute, weightValue, weightUnit } = this.data
+    if (!selectedRoute) {
+      wx.showToast({ title: '请选择给药途径', icon: 'none' })
       return
     }
 
-    const { selectedRoute, selectedForm, specValue, weightValue } = this.data
-    const doseInfo = medicine.doseByRoute[selectedRoute]
-    if (!doseInfo) {
-      wx.showToast({ title: '该药物不支持此用药方式', icon: 'none' })
+    const weight = parseFloat(weightValue)
+    if (!weight || weight <= 0) {
+      wx.showToast({ title: '请输入有效体重', icon: 'none' })
       return
     }
 
-    const spec = parseFloat(specValue)
-    if (!spec || spec <= 0) {
-      wx.showToast({ title: '请输入有效的药品规格', icon: 'none' })
-      return
+    const weightKg = weightUnit === 'g' ? weight / 1000 : weight
+    const dose = parseFloat(selectedRoute.dose) || 0
+    const unit = selectedRoute.unit || 'mg/kg'
+    const effectiveDose = weightKg * dose
+    const doseUnit = unit.split('/')[0] || 'mg'
+
+    const inputDesc = weightUnit === 'g'
+      ? `体重 ${weight} g（${weightKg.toFixed(3)} kg）`
+      : `体重 ${weight} kg`
+
+    const result = {
+      medicineName: this.data.selectedMedicine ? this.data.selectedMedicine.name : '',
+      routeName: selectedRoute.route,
+      amountText: effectiveDose < 0.01 ? effectiveDose.toFixed(4) : effectiveDose.toFixed(2),
+      unit: doseUnit,
+      formula: `${weightKg.toFixed(3)} kg × ${dose} ${unit} = ${effectiveDose.toFixed(2)} ${doseUnit}`,
+      inputDesc
     }
 
-    const weightG = parseFloat(weightValue)
-    if (!weightG || weightG <= 0) {
-      wx.showToast({ title: '请输入有效的龟龟体重', icon: 'none' })
-      return
-    }
+    // 注射途径：根据浓度换算注射体积
+    if (selectedRoute.route === '注射' && selectedRoute.concentration && selectedRoute.concentration > 0) {
+      const conc = parseFloat(selectedRoute.concentration)
+      const concUnitLabel = selectedRoute.concUnit || 'mg/ml'
+      const volumeMl = effectiveDose / conc
 
-    const weightKg = weightG / 1000
-    const effectiveDose = weightKg * doseInfo.value
+      result.volumeUnit = 'ml'
+      result.concentration = conc
+      result.concFormula = `${effectiveDose.toFixed(2)} ${doseUnit} ÷ ${conc} ${concUnitLabel} = ${volumeMl.toFixed(4)} ml`
 
-    let resultAmount = 0
-    let resultUnit = ''
-    let formula = ''
-    const formInfo = formDefs[selectedForm]
+      if (volumeMl >= 0.2) {
+        // 体积够大，1ml注射器直接抽取
+        result.volumeText = volumeMl.toFixed(2)
+        result.injectAdvice = `用1ml注射器直接抽取 ${volumeMl.toFixed(2)} ml 注射`
+        result.adviceType = 'ok'
+      } else {
+        // 体积 < 0.2ml，需要稀释
+        // 取1ml原液，加整数ml生理盐水，使稀释后抽取量 >= 0.1ml
+        const origVol = 1
+        let totalVol = 5
 
-    switch (selectedForm) {
-      case 'tablet':
-        resultAmount = effectiveDose / spec
-        resultUnit = '片'
-        formula = `${effectiveDose.toFixed(2)} ${doseInfo.unit} ÷ ${spec} ${formInfo.unit}`
-        break
-      case 'powder':
-        resultAmount = effectiveDose / (spec / 100)
-        resultUnit = doseInfo.unit
-        formula = `${effectiveDose.toFixed(2)} ${doseInfo.unit} ÷ ${spec}%`
-        break
-      case 'dry':
-        resultAmount = effectiveDose / spec
-        resultUnit = '瓶'
-        formula = `${effectiveDose.toFixed(2)} ${doseInfo.unit} ÷ ${spec} ${formInfo.unit}`
-        break
-      case 'injection':
-        resultAmount = effectiveDose / spec
-        resultUnit = 'ml'
-        formula = `${effectiveDose.toFixed(2)} ${doseInfo.unit} ÷ ${spec} ${formInfo.unit}`
-        break
-    }
+        // 逐步增加稀释总量（5的倍数），直到抽取量 >= 0.1ml
+        while (volumeMl * totalVol / origVol < 0.1 && totalVol < 50) {
+          totalVol += 5
+        }
 
-    this.setData({
-      result: {
-        medicineName: medicine.name,
-        routeName: routeDefs.find(r => r.id === selectedRoute).name,
-        formName: formInfo.name,
-        weightG,
-        weightKg,
-        weightKgText: weightKg.toFixed(3),
-        dose: doseInfo.value,
-        doseUnit: doseInfo.unit,
-        effectiveDose,
-        effectiveDoseText: effectiveDose.toFixed(2),
-        spec,
-        specUnit: formInfo.unit,
-        amount: resultAmount,
-        amountText: resultAmount < 0.01 ? resultAmount.toFixed(4) : resultAmount.toFixed(2),
-        unit: resultUnit,
-        formula
+        const salineVol = totalVol - origVol
+        const drawVol = volumeMl * totalVol / origVol
+        const syringe = drawVol > 1 ? '5ml' : '1ml'
+
+        result.volumeText = volumeMl.toFixed(4)
+        result.injectAdvice = `取 ${origVol}ml 原液 + ${salineVol}ml 生理盐水 = ${totalVol}ml，摇匀后用${syringe}注射器抽取 ${drawVol.toFixed(2)} ml 注射`
+        result.adviceType = 'warn'
       }
-    })
+    }
+
+    // 稀释说明
+    if (selectedRoute.dilutionNote) {
+      result.dilutionNote = selectedRoute.dilutionNote
+    }
+
+    this.setData({ result })
   }
 })

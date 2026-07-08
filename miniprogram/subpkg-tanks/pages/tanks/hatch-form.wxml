@@ -1,0 +1,44 @@
+<view class="page-form">
+  <view class="nav-bar" style="padding-top:{{statusBarHeight}}px">
+    <view class="nav-back press" bindtap="navigateBack"><text class="nav-back-icon">‹</text></view>
+    <text class="nav-title">记录孵化</text>
+    <view class="nav-placeholder"></view>
+  </view>
+
+  <scroll-view style="padding-top:{{statusBarHeight + 88}}px" scroll-y class="form-scroll">
+    <view class="form-inner">
+      <view class="form-group">
+        <text class="form-label">出苗日期</text>
+        <picker mode="date" value="{{form.hatch_date}}" bindchange="onDateChange">
+          <view class="form-picker">{{form.hatch_date || '请选择日期'}}</view>
+        </picker>
+      </view>
+
+      <view class="form-group">
+        <text class="form-label">出苗总数（只）</text>
+        <input class="form-input" type="number" placeholder="请输入" value="{{form.total_hatched}}" bindinput="onInput" data-field="total_hatched"/>
+      </view>
+
+      <view class="form-group">
+        <text class="form-label">全品数（只）</text>
+        <input class="form-input" type="number" placeholder="请输入" value="{{form.perfect_count}}" bindinput="onInput" data-field="perfect_count"/>
+      </view>
+
+      <view class="form-group">
+        <text class="form-label">非全品数（自动计算）</text>
+        <view class="form-display">{{form.imperfect_count || 0}}</view>
+      </view>
+
+      <view class="form-group">
+        <text class="form-label">备注</text>
+        <textarea class="form-textarea" placeholder="选填" value="{{form.notes}}" bindinput="onInput" data-field="notes"/>
+      </view>
+
+      <view class="submit-btn press {{submitting ? 'disabled' : ''}}" bindtap="submit">
+        <text>{{submitting ? '提交中...' : '保存记录'}}</text>
+      </view>
+
+      <view class="safe-bottom"></view>
+    </view>
+  </scroll-view>
+</view>

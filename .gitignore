@@ -3,8 +3,9 @@ node_modules/
 
 # 云开发配置（含密钥，绝不提交）
 cloud-config.txt
-*.env
-.env.*
+.env
+.env.local
+.env.production
 
 # 上传临时文件
 .uploads/
@@ -17,6 +18,9 @@ project.private.config.json
 .vscode/
 *.swp
 *.swo
+
+# AI 工具自动生成的知识库（非项目代码）
+.qoder/
 
 # 系统文件
 .DS_Store

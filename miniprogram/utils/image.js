@@ -1,171 +1,133 @@
-// 图片处理工具
-
-// 云开发环境ID（与app.js中wx.cloud.init的env保持一致）
-const CLOUD_ENV_ID = 'cloud1-d0g853l9d7017ea3b'
-
 /**
- * 从临时URL中提取fileID
- * 临时URL: https://636c-cloud1-d0g853l9d7017ea3b-1437722068.tcb.qcloud.la/pets/xxx.jpg?sign=xxx
- * fileID:   cloud://cloud1-d0g853l9d7017ea3b.636c-cloud1-d0g853l9d7017ea3b-1437722068/pets/xxx.jpg
+ * 图片处理工具 v2.0
+ * 
+ * 适配自建服务器 — 图片存储为 HTTP 相对路径（如 uploads/xxx/xxx.jpg）
+ * 不再使用 cloud:// fileID，移除 wx.cloud.getTempFileURL 依赖
+ *
+ * 迁移兼容：如果数据中仍有 cloud:// 格式的旧图片，
+ * 将尝试通过 baseUrl + 去除 cloud:// 前缀来访问
  */
-function extractFileIdFromTempUrl(url) {
-  if (!url || !url.includes('tcb.qcloud.la')) return null
-  
-  try {
-    // 提取域名前缀和文件路径
-    const match = url.match(/^https?:\/\/([^\/]+)(\/[^\?]+)/)
-    if (!match) return null
-    
-    const domain = match[1] // 636c-cloud1-d0g853l9d7017ea3b-1437722068.tcb.qcloud.la
-    const filePath = match[2] // /pets/xxx.jpg
-    
-    // 去掉 .tcb.qcloud.la 后缀，得到域名前缀
-    const domainPrefix = domain.replace('.tcb.qcloud.la', '') // 636c-cloud1-d0g853l9d7017ea3b-1437722068
-    
-    // fileID格式: cloud://环境ID.域名前缀/文件路径
-    return `cloud://${CLOUD_ENV_ID}.${domainPrefix}${filePath}`
-  } catch (error) {
-    console.error('提取fileID失败:', error)
-    return null
-  }
+const { getAPI } = require('./api.js')
+
+/** 获取图片服务器基础 URL */
+function getImageBaseUrl() {
+  const app = getApp()
+  const config = app?.globalData?.systemConfig || {}
+  return config.imageServerUrl || config.apiUrl || 'https://pets.openget.cn'
 }
 
 /**
- * 批量转换云存储URL为临时访问链接（无缓存，每次获取最新链接）
- * @param {Array} pets - 宠物列表
- * @returns {Promise<Array>}
+ * 将相对路径或旧 cloud:// 路径转为完整 HTTP URL
+ * @param {string} photo - 图片路径
+ * @returns {string} 完整 HTTP URL
  */
-async function convertPetPhotosToUrls(pets) {
-  if (!pets || pets.length === 0) return pets
-
-  const result = []
-
-  for (const pet of pets) {
-    if (pet.photos && pet.photos.length > 0) {
-      const convertedPhotos = []
-      for (const photo of pet.photos) {
-        const convertedPhoto = await convertSinglePhoto(photo)
-        convertedPhotos.push(convertedPhoto)
-      }
-      result.push({ ...pet, photos: convertedPhotos })
-    } else {
-      result.push(pet)
+function photoToUrl(photo) {
+  if (!photo) return photo
+  // 已经是完整 HTTP URL 则直接返回
+  if (photo.startsWith('http://') || photo.startsWith('https://')) return photo
+  // cloud:// 旧格式 → 提取相对路径部分
+  if (photo.startsWith('cloud://')) {
+    // cloud://env.bucket/path/to/file.jpg → 提取 path/to/file.jpg
+    const parts = photo.split('/')
+    const idx = parts.findIndex(p => p.includes('.'))  // 找到域名部分
+    if (idx >= 0 && idx < parts.length - 1) {
+      photo = parts.slice(idx + 1).join('/')
     }
   }
-
-  return result
+  // 拼接完整 URL
+  const base = getImageBaseUrl()
+  if (photo.startsWith('/')) return base + photo
+  return base + '/' + photo
 }
 
 /**
- * 获取单个云文件的临时链接
- * @param {string} fileID 
+ * 批量转换图片路径为完整 HTTP URL
+ * @param {Array<string>} photos - 图片路径列表
+ * @returns {Array<string>} 完整 HTTP URL 列表
+ */
+function convertPhotosToUrls(photos) {
+  if (!photos || !Array.isArray(photos)) return photos || []
+  return photos.map(p => photoToUrl(p))
+}
+
+/**
+ * 转换单个图片路径（同步，无需网络请求）
+ * @param {string} photo - 图片路径
+ * @returns {string}
+ */
+function convertSinglePhoto(photo) {
+  return photoToUrl(photo)
+}
+
+/**
+ * 批量转换宠物列表中的图片路径为完整 URL
+ * @param {Array} pets - 宠物列表
+ * @returns {Array}
+ */
+function convertPetPhotosToUrls(pets) {
+  if (!pets || pets.length === 0) return pets
+  return pets.map(pet => ({
+    ...pet,
+    photos: convertPhotosToUrls(pet.photos)
+  }))
+}
+
+/**
+ * 批量转换图片 ID 列表为 URL（兼容旧接口，现在无需异步）
+ * @param {Array<string>} photoIDs
+ * @returns {Array<string>}
+ */
+function convertPhotoIdsToUrls(photoIDs) {
+  return convertPhotosToUrls(photoIDs)
+}
+
+/**
+ * 获取图片的 HTTP URL（替代云开发临时链接）
+ * v2.0: 不再调用 wx.cloud.getTempFileURL，直接基于 photoToUrl 转换
+ * @param {string} fileID - 图片路径（HTTP URL / cloud:// / 相对路径）
  * @returns {Promise<string>}
  */
 async function getTempUrl(fileID) {
-  try {
-    const result = await wx.cloud.getTempFileURL({
-      fileList: [fileID]
-    })
-    const file = result.fileList && result.fileList[0]
-    if (file && file.tempFileURL) {
-      return file.tempFileURL
-    }
-    // fileID 可能无效，打印详细信息
-    const errMsg = file ? (file.status + ' ' + (file.errMsg || '')) : 'fileList为空'
-    console.warn('获取临时链接失败:', errMsg, 'fileID:', fileID)
-    return fileID
-  } catch (error) {
-    // 网络错误（如 Failed to fetch）直接返回原 fileID，不抛出不阻塞
-    console.error('获取临时URL失败:', error.message || error, 'fileID:', fileID)
-    return fileID
-  }
+  if (!fileID) return fileID
+  // 直接同步转换为 HTTP URL（无需网络请求）
+  return photoToUrl(fileID)
 }
 
 /**
- * 转换单个图片URL
- * @param {string} photo - 图片URL（可能是cloud://或临时URL）
- * @returns {Promise<string>}
- */
-async function convertSinglePhoto(photo) {
-  if (!photo) return photo
-
-  // 如果已经是临时URL（非cloud://），直接返回
-  if (photo.startsWith('http')) {
-    return photo
-  }
-
-  // 如果是 cloud:// 格式，转换为临时URL
-  if (photo.startsWith('cloud://')) {
-    try {
-      return await getTempUrl(photo)
-    } catch (error) {
-      console.error('转换cloud://图片失败:', photo, error)
-      // 转换失败时保留原始fileID，不返回空字符串
-      return photo
-    }
-  }
-
-  // 其他格式直接返回
-  return photo
-}
-
-/**
- * 批量转换图片ID列表为URL（无缓存，每次获取最新临时链接）
- * @param {Array} photoIDs 
- * @returns {Promise<Array>}
- */
-async function convertPhotoIdsToUrls(photoIDs) {
-  if (!photoIDs || photoIDs.length === 0) return []
-
-  const result = []
-
-  for (const photo of photoIDs) {
-    const convertedPhoto = await convertSinglePhoto(photo)
-    result.push(convertedPhoto)
-  }
-
-  return result
-}
-
-/**
- * 净化图片URL列表，将临时URL转为cloud://fileID，确保存入缓存的数据不会过期
- * @param {Array} photos - 图片URL列表
- * @returns {Array} 只包含cloud://fileID的列表
+ * 净化图片 URL 列表（适配自建服务器，无需转换）
+ * @param {Array} photos
+ * @returns {Array}
  */
 function sanitizePhotoUrls(photos) {
   if (!photos || !Array.isArray(photos)) return []
   return photos.map(photo => {
     if (!photo) return photo
-    if (photo.startsWith('cloud://')) return photo
-    if (photo.includes('tcb.qcloud.la')) {
-      const fileId = extractFileIdFromTempUrl(photo)
-      return fileId || photo
-    }
+    // 保留 HTTP URL 和相对路径
     return photo
   })
 }
 
 /**
- * 净化宠物列表的图片数据，确保存入缓存的数据不会过期
- * @param {Array} pets - 宠物列表
- * @returns {Array} photos字段只包含cloud://fileID的宠物列表
+ * 净化宠物列表的图片数据
+ * @param {Array} pets
+ * @returns {Array}
  */
 function sanitizePetPhotos(pets) {
   if (!pets || !Array.isArray(pets)) return pets
-  return pets.map(pet => {
-    if (pet.photos && pet.photos.length > 0) {
-      return { ...pet, photos: sanitizePhotoUrls(pet.photos) }
-    }
-    return pet
-  })
+  return pets.map(pet => ({
+    ...pet,
+    photos: sanitizePhotoUrls(pet.photos)
+  }))
 }
 
 module.exports = {
+  photoToUrl,
+  getImageBaseUrl,
+  getTempUrl,
+  convertPhotosToUrls,
+  convertSinglePhoto,
   convertPetPhotosToUrls,
   convertPhotoIdsToUrls,
-  getTempUrl,
-  convertSinglePhoto,
-  extractFileIdFromTempUrl,
   sanitizePhotoUrls,
   sanitizePetPhotos
 }

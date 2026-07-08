@@ -1,3 +1,4 @@
+const API = require('../../../utils/api')
 Page({
   data: {
     searchText: '',
@@ -28,23 +29,21 @@ Page({
   loadPets: async function () {
     this.setData({ loading: true })
     try {
-      const res = await wx.cloud.callFunction({
-        name: 'admin',
-        data: {
-          action: 'getPets',
-          searchText: this.data.searchText,
-          filterCategory: this.data.filterCategory
-        }
+      const res = await API.getAdminPets({
+        search: this.data.searchText,
+        category: this.data.filterCategory,
+        page: 1,
+        pageSize: 100
       })
-      
-      if (res.result.success) {
-        this.setData({ 
-          petList: res.result.data.list,
-          loading: false 
+
+      if (res.success) {
+        this.setData({
+          petList: res.data.list,
+          loading: false
         })
       } else {
         this.setData({ loading: false })
-        wx.showToast({ title: res.result.message || '加载失败', icon: 'none' })
+        wx.showToast({ title: res.message || '加载失败', icon: 'none' })
       }
     } catch (error) {
       console.error('加载宠物列表失败:', error)

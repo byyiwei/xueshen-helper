@@ -1,0 +1,62 @@
+<view class="page-form">
+  <view class="nav-bar" style="padding-top:{{statusBarHeight}}px">
+    <view class="nav-back press" bindtap="navigateBack"><text class="nav-back-icon">‹</text></view>
+    <text class="nav-title">记录产蛋</text>
+    <view class="nav-placeholder"></view>
+  </view>
+
+  <scroll-view style="padding-top:{{statusBarHeight + 88}}px" scroll-y class="form-scroll">
+    <view class="form-inner">
+      <!-- 日期 -->
+      <view class="form-group">
+        <text class="form-label">产蛋日期</text>
+        <picker mode="date" value="{{form.lay_date}}" bindchange="onDateChange">
+          <view class="form-picker">{{form.lay_date || '请选择日期'}}</view>
+        </picker>
+      </view>
+
+      <!-- 产蛋总数 -->
+      <view class="form-group">
+        <text class="form-label">产蛋总数（枚）</text>
+        <input class="form-input" type="number" placeholder="请输入" value="{{form.total_eggs}}" bindinput="onInput" data-field="total_eggs"/>
+      </view>
+
+      <!-- 受精数 -->
+      <view class="form-group">
+        <text class="form-label">受精数（枚）</text>
+        <input class="form-input" type="number" placeholder="请输入" value="{{form.fertilized}}" bindinput="onInput" data-field="fertilized"/>
+      </view>
+
+      <!-- 未受精（自动计算） -->
+      <view class="form-group">
+        <text class="form-label">未受精数（自动计算）</text>
+        <view class="form-display">{{form.unfertilized || 0}}</view>
+      </view>
+
+      <!-- 父本 -->
+      <view class="form-group">
+        <text class="form-label">父本</text>
+        <input class="form-input" placeholder="选填" value="{{form.parent_male}}" bindinput="onInput" data-field="parent_male"/>
+      </view>
+
+      <!-- 母本 -->
+      <view class="form-group">
+        <text class="form-label">母本</text>
+        <input class="form-input" placeholder="选填" value="{{form.parent_female}}" bindinput="onInput" data-field="parent_female"/>
+      </view>
+
+      <!-- 备注 -->
+      <view class="form-group">
+        <text class="form-label">备注</text>
+        <textarea class="form-textarea" placeholder="选填" value="{{form.notes}}" bindinput="onInput" data-field="notes"/>
+      </view>
+
+      <!-- 提交 -->
+      <view class="submit-btn press {{submitting ? 'disabled' : ''}}" bindtap="submit">
+        <text>{{submitting ? '提交中...' : '保存记录'}}</text>
+      </view>
+
+      <view class="safe-bottom"></view>
+    </view>
+  </scroll-view>
+</view>

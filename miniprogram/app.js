@@ -1,60 +1,44 @@
 App({
   onLaunch: function () {
-    // 云开发初始化
-    wx.cloud.init({
-      env: 'cloud1-d0g853l9d7017ea3b'
-    }).then(() => {
-      this.onCloudReady()
-    }).catch(() => {})
-  },
-
-  // 云开发就绪后的回调
-  onCloudReady: function () {
+    this.initLocalData()
     this.loadSystemConfig()
   },
 
-  // 从云数据库加载系统配置
+  // 从自建服务器加载系统配置（替代原 wx.cloud.database()）
   loadSystemConfig: function () {
-    const db = wx.cloud.database()
-    // 先尝试从 systemConfig 集合读取（后台管理配置）
-    db.collection('systemConfig').limit(1).get({
+    const baseUrl = this.getBaseUrl()
+    wx.request({
+      url: baseUrl + '/api/admin/config',
+      method: 'GET',
       success: (res) => {
-        if (res.data && res.data.length > 0) {
-          this.globalData.systemConfig = res.data[0]
-          console.log('[systemConfig] 从 systemConfig 集合读取成功:', res.data[0])
-        } else {
-          // 如果 systemConfig 没有数据，尝试从旧的 system 集合读取
-          db.collection('system').doc('config').get({
-            success: (res) => {
-              if (res.data) {
-                this.globalData.systemConfig = res.data
-                console.log('[systemConfig] 从 system 集合读取成功:', res.data)
-              } else {
-                console.log('[systemConfig] 文档存在但无数据')
-              }
-            },
-            fail: (err) => {
-              console.error('[systemConfig] 读取失败:', err.errMsg || err)
+        if (res.statusCode === 200 && res.data && res.data.success) {
+          const config = res.data.data || {}
+          // 合并默认值，过滤掉 undefined / null / 空字符串，防止覆盖有效值
+          const merged = { ...this.globalData.systemConfig }
+          Object.keys(config).forEach(key => {
+            if (config[key] != null && config[key] !== '') {
+              merged[key] = config[key]
             }
           })
+          if (!merged.imageServerUrl) merged.imageServerUrl = baseUrl
+          if (!merged.apiUrl) merged.apiUrl = baseUrl
+          this.globalData.systemConfig = merged
+          console.log('[systemConfig] 从服务器加载成功:', this.globalData.systemConfig)
+        } else {
+          console.warn('[systemConfig] 加载失败，使用默认配置')
         }
       },
       fail: (err) => {
-        console.error('[systemConfig] 从 systemConfig 读取失败:', err.errMsg || err)
-        // 降级到旧的 system 集合
-        db.collection('system').doc('config').get({
-          success: (res) => {
-            if (res.data) {
-              this.globalData.systemConfig = res.data
-              console.log('[systemConfig] 从 system 集合读取成功:', res.data)
-            }
-          },
-          fail: (err) => {
-            console.error('[systemConfig] 降级读取也失败:', err.errMsg || err)
-          }
-        })
+        console.warn('[systemConfig] 请求失败，使用默认配置:', err.errMsg)
       }
     })
+  },
+
+  /** 获取 API 基础 URL */
+  getBaseUrl: function () {
+    return this.globalData.systemConfig.apiUrl ||
+      this.globalData.systemConfig.imageServerUrl ||
+      'https://pets.openget.cn'
   },
 
   // 初始化本地数据（同步执行，不依赖云开发）
@@ -80,95 +64,111 @@ App({
     this.asyncLogin()
   },
 
-  // 异步获取 openid 并自动登录
+  // 异步登录（wx.login → /api/auth/login → 获取 JWT + openid）
   asyncLogin: function () {
-    try {
-      wx.cloud.callFunction({
-        name: 'login',
-        data: { action: '', data: {} },
-        success: (res) => {
-          if (res.result && res.result.success && res.result.data && res.result.data.openid) {
-            const openid = res.result.data.openid
-            const user = res.result.data.user
-            // 自动登录
-            try {
-              wx.setStorageSync('openid', openid)
-            } catch (e) {}
-            this.globalData.isLoggedIn = true
-            this.globalData.openid = openid
-            if (user) {
-              try {
-                let localUser = wx.getStorageSync('userInfo') || {}
-                if (!localUser.nickname) {
-                  if (user.nickname && user.nickname !== '') {
-                    localUser.nickname = user.nickname
-                  } else {
-                    let idx = wx.getStorageSync('userIndex') || 0
-                    idx += 1
-                    wx.setStorageSync('userIndex', idx)
-                    localUser.nickname = '养龟档案' + idx
-                  }
-                }
-                if (!localUser.avatar && user.avatar && user.avatar !== '') {
-                  localUser.avatar = user.avatar
-                }
-                if (!localUser.phone && user.phone && user.phone !== '') {
-                  localUser.phone = user.phone
-                }
-                wx.setStorageSync('userInfo', localUser)
-                if (user.createdAt) {
-                  const t = user.createdAt instanceof Date
-                    ? user.createdAt.toISOString()
-                    : user.createdAt
-                  wx.setStorageSync('registerTime', t)
-                }
-              } catch (e) {}
-            }
-            setTimeout(() => {
-              this.generateQrcode(openid)
-              this._checkSecurityNotifications()
-            }, 500)
-          }
-        },
-        fail: (err) => {
-          console.error('App Launch - 静默获取 openid 失败:', err)
+    const self = this
+    wx.login({
+      success: (loginRes) => {
+        if (!loginRes.code) {
+          console.error('App Launch - wx.login 无 code')
+          return
         }
-      })
-    } catch (error) {
-      console.error('App Launch - 静默登录流程异常:', error)
-    }
+        const baseUrl = self.getBaseUrl()
+        wx.request({
+          url: baseUrl + '/api/auth/login',
+          method: 'POST',
+          data: { code: loginRes.code },
+          success: (res) => {
+            if (res.statusCode === 200 && res.data && res.data.success && res.data.data) {
+              const { openid, token, user, isAdmin } = res.data.data
+              try {
+                wx.setStorageSync('openid', openid)
+                wx.setStorageSync('token', token)
+              } catch (e) {}
+              self.globalData.isLoggedIn = true
+              self.globalData.openid = openid
+              if (isAdmin) {
+                try { wx.setStorageSync('isAdmin', true) } catch (e) {}
+              }
+              if (user) {
+                try {
+                  let localUser = wx.getStorageSync('userInfo') || {}
+                  if (!localUser.nickname || localUser.nickname === '') {
+                    if (user.nickname && user.nickname !== '') {
+                      localUser.nickname = user.nickname
+                    } else {
+                      let idx = wx.getStorageSync('userIndex') || 0
+                      idx += 1
+                      wx.setStorageSync('userIndex', idx)
+                      localUser.nickname = '养龟档案' + idx
+                    }
+                  }
+                  if (!localUser.avatar && user.avatar && user.avatar !== '') {
+                    localUser.avatar = user.avatar
+                  }
+                  if (!localUser.phone && user.phone && user.phone !== '') {
+                    localUser.phone = user.phone
+                  }
+                  wx.setStorageSync('userInfo', localUser)
+                  if (user.createdAt) {
+                    const t = user.createdAt instanceof Date
+                      ? user.createdAt.toISOString()
+                      : user.createdAt
+                    wx.setStorageSync('registerTime', t)
+                  }
+                } catch (e) {}
+              }
+              setTimeout(() => {
+                self.generateQrcode(openid)
+                self._checkSecurityNotifications()
+              }, 500)
+            }
+          },
+          fail: (err) => {
+            console.error('App Launch - 登录请求失败:', err)
+          }
+        })
+      },
+      fail: (err) => {
+        console.error('App Launch - wx.login 失败:', err)
+      }
+    })
   },
 
   // 后台静默生成小程序码，不阻塞用户操作
   generateQrcode: function (openid) {
     try {
       const shareInfo = wx.getStorageSync('shareInfo') || {}
-      // 已有云端小程序码（cloud:// fileID）则跳过；旧数据存的是临时URL需重新生成
-      if (shareInfo.qrcode && shareInfo.qrcode.startsWith('cloud://')) return
+      // 已有有效小程序码路径则跳过
+      if (shareInfo.qrcode && typeof shareInfo.qrcode === 'string' && shareInfo.qrcode.length > 20) return
     } catch (e) {}
 
-    wx.cloud.callFunction({
-      name: 'qrcode',
+    const baseUrl = this.getBaseUrl()
+    wx.request({
+      url: baseUrl + '/api/qrcode/generate',
+      method: 'POST',
       data: {
-        action: 'generate',
-        data: {
-          scene: 'userId=' + openid,
-          page: '/subpkg-report/pages/public/index'
-        }
+        scene: 'userId=' + openid,
+        page: '/subpkg-report/pages/public/index'
       },
       success: (res) => {
-        if (res.result && res.result.success) {
-          const fileID = res.result.data  // cloud:// 格式，永久有效
+        if (res.statusCode === 200 && res.data && res.data.success) {
+          const qrcodePath = res.data.data  // HTTP 可访问路径
+          if (!qrcodePath || typeof qrcodePath !== 'string') {
+            console.error('小程序码生成失败: 返回路径为空')
+            return
+          }
           const savedShareInfo = wx.getStorageSync('shareInfo') || {}
-          savedShareInfo.qrcode = fileID
+          savedShareInfo.qrcode = qrcodePath.startsWith('http')
+            ? qrcodePath
+            : baseUrl + '/' + qrcodePath.replace(/^\/+/, '')
           wx.setStorageSync('shareInfo', savedShareInfo)
-
         } else {
-          console.error('小程序码生成失败:', res.result ? res.result.message : '未知错误')
+          console.error('小程序码生成失败:', res.data ? res.data.message : '未知错误')
         }
       },
       fail: (err) => {
-        console.error('小程序码云函数调用失败:', err)
+        console.error('小程序码请求失败:', err)
       }
     })
   },
@@ -197,29 +197,50 @@ App({
     })
   },
 
-  // 强制登录（静默获取 openid 并自动登录）
+  // 强制登录
   forceLogin: function () {
+    const self = this
     wx.showLoading({ title: '登录中...' })
-    wx.cloud.callFunction({
-      name: 'login',
-      data: { action: '', data: {} },
-      success: (res) => {
-        if (res.result && res.result.success && res.result.data && res.result.data.openid) {
-          const openid = res.result.data.openid
-          try { wx.setStorageSync('openid', openid) } catch (e) {}
-          this.globalData.isLoggedIn = true
-          this.globalData.openid = openid
-          // 登录成功后检查审核违规通知
-          this._checkSecurityNotifications()
-          wx.showToast({ title: '登录成功', icon: 'success' })
-        } else {
+    wx.login({
+      success: (loginRes) => {
+        if (!loginRes.code) {
           wx.hideLoading()
           wx.showToast({ title: '登录失败，请重试', icon: 'none' })
+          return
         }
+        const baseUrl = self.getBaseUrl()
+        wx.request({
+          url: baseUrl + '/api/auth/login',
+          method: 'POST',
+          data: { code: loginRes.code },
+          success: (res) => {
+            wx.hideLoading()
+            if (res.statusCode === 200 && res.data && res.data.success && res.data.data) {
+              const { openid, token, isAdmin } = res.data.data
+              try {
+                wx.setStorageSync('openid', openid)
+                wx.setStorageSync('token', token)
+              } catch (e) {}
+              self.globalData.isLoggedIn = true
+              self.globalData.openid = openid
+              if (isAdmin) {
+                try { wx.setStorageSync('isAdmin', true) } catch (e) {}
+              }
+              self._checkSecurityNotifications()
+              wx.showToast({ title: '登录成功', icon: 'success' })
+            } else {
+              wx.showToast({ title: '登录失败，请重试', icon: 'none' })
+            }
+          },
+          fail: (err) => {
+            wx.hideLoading()
+            wx.showToast({ title: '登录失败：' + (err.errMsg || '网络异常'), icon: 'none' })
+          }
+        })
       },
       fail: (err) => {
         wx.hideLoading()
-        wx.showToast({ title: '登录失败：' + (err.errMsg || '网络异常'), icon: 'none' })
+        wx.showToast({ title: '登录失败：' + (err.errMsg || '登录凭证获取失败'), icon: 'none' })
       }
     })
   },
@@ -237,6 +258,7 @@ App({
     this.globalData.userInfo = null
     try {
       wx.removeStorageSync('openid')
+      wx.removeStorageSync('token')
       wx.removeStorageSync('userInfo')
       wx.removeStorageSync('registerTime')
       wx.removeStorageSync('isAdmin')
@@ -294,7 +316,8 @@ App({
     isLoggedIn: false,
     openid: null,
     systemConfig: {
-      imageServerUrl: 'http://192.168.110.29:3000'
+      imageServerUrl: 'https://pets.openget.cn',
+      apiUrl: 'https://pets.openget.cn'
     },
     // loading 页预加载的数据
     dataPreloaded: false,
@@ -306,6 +329,9 @@ App({
     preloadedFeaturedPets: null,
     preloadedMyStats: null,
     preloadedShareInfo: null,
-    preloadedQrcode: null
+    preloadedQrcode: null,
+    // 龟缸预加载数据
+    preloadedTanks: null,
+    preloadedTankStats: null
   }
 })

@@ -16,7 +16,7 @@
 const { convertHTMLImagesToBase64 } = require('./theme.js');
 
 // 默认服务配置（云数据库未配置时的兜底值）
-const DEFAULT_ENDPOINT = 'http://192.168.110.29:3000';
+const DEFAULT_ENDPOINT = 'https://pets.openget.cn';
 const DEFAULT_TIMEOUT = 60000;
 
 /**

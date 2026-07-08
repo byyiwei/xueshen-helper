@@ -363,7 +363,7 @@
       <text class="action-icon">•••</text>
       <text class="action-text">更多</text>
     </view>
-    <button wx:if="{{false}}" class="detail-action secondary press share-btn" open-type="share">
+    <button class="detail-action secondary press share-btn" open-type="share">
       <image class="action-icon-img" src="/icons/分享.png" mode="aspectFit"/>
       <text class="action-text">分享</text>
     </button>

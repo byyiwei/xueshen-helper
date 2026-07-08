@@ -1,5 +1,6 @@
-<view class="page" style="padding-top: {{totalNavHeight}}rpx;">
-  <view class="custom-nav" style="padding-top: {{statusBarHeight}}px">
+<view class="page" style="padding-top: {{statusBarHeight}}px">
+  <!-- 顶栏 -->
+  <view class="nav">
     <view class="nav-back" bindtap="goBack">
       <text class="nav-back-icon">‹</text>
     </view>
@@ -7,97 +8,115 @@
     <view class="nav-placeholder"></view>
   </view>
 
-  <view class="content">
-    <!-- 选择药物 -->
-    <view class="card">
-      <text class="card-label">选择药物</text>
-      <picker mode="selector" range="{{medicines}}" range-key="name" bindchange="onPickMedicine">
-        <view class="picker-row">
-          <text class="picker-value">{{selectedMedicine.name}}</text>
-          <text class="picker-arrow">▼</text>
-        </view>
-      </picker>
+  <!-- 主体 -->
+  <view class="body">
+
+    <!-- 加载/错误/空状态 -->
+    <view wx:if="{{loading}}" class="status-box">
+      <text class="status-text">加载中…</text>
     </view>
 
-    <!-- 用药方式 -->
-    <view class="card">
-      <text class="card-label">用药方式</text>
-      <view class="route-list">
-        <view
-          wx:for="{{formRows}}"
-          wx:key="route.id"
-          class="route-row {{item.active ? 'active' : ''}} {{item.disabled ? 'disabled' : ''}}"
-        >
-          <text class="route-name" bindtap="selectRoute" data-id="{{item.route.id}}">{{item.route.name}}</text>
-          <view class="form-options">
-            <view
-              wx:for="{{item.forms}}"
-              wx:for-item="formItem"
-              wx:key="id"
-              class="form-btn {{formItem.active ? 'active' : ''}} {{formItem.supported ? '' : 'disabled'}}"
-              bindtap="selectForm"
-              data-id="{{formItem.id}}"
-            >
-              <text class="form-name">{{formItem.name}}</text>
-              <text class="form-unit">{{formItem.unit}}</text>
+    <view wx:elif="{{loadError}}" class="status-box">
+      <text class="status-icon">😵</text>
+      <text class="status-text">{{errorMsg || '加载失败'}}</text>
+      <view class="retry-btn" bindtap="retryLoad"><text>重试</text></view>
+    </view>
+
+    <view wx:elif="{{!selectedMedicine}}" class="status-box">
+      <text class="status-icon">💊</text>
+      <text class="status-text">未找到药品</text>
+    </view>
+
+    <!-- 有药品 -->
+    <block wx:else>
+      <!-- 药品头部 + 给药方案 -->
+      <view class="panel">
+        <view class="med-row">
+          <image wx:if="{{selectedMedicine.image}}" class="med-image" src="{{selectedMedicine.image}}" mode="aspectFill" />
+          <view class="med-info-text">
+            <text class="med-name">{{selectedMedicine.name}}</text>
+            <text class="med-cat">{{selectedMedicine.category}}</text>
+          </view>
+        </view>
+
+        <view wx:if="{{usageDosages.length > 0}}" class="route-row">
+          <view
+            wx:for="{{usageDosages}}" wx:key="route" wx:for-index="idx"
+            class="route-chip {{selectedRouteIdx === idx ? 'active' : ''}}"
+            bindtap="selectRoute" data-idx="{{idx}}"
+          >
+            <text class="chip-route">{{item.route}}</text>
+            <text class="chip-dose">{{item.dose}}{{item.unit}}</text>
+          </view>
+        </view>
+
+        <view wx:if="{{selectedMedicine.indications}}" class="med-info">
+          <text class="med-info-label">适应症</text>
+          <text class="med-info-text">{{selectedMedicine.indications}}</text>
+        </view>
+        <view wx:if="{{selectedMedicine.notes}}" class="med-info">
+          <text class="med-info-label">注意事项</text>
+          <text class="med-info-text">{{selectedMedicine.notes}}</text>
+        </view>
+      </view>
+
+      <!-- 输入区：只需体重 -->
+      <view wx:if="{{selectedRoute}}" class="panel input-panel">
+        <view class="inp-line">
+          <text class="inp-label">龟龟体重</text>
+          <view class="inp-wrap">
+            <input class="inp" type="digit" placeholder="输入体重" value="{{weightValue}}" bindinput="onWeightInput"/>
+            <view class="unit-btn" bindtap="toggleWeightUnit">
+              <text class="{{weightUnit === 'g' ? 'on' : ''}}">g</text>
+              <text class="sep">/</text>
+              <text class="{{weightUnit === 'kg' ? 'on' : ''}}">kg</text>
             </view>
           </view>
         </view>
       </view>
-    </view>
 
-    <!-- 药品规格与体重 -->
-    <view class="card">
-      <view class="input-row">
-        <text class="input-label">{{formDefs[selectedForm].specLabel}}</text>
-        <view class="input-wrap">
-          <input
-            class="input-field"
-            type="{{formDefs[selectedForm].inputType}}"
-            placeholder="{{formDefs[selectedForm].specPlaceholder}}"
-            value="{{specValue}}"
-            bindinput="onSpecInput"
-          />
-          <text class="input-unit">{{formDefs[selectedForm].unit}}</text>
+      <!-- 计算结果 -->
+      <view wx:if="{{result}}" class="panel res-panel">
+        <!-- 用药量 -->
+        <view class="res-main">
+          <text class="res-num">{{result.amountText}}</text>
+          <text class="res-u">{{result.unit}}</text>
+        </view>
+        <view class="res-sub">
+          <text>{{result.medicineName}} · {{result.routeName}}</text>
+          <text>{{result.inputDesc}}</text>
+          <text class="res-fml">{{result.formula}}</text>
+        </view>
+
+        <!-- 注射体积 -->
+        <view wx:if="{{result.volumeText}}" class="res-inject">
+          <view class="res-inject-head">
+            <text class="res-inject-label">注射体积</text>
+            <text class="res-inject-num">{{result.volumeText}}</text>
+            <text class="res-inject-unit">{{result.volumeUnit}}</text>
+          </view>
+          <text class="res-fml">{{result.concFormula}}</text>
+
+          <!-- 注射建议 -->
+          <view wx:if="{{result.injectAdvice}}" class="res-advice {{result.adviceType === 'warn' ? 'advice-warn' : 'advice-ok'}}">
+            <text class="advice-icon">{{result.adviceType === 'warn' ? '⚠' : '✓'}}</text>
+            <text class="advice-text">{{result.injectAdvice}}</text>
+          </view>
+        </view>
+
+        <!-- 稀释说明 -->
+        <view wx:if="{{result.dilutionNote}}" class="res-dilution">
+          <text class="res-dilution-label">稀释说明</text>
+          <text class="res-dilution-text">{{result.dilutionNote}}</text>
         </view>
       </view>
-      <view class="input-row">
-        <text class="input-label">龟龟体重</text>
-        <view class="input-wrap">
-          <input
-            class="input-field"
-            type="digit"
-            placeholder="请填写重量"
-            value="{{weightValue}}"
-            bindinput="onWeightInput"
-          />
-          <text class="input-unit">g</text>
-        </view>
-      </view>
-    </view>
-
-    <!-- 计算结果 -->
-    <view wx:if="{{result}}" class="card result-card">
-      <text class="card-label">计算结果</text>
-      <view class="result-main">
-        <text class="result-amount">{{result.amountText}}</text>
-        <text class="result-unit">{{result.unit}}</text>
-      </view>
-      <view class="result-detail">
-        <text>{{result.medicineName}} · {{result.routeName}} · {{result.formName}}</text>
-        <text>体重 {{result.weightG}} g（{{result.weightKgText}} kg）</text>
-        <text>有效剂量 {{result.effectiveDoseText}} {{result.doseUnit}}</text>
-        <text class="result-formula">{{result.formula}}</text>
-      </view>
-    </view>
-
-    <view class="safe-bottom"></view>
+    </block>
   </view>
 
-  <!-- 底部计算按钮 -->
-  <view class="footer-bar">
-    <view class="calc-submit-btn" bindtap="calculate">
-      <text>计算</text>
-    </view>
+  <!-- 底部按钮 -->
+  <view wx:if="{{selectedMedicine && selectedRoute}}" class="foot">
+    <view class="calc-btn" bindtap="calculate"><text>计算</text></view>
   </view>
+
+  <view class="data-source">⚠️ 数据仅供参考，请遵兽医医嘱用药<br/>数据来源：《最新异宠药物处方手册》爬行动物章节</view>
 </view>

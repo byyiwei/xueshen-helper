@@ -1,3 +1,5 @@
+const API = require('../../../utils/api')
+
 Page({
   data: {
     loading: true,
@@ -49,23 +51,19 @@ Page({
   loadConfig: async function () {
     this.setData({ loading: true })
     try {
-      const res = await wx.cloud.callFunction({
-        name: 'admin',
-        data: { action: 'getConfig' }
-      })
-      
-      if (res.result.success) {
-        this.setData({ 
-          config: { ...this.data.config, ...res.result.data },
-          loading: false 
+      const res = await API.getAdminConfig()
+
+      if (res.success) {
+        this.setData({
+          config: { ...this.data.config, ...res.data },
+          loading: false
         })
       } else {
         this.setData({ loading: false })
-        wx.showToast({ title: res.result.message || '加载失败', icon: 'none' })
+        wx.showToast({ title: res.message || '加载失败', icon: 'none' })
       }
     } catch (error) {
       console.error('加载配置失败:', error)
-      // 使用本地存储作为兜底
       try {
         const saved = wx.getStorageSync('systemConfig')
         if (saved) {
@@ -82,32 +80,21 @@ Page({
   saveConfig: async function () {
     wx.showLoading({ title: '保存中...' })
     try {
-      console.log('[config] 开始保存配置, config:', JSON.stringify(this.data.config))
-      const res = await wx.cloud.callFunction({
-        name: 'admin',
-        data: { 
-          action: 'updateConfig',
-          data: this.data.config
-        }
-      })
-      
+      const res = await API.updateAdminConfig(this.data.config)
+
       wx.hideLoading()
-      
-      console.log('[config] 云函数返回结果:', JSON.stringify(res))
-      
-      if (res.result.success) {
-        // 同时保存到本地
+
+      if (res.success) {
         try {
           wx.setStorageSync('systemConfig', this.data.config)
         } catch (e) {}
         wx.showToast({ title: '保存成功', icon: 'success' })
       } else {
-        console.error('[config] 保存失败, message:', res.result.message, ', error:', res.result.error)
-        wx.showToast({ title: res.result.message || '保存失败', icon: 'none' })
+        wx.showToast({ title: res.message || '保存失败', icon: 'none' })
       }
     } catch (error) {
       wx.hideLoading()
-      console.error('[config] 保存配置异常:', error)
+      console.error('保存配置异常:', error)
       console.error('[config] 异常详情:', error.message, error.stack)
       wx.showToast({ title: '保存失败: ' + (error.message || '网络错误'), icon: 'none' })
     }

@@ -1,9 +1,0 @@
-schema_version: 1
-module_path: cloudfunctions
-title: 微信小程序云函数后端
-scope:
-    - cloudfunctions/
-source_files: []
-depends_on: []
-related_to:
-    - path: html2image_server

@@ -1,5 +1,3 @@
-import { LPAPIFactory } from '../../lpapi/index'
-
 const { getAPI } = require('../../utils/api.js')
 const { showError, showSuccess, showLoading, hideLoading } = require('../../utils/error.js')
 const { getVoiceManager } = require('../../utils/voice.js')
@@ -60,7 +58,8 @@ Page({
       eggEvents: 0,
       pairEvents: 0,
       pendingCount: 0,
-      warningCount: 0
+      warningCount: 0,
+      tankCount: 0
     },
     // 分享卡片数据
     shareInfo: {
@@ -102,9 +101,9 @@ Page({
     const rpxRatio = 750 / sysInfo.windowWidth
     const totalNavHeight = Math.round(finalStatusBarHeight * rpxRatio) + 88
     this.setData({ statusBarHeight: finalStatusBarHeight, totalNavHeight })
-    // 初始化德佟打印SDK
-    this.lpapi = LPAPIFactory.getInstance({ showLog: 4 })
-    this.setData({ lpapi: this.lpapi })
+    // 初始化德佟打印SDK（懒加载，避免打包进主包）
+    this.lpapi = null
+    this._lpapiFactory = null
 
     const app = getApp()
     const isLoggedIn = app.globalData.isLoggedIn
@@ -126,7 +125,7 @@ Page({
     const updateTabBar = () => {
       if (typeof this.getTabBar === 'function' && this.getTabBar()) {
         const tabBar = this.getTabBar()
-        tabBar.setData({ selected: 2, visible: true })
+        tabBar.setData({ selected: 3, visible: true })
       }
     }
     updateTabBar()
@@ -174,33 +173,47 @@ Page({
     }
   },
 
-  // 加载用户打印配置（从数据库，以云端为准）
+  // 懒加载打印SDK（通过分包异步化，避免314KB打包进主包）
+  _ensureLpapi() {
+    if (this.lpapi) return Promise.resolve(this.lpapi)
+    return new Promise((resolve, reject) => {
+      require.async('subpkg-printer/lpapi/index.js').then(module => {
+        const { LPAPIFactory } = module
+        this.lpapi = LPAPIFactory.getInstance({ showLog: 4 })
+        this.setData({ lpapi: this.lpapi })
+        resolve(this.lpapi)
+      }).catch(e => {
+        console.error('打印SDK加载失败:', e)
+        wx.showToast({ title: '打印SDK加载失败', icon: 'none' })
+        reject(e)
+      })
+    })
+  },
+
+  // 加载用户打印配置（从服务器，以云端为准）
   loadUserPrintConfig: async function () {
     try {
-      const db = wx.cloud.database()
       const openid = wx.getStorageSync('openid')
       if (!openid) {
         console.warn('[userPrintConfig] 未登录，跳过云端加载')
         return
       }
-      
-      const res = await db.collection('userPrintConfig').where({
-        openid: openid
-      }).get()
-      
-      if (res.data && res.data.length > 0) {
-        const config = res.data[0]
+
+      const res = await API.request('GET', '/api/user/print-config')
+
+      if (res.success && res.data && res.data.qrPrintTypes) {
+        const config = res.data.qrPrintTypes
         let qrPrintTypes = {
           jiaopei: false,
           chandan: false,
           chumiao: false,
           jiankang: false
         }
-        if (config.qrPrintTypes && typeof config.qrPrintTypes === 'object') {
-          qrPrintTypes.jiaopei = config.qrPrintTypes.jiaopei === true
-          qrPrintTypes.chandan = config.qrPrintTypes.chandan === true
-          qrPrintTypes.chumiao = config.qrPrintTypes.chumiao === true
-          qrPrintTypes.jiankang = config.qrPrintTypes.jiankang === true
+        if (config && typeof config === 'object') {
+          qrPrintTypes.jiaopei = config.jiaopei === true
+          qrPrintTypes.chandan = config.chandan === true
+          qrPrintTypes.chumiao = config.chumiao === true
+          qrPrintTypes.jiankang = config.jiankang === true
         }
         const pc = { ...this.data.printerConfig, qrPrintTypes }
         this.setData({ printerConfig: pc })
@@ -217,49 +230,31 @@ Page({
     }
   },
 
-  // 保存用户打印配置到数据库（以云端为准，失败则本地也不更新）
+  // 保存用户打印配置到服务器（以云端为准，失败则本地也不更新）
   saveUserPrintConfig: async function (qrPrintTypes) {
-    const db = wx.cloud.database()
     const openid = wx.getStorageSync('openid')
     if (!openid) {
       console.warn('[userPrintConfig] 未登录，跳过云端保存')
       throw new Error('未登录')
     }
-    
+
     const validConfig = {
       jiaopei: qrPrintTypes.jiaopei === true,
       chandan: qrPrintTypes.chandan === true,
       chumiao: qrPrintTypes.chumiao === true,
       jiankang: qrPrintTypes.jiankang === true
     }
-    
+
     try {
-      const res = await db.collection('userPrintConfig').where({
-        openid: openid
-      }).get()
-      
-      if (res.data && res.data.length > 0) {
-        await db.collection('userPrintConfig').doc(res.data[0]._id).update({
-          data: {
-            qrPrintTypes: validConfig,
-            updatedAt: new Date()
-          }
-        })
-      } else {
-        await db.collection('userPrintConfig').add({
-          data: {
-            openid: openid,
-            qrPrintTypes: validConfig,
-            createdAt: new Date(),
-            updatedAt: new Date()
-          }
-        })
+      const res = await API.request('PUT', '/api/user/print-config', { qrPrintTypes: validConfig })
+      if (!res.success) {
+        throw new Error(res.message || '保存失败')
       }
-      
+
       const pc = { ...this.data.printerConfig, qrPrintTypes: validConfig }
       this.setData({ printerConfig: pc })
       wx.setStorageSync('printerConfig', pc)
-      
+
       console.log('[userPrintConfig] 保存到云端成功:', validConfig)
       return true
     } catch (error) {
@@ -268,20 +263,17 @@ Page({
     }
   },
 
-  // 加载系统配置
+  // 加载系统配置（从服务器 API）
   loadSystemConfig: async function () {
     try {
-      const res = await wx.cloud.callFunction({
-        name: 'admin',
-        data: { action: 'getConfig' }
-      })
-      
-      if (res.result.success) {
+      const res = await API.request('GET', '/api/admin/config')
+
+      if (res.success) {
         this.setData({
           systemConfig: {
-            systemName: res.result.data.systemName || '养龟档案',
-            version: res.result.data.version || '1.0.0',
-            servicePhone: res.result.data.servicePhone || ''
+            systemName: res.data.systemName || '养龟档案',
+            version: res.data.version || '1.0.0',
+            servicePhone: res.data.servicePhone || ''
           }
         })
       }
@@ -399,30 +391,45 @@ Page({
       }
     } catch (e) {}
 
-    // 尝试通过云函数获取小程序码（使用 qrcode 云函数）
+    // 尝试通过服务器 API 获取小程序码
     try {
-      if (wx.cloud) {
-        const result = await wx.cloud.callFunction({
-          name: 'qrcode',
-          data: {
-            action: 'generate',
-            data: {
-              scene: 'userId=' + (wx.getStorageSync('openid') || 'guest'),
-              page: 'subpkg-report/pages/public/index'
-            }
+      const baseUrl = API.getBaseUrl()
+      const result = await API.generateQrcode(
+        'userId=' + (wx.getStorageSync('openid') || 'guest'),
+        'subpkg-report/pages/public/index'
+      )
+      if (result && result.success && result.data) {
+        const qrUrl = result.data
+        if (qrUrl && (qrUrl.startsWith('http://') || qrUrl.startsWith('https://'))) {
+          // 下载到本地
+          const tempFileRes = await new Promise((resolve, reject) => {
+            wx.downloadFile({
+              url: qrUrl,
+              success: resolve,
+              fail: reject
+            })
+          })
+          if (tempFileRes.tempFilePath) {
+            this.setData({ qrcodeImage: tempFileRes.tempFilePath })
+            wx.setStorageSync('qrcodeImage', tempFileRes.tempFilePath)
+            wx.setStorageSync('qrcodeImageVersion', 2)
+            return
           }
-        })
-        if (result && result.result && result.result.success) {
-          const fileID = result.result.data
-          if (fileID && fileID.startsWith('cloud://')) {
-            // 下载到本地
-            const tempFileRes = await wx.cloud.downloadFile({ fileID: fileID })
-            if (tempFileRes.tempFilePath) {
-              this.setData({ qrcodeImage: tempFileRes.tempFilePath })
-              wx.setStorageSync('qrcodeImage', tempFileRes.tempFilePath)
-              wx.setStorageSync('qrcodeImageVersion', 2)
-              return
-            }
+        } else if (qrUrl && qrUrl.startsWith('cloud://')) {
+          // 兼容旧的 cloud:// 格式
+          const httpUrl = baseUrl + '/' + qrUrl.replace('cloud://', '').split('/').slice(1).join('/')
+          const tempFileRes = await new Promise((resolve, reject) => {
+            wx.downloadFile({
+              url: httpUrl,
+              success: resolve,
+              fail: reject
+            })
+          })
+          if (tempFileRes.tempFilePath) {
+            this.setData({ qrcodeImage: tempFileRes.tempFilePath })
+            wx.setStorageSync('qrcodeImage', tempFileRes.tempFilePath)
+            wx.setStorageSync('qrcodeImageVersion', 2)
+            return
           }
         }
       }
@@ -493,7 +500,7 @@ Page({
       this.loadShareInfo()
 
       const { userInfo, shareInfo } = this.data
-      const theme = { primary: '#3A7CFF', primaryDark: '#1A5CD6', primaryLight: '#E6F0FF', bg: '#F0F7FF', bgLight: '#FFFFFF', accent: '#FF8C42', text: '#1E293B' }
+      const theme = { primary: '#E8A400', primaryDark: '#C98D00', primaryLight: '#FFF8E7', bg: '#FAF8F5', bgLight: '#FFFFFF', accent: '#FF8C42', text: '#1E293B' }
       const html = generateShareHTML({}, {
         nickname: userInfo.nickname || '养龟档案',
         cover: shareInfo.cover || '',
@@ -566,10 +573,11 @@ Page({
 
   loadCloudStats: async function () {
     try {
-      const [petResult, recordResult, footResult] = await Promise.all([
+      const [petResult, recordResult, footResult, tankStatsResult] = await Promise.all([
         API.getPetList({}),
         API.getRecordList('', ''),
-        API.getFootprintList('all').catch(() => ({ success: false }))
+        API.getFootprintList('all').catch(() => ({ success: false })),
+        API.request('GET', '/api/tanks/stats').catch(() => ({ success: false }))
       ])
       
       let petList = []
@@ -589,6 +597,9 @@ Page({
         try { footList = wx.getStorageSync('footprints') || [] } catch (e) {}
       }
       
+      if (tankStatsResult.success && tankStatsResult.data) {
+        this.setData({ 'stats.tankCount': tankStatsResult.data.count || 0 })
+      }
       this.updateStatsData(petList, recordList, footList)
     } catch (error) {
       // 云模式不可用时静默回退，本地数据已展示
@@ -889,33 +900,25 @@ Page({
     }
   },
 
-  // 将名片公开信息同步到云数据库（供公开档案页使用）
+  // 将名片公开信息同步到服务器（供公开档案页使用）
   syncShareInfoToCloud: function (shareInfo) {
     const info = shareInfo || this.data.shareInfo
     if (!info) return
     try {
-      wx.cloud.callFunction({
-        name: 'login',
-        data: {
-          action: 'updatePublicProfile',
-          data: {
-            specialty: info.specialty || '',
-            wechatId: info.wechatId || '',
-            wechatPublic: !!info.wechatPublic,
-            region: info.region || '',
-            tags: Array.isArray(info.tags) ? info.tags : [],
-            intro: info.intro || '',
-            cover: info.cover || ''
-          }
-        },
-        success: (res) => {
-          if (res.result && res.result.success) {
-            console.log('公开名片已同步到云端')
-          }
-        },
-        fail: (err) => {
-          console.error('同步公开名片失败:', err)
+      API.updatePublicProfile({
+        specialty: info.specialty || '',
+        wechatId: info.wechatId || '',
+        wechatPublic: !!info.wechatPublic,
+        region: info.region || '',
+        tags: Array.isArray(info.tags) ? info.tags : [],
+        intro: info.intro || '',
+        cover: info.cover || ''
+      }).then(res => {
+        if (res && res.success) {
+          console.log('公开名片已同步到云端')
         }
+      }).catch(err => {
+        console.error('同步公开名片失败:', err)
       })
     } catch (e) {
       console.error('同步公开名片异常:', e)
@@ -1030,25 +1033,19 @@ Page({
   },
 
   /**
-   * 保存用户信息到云端（静默，失败时重试一次）
+   * 保存用户信息到服务器（静默，失败时重试一次）
    */
   _saveUserInfoToCloud: function (data) {
     try {
-      wx.cloud.callFunction({
-        name: 'login',
-        data: { action: 'updateUserInfo', data }
-      }).then(res => {
-        if (res.result && !res.result.success) {
-          console.error('[saveUserInfoToCloud] 云端返回失败:', res.result.message)
+      API.updateUserInfo(data).then(res => {
+        if (res && !res.success) {
+          console.error('[saveUserInfoToCloud] 云端返回失败:', res.message)
         }
       }).catch(err => {
         console.error('[saveUserInfoToCloud] 云端保存失败:', err)
         // 重试一次
         setTimeout(() => {
-          wx.cloud.callFunction({
-            name: 'login',
-            data: { action: 'updateUserInfo', data }
-          }).catch(() => {})
+          API.updateUserInfo(data).catch(() => {})
         }, 2000)
       })
     } catch (err) {
@@ -1106,6 +1103,7 @@ Page({
 
   scanBluetooth: function () {
     const that = this
+    this._ensureLpapi().then(() => {
     // 手动扫描时重置失败计数（用户主动操作，给自动连接一次新的机会）
     const pc = { ...this.data.printerConfig, connectFailCount: 0 }
     this.setData({ printerConfig: pc })
@@ -1129,15 +1127,17 @@ Page({
         }
       }
     })
+    }).catch(() => {})
   },
 
   hideBluetoothModal: function () {
     this.setData({ showBluetoothModal: false, isScanning: false })
-    this.lpapi.stopBleDiscovery()
+    if (this.lpapi) this.lpapi.stopBleDiscovery()
   },
 
   connectBluetooth: function (e) {
     const that = this
+    this._ensureLpapi().then(() => {
     const deviceId = e.currentTarget.dataset.deviceId
     const deviceName = e.currentTarget.dataset.deviceName
     wx.showLoading({ title: '连接中...' })
@@ -1159,10 +1159,12 @@ Page({
         wx.showToast({ title: '连接失败', icon: 'none' })
       }
     })
+    }).catch(() => {})
   },
 
   disconnectPrinter: function () {
     if (!this.data.printerConfig.deviceId) { wx.showToast({ title: '未连接打印机', icon: 'none' }); return }
+    if (!this.lpapi) return
     wx.showModal({
       title: '提示', content: '确定要断开打印机连接吗？',
       success: (res) => {
@@ -1240,8 +1242,7 @@ Page({
     } else {
       // 关闭 → 断开蓝牙连接
       if (pc.connected) {
-        this.lpapi.closePrinter()
-        this.lpapi.stopBleDiscovery()
+        if (this.lpapi) { this.lpapi.closePrinter(); this.lpapi.stopBleDiscovery() }
         wx.closeBluetoothAdapter()
         const updated = { ...pc, connected: false }
         this.setData({ printerConfig: updated })
@@ -1291,6 +1292,7 @@ Page({
 
   _doAutoConnect: function (pc) {
     const that = this
+    this._ensureLpapi().then(() => {
     this.lpapi.openPrinter({
       name: pc.deviceName,
       deviceId: pc.deviceId,
@@ -1311,10 +1313,12 @@ Page({
         }
       }
     })
+    }).catch(() => {})
   },
 
   printLabel: function (labelData, success, fail) {
     if (!this.data.printerConfig.connected) { if (fail) fail('打印机未连接'); return }
+    this._ensureLpapi().then(() => {
     const api = this.lpapi
     const result = api.startJob({ width: 40, height: 20, jobName: 'label-print', gapType: 2 })
     if (!result) { if (fail) fail('创建打印任务失败'); return }
@@ -1329,6 +1333,7 @@ Page({
       if (result.statusCode === 0 && success) success()
       else if (fail) fail('打印失败')
     }).catch(() => { if (fail) fail('打印失败') })
+    }).catch(() => { if (fail) fail('SDK加载失败') })
   },
 
   // （旧分享相关方法已删除：editShareTitle / onShareTitleInput / saveShareTitle / editShareSubtitle / onShareSubtitleInput / saveShareSubtitle / startShareVoiceInput / stopShareVoiceInput）
@@ -1552,6 +1557,11 @@ Page({
     wx.navigateTo({ url: '/pages/my/recent-view/index' })
   },
 
+  // 跳转到龟缸管理
+  goToTanks: function () {
+    wx.switchTab({ url: '/pages/tanks/index' })
+  },
+
   // 跳转到宠物档案
   goToPetProfile: function () {
     wx.switchTab({ url: '/pages/pet/index' })
@@ -1560,16 +1570,13 @@ Page({
   // 跳转到客服帮助（已迁移至 WXML 的 button open-type="contact"）
   // goToCustomerService 函数已移除，用 button 原生客服会话替代
 
-  // 检查管理员权限（通过云函数验证openid）
+  // 检查管理员权限（通过服务器 API 验证 openid）
   checkAdminPermission: async function () {
     try {
-      const result = await wx.cloud.callFunction({
-        name: 'login',
-        data: { action: 'checkAdmin' }
-      })
+      const result = await API.checkAdmin()
       console.log('管理员权限检查结果:', result)
-      const isAdmin = result.result.data.isAdmin || false
-      const adminName = result.result.data.adminName || '未知'
+      const isAdmin = result.data ? (result.data.isAdmin || false) : false
+      const adminName = result.data ? (result.data.adminName || '未知') : '未知'
       console.log('是否为管理员:', isAdmin, '管理员名称:', adminName)
       this.setData({ isAdmin })
       // 保存到本地缓存

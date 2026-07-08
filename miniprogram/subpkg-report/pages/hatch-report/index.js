@@ -1,4 +1,6 @@
 const app = getApp()
+const { getAPI } = require('../../../utils/api')
+const API = getAPI()
 
 Page({
   data: {
@@ -60,16 +62,20 @@ Page({
 
   // 加载种母选项
   loadFemales: function () {
-    const db = wx.cloud.database()
-    db.collection('pets').where({ gender: '母' }).get().then(res => {
+    API.request('GET', '/api/pets', { gender: '母', pageSize: 999 }).then(res => {
+      if (!res || !res.success) {
+        console.error('加载种母列表失败', res && res.message)
+        this.loadHatchRecords()
+        return
+      }
+      const list = (res.data && res.data.list) || []
       const options = ['全部']
       const femaleMap = {}
-      res.data.forEach(pet => {
+      list.forEach(pet => {
         const displayName = pet.alias || pet.name || pet.tag
         options.push(displayName)
-        const pid = pet._id || pet.id
+        const pid = pet.id
         if (pid) femaleMap[pid] = displayName
-        if (pet.id && pet.id !== pid) femaleMap[pet.id] = displayName
       })
       this.setData({ femaleOptions: options, femaleMap })
       if (this._preFilterPetId && femaleMap[this._preFilterPetId]) {
@@ -78,7 +84,7 @@ Page({
         delete this._preFilterPetId
         this.loadHatchRecords()
       } else if (this._maleId) {
-        this._findPairedFemales(this._maleId, res.data, options, femaleMap)
+        this._findPairedFemales(this._maleId, list, options, femaleMap)
       } else {
         this.loadHatchRecords()
       }
@@ -90,9 +96,8 @@ Page({
 
   // 根据公龟ID查找配对母龟并预选
   _findPairedFemales: function (maleId, femalePets, options, femaleMap) {
-    const db = wx.cloud.database()
-    db.collection('pets').doc(maleId).get().then(res => {
-      const partnerId = res.data && (res.data.partner || '')
+    API.request('GET', '/api/pets/' + maleId).then(res => {
+      const partnerId = (res && res.success && res.data && res.data.partnerId) || ''
       if (!partnerId) {
         this._findByMatingText(maleId, femalePets, options)
         return
@@ -112,9 +117,9 @@ Page({
   },
 
   _findByMatingText: function (maleId, femalePets, options) {
-    const db = wx.cloud.database()
-    db.collection('records').where({ petId: maleId, type: '交配' }).get().then(res => {
-      const matingTexts = (res.data || []).map(r => r.text || '').filter(Boolean)
+    API.request('GET', '/api/records', { petId: maleId, type: '交配', pageSize: 999 }).then(res => {
+      const list = (res && res.success && res.data && res.data.list) || []
+      const matingTexts = list.map(r => r.text || '').filter(Boolean)
       if (matingTexts.length === 0) {
         this.loadHatchRecords()
         return
@@ -144,51 +149,65 @@ Page({
 
   // 加载出苗记录
   loadHatchRecords: function () {
-    const db = wx.cloud.database()
-    const _ = db.command
-
-    let whereCondition = { type: '出苗' }
-
-    if (this.data.startDate && this.data.endDate) {
-      whereCondition.date = _.gte(this.data.startDate).and(_.lte(this.data.endDate))
-    } else if (this.data.startDate) {
-      whereCondition.date = _.gte(this.data.startDate)
-    } else if (this.data.endDate) {
-      whereCondition.date = _.lte(this.data.endDate)
-    }
-
-    if (this.data.femaleIndex > 0) {
-      const femaleName = this.data.femaleOptions[this.data.femaleIndex]
-      const petIds = Object.keys(this.data.femaleMap).filter(id => this.data.femaleMap[id] === femaleName)
-      if (petIds.length > 0) {
-        whereCondition.petId = _.in(petIds)
+    API.request('GET', '/api/records', { type: '出苗', pageSize: 999 }).then(res => {
+      if (!res || !res.success) {
+        console.error('加载出苗记录失败', res && res.message)
+        // 接口查询失败，回退到本地
+        this._loadLocalHatchRecords()
+        return
       }
-    }
+      const allRecords = (res.data && res.data.list) || []
+      console.log('出苗记录原始数据(REST):', JSON.stringify(allRecords))
 
-    const sortDesc = this.data.sortDesc
-    db.collection('records').where(whereCondition).orderBy('date', sortDesc ? 'desc' : 'asc').limit(100).get().then(res => {
-      console.log('出苗记录原始数据(云端):', JSON.stringify(res.data))
-      if (res.data && res.data.length > 0) {
-        this.processRecords(res.data)
+      // 客户端按日期范围过滤（不再使用 db.command）
+      let filtered = allRecords.filter(r => r.type === '出苗')
+      if (this.data.startDate && this.data.endDate) {
+        filtered = filtered.filter(r => r.date && r.date >= this.data.startDate && r.date <= this.data.endDate)
+      } else if (this.data.startDate) {
+        filtered = filtered.filter(r => r.date && r.date >= this.data.startDate)
+      } else if (this.data.endDate) {
+        filtered = filtered.filter(r => r.date && r.date <= this.data.endDate)
+      }
+
+      // 客户端按种母过滤
+      if (this.data.femaleIndex > 0) {
+        const femaleName = this.data.femaleOptions[this.data.femaleIndex]
+        const petIds = Object.keys(this.data.femaleMap).filter(id => this.data.femaleMap[id] === femaleName)
+        if (petIds.length > 0) {
+          filtered = filtered.filter(r => petIds.includes(r.petId))
+        }
+      }
+
+      // 客户端按日期排序（processRecords 仅处理 hatch/gradeRate 排序）
+      if (this.data.sortBy === 'date') {
+        const sortDesc = this.data.sortDesc
+        filtered.sort((a, b) => {
+          const dateA = a.date || ''
+          const dateB = b.date || ''
+          return sortDesc ? dateB.localeCompare(dateA) : dateA.localeCompare(dateB)
+        })
+      }
+
+      if (filtered.length > 0) {
+        this.processRecords(filtered)
       } else {
-        // 云端无数据，尝试从本地缓存加载
-        this._loadLocalHatchRecords(whereCondition)
+        // 接口无数据，尝试从本地缓存加载
+        this._loadLocalHatchRecords()
       }
     }).catch(err => {
       console.error('加载出苗记录失败', err)
-      // 云端查询失败，回退到本地
-      this._loadLocalHatchRecords(whereCondition)
+      // 接口查询失败，回退到本地
+      this._loadLocalHatchRecords()
     })
   },
 
   // 本地回退加载
-  _loadLocalHatchRecords: function (whereCondition) {
+  _loadLocalHatchRecords: function () {
     try {
       const allRecords = wx.getStorageSync('records') || []
       let filtered = allRecords.filter(r => r.type === '出苗')
-      // 日期范围过滤
-      if (whereCondition.date) {
-        // 简化处理：用字符串比较
+      // 日期范围过滤（客户端字符串比较，记录字段为 petId）
+      if (this.data.startDate || this.data.endDate) {
         filtered = filtered.filter(r => {
           if (!r.date) return false
           if (this.data.startDate && r.date < this.data.startDate) return false
@@ -204,9 +223,18 @@ Page({
           filtered = filtered.filter(r => petIds.includes(r.petId))
         }
       }
+      // 客户端按日期排序
+      if (this.data.sortBy === 'date') {
+        const sortDesc = this.data.sortDesc
+        filtered.sort((a, b) => {
+          const dateA = a.date || ''
+          const dateB = b.date || ''
+          return sortDesc ? dateB.localeCompare(dateA) : dateA.localeCompare(dateB)
+        })
+      }
       console.log('出苗记录原始数据(本地):', JSON.stringify(filtered))
       if (filtered.length === 0) {
-        console.warn('云端和本地均无出苗记录，请确认：1)出苗记录已添加 2)云函数record已重新部署')
+        console.warn('接口和本地均无出苗记录，请确认：1)出苗记录已添加 2)REST API 服务正常')
       }
       this.processRecords(filtered)
     } catch (err) {

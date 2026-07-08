@@ -1,0 +1,28 @@
+# ============================================
+# 养龟档案 - Admin Web 管理后台 Nginx 配置
+# 部署路径: /www/wwwroot/pets.openget.cn/admin
+# 使用方法: 将此配置添加到宝塔面板网站配置中
+# ============================================
+
+# Admin Web 静态站点
+location /admin {
+    alias /www/wwwroot/pets.openget.cn/admin-web;
+    index index.html;
+    try_files $uri $uri/ /admin/index.html;
+
+    # 静态资源缓存
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf)$ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+}
+
+# Admin API 反向代理（/api/admin 已由全局配置代理到 :3000）
+# 确保以下配置存在于全局或 site 配置中：
+# location /api/ {
+#     proxy_pass http://127.0.0.1:3000;
+#     proxy_set_header Host $host;
+#     proxy_set_header X-Real-IP $remote_addr;
+#     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#     proxy_set_header X-Forwarded-Proto $scheme;
+# }

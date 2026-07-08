@@ -1,0 +1,27 @@
+{
+  "name": "turtle-archive-server",
+  "version": "2.0.0",
+  "description": "养龟档案 - 自建服务器 REST API",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js",
+    "dev": "node --watch src/app.js",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop turtle-archive-server",
+    "pm2:restart": "pm2 restart turtle-archive-server"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.22.5",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^6.9.0",
+    "tencentcloud-sdk-nodejs": "^4.0.900",
+    "uuid": "^10.0.0"
+  }
+}

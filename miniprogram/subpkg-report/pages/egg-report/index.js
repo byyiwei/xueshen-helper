@@ -1,3 +1,5 @@
+const { getAPI } = require('../../../utils/api')
+const API = getAPI()
 const app = getApp()
 
 Page({
@@ -74,20 +76,24 @@ Page({
 
   // 加载种母选项
   loadFemales: function () {
-    const db = wx.cloud.database()
-    db.collection('pets').where({
-      gender: '母'
-    }).get().then(res => {
+    API.request('GET', '/api/pets', { gender: '母', pageSize: 999 }).then(res => {
+      if (!res || !res.success) {
+        console.error('加载种母列表失败', res && res.message)
+        // 即使种母加载失败，也尝试加载产蛋记录
+        this.loadEggRecords()
+        return
+      }
+      // 兼容 {success, data: {list, total}} 与 {success, data: [...]} 两种返回
+      const list = Array.isArray(res.data) ? res.data : (res.data && Array.isArray(res.data.list) ? res.data.list : [])
       const options = ['全部']
       const femaleMap = {}
-      res.data.forEach(pet => {
+      list.forEach(pet => {
         // 优先使用别名，如果没有别名则使用名字
         const displayName = pet.alias || pet.name || pet.tag
         options.push(displayName)
-        // 同时用 _id 和 id 作为 key，确保能匹配不同来源的 petId
-        const pid = pet._id || pet.id
+        // REST API 统一使用 id 字段（不再是 _id）
+        const pid = pet.id
         if (pid) femaleMap[pid] = displayName
-        if (pet.id && pet.id !== pid) femaleMap[pet.id] = displayName
       })
       this.setData({
         femaleOptions: options,
@@ -104,7 +110,7 @@ Page({
         this.loadEggRecords()
       } else if (this._maleId) {
         // 公龟进入：查找配对母龟并预选
-        this._findPairedFemales(this._maleId, res.data, options, femaleMap)
+        this._findPairedFemales(this._maleId, list, options, femaleMap)
       } else {
         this.loadEggRecords()
       }
@@ -117,10 +123,16 @@ Page({
 
   // 根据公龟ID查找配对母龟并预选
   _findPairedFemales: function (maleId, femalePets, options, femaleMap) {
-    const db = wx.cloud.database()
-    // 直接查询公龟的 partner 字段
-    db.collection('pets').doc(maleId).get().then(res => {
-      const partnerId = res.data && (res.data.partner || '')
+    // 查询公龟详情，获取 partnerId 字段
+    API.request('GET', '/api/pets/' + maleId).then(res => {
+      if (!res || !res.success) {
+        // 查询失败，回退到查交配记录文字匹配
+        this._findByMatingText(maleId, femalePets, options)
+        return
+      }
+      const petData = res.data || {}
+      // REST API 使用 partnerId（不再是 partner）
+      const partnerId = petData.partnerId || ''
       if (!partnerId) {
         // 无配对关系，回退到查交配记录文字匹配
         this._findByMatingText(maleId, femalePets, options)
@@ -144,9 +156,13 @@ Page({
 
   // 回退方案：通过交配记录文字匹配母龟
   _findByMatingText: function (maleId, femalePets, options) {
-    const db = wx.cloud.database()
-    db.collection('records').where({ petId: maleId, type: '交配' }).get().then(res => {
-      const matingTexts = (res.data || []).map(r => r.text || '').filter(Boolean)
+    API.request('GET', '/api/records', { petId: maleId, type: '交配', pageSize: 999 }).then(res => {
+      if (!res || !res.success) {
+        this.loadEggRecords()
+        return
+      }
+      const list = Array.isArray(res.data) ? res.data : (res.data && Array.isArray(res.data.list) ? res.data.list : [])
+      const matingTexts = list.map(r => r.text || '').filter(Boolean)
       if (matingTexts.length === 0) {
         this.loadEggRecords()
         return
@@ -176,50 +192,50 @@ Page({
 
   // 加载产蛋记录
   loadEggRecords: function () {
-    const db = wx.cloud.database()
-    const _ = db.command
-    
-    // 构建查询条件对象
-    let whereCondition = {
-      type: '产蛋'
-    }
-    
-    // 添加日期范围条件
-    if (this.data.startDate && this.data.endDate) {
-      whereCondition.date = _.gte(this.data.startDate).and(_.lte(this.data.endDate))
-    } else if (this.data.startDate) {
-      whereCondition.date = _.gte(this.data.startDate)
-    } else if (this.data.endDate) {
-      whereCondition.date = _.lte(this.data.endDate)
-    }
-    
-    // 添加种母筛选条件
-    if (this.data.femaleIndex > 0) {
-      const femaleName = this.data.femaleOptions[this.data.femaleIndex]
-      // 通过宠物名称查找对应的宠物ID
-      const petIds = Object.keys(this.data.femaleMap).filter(id => this.data.femaleMap[id] === femaleName)
-      if (petIds.length > 0) {
-        whereCondition.petId = _.in(petIds)
+    // REST API 不支持 db.command 复杂查询，改为拉取全部产蛋记录后客户端过滤
+    API.request('GET', '/api/records', { type: '产蛋', pageSize: 999 }).then(res => {
+      if (!res || !res.success) {
+        console.error('加载产蛋记录失败', res && res.message)
+        this._loadLocalEggRecords()
+        return
       }
-    }
-    
-    // 根据排序方式决定数据库排序
-    const sortBy = this.data.sortBy
-    const sortDesc = this.data.sortDesc
-    
-    let orderByField = 'date'
-    let orderByDirection = sortDesc ? 'desc' : 'asc'
-    
-    // 如果按产蛋数量或受精率排序，数据库按日期排序，客户端再处理
-    if (sortBy === 'date') {
-      orderByField = 'date'
-      orderByDirection = sortDesc ? 'desc' : 'asc'
-    }
-    
-    db.collection('records').where(whereCondition).orderBy(orderByField, orderByDirection).get().then(res => {
-      console.log('产蛋记录原始数据(云端):', res.data)
-      if (res.data && res.data.length > 0) {
-        this.processRecords(res.data)
+      const list = Array.isArray(res.data) ? res.data : (res.data && Array.isArray(res.data.list) ? res.data.list : [])
+      console.log('产蛋记录原始数据(云端):', list)
+
+      // 客户端过滤：日期范围
+      let filtered = list
+      if (this.data.startDate) {
+        filtered = filtered.filter(r => r.date >= this.data.startDate)
+      }
+      if (this.data.endDate) {
+        filtered = filtered.filter(r => r.date <= this.data.endDate)
+      }
+
+      // 客户端过滤：种母筛选
+      if (this.data.femaleIndex > 0) {
+        const femaleName = this.data.femaleOptions[this.data.femaleIndex]
+        // 通过宠物名称查找对应的宠物ID
+        const petIds = Object.keys(this.data.femaleMap).filter(id => this.data.femaleMap[id] === femaleName)
+        if (petIds.length > 0) {
+          filtered = filtered.filter(r => petIds.includes(r.petId))
+        }
+      }
+
+      // 客户端排序：按日期排序（产蛋/受精率排序由 processRecords 二次处理）
+      const sortBy = this.data.sortBy
+      const sortDesc = this.data.sortDesc
+      if (sortBy === 'date') {
+        filtered.sort((a, b) => {
+          const dateA = a.date || ''
+          const dateB = b.date || ''
+          if (dateA < dateB) return sortDesc ? 1 : -1
+          if (dateA > dateB) return sortDesc ? -1 : 1
+          return 0
+        })
+      }
+
+      if (filtered.length > 0) {
+        this.processRecords(filtered)
       } else {
         this._loadLocalEggRecords()
       }

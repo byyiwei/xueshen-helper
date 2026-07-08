@@ -142,39 +142,48 @@ class VoiceInputManager {
   }
 
   /**
-   * 识别语音
+   * 识别语音（自建服务器 — base64 直传）
    * @param {string} tempFilePath 
    * @returns {Promise<string>}
    */
   async _recognizeVoice(tempFilePath) {
-    try {
-      const openid = wx.getStorageSync('openid') || 'unknown'
-      const filename = Date.now() + '_' + Math.random().toString(36).slice(2) + '.mp3'
-      const cloudPath = `voice/${openid}/${filename}`
-      const uploadResult = await wx.cloud.uploadFile({
-        cloudPath: cloudPath,
-        filePath: tempFilePath
-      })
+    return new Promise((resolve, reject) => {
+      // 读取录音文件为 base64
+      const fs = wx.getFileSystemManager()
+      fs.readFile({
+        filePath: tempFilePath,
+        encoding: 'base64',
+        success: async (readRes) => {
+          try {
+            const app = getApp()
+            const config = app?.globalData?.systemConfig || {}
+            const baseUrl = config.apiUrl || config.imageServerUrl || 'https://pets.openget.cn'
+            const token = wx.getStorageSync('token') || ''
 
-      const result = await wx.cloud.callFunction({
-        name: 'speech',
-        data: {
-          action: 'recognize',
-          data: {
-            fileID: uploadResult.fileID
+            wx.request({
+              url: baseUrl + '/api/speech/recognize',
+              method: 'POST',
+              header: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+              },
+              data: { audioBase64: readRes.data },
+              success: (res) => {
+                if (res.statusCode === 200 && res.data && res.data.success && res.data.data && res.data.data.text) {
+                  resolve(res.data.data.text)
+                } else {
+                  reject(new Error(res.data?.message || '识别失败'))
+                }
+              },
+              fail: (err) => reject(new Error(err.errMsg || '网络异常'))
+            })
+          } catch (err) {
+            reject(err)
           }
-        }
+        },
+        fail: (err) => reject(new Error('读取音频文件失败'))
       })
-
-      if (result.result && result.result.success && result.result.data.text) {
-        return result.result.data.text
-      }
-      
-      throw new Error(result.result?.message || '识别失败')
-    } catch (error) {
-      console.error('语音识别失败:', error)
-      throw error
-    }
+    })
   }
 }
 

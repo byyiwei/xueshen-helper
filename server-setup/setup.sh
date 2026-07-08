@@ -85,16 +85,16 @@ echo ""
 echo -e "${YELLOW}[7/7]${NC} 创建数据库..."
 echo "请输入 MySQL root 密码以创建数据库:"
 mysql -u root -p <<EOF
-CREATE DATABASE IF NOT EXISTS turtle_archive CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS 'turtle_user'@'localhost' IDENTIFIED BY 'Turtle@2024';
-GRANT ALL PRIVILEGES ON turtle_archive.* TO 'turtle_user'@'localhost';
+CREATE DATABASE IF NOT EXISTS \`turtle-records\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'turtle-records'@'localhost' IDENTIFIED BY '199975yiwei';
+GRANT ALL PRIVILEGES ON \`turtle-records\`.* TO 'turtle-records'@'localhost';
 FLUSH PRIVILEGES;
 EOF
 
 echo -e "${GREEN}✓${NC} 数据库创建完成"
-echo "  数据库名: turtle_archive"
-echo "  用户名: turtle_user"
-echo "  密码: Turtle@2024"
+echo "  数据库名: turtle-records"
+echo "  用户名: turtle-records"
+echo "  密码: 199975yiwei"
 echo "  (请修改密码为更安全的密码!)"
 
 # 8. 安装其他依赖
@@ -134,11 +134,11 @@ echo "  • Nginx: $(nginx -v 2>&1)"
 echo "  • MySQL: $(mysql --version)"
 echo ""
 echo "下一步:"
-echo "  1. 导入数据库表结构: mysql -u turtle_user -p turtle_archive < database.sql"
+echo "  1. 导入数据库表结构: mysql -u turtle-records -p turtle-records < database.sql"
 echo "  2. 上传项目文件到 /var/www/turtle-archive"
 echo "  3. 配置 Nginx (已生成配置文件)"
 echo "  4. 使用 PM2 启动服务"
 echo ""
 echo "Nginx 配置文件已生成: /etc/nginx/sites-available/turtle-archive"
-echo "请查看 SETUP_GUIDE.md 获取详细部署步骤"
+echo "部署指南请查看: 宝塔面板部署指南.md"
 echo ""

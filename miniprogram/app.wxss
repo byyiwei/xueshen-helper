@@ -48,15 +48,15 @@ page {
 }
 
 .bg-dark {
-  background-color: #3A7CFF;
+  background-color: #E8A400;
 }
 
 :root {
-  --primary-color: #3A7CFF;
-  --primary-light: #E6F0FF;
-  --primary-dark: #1A5CD6;
+  --primary-color: #E8A400;
+  --primary-light: #FFF8E7;
+  --primary-dark: #C98D00;
   --accent-color: #FF8C42;
-  --bg-color: #F0F7FF;
+  --bg-color: #FAF8F5;
   --bg-light: #FFFFFF;
   --card-bg: #ffffff;
   --text-color: #1E293B;
@@ -66,7 +66,7 @@ page {
 }
 
 .btn-primary {
-  background-color: #3A7CFF;
+  background-color: #E8A400;
   color: #ffffff;
   border-radius: 40rpx;
   font-size: 28rpx;
@@ -81,8 +81,8 @@ page {
 }
 
 .btn-secondary {
-  background-color: #F0F7FF;
-  color: #3A7CFF;
+  background-color: #FAF8F5;
+  color: #E8A400;
   border-radius: 40rpx;
   font-size: 28rpx;
   padding: 24rpx 48rpx;
@@ -125,7 +125,7 @@ page {
 
 .btn-outline {
   background-color: transparent;
-  color: #3A7CFF;
+  color: #E8A400;
   border: 2rpx solid #E2E8F0;
   border-radius: 40rpx;
   font-size: 28rpx;
@@ -205,7 +205,7 @@ page {
 .not-logged-in-btn {
   width: 320rpx;
   height: 84rpx;
-  background: linear-gradient(135deg, #3A7CFF 0%, #1A5CD6 100%);
+  background: linear-gradient(135deg, #E8A400 0%, #C98D00 100%);
   color: #ffffff;
   border-radius: 42rpx;
   display: flex;

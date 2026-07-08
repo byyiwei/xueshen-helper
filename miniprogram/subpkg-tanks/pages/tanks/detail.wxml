@@ -1,0 +1,472 @@
+<view class="page-detail">
+  <!-- 导航栏 -->
+  <view class="nav-bar" style="padding-top:{{statusBarHeight}}px">
+    <view class="nav-back press" bindtap="navigateBack">
+      <text class="nav-back-icon">‹</text>
+    </view>
+    <text class="nav-title">{{tank.displayName}}</text>
+    <view class="nav-placeholder"></view>
+  </view>
+
+  <scroll-view
+    style="padding-top:{{totalNavHeight}}rpx"
+    scroll-y class="scroll-main"
+    refresher-enabled refresher-triggered="{{loading}}"
+    bindrefresherrefresh="onPullDownRefresh"
+  >
+    <view class="detail-inner">
+      <!-- 加载失败 -->
+      <view wx:if="{{loadError}}" class="status-box">
+        <text class="status-icon">⚠</text>
+        <text class="status-text">加载失败</text>
+        <view class="retry-btn press" bindtap="retryLoad">重新加载</view>
+      </view>
+
+      <block wx:elif="{{!loading}}">
+        <!-- 龟缸信息卡片 -->
+        <view class="info-card">
+          <view class="info-header">
+            <view class="info-title-wrap">
+              <text class="info-name">{{tank.name}}</text>
+              <text class="info-code">{{tank.displayCode}}</text>
+            </view>
+            <view class="info-edit press" bindtap="showEditForm">编辑</view>
+          </view>
+
+          <view class="info-grid">
+            <view class="info-grid-item">
+              <text class="info-grid-label">尺寸</text>
+              <text class="info-grid-value">{{tank.size ? tank.size : '-'}}</text>
+            </view>
+            <view class="info-grid-item">
+              <text class="info-grid-label">分类</text>
+              <text class="info-grid-value">{{tank.category ? tank.category : '-'}}</text>
+            </view>
+            <view class="info-grid-item">
+              <text class="info-grid-label">品种</text>
+              <text class="info-grid-value">{{tank.species ? tank.species : '-'}}</text>
+            </view>
+            <view class="info-grid-item">
+              <text class="info-grid-label">性别</text>
+              <text class="info-grid-value">公{{tank.maleCount}} · 母{{tank.femaleCount}}</text>
+            </view>
+          </view>
+
+          <view class="info-notes" wx:if="{{tank.notes}}">
+            <text class="info-notes-label">备注</text>
+            <text class="info-notes-text">{{tank.notes}}</text>
+          </view>
+        </view>
+
+        <!-- 种群统计 -->
+        <view class="population-card">
+          <view class="pop-item">
+            <text class="pop-num male">{{tank.maleCount}}</text>
+            <text class="pop-label">公龟</text>
+          </view>
+          <view class="pop-divider"></view>
+          <view class="pop-item">
+            <text class="pop-num female">{{tank.femaleCount}}</text>
+            <text class="pop-label">母龟</text>
+          </view>
+          <view class="pop-divider"></view>
+          <view class="pop-item">
+            <text class="pop-num">{{tank.totalCount}}</text>
+            <text class="pop-label">总数</text>
+          </view>
+          <view class="pop-divider"></view>
+          <view class="pop-item">
+            <text class="pop-num">{{tank.ratio}}</text>
+            <text class="pop-label">公母比</text>
+          </view>
+        </view>
+
+        <!-- 待办提醒 -->
+        <view wx:if="{{hasTankReminder}}" class="reminder-card">
+          <view class="reminder-card-head">
+            <text class="reminder-card-title">待办提醒</text>
+            <view class="reminder-setting-btn press" bindtap="gotoReminders">
+              <text>设置</text>
+            </view>
+          </view>
+          <view class="reminder-list">
+            <view wx:for="{{tankReminders}}" wx:key="id" class="reminder-item">
+              <view class="rem-dot {{item.statusClass}}"></view>
+              <view class="rem-info">
+                <text class="rem-type">{{item.typeText}}</text>
+                <text class="rem-date">{{item.nextDueDate}}</text>
+              </view>
+              <view class="rem-status {{item.statusClass}}">{{item.statusText}}</view>
+            </view>
+          </view>
+        </view>
+
+        <!-- Tab 切换 -->
+        <view class="detail-tabs">
+          <view class="tab-item {{activeTab==='water'?'active':''}}" bindtap="switchTab" data-tab="water">
+            <text class="tab-text">换水</text>
+          </view>
+          <view class="tab-item {{activeTab==='feeding'?'active':''}}" bindtap="switchTab" data-tab="feeding">
+            <text class="tab-text">喂食</text>
+          </view>
+          <view class="tab-item {{activeTab==='egg'?'active':''}}" bindtap="switchTab" data-tab="egg">
+            <text class="tab-text">捡蛋</text>
+          </view>
+          <view class="tab-item {{activeTab==='hatch'?'active':''}}" bindtap="switchTab" data-tab="hatch">
+            <text class="tab-text">出苗</text>
+          </view>
+          <view class="tab-reminder press" bindtap="gotoReminders">
+            <text class="tab-reminder-icon">🔔</text>
+          </view>
+        </view>
+
+        <!-- 换水记录 Tab -->
+        <view wx:if="{{activeTab==='water'}}" class="tab-content">
+          <view class="tab-top-bar">
+            <text class="tab-title">换水记录</text>
+            <view class="add-btn press" bindtap="showWaterForm">+ 记录</view>
+          </view>
+          <view wx:if="{{waterRecords.length === 0}}" class="empty-box">
+            <text class="empty-icon">💧</text>
+            <text class="empty-text">暂无换水记录</text>
+            <text class="empty-hint">记录换水，掌握水质变化</text>
+          </view>
+          <view wx:else class="record-list">
+            <view wx:for="{{waterRecords}}" wx:key="id" class="record-card">
+              <view class="record-main">
+                <view class="record-date">{{item.record_date}}</view>
+                <view class="record-detail" wx:if="{{item.water_change}}">换水量 {{item.water_change}}</view>
+                <view class="record-notes" wx:if="{{item.notes}}">{{item.notes}}</view>
+              </view>
+              <view class="record-type water"></view>
+            </view>
+          </view>
+        </view>
+
+        <!-- 喂食记录 Tab -->
+        <view wx:if="{{activeTab==='feeding'}}" class="tab-content">
+          <view class="tab-top-bar">
+            <text class="tab-title">喂食记录</text>
+            <view class="add-btn press" bindtap="showFeedingForm">+ 记录</view>
+          </view>
+          <view wx:if="{{feedingRecords.length === 0}}" class="empty-box">
+            <text class="empty-icon">🍤</text>
+            <text class="empty-text">暂无喂食记录</text>
+            <text class="empty-hint">记录喂食，追踪饮食规律</text>
+          </view>
+          <view wx:else class="record-list">
+            <view wx:for="{{feedingRecords}}" wx:key="id" class="record-card">
+              <view class="record-main">
+                <view class="record-date">{{item.record_date}}</view>
+                <view class="record-detail" wx:if="{{item.food_type}}">{{item.food_type}} {{item.amount_g ? item.amount_g : ''}}</view>
+                <view class="record-detail" wx:if="{{item.additives}}">添加 {{item.additives}}</view>
+                <view class="record-notes" wx:if="{{item.notes}}">{{item.notes}}</view>
+              </view>
+              <view class="record-type feeding"></view>
+            </view>
+          </view>
+        </view>
+
+        <!-- 捡蛋记录 Tab -->
+        <view wx:if="{{activeTab==='egg'}}" class="tab-content">
+          <view class="tab-top-bar">
+            <text class="tab-title">捡蛋记录</text>
+            <view class="add-btn press" bindtap="showEggForm">+ 记录</view>
+          </view>
+          <view wx:if="{{eggRecords.length === 0}}" class="empty-box">
+            <text class="empty-icon">🥚</text>
+            <text class="empty-text">暂无捡蛋记录</text>
+            <text class="empty-hint">记录产蛋，管理繁殖数据</text>
+          </view>
+          <view wx:else class="record-list">
+            <view wx:for="{{eggRecords}}" wx:key="id" class="egg-card">
+              <view class="egg-main">
+                <view class="egg-top">
+                  <text class="egg-date">{{item.lay_date}}</text>
+                  <text class="egg-rate">受精率 {{item.fertility_rate}}</text>
+                </view>
+                <view class="egg-stats">
+                  <view class="egg-stat">
+                    <text class="egg-num">{{item.total_eggs}}</text>
+                    <text class="egg-label">总蛋数</text>
+                  </view>
+                  <view class="egg-stat">
+                    <text class="egg-num fertilized">{{item.fertilized}}</text>
+                    <text class="egg-label">受精</text>
+                  </view>
+                  <view class="egg-stat">
+                    <text class="egg-num">{{item.unfertilized}}</text>
+                    <text class="egg-label">未受精</text>
+                  </view>
+                </view>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <!-- 出苗记录 Tab -->
+        <view wx:if="{{activeTab==='hatch'}}" class="tab-content">
+          <view class="tab-top-bar">
+            <text class="tab-title">出苗记录</text>
+            <view class="add-btn press" bindtap="goHatchFromTab">+ 记录</view>
+          </view>
+          <view wx:if="{{hatchRecords.length === 0}}" class="empty-box">
+            <text class="empty-icon">🐢</text>
+            <text class="empty-text">暂无出苗记录</text>
+            <text class="empty-hint">记录出苗，统计孵化成果</text>
+          </view>
+          <view wx:else class="record-list">
+            <view wx:for="{{hatchRecords}}" wx:key="id" class="record-card">
+              <view class="record-main">
+                <view class="record-date">{{item.hatch_date}}</view>
+                <view class="record-detail">出苗 {{item.total_hatched}} 只 · 全品 {{item.perfect_count}} · 次品 {{item.imperfect_count}}</view>
+                <view class="record-detail" wx:if="{{item.perfect_rate}}">全品率 {{item.perfect_rate}}</view>
+                <view class="record-notes" wx:if="{{item.notes}}">{{item.notes}}</view>
+              </view>
+              <view class="record-type hatch"></view>
+            </view>
+          </view>
+        </view>
+      </block>
+
+      <!-- 骨架屏 -->
+      <view wx:if="{{loading}}" class="skeleton-wrap">
+        <view class="skeleton-card"></view>
+        <view class="skeleton-pop"></view>
+        <view class="skeleton-tabs"></view>
+        <view class="skeleton-record"></view>
+        <view class="skeleton-record"></view>
+      </view>
+
+      <view class="safe-bottom"></view>
+    </view>
+  </scroll-view>
+
+  <!-- 换水记录弹窗 -->
+  <view wx:if="{{showWaterForm}}" class="modal-mask" bindtap="hideWaterForm">
+    <view class="modal-sheet" catchtap="stopPropagation">
+      <view class="modal-head">
+        <text class="modal-title">记录换水</text>
+        <text class="modal-close" bindtap="hideWaterForm">×</text>
+      </view>
+      <scroll-view scroll-y class="modal-body">
+        <view class="form-group">
+          <text class="form-label">日期</text>
+          <picker mode="date" value="{{waterForm.record_date}}" bindchange="onWaterDateChange">
+            <view class="form-picker">{{waterForm.record_date ? waterForm.record_date : '请选择日期'}}</view>
+          </picker>
+        </view>
+        <view class="form-group">
+          <text class="form-label">换水量</text>
+          <picker bindchange="onWaterChangePick" value="{{waterForm.water_change_index}}" range="{{waterChangeOptions}}">
+            <view class="form-picker">{{waterForm.water_change ? waterForm.water_change : '请选择换水量'}}</view>
+          </picker>
+        </view>
+        <view class="form-group">
+          <text class="form-label">备注</text>
+          <textarea class="form-textarea" placeholder="选填" value="{{waterForm.notes}}" bindinput="onWaterInput" data-field="notes"/>
+        </view>
+        <view class="submit-btn press {{submitting ? 'disabled' : ''}}" bindtap="submitWater">
+          <text>{{submitting ? '提交中...' : '确认保存'}}</text>
+        </view>
+        <view class="event-sheet-safe"></view>
+      </scroll-view>
+    </view>
+  </view>
+
+  <!-- 喂食记录弹窗 -->
+  <view wx:if="{{showFeedingForm}}" class="modal-mask" bindtap="hideFeedingForm">
+    <view class="modal-sheet" catchtap="stopPropagation">
+      <view class="modal-head">
+        <text class="modal-title">记录喂食</text>
+        <text class="modal-close" bindtap="hideFeedingForm">×</text>
+      </view>
+      <scroll-view scroll-y class="modal-body">
+        <view class="form-group">
+          <text class="form-label">日期</text>
+          <picker mode="date" value="{{feedingForm.record_date}}" bindchange="onFeedingDateChange">
+            <view class="form-picker">{{feedingForm.record_date ? feedingForm.record_date : '请选择日期'}}</view>
+          </picker>
+        </view>
+        <view class="form-group">
+          <text class="form-label">食物类型</text>
+          <picker bindchange="onFoodTypePick" value="{{feedingForm.food_type_index}}" range="{{foodTypeOptions}}">
+            <view class="form-picker">{{feedingForm.food_type ? feedingForm.food_type : '请选择食物类型'}}</view>
+          </picker>
+        </view>
+        <view class="form-group" wx:if="{{feedingForm.food_type === '其他'}}">
+          <text class="form-label">其他食物</text>
+          <input class="form-input" placeholder="请输入食物名称" value="{{feedingForm.food_type_custom}}" bindinput="onFeedingInput" data-field="food_type_custom"/>
+        </view>
+        <view class="form-group">
+          <text class="form-label">投喂量</text>
+          <picker bindchange="onAmountPick" value="{{feedingForm.amount_index}}" range="{{amountOptions}}">
+            <view class="form-picker">{{feedingForm.amount_g ? feedingForm.amount_g : '请选择投喂量'}}</view>
+          </picker>
+        </view>
+        <view class="form-group">
+          <text class="form-label">营养剂</text>
+          <picker bindchange="onAdditivesPick" value="{{feedingForm.additives_index}}" range="{{additiveOptions}}">
+            <view class="form-picker">{{feedingForm.additives ? feedingForm.additives : '请选择营养剂'}}</view>
+          </picker>
+        </view>
+        <view class="form-group" wx:if="{{feedingForm.additives === '其他'}}">
+          <text class="form-label">其他营养剂</text>
+          <input class="form-input" placeholder="请输入营养剂名称" value="{{feedingForm.additives_custom}}" bindinput="onFeedingInput" data-field="additives_custom"/>
+        </view>
+        <view class="form-group">
+          <text class="form-label">备注</text>
+          <textarea class="form-textarea" placeholder="选填" value="{{feedingForm.notes}}" bindinput="onFeedingInput" data-field="notes"/>
+        </view>
+        <view class="submit-btn press {{submitting ? 'disabled' : ''}}" bindtap="submitFeeding">
+          <text>{{submitting ? '提交中...' : '确认保存'}}</text>
+        </view>
+        <view class="event-sheet-safe"></view>
+      </scroll-view>
+    </view>
+  </view>
+
+  <!-- 捡蛋记录弹窗 -->
+  <view wx:if="{{showEggForm}}" class="modal-mask" bindtap="hideEggForm">
+    <view class="modal-sheet" catchtap="stopPropagation">
+      <view class="modal-head">
+        <text class="modal-title">记录捡蛋</text>
+        <text class="modal-close" bindtap="hideEggForm">×</text>
+      </view>
+      <scroll-view scroll-y class="modal-body">
+        <view class="form-group">
+          <text class="form-label">产蛋日期</text>
+          <picker mode="date" value="{{eggForm.lay_date}}" bindchange="onEggDateChange">
+            <view class="form-picker">{{eggForm.lay_date ? eggForm.lay_date : '请选择日期'}}</view>
+          </picker>
+        </view>
+        <view class="form-group">
+          <text class="form-label">产蛋总数（枚）</text>
+          <input class="form-input" type="number" placeholder="请输入" value="{{eggForm.total_eggs}}" bindinput="onEggInput" data-field="total_eggs"/>
+        </view>
+        <view class="form-group">
+          <text class="form-label">受精数（枚）</text>
+          <input class="form-input" type="number" placeholder="请输入" value="{{eggForm.fertilized}}" bindinput="onEggInput" data-field="fertilized"/>
+        </view>
+        <view class="form-group">
+          <text class="form-label">未受精数（自动计算）</text>
+          <view class="form-display">{{eggForm.unfertilized ? eggForm.unfertilized : 0}}</view>
+        </view>
+        <view class="form-group">
+          <text class="form-label">备注</text>
+          <textarea class="form-textarea" placeholder="选填" value="{{eggForm.notes}}" bindinput="onEggInput" data-field="notes"/>
+        </view>
+        <view class="submit-btn press {{submitting ? 'disabled' : ''}}" bindtap="submitEgg">
+          <text>{{submitting ? '提交中...' : '确认保存'}}</text>
+        </view>
+        <view class="event-sheet-safe"></view>
+      </scroll-view>
+    </view>
+  </view>
+
+  <!-- 出苗记录弹窗 -->
+  <view wx:if="{{showHatchForm}}" class="modal-mask" bindtap="hideHatchForm">
+    <view class="modal-sheet" catchtap="stopPropagation">
+      <view class="modal-head">
+        <text class="modal-title">记录出苗</text>
+        <text class="modal-close" bindtap="hideHatchForm">×</text>
+      </view>
+      <scroll-view scroll-y class="modal-body">
+        <view wx:if="{{selectedEggDate}}" class="form-group">
+          <text class="form-label">产蛋记录</text>
+          <view class="form-display">{{selectedEggDate}}</view>
+        </view>
+        <view class="form-group">
+          <text class="form-label">出苗日期</text>
+          <picker mode="date" value="{{hatchForm.hatch_date}}" bindchange="onHatchDateChange">
+            <view class="form-picker">{{hatchForm.hatch_date ? hatchForm.hatch_date : '请选择日期'}}</view>
+          </picker>
+        </view>
+        <view class="form-group">
+          <text class="form-label">出苗总数（只）</text>
+          <input class="form-input" type="number" placeholder="请输入" value="{{hatchForm.total_hatched}}" bindinput="onHatchInput" data-field="total_hatched"/>
+        </view>
+        <view class="form-group">
+          <text class="form-label">全品数（只）</text>
+          <input class="form-input" type="number" placeholder="请输入" value="{{hatchForm.perfect_count}}" bindinput="onHatchInput" data-field="perfect_count"/>
+        </view>
+        <view class="form-group">
+          <text class="form-label">非全品数（自动计算）</text>
+          <view class="form-display">{{hatchForm.imperfect_count ? hatchForm.imperfect_count : 0}}</view>
+        </view>
+        <view class="form-group">
+          <text class="form-label">备注</text>
+          <textarea class="form-textarea" placeholder="选填" value="{{hatchForm.notes}}" bindinput="onHatchInput" data-field="notes"/>
+        </view>
+        <view class="submit-btn press {{submitting ? 'disabled' : ''}}" bindtap="submitHatch">
+          <text>{{submitting ? '提交中...' : '确认保存'}}</text>
+        </view>
+        <view class="event-sheet-safe"></view>
+      </scroll-view>
+    </view>
+  </view>
+
+  <!-- 编辑龟缸信息弹窗 -->
+  <view wx:if="{{showEditTankForm}}" class="modal-mask" bindtap="hideEditForm">
+    <view class="modal-sheet" catchtap="stopPropagation">
+      <view class="modal-head">
+        <text class="modal-title">编辑龟缸信息</text>
+        <text class="modal-close" bindtap="hideEditForm">×</text>
+      </view>
+      <scroll-view scroll-y class="modal-body">
+        <view class="form-group">
+          <text class="form-label">编号</text>
+          <input class="form-input" placeholder="留空自动生成" value="{{editForm.tank_code}}" bindinput="onEditInput" data-field="tank_code"/>
+        </view>
+        <view class="form-group">
+          <text class="form-label">名称</text>
+          <input class="form-input" placeholder="龟缸名称" value="{{editForm.name}}" bindinput="onEditInput" data-field="name"/>
+        </view>
+        <view class="form-group">
+          <text class="form-label">尺寸</text>
+          <input class="form-input" placeholder="如 60×40×30 cm" value="{{editForm.size}}" bindinput="onEditInput" data-field="size"/>
+        </view>
+        <view class="form-group">
+          <text class="form-label">饲养品种</text>
+          <input class="form-input" placeholder="如 草龟、巴西龟" value="{{editForm.species}}" bindinput="onEditInput" data-field="species"/>
+        </view>
+        <view class="form-group">
+          <text class="form-label">备注</text>
+          <textarea class="form-textarea" placeholder="选填" value="{{editForm.notes}}" bindinput="onEditInput" data-field="notes"/>
+        </view>
+        <view class="submit-btn press {{submitting ? 'disabled' : ''}}" bindtap="submitEditTank">
+          <text>{{submitting ? '提交中...' : '确认保存'}}</text>
+        </view>
+        <view class="event-sheet-safe"></view>
+      </scroll-view>
+    </view>
+  </view>
+
+  <!-- 出苗选择产蛋记录弹窗 -->
+  <view wx:if="{{showEggSelector}}" class="modal-mask" bindtap="hideEggSelector">
+    <view class="modal-sheet modal-sheet-sm" catchtap="stopPropagation">
+      <view class="modal-head">
+        <text class="modal-title">选择产蛋记录</text>
+        <text class="modal-close" bindtap="hideEggSelector">×</text>
+      </view>
+      <view class="egg-selector-list">
+        <view wx:if="{{eggRecords.length === 0}}" class="empty-box">
+          <text class="empty-text">暂无产蛋记录</text>
+          <text class="empty-hint">请先记录捡蛋后再出苗</text>
+        </view>
+        <view
+          wx:for="{{eggRecords}}"
+          wx:key="id"
+          class="egg-selector-item press"
+          bindtap="onSelectEggForHatch"
+          data-id="{{item.id}}"
+          data-date="{{item.lay_date}}"
+        >
+          <text class="egg-selector-date">{{item.lay_date}}</text>
+          <text class="egg-selector-stat">总{{item.total_eggs}}枚 · 受精{{item.fertilized}}</text>
+        </view>
+      </view>
+      <view class="event-sheet-safe"></view>
+    </view>
+  </view>
+</view>

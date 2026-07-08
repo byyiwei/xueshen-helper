@@ -1,0 +1,50 @@
+<view class="page-quick">
+  <view class="nav-bar" style="padding-top:{{statusBarHeight}}px">
+    <view class="nav-back press" bindtap="navigateBack">
+      <text class="nav-back-icon">‹</text>
+    </view>
+    <text class="nav-title">{{checkType === 'water' ? '换水打卡' : '喂食打卡'}}</text>
+    <view class="nav-placeholder"></view>
+  </view>
+
+  <view class="body" style="padding-top:{{statusBarHeight + 88}}px">
+    <view class="check-card">
+      <text class="check-icon">{{checkType === 'water' ? '💧' : '🍽'}}</text>
+      <text class="check-label">{{checkType === 'water' ? '换水记录' : '喂食记录'}}</text>
+      <text class="check-date">{{today}}</text>
+    </view>
+
+    <!-- 换水选项 -->
+    <block wx:if="{{checkType === 'water'}}">
+      <view class="option-title">选择换水量</view>
+      <view class="option-list">
+        <view
+          wx:for="{{waterOptions}}"
+          wx:key="*this"
+          class="option-item press {{waterChange === item ? 'active' : ''}}"
+          bindtap="onWaterSelect"
+          data-value="{{item}}"
+        >
+          <text>{{item}}</text>
+        </view>
+      </view>
+    </block>
+
+    <!-- 喂食表单 -->
+    <block wx:else>
+      <view class="form-group">
+        <text class="form-label">食物类型</text>
+        <input class="form-input" placeholder="如：龟粮、小鱼、虾" value="{{foodType}}" bindinput="onInput" data-field="foodType"/>
+      </view>
+      <view class="form-group">
+        <text class="form-label">投喂量（克）</text>
+        <input class="form-input" type="digit" placeholder="选填" value="{{amountG}}" bindinput="onInput" data-field="amountG"/>
+      </view>
+    </block>
+
+    <!-- 提交按钮 -->
+    <view class="submit-btn press {{submitting ? 'disabled' : ''}}" bindtap="submit">
+      <text>{{submitting ? '提交中...' : '确认打卡'}}</text>
+    </view>
+  </view>
+</view>

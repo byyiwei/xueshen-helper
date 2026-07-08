@@ -103,8 +103,7 @@ Page({
     console.log('loadPublicPets called with userId:', userId)
     
     try {
-      // 调用云函数获取公开宠物
-      const result = await API.callCloudFunction('pet', 'publicList', { userId })
+      const result = await API.getPublicPets(userId)
       console.log('loadPublicPets API result:', result)
       
       if (result.success) {
@@ -113,20 +112,12 @@ Page({
         const ownerNickname = responseData.ownerNickname || ''
         const ownerAvatar = responseData.ownerAvatar || ''
         const publicShareInfo = responseData.publicShareInfo || {}
-        // 用云端返回的真实用户信息填充 userInfo
         if (ownerNickname || ownerAvatar) {
           const nickname = ownerNickname || ''
-          // 头像可能是 cloud:// 格式，需要转换为临时 URL
           let avatarUrl = ownerAvatar || ''
-          if (avatarUrl && (avatarUrl.startsWith('cloud://') || avatarUrl.includes('tcb.qcloud.la'))) {
-            try {
-              avatarUrl = await getTempUrl(avatarUrl.startsWith('cloud://') ? avatarUrl : avatarUrl)
-            } catch (err) {
-              console.error('头像URL转换失败:', err)
-              avatarUrl = ''
-            }
+          if (avatarUrl) {
+            avatarUrl = avatarUrl // 服务器返回的是 HTTP URL，无需转换
           }
-          // 合并而非覆盖：本地已有的 userInfo 优先（主人访问时头像可能是本地临时URL）
           const existingUserInfo = this.data.userInfo || {}
           this.setData({
             userInfo: {
@@ -136,31 +127,17 @@ Page({
             avatarInitial: nickname ? nickname.charAt(0) : '?'
           })
         }
-        // 计算微信号是否公开显示
         publicShareInfo.showWechat = !!(publicShareInfo.wechatPublic && publicShareInfo.wechatId)
-        // 将公开名片信息同步到 shareInfo，使封面等配置对访客可见
-        // cover 是 cloud:// 格式，需要转换为临时 URL
         let coverUrl = publicShareInfo.cover || ''
-        if (coverUrl && (coverUrl.startsWith('cloud://') || coverUrl.includes('tcb.qcloud.la'))) {
-          try {
-            coverUrl = await getTempUrl(coverUrl.startsWith('cloud://') ? coverUrl : coverUrl)
-          } catch (err) {
-            console.error('封面图URL转换失败:', err)
-            coverUrl = ''
-          }
-        }
-        // 合并而非覆盖：优先使用本地已有的 shareInfo（主人访问时更完整）
         const cloudShareInfo = {
           cover: coverUrl,
           specialty: publicShareInfo.specialty || '',
           tags: publicShareInfo.tags || []
         }
         const finalShareInfo = { ...cloudShareInfo, ...this.data.shareInfo }
-        // 但如果本地没有 cover，用云端的
         if (!finalShareInfo.cover && coverUrl) {
           finalShareInfo.cover = coverUrl
         }
-        // 格式化产蛋/配对日期为 MM-DD，并处理记录数据
         for (const pet of pets) {
           if (pet.latestEgg && pet.latestEgg.date) {
             const parts = pet.latestEgg.date.split('-')
@@ -172,21 +149,6 @@ Page({
             const parts = pet.latestPairing.date.split('-')
             if (parts.length >= 3) {
               pet.latestPairing.date = parts[1] + '-' + parts[2]
-            }
-          }
-          // 转换图片URL
-          if (pet.photos && pet.photos.length > 0) {
-            const needsConversion = pet.photos.some(p => 
-              p && (p.startsWith('cloud://') || p.includes('tcb.qcloud.la'))
-            )
-            if (needsConversion) {
-              try {
-                pet.photos = await convertPhotoIdsToUrls(pet.photos)
-                pet.photos = pet.photos.filter(p => p && p.length > 0)
-              } catch (err) {
-                console.error('图片URL转换失败:', err)
-                pet.photos = []
-              }
             }
           }
         }

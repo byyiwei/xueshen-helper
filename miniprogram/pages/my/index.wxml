@@ -45,16 +45,16 @@
               <text class="stat-card-label">龟档案</text>
             </view>
             <view class="stat-card">
+              <text class="stat-card-num">{{stats.tankCount}}</text>
+              <text class="stat-card-label">龟缸</text>
+            </view>
+            <view class="stat-card">
               <text class="stat-card-num">{{stats.eggEvents}}</text>
               <text class="stat-card-label">产蛋记录</text>
             </view>
             <view class="stat-card">
               <text class="stat-card-num">{{stats.pairEvents}}</text>
               <text class="stat-card-label">配对记录</text>
-            </view>
-            <view class="stat-card warning">
-              <text class="stat-card-num">{{stats.warningCount}}</text>
-              <text class="stat-card-label">预警档案</text>
             </view>
           </view>
         </view>
@@ -66,7 +66,7 @@
               <text class="section-sub">个人资料与服务入口</text>
             </view>
           </view>
-          <view class="menu-grid">
+          <view class="menu-grid menu-grid-3">
             <view class="menu-item press" bindtap="goToRecycleBin">
               <text class="menu-icon">🗑</text>
               <text class="menu-name">回收站</text>

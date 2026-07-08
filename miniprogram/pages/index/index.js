@@ -13,6 +13,14 @@ Page({
     isLoggedIn: false,
     allReminders: [],
     hasAnyReminder: false,
+    tankReminders: [],
+    hasTankReminder: false,
+    tankRemindersToday: [],
+    tankRemindersFuture: [],
+    hasFutureReminders: false,
+    futureGroups: [],
+    collapsedGroups: {},
+    todoTab: 'pet', // pet | tank
     featuredPets: [],
     stats: {
       petCount: 0,
@@ -20,7 +28,8 @@ Page({
       pairEvents: 0,
       warningCount: 0
     },
-    showSkeleton: false
+    showSkeleton: false,
+    tankCount: 0
   },
 
   onLoad: function () {
@@ -32,6 +41,8 @@ Page({
   },
 
   _applyPreloadedData: function (app) {
+    const tankStats = app.globalData.preloadedTankStats || {}
+    const tanks = app.globalData.preloadedTanks || []
     this.setData({
       allReminders: app.globalData.preloadedReminders || [],
       hasAnyReminder: !!app.globalData.preloadedHasReminder,
@@ -41,7 +52,8 @@ Page({
         pairEvents: 0,
         warningCount: 0
       },
-      featuredPets: app.globalData.preloadedFeaturedPets || []
+      featuredPets: app.globalData.preloadedFeaturedPets || [],
+      tankCount: tankStats.count !== undefined ? tankStats.count : tanks.length
     })
   },
 
@@ -55,14 +67,23 @@ Page({
       this._applyPreloadedData(app)
       this._preloadedApplied = true
       this.loadUserData()
+      // 龟缸提醒未预加载，需主动获取
+      this.loadTankReminders()
+      // 如果预加载的宠物提醒为空（可能 token 过期导致预加载失败），重新加载
+      if (!app.globalData.preloadedReminders || app.globalData.preloadedReminders.length === 0) {
+        this.loadReminders()
+      }
     } else if (this._preloadedApplied && isLoggedIn) {
       // 后续返回首页时刷新
       this.loadReminders()
+      this.loadTankReminders()
       this.loadStats()
       this.loadUserData()
+      this.refreshTankCount()
     } else if (!this._preloadedApplied && !app.globalData.dataPreloaded && isLoggedIn) {
       // 未经过 loading 页的直接进入（兜底）
       this.loadReminders()
+      this.loadTankReminders()
       this.loadStats()
       this.loadUserData()
       this._preloadedApplied = true
@@ -330,6 +351,101 @@ Page({
     }
   },
 
+  // 加载龟缸提醒
+  async loadTankReminders() {
+    try {
+      const res = await API.getTankRemindersDue()
+      if (res.success && res.data) {
+        const list = (res.data.list || []).map(r => {
+          let dateStr = r.nextDueDate || ''
+          if (dateStr) {
+            const d = new Date(dateStr)
+            if (!isNaN(d.getTime())) {
+              dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+            }
+          }
+          return { ...r, nextDueDate: dateStr }
+        })
+        const priority = { overdue: 0, today: 1, tomorrow: 2, dayafter: 3, normal: 4 }
+        list.sort((a, b) => {
+          const pa = priority[a.statusClass] || 9
+          const pb = priority[b.statusClass] || 9
+          return pa - pb
+        })
+        const todayList = list.filter(r => r.statusClass === 'overdue' || r.statusClass === 'today')
+        const futureList = list.filter(r => r.statusClass !== 'overdue' && r.statusClass !== 'today')
+
+        // 按日期标签分组，并按类型拆分子组
+        const groupMap = {}
+        futureList.forEach(r => {
+          const label = r.statusText
+          if (!groupMap[label]) {
+            groupMap[label] = { label, items: [], typeBreakdown: [] }
+          }
+          groupMap[label].items.push(r)
+        })
+        // 计算每个分组的类型明细
+        Object.values(groupMap).forEach(g => {
+          const typeMap = {}
+          g.items.forEach(r => {
+            const t = r.typeText
+            if (!typeMap[t]) typeMap[t] = { type: r.type, typeText: t, count: 0 }
+            typeMap[t].count++
+          })
+          g.typeBreakdown = Object.values(typeMap)
+        })
+        const futureGroups = Object.values(groupMap)
+
+        // 默认折叠状态：超过3个缸的分组折叠
+        const collapsedGroups = {}
+        futureGroups.forEach((g, i) => {
+          collapsedGroups[g.label] = g.items.length > 3
+        })
+
+        this.setData({
+          tankReminders: list,
+          hasTankReminder: list.length > 0,
+          tankRemindersToday: todayList,
+          tankRemindersFuture: futureList,
+          hasFutureReminders: futureList.length > 0,
+          futureGroups,
+          collapsedGroups
+        })
+      } else {
+        this.setData({ tankReminders: [], hasTankReminder: false, tankRemindersToday: [], tankRemindersFuture: [], hasFutureReminders: false, futureGroups: [], collapsedGroups: {} })
+      }
+    } catch (error) {
+      console.error('加载龟缸提醒失败:', error)
+      this.setData({ tankReminders: [], hasTankReminder: false, tankRemindersToday: [], tankRemindersFuture: [], hasFutureReminders: false, futureGroups: [], collapsedGroups: {} })
+    }
+  },
+
+  toggleFutureGroup(e) {
+    const label = e.currentTarget.dataset.label
+    if (!label) return
+    const collapsedGroups = { ...this.data.collapsedGroups }
+    collapsedGroups[label] = !collapsedGroups[label]
+    this.setData({ collapsedGroups })
+  },
+
+  // 切换待办 tab
+  switchTodoTab: function (e) {
+    const tab = e.currentTarget.dataset.tab
+    if (tab && tab !== this.data.todoTab) {
+      this.setData({ todoTab: tab })
+    }
+  },
+
+  // 从龟缸提醒跳转到龟缸详情
+  gotoTankDetailFromReminder: function (e) {
+    const tankId = e.currentTarget.dataset.tankId
+    if (tankId) {
+      wx.navigateTo({
+        url: `/subpkg-tanks/pages/tanks/detail?id=${tankId}`
+      })
+    }
+  },
+
   // ========== 标记完成（与详情页 markReminderDone 逻辑一致） ==========
   markReminderDoneFromIndex: async function (e) {
     const { petId, reminderId } = e.currentTarget.dataset
@@ -392,7 +508,18 @@ Page({
   },
 
   goToTank: function () {
-    wx.showToast({ title: '龟缸功能开发中', icon: 'none' })
+    wx.switchTab({ url: '/pages/tanks/index' })
+  },
+
+  refreshTankCount: function () {
+    const app = getApp()
+    const tankStats = app.globalData.preloadedTankStats
+    const tanks = app.globalData.preloadedTanks
+    if (tankStats && tankStats.count !== undefined) {
+      this.setData({ tankCount: tankStats.count })
+    } else if (tanks) {
+      this.setData({ tankCount: tanks.length })
+    }
   },
 
   goToDiseasePrevention: function () {
@@ -405,6 +532,10 @@ Page({
 
   goToHatchReport: function () {
     wx.navigateTo({ url: '/subpkg-report/pages/hatch-report/index' })
+  },
+
+  goToTankDashboard: function () {
+    wx.navigateTo({ url: '/subpkg-tanks/pages/tanks/dashboard' })
   },
 
   goToCalculator: function () {

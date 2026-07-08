@@ -1,0 +1,201 @@
+/* ====== 页面容器 ====== */
+.page-remind {
+  min-height: 100vh;
+  background: var(--c-bg, #FAF8F5);
+}
+
+/* ====== 导航栏 ====== */
+.nav-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(255,255,255,0.95);
+  backdrop-filter: blur(16px);
+  display: flex; align-items: center;
+  height: 88rpx;
+  border-bottom: 1rpx solid var(--c-border-light, #F5F2EE);
+}
+.nav-back {
+  width: 80rpx; height: 100%;
+  display: flex; align-items: center; justify-content: center;
+}
+.nav-back-icon { font-size: 44rpx; color: var(--c-text, #1A1A1A); }
+.nav-title {
+  flex: 1; text-align: center;
+  font-size: 32rpx; font-weight: 700;
+  color: var(--c-text, #1A1A1A);
+}
+.nav-placeholder { width: 80rpx; }
+
+/* ====== 滚动区 ====== */
+.form-scroll {
+  height: 100vh;
+  box-sizing: border-box;
+}
+.form-inner {
+  padding: 24rpx;
+}
+
+/* ====== 加载/空状态 ====== */
+.status-box {
+  padding: 120rpx 0;
+  text-align: center;
+}
+.status-text {
+  font-size: 28rpx;
+  color: var(--c-text3, #BFBFBF);
+}
+.empty-box {
+  padding: 120rpx 0 80rpx;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 16rpx;
+}
+.empty-icon { font-size: 80rpx; }
+.empty-text {
+  font-size: 30rpx; font-weight: 600;
+  color: var(--c-text2, #999);
+}
+.empty-hint {
+  font-size: 24rpx;
+  color: var(--c-text3, #BFBFBF);
+}
+
+/* ====== 提醒卡片 ====== */
+.remind-card {
+  background: var(--c-surface, #FFFFFF);
+  border-radius: 20rpx;
+  padding: 24rpx;
+  margin-bottom: 20rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0,0,0,0.04);
+  border: 1rpx solid var(--c-border-light, #F5F2EE);
+  transition: opacity 0.2s;
+}
+.remind-card.disabled {
+  opacity: 0.5;
+}
+
+/* 卡片头部 */
+.card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 20rpx;
+}
+.type-badge {
+  display: flex; align-items: center; gap: 6rpx;
+  padding: 10rpx 20rpx;
+  border-radius: 12rpx;
+  font-size: 26rpx; font-weight: 600;
+}
+.type-water {
+  background: var(--c-primary-light, #FFF8E7);
+  color: var(--c-primary, #E8A400);
+}
+.type-feed {
+  background: rgba(255, 140, 66, 0.1);
+  color: #FF8C42;
+}
+.type-event {
+  background: var(--c-primary-light, #FFF8E7);
+  color: var(--c-primary, #E8A400);
+}
+.type-arrow {
+  font-size: 20rpx;
+  opacity: 0.6;
+}
+.head-right {
+  display: flex; align-items: center; gap: 16rpx;
+}
+.del-btn {
+  width: 56rpx; height: 56rpx;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: var(--c-danger-bg, #FFF5F5);
+}
+.del-icon {
+  font-size: 28rpx;
+  color: var(--c-danger, #E05555);
+}
+
+/* ====== 表单行 ====== */
+.form-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16rpx 0;
+  border-top: 1rpx solid var(--c-border-light, #F5F2EE);
+}
+.form-label {
+  font-size: 28rpx;
+  color: var(--c-text2, #999);
+  flex-shrink: 0;
+}
+.form-input {
+  flex: 1; text-align: right;
+  font-size: 28rpx;
+  color: var(--c-text, #1A1A1A);
+  font-weight: 500;
+}
+.form-picker {
+  font-size: 28rpx;
+  color: var(--c-text, #1A1A1A);
+  font-weight: 500;
+}
+.form-picker.placeholder {
+  color: var(--c-text3, #BFBFBF);
+  font-weight: 400;
+}
+
+/* 间隔天数 */
+.interval-wrap {
+  display: flex; align-items: center; gap: 8rpx;
+}
+.interval-input {
+  width: 100rpx;
+  text-align: center;
+}
+.interval-unit {
+  font-size: 28rpx;
+  color: var(--c-text2, #999);
+}
+
+/* 提示文字 */
+.form-tip {
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  color: var(--c-text3, #BFBFBF);
+  line-height: 1.5;
+}
+
+/* ====== 添加按钮 ====== */
+.add-btn {
+  display: flex; align-items: center; justify-content: center;
+  gap: 8rpx;
+  padding: 28rpx 0;
+  border: 2rpx dashed var(--c-border, #F0EDE8);
+  border-radius: 16rpx;
+  margin-bottom: 24rpx;
+  background: var(--c-surface, #FFF);
+}
+.add-icon {
+  font-size: 36rpx;
+  color: var(--c-primary, #E8A400);
+}
+.add-text {
+  font-size: 28rpx;
+  color: var(--c-primary, #E8A400);
+  font-weight: 600;
+}
+
+/* ====== 保存按钮 ====== */
+.submit-btn {
+  height: 88rpx;
+  border-radius: 44rpx;
+  background: var(--c-primary, #E8A400);
+  display: flex; align-items: center; justify-content: center;
+  color: #FFF;
+  font-size: 30rpx; font-weight: 700;
+  box-shadow: 0 8rpx 24rpx rgba(232, 164, 0, 0.25);
+}
+.submit-btn.disabled {
+  opacity: 0.6;
+}
+
+/* ====== 安全底部 ====== */
+.safe-bottom {
+  height: calc(env(safe-area-inset-bottom) + 40rpx);
+}

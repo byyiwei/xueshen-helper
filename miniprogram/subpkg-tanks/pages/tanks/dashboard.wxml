@@ -1,0 +1,86 @@
+<view class="page-dashboard">
+  <view class="nav-bar" style="padding-top:{{statusBarHeight}}px">
+    <view class="nav-back press" bindtap="navigateBack"><text class="nav-back-icon">‹</text></view>
+    <text class="nav-title">数据看板</text>
+    <view class="nav-placeholder"></view>
+  </view>
+
+  <scroll-view
+    style="padding-top:{{totalNavHeight}}rpx"
+    scroll-y="{{true}}"
+    class="scroll-main"
+    refresher-enabled="{{true}}"
+    refresher-triggered="{{loading}}"
+    bindrefresherrefresh="onPullDownRefresh"
+  >
+    <view class="dash-inner">
+      <!-- 加载中 -->
+      <view wx:if="{{loading}}" class="status-box">
+        <text class="status-text">加载中...</text>
+      </view>
+
+      <!-- 错误 -->
+      <view wx:if="{{loadError}}" class="status-box">
+        <text class="status-icon">⚠</text>
+        <text class="status-text">加载失败</text>
+        <view class="retry-btn press" bindtap="retryLoad">重新加载</view>
+      </view>
+
+      <block wx:if="{{showContent}}">
+        <!-- 总览 -->
+        <view class="overview-cards">
+          <view class="ov-card">
+            <text class="ov-num">{{stats.count}}</text>
+            <text class="ov-label">龟缸总数</text>
+          </view>
+          <view class="ov-card">
+            <text class="ov-num">{{stats.countMale}}</text>
+            <text class="ov-label">公龟总数</text>
+          </view>
+          <view class="ov-card">
+            <text class="ov-num">{{stats.countFemale}}</text>
+            <text class="ov-label">母龟总数</text>
+          </view>
+        </view>
+
+        <!-- 各缸统计表 -->
+        <view wx:if="{{hasEggSummary}}" class="section-card">
+          <view class="section-title">繁殖统计</view>
+          <view class="table-wrap">
+            <view class="table-row table-head">
+              <text class="table-cell name">龟缸</text>
+              <text class="table-cell">产蛋窝数</text>
+              <text class="table-cell">总蛋数</text>
+              <text class="table-cell">受精率</text>
+              <text class="table-cell">出苗数</text>
+            </view>
+            <view wx:for="{{eggSummary}}" wx:key="tankId" class="table-row press" bindtap="goDetail" data-id="{{item.tankId}}">
+              <text class="table-cell name">{{item.tankName}}</text>
+              <text class="table-cell">{{item.eggCount}}</text>
+              <text class="table-cell">{{item.totalEggs}}</text>
+              <text class="table-cell rate">{{item.fertilityRate}}</text>
+              <text class="table-cell">{{item.hatchedTotal}}</text>
+            </view>
+          </view>
+        </view>
+
+        <!-- 缸列表 -->
+        <view class="section-card">
+          <view class="section-title">龟缸概览</view>
+          <view wx:if="{{tanksEmpty}}" class="empty-text">暂无数据</view>
+          <view wx:if="{{hasTanks}}" class="tank-mini-list">
+            <view wx:for="{{tanks}}" wx:key="id" class="tank-mini press" bindtap="goDetail" data-id="{{item.id}}">
+              <view class="tank-mini-info">
+                <text class="tank-mini-name">{{item.name}}</text>
+                <text class="tank-mini-count">♂{{item.male_count}} ♀{{item.female_count}}</text>
+              </view>
+              <text class="tank-mini-arrow">›</text>
+            </view>
+          </view>
+        </view>
+      </block>
+
+      <view class="safe-bottom"></view>
+    </view>
+  </scroll-view>
+</view>

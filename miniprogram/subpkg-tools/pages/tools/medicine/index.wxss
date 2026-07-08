@@ -416,31 +416,126 @@
   color: var(--c-text3);
 }
 
-/* 空状态 */
-.empty-box {
+/* 状态提示（加载/错误/空） */
+.status-box {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 100rpx 48rpx;
+  padding: 120rpx 48rpx 100rpx;
 }
-
-.empty-box .empty-icon {
-  font-size: 72rpx;
-  margin-bottom: 24rpx;
+.status-box .status-icon { font-size: 72rpx; margin-bottom: 24rpx; }
+.status-box .status-text { font-size: var(--fs-body); color: var(--c-text); font-weight: 600; margin-bottom: 12rpx; }
+.status-box .status-hint { font-size: var(--fs-small); color: var(--c-text2); }
+.retry-btn {
+  margin-top: 24rpx;
+  padding: 14rpx 56rpx;
+  background: var(--c-primary);
+  border-radius: var(--r-full);
 }
-
-.empty-box .empty-text {
-  font-size: var(--fs-body);
-  color: var(--c-text);
-  font-weight: 600;
-  margin-bottom: 12rpx;
-}
-
-.empty-box .empty-hint {
-  font-size: var(--fs-small);
-  color: var(--c-text2);
-}
+.retry-btn text { font-size: var(--fs-body); color: #fff; font-weight: 600; }
 
 .safe-bottom {
   padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
 }
+
+/* 数据来源 */
+.data-source {
+  text-align: center;
+  font-size: 22rpx;
+  color: var(--c-text3);
+  padding: 20rpx 0;
+  line-height: 1.5;
+}
+
+/* 用药计算跳转按钮 */
+.calc-nav-btn {
+  display: flex;
+  align-items: center;
+  padding: 8rpx 20rpx;
+  background: var(--c-primary);
+  border-radius: 32rpx;
+  flex-shrink: 0;
+}
+
+.calc-nav-btn text {
+  font-size: var(--fs-mini);
+  color: #fff;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* 给药方案标签 */
+.dosage-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+}
+
+.tag-dosage {
+  font-size: var(--fs-mini);
+  padding: 4rpx 12rpx;
+  background: var(--c-primary-light);
+  color: var(--c-primary);
+  border-radius: 8rpx;
+  font-weight: 500;
+}
+
+/* 上报按钮 */
+.report-btn {
+  margin-top: 24rpx;
+  padding: 14rpx 56rpx;
+  background: var(--c-primary, #E8A400);
+  border-radius: var(--r-full, 999rpx);
+}
+.report-btn text { font-size: 28rpx; color: #fff; font-weight: 600; }
+
+/* 上报弹窗 */
+.modal-mask {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 1000;
+  display: flex; align-items: flex-end;
+}
+.modal-sheet {
+  width: 100%;
+  background: var(--c-surface, #fff);
+  border-radius: 32rpx 32rpx 0 0;
+  padding: 32rpx 40rpx;
+  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
+}
+.modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 32rpx;
+}
+.modal-title { font-size: 34rpx; font-weight: 700; color: var(--c-text, #1A1A1A); }
+.modal-close { font-size: 44rpx; color: var(--c-text3, #999); padding: 0 10rpx; }
+.modal-body { }
+.report-form-group { margin-bottom: 28rpx; }
+.report-form-label {
+  display: block; font-size: 26rpx; color: var(--c-text2, #999);
+  margin-bottom: 12rpx; font-weight: 600;
+}
+.report-form-input {
+  width: 100%; height: 80rpx;
+  background: var(--c-bg, #FAF8F5);
+  border-radius: 14rpx;
+  padding: 0 24rpx;
+  font-size: 28rpx;
+  color: var(--c-text, #1A1A1A);
+  box-sizing: border-box;
+  border: 2rpx solid transparent;
+}
+.report-tip {
+  margin: 8rpx 0 28rpx;
+  font-size: 24rpx;
+  color: var(--c-text2, #999);
+  line-height: 1.5;
+}
+.report-submit-btn {
+  width: 100%; height: 88rpx;
+  background: var(--c-primary, #E8A400);
+  border-radius: var(--r-full, 999rpx);
+  display: flex; align-items: center; justify-content: center;
+}
+.report-submit-btn.disabled { opacity: 0.6; }
+.report-submit-btn text { color: #fff; font-size: 30rpx; font-weight: 700; }

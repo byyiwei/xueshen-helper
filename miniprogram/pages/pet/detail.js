@@ -1,5 +1,3 @@
-import { LPAPIFactory } from '../../lpapi/index'
-
 const { getAPI } = require('../../utils/api.js')
 const { showError, showSuccess, showLoading, hideLoading, showConfirm } = require('../../utils/error.js')
 const { getVoiceManager } = require('../../utils/voice.js')
@@ -165,8 +163,8 @@ Page({
 
     // 打印机配置
     this.loadPrinterConfig()
-    // 初始化德佟打印SDK
-    this.lpapi = LPAPIFactory.getInstance({ showLog: 4 })
+    // 初始化德佟打印SDK（懒加载，避免314KB打包进主包）
+    this.lpapi = null
     // 自动连接打印机（如果已开启）
     wx.nextTick(() => { this.tryAutoConnect() })
 
@@ -238,6 +236,22 @@ Page({
     }
   },
 
+  // 懒加载打印SDK（通过分包异步化，避免314KB打包进主包）
+  _ensureLpapi() {
+    if (this.lpapi) return Promise.resolve(this.lpapi)
+    return new Promise((resolve, reject) => {
+      require.async('subpkg-printer/lpapi/index.js').then(module => {
+        const { LPAPIFactory } = module
+        this.lpapi = LPAPIFactory.getInstance({ showLog: 4 })
+        resolve(this.lpapi)
+      }).catch(e => {
+        console.error('打印SDK加载失败:', e)
+        wx.showToast({ title: '打印SDK加载失败', icon: 'none' })
+        reject(e)
+      })
+    })
+  },
+
   loadPrinterConfig: function () {
     try {
       const savedConfig = wx.getStorageSync('printerConfig')
@@ -275,6 +289,7 @@ Page({
 
   _doAutoConnect: function (pc) {
     const that = this
+    this._ensureLpapi().then(() => {
     this.lpapi.openPrinter({
       name: pc.deviceName,
       deviceId: pc.deviceId,
@@ -292,6 +307,7 @@ Page({
         wx.setStorageSync('printerConfig', updated)
       }
     })
+    }).catch(() => {})
   },
 
   // ============================================================
@@ -427,7 +443,7 @@ Page({
       let result
       if (this.data.isPublicMode) {
         // 公开模式：调用公开接口
-        result = await API.callCloudFunction('pet', 'publicGet', { id: petId })
+        result = await API.request('GET', `/api/pets/public/detail/${petId}`)
       } else {
         result = await API.getPetById(petId)
       }
@@ -1910,10 +1926,7 @@ Page({
       debug.push('✅ 步骤3: 静默调用云函数 qrcode.generateUrlLink')
       try {
         debug.push('  请求参数: petId=' + this.data.petId + ' recordId=' + record.id)
-        const qrResult = await API.callCloudFunction('qrcode', 'generateUrlLink', {
-          petId: this.data.petId,
-          recordId: record.id
-        })
+        const qrResult = await API.generateUrlLink(this.data.petId, record.id)
         debug.push('  云函数返回: ' + JSON.stringify(qrResult).substring(0, 200))
         if (!qrResult.success) {
           debug.push('❌ 步骤3: 云函数返回 success=false')
@@ -1953,6 +1966,7 @@ Page({
 
   // 打印标签（40×20mm：左侧二维码 + 右侧宠物名/类型内容/时间）
   _printLabel: function (urlLink, record) {
+    this._ensureLpapi().then(() => {
     wx.showLoading({ title: '打印中...' })
     try {
       const api = this.lpapi
@@ -2028,6 +2042,7 @@ Page({
       console.error('打印异常:', err)
       showError('打印失败')
     }
+    }).catch(() => { wx.hideLoading(); wx.showToast({ title: '打印SDK加载失败', icon: 'none' }) })
   },
 
   // 保存 urlLink 缓存（只存链接文本，QR 图按需客户端生成）
@@ -2051,11 +2066,7 @@ Page({
 
     // 异步更新云端记录（静默，不阻塞）
     if (urlLink) {
-      API.callCloudFunction('record', 'updateQrBase64', {
-        id: recordId,
-        qrBase64: '',
-        urlLink: urlLink
-      }).catch(() => {
+      API.updateRecordQrCode(recordId, '', urlLink).catch(() => {
 
       })
     }
@@ -2157,10 +2168,7 @@ Page({
     // 2. 获取 urlLink（静默后台，不弹 loading）
     let urlLink = ''
     try {
-      const qrResult = await API.callCloudFunction('qrcode', 'generateUrlLink', {
-        petId: this.data.petId,
-        recordId: recordId
-      })
+      const qrResult = await API.generateUrlLink(this.data.petId, recordId)
       if (qrResult.success && qrResult.data && qrResult.data.urlLink) {
         urlLink = qrResult.data.urlLink
       }
@@ -2175,6 +2183,7 @@ Page({
     }
 
     // 3. 打印标签（40×20mm：左侧二维码 + 右侧宠物名/类型内容/时间）
+    this._ensureLpapi().then(() => {
     wx.showLoading({ title: '打印中...' })
     try {
       const api = this.lpapi
@@ -2251,6 +2260,7 @@ Page({
       showError('打印失败')
       this.setData({ _isSavingRecord: false })
     }
+    }).catch(() => { wx.showToast({ title: '打印SDK加载失败', icon: 'none' }) })
   },
 
   // ============================================================

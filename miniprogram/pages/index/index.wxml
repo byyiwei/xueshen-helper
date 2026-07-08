@@ -55,7 +55,8 @@
             <view class="tank-bubble b2"></view>
           </view>
           <text class="feature-desc">水体、设备与环境记录</text>
-          <text class="tank-status">即将上线</text>
+          <text class="tank-count" wx:if="{{tankCount > 0}}">{{tankCount}} 个龟缸</text>
+          <text class="tank-status" wx:else>暂无龟缸</text>
         </view>
       </view>
 
@@ -63,32 +64,102 @@
         <view class="section-header">
           <view>
             <text class="section-title">待办事项</text>
-            <text class="section-sub">{{hasAnyReminder ? '优先处理临近提醒' : '今天没有紧急提醒'}}</text>
+            <text class="section-sub">{{todoTab === 'pet' ? (hasAnyReminder ? '优先处理临近提醒' : '今天没有紧急提醒') : (hasTankReminder ? '龟缸需要关注' : '龟缸状态良好')}}</text>
           </view>
-          <text wx:if="{{hasAnyReminder}}" class="chip active count-chip">{{allReminders.length}}项</text>
+          <text wx:if="{{todoTab === 'pet' && hasAnyReminder}}" class="chip active count-chip">{{allReminders.length}}项</text>
+          <text wx:elif="{{todoTab === 'tank' && hasTankReminder}}" class="chip active count-chip">{{tankReminders.length}}项</text>
           <text wx:else class="chip clear-chip">已完成</text>
         </view>
 
-        <view wx:if="{{hasAnyReminder}}" class="reminder-list">
-          <view wx:for="{{allReminders}}" wx:key="id" class="reminder-item press" bindtap="gotoPetDetailFromReminder" data-pet-id="{{item.petId}}">
-            <view class="rem-dot {{item.statusClass}}"></view>
-            <view class="rem-info">
-              <text class="rem-type">{{item.type}}</text>
-              <text class="rem-pet">{{item.petName}}<text wx:if="{{item.petCategory}}"> · {{item.petCategory}}</text></text>
-            </view>
-            <view class="rem-meta">
-              <text class="rem-status {{item.statusClass}}">{{item.statusText}}</text>
-              <text class="rem-date">{{item.nextDueDate}}</text>
-            </view>
-            <view class="rem-done" catchtap="gotoPetDetailFromReminder" data-pet-id="{{item.petId}}">
-              <text>进入</text>
-            </view>
+        <!-- Tab 切换 -->
+        <view class="todo-tabs">
+          <view class="todo-tab {{todoTab === 'pet' ? 'active' : ''}}" bindtap="switchTodoTab" data-tab="pet">
+            <text>宠物</text>
+          </view>
+          <view class="todo-tab {{todoTab === 'tank' ? 'active' : ''}}" bindtap="switchTodoTab" data-tab="tank">
+            <text>龟缸</text>
           </view>
         </view>
-        <view wx:else class="empty-todo">
-          <text class="empty-todo-title">暂无待办事项</text>
-          <text class="empty-todo-desc">进入龟档案详情页添加喂食、换水、晒背等周期提醒。</text>
-        </view>
+
+        <!-- 宠物提醒 -->
+        <block wx:if="{{todoTab === 'pet'}}">
+          <view wx:if="{{hasAnyReminder}}" class="reminder-list">
+            <view wx:for="{{allReminders}}" wx:key="id" class="reminder-item press" bindtap="gotoPetDetailFromReminder" data-pet-id="{{item.petId}}">
+              <view class="rem-dot {{item.statusClass}}"></view>
+              <view class="rem-info">
+                <text class="rem-type">{{item.type}}</text>
+                <text class="rem-pet">{{item.petName}}<text wx:if="{{item.petCategory}}"> · {{item.petCategory}}</text></text>
+              </view>
+              <view class="rem-meta">
+                <text class="rem-status {{item.statusClass}}">{{item.statusText}}</text>
+                <text class="rem-date">{{item.nextDueDate}}</text>
+              </view>
+              <view class="rem-done" catchtap="gotoPetDetailFromReminder" data-pet-id="{{item.petId}}">
+                <text>进入</text>
+              </view>
+            </view>
+          </view>
+          <view wx:else class="empty-todo">
+            <text class="empty-todo-title">暂无待办事项</text>
+            <text class="empty-todo-desc">进入龟档案详情页添加喂食、换水、晒背等周期提醒。</text>
+          </view>
+        </block>
+
+        <!-- 龟缸提醒 -->
+        <block wx:if="{{todoTab === 'tank'}}">
+          <view wx:if="{{hasTankReminder}}" class="reminder-list">
+            <!-- 当天及超期提醒 -->
+            <view wx:for="{{tankRemindersToday}}" wx:key="id" class="reminder-item press"
+              bindtap="gotoTankDetailFromReminder" data-tank-id="{{item.tankId}}">
+              <view class="rem-dot {{item.statusClass}}"></view>
+              <view class="rem-info">
+                <text class="rem-type">{{item.typeText}}</text>
+                <text class="rem-pet">{{item.tankName}}<text wx:if="{{item.species}}"> · {{item.species}}</text></text>
+              </view>
+              <view class="rem-meta">
+                <text class="rem-status {{item.statusClass}}">{{item.statusText}}</text>
+                <text class="rem-date">{{item.nextDueDate}}</text>
+              </view>
+              <view class="rem-done" catchtap="gotoTankDetailFromReminder" data-tank-id="{{item.tankId}}">
+                <text>进入</text>
+              </view>
+            </view>
+
+            <!-- 未来提醒按日期分组 -->
+            <block wx:if="{{hasFutureReminders}}">
+              <block wx:for="{{futureGroups}}" wx:key="label" wx:for-item="group">
+                <view class="future-group-header press" bindtap="toggleFutureGroup" data-label="{{group.label}}">
+                  <view class="future-group-line"></view>
+                  <view class="future-group-pill">
+                    <text class="future-group-label">{{group.label}}</text>
+                    <text class="future-group-breakdown">
+                      <text wx:for="{{group.typeBreakdown}}" wx:key="typeText" wx:for-item="tb" class="future-group-tag">{{tb.typeText}} {{tb.count}}</text>
+                    </text>
+                    <text class="future-group-arrow {{collapsedGroups[group.label] ? '' : 'expanded'}}">⌄</text>
+                  </view>
+                  <view class="future-group-line"></view>
+                </view>
+
+                <!-- 展开时显示列表 -->
+                <block wx:if="{{!collapsedGroups[group.label]}}">
+                  <view wx:for="{{group.items}}" wx:key="id" wx:for-item="item" class="future-row press"
+                    bindtap="gotoTankDetailFromReminder" data-tank-id="{{item.tankId}}">
+                    <text class="future-row-icon {{item.type === 'water' ? 'water' : 'feed'}}">{{item.type === 'water' ? '💧' : '🍤'}}</text>
+                    <view class="future-row-info">
+                      <text class="future-row-type">{{item.typeText}}</text>
+                      <text class="future-row-pet">{{item.tankCode}} · {{item.tankName}}<text wx:if="{{item.species}}"> · {{item.species}}</text></text>
+                    </view>
+                    <text class="future-row-date">{{item.nextDueDate}}</text>
+                  </view>
+                </block>
+              </block>
+            </block>
+          </view>
+          <view wx:else class="empty-todo">
+            <text class="empty-todo-title">龟缸暂无待办</text>
+            <text class="empty-todo-desc">进入龟缸详情页设置换水、喂食周期提醒。</text>
+          </view>
+        </block>
       </view>
 
       <view class="section-card disease-card press" bindtap="goToDiseasePrevention">
@@ -122,6 +193,11 @@
             <text class="func-icon">🐣</text>
             <text class="func-name">出苗报表</text>
             <text class="func-desc">孵化追踪</text>
+          </view>
+          <view class="func-item press" bindtap="goToTankDashboard">
+            <text class="func-icon">🐢</text>
+            <text class="func-name">龟缸数据</text>
+            <text class="func-desc">统计看板</text>
           </view>
           <view class="func-item press" bindtap="goToPublic">
             <image class="func-icon-img" src="/icons/gongkai.png" mode="aspectFit"></image>

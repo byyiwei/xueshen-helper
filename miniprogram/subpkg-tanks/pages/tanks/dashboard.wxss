@@ -1,0 +1,167 @@
+/* ====== 页面容器 ====== */
+.page-dashboard {
+  min-height: 100vh;
+  background: #FAF8F5;
+}
+
+.nav-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(255,255,255,0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24rpx 20rpx;
+  border-bottom: 1rpx solid rgba(0,0,0,0.06);
+}
+
+.nav-back { width: 60rpx; height: 60rpx; display: flex; align-items: center; justify-content: center; }
+.nav-back-icon { font-size: 48rpx; color: #1A1A1A; font-weight: 300; line-height: 1; }
+.nav-title { font-size: 32rpx; font-weight: 700; color: #1A1A1A; flex: 1; text-align: center; }
+.nav-placeholder { width: 60rpx; }
+
+.scroll-main { height: 100vh; box-sizing: border-box; }
+.dash-inner { padding: 20rpx 28rpx 0; }
+
+/* 状态 */
+.status-box { display: flex; flex-direction: column; align-items: center; padding: 120rpx 0; gap: 16rpx; }
+.status-icon { font-size: 80rpx; }
+.status-text { font-size: 28rpx; color: #999; }
+.retry-btn { padding: 16rpx 48rpx; background: #E8A400; color: #fff; border-radius: 40rpx; font-size: 28rpx; }
+
+/* 总览卡片 */
+.overview-cards {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 20rpx;
+}
+
+.ov-card {
+  flex: 1;
+  background: #fff;
+  border-radius: 20rpx;
+  padding: 28rpx 16rpx;
+  text-align: center;
+  box-shadow: 0 2rpx 12rpx rgba(0,0,0,0.03);
+}
+
+.ov-num {
+  font-size: 44rpx;
+  font-weight: 800;
+  color: #1A1A1A;
+  display: block;
+}
+
+.ov-label {
+  font-size: 22rpx;
+  color: #999;
+  margin-top: 4rpx;
+  display: block;
+}
+
+/* 分区卡片 */
+.section-card {
+  background: #fff;
+  border-radius: 24rpx;
+  padding: 24rpx;
+  margin-bottom: 20rpx;
+  box-shadow: 0 2rpx 12rpx rgba(0,0,0,0.03);
+}
+
+.section-title {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #1A1A1A;
+  margin-bottom: 20rpx;
+}
+
+/* 表格 */
+.table-wrap {
+  overflow-x: auto;
+}
+
+.table-row {
+  display: flex;
+  align-items: center;
+  padding: 18rpx 8rpx;
+}
+
+.table-row + .table-row {
+  border-top: 1rpx solid #F5F5F5;
+}
+
+.table-head {
+  background: #FAFAFA;
+  border-radius: 12rpx;
+  padding: 16rpx 8rpx;
+}
+
+.table-cell {
+  flex: 1;
+  text-align: center;
+  font-size: 24rpx;
+  color: #666;
+}
+
+.table-cell.name {
+  flex: 1.5;
+  text-align: left;
+  font-weight: 500;
+  color: #1A1A1A;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-head .table-cell {
+  font-weight: 600;
+  color: #999;
+  font-size: 22rpx;
+}
+
+.table-cell.rate {
+  color: #E8A400;
+  font-weight: 500;
+}
+
+/* 迷你列表 */
+.tank-mini-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.tank-mini {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 16rpx;
+  background: #FAFAFA;
+  border-radius: 14rpx;
+}
+
+.tank-mini-info {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.tank-mini-name {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: #1A1A1A;
+}
+
+.tank-mini-count {
+  font-size: 24rpx;
+  color: #999;
+}
+
+.tank-mini-arrow {
+  font-size: 28rpx;
+  color: #CCC;
+}
+
+.empty-text { font-size: 26rpx; color: #999; text-align: center; padding: 40rpx 0; }
+
+.safe-bottom { height: calc(120rpx + env(safe-area-inset-bottom)); }
+/* subpkg-tanks/pages/tanks/dashboard.wxss */

@@ -30,12 +30,20 @@ function urlToBase64(url) {
 
   return new Promise((resolve) => {
     try {
-      // cloud:// 云存储路径：先用 wx.cloud.downloadFile 下载到临时文件，再读取
-      if (url.startsWith('cloud://')) {
-        if (typeof wx !== 'undefined' && wx.cloud && wx.cloud.downloadFile) {
-          wx.cloud.downloadFile({
-            fileID: url,
-            success: (downloadRes) => {
+      // 转换为完整 HTTP URL
+      let fetchUrl = url
+      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+        const app = getApp()
+        const config = app?.globalData?.systemConfig || {}
+        const baseUrl = config.imageServerUrl || config.apiUrl || 'https://pets.openget.cn'
+        fetchUrl = baseUrl + '/' + url.replace(/^\/+/, '')
+      }
+
+      if (typeof wx !== 'undefined' && wx.downloadFile) {
+        wx.downloadFile({
+          url: fetchUrl,
+          success: (downloadRes) => {
+            if (downloadRes.statusCode === 200) {
               try {
                 const fs = wx.getFileSystemManager();
                 fs.readFile({
@@ -48,29 +56,21 @@ function urlToBase64(url) {
                     else if (url.endsWith('.webp')) mimeType = 'image/webp';
                     resolve(`data:${mimeType};base64,${res.data}`);
                   },
-                  fail: (err) => {
-
-                    resolve(url);
-                  }
+                  fail: () => resolve(url)
                 });
-              } catch (e) {
-
+              } catch (_) {
                 resolve(url);
               }
-            },
-            fail: (err) => {
-
+            } else {
               resolve(url);
             }
-          });
-        } else {
-
-          resolve(url);
-        }
+          },
+          fail: () => resolve(url)
+        });
         return;
       }
 
-      // 本地临时文件路径（http://tmp/、http://usr/、wxfile:// 等）
+      // 非微信环境：直接读本地文件
       const fs = wx.getFileSystemManager();
       fs.readFile({
         filePath: url,
@@ -82,13 +82,9 @@ function urlToBase64(url) {
           else if (url.endsWith('.webp')) mimeType = 'image/webp';
           resolve(`data:${mimeType};base64,${res.data}`);
         },
-        fail: (err) => {
-
-          resolve(url);
-        }
+        fail: () => resolve(url)
       });
-    } catch (e) {
-
+    } catch (_) {
       resolve(url);
     }
   });
@@ -134,13 +130,13 @@ async function convertHTMLImagesToBase64(html) {
 
 const WHITE_THEME = {
   name: 'white',
-  primary: '#3A7CFF',
-  primaryDark: '#1A5CD6',
-  primaryLight: '#E6F0FF',
+  primary: '#E8A400',
+  primaryDark: '#C98D00',
+  primaryLight: '#FFF8E7',
   accent: '#FF8C42',
-  bg: '#F0F7FF',
+  bg: '#FAF8F5',
   bgLight: '#FFFFFF',
-  pageBg: '#F0F7FF',
+  pageBg: '#FAF8F5',
   cardBg: '#ffffff',
   text: '#1E293B',
   textSecondary: '#475569',
@@ -578,7 +574,7 @@ function generatePetHTML(data, theme) {
       border-radius: 60px;
       overflow: hidden;
       flex-shrink: 0;
-      border: 4px solid #F0F7FF;
+      border: 4px solid #FAF8F5;
     }
     
     .pet-avatar {
@@ -605,7 +601,7 @@ function generatePetHTML(data, theme) {
     .pet-name {
       font-size: 40px;
       font-weight: bold;
-      color: #3A7CFF;
+      color: #E8A400;
       margin-bottom: 16px;
       display: block;
     }
@@ -629,12 +625,12 @@ function generatePetHTML(data, theme) {
     
     .category-tag {
       background-color: #EDF2F7;
-      color: #3A7CFF;
+      color: #E8A400;
     }
     
     .status-tag {
       background-color: #EDF2F7;
-      color: #3A7CFF;
+      color: #E8A400;
     }
     
     .status-sick {
@@ -643,7 +639,7 @@ function generatePetHTML(data, theme) {
     }
     
     .status-dead {
-      background-color: #F0F7FF;
+      background-color: #FAF8F5;
       color: #94A3B8;
     }
     
@@ -710,7 +706,7 @@ function generatePetHTML(data, theme) {
     .card-title {
       font-size: 32px;
       font-weight: bold;
-      color: #3A7CFF;
+      color: #E8A400;
       margin-bottom: 24px;
       display: flex;
       align-items: center;
@@ -756,7 +752,7 @@ function generatePetHTML(data, theme) {
     
     .detail-value {
       font-size: 28px;
-      color: #3A7CFF;
+      color: #E8A400;
       font-weight: 500;
     }
     
@@ -779,7 +775,7 @@ function generatePetHTML(data, theme) {
     .section-title {
       font-size: 28px;
       font-weight: bold;
-      color: #3A7CFF;
+      color: #E8A400;
     }
     
     .pedigree-badge {
@@ -844,7 +840,7 @@ function generatePetHTML(data, theme) {
       width: 120px;
       height: 120px;
       border-radius: 20px;
-      background: linear-gradient(135deg, #F0F7FF 0%, #E6F0FF 100%);
+      background: linear-gradient(135deg, #FAF8F5 0%, #FFF8E7 100%);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -875,7 +871,7 @@ function generatePetHTML(data, theme) {
     
     .card-name {
       font-size: 32px;
-      color: #3A7CFF;
+      color: #E8A400;
       font-weight: 600;
       max-width: 200px;
       overflow: hidden;
@@ -887,7 +883,7 @@ function generatePetHTML(data, theme) {
       font-size: 22px;
       color: #94A3B8;
       padding: 4px 16px;
-      background-color: #F0F7FF;
+      background-color: #FAF8F5;
       border-radius: 10px;
     }
     
@@ -916,7 +912,7 @@ function generatePetHTML(data, theme) {
     
     .family-title {
       font-size: 32px;
-      color: #3A7CFF;
+      color: #E8A400;
       display: block;
       margin-bottom: 16px;
     }
@@ -972,7 +968,7 @@ function generatePetHTML(data, theme) {
     .bloodline-title .title-text {
       font-size: 30px;
       font-weight: 600;
-      color: #3A7CFF;
+      color: #E8A400;
     }
     
     .bloodline-tabs {
@@ -984,7 +980,7 @@ function generatePetHTML(data, theme) {
       padding: 12px 24px;
       font-size: 26px;
       color: #475569;
-      background-color: #F0F7FF;
+      background-color: #FAF8F5;
       border-radius: 24px;
       transition: all 0.2s ease;
     }
@@ -1059,7 +1055,7 @@ function generatePetHTML(data, theme) {
     .node-name {
       font-size: 30px;
       font-weight: 600;
-      color: #3A7CFF;
+      color: #E8A400;
     }
     
     .node-category {
@@ -1088,7 +1084,7 @@ function generatePetHTML(data, theme) {
     .tree-title .title-text {
       font-size: 30px;
       font-weight: 600;
-      color: #3A7CFF;
+      color: #E8A400;
     }
     
     .tree-title .tree-hint {
@@ -1149,7 +1145,7 @@ function generatePetHTML(data, theme) {
     
     .tree-node.ancestor {
       background-color: #ffffff;
-      border: 2px solid #E6F0FF;
+      border: 2px solid #FFF8E7;
       min-width: 160px;
     }
     
@@ -1217,7 +1213,7 @@ function generatePetHTML(data, theme) {
       justify-content: center;
       width: 240px;
       height: 240px;
-      background-color: #F0F7FF;
+      background-color: #FAF8F5;
       border-radius: 24px;
       overflow: hidden;
     }
@@ -1233,7 +1229,7 @@ function generatePetHTML(data, theme) {
       width: 100%;
       height: 100%;
       border-radius: 20px;
-      background-color: #F0F7FF;
+      background-color: #FAF8F5;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1253,7 +1249,7 @@ function generatePetHTML(data, theme) {
     
     .tree-node .node-name {
       font-size: 26px;
-      color: #3A7CFF;
+      color: #E8A400;
       font-weight: 600;
       max-width: 120px;
       overflow: hidden;
@@ -1358,7 +1354,7 @@ function generatePetHTML(data, theme) {
     .event-title {
       font-size: 28px;
       font-weight: 600;
-      color: #3A7CFF;
+      color: #E8A400;
       margin-bottom: 8px;
       display: block;
     }
@@ -1428,7 +1424,7 @@ function generatePetHTML(data, theme) {
     .qrcode-title {
       font-size: 30px;
       font-weight: bold;
-      color: #3A7CFF;
+      color: #E8A400;
     }
     
     .qrcode-subtitle {
@@ -1451,7 +1447,7 @@ function generatePetHTML(data, theme) {
       width: 160px;
       height: 160px;
       border-radius: 12px;
-      border: 2px dashed #E6F0FF;
+      border: 2px dashed #FFF8E7;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1598,15 +1594,15 @@ function generateShareHTML(shareInfo, options = {}) {
   const envDesc = options.envDesc || '';
 
   // 主题色
-  const primary = theme.primary || '#3A7CFF';
-  const primaryDark = theme.primaryDark || '#1A5CD6';
-  const primaryLight = theme.primaryLight || '#E6F0FF';
+  const primary = theme.primary || '#E8A400';
+  const primaryDark = theme.primaryDark || '#C98D00';
+  const primaryLight = theme.primaryLight || '#FFF8E7';
 
   // banner 背景：如果没有封面图，使用渐变
   const hasCover = cover && cover.length > 0;
   const bannerStyle = hasCover
     ? ''
-    : `background: linear-gradient(135deg, ${primaryLight} 0%, ${theme.pageBg || '#F0F7FF'} 50%, ${primary} 100%);`;
+    : `background: linear-gradient(135deg, ${primaryLight} 0%, ${theme.pageBg || '#FAF8F5'} 50%, ${primary} 100%);`;
 
   // 标签 HTML
   const tagsHtml = tags.map(t => `<span class="shop-tag">${t}</span>`).join('');
@@ -1691,7 +1687,7 @@ function generateShareHTML(shareInfo, options = {}) {
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-    color: #3A7CFF;
+    color: #E8A400;
     background: #FFFFFF;
     -webkit-font-smoothing: antialiased;
   }
@@ -1712,7 +1708,7 @@ function generateShareHTML(shareInfo, options = {}) {
     border-radius: 24px;
     overflow: hidden;
     box-shadow: 0 8px 32px rgba(58, 124, 255, 0.08);
-    border: 2px solid #E6F0FF;
+    border: 2px solid #FFF8E7;
   }
 
   /* 顶部封面 */
@@ -1765,7 +1761,7 @@ function generateShareHTML(shareInfo, options = {}) {
   .shop-name {
     font-size: 32px;
     font-weight: bold;
-    color: #3A7CFF;
+    color: #E8A400;
     margin-right: 16px;
   }
 
@@ -1809,7 +1805,7 @@ function generateShareHTML(shareInfo, options = {}) {
     display: flex;
     align-items: center;
     padding: 16px 0;
-    border-bottom: 2px solid #F0F7FF;
+    border-bottom: 2px solid #FAF8F5;
   }
 
   .info-row:last-child {
@@ -1831,7 +1827,7 @@ function generateShareHTML(shareInfo, options = {}) {
 
   .info-value {
     font-size: 22px;
-    color: #3A7CFF;
+    color: #E8A400;
     font-weight: 500;
     flex: 1;
   }
@@ -1878,7 +1874,7 @@ function generateShareHTML(shareInfo, options = {}) {
     display: flex;
     align-items: center;
     padding: 24px 32px 16px;
-    border-top: 2px solid #F0F7FF;
+    border-top: 2px solid #FAF8F5;
   }
 
   .section-title-bar {
@@ -1892,7 +1888,7 @@ function generateShareHTML(shareInfo, options = {}) {
   .section-title-text {
     font-size: 22px;
     font-weight: 600;
-    color: #3A7CFF;
+    color: #E8A400;
   }
 
   .section-title-count {
@@ -1947,7 +1943,7 @@ function generateShareHTML(shareInfo, options = {}) {
     display: block;
     font-size: 18px;
     font-weight: 600;
-    color: #3A7CFF;
+    color: #E8A400;
     margin-bottom: 4px;
     white-space: nowrap;
     overflow: hidden;
@@ -1972,7 +1968,7 @@ function generateShareHTML(shareInfo, options = {}) {
     aspect-ratio: 1;
     border-radius: 16px;
     overflow: hidden;
-    background: #F0F7FF;
+    background: #FAF8F5;
   }
 
   .env-image {
@@ -1986,7 +1982,7 @@ function generateShareHTML(shareInfo, options = {}) {
     margin: 8px 32px 16px;
     width: 160px;
     height: 160px;
-    background: linear-gradient(135deg, ${primaryLight} 0%, ${theme.pageBg || '#F0F7FF'} 100%);
+    background: linear-gradient(135deg, ${primaryLight} 0%, ${theme.pageBg || '#FAF8F5'} 100%);
     border: 2px dashed ${primary};
     border-radius: 16px;
     display: flex;
@@ -2011,12 +2007,12 @@ function generateShareHTML(shareInfo, options = {}) {
   /* 龟友有话说 */
   .shop-intro-section {
     padding: 24px 32px 32px;
-    border-top: 2px solid #F0F7FF;
+    border-top: 2px solid #FAF8F5;
   }
 
   .intro-title {
     font-size: 22px;
-    color: #3A7CFF;
+    color: #E8A400;
     font-weight: 600;
     margin-bottom: 16px;
   }

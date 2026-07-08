@@ -4,6 +4,7 @@
     "pages/index/index",
     "pages/pet/index",
     "pages/pet/detail",
+    "pages/tanks/index",
     "pages/my/index",
     "pages/my/recycle-bin/index",
     "pages/my/recent-view/index"
@@ -38,8 +39,26 @@
         "pages/public/index",
         "pages/pet/preview"
       ]
+    },
+    {
+      "root": "subpkg-tanks",
+      "pages": [
+        "pages/tanks/detail",
+        "pages/tanks/quick-check",
+        "pages/tanks/egg-form",
+        "pages/tanks/hatch-form",
+        "pages/tanks/reminders",
+        "pages/tanks/dashboard"
+      ]
+    },
+    {
+      "root": "subpkg-printer",
+      "pages": [
+        "pages/printer/index"
+      ]
     }
   ],
+  "lazyCodeLoading": "requiredComponents",
   "window": {
     "backgroundTextStyle": "dark",
     "navigationBarTextStyle": "black",
@@ -65,6 +84,10 @@
       {
         "pagePath": "pages/my/index",
         "text": "我的"
+      },
+      {
+        "pagePath": "pages/tanks/index",
+        "text": "龟缸"
       }
     ]
   },

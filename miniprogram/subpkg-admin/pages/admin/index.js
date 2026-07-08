@@ -1,3 +1,4 @@
+const API = require('../../../utils/api')
 Page({
   data: {
     currentDate: '',
@@ -36,14 +37,14 @@ Page({
     this.setData({ loading: true })
     try {
       const [statsRes, growthRes, distRes, activitiesRes] = await Promise.all([
-        this.callAdminAPI('getStats'),
-        this.callAdminAPI('getUserGrowth', { days: 7 }),
-        this.callAdminAPI('getPetDistribution'),
-        this.callAdminAPI('getRecentActivities')
+        API.getAdminStats(),
+        API.getAdminUserGrowth(7),
+        API.getAdminPetDistribution(),
+        API.getAdminFootprints({ page: 1, pageSize: 10 })
       ])
 
       const updateData = {}
-      
+
       if (statsRes.success) {
         updateData.stats = {
           totalUsers: statsRes.data.totalUsers,
@@ -54,24 +55,24 @@ Page({
           petGrowth: statsRes.data.petGrowth
         }
       }
-      
+
       if (growthRes.success) {
         updateData.userChartData = growthRes.data
       }
-      
+
       if (distRes.success) {
         updateData.petDistribution = distRes.data
       }
-      
+
       if (activitiesRes.success) {
-        updateData.recentActivities = activitiesRes.data.map(a => ({
+        updateData.recentActivities = (activitiesRes.data.list || []).map(a => ({
           ...a,
           avatar: '📷',
           type: 'info',
           typeText: '足迹'
         }))
       }
-      
+
       this.setData(updateData)
     } catch (error) {
       console.error('加载数据失败:', error)
@@ -84,14 +85,6 @@ Page({
   // 加载统计数据
   loadStats: function () {
     this.loadAllData()
-  },
-
-  // 调用管理员云函数
-  callAdminAPI: async function (action, data = {}) {
-    return await wx.cloud.callFunction({
-      name: 'admin',
-      data: { action, data }
-    }).then(res => res.result)
   },
 
   goToConfig: function () {

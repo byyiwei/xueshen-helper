@@ -202,6 +202,45 @@
   background-color: currentColor;
 }
 
+/* ====== 龟缸图标：鱼缸 ====== */
+.icon-tank {
+  position: relative;
+  width: 40rpx;
+  height: 36rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tank-outline {
+  width: 34rpx;
+  height: 30rpx;
+  border: 2.5rpx solid currentColor;
+  border-radius: 4rpx 4rpx 10rpx 10rpx;
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.tank-water {
+  position: absolute;
+  bottom: 0;
+  left: -2rpx;
+  right: -2rpx;
+  height: 14rpx;
+  background: currentColor;
+  opacity: 0.25;
+  transition: opacity 0.3s;
+}
+
+.tab-item.active .tank-water {
+  opacity: 0.5;
+}
+
+.tab-item.active .tank-outline {
+  background-color: currentColor;
+}
+
 /* ====== 我的图标：圆润人形 ====== */
 .icon-my {
   display: flex;

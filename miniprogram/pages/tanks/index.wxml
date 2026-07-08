@@ -1,0 +1,307 @@
+<view class="page-tanks">
+  <!-- 自定义导航栏 -->
+  <view class="nav-bar" style="padding-top:{{statusBarHeight}}px">
+    <text class="nav-title">我的龟缸</text>
+  </view>
+
+  <scroll-view
+    style="padding-top:{{totalNavHeight}}rpx"
+    scroll-y
+    class="scroll-main"
+    refresher-enabled
+    refresher-triggered="{{loading}}"
+    bindrefresherrefresh="onPullDownRefresh"
+  >
+    <view class="tanks-inner">
+
+      <!-- ====== 未登录提示 ====== -->
+      <view wx:if="{{!isLoggedIn}}" class="login-bar" bindtap="goToLogin">
+        <text class="login-bar-text">登录后可管理龟缸、记录运维和繁殖数据</text>
+        <view class="login-bar-btn"><text>立即登录 ›</text></view>
+      </view>
+
+      <!-- ====== 顶部统计卡片 ====== -->
+      <view wx:if="{{!loading && isLoggedIn}}" class="stats-card">
+        <view class="stats-row">
+          <view class="stats-item">
+            <text class="stats-num">{{count}}</text>
+            <text class="stats-label">龟缸</text>
+          </view>
+          <view class="stats-item">
+            <text class="stats-num">{{totalMale + totalFemale}}</text>
+            <text class="stats-label">总龟数</text>
+          </view>
+          <view class="stats-item">
+            <text class="stats-num male">{{totalMale}}</text>
+            <text class="stats-label">公龟</text>
+          </view>
+          <view class="stats-item">
+            <text class="stats-num female">{{totalFemale}}</text>
+            <text class="stats-label">母龟</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- ====== 分类筛选 ====== -->
+      <view class="filter-bar" wx:if="{{!loading}}">
+        <text class="filter-label">分类</text>
+        <scroll-view scroll-x class="chip-scroll" show-scrollbar="{{false}}">
+          <text
+            wx:for="{{categories}}"
+            wx:key="*this"
+            class="chip {{activeCategory === item ? 'active' : ''}}"
+            bindtap="setCategory"
+            data-value="{{item}}"
+          >{{item}}</text>
+        </scroll-view>
+      </view>
+
+      <!-- ====== 加载中 ====== -->
+      <view wx:if="{{loading}}" class="status-box">
+        <view class="status-spinner"></view>
+        <text class="status-text">加载中...</text>
+      </view>
+
+      <!-- ====== 空状态 ====== -->
+      <view wx:elif="{{tanks.length === 0}}" class="empty-box">
+        <text class="empty-icon">🐢</text>
+        <text class="empty-text">还没有龟缸</text>
+        <text class="empty-hint">点击右下角按钮，添加你的第一个龟缸</text>
+      </view>
+
+      <!-- ====== 龟缸卡片列表 ====== -->
+      <view wx:else class="tank-list">
+        <view
+          wx:for="{{tanks}}"
+          wx:key="id"
+          wx:if="{{activeCategory === '全部' || item.category === activeCategory}}"
+          class="tank-card press"
+          bindtap="goDetail"
+          data-id="{{item.id}}"
+        >
+          <view class="tank-main">
+            <text class="tank-name">{{item.name}}</text>
+            <view class="tank-meta-row">
+              <text class="tank-meta-item"><text class="tank-meta-label">编号:</text>{{item.displayCode}}</text>
+              <text class="tank-meta-split" wx:if="{{item.size}}">|</text>
+              <text class="tank-meta-item" wx:if="{{item.size}}"><text class="tank-meta-label">尺寸:</text>{{item.size}}</text>
+            </view>
+            <view class="tank-meta-row">
+              <text class="tank-meta-item"><text class="tank-meta-label">品种:</text>{{item.species ? item.species : '-'}}</text>
+              <text class="tank-meta-split">|</text>
+              <text class="tank-meta-item"><text class="tank-meta-label">性别:</text>公{{item.male_count}}·母{{item.female_count}}·共{{item.totalCount}}</text>
+            </view>
+          </view>
+          <view class="tank-action press" catchtap="onTankQR" data-id="{{item.id}}" data-name="{{item.name}}">
+            <view class="qr-mini">
+              <view class="qr-mini-dot"></view>
+              <view class="qr-mini-corner tl"></view>
+              <view class="qr-mini-corner tr"></view>
+              <view class="qr-mini-corner bl"></view>
+              <view class="qr-mini-corner br"></view>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <view class="safe-bottom"></view>
+    </view>
+  </scroll-view>
+
+  <!-- ====== FAB 按钮组 ====== -->
+  <view class="fab-group">
+    <view class="fab-btn fab-water press" bindtap="openBatchModal" data-type="water">
+      <text class="fab-btn-icon">🚿</text>
+      <text class="fab-btn-label">换水</text>
+    </view>
+    <view class="fab-btn fab-feed press" bindtap="openBatchModal" data-type="feeding">
+      <text class="fab-btn-icon">🍽</text>
+      <text class="fab-btn-label">喂食</text>
+    </view>
+    <view class="fab-add press" bindtap="showAddTank">
+      <text class="fab-add-icon">＋</text>
+    </view>
+  </view>
+
+  <!-- ====== 添加龟缸弹窗 ====== -->
+  <view wx:if="{{showAddModal}}" class="modal-mask" bindtap="hideAddTank">
+    <view class="modal-sheet" catchtap="stopPropagation">
+      <view class="modal-head">
+        <text class="modal-title">添加龟缸</text>
+        <text class="modal-close" bindtap="hideAddTank">×</text>
+      </view>
+
+      <scroll-view scroll-y class="modal-body">
+        <view class="form-field">
+          <text class="form-label">编号</text>
+          <input class="form-input" placeholder="留空自动生成（如 T001）" value="{{form.tank_code}}" bindinput="onFormInput" data-field="tank_code"/>
+        </view>
+
+        <view class="form-field">
+          <text class="form-label">龟缸名称 <text class="form-required">*</text></text>
+          <input class="form-input" placeholder="给龟缸起个名字" value="{{form.name}}" bindinput="onFormInput" data-field="name"/>
+        </view>
+
+        <view class="form-field">
+          <text class="form-label">尺寸</text>
+          <input class="form-input" placeholder="如 60×40×30 cm" value="{{form.size}}" bindinput="onFormInput" data-field="size"/>
+        </view>
+
+        <view class="form-field">
+          <view class="form-label-row">
+            <text class="form-label">分类</text>
+            <text class="form-hint">点击选中，长按编辑</text>
+          </view>
+          <view class="form-chips">
+            <view
+              wx:for="{{categories}}"
+              wx:key="*this"
+              wx:if="{{item !== '全部'}}"
+              class="chip {{form.category === item ? 'active' : ''}}"
+              bindtap="selectCategory"
+              bindlongpress="editCategory"
+              data-category="{{item}}"
+            >{{item}}</view>
+            <view class="chip chip-add press" bindtap="addCategory">＋</view>
+          </view>
+        </view>
+
+        <view class="form-field">
+          <text class="form-label">饲养品种</text>
+          <input class="form-input" placeholder="如 草龟、巴西龟" value="{{form.species}}" bindinput="onFormInput" data-field="species"/>
+        </view>
+
+        <view class="form-field-row">
+          <view class="form-field half">
+            <text class="form-label">公龟数量</text>
+            <input class="form-input" type="number" placeholder="0" value="{{form.male_count}}" bindinput="onFormInput" data-field="male_count"/>
+          </view>
+          <view class="form-field half">
+            <text class="form-label">母龟数量</text>
+            <input class="form-input" type="number" placeholder="0" value="{{form.female_count}}" bindinput="onFormInput" data-field="female_count"/>
+          </view>
+        </view>
+
+        <view class="form-field">
+          <text class="form-label">备注</text>
+          <textarea class="form-textarea" placeholder="设备、过滤、加温等信息" value="{{form.notes}}" bindinput="onFormInput" data-field="notes" maxlength="500"/>
+        </view>
+      </scroll-view>
+
+      <view class="modal-actions">
+        <view class="modal-btn modal-cancel press" bindtap="hideAddTank">取消</view>
+        <view class="modal-btn modal-confirm press {{submitting ? 'disabled' : ''}}" bindtap="confirmAddTank">
+          {{submitting ? '添加中...' : '添加'}}
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ====== 新增分类模态框 ====== -->
+  <view wx:if="{{showAddCategoryModal}}" class="modal-mask" bindtap="hideAddCategoryModal">
+    <view class="modal-sheet modal-sheet-sm" catchtap="stopPropagation">
+      <view class="modal-head">
+        <text class="modal-title">新增分类</text>
+        <text class="modal-close" bindtap="hideAddCategoryModal">×</text>
+      </view>
+      <view class="modal-body-sm">
+        <input class="form-input" placeholder="输入分类名称" value="{{newCategoryName}}" bindinput="onCategoryInput"/>
+      </view>
+      <view class="modal-actions">
+        <view class="modal-btn modal-cancel press" bindtap="hideAddCategoryModal">取消</view>
+        <view class="modal-btn modal-confirm press" bindtap="confirmAddCategory">确定</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ====== 编辑分类模态框 ====== -->
+  <view wx:if="{{showEditCategoryModal}}" class="modal-mask" bindtap="hideEditCategoryModal">
+    <view class="modal-sheet modal-sheet-sm" catchtap="stopPropagation">
+      <view class="modal-head">
+        <text class="modal-title">编辑分类</text>
+        <text class="modal-close" bindtap="hideEditCategoryModal">×</text>
+      </view>
+      <view class="modal-body-sm">
+        <input class="form-input" placeholder="输入分类名称" value="{{editCategoryNewName}}" bindinput="onEditCategoryInput"/>
+      </view>
+      <view class="modal-actions">
+        <view class="modal-btn modal-cancel press" bindtap="hideEditCategoryModal">取消</view>
+        <view class="modal-btn modal-danger press" bindtap="deleteCategory">删除</view>
+        <view class="modal-btn modal-confirm press" bindtap="confirmEditCategory">保存</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ====== 批量快捷操作弹窗 ====== -->
+  <view wx:if="{{showBatchModal}}" class="modal-mask" bindtap="closeBatchModal">
+    <view class="modal-sheet" catchtap="stopPropagation">
+      <view class="modal-head">
+        <text class="modal-title">批量{{batchType === 'water' ? '换水' : '喂食'}}</text>
+        <text class="modal-close" bindtap="closeBatchModal">×</text>
+      </view>
+      <view class="modal-body">
+        <!-- 全选/反选 -->
+        <view class="batch-select-bar">
+          <text class="batch-select-text">选择龟缸（{{batchSelectedCount}}/{{batchTanks.length}}）</text>
+          <text class="batch-select-all press" bindtap="toggleAllBatch">全选/反选</text>
+        </view>
+        <!-- 龟缸多选列表 -->
+        <scroll-view scroll-y class="batch-tank-list">
+          <view wx:for="{{batchTanks}}" wx:key="id" class="batch-tank-item press"
+                bindtap="toggleBatchTank" data-id="{{item.id}}">
+            <view class="batch-check {{item.checked ? 'checked' : ''}}"><text>✓</text></view>
+            <view class="batch-tank-info">
+              <text class="batch-tank-name">{{item.name}}</text>
+              <text class="batch-tank-meta">{{item.species || '未分类'}} · 公{{item.male_count}}母{{item.female_count}}</text>
+            </view>
+          </view>
+        </scroll-view>
+        <!-- 操作参数 -->
+        <view class="batch-params">
+          <view wx:if="{{batchType === 'water'}}" class="param-row">
+            <text class="param-label">换水比例</text>
+            <view class="param-options">
+              <view wx:for="{{waterRatios}}" wx:key="*this"
+                    class="param-chip press {{batchWaterRatio === item ? 'active' : ''}}"
+                    bindtap="setBatchWaterRatio" data-value="{{item}}">{{item}}</view>
+            </view>
+          </view>
+          <view wx:if="{{batchType === 'feeding'}}" class="param-row">
+            <text class="param-label">食物类型</text>
+            <picker bindchange="onBatchFoodTypePick" value="{{batchFoodTypeIndex}}" range="{{foodTypeOptions}}">
+              <view class="param-picker {{batchFoodType ? '' : 'placeholder'}}">{{batchFoodType ? batchFoodType : '请选择食物类型'}}</view>
+            </picker>
+          </view>
+          <view wx:if="{{batchType === 'feeding' && batchFoodType === '其他'}}" class="param-row">
+            <text class="param-label">其他食物</text>
+            <input class="param-input" placeholder="请输入食物名称" value="{{batchFoodTypeCustom}}" bindinput="onBatchFoodTypeCustomInput"/>
+          </view>
+          <view wx:if="{{batchType === 'feeding'}}" class="param-row">
+            <text class="param-label">投喂量</text>
+            <picker bindchange="onBatchAmountPick" value="{{batchAmountIndex}}" range="{{amountOptions}}">
+              <view class="param-picker {{batchAmount ? '' : 'placeholder'}}">{{batchAmount ? batchAmount : '请选择投喂量'}}</view>
+            </picker>
+          </view>
+          <view wx:if="{{batchType === 'feeding'}}" class="param-row">
+            <text class="param-label">营养剂</text>
+            <picker bindchange="onBatchAdditivesPick" value="{{batchAdditivesIndex}}" range="{{additiveOptions}}">
+              <view class="param-picker {{batchAdditives ? '' : 'placeholder'}}">{{batchAdditives ? batchAdditives : '请选择营养剂'}}</view>
+            </picker>
+          </view>
+          <view wx:if="{{batchType === 'feeding' && batchAdditives === '其他'}}" class="param-row">
+            <text class="param-label">其他营养剂</text>
+            <input class="param-input" placeholder="请输入营养剂名称" value="{{batchAdditivesCustom}}" bindinput="onBatchAdditivesCustomInput"/>
+          </view>
+          <view class="param-row">
+            <text class="param-label">备注</text>
+            <textarea class="param-textarea" placeholder="选填" value="{{batchNotes}}" bindinput="onBatchNotesInput" maxlength="500"/>
+          </view>
+        </view>
+        <!-- 提交按钮 -->
+        <view class="batch-submit press {{batchSubmitting ? 'disabled' : ''}}" bindtap="submitBatchCheck">
+          <text>{{batchSubmitting ? '提交中...' : '一键完成(' + batchSelectedCount + '个龟缸)'}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

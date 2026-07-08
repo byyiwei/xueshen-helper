@@ -1,0 +1,91 @@
+<view class="page-remind">
+  <!-- 导航栏 -->
+  <view class="nav-bar" style="padding-top:{{statusBarHeight}}px">
+    <view class="nav-back press" bindtap="navigateBack"><text class="nav-back-icon">‹</text></view>
+    <text class="nav-title">提醒设置</text>
+    <view class="nav-placeholder"></view>
+  </view>
+
+  <scroll-view style="padding-top:{{statusBarHeight + 88}}px" scroll-y class="form-scroll">
+    <view class="form-inner">
+      <!-- 加载中 -->
+      <view wx:if="{{loading}}" class="status-box">
+        <text class="status-text">加载中...</text>
+      </view>
+
+      <block wx:else>
+        <!-- 空状态 -->
+        <view wx:if="{{reminders.length === 0}}" class="empty-box">
+          <text class="empty-icon">🔔</text>
+          <text class="empty-text">暂未设置提醒</text>
+          <text class="empty-hint">添加换水、喂食等周期提醒</text>
+        </view>
+
+        <!-- 提醒列表 -->
+        <view wx:for="{{reminders}}" wx:key="index" class="remind-card {{!item.enabled ? 'disabled' : ''}}">
+          <!-- 卡片头部 -->
+          <view class="card-head">
+            <picker mode="selector" range="{{typeLabels}}" value="{{item.typeIndex}}" bindchange="onTypeChange" data-index="{{index}}">
+              <view class="type-badge type-{{item.type}}">
+                <text class="type-text">{{item.typeLabel}}</text>
+                <text class="type-arrow">▾</text>
+              </view>
+            </picker>
+            <view class="head-right">
+              <switch checked="{{item.enabled}}" bindchange="onSwitch" data-index="{{index}}" color="#E8A400"/>
+              <view class="del-btn press" bindtap="removeReminder" data-index="{{index}}">
+                <text class="del-icon">✕</text>
+              </view>
+            </view>
+          </view>
+
+          <!-- 事件类型 -->
+          <block wx:if="{{item.type === 'event'}}">
+            <view class="form-row">
+              <text class="form-label">事件名称</text>
+              <input class="form-input" placeholder="如：冬眠检查" value="{{item.event_name}}" bindinput="onInput" data-index="{{index}}" data-field="event_name"/>
+            </view>
+            <view class="form-row">
+              <text class="form-label">事件日期</text>
+              <picker mode="date" value="{{item.event_date}}" bindchange="onDateChange" data-index="{{index}}" data-field="event_date">
+                <view class="form-picker {{item.event_date ? '' : 'placeholder'}}">{{item.event_date || '请选择日期'}}</view>
+              </picker>
+            </view>
+            <view class="form-tip">一次性提醒，到期后自动关闭</view>
+          </block>
+
+          <!-- 换水/喂食类型 -->
+          <block wx:else>
+            <view class="form-row">
+              <text class="form-label">提醒间隔</text>
+              <view class="interval-wrap">
+                <input class="form-input interval-input" type="number" placeholder="7" value="{{item.interval_days}}" bindinput="onInput" data-index="{{index}}" data-field="interval_days"/>
+                <text class="interval-unit">天</text>
+              </view>
+            </view>
+            <view class="form-row">
+              <text class="form-label">下次提醒</text>
+              <picker mode="date" value="{{item.next_remind}}" bindchange="onDateChange" data-index="{{index}}" data-field="next_remind">
+                <view class="form-picker {{item.next_remind ? '' : 'placeholder'}}">{{item.next_remind || '请选择日期'}}</view>
+              </picker>
+            </view>
+            <view class="form-tip">打卡换水/喂食后自动顺延下一个周期</view>
+          </block>
+        </view>
+
+        <!-- 添加按钮 -->
+        <view class="add-btn press" bindtap="addReminder">
+          <text class="add-icon">+</text>
+          <text class="add-text">添加提醒</text>
+        </view>
+
+        <!-- 保存按钮 -->
+        <view wx:if="{{reminders.length > 0}}" class="submit-btn press {{saving ? 'disabled' : ''}}" bindtap="save">
+          <text>{{saving ? '保存中...' : '保存设置'}}</text>
+        </view>
+      </block>
+
+      <view class="safe-bottom"></view>
+    </view>
+  </scroll-view>
+</view>

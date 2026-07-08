@@ -1,36 +1,18 @@
 /**
- * 前端通知管理类
- * 用于查询和展示审核违规通知
+ * 前端通知管理类 v2.0
+ * 适配自建服务器 REST API（/api/security/notifications/*）
  *
  * 使用示例:
  *   const { getNotificationManager } = require('../../utils/notification.js')
  *   const nm = getNotificationManager()
- *   // 检查是否有未读通知
  *   const hasUnread = await nm.checkUnread()
- *   // 弹窗展示通知
  *   nm.showNotificationDialog(list)
  */
+const { getAPI } = require('./api.js')
+
 class NotificationManager {
   constructor() {
     this._lastCheckTime = 0
-  }
-
-  /**
-   * 调用 security 云函数
-   * @private
-   */
-  _call(action, data = {}) {
-    return new Promise((resolve) => {
-      wx.cloud.callFunction({
-        name: 'security',
-        data: { action, data }
-      }).then(res => {
-        resolve(res.result || { success: false })
-      }).catch(err => {
-        console.error('[NotificationManager] 云函数调用失败:', err)
-        resolve({ success: false, message: '网络异常' })
-      })
-    })
   }
 
   /**
@@ -41,11 +23,10 @@ class NotificationManager {
   async getUnreadNotifications(force = false) {
     const now = Date.now()
     if (!force && now - this._lastCheckTime < 60000) {
-      // 一分钟内不重复查询
       return { list: [], total: 0 }
     }
-
-    const res = await this._call('getUnreadNotifications')
+    const api = getAPI()
+    const res = await api.getUnreadNotifications()
     if (res.success && res.data) {
       this._lastCheckTime = now
       return res.data
@@ -53,27 +34,23 @@ class NotificationManager {
     return { list: [], total: 0 }
   }
 
-  /**
-   * 快速检查是否有未读通知
-   */
+  /** 快速检查是否有未读通知 */
   async checkUnread() {
     const data = await this.getUnreadNotifications()
     return data.total > 0
   }
 
-  /**
-   * 标记单条通知为已读
-   */
+  /** 标记单条通知为已读 */
   async markRead(id) {
-    const res = await this._call('markNotificationRead', { id })
+    const api = getAPI()
+    const res = await api.markNotificationRead(id)
     return res.success
   }
 
-  /**
-   * 标记所有通知为已读
-   */
+  /** 标记所有通知为已读 */
   async markAllRead() {
-    const res = await this._call('markAllNotificationsRead')
+    const api = getAPI()
+    const res = await api.markAllNotificationsRead()
     return res.success
   }
 
@@ -83,19 +60,14 @@ class NotificationManager {
    */
   showNotificationDialog(list) {
     if (!list || list.length === 0) return
-
-    // 取最新的通知展示
     const item = list[0]
-
     wx.showModal({
       title: item.title || '内容审核提示',
-      content: item.content,
+      content: item.content || '',
       confirmText: '我知道了',
       showCancel: false,
       success: () => {
-        // 标记为已读
         this.markRead(item.id)
-        // 如果有更多通知，递归展示下一条
         const remaining = list.slice(1)
         if (remaining.length > 0) {
           setTimeout(() => this.showNotificationDialog(remaining), 500)
@@ -104,21 +76,29 @@ class NotificationManager {
     })
   }
 
-  /**
-   * 获取待审核（超时）的记录
-   * @returns {Promise<Array>}
-   */
+  /** 获取待审核（超时）的记录 */
   async getPendingChecks() {
-    const res = await this._call('getPendingChecks')
-    if (res.success && res.data) {
-      return res.data.pending || []
-    }
-    return []
+    const api = getAPI()
+    const baseUrl = this._getBaseUrl()
+    const token = wx.getStorageSync('token') || ''
+    return new Promise((resolve) => {
+      wx.request({
+        url: baseUrl + '/api/security/pending',
+        method: 'GET',
+        header: { 'Authorization': 'Bearer ' + token },
+        success: (res) => {
+          if (res.statusCode === 200 && res.data && res.data.success) {
+            resolve(res.data.data.pending || [])
+          } else {
+            resolve([])
+          }
+        },
+        fail: () => resolve([])
+      })
+    })
   }
 
-  /**
-   * 显示待审核超时提示
-   */
+  /** 显示待审核超时提示 */
   showTimeoutToast(count) {
     if (count > 0) {
       wx.showToast({
@@ -128,9 +108,14 @@ class NotificationManager {
       })
     }
   }
+
+  _getBaseUrl() {
+    const app = getApp()
+    const config = app?.globalData?.systemConfig || {}
+    return config.apiUrl || config.imageServerUrl || 'https://pets.openget.cn'
+  }
 }
 
-// 导出单例
 let instance = null
 
 function getNotificationManager() {
@@ -140,7 +125,4 @@ function getNotificationManager() {
   return instance
 }
 
-module.exports = {
-  NotificationManager,
-  getNotificationManager
-}
+module.exports = { NotificationManager, getNotificationManager }
