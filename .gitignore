@@ -8,6 +8,8 @@ providers.json
 *.pem
 jwt_secret.key
 README_INTERNAL.md
+# 本地服务器连接信息（含密码，切勿提交）
+config/server.json
 
 # 数据库文件
 *.db
