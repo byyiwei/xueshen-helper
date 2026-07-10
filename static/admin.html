@@ -149,6 +149,10 @@ body{
 }
 .form-group input::placeholder{color:var(--text3)}
 .form-group textarea{min-height:80px;resize:vertical}
+.pwd-wrap{position:relative}
+.pwd-wrap input{padding-right:36px}
+.pwd-eye{position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text3);font-size:16px;line-height:1;user-select:none}
+.pwd-eye:hover{color:var(--text2)}
 
 /* Toggle */
 .toggle{
@@ -327,7 +331,11 @@ body{
   transition:all .2s;flex-shrink:0;margin-left:12px;
 }
 .modal-card .modal-header .btn-close:hover{background:rgba(239,68,68,.15);border-color:rgba(239,68,68,.4);color:var(--danger)}
-.modal-card .modal-body{padding:20px;overflow-y:auto}
+.modal-card .modal-body{padding:20px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(148,163,184,.25) transparent}
+.modal-card .modal-body::-webkit-scrollbar{width:5px;height:5px}
+.modal-card .modal-body::-webkit-scrollbar-track{background:transparent;margin:4px 0}
+.modal-card .modal-body::-webkit-scrollbar-thumb{background:rgba(148,163,184,.25);border-radius:10px}
+.modal-card .modal-body::-webkit-scrollbar-thumb:hover{background:rgba(148,163,184,.4)}
 .modal-card .modal-body .form-group{margin-bottom:16px}
 .modal-card .modal-body .form-group:last-child{margin-bottom:0}
 .modal-card .modal-body label{font-size:13px;color:var(--text2);margin-bottom:6px;display:block}
@@ -1055,16 +1063,16 @@ body{
           </div>
 
           <!-- 邮件服务器编辑弹窗 -->
-          <div v-if="showServerForm" class="modal-mask" @click.self="showServerForm=false">
-            <div class="modal" style="max-width:560px">
-              <div class="modal-header"><h3>{{mailServerForm.id?'编辑':'添加'}}邮件服务器</h3><button class="modal-close" @click="showServerForm=false">×</button></div>
+          <div v-if="showServerForm" class="modal-overlay" @click.self="showServerForm=false">
+            <div class="modal-card" style="max-width:560px">
+              <div class="modal-header"><h3>{{mailServerForm.id?'编辑':'添加'}}邮件服务器</h3><button class="btn-close" @click="showServerForm=false">×</button></div>
               <div class="modal-body">
                 <div class="form-row">
                   <div class="form-group"><label>名称</label><input v-model="mailServerForm.name" placeholder="如：腾讯云邮件"></div>
                   <div class="form-group"><label>类型</label>
                     <select v-model="mailServerForm.type">
                       <option value="smtp">SMTP</option>
-                      <option value="tencent_ses">腾讯云邮件（SMTP 中继）</option>
+                      <option value="tencent_ses">腾讯云邮件 API</option>
                     </select>
                   </div>
                 </div>
@@ -1075,13 +1083,39 @@ body{
                   <div class="form-group" style="min-width:120px"><label>权重（越大越优先）</label><input type="number" min="1" v-model.number="mailServerForm.weight" placeholder="1"></div>
                 </div>
                 <div class="form-row">
-                  <div class="form-group"><label>SMTP 服务器地址</label><input v-model="mailServerForm.smtp_host" placeholder="如：smtp.qcloudmail.com"></div>
-                  <div class="form-group"><label>SMTP 端口</label><input type="number" v-model.number="mailServerForm.smtp_port" placeholder="如：587"></div>
+                  <div class="form-group" style="min-width:120px"><label>用于补发邮件</label>
+                    <div class="toggle" :class="mailServerForm.is_resend?'on':''" @click="mailServerForm.is_resend=!mailServerForm.is_resend"></div>
+                  </div>
+                  <div class="form-group"></div>
                 </div>
-                <div class="form-row">
-                  <div class="form-group"><label>SMTP 用户名</label><input v-model="mailServerForm.smtp_user" placeholder="邮箱或用户名"></div>
-                  <div class="form-group"><label>SMTP 密码 / 授权码</label><input type="password" v-model="mailServerForm.smtp_pass" :placeholder="mailServerForm.id?'留空则不修改':'邮箱授权码'"></div>
-                </div>
+
+                <template v-if="mailServerForm.type==='smtp'">
+                  <div class="form-row">
+                    <div class="form-group"><label>SMTP 服务器地址</label><input v-model="mailServerForm.smtp_host" placeholder="如：smtp.qcloudmail.com"></div>
+                    <div class="form-group"><label>SMTP 端口</label><input type="number" v-model.number="mailServerForm.smtp_port" placeholder="如：587"></div>
+                  </div>
+                  <div class="form-row">
+                    <div class="form-group"><label>SMTP 用户名</label><input v-model="mailServerForm.smtp_user" placeholder="邮箱或用户名"></div>
+                    <div class="form-group"><label>SMTP 密码 / 授权码</label><div class="pwd-wrap"><input :type="showSmtpPass?'text':'password'" v-model="mailServerForm.smtp_pass" :placeholder="mailServerForm.id?'留空则不修改':'邮箱授权码'"><span class="pwd-eye" @click="showSmtpPass=!showSmtpPass"><svg v-if="!showSmtpPass" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg><svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg></span></div></div>
+                  </div>
+                </template>
+
+                <template v-if="mailServerForm.type==='tencent_ses'">
+                  <div class="form-row">
+                    <div class="form-group"><label>SecretId</label><input v-model="mailServerForm.secret_id" placeholder="腾讯云 API SecretId"></div>
+                    <div class="form-group"><label>SecretKey</label><div class="pwd-wrap"><input :type="showSmtpPass?'text':'password'" v-model="mailServerForm.secret_key" :placeholder="mailServerForm.id?'留空则不修改':'腾讯云 API SecretKey'"><span class="pwd-eye" @click="showSmtpPass=!showSmtpPass"><svg v-if="!showSmtpPass" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg><svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg></span></div></div>
+                  </div>
+                  <div class="form-row">
+                    <div class="form-group"><label>区域</label>
+                      <select v-model="mailServerForm.ses_region">
+                        <option value="ap-guangzhou">ap-guangzhou（广州）</option>
+                        <option value="ap-hongkong">ap-hongkong（香港）</option>
+                      </select>
+                    </div>
+                    <div class="form-group"><label>SES 模板 ID</label><input type="number" v-model.number="mailServerForm.ses_template_id" placeholder="腾讯云 SES 模板ID（0=使用内容）"></div>
+                  </div>
+                </template>
+
                 <div class="form-row">
                   <div class="form-group"><label>发件人邮箱</label><input v-model="mailServerForm.from_addr" placeholder="如：noreply@yourdomain.com"></div>
                   <div class="form-group"><label>发件人名称</label><input v-model="mailServerForm.from_name" placeholder="学神助手"></div>
@@ -1194,6 +1228,12 @@ body{
                   <label>HTML 内容</label>
                   <textarea v-model="templateForm.body_html" placeholder="HTML 中使用 {{变量名}} 插入变量，如：&#10;<p>您的验证码是：<b>{{code}}</b></p>&#10;<p>10分钟内有效</p>"></textarea>
                 </div>
+                <div class="form-group" v-if="templateForm.content_type==='html'">
+                  <label style="display:flex;justify-content:space-between;align-items:center">纯文本兜底（兼容性用，留空则自动从 HTML 生成）
+                    <button type="button" class="btn btn-secondary btn-sm" @click="syncPlainFromHtml">从 HTML 同步</button>
+                  </label>
+                  <textarea v-model="templateForm.body_text_plain" style="min-height:90px" placeholder="可选：邮件纯文本版本，用于只支持纯文本的客户端；点「从 HTML 同步」自动生成，也可手动修改"></textarea>
+                </div>
                 <div class="form-group">
                   <label>可用变量</label>
                   <div style="display:flex;flex-wrap:wrap;gap:6px;padding:10px 12px;background:var(--bg);border-radius:8px;border:1px solid var(--border);min-height:36px;align-items:center">
@@ -1205,7 +1245,7 @@ body{
                 <div class="form-group">
                   <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
                     <input type="checkbox" v-model="templateForm.is_resend" style="width:16px;height:16px">
-                    设为「补发邮件」模板（用户点击“没收到邮件”时，强制通过腾讯云邮件服务器发送此模板）
+                    设为「补发邮件」模板（用户点击"没收到邮件"时，通过已启用的邮件服务器发送此模板）
                   </label>
                 </div>
               </div>
@@ -1690,7 +1730,7 @@ body{
                   <tbody>
                     <template v-for="item in questionBank" :key="item.id">
                       <tr style="border-bottom:1px solid var(--border);color:var(--text)">
-                        <td style="padding:10px 8px;white-space:nowrap">{{item.question_type||'-'}}</td>
+                        <td style="padding:10px 8px;white-space:nowrap">{{questionTypeName(item.question_type)}}</td>
                         <td style="padding:10px 8px;max-width:380px;word-break:break-word;color:var(--text2)">{{shortText(item.question_text,120)}}</td>
                         <td style="padding:10px 8px;max-width:260px;word-break:break-word;color:var(--success)">{{shortText(item.answer,100)}}</td>
                         <td style="padding:10px 8px;color:var(--accent2);max-width:180px;word-break:break-all">{{item.source_model||'-'}}</td>
@@ -2452,10 +2492,11 @@ createApp({
     const emailConfig=ref({enabled:false,test_recipient:''});
     const mailServers=ref([]);
     const showServerForm=ref(false);
-    const mailServerForm=ref({id:null,name:'',type:'smtp',enabled:true,weight:1,smtp_host:'',smtp_port:587,smtp_user:'',smtp_pass:'',from_addr:'',from_name:'学神助手'});
+    const mailServerForm=ref({id:null,name:'',type:'smtp',enabled:true,weight:1,smtp_host:'',smtp_port:587,smtp_user:'',smtp_pass:'',from_addr:'',from_name:'学神助手',secret_id:'',secret_key:'',ses_region:'ap-guangzhou',ses_template_id:0,is_resend:false});
+    const showSmtpPass=ref(false);
     const emailTemplates=ref([]);
     const templateModal=ref({show:false});
-    const templateForm=ref({scene:'',subject:'',body_text:'',body_html:'',content_type:'text',is_resend:false});
+    const templateForm=ref({scene:'',subject:'',body_text:'',body_html:'',body_text_plain:'',content_type:'text',is_resend:false});
     const editingTemplateId=ref(null);
     const TEMPLATE_SCENES={user_register:'用户注册验证码',user_reset:'用户密码重置验证码',admin_reset:'管理员密码重置验证码',referral_withdrawal:'推广提现通知',feedback_reply:'问题反馈回复'};
     const SCENE_VARS={user_register:['username','code','subject','from_addr'],user_reset:['username','code','subject','from_addr'],admin_reset:['username','code','subject','from_addr'],referral_withdrawal:['username','amount','status','reason','subject','from_addr'],feedback_reply:['username','title','reply_text','subject','from_addr']};
@@ -3011,9 +3052,9 @@ createApp({
     }
     function openServerForm(s){
       if(s){
-        mailServerForm.value={id:s.id,name:s.name,type:s.type,enabled:!!s.enabled,weight:s.weight,smtp_host:s.smtp_host,smtp_port:s.smtp_port,smtp_user:s.smtp_user,smtp_pass:'',from_addr:s.from_addr,from_name:s.from_name};
+        mailServerForm.value={id:s.id,name:s.name,type:s.type,enabled:!!s.enabled,weight:s.weight,smtp_host:s.smtp_host,smtp_port:s.smtp_port,smtp_user:s.smtp_user,smtp_pass:s.smtp_pass||'',from_addr:s.from_addr,from_name:s.from_name,secret_id:s.secret_id||'',secret_key:s.secret_key||'',ses_region:s.ses_region||'ap-guangzhou',ses_template_id:s.ses_template_id||0,is_resend:!!s.is_resend};
       }else{
-        mailServerForm.value={id:null,name:'',type:'smtp',enabled:true,weight:1,smtp_host:'',smtp_port:587,smtp_user:'',smtp_pass:'',from_addr:'',from_name:'学神助手'};
+        mailServerForm.value={id:null,name:'',type:'smtp',enabled:true,weight:1,smtp_host:'',smtp_port:587,smtp_user:'',smtp_pass:'',from_addr:'',from_name:'学神助手',secret_id:'',secret_key:'',ses_region:'ap-guangzhou',ses_template_id:0,is_resend:false};
       }
       showServerForm.value=true;
     }
@@ -3100,10 +3141,10 @@ createApp({
     function openTemplateModal(template){
       if(template){
         editingTemplateId.value=template.id;
-        templateForm.value={scene:template.scene||'',subject:template.subject||'',body_text:template.body_text||'',body_html:template.body_html||'',content_type:template.content_type||'text',is_resend:!!template.is_resend};
+        templateForm.value={scene:template.scene||'',subject:template.subject||'',body_text:template.body_text||'',body_html:template.body_html||'',body_text_plain:template.body_text||'',content_type:template.content_type||'text',is_resend:!!template.is_resend};
       }else{
         editingTemplateId.value=null;
-        templateForm.value={scene:'',subject:'',body_text:'',body_html:'',content_type:'text',is_resend:false};
+        templateForm.value={scene:'',subject:'',body_text:'',body_html:'',body_text_plain:'',content_type:'text',is_resend:false};
       }
       templateModal.value.show=true;
     }
@@ -3124,6 +3165,15 @@ createApp({
       const key=templateForm.value.content_type==='html'?'body_html':'body_text';
       templateForm.value[key]+=tag;
     }
+    function syncPlainFromHtml(){
+      let h=templateForm.value.body_html||'';
+      h=h.replace(/<(script|style)[\s\S]*?<\/\1>/gi,'');
+      h=h.replace(/<(br|\/p|\/div|\/tr|\/li|\/h[1-6]|\/td)[^>]*>/gi,'\n');
+      h=h.replace(/<[^>]+>/g,'');
+      h=h.replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+      h=h.replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+      templateForm.value.body_text_plain=h;
+    }
     async function saveTemplate(){
       try{
         const f=templateForm.value;
@@ -3137,7 +3187,8 @@ createApp({
           body_html:f.content_type==='html'?f.body_html:'',
           content_type:f.content_type,
           variables:vars.join(','),
-          is_resend:f.is_resend?1:0
+          is_resend:f.is_resend?1:0,
+          body_text:f.content_type==='text'?f.body_text:(f.body_text_plain||'')
         };
         if(editingTemplateId.value)payload.id=editingTemplateId.value;
         const res=await fetch('/admin/email-template',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify(payload)});
@@ -3323,6 +3374,8 @@ createApp({
       ms=Number(ms||0);
       return ms>=1000?(ms/1000).toFixed(1)+'s':ms+'ms';
     }
+    const questionTypeMap={0:'单选题',1:'多选题',2:'判断题',3:'填空题',4:'简答题','single':'单选题','multiple':'多选题','judge':'判断题','fill':'填空题','short':'简答题'};
+    function questionTypeName(t){return questionTypeMap[t]||t||'-';}
     function shortText(text,len=160){
       text=(text==null?'':String(text));
       return text.length>len?text.slice(0,len)+'...':text;
@@ -3695,7 +3748,7 @@ createApp({
 
     return{
        page,loginMode,config,emailConfig,emailTemplates,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
-       mailServers,showServerForm,mailServerForm,toggleEmailEnabled,openServerForm,saveMailServer,deleteMailServer,
+       mailServers,showServerForm,mailServerForm,showSmtpPass,toggleEmailEnabled,openServerForm,saveMailServer,deleteMailServer,
       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,users,userSearch,userSortBy,userSortOrder,showUserModal,userForm,
       paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,planForm,
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,
@@ -3705,7 +3758,7 @@ createApp({
       savePaymentConfig,savePayApiConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,openUserEdit,saveUserAdmin,
       toggleProvider,collapseAllProviders,togglePayApiSection,
       addProvider,removeProvider,addModel,removeModel,
-      protocolName,statusText,formatDuration,shortText,formatScriptExtra,trendPoints,trendX,trendY,trendMax,stackBarX,stackBarY,stackBarH,modelBarWidth,revTrendPoints,revTrendArea,revTrendX,revStep,revY,revMax,
+      protocolName,statusText,formatDuration,questionTypeName,shortText,formatScriptExtra,trendPoints,trendX,trendY,trendMax,stackBarX,stackBarY,stackBarH,modelBarWidth,revTrendPoints,revTrendArea,revTrendX,revStep,revY,revMax,
       loadLogCleanup,saveLogCleanup,runLogCleanupNow,logRetentionDays,logCleanupSaving,logCleanupRunning,logCleanupResult,payTestForm,payTestLoading,payTestResult,runPayTest,payApiWeightTotal,payApiWeightPercent,refreshSandpayParams,onSandpayAdvancedChange,
       referralTab,referralConfig,referralSaving,referralWithdrawals,referralWdFilter,referralWdSummary,referralStats,referralQrPreview,
       loadReferralConfig,saveReferralConfig,loadReferralWithdrawals,approveWithdrawal,rejectWithdrawal,loadReferralStats,

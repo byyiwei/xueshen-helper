@@ -364,7 +364,7 @@ class Database:
                 UNIQUE INDEX idx_scene (scene)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
-        # 邮件服务器配置（支持多服务器 + 权重 + 腾讯云）
+        # 邮件服务器配置（支持多服务器 + 权重 + 腾讯云SES）
         self.execute("""
             CREATE TABLE IF NOT EXISTS mail_servers (
                 id INT AUTO_INCREMENT PRIMARY KEY,
@@ -378,6 +378,11 @@ class Database:
                 smtp_pass VARCHAR(512) DEFAULT '' COMMENT 'SMTP 密码/授权码',
                 from_addr VARCHAR(255) DEFAULT '' COMMENT '发件地址',
                 from_name VARCHAR(100) DEFAULT '学神助手' COMMENT '发件人名称',
+                secret_id VARCHAR(255) DEFAULT '' COMMENT '腾讯云SecretId',
+                secret_key VARCHAR(512) DEFAULT '' COMMENT '腾讯云SecretKey',
+                ses_region VARCHAR(50) DEFAULT 'ap-guangzhou' COMMENT '腾讯云SES区域',
+                ses_template_id INT DEFAULT 0 COMMENT '腾讯云SES模板ID',
+                is_resend TINYINT DEFAULT 0 COMMENT '是否作为补发专用服务器',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -386,6 +391,15 @@ class Database:
         self._migrate_email_templates()
         # 确保邮件模板有补发标记字段
         self._add_column_if_missing("email_templates", "is_resend", "is_resend TINYINT DEFAULT 0 COMMENT '是否作为没收到邮件的补发模板'")
+        # 确保 mail_servers 有腾讯云 SES 字段
+        for col, dtype, default in [
+            ("secret_id", "VARCHAR(255)", "''"),
+            ("secret_key", "VARCHAR(512)", "''"),
+            ("ses_region", "VARCHAR(50)", "'ap-guangzhou'"),
+            ("ses_template_id", "INT", "0"),
+            ("is_resend", "TINYINT", "0"),
+        ]:
+            self._add_column_if_missing("mail_servers", col, f"{col} {dtype} DEFAULT {default}")
         # 将旧版单 SMTP 配置迁移为邮件服务器
         self._migrate_mail_servers()
         # 确保每个场景都有默认模板
@@ -1836,7 +1850,7 @@ class Database:
 
     def list_mail_servers(self, enabled_only=False):
         ph = _ph()
-        sql = "SELECT id, name, type, enabled, weight, smtp_host, smtp_port, smtp_user, smtp_pass, from_addr, from_name, created_at, updated_at FROM mail_servers"
+        sql = "SELECT id, name, type, enabled, weight, smtp_host, smtp_port, smtp_user, smtp_pass, from_addr, from_name, secret_id, secret_key, ses_region, ses_template_id, is_resend, created_at, updated_at FROM mail_servers"
         if enabled_only:
             sql += " WHERE enabled = 1"
         sql += " ORDER BY id ASC"
@@ -1849,13 +1863,16 @@ class Database:
     def create_mail_server(self, data):
         ph = _ph()
         self.execute(
-            f"INSERT INTO mail_servers (name, type, enabled, weight, smtp_host, smtp_port, smtp_user, smtp_pass, from_addr, from_name) "
-            f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
+            f"INSERT INTO mail_servers (name, type, enabled, weight, smtp_host, smtp_port, smtp_user, smtp_pass, from_addr, from_name, secret_id, secret_key, ses_region, ses_template_id, is_resend) "
+            f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
             (data.get("name", ""), data.get("type", "smtp"), 1 if data.get("enabled") else 0,
              int(data.get("weight") or 1), (data.get("smtp_host") or "").strip(),
              int(data.get("smtp_port") or 587), (data.get("smtp_user") or "").strip(),
              data.get("smtp_pass") or "", (data.get("from_addr") or "").strip(),
-             (data.get("from_name") or "").strip() or "学神助手")
+             (data.get("from_name") or "").strip() or "学神助手",
+             (data.get("secret_id") or "").strip(), (data.get("secret_key") or "").strip(),
+             (data.get("ses_region") or "ap-guangzhou").strip(), int(data.get("ses_template_id") or 0),
+             1 if data.get("is_resend") else 0)
         )
         row = self.fetchone("SELECT LAST_INSERT_ID() AS id")
         return row.get("id") if row else None
@@ -1865,19 +1882,27 @@ class Database:
         sets = [
             f"name={ph}", f"type={ph}", f"enabled={ph}", f"weight={ph}",
             f"smtp_host={ph}", f"smtp_port={ph}", f"smtp_user={ph}",
-            f"from_addr={ph}", f"from_name={ph}"
+            f"from_addr={ph}", f"from_name={ph}",
+            f"secret_id={ph}", f"ses_region={ph}", f"ses_template_id={ph}", f"is_resend={ph}"
         ]
         params = [
             data.get("name", ""), data.get("type", "smtp"), 1 if data.get("enabled") else 0,
             int(data.get("weight") or 1), (data.get("smtp_host") or "").strip(),
             int(data.get("smtp_port") or 587), (data.get("smtp_user") or "").strip(),
-            (data.get("from_addr") or "").strip(), (data.get("from_name") or "").strip() or "学神助手"
+            (data.get("from_addr") or "").strip(), (data.get("from_name") or "").strip() or "学神助手",
+            (data.get("secret_id") or "").strip(), (data.get("ses_region") or "ap-guangzhou").strip(),
+            int(data.get("ses_template_id") or 0), 1 if data.get("is_resend") else 0
         ]
         # 密码为空时不更新（保留原值）
         pwd = data.get("smtp_pass")
         if pwd:
             sets.append(f"smtp_pass={ph}")
             params.append(pwd)
+        # SecretKey 为空时不更新（保留原值）
+        sk = data.get("secret_key")
+        if sk:
+            sets.append(f"secret_key={ph}")
+            params.append(sk)
         params.append(server_id)
         self.execute(f"UPDATE mail_servers SET {', '.join(sets)} WHERE id = {ph}", tuple(params))
 

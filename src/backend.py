@@ -835,6 +835,23 @@ def _render_email_template(text, variables):
         return str(val) if val is not None else ""
     return EMAIL_VAR_PATTERN.sub(_repl, text)
 
+
+def _html_to_plain(html):
+    """将 HTML 转为纯文本（用于邮件纯文本兜底，避免 multipart/alternative 仅含 HTML 单部分时被客户端当作纯文本显示）"""
+    if not html:
+        return ""
+    h = _re.sub(r'(?is)<(script|style).*?</\1>', '', html)
+    h = _re.sub(r'(?i)<(br|/p|/div|/tr|/li|/h[1-6]|/td)[^>]*>', '\n', h)
+    h = _re.sub(r'(?s)<[^>]+>', '', h)
+    try:
+        from html import unescape as _hu
+        h = _hu(h)
+    except Exception:
+        pass
+    h = _re.sub(r'[ \t]+\n', '\n', h)
+    h = _re.sub(r'\n{3,}', '\n\n', h)
+    return h.strip()
+
 # ==================== 邮件发送 ====================
 def _weighted_pick(servers):
     """按权重随机选择一个邮件服务器"""
@@ -851,16 +868,121 @@ def _weighted_pick(servers):
 
 
 def _pick_mail_server(resend=False):
-    """选择一个可用的邮件服务器。resend=True 时强制挑选腾讯云(tencent_ses)服务器"""
+    """选择一个可用的邮件服务器。resend=True 时优先选择标记为补发专用的服务器"""
     servers = db.list_mail_servers(enabled_only=True)
     if not servers:
         return None
     if resend:
-        tencent = [s for s in servers if (s.get("type") or "") == "tencent_ses"]
-        if not tencent:
-            return None
-        return _weighted_pick(tencent)
+        # 优先选择标记为补发专用的服务器
+        resend_servers = [s for s in servers if s.get("is_resend")]
+        if resend_servers:
+            return _weighted_pick(resend_servers)
     return _weighted_pick(servers)
+
+
+def _tencent_ses_send(server, to_addr, subject, body_html=None, body_text=None):
+    """通过腾讯云 SES API 发送邮件"""
+    import hmac
+    import hashlib
+    import time
+    import random
+    from datetime import datetime
+
+    secret_id = (server.get("secret_id") or "").strip()
+    secret_key = (server.get("secret_key") or "").strip()
+    region = (server.get("ses_region") or "ap-guangzhou").strip()
+    template_id = int(server.get("ses_template_id") or 0)
+    from_addr = (server.get("from_addr") or "").strip()
+    from_name = (server.get("from_name") or "").strip() or "学神助手"
+
+    if not all([secret_id, secret_key, from_addr]):
+        return False, "腾讯云 SES 配置不完整（缺少 secret_id/secret_key/from_addr）"
+
+    service = "ses"
+    host = "ses.tencentcloudapi.com"
+    action = "SendEmail"
+    version = "2020-10-02"
+    algorithm = "HMAC-SHA256"
+    timestamp = int(time.time())
+    nonce = random.randint(1, 2147483647)
+
+    # 构建请求参数
+    from_email = f"{from_name} <{from_addr}>" if from_name else from_addr
+    params = {
+        "Action": action,
+        "Version": version,
+        "Region": region,
+        "FromEmailAddress": from_email,
+        "Subject": subject,
+        "Destination.N": [to_addr],
+    }
+    # 使用模板或直接内容
+    if template_id:
+        params["Template"] = {"TemplateID": template_id, "TemplateData": "{}"}
+    elif body_html:
+        import base64 as b64
+        params["Simple"] = {"Html": b64.b64encode(body_html.encode("utf-8")).decode("utf-8")}
+    elif body_text:
+        import base64 as b64
+        params["Simple"] = {"Text": b64.b64encode(body_text.encode("utf-8")).decode("utf-8")}
+
+    # TC3-HMAC-SHA256 签名
+    def _sha256(data):
+        return hashlib.sha256(data.encode("utf-8")).hexdigest()
+
+    def _hmac_sha256(key, msg):
+        return hmac.new(key, msg.encode("utf-8"), hashlib.sha256).digest()
+
+    # Step 1: 拼接规范请求串
+    http_request_method = "POST"
+    canonical_uri = "/"
+    canonical_querystring = ""
+    content_type = "application/json; charset=utf-8"
+    payload = json.dumps(params)
+    canonical_headers = f"content-type:{content_type}\nhost:{host}\nx-tc-action:{action.lower()}\n"
+    signed_headers = "content-type;host;x-tc-action"
+    hashed_request_payload = _sha256(payload)
+    canonical_request = f"{http_request_method}\n{canonical_uri}\n{canonical_querystring}\n{canonical_headers}\n{signed_headers}\n{hashed_request_payload}"
+
+    # Step 2: 拼接待签名字符串
+    credential_scope = f"{datetime.utcfromtimestamp(timestamp).strftime('%Y-%m-%d')}/{service}/tc3_request"
+    string_to_sign = f"{algorithm}\n{timestamp}\n{credential_scope}\n{_sha256(canonical_request)}"
+
+    # Step 3: 计算签名
+    secret_date = _hmac_sha256(("TC3" + secret_key).encode("utf-8"), datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d"))
+    secret_service = _hmac_sha256(secret_date, service)
+    secret_signing = _hmac_sha256(secret_service, "tc3_request")
+    signature = hmac.new(secret_signing, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    # Step 4: 拼接 Authorization
+    authorization = f"{algorithm} Credential={secret_id}/{credential_scope}, SignedHeaders={signed_headers}, Signature={signature}"
+
+    # 发送请求
+    req_data = payload.encode("utf-8")
+    req = __import__("urllib.request", fromlist=["Request"]).Request(
+        f"https://{host}",
+        data=req_data,
+        headers={
+            "Content-Type": content_type,
+            "Host": host,
+            "X-TC-Action": action,
+            "X-TC-Version": version,
+            "X-TC-Timestamp": str(timestamp),
+            "X-TC-Nonce": str(nonce),
+            "X-TC-Region": region,
+            "Authorization": authorization,
+        },
+        method="POST",
+    )
+    try:
+        with __import__("urllib.request", fromlist=["urlopen"]).urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            if result.get("Response", {}).get("Error"):
+                err = result["Response"]["Error"]
+                return False, f"腾讯云 SES 错误: {err.get('Code', 'Unknown')} - {err.get('Message', '')}"
+            return True, None
+    except Exception as e:
+        return False, f"腾讯云 SES 请求失败: {str(e)}"
 
 
 def send_email(to_addr, subject, body_text=None, body_html=None, template_id=None, scene=None, variables=None, resend=False):
@@ -868,7 +990,7 @@ def send_email(to_addr, subject, body_text=None, body_html=None, template_id=Non
     template_id: 使用指定模板ID
     scene: 使用指定场景的模板（user_register/user_reset/admin_reset）
     variables: 变量字典，如 {"code": "123456"}
-    resend: 是否为“没收到邮件”补发，True 时强制走腾讯云邮件服务器
+    resend: 是否为"没收到邮件"补发，True 时强制走腾讯云邮件服务器
     """
     admin = db.get_admin_config()
     if not admin or not admin.get("email_enabled"):
@@ -876,21 +998,14 @@ def send_email(to_addr, subject, body_text=None, body_html=None, template_id=Non
     server = _pick_mail_server(resend=resend)
     if not server:
         if resend:
-            return False, "未配置已启用的腾讯云邮件服务器，无法补发"
+            return False, "未配置已启用的邮件服务器，无法补发"
         return False, "未配置可用的邮件服务器"
-    smtp_host = (server.get("smtp_host") or "").strip()
-    smtp_port = int(server.get("smtp_port") or 587)
-    smtp_user = (server.get("smtp_user") or "").strip()
-    smtp_pass = (server.get("smtp_pass") or "").strip()
-    from_addr = (server.get("from_addr") or "").strip() or smtp_user
-    from_name = (server.get("from_name") or "").strip() or "学神助手"
-    if not all([smtp_host, smtp_user, smtp_pass]):
-        return False, "邮件服务器配置不完整"
 
     variables = variables or {}
-    variables["from_addr"] = from_addr
+    from_addr_val = (server.get("from_addr") or "").strip() or (server.get("smtp_user") or "").strip()
+    variables["from_addr"] = from_addr_val
 
-    # 补发场景：优先使用标记为“补发”的模板，否则使用对应场景模板
+    # 补发场景：优先使用标记为"补发"的模板，否则使用对应场景模板
     if resend and scene and not template_id:
         tpl = db.get_email_template_resend(scene) or db.get_email_template_by_scene(scene)
         if tpl:
@@ -902,7 +1017,6 @@ def send_email(to_addr, subject, body_text=None, body_html=None, template_id=Non
         if not template:
             return False, "模板不存在"
         subject = _render_email_template(template.get("subject", ""), variables)
-        # 同步渲染后的主题到变量，保证内容中的 {{subject}} 与邮件主题一致
         variables["subject"] = subject
         body_text = _render_email_template(template.get("body_text", ""), variables)
         body_html = _render_email_template(template.get("body_html", ""), variables)
@@ -916,6 +1030,25 @@ def send_email(to_addr, subject, body_text=None, body_html=None, template_id=Non
 
     if not subject:
         return False, "邮件主题不能为空"
+
+    # 腾讯云 SES API 发信
+    if server.get("type") == "tencent_ses":
+        return _tencent_ses_send(server, to_addr, subject, body_html=body_html, body_text=body_text)
+
+    # SMTP 发信
+    smtp_host = (server.get("smtp_host") or "").strip()
+    smtp_port = int(server.get("smtp_port") or 587)
+    smtp_user = (server.get("smtp_user") or "").strip()
+    smtp_pass = (server.get("smtp_pass") or "").strip()
+    from_addr = (server.get("from_addr") or "").strip() or smtp_user
+    from_name = (server.get("from_name") or "").strip() or "学神助手"
+    if not all([smtp_host, smtp_user, smtp_pass]):
+        return False, "邮件服务器配置不完整"
+
+    # 纯文本兜底：若只有 HTML 内容，自动生成纯文本，保证 multipart/alternative 同时含两部分，
+    # 否则部分邮件客户端/服务商（如腾讯云中转）会把仅含 HTML 的邮件按纯文本显示
+    if body_html and not body_text:
+        body_text = _html_to_plain(body_html)
 
     # 构建 multipart 邮件（同时支持纯文本和 HTML）
     from email.mime.multipart import MIMEMultipart
@@ -2851,8 +2984,6 @@ class Handler(BaseHTTPRequestHandler):
                 return
             admin = db.get_admin_config()
             servers = db.list_mail_servers()
-            for s in servers:
-                s["smtp_pass"] = "******" if s.get("smtp_pass") else ""
             self._send_json(200, {"code": 200, "config": {
                 "enabled": bool(admin.get("email_enabled")),
                 "test_recipient": admin.get("test_recipient") or "",
