@@ -364,8 +364,30 @@ class Database:
                 UNIQUE INDEX idx_scene (scene)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
+        # 邮件服务器配置（支持多服务器 + 权重 + 腾讯云）
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS mail_servers (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(100) NOT NULL COMMENT '服务器名称',
+                type VARCHAR(20) NOT NULL DEFAULT 'smtp' COMMENT '类型: smtp/tencent_ses',
+                enabled TINYINT DEFAULT 0 COMMENT '是否启用',
+                weight INT DEFAULT 1 COMMENT '权重(用于随机选择)',
+                smtp_host VARCHAR(255) DEFAULT '' COMMENT 'SMTP 服务器地址',
+                smtp_port INT DEFAULT 587 COMMENT 'SMTP 端口',
+                smtp_user VARCHAR(255) DEFAULT '' COMMENT 'SMTP 用户名',
+                smtp_pass VARCHAR(512) DEFAULT '' COMMENT 'SMTP 密码/授权码',
+                from_addr VARCHAR(255) DEFAULT '' COMMENT '发件地址',
+                from_name VARCHAR(100) DEFAULT '学神助手' COMMENT '发件人名称',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
         # 迁移：旧表结构 → 新表结构
         self._migrate_email_templates()
+        # 确保邮件模板有补发标记字段
+        self._add_column_if_missing("email_templates", "is_resend", "is_resend TINYINT DEFAULT 0 COMMENT '是否作为没收到邮件的补发模板'")
+        # 将旧版单 SMTP 配置迁移为邮件服务器
+        self._migrate_mail_servers()
         # 确保每个场景都有默认模板
         self._ensure_default_email_templates()
 
@@ -714,6 +736,7 @@ class Database:
         self._add_column_if_missing("admin_config", "referral_rate", "referral_rate DECIMAL(5,4) DEFAULT 0.1000")
         self._add_column_if_missing("admin_config", "referral_min_withdraw", "referral_min_withdraw DECIMAL(10,2) DEFAULT 10.00")
         self._add_column_if_missing("admin_config", "referral_settle_days", "referral_settle_days INT DEFAULT 7")
+        self._add_column_if_missing("admin_config", "feedback_auto_close_days", "feedback_auto_close_days INT DEFAULT 7")
 
     def _ensure_order_payment_columns(self):
         self._add_column_if_missing("payment_orders", "pay_method", "pay_method VARCHAR(20)")
@@ -1742,7 +1765,7 @@ class Database:
 
     def list_email_templates(self):
         """列出所有邮件模板"""
-        return self.fetchall("SELECT id, scene, subject, body_text, body_html, content_type, variables, created_at, updated_at FROM email_templates ORDER BY updated_at DESC")
+        return self.fetchall("SELECT id, scene, subject, body_text, body_html, content_type, variables, is_resend, created_at, updated_at FROM email_templates ORDER BY updated_at DESC")
 
     def get_email_template(self, template_id):
         """获取单个邮件模板"""
@@ -1755,32 +1778,116 @@ class Database:
         ph = _ph()
         return self.fetchone(f"SELECT * FROM email_templates WHERE scene = {ph}", (scene,))
 
-    def create_email_template(self, scene, subject, body_text, body_html, content_type, variables):
+    def create_email_template(self, scene, subject, body_text, body_html, content_type, variables, is_resend=0):
         """创建邮件模板（同场景禁止重复）"""
         ph = _ph()
         existing = self.fetchone(f"SELECT id FROM email_templates WHERE scene = {ph}", (scene,))
         if existing:
             raise ValueError("该应用场景的模板已存在，请直接编辑")
         self.execute(
-            f"INSERT INTO email_templates (scene, subject, body_text, body_html, content_type, variables) "
-            f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
-            (scene, subject, body_text, body_html, content_type, variables)
+            f"INSERT INTO email_templates (scene, subject, body_text, body_html, content_type, variables, is_resend) "
+            f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
+            (scene, subject, body_text, body_html, content_type, variables, 1 if is_resend else 0)
         )
         row = self.fetchone(f"SELECT id FROM email_templates WHERE scene = {ph}", (scene,))
         return row["id"] if row else None
 
-    def update_email_template(self, template_id, scene, subject, body_text, body_html, content_type, variables):
+    def update_email_template(self, template_id, scene, subject, body_text, body_html, content_type, variables, is_resend=0):
         """更新邮件模板"""
         ph = _ph()
         self.execute(
-            f"UPDATE email_templates SET scene={ph}, subject={ph}, body_text={ph}, body_html={ph}, content_type={ph}, variables={ph} WHERE id={ph}",
-            (scene, subject, body_text, body_html, content_type, variables, template_id)
+            f"UPDATE email_templates SET scene={ph}, subject={ph}, body_text={ph}, body_html={ph}, content_type={ph}, variables={ph}, is_resend={ph} WHERE id={ph}",
+            (scene, subject, body_text, body_html, content_type, variables, 1 if is_resend else 0, template_id)
         )
 
     def delete_email_template(self, template_id):
         """删除邮件模板"""
         ph = _ph()
         self.execute(f"DELETE FROM email_templates WHERE id = {ph}", (template_id,))
+
+    def get_email_template_resend(self, scene):
+        """获取某个场景的补发(没收到邮件)模板"""
+        ph = _ph()
+        return self.fetchone(f"SELECT * FROM email_templates WHERE scene = {ph} AND is_resend = 1", (scene,))
+
+    # ==================== 邮件服务器管理 ====================
+    def _migrate_mail_servers(self):
+        """将旧版 admin_config 中的单 SMTP 配置迁移为 mail_servers 记录"""
+        try:
+            cnt = self.fetchone("SELECT COUNT(*) AS c FROM mail_servers")
+            if cnt and int(cnt.get("c") or 0) > 0:
+                return
+            admin = self.get_admin_config() or {}
+            host = (admin.get("smtp_host") or "").strip()
+            user = (admin.get("smtp_user") or "").strip()
+            pwd = (admin.get("smtp_pass") or "").strip()
+            if not all([host, user, pwd]):
+                return
+            port = int(admin.get("smtp_port") or 587)
+            from_addr = (admin.get("from_addr") or "").strip() or user
+            self.execute(
+                "INSERT INTO mail_servers (name, type, enabled, weight, smtp_host, smtp_port, smtp_user, smtp_pass, from_addr, from_name) "
+                "VALUES (%s, 'smtp', %s, 1, %s, %s, %s, %s, %s, '学神助手')",
+                ("默认 SMTP", 1 if admin.get("email_enabled") else 0, host, port, user, pwd, from_addr)
+            )
+            print("[DB迁移] 已将旧版 SMTP 配置迁移为邮件服务器记录")
+        except Exception as e:
+            print(f"[DB迁移警告] 迁移邮件服务器失败: {e}")
+
+    def list_mail_servers(self, enabled_only=False):
+        ph = _ph()
+        sql = "SELECT id, name, type, enabled, weight, smtp_host, smtp_port, smtp_user, smtp_pass, from_addr, from_name, created_at, updated_at FROM mail_servers"
+        if enabled_only:
+            sql += " WHERE enabled = 1"
+        sql += " ORDER BY id ASC"
+        return self.fetchall(sql)
+
+    def get_mail_server(self, server_id):
+        ph = _ph()
+        return self.fetchone(f"SELECT * FROM mail_servers WHERE id = {ph}", (server_id,))
+
+    def create_mail_server(self, data):
+        ph = _ph()
+        self.execute(
+            f"INSERT INTO mail_servers (name, type, enabled, weight, smtp_host, smtp_port, smtp_user, smtp_pass, from_addr, from_name) "
+            f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
+            (data.get("name", ""), data.get("type", "smtp"), 1 if data.get("enabled") else 0,
+             int(data.get("weight") or 1), (data.get("smtp_host") or "").strip(),
+             int(data.get("smtp_port") or 587), (data.get("smtp_user") or "").strip(),
+             data.get("smtp_pass") or "", (data.get("from_addr") or "").strip(),
+             (data.get("from_name") or "").strip() or "学神助手")
+        )
+        row = self.fetchone("SELECT LAST_INSERT_ID() AS id")
+        return row.get("id") if row else None
+
+    def update_mail_server(self, server_id, data):
+        ph = _ph()
+        sets = [
+            f"name={ph}", f"type={ph}", f"enabled={ph}", f"weight={ph}",
+            f"smtp_host={ph}", f"smtp_port={ph}", f"smtp_user={ph}",
+            f"from_addr={ph}", f"from_name={ph}"
+        ]
+        params = [
+            data.get("name", ""), data.get("type", "smtp"), 1 if data.get("enabled") else 0,
+            int(data.get("weight") or 1), (data.get("smtp_host") or "").strip(),
+            int(data.get("smtp_port") or 587), (data.get("smtp_user") or "").strip(),
+            (data.get("from_addr") or "").strip(), (data.get("from_name") or "").strip() or "学神助手"
+        ]
+        # 密码为空时不更新（保留原值）
+        pwd = data.get("smtp_pass")
+        if pwd:
+            sets.append(f"smtp_pass={ph}")
+            params.append(pwd)
+        params.append(server_id)
+        self.execute(f"UPDATE mail_servers SET {', '.join(sets)} WHERE id = {ph}", tuple(params))
+
+    def delete_mail_server(self, server_id):
+        ph = _ph()
+        self.execute(f"DELETE FROM mail_servers WHERE id = {ph}", (server_id,))
+
+    def set_email_enabled(self, enabled):
+        ph = _ph()
+        self.execute(f"UPDATE admin_config SET email_enabled = {ph} WHERE id = 1", (1 if enabled else 0,))
 
     def cleanup_old_logs(self, days):
         """删除超过指定天数的日志数据，返回各表删除条数"""
@@ -1811,6 +1918,14 @@ class Database:
     def set_log_retention_days(self, days):
         ph = _ph()
         self.execute(f"UPDATE admin_config SET log_retention_days = {ph} WHERE id = 1", (int(days),))
+
+    def get_feedback_auto_close_days(self):
+        row = self.fetchone("SELECT feedback_auto_close_days FROM admin_config WHERE id = 1")
+        return int(row.get("feedback_auto_close_days") or 7) if row else 7
+
+    def set_feedback_auto_close_days(self, days):
+        ph = _ph()
+        self.execute(f"UPDATE admin_config SET feedback_auto_close_days = {ph} WHERE id = 1", (int(days),))
 
     def clear_question_bank(self, keyword=""):
         ph = _ph()

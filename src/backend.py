@@ -836,25 +836,65 @@ def _render_email_template(text, variables):
     return EMAIL_VAR_PATTERN.sub(_repl, text)
 
 # ==================== 邮件发送 ====================
-def send_email(to_addr, subject, body_text=None, body_html=None, template_id=None, scene=None, variables=None):
+def _weighted_pick(servers):
+    """按权重随机选择一个邮件服务器"""
+    total = sum(int(s.get("weight") or 1) for s in servers)
+    if total <= 0:
+        return servers[0] if servers else None
+    r = random.randint(1, total)
+    upto = 0
+    for s in servers:
+        upto += int(s.get("weight") or 1)
+        if r <= upto:
+            return s
+    return servers[-1]
+
+
+def _pick_mail_server(resend=False):
+    """选择一个可用的邮件服务器。resend=True 时强制挑选腾讯云(tencent_ses)服务器"""
+    servers = db.list_mail_servers(enabled_only=True)
+    if not servers:
+        return None
+    if resend:
+        tencent = [s for s in servers if (s.get("type") or "") == "tencent_ses"]
+        if not tencent:
+            return None
+        return _weighted_pick(tencent)
+    return _weighted_pick(servers)
+
+
+def send_email(to_addr, subject, body_text=None, body_html=None, template_id=None, scene=None, variables=None, resend=False):
     """发送邮件，支持模板和变量替换
     template_id: 使用指定模板ID
     scene: 使用指定场景的模板（user_register/user_reset/admin_reset）
     variables: 变量字典，如 {"code": "123456"}
+    resend: 是否为“没收到邮件”补发，True 时强制走腾讯云邮件服务器
     """
     admin = db.get_admin_config()
     if not admin or not admin.get("email_enabled"):
         return False, "邮箱功能未启用"
-    smtp_host = (admin.get("smtp_host") or "").strip()
-    smtp_port = int(admin.get("smtp_port") or 587)
-    smtp_user = (admin.get("smtp_user") or "").strip()
-    smtp_pass = (admin.get("smtp_pass") or "").strip()
-    from_addr = (admin.get("from_addr") or "").strip() or smtp_user
+    server = _pick_mail_server(resend=resend)
+    if not server:
+        if resend:
+            return False, "未配置已启用的腾讯云邮件服务器，无法补发"
+        return False, "未配置可用的邮件服务器"
+    smtp_host = (server.get("smtp_host") or "").strip()
+    smtp_port = int(server.get("smtp_port") or 587)
+    smtp_user = (server.get("smtp_user") or "").strip()
+    smtp_pass = (server.get("smtp_pass") or "").strip()
+    from_addr = (server.get("from_addr") or "").strip() or smtp_user
+    from_name = (server.get("from_name") or "").strip() or "学神助手"
     if not all([smtp_host, smtp_user, smtp_pass]):
-        return False, "SMTP 配置不完整"
+        return False, "邮件服务器配置不完整"
 
     variables = variables or {}
     variables["from_addr"] = from_addr
+
+    # 补发场景：优先使用标记为“补发”的模板，否则使用对应场景模板
+    if resend and scene and not template_id:
+        tpl = db.get_email_template_resend(scene) or db.get_email_template_by_scene(scene)
+        if tpl:
+            template_id = tpl.get("id")
 
     # 如果使用模板
     if template_id:
@@ -880,7 +920,7 @@ def send_email(to_addr, subject, body_text=None, body_html=None, template_id=Non
     # 构建 multipart 邮件（同时支持纯文本和 HTML）
     from email.mime.multipart import MIMEMultipart
     msg = MIMEMultipart("alternative")
-    msg["From"] = formataddr(("学神助手", from_addr))
+    msg["From"] = formataddr((from_name, from_addr))
     msg["To"] = to_addr
     msg["Subject"] = subject
 
@@ -892,11 +932,11 @@ def send_email(to_addr, subject, body_text=None, body_html=None, template_id=Non
         return False, "邮件内容不能为空"
 
     try:
-        server = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
-        server.starttls()
-        server.login(smtp_user, smtp_pass)
-        server.sendmail(from_addr, [to_addr], msg.as_string())
-        server.quit()
+        server_conn = smtplib.SMTP(smtp_host, smtp_port, timeout=10)
+        server_conn.starttls()
+        server_conn.login(smtp_user, smtp_pass)
+        server_conn.sendmail(from_addr, [to_addr], msg.as_string())
+        server_conn.quit()
         return True, None
     except Exception as e:
         return False, f"邮件发送失败: {str(e)}"
@@ -2810,15 +2850,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
             admin = db.get_admin_config()
+            servers = db.list_mail_servers()
+            for s in servers:
+                s["smtp_pass"] = "******" if s.get("smtp_pass") else ""
             self._send_json(200, {"code": 200, "config": {
                 "enabled": bool(admin.get("email_enabled")),
-                "smtp_host": admin.get("smtp_host") or "",
-                "smtp_port": admin.get("smtp_port") or 587,
-                "smtp_user": admin.get("smtp_user") or "",
-                "smtp_pass": admin.get("smtp_pass") or "",
-                "from_addr": admin.get("from_addr") or "",
-                "test_recipient": admin.get("test_recipient") or ""
+                "test_recipient": admin.get("test_recipient") or "",
+                "servers": servers
             }})
+
         elif path == "/admin/account-config":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -3053,7 +3093,7 @@ class Handler(BaseHTTPRequestHandler):
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
-            db.auto_close_expired_feedback(7)
+            db.auto_close_expired_feedback(db.get_feedback_auto_close_days() or 7)
             qs = parse_qs(parsed.query)
             result = db.list_feedback_admin(
                 status=qs.get("status", [""])[0],
@@ -3066,6 +3106,15 @@ class Handler(BaseHTTPRequestHandler):
                 r["created_at"] = str(r.get("created_at") or "")
                 r["replied_at"] = str(r.get("replied_at") or "") if r.get("replied_at") else ""
             self._send_json(200, {"code": 200, "data": result})
+
+        elif path == "/admin/feedback-auto-close":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                self._send_json(200, {"code": 200, "days": db.get_feedback_auto_close_days()})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
 
         elif path.startswith("/admin/feedback/"):
             if not self._check_admin():
@@ -3264,6 +3313,50 @@ class Handler(BaseHTTPRequestHandler):
                 success, err = send_email(email, fallback_subject, body_html=fallback_html, scene=scene, variables={"username": username_fallback, "code": code, "subject": fallback_subject})
                 if success:
                     self._send_json(200, {"code": 200, "msg": "验证码已发送"})
+                else:
+                    self._send_json(500, {"code": 500, "msg": err})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/api/auth/resend-verify":
+            try:
+                data = json.loads(body)
+                email = data.get("email", "").strip()
+                vtype = data.get("type", "register")  # register or reset
+                if not email:
+                    self._send_json(400, {"code": 400, "msg": "请输入邮箱"})
+                    return
+                # 安全：验证码发送限流，防止邮件轰炸
+                ok, err_msg = check_verify_code_rate(self._client_ip(), email)
+                if not ok:
+                    self._send_json(429, {"code": 429, "msg": err_msg})
+                    return
+                admin = db.get_admin_config()
+                if not admin or not admin.get("email_enabled"):
+                    self._send_json(400, {"code": 400, "msg": "邮件服务未启用，请联系管理员"})
+                    return
+                # 注册场景仍校验邮箱是否已被注册
+                if vtype == "register" and db.get_user_by_email(email):
+                    self._send_json(400, {"code": 400, "msg": "该邮箱已被注册"})
+                    return
+                # 重新生成验证码并通过腾讯云邮件服务器补发
+                code = generate_code(6)
+                db.save_verify_code(email, code, vtype, expires_minutes=10)
+                scene = "user_register" if vtype == "register" else "user_reset"
+                if vtype == "register":
+                    fallback_subject = "学神助手 - 注册验证码（补发）"
+                else:
+                    fallback_subject = "学神助手 - 密码重置验证码（补发）"
+                if vtype == "reset":
+                    existing_user = db.get_user_by_email(email)
+                    username_fallback = (existing_user.get("username") or "").strip() if existing_user else ""
+                else:
+                    username_fallback = (data.get("username") or "").strip()
+                if not username_fallback:
+                    username_fallback = email.split("@")[0] if email and "@" in email else email
+                success, err = send_email(email, fallback_subject, scene=scene, variables={"username": username_fallback, "code": code, "subject": fallback_subject}, resend=True)
+                if success:
+                    self._send_json(200, {"code": 200, "msg": "补发邮件已通过腾讯云发送，请查收"})
                 else:
                     self._send_json(500, {"code": 500, "msg": err})
             except Exception as e:
@@ -3697,6 +3790,20 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        elif path == "/admin/feedback-auto-close":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body)
+                days = int(data.get("days", 7))
+                if days < 1:
+                    days = 1
+                db.set_feedback_auto_close_days(days)
+                self._send_json(200, {"code": 200, "msg": "保存成功"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         elif path == "/admin/log-cleanup/run":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -3788,16 +3895,42 @@ class Handler(BaseHTTPRequestHandler):
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
-            admin = db.get_admin_config()
-            self._send_json(200, {"code": 200, "config": {
-                "enabled": bool(admin.get("email_enabled")),
-                "smtp_host": admin.get("smtp_host") or "",
-                "smtp_port": admin.get("smtp_port") or 587,
-                "smtp_user": admin.get("smtp_user") or "",
-                "smtp_pass": admin.get("smtp_pass") or "",
-                "from_addr": admin.get("from_addr") or "",
-                "test_recipient": admin.get("test_recipient") or ""
-            }})
+            try:
+                data = json.loads(body or "{}")
+                if "enabled" in data:
+                    db.set_email_enabled(bool(data.get("enabled")))
+                if "test_recipient" in data:
+                    db.update_admin_email({"test_recipient": (data.get("test_recipient") or "").strip()})
+                self._send_json(200, {"code": 200, "msg": "保存成功"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/mail-server":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                sid = data.get("id")
+                if sid:
+                    db.update_mail_server(int(sid), data)
+                    self._send_json(200, {"code": 200, "msg": "保存成功"})
+                else:
+                    new_id = db.create_mail_server(data)
+                    self._send_json(200, {"code": 200, "msg": "添加成功", "id": new_id})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path.startswith("/admin/mail-server/") and path.endswith("/delete"):
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                sid = int(path.split("/")[-2])
+                db.delete_mail_server(sid)
+                self._send_json(200, {"code": 200, "msg": "删除成功"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
 
         elif path == "/admin/save-email":
             if not self._check_admin():
@@ -4290,6 +4423,7 @@ class Handler(BaseHTTPRequestHandler):
             body_html = data.get("body_html", "")
             content_type = (data.get("content_type") or "text").strip()
             variables = (data.get("variables") or "").strip()
+            is_resend = 1 if data.get("is_resend") else 0
             if not scene or scene not in ("user_register", "user_reset", "admin_reset", "referral_withdrawal", "feedback_reply"):
                 self._send_json(400, {"code": 400, "msg": "请选择有效的应用场景"})
                 return
@@ -4301,10 +4435,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 if template_id:
-                    db.update_email_template(template_id, scene, subject, body_text, body_html, content_type, variables)
+                    db.update_email_template(template_id, scene, subject, body_text, body_html, content_type, variables, is_resend)
                     self._send_json(200, {"code": 200, "msg": "模板已更新"})
                 else:
-                    tid = db.create_email_template(scene, subject, body_text, body_html, content_type, variables)
+                    tid = db.create_email_template(scene, subject, body_text, body_html, content_type, variables, is_resend)
                     self._send_json(200, {"code": 200, "msg": "模板已保存", "id": tid})
             except ValueError as e:
                 self._send_json(400, {"code": 400, "msg": str(e)})

@@ -948,6 +948,7 @@
                     <input id="regEmail" type="email" autocomplete="email" placeholder="请输入邮箱">
                     <button class="code-btn" id="regCodeBtn">发送验证码</button>
                 </div>
+                <div style="margin-top:6px"><a href="javascript:void(0)" id="regResendBtn" style="font-size:12px;color:#3b82f6">没收到邮件？点击通过腾讯云重发</a></div>
                 <label>验证码</label>
                 <input id="regCode" placeholder="请输入邮箱验证码">
                 <label>密码</label>
@@ -967,6 +968,7 @@
                     <input id="resetEmail" type="email" autocomplete="email" placeholder="请输入注册邮箱">
                     <button class="code-btn" id="resetCodeBtn">发送验证码</button>
                 </div>
+                <div style="margin-top:6px"><a href="javascript:void(0)" id="resetResendBtn" style="font-size:12px;color:#3b82f6">没收到邮件？点击通过腾讯云重发</a></div>
                 <label>验证码</label>
                 <input id="resetCode" placeholder="请输入邮箱验证码">
                 <label>新密码</label>
@@ -2314,6 +2316,29 @@
             try {
                 const res = await post('/api/auth/send-verify', { email, type: 'reset' });
                 msg('resetMsg', res.msg || '验证码已发送', res.code === 200);
+            } catch (_) { msg('resetMsg', '网络请求失败', false); }
+            setBusy(this, false);
+        };
+
+        $('regResendBtn').onclick = async function () {
+            const email = $('regEmail').value.trim();
+            const regUser = $('regUser').value.trim();
+            if (!email) return msg('regMsg', '请先填写邮箱', false);
+            setBusy(this, true, '重发中...');
+            try {
+                const res = await post('/api/auth/resend-verify', { email, type: 'register', username: regUser });
+                msg('regMsg', res.msg || '补发失败', res.code === 200);
+            } catch (_) { msg('regMsg', '网络请求失败', false); }
+            setBusy(this, false);
+        };
+
+        $('resetResendBtn').onclick = async function () {
+            const email = $('resetEmail').value.trim();
+            if (!email) return msg('resetMsg', '请先填写邮箱', false);
+            setBusy(this, true, '重发中...');
+            try {
+                const res = await post('/api/auth/resend-verify', { email, type: 'reset' });
+                msg('resetMsg', res.msg || '补发失败', res.code === 200);
             } catch (_) { msg('resetMsg', '网络请求失败', false); }
             setBusy(this, false);
         };

@@ -662,7 +662,7 @@ body{
             <div class="menu-item" :class="{active:page==='login-locks'}" @click="page='login-locks';loadLoginLocks()">
               <span class="icon">⊘</span>解除锁定
             </div>
-            <div class="menu-item" :class="{active:page==='feedback'}" @click="page='feedback';loadFeedbackList()">
+            <div class="menu-item" :class="{active:page==='feedback'}" @click="page='feedback';loadFeedbackList();loadFeedbackAutoClose()">
               <span class="icon">✎</span>问题反馈
             </div>
           </div>
@@ -843,8 +843,8 @@ body{
           <div class="chart-card" style="margin-top:18px">
             <div class="chart-title"><h3>收入概况</h3><span>所选时间范围内已支付订单</span></div>
             <div class="revenue-grid">
-              <div class="revenue-card">
-                <div class="revenue-label">总收入</div>
+              <div class="revenue-card" style="cursor:pointer" title="点击查看支付明细" @click="goToPaymentDetails()">
+                <div class="revenue-label">总收入 <span style="font-size:11px;color:var(--text3)">› 支付明细</span></div>
                 <div class="revenue-value" style="color:var(--success)">¥{{dashboard.revenue?.total?.toFixed(2)||'0.00'}}</div>
                 <div class="revenue-sub">{{dashboard.revenue?.orders||0}} 笔订单</div>
               </div>
@@ -1015,26 +1015,81 @@ body{
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
 
           <div class="card">
-            <div class="card-header">
-              <h3>SMTP 服务器配置</h3>
-              <div class="toggle" :class="emailConfig.enabled?'on':''" @click="emailConfig.enabled=!emailConfig.enabled"></div>
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+              <h3>邮件服务器（多服务器 + 权重）</h3>
+              <div style="display:flex;align-items:center;gap:14px">
+                <label style="font-size:13px;color:var(--text2);display:flex;align-items:center;gap:8px;cursor:pointer">启用邮件功能
+                  <div class="toggle" :class="emailConfig.enabled?'on':''" @click="toggleEmailEnabled"></div>
+                </label>
+                <button class="btn btn-primary btn-sm" @click="openServerForm(null)">+ 添加服务器</button>
+              </div>
             </div>
             <div class="card-body">
-              <div class="form-row">
-                <div class="form-group"><label>SMTP 服务器地址</label><input v-model="emailConfig.smtp_host" placeholder="如：smtp.qq.com"></div>
-                <div class="form-group"><label>SMTP 端口</label><input v-model.number="emailConfig.smtp_port" type="number" placeholder="如：587"></div>
+              <div v-if="mailServers.length===0" class="empty-state">
+                <div class="icon">✉</div>
+                <p>暂无邮件服务器，请点击「添加服务器」</p>
               </div>
-              <div class="form-row">
-                <div class="form-group"><label>SMTP 用户名</label><input v-model="emailConfig.smtp_user" placeholder="如：yourname@qq.com"></div>
-                <div class="form-group"><label>SMTP 密码 / 授权码</label><input type="password" v-model="emailConfig.smtp_pass" placeholder="邮箱授权码"></div>
+              <div v-else style="display:flex;flex-direction:column;gap:10px">
+                <div v-for="s in mailServers" :key="s.id" style="border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:var(--bg2)">
+                  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+                    <div style="display:flex;align-items:center;gap:10px">
+                      <b style="font-size:14px">{{s.name}}</b>
+                      <span class="scene-badge" :class="s.type==='tencent_ses'?'scene-feedback_reply':'scene-user_register'">{{s.type==='tencent_ses'?'腾讯云邮件':'SMTP'}}</span>
+                      <span v-if="s.enabled" style="font-size:12px;color:var(--success)">● 已启用</span>
+                      <span v-else style="font-size:12px;color:var(--text3)">○ 已停用</span>
+                      <span style="font-size:12px;color:var(--text3)">权重 {{s.weight}}</span>
+                    </div>
+                    <div style="display:flex;gap:8px">
+                      <button class="btn btn-secondary btn-sm" @click="openServerForm(s)">编辑</button>
+                      <button class="btn btn-danger btn-sm" @click="deleteMailServer(s.id)">删除</button>
+                    </div>
+                  </div>
+                  <div style="font-size:12px;color:var(--text3);margin-top:6px">{{s.smtp_host}}:{{s.smtp_port}} · {{s.from_addr}}</div>
+                </div>
               </div>
-              <div class="form-row">
-                <div class="form-group"><label>发件人邮箱</label><input v-model="emailConfig.from_addr" placeholder="如：yourname@qq.com"></div>
+              <div class="form-row" style="margin-top:14px">
                 <div class="form-group"><label>测试收件邮箱</label><input v-model="emailConfig.test_recipient" placeholder="测试邮件发送到这个邮箱"></div>
+                <div class="form-group" style="justify-content:flex-end;display:flex"><button class="btn btn-secondary" @click="testEmail">发送测试邮件</button></div>
               </div>
-              <div class="form-actions">
-                <button class="btn btn-primary" @click="saveEmailConfig">保存邮箱配置</button>
-                <button class="btn btn-secondary" @click="testEmail">发送测试邮件</button>
+            </div>
+          </div>
+
+          <!-- 邮件服务器编辑弹窗 -->
+          <div v-if="showServerForm" class="modal-mask" @click.self="showServerForm=false">
+            <div class="modal" style="max-width:560px">
+              <div class="modal-header"><h3>{{mailServerForm.id?'编辑':'添加'}}邮件服务器</h3><button class="modal-close" @click="showServerForm=false">×</button></div>
+              <div class="modal-body">
+                <div class="form-row">
+                  <div class="form-group"><label>名称</label><input v-model="mailServerForm.name" placeholder="如：腾讯云邮件"></div>
+                  <div class="form-group"><label>类型</label>
+                    <select v-model="mailServerForm.type">
+                      <option value="smtp">SMTP</option>
+                      <option value="tencent_ses">腾讯云邮件（SMTP 中继）</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group" style="min-width:120px"><label>启用</label>
+                    <div class="toggle" :class="mailServerForm.enabled?'on':''" @click="mailServerForm.enabled=!mailServerForm.enabled"></div>
+                  </div>
+                  <div class="form-group" style="min-width:120px"><label>权重（越大越优先）</label><input type="number" min="1" v-model.number="mailServerForm.weight" placeholder="1"></div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group"><label>SMTP 服务器地址</label><input v-model="mailServerForm.smtp_host" placeholder="如：smtp.qcloudmail.com"></div>
+                  <div class="form-group"><label>SMTP 端口</label><input type="number" v-model.number="mailServerForm.smtp_port" placeholder="如：587"></div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group"><label>SMTP 用户名</label><input v-model="mailServerForm.smtp_user" placeholder="邮箱或用户名"></div>
+                  <div class="form-group"><label>SMTP 密码 / 授权码</label><input type="password" v-model="mailServerForm.smtp_pass" :placeholder="mailServerForm.id?'留空则不修改':'邮箱授权码'"></div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group"><label>发件人邮箱</label><input v-model="mailServerForm.from_addr" placeholder="如：noreply@yourdomain.com"></div>
+                  <div class="form-group"><label>发件人名称</label><input v-model="mailServerForm.from_name" placeholder="学神助手"></div>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button class="btn btn-secondary" @click="showServerForm=false">取消</button>
+                <button class="btn btn-primary" @click="saveMailServer">保存</button>
               </div>
             </div>
           </div>
@@ -1062,7 +1117,7 @@ body{
                   </thead>
                   <tbody>
                     <tr v-for="t in emailTemplates" :key="t.id">
-                      <td><span :class="['scene-badge','scene-'+t.scene]">{{ templateSceneLabel(t.scene) }}</span></td>
+                      <td><span :class="['scene-badge','scene-'+t.scene]">{{ templateSceneLabel(t.scene) }}</span> <span v-if="t.is_resend" class="scene-badge scene-feedback_reply" style="margin-left:4px">补发</span></td>
                       <td>{{ t.subject }}</td>
                       <td><span class="format-badge">{{ t.content_type==='html'?'HTML':'纯文本' }}</span></td>
                       <td style="font-size:12px;color:var(--text2)">{{ t.variables||'无' }}</td>
@@ -1116,6 +1171,8 @@ body{
                     <option value="user_register">用户注册验证码</option>
                     <option value="user_reset">用户密码重置验证码</option>
                     <option value="admin_reset">管理员密码重置验证码</option>
+                    <option value="referral_withdrawal">推广提现通知</option>
+                    <option value="feedback_reply">问题反馈回复</option>
                   </select>
                 </div>
                 <div class="form-group">
@@ -1144,6 +1201,12 @@ body{
                     <span v-for="v in sceneDefaultVars(templateForm.scene)" :key="v" class="var-tag" @click="insertVar(v)" v-text="'{{'+v+'}}'"></span>
                   </div>
                   <div style="font-size:11px;color:var(--text3);margin-top:6px">点击变量可插入到内容中</div>
+                </div>
+                <div class="form-group">
+                  <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
+                    <input type="checkbox" v-model="templateForm.is_resend" style="width:16px;height:16px">
+                    设为「补发邮件」模板（用户点击“没收到邮件”时，强制通过腾讯云邮件服务器发送此模板）
+                  </label>
                 </div>
               </div>
               <div class="modal-footer">
@@ -2153,6 +2216,7 @@ body{
                     <th style="padding:10px 12px">金额</th>
                     <th style="padding:10px 12px">收款方式</th>
                     <th style="padding:10px 12px">收款账号</th>
+                    <th style="padding:10px 12px">二维码</th>
                     <th style="padding:10px 12px">状态</th>
                     <th style="padding:10px 12px">申请时间</th>
                     <th style="padding:10px 12px">操作</th>
@@ -2164,18 +2228,19 @@ body{
                     <td style="padding:10px 12px;font-weight:600;color:var(--success)">¥{{Number(wd.amount||0).toFixed(2)}}</td>
                     <td style="padding:10px 12px">{{wd.pay_method==='alipay'?'支付宝':'微信'}}</td>
                     <td style="padding:10px 12px;font-size:12px">{{wd.pay_account}}</td>
+                    <td style="padding:10px 12px"><img v-if="wd.qr_code_path" :src="wd.qr_code_path" style="width:40px;height:40px;border-radius:4px;cursor:pointer;object-fit:cover" @click="referralQrPreview=wd.qr_code_path"></td>
                     <td style="padding:10px 12px">
                       <span :style="{color:wd.status==='pending'?'var(--warning)':wd.status==='approved'?'var(--success)':'var(--danger)'}">{{wd.status==='pending'?'待审核':wd.status==='approved'?'已通过':'已驳回'}}</span>
                     </td>
                     <td style="padding:10px 12px;color:var(--text3);font-size:12px">{{String(wd.created_at||'').replace('T',' ').substring(0,19)}}</td>
                     <td style="padding:10px 12px;display:flex;gap:6px">
-                      <button v-if="wd.qr_code" class="btn btn-secondary" style="padding:3px 10px;font-size:12px" @click="referralQrPreview=wd.qr_code">查看二维码</button>
+                      <button v-if="wd.qr_code_path" class="btn btn-secondary" style="padding:3px 10px;font-size:12px" @click="referralQrPreview=wd.qr_code_path">查看二维码</button>
                       <button v-if="wd.status==='pending'" class="btn btn-success" style="padding:3px 10px;font-size:12px" @click="approveWithdrawal(wd.id)">通过</button>
                       <button v-if="wd.status==='pending'" class="btn btn-danger" style="padding:3px 10px;font-size:12px" @click="rejectWithdrawal(wd.id)">驳回</button>
                     </td>
                   </tr>
                   <tr v-if="referralWithdrawals.length===0">
-                    <td colspan="7" style="padding:30px;text-align:center;color:var(--text3)">暂无提现申请</td>
+                    <td colspan="8" style="padding:30px;text-align:center;color:var(--text3)">暂无提现申请</td>
                   </tr>
                 </tbody>
               </table>
@@ -2228,6 +2293,17 @@ body{
                 <input v-model="feedbackFilter.keyword" class="form-control" style="padding:6px 10px;font-size:13px" placeholder="搜索标题/内容/用户" @keyup.enter="feedbackSearch()">
               </div>
               <button class="btn btn-primary" @click="feedbackSearch()">查询</button>
+            </div>
+          </div>
+          <!-- 自动关闭设置 -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-body" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+              <div class="form-group" style="margin:0;min-width:120px">
+                <label style="font-size:11px;margin-bottom:4px">超时自动关闭（天）</label>
+                <input type="number" min="1" v-model.number="feedbackAutoCloseDays" class="form-control" style="padding:6px 10px;font-size:13px" placeholder="7">
+              </div>
+              <button class="btn btn-primary" @click="saveFeedbackAutoClose()">保存设置</button>
+              <span style="font-size:12px;color:var(--text3);align-self:center">已回复/已解决的工单超过该天数无新对话将自动关闭</span>
             </div>
           </div>
           <!-- 统计栏 -->
@@ -2373,10 +2449,13 @@ createApp({
     const loginMode=ref('login');
     const token=ref(localStorage.getItem('ne21_admin_token')||'');
     const config=ref({providers:{}});
-    const emailConfig=ref({enabled:false,smtp_host:'',smtp_port:587,smtp_user:'',smtp_pass:'',from_addr:'',test_recipient:''});
+    const emailConfig=ref({enabled:false,test_recipient:''});
+    const mailServers=ref([]);
+    const showServerForm=ref(false);
+    const mailServerForm=ref({id:null,name:'',type:'smtp',enabled:true,weight:1,smtp_host:'',smtp_port:587,smtp_user:'',smtp_pass:'',from_addr:'',from_name:'学神助手'});
     const emailTemplates=ref([]);
     const templateModal=ref({show:false});
-    const templateForm=ref({scene:'',subject:'',body_text:'',body_html:'',content_type:'text'});
+    const templateForm=ref({scene:'',subject:'',body_text:'',body_html:'',content_type:'text',is_resend:false});
     const editingTemplateId=ref(null);
     const TEMPLATE_SCENES={user_register:'用户注册验证码',user_reset:'用户密码重置验证码',admin_reset:'管理员密码重置验证码',referral_withdrawal:'推广提现通知',feedback_reply:'问题反馈回复'};
     const SCENE_VARS={user_register:['username','code','subject','from_addr'],user_reset:['username','code','subject','from_addr'],admin_reset:['username','code','subject','from_addr'],referral_withdrawal:['username','amount','status','reason','subject','from_addr'],feedback_reply:['username','title','reply_text','subject','from_addr']};
@@ -2640,6 +2719,12 @@ createApp({
         dashEndDate.value=today;
       }
       loadDashboard();
+    }
+    function goToPaymentDetails(){
+      paymentOrdersFilter.value.date_from=dashStartDate.value||'';
+      paymentOrdersFilter.value.date_to=dashEndDate.value||'';
+      page.value='payment-orders';
+      loadPaymentOrders();
     }
     async function loadUsers(){
       try{
@@ -2910,9 +2995,49 @@ createApp({
         const res=await fetch('/admin/email-config',{headers:{'Authorization':token.value}});
         const data=await res.json();
         if(data.code===200&&data.config){
-          emailConfig.value={...emailConfig.value,...data.config};
+          emailConfig.value={enabled:!!data.config.enabled,test_recipient:data.config.test_recipient||''};
+          mailServers.value=data.config.servers||[];
         }
       }catch(e){/* ignore */}
+    }
+    async function toggleEmailEnabled(){
+      emailConfig.value.enabled=!emailConfig.value.enabled;
+      try{
+        const res=await fetch('/admin/email-config',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({enabled:emailConfig.value.enabled})});
+        const data=await res.json();
+        if(data.code===200)showMsg(emailConfig.value.enabled?'邮件功能已启用':'邮件功能已停用');
+        else showMsg(data.msg||'保存失败','error');
+      }catch(e){showMsg('请求失败: '+e,'error');}
+    }
+    function openServerForm(s){
+      if(s){
+        mailServerForm.value={id:s.id,name:s.name,type:s.type,enabled:!!s.enabled,weight:s.weight,smtp_host:s.smtp_host,smtp_port:s.smtp_port,smtp_user:s.smtp_user,smtp_pass:'',from_addr:s.from_addr,from_name:s.from_name};
+      }else{
+        mailServerForm.value={id:null,name:'',type:'smtp',enabled:true,weight:1,smtp_host:'',smtp_port:587,smtp_user:'',smtp_pass:'',from_addr:'',from_name:'学神助手'};
+      }
+      showServerForm.value=true;
+    }
+    async function saveMailServer(){
+      try{
+        const payload={...mailServerForm.value};
+        if(payload.id==null)delete payload.id;
+        const res=await fetch('/admin/mail-server',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify(payload)});
+        const data=await res.json();
+        if(data.code===200){
+          showMsg('邮件服务器已保存');
+          showServerForm.value=false;
+          await loadEmailConfig();
+        }else showMsg(data.msg||'保存失败','error');
+      }catch(e){showMsg('请求失败: '+e,'error');}
+    }
+    async function deleteMailServer(id){
+      if(!confirm('确定删除该邮件服务器？'))return;
+      try{
+        const res=await fetch('/admin/mail-server/'+id+'/delete',{method:'POST',headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){showMsg('已删除');await loadEmailConfig();}
+        else showMsg(data.msg||'删除失败','error');
+      }catch(e){showMsg('请求失败: '+e,'error');}
     }
     async function loadAdminAccount(){
       try{
@@ -2949,7 +3074,7 @@ createApp({
     }
     async function saveEmailConfig(){
       try{
-        const res=await fetch('/admin/save-email',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify(emailConfig.value)});
+        const res=await fetch('/admin/email-config',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({enabled:emailConfig.value.enabled,test_recipient:emailConfig.value.test_recipient})});
         const data=await res.json();
         if(data.code===403){logout();showMsg('登录已过期','error');return;}
         if(data.code===200)showMsg('邮箱配置保存成功');
@@ -2975,10 +3100,10 @@ createApp({
     function openTemplateModal(template){
       if(template){
         editingTemplateId.value=template.id;
-        templateForm.value={scene:template.scene||'',subject:template.subject||'',body_text:template.body_text||'',body_html:template.body_html||'',content_type:template.content_type||'text'};
+        templateForm.value={scene:template.scene||'',subject:template.subject||'',body_text:template.body_text||'',body_html:template.body_html||'',content_type:template.content_type||'text',is_resend:!!template.is_resend};
       }else{
         editingTemplateId.value=null;
-        templateForm.value={scene:'',subject:'',body_text:'',body_html:'',content_type:'text'};
+        templateForm.value={scene:'',subject:'',body_text:'',body_html:'',content_type:'text',is_resend:false};
       }
       templateModal.value.show=true;
     }
@@ -3011,7 +3136,8 @@ createApp({
           body_text:f.content_type==='text'?f.body_text:'',
           body_html:f.content_type==='html'?f.body_html:'',
           content_type:f.content_type,
-          variables:vars.join(',')
+          variables:vars.join(','),
+          is_resend:f.is_resend?1:0
         };
         if(editingTemplateId.value)payload.id=editingTemplateId.value;
         const res=await fetch('/admin/email-template',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify(payload)});
@@ -3350,6 +3476,7 @@ createApp({
     const feedbackTotalPages=ref(0);
     const feedbackTotal=ref(0);
     const feedbackPendingCount=ref(0);
+    const feedbackAutoCloseDays=ref(7);
     const feedbackDetail=ref(null);
     const feedbackReplyText=ref('');
     const aiPolishing=ref(false);
@@ -3485,6 +3612,20 @@ createApp({
       }catch(_){}
     }
     function feedbackSearch(){feedbackPage.value=1;loadFeedbackList();}
+    async function loadFeedbackAutoClose(){
+      try{
+        const res=await safeFetch('/admin/feedback-auto-close',{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200)feedbackAutoCloseDays.value=d.days||7;
+      }catch(_){}
+    }
+    async function saveFeedbackAutoClose(){
+      try{
+        const res=await adminPost('/admin/feedback-auto-close',{days:feedbackAutoCloseDays.value||7});
+        if(res&&res.code===200)showMsg('已保存自动关闭设置');
+        else showMsg((res&&res.msg)||'保存失败','error');
+      }catch(e){showMsg('保存失败: '+(e.message||e),'error');}
+    }
     async function viewFeedbackDetail(id){
       try{
         const res=await safeFetch('/admin/feedback/'+id,{headers:{'Authorization':token.value}});
@@ -3553,13 +3694,14 @@ createApp({
     else initAdminSlider();
 
     return{
-      page,loginMode,config,emailConfig,emailTemplates,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
+       page,loginMode,config,emailConfig,emailTemplates,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
+       mailServers,showServerForm,mailServerForm,toggleEmailEnabled,openServerForm,saveMailServer,deleteMailServer,
       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,users,userSearch,userSortBy,userSortOrder,showUserModal,userForm,
       paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,planForm,
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,
       questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,
       doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
-      loadConfig,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,
+      loadConfig,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,goToPaymentDetails,
       savePaymentConfig,savePayApiConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,openUserEdit,saveUserAdmin,
       toggleProvider,collapseAllProviders,togglePayApiSection,
       addProvider,removeProvider,addModel,removeModel,
@@ -3571,7 +3713,8 @@ createApp({
        paymentOrders,paymentOrdersFilter,paymentOrdersSort,paymentOrdersPage,paymentOrdersPageSize,paymentOrdersTotal,paymentOrdersTotalPages,paymentOrdersSum,
        loadPaymentOrders,togglePaymentSort,paymentOrdersSearch,paymentOrdersPrev,paymentOrdersNext,
        feedbackList,feedbackFilter,feedbackPage,feedbackTotalPages,feedbackTotal,feedbackPendingCount,feedbackDetail,feedbackReplyText,
-       loadFeedbackList,feedbackSearch,viewFeedbackDetail,replyFeedback,updateFeedbackStatus,feedbackPrev,feedbackNext,
+        loadFeedbackList,feedbackSearch,viewFeedbackDetail,replyFeedback,updateFeedbackStatus,feedbackPrev,feedbackNext,
+        feedbackAutoCloseDays,loadFeedbackAutoClose,saveFeedbackAutoClose,
        aiPolishing,aiPolishReply
     };
   }
