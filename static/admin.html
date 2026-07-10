@@ -361,6 +361,17 @@ body{
   transition:all .2s;
 }
 .modal-card .var-tag:hover{border-color:var(--brand);background:rgba(59,130,246,.1)}
+.html-preview-container{
+  margin-top:12px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#fff;
+}
+.html-preview-header{
+  display:flex;justify-content:space-between;align-items:center;padding:8px 12px;
+  background:var(--bg3);border-bottom:1px solid var(--border);font-size:12px;color:var(--text2);
+}
+.html-preview-tip{font-size:11px;color:var(--text3)}
+.html-preview-frame{
+  width:100%;min-height:300px;border:none;background:#fff;
+}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 
@@ -1216,8 +1227,8 @@ body{
                 <div class="form-group">
                   <label>内容格式</label>
                   <div class="format-tabs">
-                    <button :class="['btn', templateForm.content_type==='text'?'btn-primary':'btn-secondary']" @click="templateForm.content_type='text';templateForm.body_html=''">纯文本</button>
-                    <button :class="['btn', templateForm.content_type==='html'?'btn-primary':'btn-secondary']" @click="templateForm.content_type='html';templateForm.body_text=''">HTML</button>
+                    <button :class="['btn', templateForm.content_type==='text'?'btn-primary':'btn-secondary']" @click="templateForm.content_type='text'">纯文本</button>
+                    <button :class="['btn', templateForm.content_type==='html'?'btn-primary':'btn-secondary']" @click="switchToHtml">HTML</button>
                   </div>
                 </div>
                 <div class="form-group" v-if="templateForm.content_type==='text'">
@@ -1225,8 +1236,20 @@ body{
                   <textarea v-model="templateForm.body_text" placeholder="内容中使用 {{变量名}} 插入变量，如：&#10;尊敬的用户，您的验证码是：{{code}}，10分钟内有效。"></textarea>
                 </div>
                 <div class="form-group" v-if="templateForm.content_type==='html'">
-                  <label>HTML 内容</label>
-                  <textarea v-model="templateForm.body_html" placeholder="HTML 中使用 {{变量名}} 插入变量，如：&#10;<p>您的验证码是：<b>{{code}}</b></p>&#10;<p>10分钟内有效</p>"></textarea>
+                  <label style="display:flex;justify-content:space-between;align-items:center">
+                    HTML 内容
+                    <button type="button" class="btn btn-secondary btn-sm" @click="toggleHtmlPreview">
+                      {{showHtmlPreview?'关闭预览':'预览效果'}}
+                    </button>
+                  </label>
+                  <textarea v-model="templateForm.body_html" @input="onHtmlInput" :style="showHtmlPreview?'min-height:120px':''" placeholder="HTML 中使用 {{变量名}} 插入变量，如：&#10;<p>您的验证码是：<b>{{code}}</b></p>&#10;<p>10分钟内有效</p>"></textarea>
+                  <div v-if="showHtmlPreview" class="html-preview-container">
+                    <div class="html-preview-header">
+                      <span>预览效果</span>
+                      <span class="html-preview-tip">以下为示例数据渲染效果</span>
+                    </div>
+                    <iframe ref="htmlPreviewFrame" class="html-preview-frame" sandbox="allow-same-origin"></iframe>
+                  </div>
                 </div>
                 <div class="form-group" v-if="templateForm.content_type==='html'">
                   <label style="display:flex;justify-content:space-between;align-items:center">纯文本兜底（兼容性用，留空则自动从 HTML 生成）
@@ -2529,8 +2552,44 @@ createApp({
     };
     function templateSceneLabel(s){return TEMPLATE_SCENES[s]||s||'未知';}
     function sceneDefaultVars(s){return SCENE_VARS[s]||[];}
-    const msg=reactive({show:false,text:'',type:'success'});
-    const showAddModal=ref(false);
+     const msg=reactive({show:false,text:'',type:'success'});
+     const showAddModal=ref(false);
+     const showHtmlPreview=ref(false);
+      const htmlPreviewFrame=ref(null);
+     const htmlPreviewData=reactive({
+       username:'张三',
+       code:'123456',
+       subject:'注册验证码',
+       from_addr:'test@example.com',
+       amount:'100.00',
+       status:'已审核',
+       reason:'资料符合',
+       title:'功能异常',
+       reply_text:'已修复，请重试'
+     });
+       function toggleHtmlPreview(){
+         showHtmlPreview.value=!showHtmlPreview.value;
+         if(showHtmlPreview.value){
+           Vue.nextTick(function(){updateHtmlPreview();});
+         }
+       }
+       function switchToHtml(){
+         templateForm.value.content_type='html';
+         if(showHtmlPreview.value){
+          Vue.nextTick(function(){updateHtmlPreview();});
+        }
+      }
+      function onHtmlInput(){
+        if(showHtmlPreview.value)updateHtmlPreview();
+      }
+     function updateHtmlPreview(){
+       if(!htmlPreviewFrame.value)return;
+       let html=templateForm.value.body_html;
+       for(let[key,value]of Object.entries(htmlPreviewData)){
+         html=html.replaceAll('{{'+key+'}}',value);
+       }
+       htmlPreviewFrame.value.srcdoc=html;
+     }
     const newProvider=reactive({key:'',title:'',protocol:'openai',api_key:'',base_url:'',models:[]});
     const loginForm=reactive({username:'admin',password:''});
     const forgotForm=reactive({email:''});
@@ -2569,9 +2628,10 @@ createApp({
     const scriptLogLoading=ref(false);
     const scriptLogTotal=ref(0);
     const scriptLogFilter=reactive({username:'',level:'',keyword:'',date_from:'',date_to:'',limit:100,page:1});
-    const questionBank=ref([]);
-    const questionBankTotal=ref(0);
-    const questionBankLoading=ref(false);
+     const questionBank=ref([]);
+     const questionBankTotal=ref(0);
+     const questionBankLoading=ref(false);
+     const pluginData=reactive({framework:'',content:''});
     const expandedBank=reactive({});
     const questionBankFilter=reactive({keyword:'',limit:100,page:1});
     const loginLocks=ref([]);
@@ -3752,7 +3812,8 @@ createApp({
        page,loginMode,config,emailConfig,emailTemplates,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
        mailServers,showServerForm,mailServerForm,showSmtpPass,mailServerTotalWeight,mailServerWeightPercent,toggleEmailEnabled,openServerForm,saveMailServer,deleteMailServer,
       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,users,userSearch,userSortBy,userSortOrder,showUserModal,userForm,
-      paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,planForm,
+        showHtmlPreview,htmlPreviewFrame,htmlPreviewData,toggleHtmlPreview,updateHtmlPreview,switchToHtml,onHtmlInput,syncPlainFromHtml,
+       paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,planForm,
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,
       questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,
       doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
