@@ -222,6 +222,7 @@ body{
 .data-table .scene-admin_reset{background:rgba(16,185,129,.1);color:var(--success);border:1px solid rgba(16,185,129,.15)}
 .data-table .scene-referral_withdrawal{background:rgba(168,85,247,.1);color:#a855f7;border:1px solid rgba(168,85,247,.15)}
 .data-table .scene-feedback_reply{background:rgba(14,165,233,.1);color:#0ea5e9;border:1px solid rgba(14,165,233,.15)}
+.data-table .scene-daily_report{background:rgba(99,102,241,.1);color:#6366f1;border:1px solid rgba(99,102,241,.15)}
 .data-table .format-badge{
   display:inline-flex;align-items:center;gap:4px;
   padding:3px 8px;border-radius:4px;font-size:11px;font-weight:500;
@@ -683,6 +684,19 @@ body{
             </div>
             <div class="menu-item" :class="{active:page==='feedback'}" @click="page='feedback';loadFeedbackList();loadFeedbackAutoClose()">
               <span class="icon">✎</span>问题反馈
+            </div>
+          </div>
+        </div>
+
+        <!-- 定时任务组 -->
+        <div class="menu-group" :class="{expanded:expandedGroups.schedule}">
+          <div class="menu-group-header dock-item" :class="{active:page==='daily-report'}" @click="expandedGroups.schedule=!expandedGroups.schedule">
+            <span class="icon">⏰</span>定时任务
+            <span class="arrow">▶</span>
+          </div>
+          <div class="menu-group-items">
+            <div class="menu-item" :class="{active:page==='daily-report'}" @click="page='daily-report';loadDailyReport();loadEmailTemplates()">
+              <span class="icon">✉</span>每日数据邮件
             </div>
           </div>
         </div>
@@ -1218,6 +1232,7 @@ body{
                     <option value="admin_reset">管理员密码重置验证码</option>
                     <option value="referral_withdrawal">推广提现通知</option>
                     <option value="feedback_reply">问题反馈回复</option>
+                    <option value="daily_report">每日运营数据日报</option>
                   </select>
                 </div>
                 <div class="form-group">
@@ -2478,6 +2493,66 @@ body{
           </div>
         </div>
       </template>
+
+      <!-- 每日数据邮件（定时任务） -->
+      <template v-if="page==='daily-report'">
+        <header class="main-header">
+          <h2>每日数据邮件</h2>
+          <span class="breadcrumb">定时把每日注册用户数与收入情况通过邮件发送给指定收件人</span>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="card-panel" v-if="dailyReportConfig">
+            <div class="form-group" style="justify-content:space-between">
+              <label style="font-size:15px;font-weight:600">启用定时发送</label>
+              <div class="toggle" :class="dailyReportConfig.enabled?'on':''" @click="dailyReportConfig.enabled=!dailyReportConfig.enabled"></div>
+            </div>
+            <p class="tip-text">开启后，系统每天在设定时间自动汇总前一天的注册与收入数据并发送邮件。</p>
+
+            <div class="form-group">
+              <label>发送时间</label>
+              <input type="time" v-model="dailyReportConfig.send_time" style="max-width:160px">
+              <span class="tip-text">每天该时刻触发（服务器本地时间），按天去重。</span>
+            </div>
+
+            <div class="form-group" style="flex-direction:column;align-items:stretch">
+              <label>收件人邮箱</label>
+              <textarea v-model="dailyReportConfig.recipients" rows="2" placeholder="多个邮箱用逗号分隔，如 admin@x.com, boss@x.com"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label>邮件模板</label>
+              <select v-model="dailyReportConfig.template_id">
+                <option :value="null">默认（每日运营数据日报）</option>
+                <option v-for="t in emailTemplates.filter(x=>x.scene==='daily_report')" :key="t.id" :value="t.id">{{ t.subject }}</option>
+              </select>
+              <span class="tip-text">在「邮箱配置 → 邮件模板」中编辑 daily_report 场景的文本内容（支持纯文本 + HTML）。</span>
+            </div>
+
+            <div class="btn-row">
+              <button class="btn btn-primary" @click="saveDailyReport()">保存配置</button>
+              <button class="btn btn-secondary" @click="sendDailyReportNow()">立即发送（测试昨天数据）</button>
+              <button class="btn btn-secondary" @click="previewDailyReport()">预览昨日数据</button>
+            </div>
+
+            <div class="status-line" v-if="dailyReportConfig.last_sent_at">
+              上次发送：{{dailyReportConfig.last_sent_at}} · 状态：<b :class="{'ok':dailyReportConfig.last_status==='success'||dailyReportConfig.last_status==='partial','bad':dailyReportConfig.last_status==='failed'}">{{dailyReportConfig.last_status||'—'}}</b>
+              <span v-if="dailyReportConfig.last_error" class="tip-text" style="display:block;margin-top:4px">{{dailyReportConfig.last_error}}</span>
+            </div>
+
+            <div class="preview-box" v-if="dailyReportPreview">
+              <h4>昨日（{{dailyReportPreview.date}}）数据预览</h4>
+              <ul>
+                <li>新增注册用户：<b>{{dailyReportPreview.stats.reg_count}}</b> 人</li>
+                <li>支付订单数：<b>{{dailyReportPreview.stats.order_count}}</b> 笔</li>
+                <li>总收入：<b>¥{{dailyReportPreview.stats.revenue_total}}</b></li>
+                <li>月度会员：{{dailyReportPreview.stats.monthly_count}} 笔 / ¥{{dailyReportPreview.stats.monthly_revenue}}</li>
+                <li>积分套餐：{{dailyReportPreview.stats.points_count}} 笔 / ¥{{dailyReportPreview.stats.points_revenue}}</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </template>
     </main>
     <div v-if="showUserModal" class="modal-overlay" @click.self="showUserModal=false">
       <div class="modal">
@@ -2518,11 +2593,13 @@ createApp({
     const mailServerForm=ref({id:null,name:'',type:'smtp',enabled:true,weight:1,smtp_host:'',smtp_port:587,smtp_user:'',smtp_pass:'',from_addr:'',from_name:'学神助手',secret_id:'',secret_key:'',ses_region:'ap-guangzhou',ses_template_id:0,is_resend:false});
     const showSmtpPass=ref(false);
     const emailTemplates=ref([]);
+    const dailyReportConfig=ref(null);
+    const dailyReportPreview=ref(null);
     const templateModal=ref({show:false});
     const templateForm=ref({scene:'',subject:'',body_text:'',body_html:'',body_text_plain:'',content_type:'text',is_resend:false});
     const editingTemplateId=ref(null);
-    const TEMPLATE_SCENES={user_register:'用户注册验证码',user_reset:'用户密码重置验证码',admin_reset:'管理员密码重置验证码',referral_withdrawal:'推广提现通知',feedback_reply:'问题反馈回复'};
-    const SCENE_VARS={user_register:['username','code','subject','from_addr'],user_reset:['username','code','subject','from_addr'],admin_reset:['username','code','subject','from_addr'],referral_withdrawal:['username','amount','status','reason','subject','from_addr'],feedback_reply:['username','title','reply_text','subject','from_addr']};
+    const TEMPLATE_SCENES={user_register:'用户注册验证码',user_reset:'用户密码重置验证码',admin_reset:'管理员密码重置验证码',referral_withdrawal:'推广提现通知',feedback_reply:'问题反馈回复',daily_report:'每日运营数据日报'};
+    const SCENE_VARS={user_register:['username','code','subject','from_addr'],user_reset:['username','code','subject','from_addr'],admin_reset:['username','code','subject','from_addr'],referral_withdrawal:['username','amount','status','reason','subject','from_addr'],feedback_reply:['username','title','reply_text','subject','from_addr'],daily_report:['date','reg_count','order_count','revenue_total','monthly_count','monthly_revenue','points_count','points_revenue','subject','from_addr']};
     const SCENE_DEFAULTS={
       user_register:{
         subject:'学神助手 - 注册验证码',
@@ -3198,6 +3275,51 @@ createApp({
         if(data.code===200&&data.templates){emailTemplates.value=data.templates;}
       }catch(e){/* ignore */}
     }
+    async function loadDailyReport(){
+      try{
+        const res=await fetch('/admin/daily-report/config',{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200&&data.config){
+          const c=data.config;
+          dailyReportConfig.value={
+            enabled:!!c.enabled,
+            send_time:c.send_time||'08:00',
+            recipients:c.recipients||'',
+            template_id:c.template_id||null,
+            last_sent_at:c.last_sent_at||'',
+            last_status:c.last_status||'',
+            last_error:c.last_error||''
+          };
+        }
+      }catch(e){showMsg('加载失败: '+e,'error');}
+    }
+    async function saveDailyReport(){
+      if(!dailyReportConfig.value)return;
+      const c=dailyReportConfig.value;
+      try{
+        const res=await fetch('/admin/daily-report/config',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({enabled:c.enabled,send_time:c.send_time,recipients:c.recipients,template_id:c.template_id})});
+        const data=await res.json();
+        if(data.code===200){showMsg('配置已保存'); await loadDailyReport();}
+        else showMsg(data.msg||'保存失败','error');
+      }catch(e){showMsg('请求失败: '+e,'error');}
+    }
+    async function sendDailyReportNow(){
+      try{
+        const res=await fetch('/admin/daily-report/send-now',{method:'POST',headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200)showMsg('已发送：'+data.msg);
+        else showMsg(data.msg||'发送失败','error');
+        await loadDailyReport();
+      }catch(e){showMsg('请求失败: '+e,'error');}
+    }
+    async function previewDailyReport(){
+      try{
+        const res=await fetch('/admin/daily-report/preview',{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){dailyReportPreview.value={date:data.date,stats:data.stats};}
+        else showMsg(data.msg||'预览失败','error');
+      }catch(e){showMsg('请求失败: '+e,'error');}
+    }
     function openTemplateModal(template){
       if(template){
         editingTemplateId.value=template.id;
@@ -3552,7 +3674,7 @@ createApp({
 
     // ========== 推广返利 ==========
     const referralTab=ref('config');
-    const expandedGroups=ref({referral:false,payment:false,logs:false,config:false});
+    const expandedGroups=ref({referral:false,payment:false,logs:false,config:false,schedule:false});
     const isMobile=ref(window.innerWidth<=768);
     const mobileSidebarOpen=ref(false);
     const mobileSubmenu=ref(null);
@@ -3831,7 +3953,8 @@ createApp({
        feedbackList,feedbackFilter,feedbackPage,feedbackTotalPages,feedbackTotal,feedbackPendingCount,feedbackDetail,feedbackReplyText,
         loadFeedbackList,feedbackSearch,viewFeedbackDetail,replyFeedback,updateFeedbackStatus,feedbackPrev,feedbackNext,
         feedbackAutoCloseDays,loadFeedbackAutoClose,saveFeedbackAutoClose,
-       aiPolishing,aiPolishReply
+       aiPolishing,aiPolishReply,
+       dailyReportConfig,dailyReportPreview,loadDailyReport,saveDailyReport,sendDailyReportNow,previewDailyReport
     };
   }
 }).mount('#app');

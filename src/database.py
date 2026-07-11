@@ -364,6 +364,20 @@ class Database:
                 UNIQUE INDEX idx_scene (scene)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
+        # 每日数据邮件定时发送配置（单行）
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS daily_report_config (
+                id INT PRIMARY KEY DEFAULT 1,
+                enabled TINYINT DEFAULT 0 COMMENT '是否启用定时发送',
+                send_time VARCHAR(8) DEFAULT '08:00' COMMENT '每天发送时间 HH:MM',
+                recipients TEXT COMMENT '收件人邮箱，逗号分隔',
+                template_id INT NULL COMMENT '使用的邮件模板ID，为空则按场景 daily_report 取默认模板',
+                last_sent_at DATETIME NULL COMMENT '上次实际发送时间',
+                last_status VARCHAR(50) DEFAULT '' COMMENT '上次发送结果',
+                last_error TEXT COMMENT '上次发送错误信息'
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        self.execute("INSERT IGNORE INTO daily_report_config (id, enabled, send_time) VALUES (1, 0, '08:00')")
         # 邮件服务器配置（支持多服务器 + 权重 + 腾讯云SES）
         self.execute("""
             CREATE TABLE IF NOT EXISTS mail_servers (
@@ -658,6 +672,13 @@ class Database:
                 "body_text": "━━━━━━━━━━━━━━━━━━━━\n    学神助手 · {{subject}}\n━━━━━━━━━━━━━━━━━━━━\n\n尊敬的 {{username}}，您好！\n\n您提交的问题反馈「{{title}}」已处理，\n管理员回复如下：\n\n{{reply_text}}\n\n━━━━━━━━━━━━━━━━━━━━\n如有疑问请继续在用户中心提交反馈。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━",
                 "body_html": '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}.card{animation:fadeInUp 0.6s ease-out}</style></head><body style="margin:0;padding:0;background:#f0f9ff;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:40px 20px;"><table class="card" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#0ea5e9,#0284c7);padding:28px 32px;text-align:center;"><div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:1px;">学神助手</div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">{{subject}}</div></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 16px;color:#1f2937;font-size:15px;line-height:1.6;">尊敬的 <b>{{username}}</b>，您好！</p><p style="margin:0 0 8px;color:#4b5563;font-size:14px;line-height:1.6;">您提交的问题反馈已处理：</p><div style="background:#f0f9ff;border-left:4px solid #0ea5e9;border-radius:8px;padding:14px 16px;margin:0 0 20px;"><p style="margin:0 0 6px;color:#6b7280;font-size:12px;">反馈标题</p><p style="margin:0;color:#1f2937;font-size:14px;font-weight:600;">{{title}}</p></div><p style="margin:0 0 8px;color:#4b5563;font-size:14px;line-height:1.6;">管理员回复：</p><div style="background:#f9fafb;border-radius:12px;padding:16px 18px;margin:0 0 20px;"><p style="margin:0;color:#1f2937;font-size:14px;line-height:1.7;white-space:pre-wrap;">{{reply_text}}</p></div><div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:20px;"><p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">如有疑问请继续在用户中心提交反馈。</p><p style="margin:8px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由 <b style="color:#6b7280;">{{from_addr}}</b> 发送</p></div></td></tr></table></td></tr></table></body></html>',
                 "variables": "username,title,reply_text,subject,from_addr"
+            },
+            {
+                "scene": "daily_report",
+                "subject": "学神助手 - {{date}} 每日运营数据日报",
+                "body_text": "━━━━━━━━━━━━━━━━━━━━\n    学神助手 · 每日运营数据日报\n━━━━━━━━━━━━━━━━━━━━\n\n统计日期：{{date}}\n\n【注册情况】\n    新增注册用户：{{reg_count}} 人\n\n【收入情况】\n    支付订单数：{{order_count}} 笔\n    总收入：{{revenue_total}} 元\n    ├─ 月度会员：{{monthly_count}} 笔 / {{monthly_revenue}} 元\n    └─ 积分套餐：{{points_count}} 笔 / {{points_revenue}} 元\n\n━━━━━━━━━━━━━━━━━━━━\n本邮件由系统定时发送。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━",
+                "body_html": '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}.card{animation:fadeInUp .6s ease-out}.metric{background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px}</style></head><body style="margin:0;padding:0;background:#eef2f7;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:40px 20px;"><table class="card" width="520" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#6366f1,#4f46e5);padding:28px 32px;text-align:center;"><div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:1px;">学神助手</div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">{{subject}}</div></td></tr><tr><td style="padding:28px 32px;"><p style="margin:0 0 20px;color:#6b7280;font-size:14px;">统计日期：<b style="color:#1f2937">{{date}}</b></p><h3 style="margin:0 0 12px;color:#4f46e5;font-size:15px;">注册情况</h3><div class="metric" style="margin:0 0 22px;"><p style="margin:0;color:#6b7280;font-size:13px;">新增注册用户</p><p style="margin:4px 0 0;color:#1f2937;font-size:26px;font-weight:700;">{{reg_count}} <span style="font-size:14px;font-weight:400;color:#6b7280;">人</span></p></div><h3 style="margin:0 0 12px;color:#4f46e5;font-size:15px;">收入情况</h3><div class="metric" style="margin:0 0 14px;"><p style="margin:0;color:#6b7280;font-size:13px;">支付订单数 / 总收入</p><p style="margin:4px 0 0;color:#1f2937;font-size:18px;font-weight:700;">{{order_count}} 笔 · ¥{{revenue_total}}</p></div><table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;border-collapse:collapse;"><tr><td class="metric" style="width:50%;border-radius:12px 0 0 12px;"><p style="margin:0;color:#6b7280;font-size:12px;">月度会员</p><p style="margin:4px 0 0;color:#1f2937;font-size:15px;font-weight:600;">{{monthly_count}} 笔</p><p style="margin:2px 0 0;color:#16a34a;font-size:14px;">¥{{monthly_revenue}}</p></td><td class="metric" style="width:50%;border-left:none;border-radius:0 12px 12px 0;"><p style="margin:0;color:#6b7280;font-size:12px;">积分套餐</p><p style="margin:4px 0 0;color:#1f2937;font-size:15px;font-weight:600;">{{points_count}} 笔</p><p style="margin:2px 0 0;color:#16a34a;font-size:14px;">¥{{points_revenue}}</p></td></tr></table></div><div style="border-top:1px solid #e5e7eb;padding:16px 32px;background:#fafafa;"><p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由系统定时发送。</p><p style="margin:6px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由 <b>{{from_addr}}</b> 发送</p></div></td></tr></table></td></tr></table></body></html>',
+                "variables": "date,reg_count,order_count,revenue_total,monthly_count,monthly_revenue,points_count,points_revenue,subject,from_addr"
             }
         ]
         for d in defaults:
@@ -1823,6 +1844,38 @@ class Database:
         """获取某个场景的补发(没收到邮件)模板"""
         ph = _ph()
         return self.fetchone(f"SELECT * FROM email_templates WHERE scene = {ph} AND is_resend = 1", (scene,))
+
+    # ==================== 每日数据邮件定时配置 ====================
+    def get_daily_report_config(self):
+        """获取每日数据邮件配置（单行，id=1）"""
+        return self.fetchone("SELECT * FROM daily_report_config WHERE id = 1")
+
+    def update_daily_report_config(self, enabled=None, send_time=None, recipients=None, template_id=None):
+        """更新每日数据邮件配置"""
+        updates = []
+        params = []
+        if enabled is not None:
+            updates.append("enabled = %s")
+            params.append(1 if enabled else 0)
+        if send_time is not None:
+            updates.append("send_time = %s")
+            params.append((send_time or "08:00").strip())
+        if recipients is not None:
+            updates.append("recipients = %s")
+            params.append((recipients or "").strip())
+        if template_id is not None:
+            updates.append("template_id = %s")
+            params.append(int(template_id) if template_id else None)
+        if not updates:
+            return
+        self.execute(f"UPDATE daily_report_config SET {', '.join(updates)} WHERE id = 1", tuple(params))
+
+    def set_daily_report_sent_result(self, last_sent_at, last_status, last_error=""):
+        """记录上次发送结果"""
+        self.execute(
+            "UPDATE daily_report_config SET last_sent_at = %s, last_status = %s, last_error = %s WHERE id = 1",
+            (last_sent_at, last_status, last_error or "")
+        )
 
     # ==================== 邮件服务器管理 ====================
     def _migrate_mail_servers(self):

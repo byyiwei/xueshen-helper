@@ -1075,6 +1075,133 @@ def send_email(to_addr, subject, body_text=None, body_html=None, template_id=Non
         return False, f"邮件发送失败: {str(e)}"
 
 
+# ==================== 每日数据邮件（定时发送） ====================
+def get_daily_report_stats(stat_date):
+    """统计某一天（YYYY-MM-DD）的注册用户数与收入情况"""
+    try:
+        conn = db._new_mysql_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COUNT(*) AS c FROM users WHERE DATE(created_at) = %s", (stat_date,)
+            )
+            row = cursor.fetchone() or {}
+            reg_count = int(row.get("c") or 0)
+            cursor.execute(
+                """
+                SELECT
+                    COUNT(*) AS order_count,
+                    COALESCE(SUM(price), 0) AS total_revenue,
+                    SUM(CASE WHEN plan_type='monthly' THEN 1 ELSE 0 END) AS monthly_count,
+                    SUM(CASE WHEN plan_type='monthly' THEN price ELSE 0 END) AS monthly_revenue,
+                    SUM(CASE WHEN plan_type='points' THEN 1 ELSE 0 END) AS points_count,
+                    SUM(CASE WHEN plan_type='points' THEN price ELSE 0 END) AS points_revenue
+                FROM payment_orders
+                WHERE status='paid' AND DATE(created_at) = %s
+                """,
+                (stat_date,),
+            )
+            rev = cursor.fetchone() or {}
+            return {
+                "date": stat_date,
+                "reg_count": reg_count,
+                "order_count": int(rev.get("order_count") or 0),
+                "revenue_total": round(float(rev.get("total_revenue") or 0), 2),
+                "monthly_count": int(rev.get("monthly_count") or 0),
+                "monthly_revenue": round(float(rev.get("monthly_revenue") or 0), 2),
+                "points_count": int(rev.get("points_count") or 0),
+                "points_revenue": round(float(rev.get("points_revenue") or 0), 2),
+            }
+        finally:
+            conn.close()
+    except Exception as e:
+        print(f"[每日数据邮件] 统计失败: {e}", flush=True)
+        return {
+            "date": stat_date,
+            "reg_count": 0,
+            "order_count": 0,
+            "revenue_total": 0,
+            "monthly_count": 0,
+            "monthly_revenue": 0,
+            "points_count": 0,
+            "points_revenue": 0,
+        }
+
+
+def send_daily_report(stat_date=None):
+    """执行一次每日数据邮件发送。stat_date 为 None 时默认取昨天。
+    返回 (success, msg)
+    """
+    import datetime as _dt
+    _td = _dt.timedelta
+    cfg = db.get_daily_report_config()
+    if not cfg:
+        return False, "未找到每日数据邮件配置"
+    if not cfg.get("enabled"):
+        return False, "定时发送未启用"
+    recipients = (cfg.get("recipients") or "").strip()
+    if not recipients:
+        return False, "未配置收件人邮箱"
+    if not stat_date:
+        stat_date = (_dt.date.today() - _td(days=1)).strftime("%Y-%m-%d")
+    stats = get_daily_report_stats(stat_date)
+    variables = dict(stats)
+    variables["subject"] = f"学神助手 - {stat_date} 每日运营数据日报"
+    template_id = cfg.get("template_id")
+    sent_ok = 0
+    errors = []
+    for addr in [a.strip() for a in recipients.split(",") if a.strip()]:
+        try:
+            if template_id:
+                ok, err = send_email(addr, variables["subject"], template_id=template_id, variables=variables)
+            else:
+                ok, err = send_email(addr, variables["subject"], scene="daily_report", variables=variables)
+        except Exception as e:
+            ok, err = False, str(e)
+        if ok:
+            sent_ok += 1
+        else:
+            errors.append(f"{addr}: {err}")
+    now = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if sent_ok > 0:
+        status = "success" if not errors else "partial"
+        msg = f"已发送给 {sent_ok} 个收件人" + (f"，{len(errors)} 个失败" if errors else "")
+        db.set_daily_report_sent_result(now, status, "; ".join(errors))
+        return True, msg
+    db.set_daily_report_sent_result(now, "failed", "; ".join(errors))
+    return False, "发送失败: " + "; ".join(errors)
+
+
+def _daily_report_worker():
+    """后台线程：每分钟检查是否到达设定的发送时间，按天去重发送"""
+    import time as _time
+    import datetime as _dt
+    last_sent_day = ""
+    while True:
+        try:
+            cfg = db.get_daily_report_config()
+            if cfg and cfg.get("enabled"):
+                now = _dt.datetime.now()
+                send_time = (cfg.get("send_time") or "08:00").strip() or "08:00"
+                if now.strftime("%H:%M") == send_time and now.strftime("%Y-%m-%d") != last_sent_day:
+                    last_sent_day = now.strftime("%Y-%m-%d")
+                    try:
+                        ok, msg = send_daily_report()
+                        print(f"[每日数据邮件] 定时发送: {'成功' if ok else '失败'} - {msg}", flush=True)
+                    except Exception as e:
+                        print(f"[每日数据邮件] 定时发送异常: {e}", flush=True)
+        except Exception as e:
+            print(f"[每日数据邮件] 线程异常: {e}", flush=True)
+        _time.sleep(30)
+
+
+def _start_daily_report_thread():
+    import threading
+    t = threading.Thread(target=_daily_report_worker, daemon=True)
+    t.start()
+    print("[每日数据邮件] 定时发送线程已启动", flush=True)
+
+
 def generate_code(length=6):
     """生成数字验证码"""
     return "".join(random.choices(string.digits, k=length))
@@ -3274,6 +3401,21 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._send_json(200, {"code": 200, "templates": db.list_email_templates()})
 
+        # ==================== 每日数据邮件（GET） ====================
+        elif path == "/admin/daily-report/config":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            self._send_json(200, {"code": 200, "config": db.get_daily_report_config() or {}})
+
+        elif path == "/admin/daily-report/preview":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            import datetime as _dt
+            stat_date = (_dt.date.today() - _dt.timedelta(days=1)).strftime("%Y-%m-%d")
+            self._send_json(200, {"code": 200, "date": stat_date, "stats": get_daily_report_stats(stat_date)})
+
         elif path.startswith("/admin/email-template/"):
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -4555,7 +4697,7 @@ class Handler(BaseHTTPRequestHandler):
             content_type = (data.get("content_type") or "text").strip()
             variables = (data.get("variables") or "").strip()
             is_resend = 1 if data.get("is_resend") else 0
-            if not scene or scene not in ("user_register", "user_reset", "admin_reset", "referral_withdrawal", "feedback_reply"):
+            if not scene or scene not in ("user_register", "user_reset", "admin_reset", "referral_withdrawal", "feedback_reply", "daily_report"):
                 self._send_json(400, {"code": 400, "msg": "请选择有效的应用场景"})
                 return
             if not subject:
@@ -4588,6 +4730,53 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"code": 400, "msg": "邮件模板不允许删除，每个场景必须保留一个模板"})
             else:
                 self._send_json(405, {"code": 405, "msg": "方法不支持"})
+
+        # ==================== 每日数据邮件（POST） ====================
+        elif path == "/admin/daily-report/config":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            data = json.loads(body or "{}")
+            enabled = data.get("enabled")
+            send_time = (data.get("send_time") or "").strip()
+            recipients = data.get("recipients")
+            template_id = data.get("template_id")
+            if send_time and not _re.match(r"^\d{1,2}:\d{2}$", send_time):
+                self._send_json(400, {"code": 400, "msg": "发送时间格式应为 HH:MM"})
+                return
+            if recipients is not None:
+                for a in [x.strip() for x in recipients.split(",") if x.strip()]:
+                    if not _re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", a):
+                        self._send_json(400, {"code": 400, "msg": f"收件人邮箱格式不正确: {a}"})
+                        return
+            if template_id in ("", None):
+                template_id = None
+            else:
+                try:
+                    template_id = int(template_id)
+                except Exception:
+                    self._send_json(400, {"code": 400, "msg": "模板ID无效"})
+                    return
+            try:
+                db.update_daily_report_config(
+                    enabled=bool(enabled) if enabled is not None else None,
+                    send_time=send_time or None,
+                    recipients=recipients,
+                    template_id=template_id,
+                )
+                self._send_json(200, {"code": 200, "msg": "配置已保存"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/daily-report/send-now":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                ok, msg = send_daily_report()
+                self._send_json(200, {"code": 200 if ok else 400, "msg": msg})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
 
         elif path == "/admin/change-password":
             if not self._check_admin():
@@ -4894,6 +5083,7 @@ if __name__ == "__main__":
         print(f"  ✓ 已有 {enabled_count} 个提供商就绪")
     print("=" * 60)
     _start_log_cleanup_thread()
+    _start_daily_report_thread()
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     try:
         server.serve_forever()
