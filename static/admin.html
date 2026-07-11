@@ -1180,7 +1180,12 @@ body{
                   </thead>
                   <tbody>
                     <tr v-for="t in emailTemplates" :key="t.id">
-                      <td><span :class="['scene-badge','scene-'+t.scene]"><span style="margin-right:4px;opacity:.8">{{SCENE_ICONS[t.scene]||'◎'}}</span>{{ templateSceneLabel(t.scene) }}</span> <span v-if="t.is_resend" class="scene-badge scene-feedback_reply" style="margin-left:4px;font-size:11px">补发</span></td>
+                      <td style="white-space:nowrap">
+                        <div style="display:flex;gap:6px;align-items:center;flex-wrap:nowrap">
+                          <span :class="['scene-badge','scene-'+t.scene]" style="flex-shrink:0"><span style="margin-right:4px;opacity:.8">{{SCENE_ICONS[t.scene]||'◎'}}</span>{{ templateSceneLabel(t.scene) }}</span>
+                          <span v-if="t.is_resend" class="scene-badge scene-feedback_reply" style="flex-shrink:0;font-size:11px;padding:3px 8px">补发</span>
+                        </div>
+                      </td>
                       <td>{{ t.subject }}</td>
                       <td><span class="format-badge">{{ t.content_type==='html'?'HTML':'纯文本' }}</span></td>
                       <td style="font-size:12px;color:var(--text2)">{{ t.variables||'无' }}</td>
