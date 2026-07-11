@@ -691,12 +691,12 @@ body{
         <!-- 定时任务组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.schedule}">
           <div class="menu-group-header dock-item" :class="{active:page==='daily-report'}" @click="expandedGroups.schedule=!expandedGroups.schedule">
-            <span class="icon">⏰</span>定时任务
+            <span class="icon">◉</span>定时任务
             <span class="arrow">▶</span>
           </div>
           <div class="menu-group-items">
             <div class="menu-item" :class="{active:page==='daily-report'}" @click="page='daily-report';loadDailyReport();loadEmailTemplates()">
-              <span class="icon">✉</span>每日数据邮件
+              <span class="icon">⊙</span>每日数据邮件
             </div>
           </div>
         </div>
@@ -2502,53 +2502,78 @@ body{
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
-          <div class="card-panel" v-if="dailyReportConfig">
-            <div class="form-group" style="justify-content:space-between">
-              <label style="font-size:15px;font-weight:600">启用定时发送</label>
-              <div class="toggle" :class="dailyReportConfig.enabled?'on':''" @click="dailyReportConfig.enabled=!dailyReportConfig.enabled"></div>
-            </div>
-            <p class="tip-text">开启后，系统每天在设定时间自动汇总前一天的注册与收入数据并发送邮件。</p>
 
-            <div class="form-group">
-              <label>发送时间</label>
-              <input type="time" v-model="dailyReportConfig.send_time" style="max-width:160px">
-              <span class="tip-text">每天该时刻触发（服务器本地时间），按天去重。</span>
+          <div class="card" v-if="dailyReportConfig">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+              <h3>定时发送配置</h3>
+              <div style="display:flex;align-items:center;gap:14px">
+                <label style="font-size:13px;color:var(--text2);display:flex;align-items:center;gap:8px;cursor:pointer">启用定时发送
+                  <div class="toggle" :class="dailyReportConfig.enabled?'on':''" @click="dailyReportConfig.enabled=!dailyReportConfig.enabled"></div>
+                </label>
+              </div>
             </div>
+            <div class="card-body">
+              <p style="font-size:13px;color:var(--text3);margin:0 0 20px">开启后，系统每天在设定时间自动汇总前一天的注册与收入数据并发送邮件。</p>
 
-            <div class="form-group" style="flex-direction:column;align-items:stretch">
-              <label>收件人邮箱</label>
-              <textarea v-model="dailyReportConfig.recipients" rows="2" placeholder="多个邮箱用逗号分隔，如 admin@x.com, boss@x.com"></textarea>
-            </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>发送时间</label>
+                  <input type="time" v-model="dailyReportConfig.send_time">
+                </div>
+                <div class="form-group">
+                  <label>邮件模板</label>
+                  <select v-model="dailyReportConfig.template_id">
+                    <option :value="null">默认（每日运营数据日报）</option>
+                    <option v-for="t in emailTemplates.filter(x=>x.scene==='daily_report')" :key="t.id" :value="t.id">{{ t.subject }}</option>
+                  </select>
+                </div>
+              </div>
 
-            <div class="form-group">
-              <label>邮件模板</label>
-              <select v-model="dailyReportConfig.template_id">
-                <option :value="null">默认（每日运营数据日报）</option>
-                <option v-for="t in emailTemplates.filter(x=>x.scene==='daily_report')" :key="t.id" :value="t.id">{{ t.subject }}</option>
-              </select>
-              <span class="tip-text">在「邮箱配置 → 邮件模板」中编辑 daily_report 场景的文本内容（支持纯文本 + HTML）。</span>
-            </div>
+              <div class="form-group">
+                <label>收件人邮箱</label>
+                <textarea v-model="dailyReportConfig.recipients" rows="2" placeholder="多个邮箱用逗号分隔，如 admin@x.com, boss@x.com"></textarea>
+              </div>
 
-            <div class="btn-row">
-              <button class="btn btn-primary" @click="saveDailyReport()">保存配置</button>
-              <button class="btn btn-secondary" @click="sendDailyReportNow()">立即发送（测试昨天数据）</button>
-              <button class="btn btn-secondary" @click="previewDailyReport()">预览昨日数据</button>
-            </div>
+              <div style="display:flex;gap:10px;margin-top:6px">
+                <button class="btn btn-primary" @click="saveDailyReport()">保存配置</button>
+                <button class="btn btn-secondary" @click="sendDailyReportNow()">立即发送（测试昨天数据）</button>
+                <button class="btn btn-secondary" @click="previewDailyReport()">预览昨日数据</button>
+              </div>
 
-            <div class="status-line" v-if="dailyReportConfig.last_sent_at">
-              上次发送：{{dailyReportConfig.last_sent_at}} · 状态：<b :class="{'ok':dailyReportConfig.last_status==='success'||dailyReportConfig.last_status==='partial','bad':dailyReportConfig.last_status==='failed'}">{{dailyReportConfig.last_status||'—'}}</b>
-              <span v-if="dailyReportConfig.last_error" class="tip-text" style="display:block;margin-top:4px">{{dailyReportConfig.last_error}}</span>
-            </div>
+              <div v-if="dailyReportConfig.last_sent_at" style="margin-top:16px;padding:12px 16px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-size:13px;color:var(--text2)">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span>上次发送：{{dailyReportConfig.last_sent_at}}</span>
+                  <span>·</span>
+                  <span>状态：</span>
+                  <span :style="{color:(dailyReportConfig.last_status==='success'||dailyReportConfig.last_status==='partial')?'var(--success)':'var(--danger)'}">{{dailyReportConfig.last_status||'—'}}</span>
+                </div>
+                <div v-if="dailyReportConfig.last_error" style="margin-top:6px;color:var(--danger);font-size:12px">{{dailyReportConfig.last_error}}</div>
+              </div>
 
-            <div class="preview-box" v-if="dailyReportPreview">
-              <h4>昨日（{{dailyReportPreview.date}}）数据预览</h4>
-              <ul>
-                <li>新增注册用户：<b>{{dailyReportPreview.stats.reg_count}}</b> 人</li>
-                <li>支付订单数：<b>{{dailyReportPreview.stats.order_count}}</b> 笔</li>
-                <li>总收入：<b>¥{{dailyReportPreview.stats.revenue_total}}</b></li>
-                <li>月度会员：{{dailyReportPreview.stats.monthly_count}} 笔 / ¥{{dailyReportPreview.stats.monthly_revenue}}</li>
-                <li>积分套餐：{{dailyReportPreview.stats.points_count}} 笔 / ¥{{dailyReportPreview.stats.points_revenue}}</li>
-              </ul>
+              <div v-if="dailyReportPreview" style="margin-top:16px;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:8px">
+                <h4 style="margin:0 0 12px;font-size:14px">昨日（{{dailyReportPreview.date}}）数据预览</h4>
+                <div class="form-row" style="margin-bottom:0">
+                  <div style="padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:8px">
+                    <div style="font-size:12px;color:var(--text3)">新增注册</div>
+                    <div style="font-size:22px;font-weight:700;color:var(--text);margin-top:2px">{{dailyReportPreview.stats.reg_count}} <span style="font-size:13px;font-weight:400;color:var(--text3)">人</span></div>
+                  </div>
+                  <div style="padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:8px">
+                    <div style="font-size:12px;color:var(--text3)">支付订单</div>
+                    <div style="font-size:22px;font-weight:700;color:var(--text);margin-top:2px">{{dailyReportPreview.stats.order_count}} <span style="font-size:13px;font-weight:400;color:var(--text3)">笔</span></div>
+                  </div>
+                </div>
+                <div class="form-row" style="margin-top:10px;margin-bottom:0">
+                  <div style="padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:8px">
+                    <div style="font-size:12px;color:var(--text3)">总收入</div>
+                    <div style="font-size:22px;font-weight:700;color:var(--success);margin-top:2px">¥{{dailyReportPreview.stats.revenue_total}}</div>
+                  </div>
+                  <div style="padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:8px">
+                    <div style="font-size:12px;color:var(--text3)">月度会员 / 积分套餐</div>
+                    <div style="font-size:14px;color:var(--text);margin-top:2px">{{dailyReportPreview.stats.monthly_count}} 笔 · ¥{{dailyReportPreview.stats.monthly_revenue}}</div>
+                    <div style="font-size:14px;color:var(--text2)">{{dailyReportPreview.stats.points_count}} 笔 · ¥{{dailyReportPreview.stats.points_revenue}}</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
