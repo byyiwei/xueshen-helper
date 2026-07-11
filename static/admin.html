@@ -2401,6 +2401,8 @@ body{
                 <div class="toggle" :class="feedbackNotifyEnabled?'on':''" @click="feedbackNotifyEnabled=!feedbackNotifyEnabled;saveFeedbackNotify()"></div>
               </label>
               <span style="font-size:12px;color:var(--text3)">开启后，收到新的问题反馈或用户追问时自动邮件通知管理员</span>
+              <span v-if="accountConfig.admin_email" style="font-size:12px;color:var(--text3)">· 通知邮箱：<b style="color:var(--text2)">{{accountConfig.admin_email}}</b>（在「个人中心」配置）</span>
+              <span v-else style="font-size:12px;color:var(--warn)">⚠ 未配置管理员邮箱，请在「个人中心 → 绑定找回邮箱」设置</span>
             </div>
           </div>
           <!-- 统计栏 -->
