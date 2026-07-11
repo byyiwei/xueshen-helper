@@ -674,6 +674,13 @@ class Database:
                 "variables": "username,title,reply_text,subject,from_addr"
             },
             {
+                "scene": "feedback_new",
+                "subject": "学神助手 - 新问题反馈通知",
+                "body_text": "━━━━━━━━━━━━━━━━━━━━\n    学神助手 · 新问题反馈通知\n━━━━━━━━━━━━━━━━━━━━\n\n管理员您好！\n\n收到一条新的用户反馈：\n\n  用户：{{username}}\n  类型：{{category}}\n  标题：{{title}}\n\n  内容摘要：\n{{content}}\n\n━━━━━━━━━━━━━━━━━━━━\n请及时登录管理后台查看处理。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━",
+                "body_html": '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}.card{animation:fadeInUp .6s ease-out}</style></head><body style="margin:0;padding:0;background:#f0f4f8;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:40px 20px;"><table class="card" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#f97316,#ea580c);padding:28px 32px;text-align:center;"><div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:1px;">学神助手</div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">新问题反馈通知</div></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 16px;color:#1f2937;font-size:15px;line-height:1.6;">管理员您好！</p><p style="margin:0 0 20px;color:#4b5563;font-size:14px;line-height:1.6;">收到一条新的用户反馈：</p><table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f9fafb;border-radius:12px;padding:20px;margin:0 0 20px;border:1px solid #e5e7eb"><tr><td style="padding:4px 0"><span style="color:#6b7280;font-size:13px">用户</span></td><td style="padding:4px 0;color:#1f2937;font-size:14px;font-weight:600">{{username}}</td></tr><tr><td style="padding:4px 0"><span style="color:#6b7280;font-size:13px">类型</span></td><td style="padding:4px 0;color:#1f2937;font-size:14px">{{category}}</td></tr><tr><td style="padding:4px 0"><span style="color:#6b7280;font-size:13px">标题</span></td><td style="padding:4px 0;color:#1f2937;font-size:14px;font-weight:600">{{title}}</td></tr></table><p style="margin:0 0 8px;color:#4b5563;font-size:14px;line-height:1.6;">内容摘要：</p><div style="background:#f9fafb;border-left:4px solid #f97316;border-radius:8px;padding:14px 16px;margin:0 0 20px;"><p style="margin:0;color:#1f2937;font-size:14px;line-height:1.7;white-space:pre-wrap">{{content}}</p></div><div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:20px"><p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6">请及时登录管理后台查看处理。</p><p style="margin:8px 0 0;color:#9ca3af;font-size:12px;line-height:1.6">本邮件由 <b>{{from_addr}}</b> 发送</p></div></td></tr></table></td></tr></table></body></html>',
+                "variables": "username,category,title,content,subject,from_addr"
+            },
+            {
                 "scene": "daily_report",
                 "subject": "学神助手 - {{date}} 每日运营数据日报",
                 "body_text": "━━━━━━━━━━━━━━━━━━━━\n    学神助手 · 每日运营数据日报\n━━━━━━━━━━━━━━━━━━━━\n\n统计日期：{{date}}\n\n【注册情况】\n    新增注册用户：{{reg_count}} 人\n\n【收入情况】\n    支付订单数：{{order_count}} 笔\n    总收入：{{revenue_total}} 元\n    ├─ 月度会员：{{monthly_count}} 笔 / {{monthly_revenue}} 元\n    └─ 积分套餐：{{points_count}} 笔 / {{points_revenue}} 元\n\n━━━━━━━━━━━━━━━━━━━━\n本邮件由系统定时发送。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━",
@@ -772,6 +779,7 @@ class Database:
         self._add_column_if_missing("admin_config", "referral_min_withdraw", "referral_min_withdraw DECIMAL(10,2) DEFAULT 10.00")
         self._add_column_if_missing("admin_config", "referral_settle_days", "referral_settle_days INT DEFAULT 7")
         self._add_column_if_missing("admin_config", "feedback_auto_close_days", "feedback_auto_close_days INT DEFAULT 7")
+        self._add_column_if_missing("admin_config", "feedback_notify_enabled", "feedback_notify_enabled TINYINT DEFAULT 0")
 
     def _ensure_order_payment_columns(self):
         self._add_column_if_missing("payment_orders", "pay_method", "pay_method VARCHAR(20)")
@@ -2004,6 +2012,14 @@ class Database:
     def set_feedback_auto_close_days(self, days):
         ph = _ph()
         self.execute(f"UPDATE admin_config SET feedback_auto_close_days = {ph} WHERE id = 1", (int(days),))
+
+    def get_feedback_notify_enabled(self):
+        row = self.fetchone("SELECT feedback_notify_enabled FROM admin_config WHERE id = 1")
+        return bool(row.get("feedback_notify_enabled")) if row else False
+
+    def set_feedback_notify_enabled(self, enabled):
+        ph = _ph()
+        self.execute(f"UPDATE admin_config SET feedback_notify_enabled = {ph} WHERE id = 1", (1 if enabled else 0,))
 
     def clear_question_bank(self, keyword=""):
         ph = _ph()

@@ -1202,6 +1202,28 @@ def _start_daily_report_thread():
     print("[每日数据邮件] 定时发送线程已启动", flush=True)
 
 
+def _send_feedback_notify(feedback_id, notify_type="new", username="", category="", title="", content=""):
+    """向管理员发送反馈通知邮件（新反馈/用户追问）"""
+    try:
+        if not db.get_feedback_notify_enabled():
+            return
+        admin = db.get_admin_config()
+        admin_email = (admin or {}).get("admin_email") or ""
+        if not admin_email:
+            return
+        variables = {
+            "username": username,
+            "category": category or "其他",
+            "title": title,
+            "content": (content or "")[:500],
+            "subject": f"学神助手 - 新问题反馈通知" if notify_type == "new" else f"学神助手 - 用户追问通知",
+            "from_addr": ""
+        }
+        send_email(admin_email, variables["subject"], scene="feedback_new", variables=variables)
+    except Exception as e:
+        print(f"[反馈通知] 邮件发送异常: {e}", flush=True)
+
+
 def generate_code(length=6):
     """生成数字验证码"""
     return "".join(random.choices(string.digits, k=length))
@@ -3408,6 +3430,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._send_json(200, {"code": 200, "config": db.get_daily_report_config() or {}})
 
+        elif path == "/admin/feedback-notify/config":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            self._send_json(200, {"code": 200, "enabled": db.get_feedback_notify_enabled()})
+
         elif path == "/admin/daily-report/preview":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -3744,6 +3772,7 @@ class Handler(BaseHTTPRequestHandler):
                     category = "other"
                 email = user.get("email") or ""
                 db.create_feedback(user["username"], email, category, title, content)
+                threading.Thread(target=_send_feedback_notify, args=(None, "new", user["username"], category, title, content), daemon=True).start()
                 self._send_json(200, {"code": 200, "msg": "提交成功"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -3773,6 +3802,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 db.add_feedback_reply(feedback_id, "user", content)
                 db.update_feedback_status(feedback_id, "processing")
+                threading.Thread(target=_send_feedback_notify, args=(feedback_id, "reply", fb.get("username",""), fb.get("category",""), fb.get("title",""), content), daemon=True).start()
                 self._send_json(200, {"code": 200, "msg": "回复成功"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -4697,7 +4727,7 @@ class Handler(BaseHTTPRequestHandler):
             content_type = (data.get("content_type") or "text").strip()
             variables = (data.get("variables") or "").strip()
             is_resend = 1 if data.get("is_resend") else 0
-            if not scene or scene not in ("user_register", "user_reset", "admin_reset", "referral_withdrawal", "feedback_reply", "daily_report"):
+            if not scene or scene not in ("user_register", "user_reset", "admin_reset", "referral_withdrawal", "feedback_reply", "daily_report", "feedback_new"):
                 self._send_json(400, {"code": 400, "msg": "请选择有效的应用场景"})
                 return
             if not subject:
@@ -4764,6 +4794,18 @@ class Handler(BaseHTTPRequestHandler):
                     recipients=recipients,
                     template_id=template_id,
                 )
+                self._send_json(200, {"code": 200, "msg": "配置已保存"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/feedback-notify/config":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                enabled = bool(data.get("enabled"))
+                db.set_feedback_notify_enabled(enabled)
                 self._send_json(200, {"code": 200, "msg": "配置已保存"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
