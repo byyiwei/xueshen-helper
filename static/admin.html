@@ -107,7 +107,10 @@ body{
   flex-shrink:0;position:relative;
 }
 .main-header h2{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
-.main-header .breadcrumb{font-size:13px;color:var(--text2)}
+.breadcrumb-nav{display:flex;align-items:center;gap:0;font-size:13px;color:var(--text3);flex-wrap:wrap}
+.breadcrumb-item{color:var(--text2);transition:color .2s}
+.breadcrumb-item.active{color:var(--text);font-weight:500}
+.breadcrumb-sep{margin:0 8px;color:var(--text3);font-size:11px}
 .main-body{flex:1;overflow-y:auto;padding:24px}
 .top-account{position:fixed;right:22px;top:10px;z-index:80;padding-bottom:10px}
 .top-avatar{width:40px;height:40px;border-radius:16px;background:linear-gradient(135deg,var(--accent),#2563eb);border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;overflow:hidden;color:#fff;cursor:pointer;box-shadow:0 10px 24px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.22);transition:transform .18s,box-shadow .18s}
@@ -721,7 +724,7 @@ body{
       <template v-if="page==='dashboard'">
         <header class="main-header">
           <h2>运营概览</h2>
-          <span class="breadcrumb">系统运行数据与模型调用趋势</span>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1}">{{item}}</span></span></nav>
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
@@ -935,7 +938,7 @@ body{
       <template v-if="page==='ai-config'">
         <header class="main-header">
           <h2>模型配置</h2>
-          <span class="breadcrumb">配置 AI 提供商与模型</span>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1}">{{item}}</span></span></nav>
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
@@ -1046,7 +1049,7 @@ body{
       <template v-if="page==='email-config'">
         <header class="main-header">
           <h2>邮箱配置</h2>
-          <span class="breadcrumb">配置 SMTP 与找回密码</span>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1}">{{item}}</span></span></nav>
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
@@ -1310,7 +1313,7 @@ body{
       <template v-if="page==='user-mgmt'">
         <header class="main-header">
           <h2>用户管理</h2>
-          <span class="breadcrumb">充值、扣除、封禁、修改邮箱和密码</span>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1}">{{item}}</span></span></nav>
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
@@ -1386,7 +1389,7 @@ body{
       <template v-if="page==='payment'">
         <header class="main-header">
           <h2>付费配置</h2>
-          <span class="breadcrumb">配置包月、题数套餐和注册赠送权益</span>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1}">{{item}}</span></span></nav>
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
@@ -1438,7 +1441,7 @@ body{
       <template v-if="page==='pay-api'">
         <header class="main-header">
           <h2>支付接口</h2>
-          <span class="breadcrumb">配置支付宝当面付和微信支付接口</span>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1}">{{item}}</span></span></nav>
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
@@ -1573,7 +1576,7 @@ body{
       <template v-if="page==='ai-logs'">
         <header class="main-header">
           <h2>模型调用日志</h2>
-          <span class="breadcrumb">查看前端每次调用模型的请求、结果和耗时</span>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1}">{{item}}</span></span></nav>
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
@@ -1664,7 +1667,7 @@ body{
       <template v-if="page==='script-logs'">
         <header class="main-header">
           <h2>脚本日志</h2>
-          <span class="breadcrumb">查看脚本端交互、运行状态和错误日志，用于定位排查问题</span>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1}">{{item}}</span></span></nav>
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
@@ -1735,7 +1738,7 @@ body{
       <template v-if="page==='question-bank'">
         <header class="main-header">
           <h2>题库中心</h2>
-          <span class="breadcrumb">模型搜索答案会自动沉淀到题库，后续优先题库命中</span>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1}">{{item}}</span></span></nav>
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
@@ -1809,7 +1812,7 @@ body{
       <template v-if="page==='login-locks'">
         <header class="main-header">
           <h2>解除锁定</h2>
-          <span class="breadcrumb">查看密码错误次数过多的用户，并手动解除登录锁定</span>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1}">{{item}}</span></span></nav>
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
@@ -1856,7 +1859,7 @@ body{
       <template v-if="page==='profile'">
         <header class="main-header">
           <h2>个人中心</h2>
-          <span class="breadcrumb">账户信息、绑定邮箱与密码管理</span>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1}">{{item}}</span></span></nav>
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
@@ -1938,7 +1941,7 @@ body{
       <template v-if="page==='referral'">
         <header class="main-header">
           <h2>推广返利</h2>
-          <span class="breadcrumb">配置佣金比例、审核提现申请、查看推广数据</span>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1}">{{item}}</span></span></nav>
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
@@ -2066,7 +2069,7 @@ body{
       <template v-if="page==='pay-test'">
         <header class="main-header">
           <h2>支付测试</h2>
-          <span class="breadcrumb">独立测试各支付通道，不影响正式环境用户</span>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1}">{{item}}</span></span></nav>
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
@@ -2179,7 +2182,7 @@ body{
       <template v-if="page==='payment-orders'">
         <header class="main-header">
           <h2>支付明细</h2>
-          <span class="breadcrumb">查看用户支付订单，支持筛选与排序</span>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1}">{{item}}</span></span></nav>
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
@@ -2276,7 +2279,7 @@ body{
       <template v-if="page==='referral-withdrawals'">
         <header class="main-header">
           <h2>提现审核</h2>
-          <span class="breadcrumb">审核用户提现申请</span>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1}">{{item}}</span></span></nav>
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
@@ -2348,7 +2351,7 @@ body{
       <template v-if="page==='feedback'">
         <header class="main-header">
           <h2>问题反馈</h2>
-          <span class="breadcrumb">查看用户反馈，处理后通过邮件回复</span>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1}">{{item}}</span></span></nav>
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
@@ -2519,7 +2522,7 @@ body{
       <template v-if="page==='daily-report'">
         <header class="main-header">
           <h2>每日数据邮件</h2>
-          <span class="breadcrumb">定时把每日注册用户数与收入情况通过邮件发送给指定收件人</span>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1}">{{item}}</span></span></nav>
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
@@ -2631,6 +2634,27 @@ createApp({
   setup(){
     const page=ref('login');
     const loginMode=ref('login');
+    const BREADCRUMB_MAP={
+      'dashboard':['后台首页','运营概览'],
+      'user-mgmt':['用户管理'],
+      'referral':['推广返利','返利配置'],
+      'referral-withdrawals':['推广返利','提现审核'],
+      'payment-orders':['支付财务','支付明细'],
+      'payment':['支付财务','套餐配置'],
+      'pay-api':['支付财务','支付接口'],
+      'pay-test':['支付财务','支付测试'],
+      'script-logs':['日志监控','脚本日志'],
+      'ai-logs':['日志监控','模型日志'],
+      'log-cleanup':['日志监控','日志清理'],
+      'question-bank':['系统配置','题库中心'],
+      'ai-config':['系统配置','模型配置'],
+      'email-config':['系统配置','邮箱配置'],
+      'login-locks':['系统配置','解除锁定'],
+      'feedback':['系统配置','问题反馈'],
+      'daily-report':['定时任务','每日数据邮件'],
+      'profile':['个人中心']
+    };
+    const breadcrumbItems=computed(()=>BREADCRUMB_MAP[page.value]||[]);
     const token=ref(localStorage.getItem('ne21_admin_token')||'');
     const config=ref({providers:{}});
     const emailConfig=ref({enabled:false,test_recipient:''});
@@ -3993,7 +4017,7 @@ createApp({
     else initAdminSlider();
 
     return{
-       page,loginMode,config,emailConfig,emailTemplates,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,SCENE_ICONS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
+       page,loginMode,breadcrumbItems,config,emailConfig,emailTemplates,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,SCENE_ICONS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
        mailServers,showServerForm,mailServerForm,showSmtpPass,mailServerTotalWeight,mailServerWeightPercent,toggleEmailEnabled,openServerForm,saveMailServer,deleteMailServer,
       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,users,userSearch,userSortBy,userSortOrder,showUserModal,userForm,
         showHtmlPreview,htmlPreviewFrame,htmlPreviewData,toggleHtmlPreview,updateHtmlPreview,switchToHtml,onHtmlInput,syncPlainFromHtml,
