@@ -2436,7 +2436,6 @@ body{
                     </td>
                     <td style="padding:10px 12px;color:var(--text3);font-size:12px">{{String(row.created_at||'').replace('T',' ').substring(0,19)}}</td>
                     <td style="padding:10px 12px">
-                      <button v-if="row.status==='paid'" class="btn btn-danger" style="padding:3px 10px;font-size:12px" @click="showRefundModal(row)">退款</button>
                       <span v-if="row.status==='refunded'" style="font-size:12px;color:var(--text3)">{{row.refund_reason||'管理员退款'}}</span>
                     </td>
                   </tr>
@@ -2454,41 +2453,6 @@ body{
                 <span style="font-size:13px">{{paymentOrdersPage}} / {{paymentOrdersTotalPages}}</span>
                 <button class="btn btn-secondary" style="padding:4px 12px" :disabled="paymentOrdersPage>=paymentOrdersTotalPages" @click="paymentOrdersNext()">下一页</button>
               </div>
-            </div>
-          </div>
-        </div>
-        <!-- 退款确认弹窗 -->
-        <div v-if="refundTarget" class="modal-overlay" @click.self="refundTarget=null">
-          <div class="modal" style="max-width:420px">
-            <h3>确认退款</h3>
-            <div v-if="refundDeadlinePassed" style="background:#fef2f2;color:#dc2626;padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:10px">
-              ⚠️ 该订单已超过退款时效，无法退款
-            </div>
-            <div style="margin:12px 0;color:var(--text2);font-size:14px;line-height:1.8">
-              <div><b>订单：</b>{{refundTarget.order_no}}</div>
-              <div><b>用户：</b>{{refundTarget.username}}</div>
-              <div><b>套餐：</b>{{refundTarget.plan_name||'-'}} <span style="color:var(--success)">¥{{Number(refundTarget.price||0).toFixed(2)}}</span></div>
-              <div v-if="refundTarget.plan_type==='monthly'"><b>将撤销包月：</b>{{refundTarget.days||0}} 天</div>
-              <div v-else><b>将扣回点数：</b>{{refundTarget.points||0}} 点</div>
-              <div v-if="refundRemainingDays>0" style="margin-top:6px;font-size:13px;color:var(--warning)">⏰ 剩余可退款 {{refundRemainingDays}} 天</div>
-            </div>
-            <div class="form-group">
-              <label>退款原因</label>
-              <select v-model="refundReason" class="form-control" style="padding:8px 12px;font-size:14px">
-                <option value="用户申请退款">用户申请退款</option>
-                <option value="支付异常退款">支付异常退款</option>
-                <option value="重复支付退款">重复支付退款</option>
-                <option value="管理员操作退款">管理员操作退款</option>
-                <option value="">其他原因</option>
-              </select>
-            </div>
-            <div v-if="!refundReason" class="form-group" style="margin-top:10px">
-              <input v-model="refundReasonCustom" class="form-control" style="padding:8px 12px;font-size:14px" placeholder="请输入退款原因">
-            </div>
-            <div v-if="refundErr" class="msg show danger" style="margin:10px 0">{{refundErr}}</div>
-            <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
-              <button class="btn btn-secondary" @click="refundTarget=null">取消</button>
-              <button class="btn btn-danger" :disabled="refunding||refundDeadlinePassed" @click="doRefund()">{{refunding?'处理中...':'确认退款'}}</button>
             </div>
           </div>
         </div>
@@ -4047,19 +4011,6 @@ createApp({
     const paymentOrdersTotalPages=ref(0);
     const paymentOrdersSum=ref({sum_amount:0,sum_count:0});
     // 退款
-    const refundTarget=ref(null);
-    const refundReason=ref('用户申请退款');
-    const refundReasonCustom=ref('');
-    const refunding=ref(false);
-    const refundErr=ref('');
-    const refundDaysLimit=computed(()=>parseInt(payApiConfig.refund_days_limit)||0);
-    const refundRemainingDays=computed(()=>{
-      if(!refundTarget.value||!refundDaysLimit.value) return 0;
-      const created=new Date(refundTarget.value.created_at.replace(' ','T'));
-      const elapsed=(Date.now()-created.getTime())/86400000;
-      return Math.max(0,Math.ceil(refundDaysLimit.value-elapsed));
-    });
-    const refundDeadlinePassed=computed(()=>refundDaysLimit.value>0&&refundRemainingDays.value<=0);
     // 退款申请管理
     const rrFilterStatus=ref('');
     const rrList=ref([]);
@@ -4216,40 +4167,6 @@ createApp({
       }catch(_){showMsg('danger','请求失败');}
     }
 
-    // ========== 退款操作 ==========
-    function showRefundModal(row){
-      refundTarget.value=row;
-      refundReason.value='用户申请退款';
-      refundReasonCustom.value='';
-      refundErr.value='';
-      refunding.value=false;
-    }
-    async function doRefund(){
-      if(!refundTarget.value) return;
-      refunding.value=true;
-      refundErr.value='';
-      const reason=refundReason.value||refundReasonCustom.value||'管理员退款';
-      try{
-        const res=await safeFetch('/admin/payment/refund',{
-          method:'POST',
-          headers:{'Content-Type':'application/json','Authorization':token.value},
-          body:JSON.stringify({order_no:refundTarget.value.order_no,reason:reason})
-        });
-        const d=await res.json();
-        if(d.code===200){
-          refundTarget.value=null;
-          showMsg('success','退款成功');
-          loadPaymentOrders();
-        }else{
-          refundErr.value=d.msg||'退款失败';
-        }
-      }catch(e){
-        refundErr.value='请求失败：'+e.message;
-      }finally{
-        refunding.value=false;
-      }
-    }
-
     // ========== 问题反馈管理 ==========
     async function loadFeedbackList(){
       const f=feedbackFilter.value;
@@ -4388,9 +4305,6 @@ createApp({
       expandedGroups,isMobile,mobileSidebarOpen,mobileSubmenu,openMobileSubmenu,handleGroupClick,
        paymentOrders,paymentOrdersFilter,paymentOrdersSort,paymentOrdersPage,paymentOrdersPageSize,paymentOrdersTotal,paymentOrdersTotalPages,paymentOrdersSum,
         loadPaymentOrders,togglePaymentSort,paymentOrdersSearch,paymentOrdersPrev,paymentOrdersNext,
-        refundTarget,refundReason,refundReasonCustom,refunding,refundErr,
-        refundDaysLimit,refundRemainingDays,refundDeadlinePassed,
-        showRefundModal,doRefund,
         rrFilterStatus,rrList,rrPage,rrTotalPages,rrTotal,
         loadRefundRequests,processRefundRequest,
        feedbackList,feedbackFilter,feedbackPage,feedbackTotalPages,feedbackTotal,feedbackPendingCount,feedbackDetail,feedbackReplyText,
