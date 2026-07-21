@@ -879,6 +879,51 @@
             .check-card { align-items: flex-start; }
             .check-card input { margin-top: 2px; }
         }
+        .btn-refund {
+            display:inline-block;padding:3px 10px;font-size:12px;border:none;border-radius:6px;
+            background:#fee2e2;color:#dc2626;cursor:pointer;transition:all 0.2s;
+            font-family:inherit;
+        }
+        .btn-refund:hover { background:#fecaca; }
+        .btn-refund:disabled { opacity:.5; cursor:not-allowed; }
+        .form-row { display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px; }
+        .form-row .form-group { flex:1;min-width:200px; }
+        .form-group label { display:block;font-size:13px;color:var(--v-text2);margin-bottom:4px; }
+        .qr-upload-zone {
+            border:2px dashed var(--v-border);border-radius:8px;padding:16px;text-align:center;
+            cursor:pointer;transition:all 0.2s;background:var(--v-bg2);
+        }
+        .qr-upload-zone:hover { border-color:var(--primary); }
+        .qr-upload-hint { font-size:12px;color:var(--v-muted);margin-top:6px; }
+        .btn-sm { padding:4px 12px;font-size:12px; }
+        .btn-outline { background:transparent;border:1px solid var(--v-border);color:var(--v-text);border-radius:6px;cursor:pointer; }
+        .modal-overlay {
+            position:fixed;inset:0;background:rgba(0,0,0,.4);
+            display:flex;align-items:center;justify-content:center;z-index:2000;
+        }
+        .modal-box {
+            background:#fff;border-radius:12px;padding:24px;max-width:400px;width:90%;
+            box-shadow:0 8px 30px rgba(0,0,0,.15);
+        }
+        .modal-box h3 { margin:0 0 12px;font-size:16px;color:#1e293b; }
+        .modal-box p { margin:6px 0;font-size:13px;color:#475569;line-height:1.6; }
+        .modal-box .actions { display:flex;gap:10px;justify-content:flex-end;margin-top:16px; }
+        .modal-box .actions button {
+            padding:8px 20px;border:none;border-radius:8px;font-size:13px;cursor:pointer;
+            font-family:inherit;transition:all 0.2s;
+        }
+        .modal-box .btn-cancel { background:#f1f5f9;color:#475569; }
+        .modal-box .btn-cancel:hover { background:#e2e8f0; }
+        .modal-box .btn-confirm { background:#dc2626;color:#fff; }
+        .modal-box .btn-confirm:hover { background:#b91c1c; }
+        .modal-box .btn-confirm:disabled { background:#fca5a5;cursor:not-allowed; }
+        @media (prefers-color-scheme:dark) {
+            .modal-box { background:#1e293b; }
+            .modal-box h3 { color:#f1f5f9; }
+            .modal-box p { color:#94a3b8; }
+            .modal-box .btn-cancel { background:#334155;color:#cbd5e1; }
+            .modal-box .btn-cancel:hover { background:#475569; }
+        }
         @media (max-width: 380px) {
             .hero { display: none; }
             .panel { min-height: calc(100vh - 20px); min-height: calc(100dvh - 20px); }
@@ -1015,6 +1060,7 @@
                 <button class="user-menu-item" data-section="script"><span class="mi">⌘</span><span class="user-menu-label">脚本设置</span></button>
                 <button class="user-menu-item" data-section="account"><span class="mi">◌</span><span class="user-menu-label">账号信息</span></button>
                 <button class="user-menu-item" data-section="promotion"><span class="mi">★</span><span class="user-menu-label">推广返利</span></button>
+                <button class="user-menu-item" data-section="payment-info"><span class="mi">$</span><span class="user-menu-label">收款信息</span></button>
                 <button class="user-menu-item" data-section="feedback"><span class="mi">✎</span><span class="user-menu-label">问题反馈</span></button>
                 <button class="user-menu-item" id="sideLogoutBtn"><span class="mi">↗</span><span class="user-menu-label">退出登录</span></button>
             </nav>
@@ -1286,6 +1332,45 @@
                     </div>
                 </section>
 
+                <section class="user-section" id="section-payment-info">
+                    <div class="user-card">
+                        <h3>收款信息</h3>
+                        <p class="hint">设置退款收款方式，提交退款申请后将以此方式退款。</p>
+                        <div class="form-row">
+                            <div class="form-group" style="flex:1">
+                                <label>支付宝账号</label>
+                                <input id="piAlipayAccount" class="form-control" placeholder="请输入支付宝账号">
+                            </div>
+                            <div class="form-group" style="flex:1">
+                                <label>微信账号</label>
+                                <input id="piWechatAccount" class="form-control" placeholder="请输入微信账号">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group" style="flex:1">
+                                <label>支付宝收款码</label>
+                                <div class="qr-upload-zone" id="piAlipayQrZone">
+                                    <img id="piAlipayQrPreview" style="display:none;max-width:140px;border-radius:8px">
+                                    <div class="qr-upload-hint">点击上传收款码</div>
+                                </div>
+                                <input type="file" id="piAlipayQrInput" accept="image/*" style="display:none">
+                                <button class="btn btn-sm btn-outline" id="piAlipayQrClear" style="display:none;margin-top:4px">清除</button>
+                            </div>
+                            <div class="form-group" style="flex:1">
+                                <label>微信收款码</label>
+                                <div class="qr-upload-zone" id="piWechatQrZone">
+                                    <img id="piWechatQrPreview" style="display:none;max-width:140px;border-radius:8px">
+                                    <div class="qr-upload-hint">点击上传收款码</div>
+                                </div>
+                                <input type="file" id="piWechatQrInput" accept="image/*" style="display:none">
+                                <button class="btn btn-sm btn-outline" id="piWechatQrClear" style="display:none;margin-top:4px">清除</button>
+                            </div>
+                        </div>
+                        <button class="btn primary" id="piSaveBtn" style="margin-top:12px">保存收款信息</button>
+                        <div id="piMsg" style="margin-top:8px;font-size:13px"></div>
+                    </div>
+                </section>
+
                 <section class="user-section" id="section-consumption">
                     <div class="user-card">
                         <h3>消费记录</h3>
@@ -1306,7 +1391,7 @@
                         <h4 class="dash-title" style="margin-top:20px">最近订单</h4>
                         <div class="dash-table-wrap">
                             <table class="dash-table" id="dashOrderTable">
-                                <thead><tr><th>套餐</th><th>金额</th><th>状态</th><th>时间</th></tr></thead>
+                                <thead><tr><th>套餐</th><th>金额</th><th>状态</th><th>时间</th><th>操作</th></tr></thead>
                                 <tbody></tbody>
                             </table>
                         </div>
@@ -1703,7 +1788,8 @@
                 model: ['模型设置', '配置自动模型或自有模型。'],
                 script: ['脚本设置', '编辑脚本同步到账号的云端记忆。'],
                 promotion: ['推广返利', '邀请好友赚取现金佣金。'],
-                feedback: ['问题反馈', '提交问题或建议，我们通过邮件回复您。']
+                feedback: ['问题反馈', '提交问题或建议，我们通过邮件回复您。'],
+                'payment-info': ['收款信息', '设置退款收款方式，支付宝或微信。']
             };
             document.querySelectorAll('.user-section').forEach(v => v.classList.remove('active'));
             document.querySelectorAll('.user-menu-item[data-section]').forEach(v => v.classList.toggle('active', v.dataset.section === name));
@@ -1718,6 +1804,7 @@
             if (name === 'billing') { loadProfile(); loadPlans(); }
             if (name === 'promotion') loadPromotion();
             if (name === 'feedback') loadFeedback();
+            if (name === 'payment-info') loadPaymentInfo();
         }
         let dashboardTimer = null;
         async function loadDashboard() {
@@ -1752,8 +1839,8 @@
                 // 最近订单
                 const ot = $('dashOrderTable').querySelector('tbody');
                 ot.innerHTML = (c.recent_orders || []).length
-                    ? c.recent_orders.map(o => '<tr><td>' + (o.plan_name || '-') + '</td><td>¥' + (o.price || 0).toFixed(2) + '</td><td class="tag-' + (o.status === 'paid' ? 'paid' : o.status === 'refunded' ? 'refunded' : 'pending') + '">' + (o.status === 'paid' ? '已支付' : o.status === 'refunded' ? '已退款' : o.status || '-') + '</td><td>' + (o.created_at || '-') + '</td></tr>').join('')
-                    : '<tr><td colspan="4" style="text-align:center;color:var(--v-muted)">暂无订单</td></tr>';
+                    ? c.recent_orders.map(o => '<tr><td>' + (o.plan_name || '-') + '</td><td>¥' + (o.price || 0).toFixed(2) + '</td><td class="tag-' + (o.status === 'paid' ? 'paid' : o.status === 'refunded' ? 'refunded' : 'pending') + '">' + (o.status === 'paid' ? '已支付' : o.status === 'refunded' ? '已退款' : o.status || '-') + '</td><td>' + (o.created_at || '-') + '</td><td>' + (o.status === 'paid' ? '<button class="btn-refund" data-order="' + o.order_no + '" data-plan="' + (o.plan_name || '') + '" data-price="' + (o.price || 0) + '">申请退款</button>' : '') + '</td></tr>').join('')
+                    : '<tr><td colspan="5" style="text-align:center;color:var(--v-muted)">暂无订单</td></tr>';
                 // 图表
                 renderLineChart('answerChart', d.answers_7d || [], ['bank', 'ai'], ['#10b981', '#06b6d4'], ['题库', 'AI']);
                 renderLineChart('activityChart', d.activity_7d || [], ['answers', 'videos', 'exams', 'readings'], ['#10b981', '#06b6d4', '#34d399', '#67e8f9'], ['答题', '视频', '考试', '阅读']);
@@ -2786,6 +2873,118 @@
             } catch (_) { alert('网络错误'); }
             setBusy(this, false);
         };
+
+        // ===== 收款信息 =====
+        let piAlipayQrData = '';
+        let piWechatQrData = '';
+        function readFileAsDataURL(file) {
+            return new Promise((resolve) => {
+                const r = new FileReader();
+                r.onload = () => resolve(r.result);
+                r.readAsDataURL(file);
+            });
+        }
+        async function loadPaymentInfo() {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) return;
+            try {
+                const res = await fetch('/api/user/payment-info', { headers: { Authorization: 'Bearer ' + token } });
+                const d = await res.json().catch(() => ({}));
+                if (d.code === 200 && d.info) {
+                    const info = d.info;
+                    $('piAlipayAccount').value = info.alipay_account || '';
+                    $('piWechatAccount').value = info.wechat_account || '';
+                    piAlipayQrData = info.alipay_qr || '';
+                    piWechatQrData = info.wechat_qr || '';
+                    const aq = $('piAlipayQrPreview');
+                    const wq = $('piWechatQrPreview');
+                    if (piAlipayQrData) { aq.src = piAlipayQrData; aq.style.display = 'block'; aq.parentNode.querySelector('.qr-upload-hint').style.display = 'none'; $('piAlipayQrClear').style.display = ''; }
+                    else { aq.style.display = 'none'; aq.parentNode.querySelector('.qr-upload-hint').style.display = ''; $('piAlipayQrClear').style.display = 'none'; }
+                    if (piWechatQrData) { wq.src = piWechatQrData; wq.style.display = 'block'; wq.parentNode.querySelector('.qr-upload-hint').style.display = 'none'; $('piWechatQrClear').style.display = ''; }
+                    else { wq.style.display = 'none'; wq.parentNode.querySelector('.qr-upload-hint').style.display = ''; $('piWechatQrClear').style.display = 'none'; }
+                }
+            } catch (_) {}
+        }
+        $('piAlipayQrZone').onclick = () => $('piAlipayQrInput').click();
+        $('piWechatQrZone').onclick = () => $('piWechatQrInput').click();
+        $('piAlipayQrInput').onchange = async function () {
+            if (this.files && this.files[0]) {
+                piAlipayQrData = await readFileAsDataURL(this.files[0]);
+                const aq = $('piAlipayQrPreview');
+                aq.src = piAlipayQrData; aq.style.display = 'block';
+                aq.parentNode.querySelector('.qr-upload-hint').style.display = 'none';
+                $('piAlipayQrClear').style.display = '';
+            }
+        };
+        $('piWechatQrInput').onchange = async function () {
+            if (this.files && this.files[0]) {
+                piWechatQrData = await readFileAsDataURL(this.files[0]);
+                const wq = $('piWechatQrPreview');
+                wq.src = piWechatQrData; wq.style.display = 'block';
+                wq.parentNode.querySelector('.qr-upload-hint').style.display = 'none';
+                $('piWechatQrClear').style.display = '';
+            }
+        };
+        $('piAlipayQrClear').onclick = function () {
+            piAlipayQrData = '';
+            const aq = $('piAlipayQrPreview');
+            aq.style.display = 'none';
+            aq.parentNode.querySelector('.qr-upload-hint').style.display = '';
+            this.style.display = 'none';
+        };
+        $('piWechatQrClear').onclick = function () {
+            piWechatQrData = '';
+            const wq = $('piWechatQrPreview');
+            wq.style.display = 'none';
+            wq.parentNode.querySelector('.qr-upload-hint').style.display = '';
+            this.style.display = 'none';
+        };
+        $('piSaveBtn').onclick = async function () {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) return;
+            const data = {
+                alipay_account: $('piAlipayAccount').value.trim(),
+                wechat_account: $('piWechatAccount').value.trim(),
+                alipay_qr: piAlipayQrData,
+                wechat_qr: piWechatQrData
+            };
+            setBusy(this, true, '保存中...');
+            try {
+                const res = await fetch('/api/user/payment-info', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+                    body: JSON.stringify(data)
+                });
+                const d = await res.json().catch(() => ({}));
+                $('piMsg').textContent = d.code === 200 ? '保存成功' : (d.msg || '保存失败');
+                $('piMsg').style.color = d.code === 200 ? '#10b981' : '#ef4444';
+            } catch (_) { $('piMsg').textContent = '网络错误'; $('piMsg').style.color = '#ef4444'; }
+            setBusy(this, false);
+        };
+
+        // ===== 退款申请 =====
+        document.addEventListener('click', async function (e) {
+            const btn = e.target.closest('.btn-refund');
+            if (!btn) return;
+            const orderNo = btn.dataset.order;
+            const planName = btn.dataset.plan;
+            const price = btn.dataset.price;
+            if (!orderNo) return;
+            if (!confirm('确认申请退款「' + planName + ' - ¥' + Number(price).toFixed(2) + '」？\n退款将提交管理员审核，请先设置好收款信息。')) return;
+            setBusy(btn, true, '提交中...');
+            const token = localStorage.getItem(TOKEN_KEY);
+            try {
+                const res = await fetch('/api/user/refund', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+                    body: JSON.stringify({ order_no: orderNo })
+                });
+                const d = await res.json().catch(() => ({}));
+                alert(d.msg || '提交成功');
+                loadDashboard();
+            } catch (_) { alert('网络错误'); }
+            setBusy(btn, false);
+        });
 
         initUserSlider();
         startByPath();

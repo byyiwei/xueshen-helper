@@ -571,6 +571,34 @@ class Database:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
 
+        # ===== 用户收款信息 =====
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS user_payment_info (
+                username VARCHAR(50) PRIMARY KEY COMMENT '用户名',
+                alipay_account VARCHAR(100) DEFAULT '' COMMENT '支付宝账号',
+                alipay_qr TEXT COMMENT '支付宝收款码(base64)',
+                wechat_account VARCHAR(100) DEFAULT '' COMMENT '微信账号',
+                wechat_qr TEXT COMMENT '微信收款码(base64)',
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        # ===== 用户退款申请 =====
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS refund_requests (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(50) NOT NULL COMMENT '申请用户',
+                order_no VARCHAR(64) NOT NULL COMMENT '订单号',
+                reason VARCHAR(200) DEFAULT '' COMMENT '退款原因',
+                status VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT 'pending/approved/rejected',
+                admin_note TEXT COMMENT '管理员备注',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                processed_at TIMESTAMP NULL COMMENT '处理时间',
+                INDEX idx_username (username),
+                INDEX idx_order_no (order_no),
+                INDEX idx_status (status)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
         # ===== 推广返利 =====
         # 邀请关系表
         self.execute("""
@@ -1244,7 +1272,7 @@ class Database:
             print(f"[推广返利] 佣金结算失败 order={order_no}: {e}", flush=True)
         return True, "支付成功，权益已到账"
 
-    def refund_order(self, order_no, reason="", operator=""):
+    def refund_order(self, order_no, reason="", operator="", user_initiated=False):
         """退款订单：撤销权益，标记 refunded 状态"""
         ph = _ph()
         order = self.get_order(order_no)
@@ -1254,6 +1282,8 @@ class Database:
             return False, "仅已支付订单可退款"
         if order.get("refunded_at"):
             return False, "该订单已退款"
+        if user_initiated and order.get("username") != operator:
+            return False, "无权操作此订单"
         # 退款时效检查
         admin = self.get_admin_config() or {}
         refund_days = int(admin.get("refund_days_limit") or 7)
@@ -1298,6 +1328,71 @@ class Database:
             (reason or "", operator or "", order_no)
         )
         return True, "退款成功，权益已撤销"
+
+    def get_user_payment_info(self, username):
+        ph = _ph()
+        row = self.fetchone(f"SELECT * FROM user_payment_info WHERE username = {ph}", (username,))
+        return row or {}
+
+    def save_user_payment_info(self, username, data):
+        ph = _ph()
+        self.execute(f"""
+            INSERT INTO user_payment_info (username, alipay_account, alipay_qr, wechat_account, wechat_qr)
+            VALUES ({ph}, {ph}, {ph}, {ph}, {ph})
+            ON DUPLICATE KEY UPDATE
+                alipay_account = VALUES(alipay_account),
+                alipay_qr = VALUES(alipay_qr),
+                wechat_account = VALUES(wechat_account),
+                wechat_qr = VALUES(wechat_qr)
+        """, (username, data.get("alipay_account", ""), data.get("alipay_qr", ""),
+              data.get("wechat_account", ""), data.get("wechat_qr", "")))
+
+    def create_refund_request(self, username, order_no, reason=""):
+        ph = _ph()
+        order = self.get_order(order_no)
+        if not order:
+            return False, "订单不存在"
+        if order.get("username") != username:
+            return False, "无权操作此订单"
+        if order.get("status") != "paid":
+            return False, "仅已支付订单可申请退款"
+        existing = self.fetchone(f"SELECT id FROM refund_requests WHERE order_no = {ph} AND status = 'pending'", (order_no,))
+        if existing:
+            return False, "该订单已有待处理的退款申请"
+        self.execute(
+            f"INSERT INTO refund_requests (username, order_no, reason) VALUES ({ph}, {ph}, {ph})",
+            (username, order_no, reason)
+        )
+        return True, "退款申请已提交，请等待管理员处理"
+
+    def list_refund_requests(self, status="", page=1, page_size=20):
+        ph = _ph()
+        where = ""
+        params = []
+        if status:
+            where = f"WHERE r.status = {ph}"
+            params.append(status)
+        total = self.fetchone(f"SELECT COUNT(*) cnt FROM refund_requests r {where}", params)["cnt"]
+        offset = (page - 1) * page_size
+        rows = self.fetchall(
+            f"SELECT r.*, o.plan_name, o.price, o.created_at order_created_at FROM refund_requests r "
+            f"LEFT JOIN payment_orders o ON r.order_no = o.order_no {where} ORDER BY r.created_at DESC LIMIT {ph} OFFSET {ph}",
+            params + [page_size, offset]
+        )
+        return {"total": total, "rows": rows or []}
+
+    def process_refund_request(self, request_id, status, admin_note=""):
+        ph = _ph()
+        row = self.fetchone(f"SELECT * FROM refund_requests WHERE id = {ph}", (request_id,))
+        if not row:
+            return False, "申请不存在"
+        if row["status"] != "pending":
+            return False, "该申请已处理"
+        self.execute(
+            f"UPDATE refund_requests SET status = {ph}, admin_note = {ph}, processed_at = CURRENT_TIMESTAMP WHERE id = {ph}",
+            (status, admin_note, request_id)
+        )
+        return True, "处理成功"
 
     def _revoke_user_membership(self, username, days):
         """撤销用户包月天数（从 member_until 向前减少）"""

@@ -2856,6 +2856,13 @@ class Handler(BaseHTTPRequestHandler):
                 "wechat_account": info.get("wechat_account") or "",
                 "wechat_qr": info.get("wechat_qr") or ""
             }})
+        elif path == "/api/user/payment-info":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "请先登录"})
+                return
+            info = db.get_user_payment_info(user["username"]) or {}
+            self._send_json(200, {"code": 200, "info": info})
         elif path == "/api/v1/auth":
             self._send_json(200, {"code": 200, "msg": "ok", "data": {"status": "running", "models": build_models_html()}})
         elif path == "/api/auth/current-session":
@@ -3358,6 +3365,19 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        elif path == "/admin/refund-requests":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                status = qs.get("status", [""])[0]
+                page = int(qs.get("page", [1])[0])
+                result = db.list_refund_requests(status=status, page=page)
+                self._send_json(200, {"code": 200, **result})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         # ==================== 推广返利管理（GET） ====================
         elif path == "/admin/referral/config":
             if not self._check_admin():
@@ -3843,6 +3863,45 @@ class Handler(BaseHTTPRequestHandler):
                 db.update_feedback_status(feedback_id, "processing")
                 threading.Thread(target=_send_feedback_notify, args=(feedback_id, "reply", fb.get("username",""), fb.get("category",""), fb.get("title",""), content), daemon=True).start()
                 self._send_json(200, {"code": 200, "msg": "回复成功"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        # ========== 用户端申请退款 ==========
+        elif path == "/api/user/refund":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "请先登录"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                order_no = (data.get("order_no") or "").strip()
+                reason = (data.get("reason") or "").strip()
+                if not order_no:
+                    self._send_json(400, {"code": 400, "msg": "订单号不能为空"})
+                    return
+                if len(reason) > 200:
+                    self._send_json(400, {"code": 400, "msg": "退款原因不能超过200字"})
+                    return
+                username = user["username"]
+                ok, msg = db.create_refund_request(username, order_no, reason)
+                if not ok:
+                    self._send_json(400, {"code": 400, "msg": msg})
+                    return
+                self._send_json(200, {"code": 200, "msg": msg})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        # ========== 用户端保存收款信息 ==========
+        elif path == "/api/user/payment-info":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "请先登录"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                username = user["username"]
+                db.save_user_payment_info(username, data)
+                self._send_json(200, {"code": 200, "msg": "保存成功"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -4498,6 +4557,28 @@ class Handler(BaseHTTPRequestHandler):
                 admin_cfg = db.get_admin_config() or {}
                 operator = admin_cfg.get("username") or "admin"
                 ok, msg = db.refund_order(order_no, reason=reason, operator=operator)
+                self._send_json(200 if ok else 400, {"code": 200 if ok else 400, "msg": msg})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/refund-request/process":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                request_id = int(data.get("id") or 0)
+                status = (data.get("status") or "").strip()
+                note = (data.get("note") or "").strip()
+                if not request_id or status not in ("approved", "rejected"):
+                    self._send_json(400, {"code": 400, "msg": "参数错误"})
+                    return
+                ok, msg = db.process_refund_request(request_id, status, note)
+                # 如果管理员批准退款，执行实际退款
+                if ok and status == "approved":
+                    row = db.fetchone("SELECT * FROM refund_requests WHERE id = %s", (request_id,))
+                    if row:
+                        db.refund_order(row["order_no"], reason=row.get("reason") or "用户申请退款", operator="admin")
                 self._send_json(200 if ok else 400, {"code": 200 if ok else 400, "msg": msg})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
