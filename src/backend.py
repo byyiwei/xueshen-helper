@@ -27,7 +27,7 @@ from email.mime.text import MIMEText
 from email.utils import formataddr
 from datetime import datetime, timedelta
 
-from database import db, hash_password, verify_password, is_legacy_password
+from database import db, hash_password, verify_password, is_legacy_password, get_db_config, save_db_config
 
 # ==================== 全局配置 ====================
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -427,7 +427,8 @@ def alipay_api_call(method, biz_content, skip_enabled_check=False):
     return res
 
 def create_alipay_precreate_order(username, plan, skip_enabled_check=False):
-    order_no = db.create_pending_order(username, plan, pay_method="alipay", pay_channel="alipay")
+    business_type = "套餐购买" if plan.get("plan_type") == "monthly" else "点数充值"
+    order_no = db.create_pending_order(username, plan, pay_method="alipay", pay_channel="alipay", pay_type="alipay_precreate", business_type=business_type)
     subject = f"学神助手-{plan.get('name')}"
     res = alipay_api_call("alipay.trade.precreate", {
         "out_trade_no": order_no,
@@ -466,7 +467,8 @@ def create_zhifufm_order(username, plan, pay_type="alipay", skip_enabled_check=F
     return_url = (admin.get("zhifufm_return_url") or "").strip()
     if not api_url or not merchant_num or not secret:
         raise RuntimeError("支付FM配置不完整")
-    order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="zhifufm")
+    business_type = "套餐购买" if plan.get("plan_type") == "monthly" else "点数充值"
+    order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="zhifufm", pay_type="sandpayh5", business_type=business_type)
     amount = f"{float(plan.get('price') or 0):.2f}"
     # 按支付FM文档：待签名字符串=商户号+商户订单号+支付金额+异步通知地址+接入密钥
     sign_str = merchant_num + order_no + amount + notify_url + secret
@@ -539,6 +541,7 @@ def create_sandpay_order(username, plan, pay_type="alipay", skip_enabled_check=F
     private_key_text = admin.get("sandpay_private_key") or ""
     if not api_url or not mid:
         raise RuntimeError("杉德支付配置不完整")
+    business_type = "套餐购买" if plan.get("plan_type") == "monthly" else "点数充值"
     # 若传入了自定义body且含orderCode，则使用该orderCode作为数据库订单号
     custom_order_no = (custom_body or {}).get("orderCode", "") if custom_body else ""
     if custom_order_no:
@@ -546,9 +549,9 @@ def create_sandpay_order(username, plan, pay_type="alipay", skip_enabled_check=F
         # 将自定义订单写入数据库（如果不存在则创建）
         existing = db.get_order(order_no)
         if not existing:
-            db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="sandpay", order_no=order_no)
+            db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="sandpay", order_no=order_no, pay_type=pay_type, business_type=business_type)
     else:
-        order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="sandpay")
+        order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="sandpay", pay_type=pay_type, business_type=business_type)
     amount_yuan = float(plan.get('price') or 0)
     # 杉德金额格式：12位数字，单位分，如 000000000001 = 0.01元
     amount_fen = int(round(amount_yuan * 100))
@@ -703,7 +706,8 @@ def create_epay_order(username, plan, pay_type="alipay", skip_enabled_check=Fals
     return_url = (admin.get("epay_return_url") or "").strip()
     if not api_url or not pid or not key:
         raise RuntimeError("易支付配置不完整")
-    order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="epay")
+    business_type = "套餐购买" if plan.get("plan_type") == "monthly" else "点数充值"
+    order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="epay", pay_type=pay_type, business_type=business_type)
     amount = f"{float(plan.get('price') or 0):.2f}"
     name = f"学神助手-{plan.get('name', '')}"
     # 按照易支付标准签名：参数排序拼接 + 密钥直接追加
@@ -3102,8 +3106,11 @@ class Handler(BaseHTTPRequestHandler):
                 params = {k: v[0] for k, v in qs.items()}
                 if verify_epay_notify(params) and params.get("trade_status") == "TRADE_SUCCESS":
                     order_no = params.get("out_trade_no", "")
+                    trade_no = params.get("trade_no", "")
                     order = db.get_order(order_no)
                     if order and order.get("status") != "paid":
+                        if trade_no:
+                            db.update_order_payment(order_no, trade_no=trade_no)
                         db.apply_paid_order(order_no)
                     self._send_text(200, "success")
                 else:
@@ -3127,6 +3134,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
             PROVIDERS = refresh_providers_from_storage()
             self._send_json(200, {"code": 200, "config": {"providers": PROVIDERS}, "ready_count": provider_ready_count(PROVIDERS), "provider_count": len(PROVIDERS or {})})
+        elif path == "/admin/db-config":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            self._send_json(200, {"code": 200, "config": get_db_config()})
         elif path == "/admin/email-config":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -3356,6 +3368,7 @@ class Handler(BaseHTTPRequestHandler):
                 username=qs.get("username", [""])[0],
                 status=qs.get("status", [""])[0],
                 plan_name=qs.get("plan_name", [""])[0],
+                pay_method=qs.get("pay_method", [""])[0],
                 date_from=qs.get("date_from", [""])[0],
                 date_to=qs.get("date_to", [""])[0],
                 sort=qs.get("sort", ["created_at"])[0],
@@ -4062,6 +4075,28 @@ class Handler(BaseHTTPRequestHandler):
                 return
             PROVIDERS = refresh_providers_from_storage()
             self._send_json(200, {"code": 200, "config": {"providers": PROVIDERS}, "ready_count": provider_ready_count(PROVIDERS), "provider_count": len(PROVIDERS or {})})
+
+        elif path == "/admin/db-config":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                only_test = "test=1" in (parsed.query or "")
+                if only_test:
+                    ok, msg = test_db_config(data)
+                    if not ok:
+                        self._send_json(400, {"code": 400, "msg": "连接测试失败：" + msg})
+                        return
+                    self._send_json(200, {"code": 200, "msg": "连接测试成功", "config": get_db_config()})
+                    return
+                ok, msg = save_db_config(data)
+                if not ok:
+                    self._send_json(400, {"code": 400, "msg": msg})
+                    return
+                self._send_json(200, {"code": 200, "msg": msg, "config": get_db_config()})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
 
         elif path == "/admin/save":
             if not self._check_admin():

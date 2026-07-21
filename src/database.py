@@ -22,12 +22,38 @@ MYSQL_CONFIG = {
     "user": os.environ.get("MYSQL_USER", "xuexitong"),
     "password": os.environ.get("MYSQL_PASSWORD", ""),
     "database": os.environ.get("MYSQL_DATABASE", "xuexitong"),
-    "charset": "utf8mb4",
-    "connect_timeout": 8,
-    "read_timeout": 15,
-    "write_timeout": 15
+  "charset": "utf8mb4",
+  "connect_timeout": 8,
+  "read_timeout": 15,
+  "write_timeout": 15
 }
 # ==============================================
+
+# 数据库连接的持久化配置文件：运行时在后台「系统设置」中修改后会写入此文件，重启后仍生效。
+DB_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config", "db.json")
+
+# 当前生效的 Database 单例（运行时切换数据库后用于重建表结构）
+DB_INSTANCE = None
+
+
+def _apply_db_config_file():
+    """若存在磁盘配置文件，则用其覆盖 MYSQL_CONFIG 的环境变量默认值"""
+    if not os.path.exists(DB_CONFIG_FILE):
+        return
+    try:
+        with open(DB_CONFIG_FILE, "r", encoding="utf-8") as _f:
+            _data = json.load(_f)
+        for _k in ("host", "port", "user", "password", "database"):
+            if _k in _data and _data[_k] not in (None, ""):
+                MYSQL_CONFIG[_k] = _data[_k]
+        if _data.get("port"):
+            MYSQL_CONFIG["port"] = int(_data["port"])
+        print(f"[数据库配置] 已从配置文件加载连接参数: {MYSQL_CONFIG['host']}:{MYSQL_CONFIG['port']}/{MYSQL_CONFIG['database']}")
+    except Exception as _e:
+        print(f"[数据库配置] 读取配置文件失败，使用环境变量默认值: {_e}")
+
+
+_apply_db_config_file()
 
 
 def _ph():
@@ -40,12 +66,93 @@ def _adapt_params(params):
     return tuple(params)
 
 
+def get_db_config():
+    """返回当前数据库连接配置（密码做掩码处理，避免泄露）"""
+    pwd = MYSQL_CONFIG.get("password", "")
+    return {
+        "host": MYSQL_CONFIG.get("host", "127.0.0.1"),
+        "port": int(MYSQL_CONFIG.get("port", 3306)),
+        "user": MYSQL_CONFIG.get("user", ""),
+        "password": "********" if pwd else "",
+        "database": MYSQL_CONFIG.get("database", ""),
+    }
+
+
+def test_db_config(cfg):
+    """使用给定参数测试能否连接 MySQL，返回 (ok, error_msg)"""
+    import pymysql
+    try:
+        conn = pymysql.connect(
+            host=cfg.get("host", "127.0.0.1"),
+            port=int(cfg.get("port", 3306)),
+            user=cfg.get("user", ""),
+            password=cfg.get("password", ""),
+            database=cfg.get("database", ""),
+            charset="utf8mb4",
+            connect_timeout=8,
+        )
+        conn.close()
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+def save_db_config(cfg):
+    """校验连接后持久化到配置文件并热更新当前连接配置。返回 (ok, msg)"""
+    host = (cfg.get("host") or "").strip()
+    port = int(cfg.get("port", 3306))
+    user = (cfg.get("user") or "").strip()
+    password = cfg.get("password") or ""
+    database = (cfg.get("database") or "").strip()
+    if not host or not user or not database:
+        return False, "主机、用户名和数据库名均不能为空"
+    # 密码框未改动（仍为掩码）时，保留当前密码
+    if password == "********":
+        password = MYSQL_CONFIG.get("password", "")
+
+    ok, err = test_db_config({"host": host, "port": port, "user": user, "password": password, "database": database})
+    if not ok:
+        return False, f"连接测试失败：{err}"
+
+    try:
+        os.makedirs(os.path.dirname(DB_CONFIG_FILE), exist_ok=True)
+        with open(DB_CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "host": host,
+                "port": port,
+                "user": user,
+                "password": password,
+                "database": database,
+            }, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        return False, f"配置文件写入失败：{e}"
+
+    # 热更新当前连接配置（后续新建连接生效）
+    MYSQL_CONFIG["host"] = host
+    MYSQL_CONFIG["port"] = port
+    MYSQL_CONFIG["user"] = user
+    MYSQL_CONFIG["password"] = password
+    MYSQL_CONFIG["database"] = database
+
+    # 在新库上重建/校验表结构（best-effort）
+    table_msg = ""
+    try:
+        if DB_INSTANCE is not None:
+            DB_INSTANCE._init_tables()
+    except Exception as e:
+        table_msg = f"（表结构初始化失败：{e}，请确认该数据库已准备就绪）"
+
+    return True, "数据库连接已更新并持久化" + table_msg
+
+
 class Database:
     def __init__(self):
+        global DB_INSTANCE
         self.conn = None
         self.lock = threading.RLock()
         self._connect()
         self._init_tables()
+        DB_INSTANCE = self
 
     def _connect(self):
         # MySQL 多人并发场景下不复用单个连接；每次查询创建短连接，避免 PyMySQL 连接跨线程冲突。
@@ -191,6 +298,15 @@ class Database:
                 points INT DEFAULT 0,
                 days INT DEFAULT 0,
                 status VARCHAR(20) DEFAULT 'paid',
+                pay_method VARCHAR(20),
+                pay_channel VARCHAR(20),
+                trade_no VARCHAR(128),
+                bank_order_no VARCHAR(128),
+                pay_type VARCHAR(50),
+                business_type VARCHAR(50),
+                qr_code TEXT,
+                pay_url TEXT,
+                paid_at TIMESTAMP NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_username (username),
                 INDEX idx_created_at (created_at)
@@ -788,6 +904,9 @@ class Database:
         self._add_column_if_missing("payment_orders", "qr_code", "qr_code TEXT")
         self._add_column_if_missing("payment_orders", "pay_url", "pay_url TEXT")
         self._add_column_if_missing("payment_orders", "paid_at", "paid_at TIMESTAMP NULL")
+        self._add_column_if_missing("payment_orders", "bank_order_no", "bank_order_no VARCHAR(128)")
+        self._add_column_if_missing("payment_orders", "pay_type", "pay_type VARCHAR(50)")
+        self._add_column_if_missing("payment_orders", "business_type", "business_type VARCHAR(50)")
 
     # ==================== 用户相关 ====================
     def create_user(self, username, email, password_hash, invite_code=None):
@@ -1037,18 +1156,19 @@ class Database:
         self.apply_paid_order(order_no)
         return order_no
 
-    def create_pending_order(self, username, plan, pay_method="alipay", pay_channel="", trade_no="", qr_code="", pay_url="", order_no=None):
+    def create_pending_order(self, username, plan, pay_method="alipay", pay_channel="", trade_no="", qr_code="", pay_url="", order_no=None, bank_order_no="", pay_type="", business_type=""):
         ph = _ph()
         if not order_no:
             order_no = f"ORD{int(time.time()*1000)}{abs(hash(username)) % 10000:04d}"
         self.execute(
-            f"""INSERT INTO payment_orders (order_no, username, plan_id, plan_name, plan_type, price, points, days, status, pay_method, pay_channel, trade_no, qr_code, pay_url)
-                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'pending', {ph}, {ph}, {ph}, {ph}, {ph})""",
+            f"""INSERT INTO payment_orders (order_no, username, plan_id, plan_name, plan_type, price, points, days, status, pay_method, pay_channel, trade_no, qr_code, pay_url, bank_order_no, pay_type, business_type)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'pending', {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
             (
                 order_no, username, int(plan.get("id") or 0), plan.get("name", ""),
                 plan.get("plan_type", ""), float(plan.get("price") or 0),
                 int(plan.get("points") or 0), int(plan.get("days") or 0),
-                pay_method, pay_channel, trade_no, qr_code, pay_url
+                pay_method, pay_channel, trade_no, qr_code, pay_url,
+                bank_order_no, pay_type, business_type
             )
         )
         return order_no
@@ -1057,7 +1177,7 @@ class Database:
         ph = _ph()
         return self.fetchone(f"SELECT * FROM payment_orders WHERE order_no = {ph}", (order_no,))
 
-    def update_order_payment(self, order_no, trade_no="", qr_code="", status=None, pay_url=""):
+    def update_order_payment(self, order_no, trade_no="", qr_code="", status=None, pay_url="", bank_order_no="", pay_type="", paid_at=None):
         ph = _ph()
         sets = []
         params = []
@@ -1073,6 +1193,15 @@ class Database:
         if status:
             sets.append(f"status = {ph}")
             params.append(status)
+        if bank_order_no:
+            sets.append(f"bank_order_no = {ph}")
+            params.append(bank_order_no)
+        if pay_type:
+            sets.append(f"pay_type = {ph}")
+            params.append(pay_type)
+        if paid_at:
+            sets.append(f"paid_at = {ph}")
+            params.append(paid_at)
         if not sets:
             return
         params.append(order_no)
@@ -1193,7 +1322,7 @@ class Database:
             return self.fetchall(f"SELECT * FROM payment_orders WHERE username = {ph} ORDER BY id DESC LIMIT {int(limit)}", (username,))
         return self.fetchall(f"SELECT * FROM payment_orders ORDER BY id DESC LIMIT {int(limit)}")
 
-    def list_payment_orders_admin(self, username="", status="", plan_name="", date_from="", date_to="", sort="created_at", order="desc", page=1, page_size=20):
+    def list_payment_orders_admin(self, username="", status="", plan_name="", pay_method="", date_from="", date_to="", sort="created_at", order="desc", page=1, page_size=20):
         """管理员支付明细查询，支持筛选/排序/分页"""
         ph = _ph()
         where = []
@@ -1207,6 +1336,9 @@ class Database:
         if plan_name:
             where.append(f"plan_name = {ph}")
             params.append(plan_name)
+        if pay_method:
+            where.append(f"pay_method = {ph}")
+            params.append(pay_method)
         if date_from:
             where.append(f"DATE(created_at) >= {ph}")
             params.append(date_from)
