@@ -4574,11 +4574,32 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(400, {"code": 400, "msg": "参数错误"})
                     return
                 ok, msg = db.process_refund_request(request_id, status, note)
-                # 如果管理员批准退款，执行实际退款
-                if ok and status == "approved":
+                # 发送邮件通知
+                if ok:
                     row = db.fetchone("SELECT * FROM refund_requests WHERE id = %s", (request_id,))
                     if row:
-                        db.refund_order(row["order_no"], reason=row.get("reason") or "用户申请退款", operator="admin")
+                        if status == "approved":
+                            db.refund_order(row["order_no"], reason=row.get("reason") or "用户申请退款", operator="admin")
+                        # 获取用户邮箱
+                        user_row = db.fetchone("SELECT email FROM users WHERE username = %s", (row["username"],))
+                        if user_row and user_row.get("email"):
+                            order = db.get_order(row["order_no"])
+                            scene = "refund_approved" if status == "approved" else "refund_rejected"
+                            threading.Thread(target=send_email, args=(
+                                user_row["email"],
+                                f"退款申请{('已通过' if status == 'approved' else '已拒绝')} - {row['order_no']}",
+                            ), kwargs={
+                                "scene": scene,
+                                "variables": {
+                                    "username": row["username"],
+                                    "order_no": row["order_no"],
+                                    "plan_name": (order or {}).get("plan_name") or "",
+                                    "price": str((order or {}).get("price") or "0"),
+                                    "reason": row.get("reason") or "",
+                                    "note": note or "无",
+                                    "subject": f"退款申请{('已通过' if status == 'approved' else '已拒绝')} - {row['order_no']}"
+                                }
+                            }, daemon=True).start()
                 self._send_json(200 if ok else 400, {"code": 200 if ok else 400, "msg": msg})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})

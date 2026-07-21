@@ -2886,8 +2886,8 @@ createApp({
     const templateModal=ref({show:false});
     const templateForm=ref({scene:'',subject:'',body_text:'',body_html:'',body_text_plain:'',content_type:'text',is_resend:false});
     const editingTemplateId=ref(null);
-    const TEMPLATE_SCENES={user_register:'用户注册验证码',user_reset:'用户密码重置验证码',admin_reset:'管理员密码重置验证码',referral_withdrawal:'推广提现通知',feedback_reply:'问题反馈回复',daily_report:'每日运营数据日报',feedback_new:'新问题反馈通知'};
-    const SCENE_VARS={user_register:['username','code','subject','from_addr'],user_reset:['username','code','subject','from_addr'],admin_reset:['username','code','subject','from_addr'],referral_withdrawal:['username','amount','status','reason','subject','from_addr'],feedback_reply:['username','title','reply_text','subject','from_addr'],daily_report:['date','reg_count','order_count','revenue_total','monthly_count','monthly_revenue','points_count','points_revenue','subject','from_addr'],feedback_new:['username','category','title','content','subject','from_addr']};
+    const TEMPLATE_SCENES={user_register:'用户注册验证码',user_reset:'用户密码重置验证码',admin_reset:'管理员密码重置验证码',referral_withdrawal:'推广提现通知',feedback_reply:'问题反馈回复',daily_report:'每日运营数据日报',feedback_new:'新问题反馈通知',refund_approved:'退款申请通过',refund_rejected:'退款申请拒绝'};
+    const SCENE_VARS={user_register:['username','code','subject','from_addr'],user_reset:['username','code','subject','from_addr'],admin_reset:['username','code','subject','from_addr'],referral_withdrawal:['username','amount','status','reason','subject','from_addr'],feedback_reply:['username','title','reply_text','subject','from_addr'],daily_report:['date','reg_count','order_count','revenue_total','monthly_count','monthly_revenue','points_count','points_revenue','subject','from_addr'],feedback_new:['username','category','title','content','subject','from_addr'],refund_approved:['username','order_no','plan_name','price','reason','note','subject','from_addr'],refund_rejected:['username','order_no','plan_name','price','reason','note','subject','from_addr']};
     const SCENE_DEFAULTS={
       user_register:{
         subject:'学神助手 - 注册验证码',
