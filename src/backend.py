@@ -4585,19 +4585,37 @@ class Handler(BaseHTTPRequestHandler):
                         if user_row and user_row.get("email"):
                             order = db.get_order(row["order_no"])
                             scene = "refund_approved" if status == "approved" else "refund_rejected"
+                            plan_name = (order or {}).get("plan_name") or ""
+                            price = str((order or {}).get("price") or "0")
+                            refund_reason = row.get("reason") or ""
+                            status_text = "已通过" if status == "approved" else "已拒绝"
+                            fallback_html = f"""<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
+<h2 style="color:#1e293b">退款申请{status_text}</h2>
+<p style="color:#475569">您好，您的退款申请已被管理员{status_text}。</p>
+<table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px">
+<tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">订单号</td><td style="padding:8px 12px;border:1px solid #e2e8f0;font-weight:600">{row['order_no']}</td></tr>
+<tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">套餐</td><td style="padding:8px 12px;border:1px solid #e2e8f0">{plan_name}</td></tr>
+<tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">金额</td><td style="padding:8px 12px;border:1px solid #e2e8f0">¥{price}</td></tr>
+<tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">退款原因</td><td style="padding:8px 12px;border:1px solid #e2e8f0">{refund_reason or '无'}</td></tr>
+<tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">管理员备注</td><td style="padding:8px 12px;border:1px solid #e2e8f0">{note or '无'}</td></tr>
+</table>
+<p style="color:#94a3b8;font-size:13px">如有疑问请联系管理员。</p>
+</div>"""
                             threading.Thread(target=send_email, args=(
                                 user_row["email"],
-                                f"退款申请{('已通过' if status == 'approved' else '已拒绝')} - {row['order_no']}",
+                                f"退款申请{status_text} - {row['order_no']}",
                             ), kwargs={
                                 "scene": scene,
+                                "body_html": fallback_html,
+                                "body_text": f"退款申请{status_text}\n\n订单号：{row['order_no']}\n套餐：{plan_name}\n金额：¥{price}\n退款原因：{refund_reason or '无'}\n管理员备注：{note or '无'}",
                                 "variables": {
                                     "username": row["username"],
                                     "order_no": row["order_no"],
-                                    "plan_name": (order or {}).get("plan_name") or "",
-                                    "price": str((order or {}).get("price") or "0"),
-                                    "reason": row.get("reason") or "",
+                                    "plan_name": plan_name,
+                                    "price": price,
+                                    "reason": refund_reason,
                                     "note": note or "无",
-                                    "subject": f"退款申请{('已通过' if status == 'approved' else '已拒绝')} - {row['order_no']}"
+                                    "subject": f"退款申请{status_text} - {row['order_no']}"
                                 }
                             }, daemon=True).start()
                 self._send_json(200 if ok else 400, {"code": 200 if ok else 400, "msg": msg})
