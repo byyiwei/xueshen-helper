@@ -1356,9 +1356,16 @@ class Database:
             return False, "无权操作此订单"
         if order.get("status") != "paid":
             return False, "仅已支付订单可申请退款"
-        existing = self.fetchone(f"SELECT id FROM refund_requests WHERE order_no = {ph} AND status = 'pending'", (order_no,))
+        if order.get("refunded_at"):
+            return False, "该订单已退款"
+        existing = self.fetchone(f"SELECT id, status FROM refund_requests WHERE order_no = {ph} ORDER BY id DESC LIMIT 1", (order_no,))
         if existing:
-            return False, "该订单已有待处理的退款申请"
+            if existing["status"] == "pending":
+                return False, "该订单已有待处理的退款申请"
+            if existing["status"] == "approved":
+                return False, "该订单已退款成功"
+            if existing["status"] == "rejected":
+                return False, "该订单的退款申请已被拒绝"
         self.execute(
             f"INSERT INTO refund_requests (username, order_no, reason) VALUES ({ph}, {ph}, {ph})",
             (username, order_no, reason)
@@ -2531,13 +2538,26 @@ class Database:
                     deadline = paid_at + timedelta(days=refund_days)
                     if datetime.now() <= deadline:
                         can_refund = True
+            order_nos = [ri.get('order_no') for ri in rows if ri.get('order_no')]
+            refund_req_map = {}
+            if order_nos:
+                placeholders = ",".join([ph] * len(order_nos))
+                req_rows = self.fetchall(
+                    f"SELECT r.order_no, r.status FROM refund_requests r WHERE r.order_no IN ({placeholders}) ORDER BY r.id DESC",
+                    order_nos
+                )
+                for rr in (req_rows or []):
+                    if rr['order_no'] not in refund_req_map:
+                        refund_req_map[rr['order_no']] = rr['status']
+            rr_status = refund_req_map.get(r.get('order_no'), '')
             recent_orders.append({
                 'order_no': r.get('order_no') or '',
                 'plan_name': r.get('plan_name') or '',
                 'price': float(r.get('price') or 0),
                 'status': r.get('status') or '',
                 'created_at': str(ca) if ca else '',
-                'can_refund': can_refund,
+                'can_refund': can_refund and not rr_status,
+                'refund_request_status': rr_status,
             })
 
         result['consumption'] = {
