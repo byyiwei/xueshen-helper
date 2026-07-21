@@ -1375,8 +1375,12 @@ class Database:
         total = self.fetchone(f"SELECT COUNT(*) cnt FROM refund_requests r {where}", params)["cnt"]
         offset = (page - 1) * page_size
         rows = self.fetchall(
-            f"SELECT r.*, o.plan_name, o.price, o.created_at order_created_at FROM refund_requests r "
-            f"LEFT JOIN payment_orders o ON r.order_no = o.order_no {where} ORDER BY r.created_at DESC LIMIT {ph} OFFSET {ph}",
+            f"SELECT r.*, o.plan_name, o.price, o.created_at order_created_at, "
+            f"p.alipay_account, p.alipay_qr, p.wechat_account, p.wechat_qr "
+            f"FROM refund_requests r "
+            f"LEFT JOIN payment_orders o ON r.order_no = o.order_no "
+            f"LEFT JOIN user_payment_info p ON r.username = p.username "
+            f"{where} ORDER BY r.created_at DESC LIMIT {ph} OFFSET {ph}",
             params + [page_size, offset]
         )
         return {"total": total, "rows": rows or []}
