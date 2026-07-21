@@ -657,6 +657,7 @@
         .dash-table tr:last-child td { border-bottom: none; }
         .dash-table .tag-paid { color: #4ade80; font-weight: 700; }
         .dash-table .tag-pending { color: #fbbf24; font-weight: 700; }
+        .dash-table .tag-refunded { color: #f87171; font-weight: 700; }
 
         /* ===================== 套餐购买 ===================== */
         .billing-hero { position: relative; overflow: hidden; padding: 28px 26px; border-radius: var(--v-radius); border: 1px solid rgba(16, 185, 129, .3); background: linear-gradient(135deg, #047857 0%, #0d9488 50%, #06b6d4 100%); color: #ecfdf5; margin-bottom: 18px; box-shadow: 0 16px 40px rgba(13, 148, 136, .35), 0 0 30px rgba(16, 185, 129, .2); }
@@ -1751,7 +1752,7 @@
                 // 最近订单
                 const ot = $('dashOrderTable').querySelector('tbody');
                 ot.innerHTML = (c.recent_orders || []).length
-                    ? c.recent_orders.map(o => '<tr><td>' + (o.plan_name || '-') + '</td><td>¥' + (o.price || 0).toFixed(2) + '</td><td class="tag-' + (o.status === 'paid' ? 'paid' : 'pending') + '">' + (o.status === 'paid' ? '已支付' : o.status || '-') + '</td><td>' + (o.created_at || '-') + '</td></tr>').join('')
+                    ? c.recent_orders.map(o => '<tr><td>' + (o.plan_name || '-') + '</td><td>¥' + (o.price || 0).toFixed(2) + '</td><td class="tag-' + (o.status === 'paid' ? 'paid' : o.status === 'refunded' ? 'refunded' : 'pending') + '">' + (o.status === 'paid' ? '已支付' : o.status === 'refunded' ? '已退款' : o.status || '-') + '</td><td>' + (o.created_at || '-') + '</td></tr>').join('')
                     : '<tr><td colspan="4" style="text-align:center;color:var(--v-muted)">暂无订单</td></tr>';
                 // 图表
                 renderLineChart('answerChart', d.answers_7d || [], ['bank', 'ai'], ['#10b981', '#06b6d4'], ['题库', 'AI']);

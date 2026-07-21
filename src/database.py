@@ -206,6 +206,11 @@ class Database:
 
         self._ensure_payment_columns()
 
+        # 退款相关列
+        self._add_column_if_missing("payment_orders", "refunded_at", "refunded_at TIMESTAMP NULL COMMENT '退款时间'")
+        self._add_column_if_missing("payment_orders", "refund_reason", "refund_reason VARCHAR(500) DEFAULT '' COMMENT '退款原因'")
+        self._add_column_if_missing("payment_orders", "refunded_by", "refunded_by VARCHAR(50) DEFAULT '' COMMENT '退款操作人'")
+
         # 用户脚本设置云端记忆
         self.execute("""
             CREATE TABLE IF NOT EXISTS user_settings (
@@ -896,6 +901,7 @@ class Database:
         self._add_column_if_missing("admin_config", "referral_settle_days", "referral_settle_days INT DEFAULT 7")
         self._add_column_if_missing("admin_config", "feedback_auto_close_days", "feedback_auto_close_days INT DEFAULT 7")
         self._add_column_if_missing("admin_config", "feedback_notify_enabled", "feedback_notify_enabled TINYINT DEFAULT 0")
+        self._add_column_if_missing("admin_config", "refund_days_limit", "refund_days_limit INT DEFAULT 7 COMMENT '退款时效（天），0=不允许退款'")
 
     def _ensure_order_payment_columns(self):
         self._add_column_if_missing("payment_orders", "pay_method", "pay_method VARCHAR(20)")
@@ -1238,6 +1244,99 @@ class Database:
             print(f"[推广返利] 佣金结算失败 order={order_no}: {e}", flush=True)
         return True, "支付成功，权益已到账"
 
+    def refund_order(self, order_no, reason="", operator=""):
+        """退款订单：撤销权益，标记 refunded 状态"""
+        ph = _ph()
+        order = self.get_order(order_no)
+        if not order:
+            return False, "订单不存在"
+        if order.get("status") != "paid":
+            return False, "仅已支付订单可退款"
+        if order.get("refunded_at"):
+            return False, "该订单已退款"
+        # 退款时效检查
+        admin = self.get_admin_config() or {}
+        refund_days = int(admin.get("refund_days_limit") or 7)
+        if refund_days > 0:
+            paid_at = order.get("paid_at")
+            if paid_at:
+                if isinstance(paid_at, str):
+                    paid_at = datetime.strptime(paid_at.split(".")[0], "%Y-%m-%d %H:%M:%S")
+                from datetime import timedelta
+                deadline = paid_at + timedelta(days=refund_days)
+                if datetime.now() > deadline:
+                    return False, f"该订单已超过 {refund_days} 天退款时效，无法退款"
+        if order.get("plan_type") == "monthly":
+            ok = self._revoke_user_membership(order["username"], int(order.get("days") or 30))
+            self.execute(
+                f"INSERT INTO usage_logs (username, delta_points, balance_after, reason) VALUES ({ph}, 0, 0, {ph})",
+                (order["username"], f"退款撤销包月：{order.get('plan_name','')} ({order_no}) 原因：{reason or '管理员退款'}")
+            )
+        else:
+            points = int(order.get("points") or 0)
+            if points > 0:
+                row = self.get_user_entitlement(order["username"])
+                old_balance = int(row.get("points_balance") or 0) if row else 0
+                new_balance = max(0, old_balance - points)
+                self.execute(
+                    f"UPDATE users SET points_balance = GREATEST(0, points_balance - {ph}) WHERE username = {ph}",
+                    (points, order["username"])
+                )
+                row2 = self.get_user_entitlement(order["username"])
+                actual_balance = int(row2.get("points_balance") or 0) if row2 else 0
+                self.execute(
+                    f"INSERT INTO usage_logs (username, delta_points, balance_after, reason) VALUES ({ph}, {ph}, {ph}, {ph})",
+                    (order["username"], -points, actual_balance, f"退款扣回点数：{order.get('plan_name','')} ({order_no}) 原因：{reason or '管理员退款'}")
+                )
+        # 撤销佣金
+        try:
+            self._revoke_order_commission(order_no)
+        except Exception as e:
+            print(f"[退款] 佣金撤销失败 order={order_no}: {e}", flush=True)
+        self.execute(
+            f"UPDATE payment_orders SET status = 'refunded', refunded_at = CURRENT_TIMESTAMP, refund_reason = {ph}, refunded_by = {ph} WHERE order_no = {ph}",
+            (reason or "", operator or "", order_no)
+        )
+        return True, "退款成功，权益已撤销"
+
+    def _revoke_user_membership(self, username, days):
+        """撤销用户包月天数（从 member_until 向前减少）"""
+        ph = _ph()
+        row = self.get_user_entitlement(username)
+        if not row:
+            return False
+        current = row.get("member_until")
+        if not current:
+            return True
+        try:
+            current_dt = datetime.strptime(current.split(".")[0], "%Y-%m-%d %H:%M:%S") if isinstance(current, str) else current
+        except Exception:
+            return False
+        from datetime import timedelta
+        new_until = current_dt - timedelta(days=max(0, days))
+        now = datetime.now()
+        if new_until <= now:
+            self.execute(f"UPDATE users SET member_until = NULL WHERE username = {ph}", (username,))
+        else:
+            self.execute(f"UPDATE users SET member_until = {ph} WHERE username = {ph}", (new_until, username))
+        return True
+
+    def _revoke_order_commission(self, order_no):
+        """撤销订单的推广佣金"""
+        ph = _ph()
+        row = self.fetchone(f"SELECT * FROM commission_logs WHERE order_no = {ph}", (order_no,))
+        if not row:
+            return
+        if row.get("status") == "paid":
+            # 已结算的佣金从余额扣回
+            amount = float(row.get("commission_amount") or 0)
+            inviter = row.get("inviter", "")
+            self.execute(
+                f"UPDATE users SET commission_balance = GREATEST(0, COALESCE(commission_balance,0) - {ph}) WHERE username = {ph}",
+                (amount, inviter)
+            )
+        self.execute(f"UPDATE commission_logs SET status = 'refunded' WHERE order_no = {ph}", (order_no,))
+
     def adjust_user_points(self, username, delta, reason="", question_hash=""):
         ph = _ph()
         delta = int(delta or 0)
@@ -1321,6 +1420,12 @@ class Database:
         if username:
             return self.fetchall(f"SELECT * FROM payment_orders WHERE username = {ph} ORDER BY id DESC LIMIT {int(limit)}", (username,))
         return self.fetchall(f"SELECT * FROM payment_orders ORDER BY id DESC LIMIT {int(limit)}")
+
+    def list_refunded_orders(self, limit=50):
+        ph = _ph()
+        return self.fetchall(
+            f"SELECT * FROM payment_orders WHERE status = 'refunded' ORDER BY refunded_at DESC LIMIT {int(limit)}"
+        )
 
     def list_payment_orders_admin(self, username="", status="", plan_name="", pay_method="", date_from="", date_to="", sort="created_at", order="desc", page=1, page_size=20):
         """管理员支付明细查询，支持筛选/排序/分页"""
@@ -2280,11 +2385,14 @@ class Database:
         pay_sql = f"""
             SELECT
                 COALESCE(SUM(CASE WHEN status='paid' THEN price ELSE 0 END), 0) AS total_recharged,
+                COALESCE(SUM(CASE WHEN status='refunded' THEN price ELSE 0 END), 0) AS total_refunded,
                 COUNT(CASE WHEN status='paid' THEN 1 END) AS paid_count
             FROM payment_orders WHERE username = {ph}
         """
         row = self.fetchone(pay_sql, (username,))
         total_recharged = float(row.get('total_recharged') or 0) if row else 0
+        total_refunded = float(row.get('total_refunded') or 0) if row else 0
+        total_recharged = round(max(0, total_recharged - total_refunded), 2)
 
         spent_sql = f"""
             SELECT
