@@ -2508,8 +2508,10 @@ class Database:
             for r in (rows or [])
         ]
 
+        admin = self.get_admin_config() or {}
+        refund_days = int(admin.get("refund_days_limit") or 7)
         recent_orders_sql = f"""
-            SELECT order_no, plan_name, price, status, created_at
+            SELECT order_no, plan_name, price, status, created_at, paid_at
             FROM payment_orders WHERE username = {ph}
             ORDER BY id DESC LIMIT 5
         """
@@ -2519,12 +2521,23 @@ class Database:
             ca = r.get('created_at')
             if hasattr(ca, 'strftime'):
                 ca = ca.strftime('%Y-%m-%d %H:%M')
+            can_refund = False
+            if r.get('status') == 'paid' and refund_days > 0:
+                paid_at = r.get('paid_at')
+                if paid_at:
+                    if isinstance(paid_at, str):
+                        paid_at = datetime.strptime(paid_at.split(".")[0], "%Y-%m-%d %H:%M:%S")
+                    from datetime import timedelta
+                    deadline = paid_at + timedelta(days=refund_days)
+                    if datetime.now() <= deadline:
+                        can_refund = True
             recent_orders.append({
                 'order_no': r.get('order_no') or '',
                 'plan_name': r.get('plan_name') or '',
                 'price': float(r.get('price') or 0),
                 'status': r.get('status') or '',
                 'created_at': str(ca) if ca else '',
+                'can_refund': can_refund,
             })
 
         result['consumption'] = {
