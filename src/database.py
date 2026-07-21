@@ -2505,7 +2505,7 @@ class Database:
         ]
 
         recent_orders_sql = f"""
-            SELECT plan_name, price, status, created_at
+            SELECT order_no, plan_name, price, status, created_at
             FROM payment_orders WHERE username = {ph}
             ORDER BY id DESC LIMIT 5
         """
@@ -2516,6 +2516,7 @@ class Database:
             if hasattr(ca, 'strftime'):
                 ca = ca.strftime('%Y-%m-%d %H:%M')
             recent_orders.append({
+                'order_no': r.get('order_no') or '',
                 'plan_name': r.get('plan_name') or '',
                 'price': float(r.get('price') or 0),
                 'status': r.get('status') or '',
