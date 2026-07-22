@@ -22,7 +22,7 @@ import secrets
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from difflib import SequenceMatcher
 from urllib.parse import parse_qs, urlparse, urlencode
-from urllib.request import urlopen, Request as _UrlRequest
+from urllib.request import urlopen
 from email.mime.text import MIMEText
 from email.utils import formataddr
 from datetime import datetime, timedelta
@@ -3403,49 +3403,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/api/payment/xianyu-config":
             admin = db.get_admin_config() or {}
-            self._send_json(200, {"code": 200, "xianyu_enabled": bool(admin.get("xianyu_enabled")), "xianyu_url": admin.get("xianyu_url") or "", "xianyu_cookie": bool(admin.get("xianyu_cookie"))})
-        elif path == "/admin/xianyu-orders":
-            if not self._check_admin():
-                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
-                return
-            try:
-                qs = parse_qs(parsed.query)
-                status = qs.get("status", [""])[0]
-                page = int(qs.get("page", [1])[0])
-                result = db.list_xianyu_orders(status=status, page=page)
-                self._send_json(200, {"code": 200, **result})
-            except Exception as e:
-                self._send_json(500, {"code": 500, "msg": str(e)})
-        elif path == "/admin/xianyu-cookie":
-            if not self._check_admin():
-                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
-                return
-            try:
-                admin = db.get_admin_config() or {}
-                cookie = admin.get("xianyu_cookie", "")
-                if not cookie:
-                    self._send_json(400, {"code": 400, "msg": "δ���� Cookie"})
-                    return
-                target = parse_qs(parsed.query).get("url", [""])[0] or "https://www.goofish.com/"
-                req = _UrlRequest(target, headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    "Cookie": cookie,
-                    "Accept": "text/html,application/json,*/*",
-                    "Accept-Language": "zh-CN,zh;q=0.9",
-                }, method="GET")
-                resp = urlopen(req, timeout=20)
-                raw = resp.read()
-                content_type = resp.headers.get("Content-Type", "")
-                self._send_json(200, {
-                    "code": 200,
-                    "url": target,
-                    "status": resp.status,
-                    "content_type": content_type,
-                    "size": len(raw),
-                    "preview": raw[:2000].decode("utf-8", errors="replace")
-                })
-            except Exception as e:
-                self._send_json(500, {"code": 500, "msg": str(e)})
+            self._send_json(200, {"code": 200, "xianyu_enabled": bool(admin.get("xianyu_enabled")), "xianyu_url": admin.get("xianyu_url") or ""})
         elif path == "/api/user/xianyu-orders":
             user = self._get_user_from_token()
             if not user:
@@ -4736,28 +4694,6 @@ class Handler(BaseHTTPRequestHandler):
                 db.execute("UPDATE admin_config SET xianyu_enabled = %s, xianyu_url = %s WHERE id = 1",
                     (1 if data.get("enabled") else 0, data.get("url") or ""))
                 self._send_json(200, {"code": 200, "msg": "保存成功"})
-            except Exception as e:
-                self._send_json(500, {"code": 500, "msg": str(e)})
-        elif path == "/admin/save-xianyu-cookie":
-            if not self._check_admin():
-                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
-                return
-            try:
-                data = json.loads(body or "{}")
-                db.execute("UPDATE admin_config SET xianyu_cookie = %s WHERE id = 1",
-                    (data.get("cookie") or "",))
-                self._send_json(200, {"code": 200, "msg": "Cookie 已保存"})
-            except Exception as e:
-                self._send_json(500, {"code": 500, "msg": str(e)})
-        elif path == "/admin/xianyu-force-activate":
-            if not self._check_admin():
-                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
-                return
-            try:
-                data = json.loads(body or "{}")
-                order_id = int(data.get("id") or 0)
-                ok, msg = db.activate_xianyu_order(order_id)
-                self._send_json(200 if ok else 400, {"code": 200 if ok else 400, "msg": msg})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/api/payment/xianyu-create-order":
