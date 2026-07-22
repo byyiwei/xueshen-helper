@@ -1391,22 +1391,30 @@ class Database:
         )
         return True, "退款申请已提交，请等待管理员处理"
 
-    def list_refund_requests(self, status="", page=1, page_size=20):
+    def list_refund_requests(self, status="", username="", order_no="", page=1, page_size=20):
         ph = _ph()
-        where = ""
+        where = []
         params = []
         if status:
-            where = f"WHERE r.status = {ph}"
+            where.append(f"r.status = {ph}")
             params.append(status)
-        total = self.fetchone(f"SELECT COUNT(*) cnt FROM refund_requests r {where}", params)["cnt"]
+        if username:
+            where.append(f"r.username LIKE {ph}")
+            params.append(f"%{username}%")
+        if order_no:
+            where.append(f"r.order_no LIKE {ph}")
+            params.append(f"%{order_no}%")
+        where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+        total = self.fetchone(f"SELECT COUNT(*) cnt FROM refund_requests r {where_sql}", params)["cnt"]
         offset = (page - 1) * page_size
         rows = self.fetchall(
             f"SELECT r.*, o.plan_name, o.price, o.created_at order_created_at, "
+            f"o.bank_order_no, o.trade_no, "
             f"p.alipay_account, p.alipay_qr, p.wechat_account, p.wechat_qr "
             f"FROM refund_requests r "
             f"LEFT JOIN payment_orders o ON r.order_no = o.order_no "
             f"LEFT JOIN user_payment_info p ON r.username = p.username "
-            f"{where} ORDER BY r.created_at DESC LIMIT {ph} OFFSET {ph}",
+            f"{where_sql} ORDER BY r.created_at DESC LIMIT {ph} OFFSET {ph}",
             params + [page_size, offset]
         )
         return {"total": total, "rows": rows or []}

@@ -3372,8 +3372,10 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 qs = parse_qs(parsed.query)
                 status = qs.get("status", [""])[0]
+                username = qs.get("username", [""])[0]
+                order_no = qs.get("order_no", [""])[0]
                 page = int(qs.get("page", [1])[0])
-                result = db.list_refund_requests(status=status, page=page)
+                result = db.list_refund_requests(status=status, username=username, order_no=order_no, page=page)
                 self._send_json(200, {"code": 200, **result})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})

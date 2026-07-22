@@ -1681,7 +1681,7 @@ body{
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
           <div class="card">
-            <div class="card-header">
+            <div class="card-header" style="flex-wrap:wrap">
               <h3>用户退款申请列表</h3>
               <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                 <select v-model="rrFilterStatus" @change="loadRefundRequests(1)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg4);color:var(--text)">
@@ -1690,7 +1690,10 @@ body{
                   <option value="approved">已通过</option>
                   <option value="rejected">已拒绝</option>
                 </select>
-                <button class="btn btn-secondary btn-sm" @click="loadRefundRequests(1)">刷新</button>
+                <input v-model="rrFilterUsername" class="form-control" style="width:120px;padding:6px 10px;font-size:13px" placeholder="用户名" @keyup.enter="loadRefundRequests(1)">
+                <input v-model="rrFilterOrderNo" class="form-control" style="width:160px;padding:6px 10px;font-size:13px;font-family:monospace" placeholder="订单号" @keyup.enter="loadRefundRequests(1)">
+                <button class="btn btn-secondary btn-sm" @click="loadRefundRequests(1)">搜索</button>
+                <button class="btn btn-secondary btn-sm" @click="rrFilterStatus='';rrFilterUsername='';rrFilterOrderNo='';loadRefundRequests(1)">重置</button>
               </div>
             </div>
             <div class="card-body" style="overflow-x:auto">
@@ -1700,6 +1703,8 @@ body{
                     <th style="text-align:left;padding:10px 8px">申请时间</th>
                     <th style="text-align:left;padding:10px 8px">用户</th>
                     <th style="text-align:left;padding:10px 8px">订单</th>
+                    <th style="text-align:left;padding:10px 8px">银行单号</th>
+                    <th style="text-align:left;padding:10px 8px">银联流水号</th>
                     <th style="text-align:left;padding:10px 8px">套餐</th>
                     <th style="text-align:left;padding:10px 8px">金额</th>
                     <th style="text-align:left;padding:10px 8px">原因</th>
@@ -1713,6 +1718,8 @@ body{
                     <td style="padding:10px 8px;color:var(--text3);white-space:nowrap">{{String(r.created_at||'').replace('T',' ').substring(0,16)}}</td>
                     <td style="padding:10px 8px;color:var(--accent2)">{{r.username}}</td>
                     <td style="padding:10px 8px;font-family:monospace;font-size:12px">{{r.order_no}}</td>
+                    <td style="padding:10px 8px;font-family:monospace;font-size:12px;color:var(--text2)">{{r.bank_order_no||'-'}}</td>
+                    <td style="padding:10px 8px;font-family:monospace;font-size:12px;color:var(--text2)">{{r.trade_no||'-'}}</td>
                     <td style="padding:10px 8px">{{r.plan_name||'-'}}</td>
                     <td style="padding:10px 8px;color:var(--success)">¥{{Number(r.price||0).toFixed(2)}}</td>
                     <td style="padding:10px 8px;max-width:200px;word-break:break-all;font-size:12px;color:var(--text2)">{{r.reason||'-'}}</td>
@@ -1742,7 +1749,7 @@ body{
                   </tr>
                 </tbody>
               </table>
-              <div v-else style="text-align:center;padding:40px 0;color:var(--text3);font-size:13px">暂无退款申请</div>
+                  <tr v-if="rrList.length===0"><td colspan="11" style="text-align:center;padding:40px 0;color:var(--text3);font-size:13px">暂无退款申请</td></tr>
               <div v-if="rrTotalPages>1" style="display:flex;justify-content:center;gap:6px;margin-top:16px">
                 <button v-for="p in rrTotalPages" :key="p" :class="['btn','btn-sm',p===rrPage?'btn-primary':'btn-secondary']" @click="loadRefundRequests(p)">{{p}}</button>
               </div>
@@ -4208,6 +4215,8 @@ createApp({
     // 退款
     // 退款申请管理
     const rrFilterStatus=ref('');
+    const rrFilterUsername=ref('');
+    const rrFilterOrderNo=ref('');
     const rrList=ref([]);
     const rrPage=ref(1);
     const rrTotalPages=ref(0);
@@ -4356,7 +4365,7 @@ createApp({
     // ========== 退款申请管理 ==========
     async function loadRefundRequests(page){
       rrPage.value=page||1;
-      const params=new URLSearchParams({status:rrFilterStatus.value,page:String(rrPage.value)});
+      const params=new URLSearchParams({status:rrFilterStatus.value,username:rrFilterUsername.value,order_no:rrFilterOrderNo.value,page:String(rrPage.value)});
       try{
         const res=await safeFetch('/admin/refund-requests?'+params.toString(),{headers:{'Authorization':token.value}});
         const d=await res.json();
@@ -4590,7 +4599,7 @@ createApp({
       expandedGroups,isMobile,mobileSidebarOpen,mobileSubmenu,openMobileSubmenu,handleGroupClick,
        paymentOrders,paymentOrdersFilter,paymentOrdersSort,paymentOrdersPage,paymentOrdersPageSize,paymentOrdersTotal,paymentOrdersTotalPages,paymentOrdersSum,
         loadPaymentOrders,togglePaymentSort,paymentOrdersSearch,paymentOrdersPrev,paymentOrdersNext,
-        rrFilterStatus,rrList,rrPage,rrTotalPages,rrTotal,rrQrPreview,
+        rrFilterStatus,rrFilterUsername,rrFilterOrderNo,rrList,rrPage,rrTotalPages,rrTotal,rrQrPreview,
         loadRefundRequests,processRefundRequest,previewQr,
         xianyuEnabled,xianyuUrl,ckList,ckPage,ckTotalPages,ckTotal,ckFilterStatus,ckFilterPlanId,ckGeneratePlanId,ckGenerateCount,ckGenerateSaving,
         loadCardKeys,loadXianyuConfig,saveXianyuConfig,generateCardKeys,
