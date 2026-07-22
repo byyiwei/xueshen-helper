@@ -1851,8 +1851,8 @@ body{
                   <div class="toggle" :class="xianyuEnabled?'on':''" @click="xianyuEnabled=!xianyuEnabled"></div>
                 </div>
                 <div class="form-group" style="flex:2">
-                  <label>闲鱼店铺链接</label>
-                  <input v-model="xianyuUrl" class="form-control" placeholder="如：https://m.tb.cn/h.xxxxx">
+                  <label>闲鱼商品链接</label>
+                  <input v-model="xianyuUrl" class="form-control" placeholder="如：https://m.tb.cn/h.xxxxx（点击购买时跳转）">
                 </div>
               </div>
               <button class="btn btn-success" @click="saveXianyuConfig" style="margin-top:8px">保存设置</button>
