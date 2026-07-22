@@ -642,7 +642,7 @@ body{
 
         <!-- 支付财务组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.payment}">
-          <div class="menu-group-header dock-item" :class="{active:['payment-orders','payment','pay-api','pay-test','refund-requests','card-keys'].includes(page)}" @click="expandedGroups.payment=!expandedGroups.payment">
+          <div class="menu-group-header dock-item" :class="{active:['payment-orders','payment','pay-api','pay-test','refund-requests','card-keys','xianyu'].includes(page)}" @click="expandedGroups.payment=!expandedGroups.payment">
             <span class="icon">□</span>支付财务
             <span class="arrow">▶</span>
           </div>
@@ -664,6 +664,9 @@ body{
             </div>
             <div class="menu-item" :class="{active:page==='card-keys'}" @click="page='card-keys';loadCardKeys()">
               <span class="icon">⚷</span>卡密管理
+            </div>
+            <div class="menu-item" :class="{active:page==='xianyu'}" @click="page='xianyu';loadXianyuConfig()">
+              <span class="icon">●</span>闲鱼店铺
             </div>
           </div>
         </div>
@@ -1766,24 +1769,6 @@ body{
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
           <div class="card">
             <div class="card-header">
-              <h3>闲鱼购买设置</h3>
-            </div>
-            <div class="card-body">
-              <div class="form-row">
-                <div class="form-group">
-                  <label>启用闲鱼购买</label>
-                  <div class="toggle" :class="xianyuEnabled?'on':''" @click="xianyuEnabled=!xianyuEnabled"></div>
-                </div>
-                <div class="form-group" style="flex:2">
-                  <label>闲鱼店铺链接</label>
-                  <input v-model="xianyuUrl" class="form-control" placeholder="如：https://m.tb.cn/h.xxxxx">
-                </div>
-              </div>
-              <button class="btn btn-success" @click="saveXianyuConfig" style="margin-top:8px">保存设置</button>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-header">
               <h3>生成卡密</h3>
               <div style="display:flex;gap:8px;align-items:center">
                 <select v-model.number="ckGeneratePlanId" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg4);color:var(--text)">
@@ -1842,6 +1827,35 @@ body{
               <div v-if="ckTotalPages>1" style="display:flex;justify-content:center;gap:6px;margin-top:16px">
                 <button v-for="p in ckTotalPages" :key="p" :class="['btn','btn-sm',p===ckPage?'btn-primary':'btn-secondary']" @click="loadCardKeys(p)">{{p}}</button>
               </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Xianyu Page -->
+      <template v-if="page==='xianyu'">
+        <header class="main-header">
+          <h2>闲鱼店铺</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index<breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="card">
+            <div class="card-header">
+              <h3>闲鱼购买设置</h3>
+            </div>
+            <div class="card-body">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>启用闲鱼购买</label>
+                  <div class="toggle" :class="xianyuEnabled?'on':''" @click="xianyuEnabled=!xianyuEnabled"></div>
+                </div>
+                <div class="form-group" style="flex:2">
+                  <label>闲鱼店铺链接</label>
+                  <input v-model="xianyuUrl" class="form-control" placeholder="如：https://m.tb.cn/h.xxxxx">
+                </div>
+              </div>
+              <button class="btn btn-success" @click="saveXianyuConfig" style="margin-top:8px">保存设置</button>
             </div>
           </div>
         </div>
@@ -2944,6 +2958,7 @@ createApp({
       'pay-test':[{label:'支付财务',group:'payment'},{label:'支付测试'}],
       'refund-requests':[{label:'支付财务',group:'payment'},{label:'退款申请'}],
       'card-keys':[{label:'支付财务',group:'payment'},{label:'卡密管理'}],
+      'xianyu':[{label:'支付财务',group:'payment'},{label:'闲鱼店铺'}],
       'script-logs':[{label:'日志监控',group:'logs'},{label:'脚本日志'}],
       'ai-logs':[{label:'日志监控',group:'logs'},{label:'模型日志'}],
       'log-cleanup':[{label:'日志监控',group:'logs'},{label:'日志清理'}],
@@ -4315,11 +4330,12 @@ createApp({
           if(d2.code===200)paymentPlans.value=d2.plans||[];
         }catch(_){}
       }
-      // 加载闲鱼配置
+    }
+    async function loadXianyuConfig(){
       try{
-        const res2=await fetch('/api/payment/xianyu-config',{headers:{'Authorization':token.value}});
-        const d2=await res2.json();
-        if(d2.code===200){xianyuEnabled.value=!!d2.xianyu_enabled;xianyuUrl.value=d2.xianyu_url||'';}
+        const res=await fetch('/api/payment/xianyu-config',{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200){xianyuEnabled.value=!!d.xianyu_enabled;xianyuUrl.value=d.xianyu_url||'';}
       }catch(_){}
     }
     async function saveXianyuConfig(){
@@ -4482,7 +4498,7 @@ createApp({
         rrFilterStatus,rrList,rrPage,rrTotalPages,rrTotal,rrQrPreview,
         loadRefundRequests,processRefundRequest,previewQr,
         xianyuEnabled,xianyuUrl,ckList,ckPage,ckTotalPages,ckTotal,ckFilterStatus,ckFilterPlanId,ckGeneratePlanId,ckGenerateCount,ckGenerateSaving,
-        loadCardKeys,saveXianyuConfig,generateCardKeys,
+        loadCardKeys,loadXianyuConfig,saveXianyuConfig,generateCardKeys,
        feedbackList,feedbackFilter,feedbackPage,feedbackTotalPages,feedbackTotal,feedbackPendingCount,feedbackDetail,feedbackReplyText,
         loadFeedbackList,feedbackSearch,viewFeedbackDetail,replyFeedback,updateFeedbackStatus,feedbackPrev,feedbackNext,
     feedbackAutoCloseDays,loadFeedbackAutoClose,saveFeedbackAutoClose,
