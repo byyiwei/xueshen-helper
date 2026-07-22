@@ -2465,6 +2465,9 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
         GROUP BY DATE(created_at)
         ORDER BY day ASC
     """
+    refund_pending_sql = """
+        SELECT COUNT(*) AS cnt FROM refund_requests WHERE status='pending'
+    """
     conn = db._new_mysql_conn()
     try:
         cursor = conn.cursor()
@@ -2478,6 +2481,8 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
         rev_stats = cursor.fetchone() or {}
         cursor.execute(revenue_trend_sql, (sd, ed_next))
         rev_trend_rows = cursor.fetchall()
+        cursor.execute(refund_pending_sql)
+        refund_pending_row = cursor.fetchone() or {}
     finally:
         conn.close()
     trend_map = {str(r.get("day"))[:10]: r for r in trend_rows}
@@ -2518,6 +2523,7 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
             "error": int(card_stats.get("error") or 0),
             "bank_hits": int(card_stats.get("bank_hits") or 0),
             "bank_hit_rate": round((int(card_stats.get("bank_hits") or 0) / max(1, int(card_stats.get("success") or 0))) * 100, 1),
+            "refund_pending": int(refund_pending_row.get("cnt") or 0),
         },
         "trend": trend,
         "models": [{"model": r.get("model"), "total": int(r.get("total") or 0)} for r in model_rows if r.get("model")],

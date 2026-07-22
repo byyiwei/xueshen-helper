@@ -784,6 +784,7 @@ body{
             <div class="metric-card"><div class="metric-label">成功数</div><div class="metric-value" style="color:var(--success)">{{dashboard.cards.success||0}}</div><div class="metric-sub">成功返回答案</div></div>
             <div class="metric-card"><div class="metric-label">失败数</div><div class="metric-value" style="color:var(--danger)">{{dashboard.cards.error||0}}</div><div class="metric-sub">接口失败或异常</div></div>
             <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(245,158,11,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='feedback';expandedGroups.config=true;loadFeedbackList()"><div class="metric-label">待处理反馈</div><div class="metric-value" style="color:var(--warning)">{{feedbackPendingCount||0}}</div><div class="metric-sub">点击查看处理 →</div></div>
+            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(239,68,68,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='refund-requests';loadRefundRequests()"><div class="metric-label">待处理退款</div><div class="metric-value" style="color:var(--danger)">{{dashboard.cards?.refund_pending||0}}</div><div class="metric-sub">点击查看处理 →</div></div>
           </div>
           <div class="dash-grid">
             <div class="chart-card">
