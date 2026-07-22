@@ -1531,6 +1531,7 @@ body{
                 <div class="form-group" v-if="planForm.plan_type==='points'"><label>题数</label><input type="number" min="0" v-model.number="planForm.points"></div>
                 <div class="form-group" v-if="planForm.plan_type==='monthly'"><label>包月天数</label><input type="number" min="0" v-model.number="planForm.days"></div>
                 <div class="form-group"><label>排序</label><input type="number" v-model.number="planForm.sort_order"></div>
+                <div class="form-group" style="flex:2"><label>闲鱼商品链接</label><input v-model="planForm.xianyu_url" class="form-control" placeholder="如：https://m.tb.cn/h.xxxxx（留空=使用全局链接）"></div>
               </div>
               <div style="display:flex;gap:10px;align-items:center">
                 <label style="display:flex;gap:8px;align-items:center;color:var(--text2)"><input type="checkbox" v-model="planForm.enabled"> 启用</label>
@@ -1538,10 +1539,11 @@ body{
               </div>
               <div style="overflow-x:auto;margin-top:16px">
                 <table style="width:100%;border-collapse:collapse;font-size:13px">
-                  <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2)"><th style="text-align:left;padding:10px 8px">名称</th><th style="text-align:left;padding:10px 8px">类型</th><th style="text-align:left;padding:10px 8px">价格</th><th style="text-align:left;padding:10px 8px">权益</th><th style="text-align:left;padding:10px 8px">状态</th><th style="text-align:left;padding:10px 8px">操作</th></tr></thead>
+                  <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2)"><th style="text-align:left;padding:10px 8px">名称</th><th style="text-align:left;padding:10px 8px">类型</th><th style="text-align:left;padding:10px 8px">价格</th><th style="text-align:left;padding:10px 8px">权益</th><th style="text-align:left;padding:10px 8px">闲鱼链接</th><th style="text-align:left;padding:10px 8px">状态</th><th style="text-align:left;padding:10px 8px">操作</th></tr></thead>
                   <tbody>
                     <tr v-for="p in paymentPlans" :key="p.id" style="border-bottom:1px solid var(--border)">
                       <td style="padding:10px 8px">{{p.name}}</td><td style="padding:10px 8px">{{p.plan_type==='monthly'?'包月':'题数'}}</td><td style="padding:10px 8px">￥{{p.price}}</td><td style="padding:10px 8px">{{p.plan_type==='monthly'?(p.days+'天 · 不限题数'):(p.points+'题')}}</td>
+                      <td style="padding:10px 8px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span v-if="p.xianyu_url" :title="p.xianyu_url" style="color:var(--primary);font-size:12px;cursor:pointer" @click="window.open(p.xianyu_url)">链接</span><span v-else style="color:var(--text3);font-size:12px">-</span></td>
                       <td style="padding:10px 8px"><span :style="{color:p.enabled?'var(--success)':'var(--danger)',fontWeight:'700'}">{{p.enabled?'已启用':'已停用'}}</span></td>
                       <td style="padding:10px 8px"><button class="btn btn-secondary btn-sm" @click="editPlan(p)">编辑</button><button class="btn btn-success btn-sm" v-if="!p.enabled" @click="togglePlan(p,true)">启用</button><button class="btn btn-warning btn-sm" v-if="p.enabled" @click="togglePlan(p,false)">停用</button><button class="btn btn-danger btn-sm" @click="deletePlan(p.id)">删除</button></td>
                     </tr>
@@ -1934,6 +1936,7 @@ body{
                 <span style="font-size:12px;color:var(--text3)">{{xyAutoState.running?'运行中':xyAutoState.enabled?'已启用':'未启用'}}</span>
                 <button class="btn btn-sm btn-secondary" @click="loadXianyuAutoState">刷新状态</button>
                 <button class="btn btn-sm btn-primary" @click="xianyuAutoCheckNow" :disabled="xyAutoState.running">{{xyAutoState.running?'检查中...':'立即检查'}}</button>
+                <button class="btn btn-sm btn-secondary" @click="xianyuDebugCookie">调试 Cookie</button>
               </div>
             </div>
             <div class="card-body" style="display:flex;gap:24px;flex-wrap:wrap;font-size:13px">
@@ -1957,6 +1960,7 @@ body{
                     <th style="text-align:left;padding:10px 8px">套餐</th>
                     <th style="text-align:left;padding:10px 8px">金额</th>
                     <th style="text-align:left;padding:10px 8px">卡密</th>
+                    <th style="text-align:left;padding:10px 8px">闲鱼订单号</th>
                     <th style="text-align:left;padding:10px 8px">状态</th>
                     <th style="text-align:left;padding:10px 8px">创建时间</th>
                     <th style="text-align:left;padding:10px 8px">操作</th>
@@ -1969,6 +1973,7 @@ body{
                     <td style="padding:10px 8px">{{o.plan_name||'-'}}</td>
                     <td style="padding:10px 8px;color:var(--success)">¥{{Number(o.price||0).toFixed(2)}}</td>
                     <td style="padding:10px 8px;font-family:monospace;font-size:12px">{{o.card_code}}</td>
+                    <td style="padding:10px 8px;font-family:monospace;font-size:12px;color:var(--text2)">{{o.xianyu_trade_no||'-'}}</td>
                     <td style="padding:10px 8px">
                       <span :style="{color:o.status==='pending'?'var(--warning)':o.status==='paid'?'var(--success)':'var(--danger)',fontWeight:'600'}">
                         {{o.status==='pending'?'待付款':o.status==='paid'?'已到账':'已取消'}}
@@ -3181,7 +3186,7 @@ createApp({
       refund_days_limit:7
     });
     const payApiCollapsed=reactive({alipay:true,wechat:true,zhifufm:true,sandpay:true,epay:true,refund:true});
-    const planForm=reactive({id:null,name:'',plan_type:'points',price:0,points:0,days:30,enabled:true,sort_order:0});
+    const planForm=reactive({id:null,name:'',plan_type:'points',price:0,points:0,days:30,enabled:true,sort_order:0,xianyu_url:''});
     const aiLogs=ref([]);
     const aiLogLoading=ref(false);
     const aiLogTotal=ref(0);
@@ -3907,7 +3912,7 @@ createApp({
       reader.onload=function(){accountConfig.avatar_data=String(reader.result||'');};
       reader.readAsDataURL(file);
     }
-    function newPlan(){Object.assign(planForm,{id:null,name:'',plan_type:'points',price:0,points:100,days:30,enabled:true,sort_order:0});}
+    function newPlan(){Object.assign(planForm,{id:null,name:'',plan_type:'points',price:0,points:100,days:30,enabled:true,sort_order:0,xianyu_url:''});}
     function editPlan(p){Object.assign(planForm,{...p,enabled:!!p.enabled});}
     async function savePlan(){
       const payload={...planForm};
@@ -4431,6 +4436,11 @@ createApp({
         const d=await res.json();
         if(d.code===200){xianyuEnabled.value=!!d.xianyu_enabled;xianyuUrl.value=d.xianyu_url||'';}
       }catch(_){}
+      try{
+        const res2=await safeFetch('/admin/xianyu-cookie',{headers:{'Authorization':token.value}});
+        const d2=await res2.json();
+        if(d2.code===200)xianyuCookie.value=d2.cookie||'';
+      }catch(_){}
       loadXianyuOrders(1);
       loadXianyuAutoState();
     }
@@ -4474,6 +4484,19 @@ createApp({
       }catch(_){showMsg('检查请求失败','error');}
       loadXianyuAutoState();
       loadXianyuOrders(1);
+    }
+    async function xianyuDebugCookie(){
+      const url=prompt('输入要测试的 URL（默认闲鱼首页）:','https://www.goofish.com/');
+      if(!url)return;
+      try{
+        const res=await safeFetch('/admin/xianyu-debug-cookie?url='+encodeURIComponent(url),{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200){
+          showMsg(`状态:${d.status} | 类型:${d.content_type} | 大小:${d.size}字节`,'success',8000);
+          console.log('[CookieDebug]',d);
+          alert(`URL: ${d.url}\n状态码: ${d.status}\nContent-Type: ${d.content_type}\n大小: ${d.size} 字节\n\n前2000字符预览:\n${d.preview}`);
+        }else showMsg(d.msg||'调试失败','error');
+      }catch(e){showMsg('请求失败: '+e.message,'error');}
     }
     async function forceActivateXianyuOrder(id){
       if(!confirm('确定手动将这笔订单标记为已到账？'))return;
@@ -4639,7 +4662,7 @@ createApp({
         xianyuEnabled,xianyuUrl,ckList,ckPage,ckTotalPages,ckTotal,ckFilterStatus,ckFilterPlanId,ckGeneratePlanId,ckGenerateCount,ckGenerateSaving,
         loadCardKeys,loadXianyuConfig,saveXianyuConfig,generateCardKeys,
         xianyuCookie,xyCookieSaving,xyOrderList,xyOrderPage,xyOrderTotalPages,xyOrderTotal,xyAutoState,
-        saveXianyuCookie,        loadXianyuOrders,forceActivateXianyuOrder,loadXianyuAutoState,xianyuAutoCheckNow,
+        saveXianyuCookie,        loadXianyuOrders,forceActivateXianyuOrder,loadXianyuAutoState,xianyuAutoCheckNow,xianyuDebugCookie,
        feedbackList,feedbackFilter,feedbackPage,feedbackTotalPages,feedbackTotal,feedbackPendingCount,feedbackDetail,feedbackReplyText,
         loadFeedbackList,feedbackSearch,viewFeedbackDetail,replyFeedback,updateFeedbackStatus,feedbackPrev,feedbackNext,
     feedbackAutoCloseDays,loadFeedbackAutoClose,saveFeedbackAutoClose,

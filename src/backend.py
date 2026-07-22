@@ -22,7 +22,7 @@ import secrets
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from difflib import SequenceMatcher
 from urllib.parse import parse_qs, urlparse, urlencode
-from urllib.request import urlopen
+from urllib.request import urlopen, Request as _UrlRequest
 from email.mime.text import MIMEText
 from email.utils import formataddr
 from datetime import datetime, timedelta
@@ -41,6 +41,7 @@ INTRO_HTML_FILE = os.path.join(BASE_DIR, "intro", "index.html")
 # ==================== 闲鱼自动发货 ====================
 XIANYU_AUTO_STATE = {
     "running": False,
+    "enabled": False,
     "last_check": "",
     "last_result": "",
     "pending": 0,
@@ -70,6 +71,11 @@ def _check_xianyu_orders_batch(cookie):
             price = str(int(float(order.get("price") or 0)))
             price_float = float(order.get("price") or 0)
             if price_float <= 0:
+                continue
+            # 金额冲突跳过自动激活（同金额有多笔待处理订单）
+            cnt = db.count_pending_by_price(order["price"])
+            if cnt > 1:
+                print(f"[闲鱼自动发货] ⏭️ 订单 {order['order_no']} 金额 {price} 冲突（{cnt} 单），跳过自动激活", flush=True)
                 continue
             # 尝试调用闲鱼/淘宝卖家订单 API 检查
             found = False
@@ -3507,6 +3513,42 @@ class Handler(BaseHTTPRequestHandler):
                 return
             with XIANYU_AUTO_LOCK:
                 self._send_json(200, {"code": 200, "state": dict(XIANYU_AUTO_STATE)})
+        elif path == "/admin/xianyu-cookie":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            admin = db.get_admin_config() or {}
+            self._send_json(200, {"code": 200, "cookie": admin.get("xianyu_cookie", "")})
+        elif path == "/admin/xianyu-debug-cookie":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                admin = db.get_admin_config() or {}
+                cookie = admin.get("xianyu_cookie", "")
+                if not cookie:
+                    self._send_json(400, {"code": 400, "msg": "δ���� Cookie"})
+                    return
+                target = parse_qs(parsed.query).get("url", [""])[0] or "https://www.goofish.com/"
+                req = _UrlRequest(target, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "Cookie": cookie,
+                    "Accept": "text/html,application/json,*/*",
+                    "Accept-Language": "zh-CN,zh;q=0.9",
+                }, method="GET")
+                resp = urlopen(req, timeout=20)
+                raw = resp.read()
+                content_type = resp.headers.get("Content-Type", "")
+                self._send_json(200, {
+                    "code": 200,
+                    "url": target,
+                    "status": resp.status,
+                    "content_type": content_type,
+                    "size": len(raw),
+                    "preview": raw[:2000].decode("utf-8", errors="replace")
+                })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/api/user/xianyu-orders":
             user = self._get_user_from_token()
             if not user:
@@ -4855,8 +4897,6 @@ class Handler(BaseHTTPRequestHandler):
                 if err:
                     self._send_json(400, {"code": 400, "msg": err})
                     return
-                admin = db.get_admin_config() or {}
-                order["xianyu_url"] = admin.get("xianyu_url") or ""
                 self._send_json(200, {"code": 200, "order": order})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -4880,10 +4920,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 ok, msg = db.activate_xianyu_order(order["id"])
                 if ok:
-                    profile = db.get_user_profile(user["username"])
-                    if profile:
-                        profile.pop("password", None)
-                        profile.pop("token", None)
+                    profile = build_user_profile(user["username"])
                     self._send_json(200, {"code": 200, "msg": msg, "profile": profile})
                 else:
                     self._send_json(400, {"code": 400, "msg": msg})
@@ -4903,10 +4940,7 @@ class Handler(BaseHTTPRequestHandler):
                 ok, msg = db.activate_card_key(code, user["username"])
                 res = {"code": 200 if ok else 400, "msg": msg}
                 if ok:
-                    profile = db.get_user_profile(user["username"])
-                    if profile:
-                        profile.pop("password", None)
-                        profile.pop("token", None)
+                    profile = build_user_profile(user["username"])
                     res["profile"] = profile
                 self._send_json(200 if ok else 400, res)
             except Exception as e:

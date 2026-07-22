@@ -2116,44 +2116,9 @@
                     if(d.code===200){
                         const order=d.order;
                         if(order.xianyu_url)window.open(order.xianyu_url,'_blank');
-                        $('planGrid').style.display='none';
-                        $('payMethods').style.display='none';
-                        $('ckSection').style.display='';
-                        $('ckSection').innerHTML=`
-                            <div style="padding:16px;text-align:center">
-                                <div style="font-size:16px;font-weight:700;margin-bottom:8px">⏳ 等待付款</div>
-                                <div style="color:var(--text2);margin-bottom:12px">请在闲鱼拍下商品，付款后点击下方按钮确认</div>
-                                <div style="background:var(--card);border-radius:12px;padding:14px;margin-bottom:12px;font-size:13px;text-align:left">
-                                    <div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text2)">订单号</span><span style="font-family:monospace">${order.order_no}</span></div>
-                                    <div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text2)">套餐</span><span>${order.plan_name}</span></div>
-                                    <div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text2)">金额</span><span style="color:var(--success);font-weight:600">¥${Number(order.price).toFixed(2)}</span></div>
-                                    <div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text2)">卡密</span><span style="font-family:monospace;font-size:12px">${order.card_code}</span></div>
-                                </div>
-                                <button class="primary" id="xyConfirmBtn" style="width:100%">我已付款，确认到账</button>
-                                <div style="margin-top:10px;font-size:12px;color:var(--text3)">确认后系统将自动激活权益，无需手动输入卡密</div>
-                            </div>
-                        `;
-                        $('xyConfirmBtn').onclick=async()=>{
-                            $('xyConfirmBtn').disabled=true;
-                            $('xyConfirmBtn').textContent='确认中...';
-                            try{
-                                const r2=await fetch('/api/user/xianyu-confirm',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({order_no:order.order_no})});
-                                const d2=await r2.json();
-                                if(d2.code===200){
-                                    msg('billingMsg',d2.msg||'权益已到账',true);
-                                    $('ckSection').innerHTML=`<div style="padding:16px;text-align:center;color:var(--success);font-weight:600">✓ ${d2.msg||'到账成功'}</div>`;
-                                    if(typeof fillProfile==='function')fillProfile(d2.profile);
-                                }else{
-                                    msg('billingMsg',d2.msg||'确认失败',false);
-                                    $('xyConfirmBtn').disabled=false;
-                                    $('xyConfirmBtn').textContent='我已付款，确认到账';
-                                }
-                            }catch(_){
-                                msg('billingMsg','确认失败，请稍后重试',false);
-                                $('xyConfirmBtn').disabled=false;
-                                $('xyConfirmBtn').textContent='我已付款，确认到账';
-                            }
-                        };
+                        const cardEl = document.getElementById('ckInput');
+                        if(cardEl) cardEl.value = order.card_code;
+                        msg('billingMsg','卡密已生成，请复制后在下方「卡密激活」输入框中点击激活，或保存卡密后去闲鱼拍下再回来激活',true);
                     }else{
                         msg('billingMsg',d.msg||'创建订单失败',false);
                     }

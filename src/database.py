@@ -875,6 +875,7 @@ class Database:
             return False
 
     def _ensure_payment_columns(self):
+        self._add_column_if_missing("payment_plans", "xianyu_url", "xianyu_url VARCHAR(255) DEFAULT ''")
         self._add_column_if_missing("users", "points_balance", "points_balance INT DEFAULT 0")
         self._add_column_if_missing("users", "member_until", "member_until TIMESTAMP NULL")
         self._add_column_if_missing("users", "is_banned", "is_banned TINYINT DEFAULT 0")
@@ -949,6 +950,7 @@ class Database:
         self._add_column_if_missing("admin_config", "xianyu_enabled", "xianyu_enabled TINYINT DEFAULT 0")
         self._add_column_if_missing("admin_config", "xianyu_url", "xianyu_url VARCHAR(255) DEFAULT ''")
         self._add_column_if_missing("admin_config", "xianyu_cookie", "xianyu_cookie TEXT COMMENT '闲鱼Cookie，用于自动发货'")
+        self._add_column_if_missing("xianyu_orders", "xianyu_trade_no", "xianyu_trade_no VARCHAR(64) DEFAULT '' COMMENT '闲鱼订单号（买家提供）'")
 
     def _ensure_order_payment_columns(self):
         self._add_column_if_missing("payment_orders", "pay_method", "pay_method VARCHAR(20)")
@@ -1166,18 +1168,19 @@ class Database:
             int(plan.get("points") or 0),
             int(plan.get("days") or 0),
             1 if plan.get("enabled", True) else 0,
-            int(plan.get("sort_order") or 0)
+            int(plan.get("sort_order") or 0),
+            (plan.get("xianyu_url") or "").strip()
         )
         if plan_id:
             self.execute(
-                f"""UPDATE payment_plans SET name={ph}, plan_type={ph}, price={ph}, points={ph}, days={ph}, enabled={ph}, sort_order={ph}
+                f"""UPDATE payment_plans SET name={ph}, plan_type={ph}, price={ph}, points={ph}, days={ph}, enabled={ph}, sort_order={ph}, xianyu_url={ph}
                     WHERE id={ph}""",
                 values + (int(plan_id),)
             )
             return int(plan_id)
         cursor = self.execute(
-            f"""INSERT INTO payment_plans (name, plan_type, price, points, days, enabled, sort_order)
-                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+            f"""INSERT INTO payment_plans (name, plan_type, price, points, days, enabled, sort_order, xianyu_url)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
             values
         )
         try:
@@ -1475,7 +1478,7 @@ class Database:
                 VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'pending')""",
             (username, plan_id, plan.get("name", ""), float(plan.get("price") or 0), order_no, code)
         )
-        return {"order_no": order_no, "card_code": code, "price": float(plan.get("price") or 0), "plan_name": plan.get("name", "")}, None
+        return {"order_no": order_no, "card_code": code, "price": float(plan.get("price") or 0), "plan_name": plan.get("name", ""), "xianyu_url": (plan.get("xianyu_url") or "")}, None
 
     def list_xianyu_orders(self, status="", page=1, page_size=20):
         ph = _ph()
@@ -1507,7 +1510,7 @@ class Database:
         ph = _ph()
         return self.fetchone(f"SELECT * FROM xianyu_orders WHERE order_no = {ph}", (order_no,))
 
-    def activate_xianyu_order(self, order_id):
+    def activate_xianyu_order(self, order_id, xianyu_trade_no=""):
         ph = _ph()
         row = self.fetchone(f"SELECT * FROM xianyu_orders WHERE id = {ph} AND status = 'pending'", (order_id,))
         if not row:
@@ -1516,13 +1519,18 @@ class Database:
         if not ok:
             return False, msg
         self.execute(
-            f"UPDATE xianyu_orders SET status = 'paid', paid_at = CURRENT_TIMESTAMP WHERE id = {ph}",
-            (order_id,)
+            f"UPDATE xianyu_orders SET status = 'paid', paid_at = CURRENT_TIMESTAMP, xianyu_trade_no = {ph} WHERE id = {ph}",
+            (xianyu_trade_no or row.get("xianyu_trade_no", "") or "", order_id)
         )
         return True, f"已激活，{msg}"
 
     def get_pending_xianyu_orders(self):
         return self.fetchall("SELECT * FROM xianyu_orders WHERE status = 'pending' ORDER BY id ASC")
+
+    def count_pending_by_price(self, price):
+        ph = _ph()
+        row = self.fetchone(f"SELECT COUNT(*) cnt FROM xianyu_orders WHERE status = 'pending' AND price = {ph}", (float(price),))
+        return int(row.get("cnt", 0) if row else 0)
 
     # ========== 卡密系统 ==========
     def generate_card_keys(self, plan_id, count=1, creator=""):
@@ -1582,11 +1590,11 @@ class Database:
         days = int(plan.get("days") or 30)
         self.execute("BEGIN")
         try:
-            self.execute(
+            cur = self.execute(
                 f"UPDATE card_keys SET status = 'used', used_by = {ph}, used_at = CURRENT_TIMESTAMP WHERE id = {ph} AND status = 'unused'",
                 (username, row["id"])
             )
-            if self._cursor.rowcount == 0:
+            if cur.rowcount == 0:
                 self.execute("ROLLBACK")
                 return False, "卡密已被使用"
             if plan_type == "monthly":
@@ -1602,6 +1610,16 @@ class Database:
                 f"INSERT INTO usage_logs (username, delta_points, balance_after, reason) VALUES ({ph}, 0, 0, {ph})",
                 (username, f"卡密激活：{name} ({code})")
             )
+            # 写入支付订单记录，便于用户端消费记录展示
+            try:
+                order_no = f"CAR{int(time.time()*1000)}{abs(hash(code)) % 10000:04d}"
+                self.execute(
+                    f"""INSERT IGNORE INTO payment_orders (order_no, username, plan_id, plan_name, plan_type, price, points, days, status, pay_method, paid_at)
+                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'paid', 'card', CURRENT_TIMESTAMP)""",
+                    (order_no, username, plan_id, name, plan_type, float(plan.get("price") or 0), points, days)
+                )
+            except Exception:
+                pass
             today = datetime.now().strftime("%Y-%m-%d")
             admin = self.get_admin_config() or {}
             if int(admin.get("referral_enabled") or 0):
