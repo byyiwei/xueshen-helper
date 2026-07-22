@@ -332,6 +332,7 @@ class Database:
         """)
 
         self._ensure_order_payment_columns()
+        self._ensure_xianyu_tables()
 
         # AI 配置表
         self.execute(f"""
@@ -947,6 +948,7 @@ class Database:
         self._add_column_if_missing("admin_config", "refund_days_limit", "refund_days_limit INT DEFAULT 7 COMMENT '退款时效（天），0=不允许退款'")
         self._add_column_if_missing("admin_config", "xianyu_enabled", "xianyu_enabled TINYINT DEFAULT 0")
         self._add_column_if_missing("admin_config", "xianyu_url", "xianyu_url VARCHAR(255) DEFAULT ''")
+        self._add_column_if_missing("admin_config", "xianyu_cookie", "xianyu_cookie TEXT COMMENT '闲鱼Cookie，用于自动发货'")
 
     def _ensure_order_payment_columns(self):
         self._add_column_if_missing("payment_orders", "pay_method", "pay_method VARCHAR(20)")
@@ -1422,6 +1424,97 @@ class Database:
         )
         tip = "已批准，退款已处理" if status == "approved" else "已拒绝"
         return True, f"退款申请{tip}"
+
+    # ========== 闲鱼自动发货 ==========
+    def _ensure_xianyu_tables(self):
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS xianyu_orders (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(50) NOT NULL COMMENT '购买用户',
+                plan_id INT NOT NULL COMMENT '套餐ID',
+                plan_name VARCHAR(100) DEFAULT '' COMMENT '套餐名',
+                price DECIMAL(10,2) DEFAULT 0 COMMENT '金额',
+                order_no VARCHAR(64) NOT NULL UNIQUE COMMENT '内部订单号',
+                card_code VARCHAR(64) NOT NULL COMMENT '关联卡密',
+                buyer_nick VARCHAR(100) DEFAULT '' COMMENT '闲鱼买家昵称',
+                status VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT 'pending/paid/cancelled',
+                checked_at TIMESTAMP NULL COMMENT '最近检查时间',
+                paid_at TIMESTAMP NULL COMMENT '确认付款时间',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_username (username),
+                INDEX idx_status (status),
+                INDEX idx_order_no (order_no)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+    def create_xianyu_order(self, username, plan_id):
+        ph = _ph()
+        plan = self.get_payment_plan(plan_id)
+        if not plan:
+            return None, "套餐不存在"
+        import secrets, string
+        code = "XS" + "".join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(14))
+        order_no = f"XY{int(time.time()*1000)}{abs(hash(username)) % 10000:04d}"
+        try:
+            self.execute(
+                f"INSERT INTO card_keys (code, plan_id, status, created_by) VALUES ({ph}, {ph}, 'unused', {ph})",
+                (code, plan_id, f"xianyu:{username}")
+            )
+        except Exception:
+            return None, "卡密生成失败"
+        self.execute(
+            f"""INSERT INTO xianyu_orders (username, plan_id, plan_name, price, order_no, card_code, status)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'pending')""",
+            (username, plan_id, plan.get("name", ""), float(plan.get("price") or 0), order_no, code)
+        )
+        return {"order_no": order_no, "card_code": code, "price": float(plan.get("price") or 0), "plan_name": plan.get("name", "")}, None
+
+    def list_xianyu_orders(self, status="", page=1, page_size=20):
+        ph = _ph()
+        where = []
+        params = []
+        if status:
+            where.append(f"status = {ph}")
+            params.append(status)
+        where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+        total = self.fetchone(f"SELECT COUNT(*) cnt FROM xianyu_orders {where_sql}", params)["cnt"]
+        offset = (page - 1) * page_size
+        rows = self.fetchall(
+            f"SELECT * FROM xianyu_orders {where_sql} ORDER BY id DESC LIMIT {ph} OFFSET {ph}",
+            params + [page_size, offset]
+        )
+        return {"total": total, "rows": rows or []}
+
+    def get_user_xianyu_orders(self, username, page=1, page_size=20):
+        ph = _ph()
+        total = self.fetchone(f"SELECT COUNT(*) cnt FROM xianyu_orders WHERE username = {ph}", (username,))["cnt"]
+        offset = (page - 1) * page_size
+        rows = self.fetchall(
+            f"SELECT * FROM xianyu_orders WHERE username = {ph} ORDER BY id DESC LIMIT {ph} OFFSET {ph}",
+            (username, page_size, offset)
+        )
+        return {"total": total, "rows": rows or []}
+
+    def get_xianyu_order(self, order_no):
+        ph = _ph()
+        return self.fetchone(f"SELECT * FROM xianyu_orders WHERE order_no = {ph}", (order_no,))
+
+    def activate_xianyu_order(self, order_id):
+        ph = _ph()
+        row = self.fetchone(f"SELECT * FROM xianyu_orders WHERE id = {ph} AND status = 'pending'", (order_id,))
+        if not row:
+            return False, "订单不存在或已处理"
+        ok, msg = self.activate_card_key(row["card_code"], row["username"])
+        if not ok:
+            return False, msg
+        self.execute(
+            f"UPDATE xianyu_orders SET status = 'paid', paid_at = CURRENT_TIMESTAMP WHERE id = {ph}",
+            (order_id,)
+        )
+        return True, f"已激活，{msg}"
+
+    def get_pending_xianyu_orders(self):
+        return self.fetchall("SELECT * FROM xianyu_orders WHERE status = 'pending' ORDER BY id ASC")
 
     # ========== 卡密系统 ==========
     def generate_card_keys(self, plan_id, count=1, creator=""):

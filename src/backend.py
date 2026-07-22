@@ -3393,7 +3393,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/api/payment/xianyu-config":
             admin = db.get_admin_config() or {}
-            self._send_json(200, {"code": 200, "xianyu_enabled": bool(admin.get("xianyu_enabled")), "xianyu_url": admin.get("xianyu_url") or ""})
+            self._send_json(200, {"code": 200, "xianyu_enabled": bool(admin.get("xianyu_enabled")), "xianyu_url": admin.get("xianyu_url") or "", "xianyu_cookie": bool(admin.get("xianyu_cookie"))})
 
         # ==================== 推广返利管理（GET） ====================
         elif path == "/admin/referral/config":
@@ -4672,6 +4672,98 @@ class Handler(BaseHTTPRequestHandler):
                 db.execute("UPDATE admin_config SET xianyu_enabled = %s, xianyu_url = %s WHERE id = 1",
                     (1 if data.get("enabled") else 0, data.get("url") or ""))
                 self._send_json(200, {"code": 200, "msg": "保存成功"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/save-xianyu-cookie":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                db.execute("UPDATE admin_config SET xianyu_cookie = %s WHERE id = 1",
+                    (data.get("cookie") or "",))
+                self._send_json(200, {"code": 200, "msg": "Cookie 已保存"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/xianyu-orders":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                status = qs.get("status", [""])[0]
+                page = int(qs.get("page", [1])[0])
+                result = db.list_xianyu_orders(status=status, page=page)
+                self._send_json(200, {"code": 200, **result})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/xianyu-force-activate":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                order_id = int(data.get("id") or 0)
+                ok, msg = db.activate_xianyu_order(order_id)
+                self._send_json(200 if ok else 400, {"code": 200 if ok else 400, "msg": msg})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/api/payment/xianyu-create-order":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "请先登录"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                plan_id = int(data.get("plan_id") or 0)
+                order, err = db.create_xianyu_order(user["username"], plan_id)
+                if err:
+                    self._send_json(400, {"code": 400, "msg": err})
+                    return
+                admin = db.get_admin_config() or {}
+                order["xianyu_url"] = admin.get("xianyu_url") or ""
+                self._send_json(200, {"code": 200, "order": order})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/api/user/xianyu-orders":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "请先登录"})
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                page = int(qs.get("page", [1])[0])
+                result = db.get_user_xianyu_orders(user["username"], page=page)
+                self._send_json(200, {"code": 200, **result})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/api/user/xianyu-confirm":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "请先登录"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                order_no = data.get("order_no") or ""
+                order = db.get_xianyu_order(order_no)
+                if not order:
+                    self._send_json(400, {"code": 400, "msg": "订单不存在"})
+                    return
+                if order["username"] != user["username"]:
+                    self._send_json(403, {"code": 403, "msg": "无权操作"})
+                    return
+                if order["status"] != "pending":
+                    self._send_json(400, {"code": 400, "msg": "订单已处理"})
+                    return
+                ok, msg = db.activate_xianyu_order(order["id"])
+                if ok:
+                    profile = db.get_user_profile(user["username"])
+                    if profile:
+                        profile.pop("password", None)
+                        profile.pop("token", None)
+                    self._send_json(200, {"code": 200, "msg": msg, "profile": profile})
+                else:
+                    self._send_json(400, {"code": 400, "msg": msg})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/api/user/card-key/activate":

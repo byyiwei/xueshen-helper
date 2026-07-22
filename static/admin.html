@@ -1858,6 +1858,65 @@ body{
               <button class="btn btn-success" @click="saveXianyuConfig" style="margin-top:8px">保存设置</button>
             </div>
           </div>
+          <div class="card">
+            <div class="card-header">
+              <h3>Cookie 配置（自动发货）</h3>
+            </div>
+            <div class="card-body">
+              <div class="form-group">
+                <label>闲鱼 Cookie</label>
+                <textarea v-model="xianyuCookie" class="form-control" rows="4" placeholder="登录闲鱼网页版后从浏览器复制 Cookie 粘贴到这里"></textarea>
+              </div>
+              <div style="font-size:12px;color:var(--text3);margin-bottom:8px">
+                Cookie 已设置：{{xianyuCookie?'是（'+xianyuCookie.length+' 字符）':'否'}}
+              </div>
+              <button class="btn btn-success" @click="saveXianyuCookie" :disabled="xyCookieSaving">{{xyCookieSaving?'保存中...':'保存 Cookie'}}</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <h3>待发货订单</h3>
+              <button class="btn btn-sm btn-secondary" @click="loadXianyuOrders(1)" style="margin-left:8px">刷新</button>
+            </div>
+            <div class="card-body" style="overflow-x:auto">
+              <table v-if="xyOrderList.length" style="width:100%;border-collapse:collapse;font-size:13px;min-width:700px">
+                <thead>
+                  <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
+                    <th style="text-align:left;padding:10px 8px">订单号</th>
+                    <th style="text-align:left;padding:10px 8px">用户</th>
+                    <th style="text-align:left;padding:10px 8px">套餐</th>
+                    <th style="text-align:left;padding:10px 8px">金额</th>
+                    <th style="text-align:left;padding:10px 8px">卡密</th>
+                    <th style="text-align:left;padding:10px 8px">状态</th>
+                    <th style="text-align:left;padding:10px 8px">创建时间</th>
+                    <th style="text-align:left;padding:10px 8px">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="o in xyOrderList" :key="o.id" style="border-bottom:1px solid var(--border);color:var(--text)">
+                    <td style="padding:10px 8px;font-family:monospace;font-size:12px">{{o.order_no}}</td>
+                    <td style="padding:10px 8px">{{o.username}}</td>
+                    <td style="padding:10px 8px">{{o.plan_name||'-'}}</td>
+                    <td style="padding:10px 8px;color:var(--success)">¥{{Number(o.price||0).toFixed(2)}}</td>
+                    <td style="padding:10px 8px;font-family:monospace;font-size:12px">{{o.card_code}}</td>
+                    <td style="padding:10px 8px">
+                      <span :style="{color:o.status==='pending'?'var(--warning)':o.status==='paid'?'var(--success)':'var(--danger)',fontWeight:'600'}">
+                        {{o.status==='pending'?'待付款':o.status==='paid'?'已到账':'已取消'}}
+                      </span>
+                    </td>
+                    <td style="padding:10px 8px;color:var(--text3);font-size:12px">{{String(o.created_at||'').replace('T',' ').substring(0,16)}}</td>
+                    <td style="padding:10px 8px">
+                      <button v-if="o.status==='pending'" class="btn btn-success btn-sm" @click="forceActivateXianyuOrder(o.id)">手动到账</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-else style="text-align:center;padding:20px 0;color:var(--text3);font-size:13px">暂无订单</div>
+              <div v-if="xyOrderTotalPages>1" style="display:flex;justify-content:center;gap:6px;margin-top:16px">
+                <button v-for="p in xyOrderTotalPages" :key="p" :class="['btn','btn-sm',p===xyOrderPage?'btn-primary':'btn-secondary']" @click="loadXianyuOrders(p)">{{p}}</button>
+              </div>
+            </div>
+          </div>
         </div>
       </template>
 
@@ -4154,6 +4213,12 @@ createApp({
     // 卡密管理
     const xianyuEnabled=ref(false);
     const xianyuUrl=ref('');
+    const xianyuCookie=ref('');
+    const xyCookieSaving=ref(false);
+    const xyOrderList=ref([]);
+    const xyOrderPage=ref(1);
+    const xyOrderTotalPages=ref(0);
+    const xyOrderTotal=ref(0);
     const ckList=ref([]);
     const ckPage=ref(1);
     const ckTotalPages=ref(0);
@@ -4337,12 +4402,39 @@ createApp({
         const d=await res.json();
         if(d.code===200){xianyuEnabled.value=!!d.xianyu_enabled;xianyuUrl.value=d.xianyu_url||'';}
       }catch(_){}
+      loadXianyuOrders(1);
     }
     async function saveXianyuConfig(){
       try{
         const res=await safeFetch('/admin/save-xianyu-config',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({enabled:xianyuEnabled.value,url:xianyuUrl.value})});
         const d=await res.json();
         showMsg(d.msg||'保存完成', d.code===200?'success':'error');
+      }catch(_){showMsg('error','网络错误');}
+    }
+    async function saveXianyuCookie(){
+      xyCookieSaving.value=true;
+      try{
+        const res=await safeFetch('/admin/save-xianyu-cookie',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({cookie:xianyuCookie.value})});
+        const d=await res.json();
+        showMsg(d.msg||'保存完成', d.code===200?'success':'error');
+      }catch(_){showMsg('error','网络错误');}
+      xyCookieSaving.value=false;
+    }
+    async function loadXianyuOrders(page){
+      xyOrderPage.value=page||1;
+      try{
+        const res=await safeFetch('/admin/xianyu-orders?page='+xyOrderPage.value,{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200){xyOrderList.value=d.rows||[];xyOrderTotal.value=d.total||0;xyOrderTotalPages.value=Math.ceil(xyOrderTotal.value/20)||1;}
+      }catch(_){}
+    }
+    async function forceActivateXianyuOrder(id){
+      if(!confirm('确定手动将这笔订单标记为已到账？'))return;
+      try{
+        const res=await safeFetch('/admin/xianyu-force-activate',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({id})});
+        const d=await res.json();
+        showMsg(d.msg||'操作完成', d.code===200?'success':'error');
+        if(d.code===200)loadXianyuOrders(xyOrderPage.value);
       }catch(_){showMsg('error','网络错误');}
     }
     async function generateCardKeys(){
@@ -4499,6 +4591,8 @@ createApp({
         loadRefundRequests,processRefundRequest,previewQr,
         xianyuEnabled,xianyuUrl,ckList,ckPage,ckTotalPages,ckTotal,ckFilterStatus,ckFilterPlanId,ckGeneratePlanId,ckGenerateCount,ckGenerateSaving,
         loadCardKeys,loadXianyuConfig,saveXianyuConfig,generateCardKeys,
+        xianyuCookie,xyCookieSaving,xyOrderList,xyOrderPage,xyOrderTotalPages,xyOrderTotal,
+        saveXianyuCookie,loadXianyuOrders,forceActivateXianyuOrder,
        feedbackList,feedbackFilter,feedbackPage,feedbackTotalPages,feedbackTotal,feedbackPendingCount,feedbackDetail,feedbackReplyText,
         loadFeedbackList,feedbackSearch,viewFeedbackDetail,replyFeedback,updateFeedbackStatus,feedbackPrev,feedbackNext,
     feedbackAutoCloseDays,loadFeedbackAutoClose,saveFeedbackAutoClose,
