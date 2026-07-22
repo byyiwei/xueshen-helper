@@ -656,6 +656,21 @@ class Database:
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
+        # ===== 卡密表（闲鱼购买） =====
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS card_keys (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                code VARCHAR(64) NOT NULL UNIQUE COMMENT '卡密',
+                plan_id INT NOT NULL COMMENT '关联套餐ID',
+                status VARCHAR(20) NOT NULL DEFAULT 'unused' COMMENT 'unused/used',
+                created_by VARCHAR(50) DEFAULT '' COMMENT '生成者',
+                used_by VARCHAR(50) DEFAULT '' COMMENT '使用者',
+                used_at TIMESTAMP NULL COMMENT '使用时间',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_status (status),
+                INDEX idx_code (code)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
 
     def _ensure_index(self, table, index_name, *columns):
         """确保普通索引存在，不存在则创建"""
@@ -930,6 +945,8 @@ class Database:
         self._add_column_if_missing("admin_config", "feedback_auto_close_days", "feedback_auto_close_days INT DEFAULT 7")
         self._add_column_if_missing("admin_config", "feedback_notify_enabled", "feedback_notify_enabled TINYINT DEFAULT 0")
         self._add_column_if_missing("admin_config", "refund_days_limit", "refund_days_limit INT DEFAULT 7 COMMENT '退款时效（天），0=不允许退款'")
+        self._add_column_if_missing("admin_config", "xianyu_enabled", "xianyu_enabled TINYINT DEFAULT 0")
+        self._add_column_if_missing("admin_config", "xianyu_url", "xianyu_url VARCHAR(255) DEFAULT ''")
 
     def _ensure_order_payment_columns(self):
         self._add_column_if_missing("payment_orders", "pay_method", "pay_method VARCHAR(20)")
@@ -1403,7 +1420,95 @@ class Database:
             f"UPDATE refund_requests SET status = {ph}, admin_note = {ph}, processed_at = CURRENT_TIMESTAMP WHERE id = {ph}",
             (status, admin_note, request_id)
         )
-        return True, "处理成功"
+        tip = "已批准，退款已处理" if status == "approved" else "已拒绝"
+        return True, f"退款申请{tip}"
+
+    # ========== 卡密系统 ==========
+    def generate_card_keys(self, plan_id, count=1, creator=""):
+        ph = _ph()
+        plan = self.get_payment_plan(plan_id)
+        if not plan:
+            return False, "套餐不存在"
+        codes = []
+        import secrets, string
+        for _ in range(count):
+            code = "XS" + "".join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(14))
+            codes.append(code)
+        import pymysql
+        try:
+            for code in codes:
+                self.execute(
+                    f"INSERT INTO card_keys (code, plan_id, created_by) VALUES ({ph}, {ph}, {ph})",
+                    (code, plan_id, creator)
+                )
+        except pymysql.IntegrityError:
+            return False, "卡密生成失败（重复）"
+        return True, f"已生成 {len(codes)} 张卡密"
+
+    def list_card_keys(self, status="", plan_id=0, page=1, page_size=20):
+        ph = _ph()
+        where = []
+        params = []
+        if status:
+            where.append(f"c.status = {ph}")
+            params.append(status)
+        if plan_id:
+            where.append(f"c.plan_id = {ph}")
+            params.append(plan_id)
+        where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+        total = self.fetchone(f"SELECT COUNT(*) cnt FROM card_keys c {where_sql}", params)["cnt"]
+        offset = (page - 1) * page_size
+        rows = self.fetchall(
+            f"SELECT c.*, p.name plan_name, p.price, p.type plan_type FROM card_keys c "
+            f"LEFT JOIN payment_plans p ON c.plan_id = p.id {where_sql} ORDER BY c.id DESC LIMIT {ph} OFFSET {ph}",
+            params + [page_size, offset]
+        )
+        return {"total": total, "rows": rows or []}
+
+    def activate_card_key(self, code, username):
+        ph = _ph()
+        row = self.fetchone(f"SELECT * FROM card_keys WHERE code = {ph}", (code,))
+        if not row:
+            return False, "卡密不存在"
+        if row["status"] != "unused":
+            return False, "卡密已被使用"
+        plan_id = row["plan_id"]
+        plan = self.get_payment_plan(plan_id)
+        if not plan:
+            return False, "关联套餐不存在"
+        plan_type = plan.get("type") or "points"
+        points = int(plan.get("points") or 0)
+        days = int(plan.get("days") or 30)
+        self.execute("BEGIN")
+        try:
+            self.execute(
+                f"UPDATE card_keys SET status = 'used', used_by = {ph}, used_at = CURRENT_TIMESTAMP WHERE id = {ph} AND status = 'unused'",
+                (username, row["id"])
+            )
+            if self._cursor.rowcount == 0:
+                self.execute("ROLLBACK")
+                return False, "卡密已被使用"
+            if plan_type == "monthly":
+                self.extend_user_membership(username, days, f"卡密激活：{code}")
+            else:
+                self.execute(
+                    f"UPDATE users SET points_balance = points_balance + {ph} WHERE username = {ph}",
+                    (points, username)
+                )
+            self.execute("COMMIT")
+            name = plan.get("name") or ""
+            self.execute(
+                f"INSERT INTO usage_logs (username, delta_points, balance_after, reason) VALUES ({ph}, 0, 0, {ph})",
+                (username, f"卡密激活：{name} ({code})")
+            )
+            today = datetime.now().strftime("%Y-%m-%d")
+            admin = self.get_admin_config() or {}
+            if int(admin.get("referral_enabled") or 0):
+                self._settle_first_order_commission(username, f"card_{code}", float(plan.get("price") or 0))
+            return True, f"卡密激活成功，已获得「{name}」"
+        except Exception as e:
+            self.execute("ROLLBACK")
+            return False, f"激活失败：{str(e)}"
 
     def _revoke_user_membership(self, username, days):
         """撤销用户包月天数（从 member_until 向前减少）"""

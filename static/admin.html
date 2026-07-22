@@ -642,7 +642,7 @@ body{
 
         <!-- 支付财务组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.payment}">
-          <div class="menu-group-header dock-item" :class="{active:['payment-orders','payment','pay-api','pay-test','refund-requests'].includes(page)}" @click="expandedGroups.payment=!expandedGroups.payment">
+          <div class="menu-group-header dock-item" :class="{active:['payment-orders','payment','pay-api','pay-test','refund-requests','card-keys'].includes(page)}" @click="expandedGroups.payment=!expandedGroups.payment">
             <span class="icon">□</span>支付财务
             <span class="arrow">▶</span>
           </div>
@@ -661,6 +661,9 @@ body{
             </div>
             <div class="menu-item" :class="{active:page==='refund-requests'}" @click="page='refund-requests';loadRefundRequests()">
               <span class="icon">↩</span>退款申请
+            </div>
+            <div class="menu-item" :class="{active:page==='card-keys'}" @click="page='card-keys';loadCardKeys()">
+              <span class="icon">⚷</span>卡密管理
             </div>
           </div>
         </div>
@@ -1748,6 +1751,97 @@ body{
               <h3>收款码</h3>
               <img :src="rrQrPreview" style="max-width:280px;border-radius:8px;margin:12px 0">
               <div><button class="btn btn-secondary" @click="rrQrPreview=''">关闭</button></div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Card Keys Page -->
+      <template v-if="page==='card-keys'">
+        <header class="main-header">
+          <h2>卡密管理</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index<breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="card">
+            <div class="card-header">
+              <h3>闲鱼购买设置</h3>
+            </div>
+            <div class="card-body">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>启用闲鱼购买</label>
+                  <div class="toggle" :class="xianyuEnabled?'on':''" @click="xianyuEnabled=!xianyuEnabled"></div>
+                </div>
+                <div class="form-group" style="flex:2">
+                  <label>闲鱼店铺链接</label>
+                  <input v-model="xianyuUrl" class="form-control" placeholder="如：https://m.tb.cn/h.xxxxx">
+                </div>
+              </div>
+              <button class="btn btn-success" @click="saveXianyuConfig" style="margin-top:8px">保存设置</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <h3>生成卡密</h3>
+              <div style="display:flex;gap:8px;align-items:center">
+                <select v-model.number="ckGeneratePlanId" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg4);color:var(--text)">
+                  <option value="0">选择套餐</option>
+                  <option v-for="p in paymentPlans" :key="p.id" :value="p.id">{{p.name}} - ¥{{Number(p.price).toFixed(2)}}</option>
+                </select>
+                <input v-model.number="ckGenerateCount" type="number" min="1" max="100" style="width:70px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg4);color:var(--text)" placeholder="数量">
+                <button class="btn btn-primary" :disabled="!ckGeneratePlanId||ckGenerateSaving" @click="generateCardKeys">{{ckGenerateSaving?'生成中...':'生成卡密'}}</button>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <h3>卡密列表</h3>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <select v-model="ckFilterStatus" @change="loadCardKeys(1)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg4);color:var(--text)">
+                  <option value="">全部状态</option>
+                  <option value="unused">未使用</option>
+                  <option value="used">已使用</option>
+                </select>
+                <select v-model.number="ckFilterPlanId" @change="loadCardKeys(1)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg4);color:var(--text)">
+                  <option value="0">全部套餐</option>
+                  <option v-for="p in paymentPlans" :key="p.id" :value="p.id">{{p.name}}</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" @click="loadCardKeys(1)">刷新</button>
+              </div>
+            </div>
+            <div class="card-body" style="overflow-x:auto">
+              <table v-if="ckList.length" style="width:100%;border-collapse:collapse;font-size:13px;min-width:700px">
+                <thead>
+                  <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
+                    <th style="text-align:left;padding:10px 8px">卡密</th>
+                    <th style="text-align:left;padding:10px 8px">套餐</th>
+                    <th style="text-align:left;padding:10px 8px">金额</th>
+                    <th style="text-align:left;padding:10px 8px">状态</th>
+                    <th style="text-align:left;padding:10px 8px">使用者</th>
+                    <th style="text-align:left;padding:10px 8px">生成时间</th>
+                    <th style="text-align:left;padding:10px 8px">使用时间</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="c in ckList" :key="c.id" style="border-bottom:1px solid var(--border);color:var(--text)">
+                    <td style="padding:10px 8px;font-family:monospace;font-size:12px">{{c.code}}</td>
+                    <td style="padding:10px 8px">{{c.plan_name||'-'}}</td>
+                    <td style="padding:10px 8px;color:var(--success)">¥{{Number(c.price||0).toFixed(2)}}</td>
+                    <td style="padding:10px 8px">
+                      <span :style="{color:c.status==='unused'?'var(--warning)':'var(--text3)'}">{{c.status==='unused'?'未使用':'已使用'}}</span>
+                    </td>
+                    <td style="padding:10px 8px;color:var(--accent2)">{{c.used_by||'-'}}</td>
+                    <td style="padding:10px 8px;color:var(--text3);font-size:12px">{{String(c.created_at||'').replace('T',' ').substring(0,16)}}</td>
+                    <td style="padding:10px 8px;color:var(--text3);font-size:12px">{{c.used_at?String(c.used_at).replace('T',' ').substring(0,16):'-'}}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-else style="text-align:center;padding:40px 0;color:var(--text3);font-size:13px">暂无卡密</div>
+              <div v-if="ckTotalPages>1" style="display:flex;justify-content:center;gap:6px;margin-top:16px">
+                <button v-for="p in ckTotalPages" :key="p" :class="['btn','btn-sm',p===ckPage?'btn-primary':'btn-secondary']" @click="loadCardKeys(p)">{{p}}</button>
+              </div>
             </div>
           </div>
         </div>
@@ -2849,6 +2943,7 @@ createApp({
       'pay-api':[{label:'支付财务',group:'payment'},{label:'支付接口'}],
       'pay-test':[{label:'支付财务',group:'payment'},{label:'支付测试'}],
       'refund-requests':[{label:'支付财务',group:'payment'},{label:'退款申请'}],
+      'card-keys':[{label:'支付财务',group:'payment'},{label:'卡密管理'}],
       'script-logs':[{label:'日志监控',group:'logs'},{label:'脚本日志'}],
       'ai-logs':[{label:'日志监控',group:'logs'},{label:'模型日志'}],
       'log-cleanup':[{label:'日志监控',group:'logs'},{label:'日志清理'}],
@@ -2983,7 +3078,8 @@ createApp({
       sandpay_enabled:false,sandpay_mid:'',sandpay_api_url:'',sandpay_private_key:'',sandpay_merchant_public_key:'',sandpay_public_key:'',sandpay_notify_url:'',sandpay_return_url:'',
       // 易支付
       epay_enabled:false,epay_api_url:'',epay_pid:'',epay_key:'',epay_notify_url:'',epay_return_url:'',
-      alipay_weight:100,wechat_weight:100,zhifufm_weight:100,sandpay_weight:100,epay_weight:100
+      alipay_weight:100,wechat_weight:100,zhifufm_weight:100,sandpay_weight:100,epay_weight:100,
+      refund_days_limit:7
     });
     const payApiCollapsed=reactive({alipay:true,wechat:true,zhifufm:true,sandpay:true,epay:true,refund:true});
     const planForm=reactive({id:null,name:'',plan_type:'points',price:0,points:0,days:30,enabled:true,sort_order:0});
@@ -4040,6 +4136,18 @@ createApp({
     const rrTotalPages=ref(0);
     const rrTotal=ref(0);
     const rrQrPreview=ref('');
+    // 卡密管理
+    const xianyuEnabled=ref(false);
+    const xianyuUrl=ref('');
+    const ckList=ref([]);
+    const ckPage=ref(1);
+    const ckTotalPages=ref(0);
+    const ckTotal=ref(0);
+    const ckFilterStatus=ref('');
+    const ckFilterPlanId=ref(0);
+    const ckGeneratePlanId=ref(0);
+    const ckGenerateCount=ref(10);
+    const ckGenerateSaving=ref(false);
     // 问题反馈
     const feedbackList=ref([]);
     const feedbackFilter=ref({status:'',category:'',keyword:''});
@@ -4185,11 +4293,53 @@ createApp({
           body:JSON.stringify({id,status})
         });
         const d=await res.json();
-        showMsg(d.code===200?'success':'danger',d.msg||'操作完成');
+        showMsg(d.msg||'操作完成',d.code===200?'success':'danger');
         loadRefundRequests(rrPage.value);
       }catch(_){showMsg('danger','请求失败');}
     }
     function previewQr(src){rrQrPreview.value=src;}
+    // 卡密管理
+    async function loadCardKeys(page){
+      ckPage.value=page||1;
+      const params=new URLSearchParams({status:ckFilterStatus.value,plan_id:String(ckFilterPlanId.value),page:String(ckPage.value)});
+      try{
+        const res=await safeFetch('/admin/card-keys?'+params.toString(),{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200){ckList.value=d.rows||[];ckTotal.value=d.total||0;ckTotalPages.value=Math.ceil(ckTotal.value/20)||1;}
+      }catch(_){}
+      // 加载套餐列表
+      if(!paymentPlans.value.length){
+        try{
+          const res2=await safeFetch('/admin/payment-config',{headers:{'Authorization':token.value}});
+          const d2=await res2.json();
+          if(d2.code===200)paymentPlans.value=d2.plans||[];
+        }catch(_){}
+      }
+      // 加载闲鱼配置
+      try{
+        const res2=await fetch('/api/payment/xianyu-config',{headers:{'Authorization':token.value}});
+        const d2=await res2.json();
+        if(d2.code===200){xianyuEnabled.value=!!d2.xianyu_enabled;xianyuUrl.value=d2.xianyu_url||'';}
+      }catch(_){}
+    }
+    async function saveXianyuConfig(){
+      try{
+        const res=await safeFetch('/admin/save-xianyu-config',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({enabled:xianyuEnabled.value,url:xianyuUrl.value})});
+        const d=await res.json();
+        showMsg(d.msg||'保存完成', d.code===200?'success':'error');
+      }catch(_){showMsg('error','网络错误');}
+    }
+    async function generateCardKeys(){
+      if(!ckGeneratePlanId.value)return showMsg('error','请选择套餐');
+      ckGenerateSaving.value=true;
+      try{
+        const res=await safeFetch('/admin/card-keys/generate',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({plan_id:ckGeneratePlanId.value,count:ckGenerateCount.value})});
+        const d=await res.json();
+        showMsg(d.msg||'操作完成',d.code===200?'success':'error');
+        if(d.code===200)loadCardKeys(1);
+      }catch(_){showMsg('error','网络错误');}
+      ckGenerateSaving.value=false;
+    }
 
     // ========== 问题反馈管理 ==========
     async function loadFeedbackList(){
@@ -4331,6 +4481,8 @@ createApp({
         loadPaymentOrders,togglePaymentSort,paymentOrdersSearch,paymentOrdersPrev,paymentOrdersNext,
         rrFilterStatus,rrList,rrPage,rrTotalPages,rrTotal,rrQrPreview,
         loadRefundRequests,processRefundRequest,previewQr,
+        xianyuEnabled,xianyuUrl,ckList,ckPage,ckTotalPages,ckTotal,ckFilterStatus,ckFilterPlanId,ckGeneratePlanId,ckGenerateCount,ckGenerateSaving,
+        loadCardKeys,saveXianyuConfig,generateCardKeys,
        feedbackList,feedbackFilter,feedbackPage,feedbackTotalPages,feedbackTotal,feedbackPendingCount,feedbackDetail,feedbackReplyText,
         loadFeedbackList,feedbackSearch,viewFeedbackDetail,replyFeedback,updateFeedbackStatus,feedbackPrev,feedbackNext,
     feedbackAutoCloseDays,loadFeedbackAutoClose,saveFeedbackAutoClose,

@@ -668,6 +668,10 @@
         .billing-hero p { margin: 0; color: rgba(236, 253, 245, .9); line-height: 1.7; font-size: 13.5px; position: relative; z-index: 1; }
         .billing-hero .hero-urgency { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 6px 14px; border-radius: 999px; background: rgba(255, 255, 255, .18); border: 1px solid rgba(255, 255, 255, .3); font-size: 12px; font-weight: 700; position: relative; z-index: 1; }
         .billing-hero .hero-urgency .pulse { width: 8px; height: 8px; border-radius: 50%; background: #fde047; animation: pulse-glow 1.5s ease-in-out infinite; }
+        .ck-activate-section { padding:14px; border-radius:var(--v-radius-sm); border:1px dashed var(--primary); background:rgba(16,185,129,.06); margin-top:16px }
+        .ck-input-row { display:flex; align-items:center; gap:8px }
+        .btn.primary-outline { background:transparent; border:1px solid var(--primary); color:var(--primary); padding:8px 18px; border-radius:8px; font-weight:600; cursor:pointer; transition:all .2s; font-size:13.5px }
+        .btn.primary-outline:hover { background:var(--primary); color:#fff }
         @keyframes pulse-glow { 0%, 100% { opacity: 1; box-shadow: 0 0 4px #fde047; } 50% { opacity: .6; box-shadow: 0 0 14px #fde047; } }
         .billing-status { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; position: relative; z-index: 1; }
         .billing-status .bs { padding: 14px 16px; border-radius: var(--v-radius-sm); background: rgba(255, 255, 255, .14); border: 1px solid rgba(255, 255, 255, .2); -webkit-backdrop-filter: blur(6px); transition: background .2s; }
@@ -1421,6 +1425,12 @@
                         </div>
                         <div id="payMethods" class="pay-methods"></div>
                         <div id="planGrid" class="plan-grid"></div>
+                        <div id="ckSection" class="ck-activate-section" style="display:none;margin-top:16px">
+                            <div class="ck-input-row">
+                                <input id="ckInput" class="form-control" placeholder="输入闲鱼购买的卡密（16 位）" style="flex:1;min-width:180px" maxlength="16">
+                                <button class="btn primary-outline" id="ckActivateBtn">激活卡密</button>
+                            </div>
+                        </div>
                         <div id="qrPanel" class="qr-panel">
                             <div class="qr-title" id="payQrTitle">请扫码完成付款</div>
                             <img id="payQrImg" alt="支付二维码">
@@ -1976,8 +1986,42 @@
                 setBusy($('regenScriptKeyBtn'), false);
             }
         }
+        let xianyuUrl='';
+        let xianyuEnabled=false;
+        async function loadXianyuConfig(){
+            try{
+                const res=await fetch('/api/payment/xianyu-config');
+                const d=await res.json();
+                if(d.code===200&&d.xianyu_enabled){
+                    xianyuEnabled=true;
+                    xianyuUrl=d.xianyu_url||'';
+                }else{
+                    xianyuEnabled=false;
+                    xianyuUrl='';
+                }
+            }catch(_){xianyuEnabled=false;xianyuUrl='';}
+        }
+        async function activateCardKey(){
+            const input=$('ckInput');
+            const code=input.value.trim();
+            if(!code||code.length!==16)return msg('billingMsg','请输入 16 位卡密',false);
+            const token=localStorage.getItem(TOKEN_KEY);
+            if(!token)return msg('billingMsg','请先登录',false);
+            try{
+                const res=await fetch('/api/user/card-key/activate',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({code})});
+                const d=await res.json();
+                if(d.code===200){
+                    msg('billingMsg',d.msg||'卡密激活成功，权益已到账',true);
+                    input.value='';
+                    if(typeof fillProfile==='function')fillProfile(d.profile);
+                }else{
+                    msg('billingMsg',d.msg||'激活失败',false);
+                }
+            }catch(_){msg('billingMsg','激活失败，请检查网络',false);}
+        }
         async function loadPlans() {
             try {
+                await loadXianyuConfig();
                 await loadPaymentMethods();
                 const res = await fetch('/api/payment/plans');
                 const data = await res.json();
@@ -2009,6 +2053,8 @@
                     </div>`;
                 }).join('') : '<p class="hint">暂无可购买套餐，请联系管理员配置。</p>';
                 document.querySelectorAll('[data-buy-plan]').forEach(btn => btn.onclick = () => buyPlan(btn.dataset.buyPlan, btn, Number(btn.dataset.planPrice || 0)));
+                $('ckActivateBtn').onclick = activateCardKey;
+                $('ckInput').onkeydown = e => { if(e.key==='Enter')activateCardKey(); };
             } catch (_) {
                 $('planGrid').innerHTML = '<p class="hint">套餐加载失败，请稍后重试。</p>';
             }
@@ -2025,22 +2071,37 @@
                 // 渲染带图标的支付方式卡片
                 const icons = {
                     wechat: '<svg viewBox="0 0 1228 1024" width="28" height="28"><path d="M530.8928 703.1296a41.472 41.472 0 0 1-35.7376-19.8144l-2.7136-5.5808L278.272 394.752a18.7392 18.7392 0 0 1-2.048-8.1408 19.968 19.968 0 0 1 20.48-19.3536c4.608 0 8.8576 1.4336 12.288 3.84l234.3936 139.9296a64.4096 64.4096 0 0 0 54.528 5.9392L1116.2624 204.8C1004.9536 80.896 821.76 0 614.4 0 275.0464 0 0 216.576 0 483.6352c0 145.7152 82.7392 276.8896 212.2752 365.5168a38.1952 38.1952 0 0 1 17.2032 31.488 44.4928 44.4928 0 0 1-2.1504 12.3904l-27.6992 97.4848c-1.3312 4.608-3.328 9.3696-3.328 14.1312 0 10.752 9.216 19.3536 20.48 19.3536 4.4032 0 8.0384-1.536 11.776-3.584l134.5536-73.3184c10.1376-5.5296 20.7872-8.96 32.6144-8.96 6.2976 0 12.288 0.9216 18.0736 2.5088 62.72 17.0496 130.4576 26.5728 200.5504 26.5728C953.7024 967.168 1228.8 750.592 1228.8 483.6352c0-80.9472-25.4464-157.1328-70.0416-224.1024l-604.9792 436.992-4.4544 2.4064a42.1376 42.1376 0 0 1-18.432 4.1984z" fill="#15BA11"/></svg>',
-                    alipay: '<svg viewBox="0 0 1024 1024" width="28" height="28"><path d="M1024.0512 701.0304V196.864A196.9664 196.9664 0 0 0 827.136 0H196.864A196.9664 196.9664 0 0 0 0 196.864v630.272A196.9152 196.9152 0 0 0 196.864 1024h630.272a197.12 197.12 0 0 0 193.8432-162.0992c-52.224-22.6304-278.528-120.32-396.4416-176.64-89.7024 108.6976-183.7056 173.9264-325.3248 173.9264s-236.1856-87.2448-224.8192-194.048c7.4752-70.0416 55.552-184.576 264.2944-164.9664 110.08 10.3424 160.4096 30.8736 250.1632 60.5184 23.1936-42.5984 42.496-89.4464 57.1392-139.264H248.064v-39.424h196.9152V311.1424H204.8V267.776h240.128V165.632s2.1504-15.9744 19.8144-15.9744h98.4576V267.776h256v43.4176h-256V381.952h208.8448a805.9904 805.9904 0 0 1-84.8384 212.6848c60.672 22.016 336.7936 106.3936 336.7936 106.3936zM283.5456 791.6032c-149.6576 0-173.312-94.464-165.376-133.9392 7.8336-39.3216 51.2-90.624 134.4-90.624 95.5904 0 181.248 24.4736 284.0576 74.5472-72.192 94.0032-160.9216 150.016-253.0816 150.016z" fill="#009FE8"/></svg>'
+                    alipay: '<svg viewBox="0 0 1024 1024" width="28" height="28"><path d="M1024.0512 701.0304V196.864A196.9664 196.9664 0 0 0 827.136 0H196.864A196.9664 196.9664 0 0 0 0 196.864v630.272A196.9152 196.9152 0 0 0 196.864 1024h630.272a197.12 197.12 0 0 0 193.8432-162.0992c-52.224-22.6304-278.528-120.32-396.4416-176.64-89.7024 108.6976-183.7056 173.9264-325.3248 173.9264s-236.1856-87.2448-224.8192-194.048c7.4752-70.0416 55.552-184.576 264.2944-164.9664 110.08 10.3424 160.4096 30.8736 250.1632 60.5184 23.1936-42.5984 42.496-89.4464 57.1392-139.264H248.064v-39.424h196.9152V311.1424H204.8V267.776h240.128V165.632s2.1504-15.9744 19.8144-15.9744h98.4576V267.776h256v43.4176h-256V381.952h208.8448a805.9904 805.9904 0 0 1-84.8384 212.6848c60.672 22.016 336.7936 106.3936 336.7936 106.3936zM283.5456 791.6032c-149.6576 0-173.312-94.464-165.376-133.9392 7.8336-39.3216 51.2-90.624 134.4-90.624 95.5904 0 181.248 24.4736 284.0576 74.5472-72.192 94.0032-160.9216 150.016-253.0816 150.016z" fill="#009FE8"/></svg>',
+                    xianyu: '<svg viewBox="0 0 28 28" width="28" height="28"><rect width="28" height="28" rx="6" fill="#FFD800"/><text x="14" y="18" font-size="11" font-weight="900" fill="#1A1A1A" text-anchor="middle" font-family="-apple-system,Helvetica,Arial,sans-serif">闲鱼</text></svg>'
                 };
-                $('payMethods').innerHTML = payMethodsList.length ? payMethodsList.map(m => {
+                let html = payMethodsList.map(m => {
                     const checked = m.value === currentPayMethod ? 'checked' : '';
                     return `<label class="pay-method-card ${checked ? 'active' : ''}" data-pay-method="${m.value}">
                         <span class="pm-icon">${icons[m.value] || ''}</span>
                         <span class="pm-label">${m.label}</span>
                         <span class="pm-check">${checked ? '✓' : ''}</span>
                     </label>`;
-                }).join('') : '<p class="hint">暂无可用支付方式，请联系管理员配置支付通道。</p>';
+                }).join('');
+                if (xianyuEnabled) {
+                    const xyChecked = currentPayMethod === 'xianyu' ? 'active' : '';
+                    html += `<label class="pay-method-card ${xyChecked}" data-pay-method="xianyu">
+                        <span class="pm-icon">${icons.xianyu}</span>
+                        <span class="pm-label">闲鱼下单</span>
+                        <span class="pm-check">${currentPayMethod === 'xianyu' ? '✓' : ''}</span>
+                    </label>`;
+                    $('ckSection').style.display = currentPayMethod === 'xianyu' ? '' : 'none';
+                }
+                $('payMethods').innerHTML = html || '<p class="hint">暂无可用支付方式，请联系管理员配置支付通道。</p>';
                 document.querySelectorAll('.pay-method-card').forEach(el => el.onclick = () => {
                     currentPayMethod = el.dataset.payMethod;
                     document.querySelectorAll('.pay-method-card').forEach(c => { c.classList.remove('active'); c.querySelector('.pm-check').textContent = ''; });
                     el.classList.add('active');
                     el.querySelector('.pm-check').textContent = '✓';
+                    // 闲鱼选中时显示卡密输入，其他方式隐藏
+                    $('ckSection').style.display = currentPayMethod === 'xianyu' ? '' : 'none';
                 });
+                // 如果当前是闲鱼方式，显示卡密区
+                $('ckSection').style.display = currentPayMethod === 'xianyu' ? '' : 'none';
             } catch (_) {
                 $('payMethods').innerHTML = '<p class="hint">支付方式加载失败，请稍后重试。</p>';
             }
@@ -2048,6 +2109,15 @@
         async function buyPlan(planId, btn, price) {
             const token = localStorage.getItem(TOKEN_KEY);
             if (!token) return msg('billingMsg', '请先登录', false);
+            if (currentPayMethod === 'xianyu') {
+                if (xianyuUrl) {
+                    window.open(xianyuUrl, '_blank');
+                }
+                msg('billingMsg', '闲鱼拍下后回到此处输入卡密激活', true);
+                $('ckSection').style.display = '';
+                $('ckInput').focus();
+                return;
+            }
             if (Number(price || 0) > 0 && !payMethodsList.length) return msg('billingMsg', '暂无可用支付方式，请联系管理员启用支付通道', false);
             setBusy(btn, true, '购买中...');
             try {

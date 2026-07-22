@@ -3378,6 +3378,23 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        elif path == "/admin/card-keys":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                status = qs.get("status", [""])[0]
+                plan_id = int(qs.get("plan_id", [0])[0])
+                page = int(qs.get("page", [1])[0])
+                result = db.list_card_keys(status=status, plan_id=plan_id, page=page)
+                self._send_json(200, {"code": 200, **result})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/api/payment/xianyu-config":
+            admin = db.get_admin_config() or {}
+            self._send_json(200, {"code": 200, "xianyu_enabled": bool(admin.get("xianyu_enabled")), "xianyu_url": admin.get("xianyu_url") or ""})
+
         # ==================== 推广返利管理（GET） ====================
         elif path == "/admin/referral/config":
             if not self._check_admin():
@@ -4573,13 +4590,20 @@ class Handler(BaseHTTPRequestHandler):
                 if not request_id or status not in ("approved", "rejected"):
                     self._send_json(400, {"code": 400, "msg": "参数错误"})
                     return
+                if status == "approved":
+                    row = db.fetchone("SELECT * FROM refund_requests WHERE id = %s", (request_id,))
+                    if not row:
+                        self._send_json(400, {"code": 400, "msg": "申请不存在"})
+                        return
+                    refund_ok, refund_msg = db.refund_order(row["order_no"], reason=row.get("reason") or "用户申请退款", operator="admin")
+                    if not refund_ok:
+                        self._send_json(400, {"code": 400, "msg": refund_msg or "退款失败"})
+                        return
                 ok, msg = db.process_refund_request(request_id, status, note)
                 # 发送邮件通知
                 if ok:
                     row = db.fetchone("SELECT * FROM refund_requests WHERE id = %s", (request_id,))
                     if row:
-                        if status == "approved":
-                            db.refund_order(row["order_no"], reason=row.get("reason") or "用户申请退款", operator="admin")
                         # 获取用户邮箱
                         user_row = db.fetchone("SELECT email FROM users WHERE username = %s", (row["username"],))
                         if user_row and user_row.get("email"):
@@ -4619,6 +4643,57 @@ class Handler(BaseHTTPRequestHandler):
                                 }
                             }, daemon=True).start()
                 self._send_json(200 if ok else 400, {"code": 200 if ok else 400, "msg": msg})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/card-keys/generate":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                plan_id = int(data.get("plan_id") or 0)
+                count = int(data.get("count") or 1)
+                if count < 1 or count > 100:
+                    self._send_json(400, {"code": 400, "msg": "生成数量 1-100"})
+                    return
+                admin_cfg = db.get_admin_config() or {}
+                operator = admin_cfg.get("username") or "admin"
+                ok, msg = db.generate_card_keys(plan_id, count, operator)
+                self._send_json(200 if ok else 400, {"code": 200 if ok else 400, "msg": msg})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/save-xianyu-config":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                db.execute("UPDATE admin_config SET xianyu_enabled = %s, xianyu_url = %s WHERE id = 1",
+                    (1 if data.get("enabled") else 0, data.get("url") or ""))
+                self._send_json(200, {"code": 200, "msg": "保存成功"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/api/user/card-key/activate":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "请先登录"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                code = (data.get("code") or "").strip().upper()
+                if not code:
+                    self._send_json(400, {"code": 400, "msg": "请输入卡密"})
+                    return
+                ok, msg = db.activate_card_key(code, user["username"])
+                res = {"code": 200 if ok else 400, "msg": msg}
+                if ok:
+                    profile = db.get_user_profile(user["username"])
+                    if profile:
+                        profile.pop("password", None)
+                        profile.pop("token", None)
+                    res["profile"] = profile
+                self._send_json(200 if ok else 400, res)
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
