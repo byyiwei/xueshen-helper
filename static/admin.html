@@ -2564,6 +2564,7 @@ body{
                   <option value="">全部</option>
                   <option value="alipay">支付宝</option>
                   <option value="wechat">微信支付</option>
+                  <option value="xianyu">闲鱼</option>
                 </select>
               </div>
               <div class="form-group" style="margin:0">
@@ -2615,7 +2616,9 @@ body{
                     <td style="padding:10px 12px">{{row.plan_type||'-'}}</td>
                     <td style="padding:10px 12px;font-weight:600;color:var(--success)">¥{{Number(row.price||0).toFixed(2)}}</td>
                     <td style="padding:10px 12px">{{row.points>0?row.points+'点':''}}{{row.days>0?(row.points>0?'/':'')+row.days+'天':''}}{{!row.points&&!row.days?'-':''}}</td>
-                    <td style="padding:10px 12px">{{row.pay_method==='alipay'?'支付宝':row.pay_method==='wechat'?'微信支付':row.pay_method||'-'}}</td>
+                    <td style="padding:10px 12px">{{row.pay_method==='alipay'?'支付宝':row.pay_method==='wechat'?'微信支付':row.pay_method==='xianyu'?'闲鱼':row.pay_method||'-'}}
+                      <span v-if="row.source==='xianyu'" style="margin-left:4px;font-size:10px;background:var(--warning);color:#fff;padding:1px 5px;border-radius:4px">闲鱼</span>
+                    </td>
                     <td style="padding:10px 12px">{{row.pay_type||'-'}}</td>
                     <td style="padding:10px 12px;font-family:monospace;font-size:12px">{{row.bank_order_no||'-'}}</td>
                     <td style="padding:10px 12px;font-family:monospace;font-size:12px">{{row.trade_no||'-'}}</td>

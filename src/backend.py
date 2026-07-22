@@ -3394,6 +3394,30 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/payment/xianyu-config":
             admin = db.get_admin_config() or {}
             self._send_json(200, {"code": 200, "xianyu_enabled": bool(admin.get("xianyu_enabled")), "xianyu_url": admin.get("xianyu_url") or "", "xianyu_cookie": bool(admin.get("xianyu_cookie"))})
+        elif path == "/admin/xianyu-orders":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                status = qs.get("status", [""])[0]
+                page = int(qs.get("page", [1])[0])
+                result = db.list_xianyu_orders(status=status, page=page)
+                self._send_json(200, {"code": 200, **result})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/api/user/xianyu-orders":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "请先登录"})
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                page = int(qs.get("page", [1])[0])
+                result = db.get_user_xianyu_orders(user["username"], page=page)
+                self._send_json(200, {"code": 200, **result})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
 
         # ==================== 推广返利管理（GET） ====================
         elif path == "/admin/referral/config":
@@ -4685,18 +4709,6 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {"code": 200, "msg": "Cookie 已保存"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
-        elif path == "/admin/xianyu-orders":
-            if not self._check_admin():
-                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
-                return
-            try:
-                qs = parse_qs(parsed.query)
-                status = qs.get("status", [""])[0]
-                page = int(qs.get("page", [1])[0])
-                result = db.list_xianyu_orders(status=status, page=page)
-                self._send_json(200, {"code": 200, **result})
-            except Exception as e:
-                self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/xianyu-force-activate":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -4723,18 +4735,6 @@ class Handler(BaseHTTPRequestHandler):
                 admin = db.get_admin_config() or {}
                 order["xianyu_url"] = admin.get("xianyu_url") or ""
                 self._send_json(200, {"code": 200, "order": order})
-            except Exception as e:
-                self._send_json(500, {"code": 500, "msg": str(e)})
-        elif path == "/api/user/xianyu-orders":
-            user = self._get_user_from_token()
-            if not user:
-                self._send_json(401, {"code": 401, "msg": "请先登录"})
-                return
-            try:
-                qs = parse_qs(parsed.query)
-                page = int(qs.get("page", [1])[0])
-                result = db.get_user_xianyu_orders(user["username"], page=page)
-                self._send_json(200, {"code": 200, **result})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/api/user/xianyu-confirm":

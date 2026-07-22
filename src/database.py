@@ -1732,48 +1732,117 @@ class Database:
         )
 
     def list_payment_orders_admin(self, username="", status="", plan_name="", pay_method="", date_from="", date_to="", sort="created_at", order="desc", page=1, page_size=20):
-        """管理员支付明细查询，支持筛选/排序/分页"""
+        """管理员支付明细查询，包含闲鱼订单"""
         ph = _ph()
-        where = []
-        params = []
+        # 支付订单 WHERE
+        po_where = []
+        po_params = []
         if username:
-            where.append(f"username LIKE {ph}")
-            params.append(f"%{username}%")
+            po_where.append(f"po.username LIKE {ph}")
+            po_params.append(f"%{username}%")
         if status:
-            where.append(f"status = {ph}")
-            params.append(status)
+            po_where.append(f"po.status = {ph}")
+            po_params.append(status)
         if plan_name:
-            where.append(f"plan_name = {ph}")
-            params.append(plan_name)
+            po_where.append(f"po.plan_name = {ph}")
+            po_params.append(plan_name)
         if pay_method:
-            where.append(f"pay_method = {ph}")
-            params.append(pay_method)
+            if pay_method == "xianyu":
+                po_where.append("1=0")
+            else:
+                po_where.append(f"po.pay_method = {ph}")
+                po_params.append(pay_method)
         if date_from:
-            where.append(f"DATE(created_at) >= {ph}")
-            params.append(date_from)
+            po_where.append(f"DATE(po.created_at) >= {ph}")
+            po_params.append(date_from)
         if date_to:
-            where.append(f"DATE(created_at) <= {ph}")
-            params.append(date_to)
-        where_clause = (" WHERE " + " AND ".join(where)) if where else ""
-        # 安全排序字段
+            po_where.append(f"DATE(po.created_at) <= {ph}")
+            po_params.append(date_to)
+        po_where_sql = (" WHERE " + " AND ".join(po_where)) if po_where else ""
+
+        # 闲鱼订单 WHERE
+        xy_where = []
+        xy_params = []
+        if username:
+            xy_where.append(f"xo.username LIKE {ph}")
+            xy_params.append(f"%{username}%")
+        if status:
+            xy_map = {"paid": "paid", "pending": "pending", "refunded": "none", "cancelled": "none"}
+            s = xy_map.get(status, "")
+            if s == "none":
+                xy_where.append("1=0")
+            elif s:
+                xy_where.append(f"xo.status = {ph}")
+                xy_params.append(s)
+        if plan_name:
+            xy_where.append(f"xo.plan_name = {ph}")
+            xy_params.append(plan_name)
+        if pay_method:
+            if pay_method != "xianyu":
+                xy_where.append("1=0")
+        if date_from:
+            xy_where.append(f"DATE(xo.created_at) >= {ph}")
+            xy_params.append(date_from)
+        if date_to:
+            xy_where.append(f"DATE(xo.created_at) <= {ph}")
+            xy_params.append(date_to)
+        xy_where_sql = (" WHERE " + " AND ".join(xy_where)) if xy_where else ""
+
         allowed_sorts = {"created_at": "created_at", "price": "price", "username": "username", "status": "status", "order_no": "order_no", "id": "id"}
         sort_field = allowed_sorts.get(sort, "created_at")
         order_dir = "ASC" if order.lower() == "asc" else "DESC"
         offset = (max(1, int(page)) - 1) * int(page_size)
-        total_row = self.fetchone(f"SELECT COUNT(*) AS cnt FROM payment_orders{where_clause}", params) or {}
+
+        total_sql = f"""
+            SELECT COUNT(*) AS cnt FROM (
+                SELECT po.id FROM payment_orders po{po_where_sql}
+                UNION ALL
+                SELECT xo.id FROM xianyu_orders xo{xy_where_sql}
+            ) t
+        """
+        total_row = self.fetchone(total_sql, po_params + xy_params) or {}
         total = int(total_row.get("cnt") or 0)
-        rows = self.fetchall(
-            f"SELECT * FROM payment_orders{where_clause} ORDER BY {sort_field} {order_dir} LIMIT {int(page_size)} OFFSET {offset}",
-            params
-        )
-        # 统计金额合计
-        sum_row = self.fetchone(f"SELECT COALESCE(SUM(price),0) AS total_amount, COUNT(*) AS cnt FROM payment_orders{where_clause}", params) or {}
+
+        data_sql = f"""
+            SELECT * FROM (
+                SELECT po.id, po.order_no, po.username, po.plan_id, po.plan_name, po.plan_type,
+                       po.price, po.points, po.days, po.status, po.pay_method, po.pay_channel,
+                       po.trade_no, po.qr_code, po.pay_url, po.created_at, po.paid_at,
+                       po.refunded_at, po.refund_reason, po.refunded_by,
+                       po.bank_order_no, po.pay_type, po.business_type,
+                       'payment' as source
+                FROM payment_orders po{po_where_sql}
+                UNION ALL
+                SELECT xo.id, xo.order_no, xo.username, xo.plan_id, xo.plan_name,
+                       COALESCE((SELECT pp.plan_type FROM payment_plans pp WHERE pp.id = xo.plan_id), 'points') as plan_type,
+                       xo.price, 0 as points, 0 as days,
+                       CASE WHEN xo.status = 'paid' THEN 'paid' ELSE 'pending' END as status,
+                       'xianyu' as pay_method, '' as pay_channel,
+                       '' as trade_no, '' as qr_code, xo.card_code as pay_url,
+                       xo.created_at, xo.paid_at,
+                       NULL as refunded_at, '' as refund_reason, '' as refunded_by,
+                       '' as bank_order_no, '' as pay_type, '' as business_type,
+                       'xianyu' as source
+                FROM xianyu_orders xo{xy_where_sql}
+            ) combined ORDER BY {sort_field} {order_dir} LIMIT {int(page_size)} OFFSET {offset}
+        """
+        rows = self.fetchall(data_sql, po_params + xy_params) or []
+
+        sum_sql = f"""
+            SELECT COALESCE(SUM(price),0) AS total_amount, COUNT(*) AS cnt FROM (
+                SELECT price FROM payment_orders po{po_where_sql}
+                UNION ALL
+                SELECT price FROM xianyu_orders xo{xy_where_sql}
+            ) t
+        """
+        sum_row = self.fetchone(sum_sql, po_params + xy_params) or {}
+
         return {
-            "rows": rows or [],
+            "rows": rows,
             "total": total,
             "page": int(page),
             "page_size": int(page_size),
-            "total_pages": (total + int(page_size) - 1) // int(page_size),
+            "total_pages": (total + int(page_size) - 1) // int(page_size) if total > 0 else 0,
             "sum_amount": float(sum_row.get("total_amount") or 0),
             "sum_count": int(sum_row.get("cnt") or 0)
         }
