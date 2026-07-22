@@ -623,11 +623,14 @@ body{
         <div class="menu-item dock-item" :class="{active:page==='user-mgmt'}" @click="page='user-mgmt';loadUsers()">
           <span class="icon">◯</span>用户管理
         </div>
+        <div class="menu-item dock-item" :class="{active:page==='question-bank'}" @click="page='question-bank';loadQuestionBank()">
+          <span class="icon">▤</span>题库中心
+        </div>
 
-        <!-- 推广返利组 -->
+        <!-- 推广运营组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.referral}">
-          <div class="menu-group-header dock-item" :class="{active:page==='referral'||page==='referral-withdrawals'}" @click="expandedGroups.referral=!expandedGroups.referral">
-            <span class="icon">★</span>推广返利
+          <div class="menu-group-header dock-item" :class="{active:['referral','referral-withdrawals','feedback'].includes(page)}" @click="expandedGroups.referral=!expandedGroups.referral">
+            <span class="icon">★</span>推广运营
             <span class="arrow">▶</span>
           </div>
           <div class="menu-group-items">
@@ -637,12 +640,15 @@ body{
             <div class="menu-item" :class="{active:page==='referral-withdrawals'}" @click="page='referral-withdrawals';loadReferralWithdrawals()">
               <span class="icon">¥</span>提现审核
             </div>
+            <div class="menu-item" :class="{active:page==='feedback'}" @click="page='feedback';loadFeedbackList();loadFeedbackAutoClose();loadFeedbackNotify()">
+              <span class="icon">✎</span>问题反馈
+            </div>
           </div>
         </div>
 
         <!-- 支付财务组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.payment}">
-          <div class="menu-group-header dock-item" :class="{active:['payment-orders','payment','pay-api','pay-test','refund-requests','card-keys','xianyu'].includes(page)}" @click="expandedGroups.payment=!expandedGroups.payment">
+          <div class="menu-group-header dock-item" :class="{active:['payment-orders','payment','pay-api','pay-test','refund-requests'].includes(page)}" @click="expandedGroups.payment=!expandedGroups.payment">
             <span class="icon">□</span>支付财务
             <span class="arrow">▶</span>
           </div>
@@ -662,11 +668,21 @@ body{
             <div class="menu-item" :class="{active:page==='refund-requests'}" @click="page='refund-requests';loadRefundRequests()">
               <span class="icon">↩</span>退款申请
             </div>
-            <div class="menu-item" :class="{active:page==='card-keys'}" @click="page='card-keys';loadCardKeys()">
-              <span class="icon">⚷</span>卡密管理
-            </div>
+          </div>
+        </div>
+
+        <!-- 闲鱼与卡密组 -->
+        <div class="menu-group" :class="{expanded:expandedGroups.xianyu}">
+          <div class="menu-group-header dock-item" :class="{active:['xianyu','card-keys'].includes(page)}" @click="expandedGroups.xianyu=!expandedGroups.xianyu">
+            <span class="icon">●</span>闲鱼与卡密
+            <span class="arrow">▶</span>
+          </div>
+          <div class="menu-group-items">
             <div class="menu-item" :class="{active:page==='xianyu'}" @click="page='xianyu';loadXianyuConfig()">
               <span class="icon">●</span>闲鱼店铺
+            </div>
+            <div class="menu-item" :class="{active:page==='card-keys'}" @click="page='card-keys';loadCardKeys()">
+              <span class="icon">⚷</span>卡密管理
             </div>
           </div>
         </div>
@@ -692,14 +708,11 @@ body{
 
         <!-- 系统配置组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.config}">
-          <div class="menu-group-header dock-item" :class="{active:['question-bank','ai-config','email-config','login-locks','db-config','feedback'].includes(page)}" @click="expandedGroups.config=!expandedGroups.config">
+          <div class="menu-group-header dock-item" :class="{active:['ai-config','email-config','login-locks','db-config','daily-report'].includes(page)}" @click="expandedGroups.config=!expandedGroups.config">
             <span class="icon">◇</span>系统配置
             <span class="arrow">▶</span>
           </div>
           <div class="menu-group-items">
-            <div class="menu-item" :class="{active:page==='question-bank'}" @click="page='question-bank';loadQuestionBank()">
-              <span class="icon">▤</span>题库中心
-            </div>
             <div class="menu-item" :class="{active:page==='ai-config'}" @click="page='ai-config';loadConfig()">
               <span class="icon">◈</span>模型配置
             </div>
@@ -709,22 +722,9 @@ body{
             <div class="menu-item" :class="{active:page==='login-locks'}" @click="page='login-locks';loadLoginLocks()">
               <span class="icon">⊘</span>解除锁定
             </div>
-            <div class="menu-item" :class="{active:page==='feedback'}" @click="page='feedback';loadFeedbackList();loadFeedbackAutoClose();loadFeedbackNotify()">
-              <span class="icon">✎</span>问题反馈
-            </div>
             <div class="menu-item" :class="{active:page==='db-config'}" @click="page='db-config';loadDbConfig()">
               <span class="icon">⛁</span>系统设置
             </div>
-          </div>
-        </div>
-
-        <!-- 定时任务组 -->
-        <div class="menu-group" :class="{expanded:expandedGroups.schedule}">
-          <div class="menu-group-header dock-item" :class="{active:page==='daily-report'}" @click="expandedGroups.schedule=!expandedGroups.schedule">
-            <span class="icon">◉</span>定时任务
-            <span class="arrow">▶</span>
-          </div>
-          <div class="menu-group-items">
             <div class="menu-item" :class="{active:page==='daily-report'}" @click="page='daily-report';loadDailyReport();loadEmailTemplates()">
               <span class="icon">⊙</span>每日数据邮件
             </div>
@@ -783,7 +783,7 @@ body{
             <div class="metric-card"><div class="metric-label">模型调用数</div><div class="metric-value">{{dashboard.cards.calls||0}}</div><div class="metric-sub">累计请求</div></div>
             <div class="metric-card"><div class="metric-label">成功数</div><div class="metric-value" style="color:var(--success)">{{dashboard.cards.success||0}}</div><div class="metric-sub">成功返回答案</div></div>
             <div class="metric-card"><div class="metric-label">失败数</div><div class="metric-value" style="color:var(--danger)">{{dashboard.cards.error||0}}</div><div class="metric-sub">接口失败或异常</div></div>
-            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(245,158,11,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='feedback';expandedGroups.config=true;loadFeedbackList()"><div class="metric-label">待处理反馈</div><div class="metric-value" style="color:var(--warning)">{{feedbackPendingCount||0}}</div><div class="metric-sub">点击查看处理 →</div></div>
+            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(245,158,11,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='feedback';expandedGroups.referral=true;loadFeedbackList()"><div class="metric-label">待处理反馈</div><div class="metric-value" style="color:var(--warning)">{{feedbackPendingCount||0}}</div><div class="metric-sub">点击查看处理 →</div></div>
             <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(239,68,68,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='refund-requests';loadRefundRequests()"><div class="metric-label">待处理退款</div><div class="metric-value" style="color:var(--danger)">{{dashboard.cards?.refund_pending||0}}</div><div class="metric-sub">点击查看处理 →</div></div>
           </div>
           <div class="dash-grid">
@@ -3032,28 +3032,28 @@ createApp({
     const BREADCRUMB_MAP={
       'dashboard':[{label:'运营概览'}],
       'user-mgmt':[{label:'用户管理'}],
-      'referral':[{label:'推广返利',group:'referral'},{label:'返利配置'}],
-      'referral-withdrawals':[{label:'推广返利',group:'referral'},{label:'提现审核'}],
+      'question-bank':[{label:'题库中心'}],
+      'referral':[{label:'推广运营',group:'referral'},{label:'返利配置'}],
+      'referral-withdrawals':[{label:'推广运营',group:'referral'},{label:'提现审核'}],
+      'feedback':[{label:'推广运营',group:'referral'},{label:'问题反馈'}],
       'payment-orders':[{label:'支付财务',group:'payment'},{label:'支付明细'}],
       'payment':[{label:'支付财务',group:'payment'},{label:'套餐配置'}],
       'pay-api':[{label:'支付财务',group:'payment'},{label:'支付接口'}],
       'pay-test':[{label:'支付财务',group:'payment'},{label:'支付测试'}],
       'refund-requests':[{label:'支付财务',group:'payment'},{label:'退款申请'}],
-      'card-keys':[{label:'支付财务',group:'payment'},{label:'卡密管理'}],
-      'xianyu':[{label:'支付财务',group:'payment'},{label:'闲鱼店铺'}],
+      'xianyu':[{label:'闲鱼与卡密',group:'xianyu'},{label:'闲鱼店铺'}],
+      'card-keys':[{label:'闲鱼与卡密',group:'xianyu'},{label:'卡密管理'}],
       'script-logs':[{label:'日志监控',group:'logs'},{label:'脚本日志'}],
       'ai-logs':[{label:'日志监控',group:'logs'},{label:'模型日志'}],
       'log-cleanup':[{label:'日志监控',group:'logs'},{label:'日志清理'}],
-      'question-bank':[{label:'系统配置',group:'config'},{label:'题库中心'}],
       'ai-config':[{label:'系统配置',group:'config'},{label:'模型配置'}],
       'email-config':[{label:'系统配置',group:'config'},{label:'邮箱配置'}],
       'login-locks':[{label:'系统配置',group:'config'},{label:'解除锁定'}],
-      'feedback':[{label:'系统配置',group:'config'},{label:'问题反馈'}],
       'db-config':[{label:'系统配置',group:'config'},{label:'系统设置'}],
-      'daily-report':[{label:'定时任务',group:'schedule'},{label:'每日数据邮件'}],
+      'daily-report':[{label:'系统配置',group:'config'},{label:'每日数据邮件'}],
       'profile':[{label:'个人中心'}]
     };
-    const GROUP_FIRST_PAGE={referral:'referral',payment:'payment-orders',logs:'script-logs',config:'question-bank',schedule:'daily-report'};
+    const GROUP_FIRST_PAGE={referral:'referral',payment:'payment-orders',xianyu:'xianyu',logs:'script-logs',config:'question-bank'};
     const breadcrumbItems=computed(()=>BREADCRUMB_MAP[page.value]||[]);
     function navigateBreadcrumb(item,index){
       if(index===breadcrumbItems.value.length-1)return;
@@ -4193,15 +4193,16 @@ createApp({
 
     // ========== 推广返利 ==========
     const referralTab=ref('config');
-    const expandedGroups=ref({referral:false,payment:false,logs:false,config:false,schedule:false});
+    const expandedGroups=ref({referral:false,payment:false,xianyu:false,logs:false,config:false});
     const isMobile=ref(window.innerWidth<=768);
     const mobileSidebarOpen=ref(false);
     const mobileSubmenu=ref(null);
     const MOBILE_SUBMENU_MAP={
-      referral:{title:'推广返利',icon:'★',items:[{page:'referral',label:'返利配置',icon:'⚙',load:loadReferralConfig},{page:'referral-withdrawals',label:'提现审核',icon:'¥',load:loadReferralWithdrawals}]},
-      payment:{title:'支付财务',icon:'□',items:[{page:'payment-orders',label:'支付明细',icon:'▤',load:loadPaymentOrders},{page:'payment',label:'套餐配置',icon:'◈',load:loadPaymentConfig},{page:'pay-api',label:'支付接口',icon:'⌁',load:loadPayApiConfig},{page:'pay-test',label:'支付测试',icon:'◎',load:()=>{}}]},
+      referral:{title:'推广运营',icon:'★',items:[{page:'referral',label:'返利配置',icon:'⚙',load:loadReferralConfig},{page:'referral-withdrawals',label:'提现审核',icon:'¥',load:loadReferralWithdrawals},{page:'feedback',label:'问题反馈',icon:'✎',load:()=>{loadFeedbackList();loadFeedbackAutoClose();loadFeedbackNotify();}}]},
+      payment:{title:'支付财务',icon:'□',items:[{page:'payment-orders',label:'支付明细',icon:'▤',load:loadPaymentOrders},{page:'payment',label:'套餐配置',icon:'◈',load:loadPaymentConfig},{page:'pay-api',label:'支付接口',icon:'⌁',load:loadPayApiConfig},{page:'pay-test',label:'支付测试',icon:'◎',load:()=>{}},{page:'refund-requests',label:'退款申请',icon:'↩',load:loadRefundRequests}]},
+      xianyu:{title:'闲鱼与卡密',icon:'●',items:[{page:'xianyu',label:'闲鱼店铺',icon:'●',load:loadXianyuConfig},{page:'card-keys',label:'卡密管理',icon:'⚷',load:loadCardKeys}]},
       logs:{title:'日志监控',icon:'☰',items:[{page:'script-logs',label:'脚本日志',icon:'⌘',load:loadScriptLogs},{page:'ai-logs',label:'模型日志',icon:'≡',load:loadAiLogs},{page:'log-cleanup',label:'日志清理',icon:'∅',load:loadLogCleanup}]},
-      config:{title:'系统配置',icon:'◇',items:[{page:'question-bank',label:'题库中心',icon:'▤',load:loadQuestionBank},{page:'ai-config',label:'模型配置',icon:'◈',load:loadConfig},{page:'email-config',label:'邮箱配置',icon:'✉',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'login-locks',label:'解除锁定',icon:'⊘',load:loadLoginLocks},{page:'db-config',label:'系统设置',icon:'⛁',load:loadDbConfig}]}
+      config:{title:'系统配置',icon:'◇',items:[{page:'ai-config',label:'模型配置',icon:'◈',load:loadConfig},{page:'email-config',label:'邮箱配置',icon:'✉',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'login-locks',label:'解除锁定',icon:'⊘',load:loadLoginLocks},{page:'db-config',label:'系统设置',icon:'⛁',load:loadDbConfig},{page:'daily-report',label:'每日数据邮件',icon:'⊙',load:()=>{loadDailyReport();loadEmailTemplates();}}]}
     };
     function openMobileSubmenu(key,title,icon){
       const cfg=MOBILE_SUBMENU_MAP[key];
