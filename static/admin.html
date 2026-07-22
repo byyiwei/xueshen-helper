@@ -671,15 +671,15 @@ body{
           </div>
         </div>
 
-        <!-- 闲鱼与卡密组 -->
-        <div class="menu-group" :class="{expanded:expandedGroups.xianyu}">
-          <div class="menu-group-header dock-item" :class="{active:['xianyu','card-keys'].includes(page)}" @click="expandedGroups.xianyu=!expandedGroups.xianyu">
-            <span class="icon">●</span>闲鱼与卡密
+        <!-- 卡密管理组 -->
+        <div class="menu-group" :class="{expanded:expandedGroups.card}">
+          <div class="menu-group-header dock-item" :class="{active:['xianyu','card-keys'].includes(page)}" @click="expandedGroups.card=!expandedGroups.card">
+            <span class="icon">⚷</span>卡密管理
             <span class="arrow">▶</span>
           </div>
           <div class="menu-group-items">
             <div class="menu-item" :class="{active:page==='xianyu'}" @click="page='xianyu';loadXianyuConfig()">
-              <span class="icon">●</span>闲鱼店铺
+              <span class="icon">●</span>商品配置
             </div>
             <div class="menu-item" :class="{active:page==='card-keys'}" @click="page='card-keys';loadCardKeys()">
               <span class="icon">⚷</span>卡密管理
@@ -1531,7 +1531,7 @@ body{
                 <div class="form-group" v-if="planForm.plan_type==='points'"><label>题数</label><input type="number" min="0" v-model.number="planForm.points"></div>
                 <div class="form-group" v-if="planForm.plan_type==='monthly'"><label>包月天数</label><input type="number" min="0" v-model.number="planForm.days"></div>
                 <div class="form-group"><label>排序</label><input type="number" v-model.number="planForm.sort_order"></div>
-                <div class="form-group" style="flex:2"><label>闲鱼商品链接</label><input v-model="planForm.xianyu_url" class="form-control" placeholder="如：https://m.tb.cn/h.xxxxx（留空=使用全局链接）"></div>
+                <div class="form-group" style="flex:2"><label>商品链接</label><input v-model="planForm.xianyu_url" class="form-control" placeholder="如：https://m.tb.cn/h.xxxxx（留空=使用全局链接）"></div>
               </div>
               <div style="display:flex;gap:10px;align-items:center">
                 <label style="display:flex;gap:8px;align-items:center;color:var(--text2)"><input type="checkbox" v-model="planForm.enabled"> 启用</label>
@@ -1539,7 +1539,7 @@ body{
               </div>
               <div style="overflow-x:auto;margin-top:16px">
                 <table style="width:100%;border-collapse:collapse;font-size:13px">
-                  <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2)"><th style="text-align:left;padding:10px 8px">名称</th><th style="text-align:left;padding:10px 8px">类型</th><th style="text-align:left;padding:10px 8px">价格</th><th style="text-align:left;padding:10px 8px">权益</th><th style="text-align:left;padding:10px 8px">闲鱼链接</th><th style="text-align:left;padding:10px 8px">状态</th><th style="text-align:left;padding:10px 8px">操作</th></tr></thead>
+                  <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2)"><th style="text-align:left;padding:10px 8px">名称</th><th style="text-align:left;padding:10px 8px">类型</th><th style="text-align:left;padding:10px 8px">价格</th><th style="text-align:left;padding:10px 8px">权益</th>                  <th style="text-align:left;padding:10px 8px">商品链接</th><th style="text-align:left;padding:10px 8px">状态</th><th style="text-align:left;padding:10px 8px">操作</th></tr></thead>
                   <tbody>
                     <tr v-for="p in paymentPlans" :key="p.id" style="border-bottom:1px solid var(--border)">
                       <td style="padding:10px 8px">{{p.name}}</td><td style="padding:10px 8px">{{p.plan_type==='monthly'?'包月':'题数'}}</td><td style="padding:10px 8px">￥{{p.price}}</td><td style="padding:10px 8px">{{p.plan_type==='monthly'?(p.days+'天 · 不限题数'):(p.points+'题')}}</td>
@@ -1887,28 +1887,36 @@ body{
         </div>
       </template>
 
-      <!-- Xianyu Page -->
+      <!-- Card Config Page -->
       <template v-if="page==='xianyu'">
         <header class="main-header">
-          <h2>闲鱼店铺</h2>
+          <h2>商品配置</h2>
           <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index<breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
           <div class="card">
             <div class="card-header">
-              <h3>闲鱼购买设置</h3>
+              <h3>卡密商品设置</h3>
             </div>
             <div class="card-body">
               <div class="form-row">
                 <div class="form-group">
-                  <label>启用闲鱼购买</label>
+                  <label>启用卡密购买</label>
                   <div class="toggle" :class="xianyuEnabled?'on':''" @click="xianyuEnabled=!xianyuEnabled"></div>
                 </div>
-                <div class="form-group" style="flex:2">
-                  <label>闲鱼商品链接</label>
-                  <input v-model="xianyuUrl" class="form-control" placeholder="如：https://m.tb.cn/h.xxxxx（点击购买时跳转）">
+                <div class="form-group">
+                  <label>支付方式名称</label>
+                  <input v-model="cardPayName" class="form-control" placeholder="如：卡密激活（显示在用户端）">
                 </div>
+                <div class="form-group">
+                  <label>支付方式图标</label>
+                  <input v-model="cardPayIcon" class="form-control" placeholder="如：🔑 或 emoji">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>商品链接</label>
+                <input v-model="xianyuUrl" class="form-control" placeholder="用户点购买时跳转的链接，留空=用户不可用此方式">
               </div>
               <button class="btn btn-success" @click="saveXianyuConfig" style="margin-top:8px">保存设置</button>
             </div>
@@ -2970,8 +2978,8 @@ createApp({
       'pay-api':[{label:'支付财务',group:'payment'},{label:'支付接口'}],
       'pay-test':[{label:'支付财务',group:'payment'},{label:'支付测试'}],
       'refund-requests':[{label:'支付财务',group:'payment'},{label:'退款申请'}],
-      'xianyu':[{label:'闲鱼与卡密',group:'xianyu'},{label:'闲鱼店铺'}],
-      'card-keys':[{label:'闲鱼与卡密',group:'xianyu'},{label:'卡密管理'}],
+      'xianyu':[{label:'卡密管理',group:'card'},{label:'商品配置'}],
+      'card-keys':[{label:'卡密管理',group:'card'},{label:'卡密管理'}],
       'script-logs':[{label:'日志监控',group:'logs'},{label:'脚本日志'}],
       'ai-logs':[{label:'日志监控',group:'logs'},{label:'模型日志'}],
       'log-cleanup':[{label:'日志监控',group:'logs'},{label:'日志清理'}],
@@ -2981,7 +2989,7 @@ createApp({
       'daily-report':[{label:'日志监控',group:'logs'},{label:'每日数据邮件'}],
       'profile':[{label:'个人中心'}]
     };
-    const GROUP_FIRST_PAGE={referral:'referral',payment:'payment-orders',xianyu:'xianyu',logs:'script-logs',config:'question-bank'};
+    const GROUP_FIRST_PAGE={referral:'referral',payment:'payment-orders',card:'xianyu',logs:'script-logs',config:'question-bank'};
     const breadcrumbItems=computed(()=>BREADCRUMB_MAP[page.value]||[]);
     function navigateBreadcrumb(item,index){
       if(index===breadcrumbItems.value.length-1)return;
@@ -4121,14 +4129,14 @@ createApp({
 
     // ========== 推广返利 ==========
     const referralTab=ref('config');
-    const expandedGroups=ref({referral:false,payment:false,xianyu:false,logs:false,config:false});
+    const expandedGroups=ref({referral:false,payment:false,card:false,logs:false,config:false});
     const isMobile=ref(window.innerWidth<=768);
     const mobileSidebarOpen=ref(false);
     const mobileSubmenu=ref(null);
     const MOBILE_SUBMENU_MAP={
       referral:{title:'推广运营',icon:'★',items:[{page:'referral',label:'返利配置',icon:'⚙',load:loadReferralConfig},{page:'referral-withdrawals',label:'提现审核',icon:'¥',load:loadReferralWithdrawals},{page:'feedback',label:'问题反馈',icon:'✎',load:()=>{loadFeedbackList();loadFeedbackAutoClose();loadFeedbackNotify();}}]},
       payment:{title:'支付财务',icon:'□',items:[{page:'payment-orders',label:'支付明细',icon:'▤',load:loadPaymentOrders},{page:'payment',label:'套餐配置',icon:'◈',load:loadPaymentConfig},{page:'pay-api',label:'支付接口',icon:'⌁',load:loadPayApiConfig},{page:'pay-test',label:'支付测试',icon:'◎',load:()=>{}},{page:'refund-requests',label:'退款申请',icon:'↩',load:loadRefundRequests}]},
-      xianyu:{title:'闲鱼与卡密',icon:'●',items:[{page:'xianyu',label:'闲鱼店铺',icon:'●',load:loadXianyuConfig},{page:'card-keys',label:'卡密管理',icon:'⚷',load:loadCardKeys}]},
+      card:{title:'卡密管理',icon:'⚷',items:[{page:'xianyu',label:'商品配置',icon:'●',load:loadXianyuConfig},{page:'card-keys',label:'卡密管理',icon:'⚷',load:loadCardKeys}]},
       logs:{title:'日志监控',icon:'☰',items:[{page:'script-logs',label:'脚本日志',icon:'⌘',load:loadScriptLogs},{page:'ai-logs',label:'模型日志',icon:'≡',load:loadAiLogs},{page:'log-cleanup',label:'日志清理',icon:'∅',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'⊙',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
       config:{title:'系统配置',icon:'◇',items:[{page:'ai-config',label:'模型配置',icon:'◈',load:loadConfig},{page:'email-config',label:'邮箱配置',icon:'✉',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'db-config',label:'系统设置',icon:'⛁',load:loadDbConfig}]}
     };
@@ -4167,6 +4175,8 @@ createApp({
     // 卡密管理
     const xianyuEnabled=ref(false);
     const xianyuUrl=ref('');
+    const cardPayName=ref('卡密激活');
+    const cardPayIcon=ref('🔑');
     const xyAutoState=ref({running:false,last_check:'',last_result:'',pending:0,enabled:false,total_activated:0});
     const ckList=ref([]);
     const ckPage=ref(1);
@@ -4349,12 +4359,12 @@ createApp({
       try{
         const res=await fetch('/api/payment/xianyu-config',{headers:{'Authorization':token.value}});
         const d=await res.json();
-        if(d.code===200){xianyuEnabled.value=!!d.xianyu_enabled;xianyuUrl.value=d.xianyu_url||'';}
+        if(d.code===200){xianyuEnabled.value=!!d.xianyu_enabled;xianyuUrl.value=d.xianyu_url||'';cardPayName.value=d.card_pay_name||'卡密激活';cardPayIcon.value=d.card_pay_icon||'🔑';}
       }catch(_){}
     }
     async function saveXianyuConfig(){
       try{
-        const res=await safeFetch('/admin/save-xianyu-config',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({enabled:xianyuEnabled.value,url:xianyuUrl.value})});
+        const res=await safeFetch('/admin/save-xianyu-config',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({enabled:xianyuEnabled.value,url:xianyuUrl.value,card_pay_name:cardPayName.value,card_pay_icon:cardPayIcon.value})});
         const d=await res.json();
         showMsg(d.msg||'保存完成', d.code===200?'success':'error');
       }catch(_){showMsg('error','网络错误');}
@@ -4511,7 +4521,7 @@ createApp({
         loadPaymentOrders,togglePaymentSort,paymentOrdersSearch,paymentOrdersPrev,paymentOrdersNext,
         rrFilterStatus,rrFilterUsername,rrFilterOrderNo,rrList,rrPage,rrTotalPages,rrTotal,rrQrPreview,
         loadRefundRequests,processRefundRequest,previewQr,
-        xianyuEnabled,xianyuUrl,ckList,ckPage,ckTotalPages,ckTotal,ckFilterStatus,ckFilterPlanId,ckGeneratePlanId,ckGenerateCount,ckGenerateSaving,
+        xianyuEnabled,xianyuUrl,cardPayName,cardPayIcon,ckList,ckPage,ckTotalPages,ckTotal,ckFilterStatus,ckFilterPlanId,ckGeneratePlanId,ckGenerateCount,ckGenerateSaving,
         loadCardKeys,loadXianyuConfig,saveXianyuConfig,generateCardKeys,
        feedbackList,feedbackFilter,feedbackPage,feedbackTotalPages,feedbackTotal,feedbackPendingCount,feedbackDetail,feedbackReplyText,
         loadFeedbackList,feedbackSearch,viewFeedbackDetail,replyFeedback,updateFeedbackStatus,feedbackPrev,feedbackNext,

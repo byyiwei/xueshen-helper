@@ -949,6 +949,8 @@ class Database:
         self._add_column_if_missing("admin_config", "refund_days_limit", "refund_days_limit INT DEFAULT 7 COMMENT '退款时效（天），0=不允许退款'")
         self._add_column_if_missing("admin_config", "xianyu_enabled", "xianyu_enabled TINYINT DEFAULT 0")
         self._add_column_if_missing("admin_config", "xianyu_url", "xianyu_url VARCHAR(255) DEFAULT ''")
+        self._add_column_if_missing("admin_config", "card_pay_name", "card_pay_name VARCHAR(50) DEFAULT '卡密激活'")
+        self._add_column_if_missing("admin_config", "card_pay_icon", "card_pay_icon VARCHAR(20) DEFAULT '🔑'")
 
     def _ensure_order_payment_columns(self):
         self._add_column_if_missing("payment_orders", "pay_method", "pay_method VARCHAR(20)")

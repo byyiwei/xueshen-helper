@@ -1986,21 +1986,6 @@
                 setBusy($('regenScriptKeyBtn'), false);
             }
         }
-        let xianyuUrl='';
-        let xianyuEnabled=false;
-        async function loadXianyuConfig(){
-            try{
-                const res=await fetch('/api/payment/xianyu-config');
-                const d=await res.json();
-                if(d.code===200&&d.xianyu_enabled){
-                    xianyuEnabled=true;
-                    xianyuUrl=d.xianyu_url||'';
-                }else{
-                    xianyuEnabled=false;
-                    xianyuUrl='';
-                }
-            }catch(_){xianyuEnabled=false;xianyuUrl='';}
-        }
         async function activateCardKey(){
             const input=$('ckInput');
             const code=input.value.trim();
@@ -2021,7 +2006,6 @@
         }
         async function loadPlans() {
             try {
-                await loadXianyuConfig();
                 await loadPaymentMethods();
                 const res = await fetch('/api/payment/plans');
                 const data = await res.json();
@@ -2071,26 +2055,17 @@
                 // 渲染带图标的支付方式卡片
                 const icons = {
                     wechat: '<svg viewBox="0 0 1228 1024" width="28" height="28"><path d="M530.8928 703.1296a41.472 41.472 0 0 1-35.7376-19.8144l-2.7136-5.5808L278.272 394.752a18.7392 18.7392 0 0 1-2.048-8.1408 19.968 19.968 0 0 1 20.48-19.3536c4.608 0 8.8576 1.4336 12.288 3.84l234.3936 139.9296a64.4096 64.4096 0 0 0 54.528 5.9392L1116.2624 204.8C1004.9536 80.896 821.76 0 614.4 0 275.0464 0 0 216.576 0 483.6352c0 145.7152 82.7392 276.8896 212.2752 365.5168a38.1952 38.1952 0 0 1 17.2032 31.488 44.4928 44.4928 0 0 1-2.1504 12.3904l-27.6992 97.4848c-1.3312 4.608-3.328 9.3696-3.328 14.1312 0 10.752 9.216 19.3536 20.48 19.3536 4.4032 0 8.0384-1.536 11.776-3.584l134.5536-73.3184c10.1376-5.5296 20.7872-8.96 32.6144-8.96 6.2976 0 12.288 0.9216 18.0736 2.5088 62.72 17.0496 130.4576 26.5728 200.5504 26.5728C953.7024 967.168 1228.8 750.592 1228.8 483.6352c0-80.9472-25.4464-157.1328-70.0416-224.1024l-604.9792 436.992-4.4544 2.4064a42.1376 42.1376 0 0 1-18.432 4.1984z" fill="#15BA11"/></svg>',
-                    alipay: '<svg viewBox="0 0 1024 1024" width="28" height="28"><path d="M1024.0512 701.0304V196.864A196.9664 196.9664 0 0 0 827.136 0H196.864A196.9664 196.9664 0 0 0 0 196.864v630.272A196.9152 196.9152 0 0 0 196.864 1024h630.272a197.12 197.12 0 0 0 193.8432-162.0992c-52.224-22.6304-278.528-120.32-396.4416-176.64-89.7024 108.6976-183.7056 173.9264-325.3248 173.9264s-236.1856-87.2448-224.8192-194.048c7.4752-70.0416 55.552-184.576 264.2944-164.9664 110.08 10.3424 160.4096 30.8736 250.1632 60.5184 23.1936-42.5984 42.496-89.4464 57.1392-139.264H248.064v-39.424h196.9152V311.1424H204.8V267.776h240.128V165.632s2.1504-15.9744 19.8144-15.9744h98.4576V267.776h256v43.4176h-256V381.952h208.8448a805.9904 805.9904 0 0 1-84.8384 212.6848c60.672 22.016 336.7936 106.3936 336.7936 106.3936zM283.5456 791.6032c-149.6576 0-173.312-94.464-165.376-133.9392 7.8336-39.3216 51.2-90.624 134.4-90.624 95.5904 0 181.248 24.4736 284.0576 74.5472-72.192 94.0032-160.9216 150.016-253.0816 150.016z" fill="#009FE8"/></svg>',
-                    xianyu: '<svg viewBox="0 0 28 28" width="28" height="28"><rect width="28" height="28" rx="6" fill="#FFD800"/><text x="14" y="18" font-size="11" font-weight="900" fill="#1A1A1A" text-anchor="middle" font-family="-apple-system,Helvetica,Arial,sans-serif">闲鱼</text></svg>'
+                    alipay: '<svg viewBox="0 0 1024 1024" width="28" height="28"><path d="M1024.0512 701.0304V196.864A196.9664 196.9664 0 0 0 827.136 0H196.864A196.9664 196.9664 0 0 0 0 196.864v630.272A196.9152 196.9152 0 0 0 196.864 1024h630.272a197.12 197.12 0 0 0 193.8432-162.0992c-52.224-22.6304-278.528-120.32-396.4416-176.64-89.7024 108.6976-183.7056 173.9264-325.3248 173.9264s-236.1856-87.2448-224.8192-194.048c7.4752-70.0416 55.552-184.576 264.2944-164.9664 110.08 10.3424 160.4096 30.8736 250.1632 60.5184 23.1936-42.5984 42.496-89.4464 57.1392-139.264H248.064v-39.424h196.9152V311.1424H204.8V267.776h240.128V165.632s2.1504-15.9744 19.8144-15.9744h98.4576V267.776h256v43.4176h-256V381.952h208.8448a805.9904 805.9904 0 0 1-84.8384 212.6848c60.672 22.016 336.7936 106.3936 336.7936 106.3936zM283.5456 791.6032c-149.6576 0-173.312-94.464-165.376-133.9392 7.8336-39.3216 51.2-90.624 134.4-90.624 95.5904 0 181.248 24.4736 284.0576 74.5472-72.192 94.0032-160.9216 150.016-253.0816 150.016z" fill="#009FE8"/></svg>'
                 };
                 let html = payMethodsList.map(m => {
                     const checked = m.value === currentPayMethod ? 'checked' : '';
+                    const iconHtml = m.value === 'xianyu' ? `<span style="font-size:24px">${m.icon || '🔑'}</span>` : (icons[m.value] || '');
                     return `<label class="pay-method-card ${checked ? 'active' : ''}" data-pay-method="${m.value}">
-                        <span class="pm-icon">${icons[m.value] || ''}</span>
+                        <span class="pm-icon">${iconHtml}</span>
                         <span class="pm-label">${m.label}</span>
                         <span class="pm-check">${checked ? '✓' : ''}</span>
                     </label>`;
                 }).join('');
-                if (xianyuEnabled) {
-                    const xyChecked = currentPayMethod === 'xianyu' ? 'active' : '';
-                    html += `<label class="pay-method-card ${xyChecked}" data-pay-method="xianyu">
-                        <span class="pm-icon">${icons.xianyu}</span>
-                        <span class="pm-label">闲鱼下单</span>
-                        <span class="pm-check">${currentPayMethod === 'xianyu' ? '✓' : ''}</span>
-                    </label>`;
-                    $('ckSection').style.display = currentPayMethod === 'xianyu' ? '' : 'none';
-                }
                 $('payMethods').innerHTML = html || '<p class="hint">暂无可用支付方式，请联系管理员配置支付通道。</p>';
                 document.querySelectorAll('.pay-method-card').forEach(el => el.onclick = () => {
                     currentPayMethod = el.dataset.payMethod;
@@ -2111,19 +2086,51 @@
             if (!token) return msg('billingMsg', '请先登录', false);
             if (currentPayMethod === 'xianyu') {
                 try{
-                    const res=await fetch('/api/payment/xianyu-create-order',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({plan_id:Number(planId)})});
-                    const d=await res.json();
-                    if(d.code===200){
-                        const order=d.order;
-                        if(order.xianyu_url)window.open(order.xianyu_url,'_blank');
-                        const cardEl = document.getElementById('ckInput');
-                        if(cardEl) cardEl.value = order.card_code;
-                        msg('billingMsg','卡密已生成，请复制后在下方「卡密激活」输入框中点击激活，或保存卡密后去闲鱼拍下再回来激活',true);
-                    }else{
-                        msg('billingMsg',d.msg||'创建订单失败',false);
-                    }
+                    const plansRes=await fetch('/api/payment/plans');
+                    const plansData=await plansRes.json();
+                    const plan=(plansData.plans||[]).find(p=>String(p.id)===String(planId));
+                    if(plan && plan.xianyu_url) window.open(plan.xianyu_url,'_blank');
+                    $('planGrid').style.display='none';
+                    $('payMethods').style.display='none';
+                    $('ckSection').style.display='';
+                    $('ckSection').innerHTML=`
+                        <div style="padding:16px;text-align:center">
+                            <div style="font-size:16px;font-weight:700;margin-bottom:8px">🔑 输入卡密激活</div>
+                            <div style="color:var(--text2);margin-bottom:12px">请在闲鱼拍下对应套餐商品，将收到的卡密输入下方激活</div>
+                            <div style="background:var(--card);border-radius:12px;padding:14px;margin-bottom:12px;font-size:13px;text-align:left">
+                                <div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text2)">套餐</span><span style="font-weight:600">${plan?plan.name:'-'}</span></div>
+                                <div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text2)">金额</span><span style="color:var(--success);font-weight:600">¥${Number(price||0).toFixed(2)}</span></div>
+                            </div>
+                            <input id="xyCardInput" class="ck-input" placeholder="输入 16 位卡密" style="width:100%;padding:12px;border:2px solid var(--border);border-radius:8px;font-size:18px;text-align:center;letter-spacing:2px;box-sizing:border-box;background:var(--bg);color:var(--text);margin-bottom:12px" maxlength="16">
+                            <button class="primary" id="xyCardBtn" style="width:100%;padding:12px;font-size:15px">激活卡密</button>
+                            <div style="margin-top:10px;font-size:12px;color:var(--text3)">卡密在闲鱼购买后由客服提供，一卡一用</div>
+                        </div>
+                    `;
+                    $('xyCardBtn').onclick=async()=>{
+                        const code=$('xyCardInput').value.trim().toUpperCase();
+                        if(!code||code.length!==16)return msg('billingMsg','请输入正确的 16 位卡密',false);
+                        $('xyCardBtn').disabled=true;
+                        $('xyCardBtn').textContent='激活中...';
+                        try{
+                            const r2=await fetch('/api/user/card-key/activate',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({code,plan_id:Number(planId)})});
+                            const d2=await r2.json();
+                            if(d2.code===200){
+                                msg('billingMsg',d2.msg||'激活成功，权益已到账',true);
+                                $('ckSection').innerHTML=`<div style="padding:16px;text-align:center;color:var(--success);font-weight:600">✓ ${d2.msg||'到账成功'}</div>`;
+                                if(typeof fillProfile==='function')fillProfile(d2.profile);
+                            }else{
+                                msg('billingMsg',d2.msg||'激活失败',false);
+                                $('xyCardBtn').disabled=false;
+                                $('xyCardBtn').textContent='激活卡密';
+                            }
+                        }catch(_){
+                            msg('billingMsg','激活失败，请稍后重试',false);
+                            $('xyCardBtn').disabled=false;
+                            $('xyCardBtn').textContent='激活卡密';
+                        }
+                    };
                 }catch(_){
-                    msg('billingMsg','创建订单失败，请检查网络',false);
+                    msg('billingMsg','加载套餐信息失败',false);
                 }
                 return;
             }

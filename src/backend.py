@@ -3022,6 +3022,8 @@ class Handler(BaseHTTPRequestHandler):
                     methods.append({"value": "wechat", "label": "微信支付", "channels": wechat_channels})
                 if alipay_channels:
                     methods.append({"value": "alipay", "label": "支付宝支付", "channels": alipay_channels})
+                if admin.get("xianyu_enabled") and admin.get("xianyu_url"):
+                    methods.append({"value": "xianyu", "label": admin.get("card_pay_name") or "卡密激活", "icon": admin.get("card_pay_icon") or "🔑"})
                 self._send_json(200, {"code": 200, "methods": methods})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -3403,7 +3405,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/api/payment/xianyu-config":
             admin = db.get_admin_config() or {}
-            self._send_json(200, {"code": 200, "xianyu_enabled": bool(admin.get("xianyu_enabled")), "xianyu_url": admin.get("xianyu_url") or ""})
+            self._send_json(200, {"code": 200, "xianyu_enabled": bool(admin.get("xianyu_enabled")), "xianyu_url": admin.get("xianyu_url") or "", "card_pay_name": admin.get("card_pay_name") or "卡密激活", "card_pay_icon": admin.get("card_pay_icon") or "🔑"})
         elif path == "/api/user/xianyu-orders":
             user = self._get_user_from_token()
             if not user:
@@ -4691,8 +4693,8 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 data = json.loads(body or "{}")
-                db.execute("UPDATE admin_config SET xianyu_enabled = %s, xianyu_url = %s WHERE id = 1",
-                    (1 if data.get("enabled") else 0, data.get("url") or ""))
+                db.execute("UPDATE admin_config SET xianyu_enabled = %s, xianyu_url = %s, card_pay_name = %s, card_pay_icon = %s WHERE id = 1",
+                    (1 if data.get("enabled") else 0, data.get("url") or "", data.get("card_pay_name") or "", data.get("card_pay_icon") or ""))
                 self._send_json(200, {"code": 200, "msg": "保存成功"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -4745,9 +4747,18 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body or "{}")
                 code = (data.get("code") or "").strip().upper()
+                plan_id = int(data.get("plan_id") or 0)
                 if not code:
                     self._send_json(400, {"code": 400, "msg": "请输入卡密"})
                     return
+                if plan_id:
+                    card = db.fetchone("SELECT plan_id FROM card_keys WHERE code = %s", (code,))
+                    if not card:
+                        self._send_json(400, {"code": 400, "msg": "卡密不存在"})
+                        return
+                    if int(card["plan_id"]) != plan_id:
+                        self._send_json(400, {"code": 400, "msg": "卡密与所选套餐不匹配"})
+                        return
                 ok, msg = db.activate_card_key(code, user["username"])
                 res = {"code": 200 if ok else 400, "msg": msg}
                 if ok:
