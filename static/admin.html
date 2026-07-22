@@ -689,7 +689,7 @@ body{
 
         <!-- 日志监控组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.logs}">
-          <div class="menu-group-header dock-item" :class="{active:['script-logs','ai-logs','log-cleanup'].includes(page)}" @click="expandedGroups.logs=!expandedGroups.logs">
+          <div class="menu-group-header dock-item" :class="{active:['script-logs','ai-logs','log-cleanup','daily-report'].includes(page)}" @click="expandedGroups.logs=!expandedGroups.logs">
             <span class="icon">☰</span>日志监控
             <span class="arrow">▶</span>
           </div>
@@ -703,12 +703,15 @@ body{
             <div class="menu-item" :class="{active:page==='log-cleanup'}" @click="page='log-cleanup';loadLogCleanup()">
               <span class="icon">∅</span>日志清理
             </div>
+            <div class="menu-item" :class="{active:page==='daily-report'}" @click="page='daily-report';loadDailyReport();loadEmailTemplates()">
+              <span class="icon">⊙</span>每日数据邮件
+            </div>
           </div>
         </div>
 
         <!-- 系统配置组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.config}">
-          <div class="menu-group-header dock-item" :class="{active:['ai-config','email-config','db-config','daily-report'].includes(page)}" @click="expandedGroups.config=!expandedGroups.config">
+          <div class="menu-group-header dock-item" :class="{active:['ai-config','email-config','db-config'].includes(page)}" @click="expandedGroups.config=!expandedGroups.config">
             <span class="icon">◇</span>系统配置
             <span class="arrow">▶</span>
           </div>
@@ -721,9 +724,6 @@ body{
             </div>
             <div class="menu-item" :class="{active:page==='db-config'}" @click="page='db-config';loadDbConfig()">
               <span class="icon">⛁</span>系统设置
-            </div>
-            <div class="menu-item" :class="{active:page==='daily-report'}" @click="page='daily-report';loadDailyReport();loadEmailTemplates()">
-              <span class="icon">⊙</span>每日数据邮件
             </div>
           </div>
         </div>
@@ -3035,7 +3035,7 @@ createApp({
       'ai-config':[{label:'系统配置',group:'config'},{label:'模型配置'}],
       'email-config':[{label:'系统配置',group:'config'},{label:'邮箱配置'}],
       'db-config':[{label:'系统配置',group:'config'},{label:'系统设置'}],
-      'daily-report':[{label:'系统配置',group:'config'},{label:'每日数据邮件'}],
+      'daily-report':[{label:'日志监控',group:'logs'},{label:'每日数据邮件'}],
       'profile':[{label:'个人中心'}]
     };
     const GROUP_FIRST_PAGE={referral:'referral',payment:'payment-orders',xianyu:'xianyu',logs:'script-logs',config:'question-bank'};
@@ -4186,8 +4186,8 @@ createApp({
       referral:{title:'推广运营',icon:'★',items:[{page:'referral',label:'返利配置',icon:'⚙',load:loadReferralConfig},{page:'referral-withdrawals',label:'提现审核',icon:'¥',load:loadReferralWithdrawals},{page:'feedback',label:'问题反馈',icon:'✎',load:()=>{loadFeedbackList();loadFeedbackAutoClose();loadFeedbackNotify();}}]},
       payment:{title:'支付财务',icon:'□',items:[{page:'payment-orders',label:'支付明细',icon:'▤',load:loadPaymentOrders},{page:'payment',label:'套餐配置',icon:'◈',load:loadPaymentConfig},{page:'pay-api',label:'支付接口',icon:'⌁',load:loadPayApiConfig},{page:'pay-test',label:'支付测试',icon:'◎',load:()=>{}},{page:'refund-requests',label:'退款申请',icon:'↩',load:loadRefundRequests}]},
       xianyu:{title:'闲鱼与卡密',icon:'●',items:[{page:'xianyu',label:'闲鱼店铺',icon:'●',load:loadXianyuConfig},{page:'card-keys',label:'卡密管理',icon:'⚷',load:loadCardKeys}]},
-      logs:{title:'日志监控',icon:'☰',items:[{page:'script-logs',label:'脚本日志',icon:'⌘',load:loadScriptLogs},{page:'ai-logs',label:'模型日志',icon:'≡',load:loadAiLogs},{page:'log-cleanup',label:'日志清理',icon:'∅',load:loadLogCleanup}]},
-      config:{title:'系统配置',icon:'◇',items:[{page:'ai-config',label:'模型配置',icon:'◈',load:loadConfig},{page:'email-config',label:'邮箱配置',icon:'✉',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'db-config',label:'系统设置',icon:'⛁',load:loadDbConfig},{page:'daily-report',label:'每日数据邮件',icon:'⊙',load:()=>{loadDailyReport();loadEmailTemplates();}}]}
+      logs:{title:'日志监控',icon:'☰',items:[{page:'script-logs',label:'脚本日志',icon:'⌘',load:loadScriptLogs},{page:'ai-logs',label:'模型日志',icon:'≡',load:loadAiLogs},{page:'log-cleanup',label:'日志清理',icon:'∅',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'⊙',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
+      config:{title:'系统配置',icon:'◇',items:[{page:'ai-config',label:'模型配置',icon:'◈',load:loadConfig},{page:'email-config',label:'邮箱配置',icon:'✉',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'db-config',label:'系统设置',icon:'⛁',load:loadDbConfig}]}
     };
     function openMobileSubmenu(key,title,icon){
       const cfg=MOBILE_SUBMENU_MAP[key];
