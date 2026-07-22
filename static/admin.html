@@ -620,7 +620,7 @@ body{
         <div class="menu-item dock-item" :class="{active:page==='dashboard'}" @click="page='dashboard';loadDashboard()">
           <span class="icon">⌂</span>运营概览
         </div>
-        <div class="menu-item dock-item" :class="{active:page==='user-mgmt'}" @click="page='user-mgmt';loadUsers()">
+        <div class="menu-item dock-item" :class="{active:page==='user-mgmt'}" @click="page='user-mgmt';loadUsers();loadLoginLocks()">
           <span class="icon">◯</span>用户管理
         </div>
         <div class="menu-item dock-item" :class="{active:page==='question-bank'}" @click="page='question-bank';loadQuestionBank()">
@@ -708,7 +708,7 @@ body{
 
         <!-- 系统配置组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.config}">
-          <div class="menu-group-header dock-item" :class="{active:['ai-config','email-config','login-locks','db-config','daily-report'].includes(page)}" @click="expandedGroups.config=!expandedGroups.config">
+          <div class="menu-group-header dock-item" :class="{active:['ai-config','email-config','db-config','daily-report'].includes(page)}" @click="expandedGroups.config=!expandedGroups.config">
             <span class="icon">◇</span>系统配置
             <span class="arrow">▶</span>
           </div>
@@ -718,9 +718,6 @@ body{
             </div>
             <div class="menu-item" :class="{active:page==='email-config'}" @click="page='email-config';loadEmailConfig();loadEmailTemplates()">
               <span class="icon">✉</span>邮箱配置
-            </div>
-            <div class="menu-item" :class="{active:page==='login-locks'}" @click="page='login-locks';loadLoginLocks()">
-              <span class="icon">⊘</span>解除锁定
             </div>
             <div class="menu-item" :class="{active:page==='db-config'}" @click="page='db-config';loadDbConfig()">
               <span class="icon">⛁</span>系统设置
@@ -1465,6 +1462,42 @@ body{
               </div>
             </div>
           </div>
+          <div class="card" style="margin-top:16px">
+            <div class="card-header">
+              <h3>当前锁定用户</h3>
+              <button class="btn btn-secondary btn-sm" @click="loadLoginLocks">刷新</button>
+            </div>
+            <div class="card-body">
+              <div v-if="loginLockLoading" style="text-align:center;color:var(--text3);padding:32px 0;font-size:13px">正在加载锁定记录...</div>
+              <div v-else-if="loginLocks.length===0" style="text-align:center;color:var(--text3);padding:40px 0;font-size:13px">暂无锁定用户，已到期的锁定不会显示。</div>
+              <div v-else style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:760px">
+                  <thead>
+                    <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
+                      <th style="text-align:left;padding:10px 8px">用户名</th>
+                      <th style="text-align:left;padding:10px 8px">邮箱 / 登录标识</th>
+                      <th style="text-align:left;padding:10px 8px">IP</th>
+                      <th style="text-align:left;padding:10px 8px">错误次数</th>
+                      <th style="text-align:left;padding:10px 8px">锁定到</th>
+                      <th style="text-align:left;padding:10px 8px">原因</th>
+                      <th style="text-align:left;padding:10px 8px">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="item in loginLocks" :key="item.id" style="border-bottom:1px solid var(--border);color:var(--text)">
+                      <td style="padding:10px 8px;white-space:nowrap">{{item.username||'-'}}</td>
+                      <td style="padding:10px 8px;color:var(--text2);word-break:break-all">{{item.email||item.identifier||'-'}}</td>
+                      <td style="padding:10px 8px;color:var(--text3);white-space:nowrap">{{item.client_ip||'-'}}</td>
+                      <td style="padding:10px 8px">{{item.fail_count||0}}</td>
+                      <td style="padding:10px 8px;color:var(--warn);white-space:nowrap">{{item.locked_until}}</td>
+                      <td style="padding:10px 8px;color:var(--text2)">{{item.reason||'-'}}</td>
+                      <td style="padding:10px 8px"><button class="btn btn-success btn-sm" @click="unlockLoginLock(item)">解除锁定</button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </div>
       </template>
 
@@ -2170,53 +2203,6 @@ body{
                   <span>第 {{questionBankFilter.page}} / {{Math.max(1,Math.ceil(questionBankTotal/questionBankFilter.limit))}} 页</span>
                   <button class="btn btn-secondary btn-sm" :disabled="questionBankFilter.page>=Math.ceil(questionBankTotal/questionBankFilter.limit)" @click="loadQuestionBank(questionBankFilter.page+1)">下一页</button>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </template>
-
-      <!-- Login Locks Page -->
-      <template v-if="page==='login-locks'">
-        <header class="main-header">
-          <h2>解除锁定</h2>
-          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index<breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
-        </header>
-        <div class="main-body">
-          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
-          <div class="card">
-            <div class="card-header">
-              <h3>当前锁定用户</h3>
-              <button class="btn btn-secondary btn-sm" @click="loadLoginLocks">刷新</button>
-            </div>
-            <div class="card-body">
-              <div v-if="loginLockLoading" style="text-align:center;color:var(--text3);padding:32px 0;font-size:13px">正在加载锁定记录...</div>
-              <div v-else-if="loginLocks.length===0" style="text-align:center;color:var(--text3);padding:40px 0;font-size:13px">暂无锁定用户，已到期的锁定不会显示。</div>
-              <div v-else style="overflow-x:auto">
-                <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:760px">
-                  <thead>
-                    <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
-                      <th style="text-align:left;padding:10px 8px">用户名</th>
-                      <th style="text-align:left;padding:10px 8px">邮箱 / 登录标识</th>
-                      <th style="text-align:left;padding:10px 8px">IP</th>
-                      <th style="text-align:left;padding:10px 8px">错误次数</th>
-                      <th style="text-align:left;padding:10px 8px">锁定到</th>
-                      <th style="text-align:left;padding:10px 8px">原因</th>
-                      <th style="text-align:left;padding:10px 8px">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="item in loginLocks" :key="item.id" style="border-bottom:1px solid var(--border);color:var(--text)">
-                      <td style="padding:10px 8px;white-space:nowrap">{{item.username||'-'}}</td>
-                      <td style="padding:10px 8px;color:var(--text2);word-break:break-all">{{item.email||item.identifier||'-'}}</td>
-                      <td style="padding:10px 8px;color:var(--text3);white-space:nowrap">{{item.client_ip||'-'}}</td>
-                      <td style="padding:10px 8px">{{item.fail_count||0}}</td>
-                      <td style="padding:10px 8px;color:var(--warn);white-space:nowrap">{{item.locked_until}}</td>
-                      <td style="padding:10px 8px;color:var(--text2)">{{item.reason||'-'}}</td>
-                      <td style="padding:10px 8px"><button class="btn btn-success btn-sm" @click="unlockLoginLock(item)">解除锁定</button></td>
-                    </tr>
-                  </tbody>
-                </table>
               </div>
             </div>
           </div>
@@ -3048,7 +3034,6 @@ createApp({
       'log-cleanup':[{label:'日志监控',group:'logs'},{label:'日志清理'}],
       'ai-config':[{label:'系统配置',group:'config'},{label:'模型配置'}],
       'email-config':[{label:'系统配置',group:'config'},{label:'邮箱配置'}],
-      'login-locks':[{label:'系统配置',group:'config'},{label:'解除锁定'}],
       'db-config':[{label:'系统配置',group:'config'},{label:'系统设置'}],
       'daily-report':[{label:'系统配置',group:'config'},{label:'每日数据邮件'}],
       'profile':[{label:'个人中心'}]
@@ -4202,7 +4187,7 @@ createApp({
       payment:{title:'支付财务',icon:'□',items:[{page:'payment-orders',label:'支付明细',icon:'▤',load:loadPaymentOrders},{page:'payment',label:'套餐配置',icon:'◈',load:loadPaymentConfig},{page:'pay-api',label:'支付接口',icon:'⌁',load:loadPayApiConfig},{page:'pay-test',label:'支付测试',icon:'◎',load:()=>{}},{page:'refund-requests',label:'退款申请',icon:'↩',load:loadRefundRequests}]},
       xianyu:{title:'闲鱼与卡密',icon:'●',items:[{page:'xianyu',label:'闲鱼店铺',icon:'●',load:loadXianyuConfig},{page:'card-keys',label:'卡密管理',icon:'⚷',load:loadCardKeys}]},
       logs:{title:'日志监控',icon:'☰',items:[{page:'script-logs',label:'脚本日志',icon:'⌘',load:loadScriptLogs},{page:'ai-logs',label:'模型日志',icon:'≡',load:loadAiLogs},{page:'log-cleanup',label:'日志清理',icon:'∅',load:loadLogCleanup}]},
-      config:{title:'系统配置',icon:'◇',items:[{page:'ai-config',label:'模型配置',icon:'◈',load:loadConfig},{page:'email-config',label:'邮箱配置',icon:'✉',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'login-locks',label:'解除锁定',icon:'⊘',load:loadLoginLocks},{page:'db-config',label:'系统设置',icon:'⛁',load:loadDbConfig},{page:'daily-report',label:'每日数据邮件',icon:'⊙',load:()=>{loadDailyReport();loadEmailTemplates();}}]}
+      config:{title:'系统配置',icon:'◇',items:[{page:'ai-config',label:'模型配置',icon:'◈',load:loadConfig},{page:'email-config',label:'邮箱配置',icon:'✉',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'db-config',label:'系统设置',icon:'⛁',load:loadDbConfig},{page:'daily-report',label:'每日数据邮件',icon:'⊙',load:()=>{loadDailyReport();loadEmailTemplates();}}]}
     };
     function openMobileSubmenu(key,title,icon){
       const cfg=MOBILE_SUBMENU_MAP[key];
@@ -4602,7 +4587,7 @@ createApp({
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,
       questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,
       doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
-      loadConfig,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,goToPaymentDetails,
+      loadConfig,loadDbConfig,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,goToPaymentDetails,
       savePaymentConfig,savePayApiConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,openUserEdit,saveUserAdmin,
       toggleProvider,collapseAllProviders,togglePayApiSection,
       addProvider,removeProvider,addModel,removeModel,
