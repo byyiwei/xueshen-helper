@@ -1681,21 +1681,33 @@ body{
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
-          <div class="card">
-            <div class="card-header" style="flex-wrap:wrap">
-              <h3>用户退款申请列表</h3>
-              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                <select v-model="rrFilterStatus" @change="loadRefundRequests(1)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg4);color:var(--text)">
-                  <option value="">全部状态</option>
+          <!-- 筛选栏 -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-body" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+              <div class="form-group" style="margin:0;min-width:100px">
+                <label style="font-size:11px;margin-bottom:4px">状态</label>
+                <select v-model="rrFilterStatus" class="form-control" style="padding:6px 10px;font-size:13px" @change="loadRefundRequests(1)">
+                  <option value="">全部</option>
                   <option value="pending">待处理</option>
                   <option value="approved">已通过</option>
                   <option value="rejected">已拒绝</option>
                 </select>
-                <input v-model="rrFilterUsername" class="form-control" style="width:120px;padding:6px 10px;font-size:13px" placeholder="用户名" @keyup.enter="loadRefundRequests(1)">
-                <input v-model="rrFilterOrderNo" class="form-control" style="width:160px;padding:6px 10px;font-size:13px;font-family:monospace" placeholder="订单号" @keyup.enter="loadRefundRequests(1)">
-                <button class="btn btn-secondary btn-sm" @click="loadRefundRequests(1)">搜索</button>
-                <button class="btn btn-secondary btn-sm" @click="rrFilterStatus='';rrFilterUsername='';rrFilterOrderNo='';loadRefundRequests(1)">重置</button>
               </div>
+              <div class="form-group" style="margin:0;min-width:140px">
+                <label style="font-size:11px;margin-bottom:4px">用户名</label>
+                <input v-model="rrFilterUsername" class="form-control" style="padding:6px 10px;font-size:13px" placeholder="搜索用户名" @keyup.enter="loadRefundRequests(1)">
+              </div>
+              <div class="form-group" style="margin:0;min-width:180px">
+                <label style="font-size:11px;margin-bottom:4px">订单号</label>
+                <input v-model="rrFilterOrderNo" class="form-control" style="padding:6px 10px;font-size:13px;font-family:monospace" placeholder="搜索订单号" @keyup.enter="loadRefundRequests(1)">
+              </div>
+              <button class="btn btn-primary" @click="loadRefundRequests(1)">查询</button>
+              <button class="btn btn-secondary" @click="rrFilterStatus='';rrFilterUsername='';rrFilterOrderNo='';loadRefundRequests(1)">重置</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <h3>用户退款申请列表</h3>
             </div>
             <div class="card-body" style="overflow-x:auto">
               <table v-if="rrList.length" style="width:100%;border-collapse:collapse;font-size:13px;min-width:800px">
@@ -1748,9 +1760,9 @@ body{
                       <span v-else style="font-size:12px;color:var(--text3)">{{r.admin_note||'-'}}</span>
                     </td>
                   </tr>
+                  <tr v-if="rrList.length===0"><td colspan="11" style="text-align:center;padding:40px 0;color:var(--text3);font-size:13px">暂无退款申请</td></tr>
                 </tbody>
               </table>
-                  <tr v-if="rrList.length===0"><td colspan="11" style="text-align:center;padding:40px 0;color:var(--text3);font-size:13px">暂无退款申请</td></tr>
               <div v-if="rrTotalPages>1" style="display:flex;justify-content:center;gap:6px;margin-top:16px">
                 <button v-for="p in rrTotalPages" :key="p" :class="['btn','btn-sm',p===rrPage?'btn-primary':'btn-secondary']" @click="loadRefundRequests(p)">{{p}}</button>
               </div>
