@@ -38,98 +38,7 @@ XUESHEN_GF_FILE = os.path.join(BASE_DIR, "scripts", "xueshen-gf.js")
 XUESHEN_SC_FILE = os.path.join(BASE_DIR, "scripts", "xueshen-sc.js")
 INTRO_HTML_FILE = os.path.join(BASE_DIR, "intro", "index.html")
 
-# ==================== 闲鱼自动发货 ====================
-XIANYU_AUTO_STATE = {
-    "running": False,
-    "enabled": False,
-    "last_check": "",
-    "last_result": "",
-    "pending": 0,
-    "enabled": False,
-    "total_activated": 0
-}
-XIANYU_AUTO_LOCK = threading.Lock()
 
-def _check_xianyu_orders_batch(cookie):
-    """使用 Cookie 检查闲鱼待发货订单并自动激活"""
-    if not cookie:
-        return "未配置 Cookie"
-    pending = db.get_pending_xianyu_orders()
-    cnt = len(pending)
-    if cnt == 0:
-        return "无待发货订单"
-    import urllib.request
-    activated = 0
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Cookie": cookie,
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "zh-CN,zh;q=0.9",
-    }
-    for order in pending:
-        try:
-            price = str(int(float(order.get("price") or 0)))
-            price_float = float(order.get("price") or 0)
-            if price_float <= 0:
-                continue
-            # 金额冲突跳过自动激活（同金额有多笔待处理订单）
-            cnt = db.count_pending_by_price(order["price"])
-            if cnt > 1:
-                print(f"[闲鱼自动发货] ⏭️ 订单 {order['order_no']} 金额 {price} 冲突（{cnt} 单），跳过自动激活", flush=True)
-                continue
-            # 尝试调用闲鱼/淘宝卖家订单 API 检查
-            found = False
-            urls_to_try = [
-                f"https://trade.taobao.com/trade/itemlist/list_sold_items.htm?pageNo=1&pageSize=20",
-            ]
-            for url in urls_to_try:
-                try:
-                    req = urllib.request.Request(url, headers=headers, method="GET")
-                    resp = urllib.request.urlopen(req, timeout=15)
-                    html = resp.read().decode("gbk", errors="ignore")
-                    if price in html:
-                        found = True
-                        break
-                except Exception:
-                    continue
-            if found:
-                ok, msg = db.activate_xianyu_order(order["id"])
-                if ok:
-                    activated += 1
-                    print(f"[闲鱼自动发货] ✅ 订单 {order['order_no']} 已自动激活", flush=True)
-                else:
-                    print(f"[闲鱼自动发货] ❌ 订单 {order['order_no']} 激活失败: {msg}", flush=True)
-        except Exception as e:
-            print(f"[闲鱼自动发货] 订单 {order.get('order_no','?')} 异常: {e}", flush=True)
-    return f"完成: 检查 {cnt} 单，自动激活 {activated} 单"
-
-def _xianyu_delivery_worker():
-    while True:
-        try:
-            admin = db.get_admin_config() or {}
-            cookie = admin.get("xianyu_cookie", "")
-            enabled = bool(admin.get("xianyu_enabled")) and bool(cookie)
-            with XIANYU_AUTO_LOCK:
-                XIANYU_AUTO_STATE["enabled"] = enabled
-            if enabled:
-                with XIANYU_AUTO_LOCK:
-                    XIANYU_AUTO_STATE["running"] = True
-                    XIANYU_AUTO_STATE["pending"] = len(db.get_pending_xianyu_orders())
-                result = _check_xianyu_orders_batch(cookie)
-                with XIANYU_AUTO_LOCK:
-                    XIANYU_AUTO_STATE["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    XIANYU_AUTO_STATE["last_result"] = result
-                    XIANYU_AUTO_STATE["running"] = False
-        except Exception as e:
-            print(f"[闲鱼自动发货] 轮询异常: {e}", flush=True)
-            with XIANYU_AUTO_LOCK:
-                XIANYU_AUTO_STATE["running"] = False
-        time.sleep(120)
-
-def _start_xianyu_delivery_thread():
-    t = threading.Thread(target=_xianyu_delivery_worker, daemon=True)
-    t.start()
-    print("[闲鱼自动发货] 后台轮询线程已启动（每 2 分钟）", flush=True)
 USER_SESSION_FILE = os.path.join(BASE_DIR, "config", "user_session.json")
 JWT_SECRET_FILE = os.path.join(BASE_DIR, "config", "jwt_secret.key")
 PORT = 8360
@@ -3507,19 +3416,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {"code": 200, **result})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
-        elif path == "/admin/xianyu-auto-delivery-status":
-            if not self._check_admin():
-                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
-                return
-            with XIANYU_AUTO_LOCK:
-                self._send_json(200, {"code": 200, "state": dict(XIANYU_AUTO_STATE)})
         elif path == "/admin/xianyu-cookie":
-            if not self._check_admin():
-                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
-                return
-            admin = db.get_admin_config() or {}
-            self._send_json(200, {"code": 200, "cookie": admin.get("xianyu_cookie", "")})
-        elif path == "/admin/xianyu-debug-cookie":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
@@ -4863,28 +4760,6 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200 if ok else 400, {"code": 200 if ok else 400, "msg": msg})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
-        elif path == "/admin/xianyu-auto-check-now":
-            if not self._check_admin():
-                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
-                return
-            try:
-                admin = db.get_admin_config() or {}
-                cookie = admin.get("xianyu_cookie", "")
-                if not cookie:
-                    self._send_json(400, {"code": 400, "msg": "未配置 Cookie，请先保存闲鱼 Cookie"})
-                    return
-                with XIANYU_AUTO_LOCK:
-                    XIANYU_AUTO_STATE["running"] = True
-                result = _check_xianyu_orders_batch(cookie)
-                with XIANYU_AUTO_LOCK:
-                    XIANYU_AUTO_STATE["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    XIANYU_AUTO_STATE["last_result"] = result
-                    XIANYU_AUTO_STATE["running"] = False
-                self._send_json(200, {"code": 200, "msg": result})
-            except Exception as e:
-                with XIANYU_AUTO_LOCK:
-                    XIANYU_AUTO_STATE["running"] = False
-                self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/api/payment/xianyu-create-order":
             user = self._get_user_from_token()
             if not user:
@@ -5652,7 +5527,6 @@ if __name__ == "__main__":
     print("=" * 60)
     _start_log_cleanup_thread()
     _start_daily_report_thread()
-    _start_xianyu_delivery_thread()
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     try:
         server.serve_forever()

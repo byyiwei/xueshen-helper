@@ -1527,11 +1527,6 @@ class Database:
     def get_pending_xianyu_orders(self):
         return self.fetchall("SELECT * FROM xianyu_orders WHERE status = 'pending' ORDER BY id ASC")
 
-    def count_pending_by_price(self, price):
-        ph = _ph()
-        row = self.fetchone(f"SELECT COUNT(*) cnt FROM xianyu_orders WHERE status = 'pending' AND price = {ph}", (float(price),))
-        return int(row.get("cnt", 0) if row else 0)
-
     # ========== 卡密系统 ==========
     def generate_card_keys(self, plan_id, count=1, creator=""):
         ph = _ph()

@@ -1930,24 +1930,6 @@ body{
           </div>
           <div class="card">
             <div class="card-header">
-              <h3>自动发货状态</h3>
-              <div style="display:flex;gap:8px;align-items:center">
-                <span class="status-dot" :class="xyAutoState.running?'on':xyAutoState.enabled?'on':'off'"></span>
-                <span style="font-size:12px;color:var(--text3)">{{xyAutoState.running?'运行中':xyAutoState.enabled?'已启用':'未启用'}}</span>
-                <button class="btn btn-sm btn-secondary" @click="loadXianyuAutoState">刷新状态</button>
-                <button class="btn btn-sm btn-primary" @click="xianyuAutoCheckNow" :disabled="xyAutoState.running">{{xyAutoState.running?'检查中...':'立即检查'}}</button>
-                <button class="btn btn-sm btn-secondary" @click="xianyuDebugCookie">调试 Cookie</button>
-              </div>
-            </div>
-            <div class="card-body" style="display:flex;gap:24px;flex-wrap:wrap;font-size:13px">
-              <div>上次检查：<b style="color:var(--text2)">{{xyAutoState.last_check||'尚未检查'}}</b></div>
-              <div>待处理订单：<b style="color:var(--warning)">{{xyAutoState.pending}}</b></div>
-              <div>结果：<b style="color:var(--text2)">{{xyAutoState.last_result||'-'}}</b></div>
-              <div style="font-size:12px;color:var(--text3)">后台每 2 分钟自动检查一次，Cookie 有效时自动激活已付款订单</div>
-            </div>
-          </div>
-          <div class="card">
-            <div class="card-header">
               <h3>待发货订单</h3>
               <button class="btn btn-sm btn-secondary" @click="loadXianyuOrders(1)" style="margin-left:8px">刷新</button>
             </div>
@@ -4442,7 +4424,6 @@ createApp({
         if(d2.code===200)xianyuCookie.value=d2.cookie||'';
       }catch(_){}
       loadXianyuOrders(1);
-      loadXianyuAutoState();
     }
     async function saveXianyuConfig(){
       try{
@@ -4467,36 +4448,6 @@ createApp({
         const d=await res.json();
         if(d.code===200){xyOrderList.value=d.rows||[];xyOrderTotal.value=d.total||0;xyOrderTotalPages.value=Math.ceil(xyOrderTotal.value/20)||1;}
       }catch(_){}
-    }
-    async function loadXianyuAutoState(){
-      try{
-        const res=await safeFetch('/admin/xianyu-auto-delivery-status',{headers:{'Authorization':token.value}});
-        const d=await res.json();
-        if(d.code===200)xyAutoState.value=d.state||xyAutoState.value;
-      }catch(_){}
-    }
-    async function xianyuAutoCheckNow(){
-      xyAutoState.value={...xyAutoState.value,running:true};
-      try{
-        const res=await safeFetch('/admin/xianyu-auto-check-now',{method:'POST',headers:{'Authorization':token.value}});
-        const d=await res.json();
-        showMsg(d.msg||'检查完成', d.code===200?'success':'error');
-      }catch(_){showMsg('检查请求失败','error');}
-      loadXianyuAutoState();
-      loadXianyuOrders(1);
-    }
-    async function xianyuDebugCookie(){
-      const url=prompt('输入要测试的 URL（默认闲鱼首页）:','https://www.goofish.com/');
-      if(!url)return;
-      try{
-        const res=await safeFetch('/admin/xianyu-debug-cookie?url='+encodeURIComponent(url),{headers:{'Authorization':token.value}});
-        const d=await res.json();
-        if(d.code===200){
-          showMsg(`状态:${d.status} | 类型:${d.content_type} | 大小:${d.size}字节`,'success',8000);
-          console.log('[CookieDebug]',d);
-          alert(`URL: ${d.url}\n状态码: ${d.status}\nContent-Type: ${d.content_type}\n大小: ${d.size} 字节\n\n前2000字符预览:\n${d.preview}`);
-        }else showMsg(d.msg||'调试失败','error');
-      }catch(e){showMsg('请求失败: '+e.message,'error');}
     }
     async function forceActivateXianyuOrder(id){
       if(!confirm('确定手动将这笔订单标记为已到账？'))return;
@@ -4661,8 +4612,8 @@ createApp({
         loadRefundRequests,processRefundRequest,previewQr,
         xianyuEnabled,xianyuUrl,ckList,ckPage,ckTotalPages,ckTotal,ckFilterStatus,ckFilterPlanId,ckGeneratePlanId,ckGenerateCount,ckGenerateSaving,
         loadCardKeys,loadXianyuConfig,saveXianyuConfig,generateCardKeys,
-        xianyuCookie,xyCookieSaving,xyOrderList,xyOrderPage,xyOrderTotalPages,xyOrderTotal,xyAutoState,
-        saveXianyuCookie,        loadXianyuOrders,forceActivateXianyuOrder,loadXianyuAutoState,xianyuAutoCheckNow,xianyuDebugCookie,
+        xianyuCookie,xyCookieSaving,xyOrderList,xyOrderPage,xyOrderTotalPages,xyOrderTotal,
+        saveXianyuCookie,        loadXianyuOrders,forceActivateXianyuOrder,
        feedbackList,feedbackFilter,feedbackPage,feedbackTotalPages,feedbackTotal,feedbackPendingCount,feedbackDetail,feedbackReplyText,
         loadFeedbackList,feedbackSearch,viewFeedbackDetail,replyFeedback,updateFeedbackStatus,feedbackPrev,feedbackNext,
     feedbackAutoCloseDays,loadFeedbackAutoClose,saveFeedbackAutoClose,
