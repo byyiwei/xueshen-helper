@@ -365,13 +365,14 @@ class Database:
                 model_label VARCHAR(255) NOT NULL,
                 weight INT DEFAULT 100,
                 daily_token_limit INT DEFAULT 0,
+                total_token_limit INT DEFAULT 0,
                 sort_order INT DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_provider_key (provider_key)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
         # 兼容旧表：添加列（如果不存在）
-        for col, ddl in [("weight", "weight INT DEFAULT 100"), ("daily_token_limit", "daily_token_limit INT DEFAULT 0")]:
+        for col, ddl in [("weight", "weight INT DEFAULT 100"), ("daily_token_limit", "daily_token_limit INT DEFAULT 0"), ("total_token_limit", "total_token_limit INT DEFAULT 0")]:
             try:
                 self.execute(f"ALTER TABLE ai_models ADD COLUMN {ddl}")
             except Exception:
@@ -410,6 +411,27 @@ class Database:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
         self._add_column_if_missing("ai_call_logs", "username", "username VARCHAR(50) DEFAULT ''")
+        # 题库调用日志
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS bank_call_logs (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                username VARCHAR(50) DEFAULT '' COMMENT '用户',
+                question_hash VARCHAR(64) NOT NULL COMMENT '题目hash',
+                question_text TEXT NOT NULL COMMENT '题目内容',
+                question_type VARCHAR(50) DEFAULT '' COMMENT '题型',
+                options_text TEXT COMMENT '选项',
+                matched TINYINT DEFAULT 0 COMMENT '是否命中',
+                matched_hash VARCHAR(64) DEFAULT '' COMMENT '命中题目的hash',
+                match_method VARCHAR(20) DEFAULT '' COMMENT '命中方式: hash/standard/fuzzy/none',
+                duration_ms INT DEFAULT 0 COMMENT '匹配耗时(毫秒)',
+                client_ip VARCHAR(64) DEFAULT '' COMMENT '客户端IP',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_created_at (created_at),
+                INDEX idx_matched (matched),
+                INDEX idx_username (username),
+                INDEX idx_question_hash (question_hash)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
         self.execute("""
             CREATE TABLE IF NOT EXISTS script_event_logs (
                 id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -950,7 +972,7 @@ class Database:
         self._add_column_if_missing("admin_config", "xianyu_enabled", "xianyu_enabled TINYINT DEFAULT 0")
         self._add_column_if_missing("admin_config", "xianyu_url", "xianyu_url VARCHAR(255) DEFAULT ''")
         self._add_column_if_missing("admin_config", "card_pay_name", "card_pay_name VARCHAR(50) DEFAULT '卡密激活'")
-        self._add_column_if_missing("admin_config", "card_pay_icon", "card_pay_icon VARCHAR(20) DEFAULT '🔑'")
+        self._add_column_if_missing("admin_config", "card_pay_icon", "card_pay_icon TEXT")
 
     def _ensure_order_payment_columns(self):
         self._add_column_if_missing("payment_orders", "pay_method", "pay_method VARCHAR(20)")
@@ -1563,7 +1585,7 @@ class Database:
         total = self.fetchone(f"SELECT COUNT(*) cnt FROM card_keys c {where_sql}", params)["cnt"]
         offset = (page - 1) * page_size
         rows = self.fetchall(
-            f"SELECT c.*, p.name plan_name, p.price, p.type plan_type FROM card_keys c "
+            f"SELECT c.*, p.name plan_name, p.price, p.plan_type FROM card_keys c "
             f"LEFT JOIN payment_plans p ON c.plan_id = p.id {where_sql} ORDER BY c.id DESC LIMIT {ph} OFFSET {ph}",
             params + [page_size, offset]
         )
@@ -2137,7 +2159,8 @@ class Database:
                     "value": m.get("model_value", ""),
                     "label": m.get("model_label", ""),
                     "weight": int(m.get("weight", 100) or 100),
-                    "daily_token_limit": int(m.get("daily_token_limit", 0) or 0)
+                    "daily_token_limit": int(m.get("daily_token_limit", 0) or 0),
+                    "total_token_limit": int(m.get("total_token_limit", 0) or 0)
                 })
             providers = {}
             for p in provider_rows:
@@ -2185,14 +2208,15 @@ class Database:
                     continue
                 self.execute(
                     f"""INSERT INTO ai_models
-                        (provider_key, model_value, model_label, weight, daily_token_limit, sort_order)
-                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+                        (provider_key, model_value, model_label, weight, daily_token_limit, total_token_limit, sort_order)
+                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
                     (
                         provider_key,
                         model.get("value", ""),
                         model.get("label", ""),
                         int(model.get("weight", 100) or 100),
                         int(model.get("daily_token_limit", 0) or 0),
+                        int(model.get("total_token_limit", 0) or 0),
                         idx
                     )
                 )
@@ -2239,6 +2263,15 @@ class Database:
             "SELECT model_name, total_tokens, call_count FROM model_token_usage WHERE usage_date = CURDATE()"
         )
         return {r["model_name"]: {"tokens": int(r.get("total_tokens") or 0), "calls": int(r.get("call_count") or 0)} for r in rows}
+
+    def get_model_token_usage_total(self):
+        """获取所有模型的历史累计 token 消耗总额"""
+        rows = self.fetchall(
+            """SELECT model_name, SUM(total_tokens) AS total_tokens
+               FROM model_token_usage
+               GROUP BY model_name"""
+        )
+        return {r["model_name"]: int(r.get("total_tokens") or 0) for r in rows}
 
     def get_model_token_usage_range(self, start_date, end_date):
         """获取时间范围内的模型 token 消耗汇总"""
@@ -2311,6 +2344,82 @@ class Database:
     def clear_ai_call_logs(self, status="", model="", keyword="", date_from="", date_to=""):
         where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to)
         sql = "DELETE FROM ai_call_logs"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        self.execute(sql, tuple(params))
+
+    # ==================== 题库调用日志 ====================
+    def save_bank_call_log(self, log):
+        ph = _ph()
+        self.execute(
+            f"""INSERT INTO bank_call_logs
+                (username, question_hash, question_text, question_type, options_text,
+                 matched, matched_hash, match_method, duration_ms, client_ip)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+            (
+                log.get("username", ""),
+                log.get("question_hash", ""),
+                log.get("question_text", ""),
+                log.get("question_type", ""),
+                log.get("options_text", ""),
+                1 if log.get("matched") else 0,
+                log.get("matched_hash", ""),
+                log.get("match_method", ""),
+                int(log.get("duration_ms") or 0),
+                log.get("client_ip", ""),
+            )
+        )
+
+    def _build_bank_log_where(self, matched="", keyword="", date_from="", date_to=""):
+        ph = _ph()
+        where = []
+        params = []
+        if matched:
+            where.append(f"matched = {ph}")
+            params.append(1 if matched in ("1", "true", "yes", "命中") else 0)
+        if keyword:
+            like = f"%{keyword}%"
+            where.append(f"(question_text LIKE {ph} OR question_hash LIKE {ph} OR match_method LIKE {ph})")
+            params.extend([like, like, like])
+        if date_from:
+            where.append(f"created_at >= {ph}")
+            params.append(date_from)
+        if date_to:
+            where.append(f"created_at <= {ph}")
+            params.append(date_to)
+        return where, params
+
+    def get_bank_call_logs(self, limit=100, matched="", keyword="", date_from="", date_to="", page=1):
+        ph = _ph()
+        try: limit = int(limit)
+        except: limit = 100
+        try: page = int(page)
+        except: page = 1
+        limit = max(1, min(limit, 200))
+        page = max(1, page)
+        offset = (page - 1) * limit
+        where, params = self._build_bank_log_where(matched, keyword, date_from, date_to)
+        sql = """SELECT id, username, question_hash, question_text, question_type, options_text,
+                        matched, matched_hash, match_method, duration_ms, client_ip, created_at
+                 FROM bank_call_logs"""
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY id DESC"
+        sql += f" LIMIT {ph} OFFSET {ph}"
+        params.extend([limit, offset])
+        return self.fetchall(sql, tuple(params))
+
+    def count_bank_call_logs(self, matched="", keyword="", date_from="", date_to=""):
+        where, params = self._build_bank_log_where(matched, keyword, date_from, date_to)
+        sql = "SELECT COUNT(*) AS total FROM bank_call_logs"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        row = self.fetchone(sql, tuple(params))
+        return int(row.get("total", 0) if row else 0)
+
+    def clear_bank_call_logs(self, matched="", keyword="", date_from="", date_to=""):
+        where, params = self._build_bank_log_where(matched, keyword, date_from, date_to)
+        sql = "DELETE FROM bank_call_logs"
         if where:
             sql += " WHERE " + " AND ".join(where)
         self.execute(sql, tuple(params))
@@ -2615,6 +2724,7 @@ class Database:
         result = {}
         tables = [
             ("ai_call_logs", "created_at"),
+            ("bank_call_logs", "created_at"),
             ("script_event_logs", "created_at"),
             ("usage_logs", "created_at"),
         ]

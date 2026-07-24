@@ -286,6 +286,21 @@ body{
   flex:none;
 }
 .btn-del:hover{background:rgba(239,68,68,.1)}
+.btn-test{
+  width:32px;height:32px;border:none;border-radius:6px;
+  background:transparent;color:#7c3aed;cursor:pointer;font-size:14px;
+  display:flex;align-items:center;justify-content:center;transition:background .2s;
+  flex:none;
+}
+.btn-test:hover{background:rgba(124,58,237,.1)}
+.btn-test:disabled{opacity:.5;cursor:not-allowed}
+.model-test-result{
+  margin:-2px 4px 8px;padding:7px 12px;border-radius:6px;font-size:12px;
+  line-height:1.6;word-break:break-all;animation:slideUp .2s;
+}
+.model-test-result.ok{background:rgba(34,197,94,.1);color:#16a34a;border:1px solid rgba(34,197,94,.25)}
+.model-test-result.fail{background:rgba(239,68,68,.1);color:#dc2626;border:1px solid rgba(239,68,68,.25)}
+.model-test-result.loading{background:var(--bg3);color:var(--text2);border:1px solid var(--border)}
 
 /* Provider tag */
 .provider-tag{
@@ -689,7 +704,7 @@ body{
 
         <!-- 日志监控组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.logs}">
-          <div class="menu-group-header dock-item" :class="{active:['script-logs','ai-logs','log-cleanup','daily-report'].includes(page)}" @click="expandedGroups.logs=!expandedGroups.logs">
+          <div class="menu-group-header dock-item" :class="{active:['script-logs','ai-logs','bank-logs','log-cleanup','daily-report'].includes(page)}" @click="expandedGroups.logs=!expandedGroups.logs">
             <span class="icon">☰</span>日志监控
             <span class="arrow">▶</span>
           </div>
@@ -699,6 +714,9 @@ body{
             </div>
             <div class="menu-item" :class="{active:page==='ai-logs'}" @click="page='ai-logs';loadAiLogs()">
               <span class="icon">≡</span>模型日志
+            </div>
+            <div class="menu-item" :class="{active:page==='bank-logs'}" @click="page='bank-logs';loadBankLogs()">
+              <span class="icon">◎</span>题库日志
             </div>
             <div class="menu-item" :class="{active:page==='log-cleanup'}" @click="page='log-cleanup';loadLogCleanup()">
               <span class="icon">∅</span>日志清理
@@ -1059,15 +1077,16 @@ body{
                 <div class="form-group"><label>API Key</label><input type="password" v-model="entry.info.api_key" placeholder="sk-xxxxxxxx"></div>
                 <div class="form-group"><label>Base URL</label><input v-model="entry.info.base_url" placeholder="https://api.xxx.com/v1"></div>
               </div>
-              <div class="models-title">模型列表 <span style="font-size:12px;color:var(--text3);font-weight:400">权重越高被调用概率越大（默认100），每日Token限额为0表示不限制</span></div>
+              <div class="models-title">模型列表 <span style="font-size:12px;color:var(--text3);font-weight:400">权重越高被调用概率越大（默认100），每日/总额Token限额为0表示不限制，总额超过后自动停用不再调用</span></div>
               <div style="display:flex;gap:8px;padding:0 4px 6px;font-size:11px;color:var(--text3);font-weight:600;letter-spacing:.3px">
                 <span style="flex:1.5">模型ID</span>
                 <span style="flex:1.5">显示名称</span>
                 <span style="width:70px;flex:none;text-align:center">调用占比</span>
                 <span style="width:90px;flex:none;text-align:center">每日Token限额</span>
+                <span style="width:90px;flex:none;text-align:center">总额Token限额</span>
                 <span style="width:30px;flex:none"></span>
               </div>
-              <div v-for="(m,idx) in entry.info.models" :key="idx" class="model-row">
+              <template v-for="(m,idx) in entry.info.models" :key="idx"><div class="model-row">
                 <input v-model="m.value" placeholder="如: deepseek-chat" style="flex:1.5">
                 <input v-model="m.label" placeholder="如: DeepSeek V3" style="flex:1.5">
                 <div style="width:70px;flex:none;display:flex;align-items:center;justify-content:center">
@@ -1076,8 +1095,14 @@ body{
                 <div style="width:90px;flex:none;display:flex;align-items:center;justify-content:center">
                   <input v-model.number="m.daily_token_limit" type="number" min="0" placeholder="0" title="每日Token限额(0=不限)" style="width:80px;text-align:center">
                 </div>
+                <div style="width:90px;flex:none;display:flex;align-items:center;justify-content:center">
+                  <input v-model.number="m.total_token_limit" type="number" min="0" placeholder="0" title="总额Token限额(0=不限)，超过则自动停用" style="width:80px;text-align:center">
+                </div>
+                <button class="btn-test" :disabled="testingModel===(entry.key+'-'+idx)" :title="'调试 '+(m.value||'模型')" @click="testModel(entry.info,m,entry.key+'-'+idx)">{{testingModel===(entry.key+'-'+idx)?'…':'⚡'}}</button>
                 <button class="btn-del" @click="removeModel(entry.key,idx)">×</button>
               </div>
+              <div v-if="modelTestResults[entry.key+'-'+idx]" class="model-test-result" :class="modelTestResults[entry.key+'-'+idx].status" v-html="modelTestResults[entry.key+'-'+idx].text"></div>
+              </template>
               <button class="btn-add" @click="addModel(entry.key)">+ 添加模型</button>
             </div>
           </div>
@@ -1108,6 +1133,15 @@ body{
               </div>
               <div class="form-row">
                 <div class="form-group"><label>Base URL</label><input v-model="newProvider.base_url" placeholder="https://api.xxx.com/v1"></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>测试模型ID（可选，用于调试连接）</label>
+                  <div style="display:flex;gap:8px">
+                    <input v-model="newProvider.test_model" placeholder="如: deepseek-chat" style="flex:1">
+                    <button class="btn btn-secondary btn-sm" style="flex:none" :disabled="testingNewProvider" @click="testNewProvider">{{testingNewProvider?'调试中…':'调试'}}</button>
+                  </div>
+                  <div v-if="newProviderTestResult" class="model-test-result" :class="newProviderTestResult.status" style="margin:8px 0 0" v-html="newProviderTestResult.text"></div>
+                </div>
               </div>
               <div class="modal-actions">
                 <button class="btn btn-secondary" @click="showAddModal=false">取消</button>
@@ -1849,6 +1883,7 @@ body{
                   <option v-for="p in paymentPlans" :key="p.id" :value="p.id">{{p.name}}</option>
                 </select>
                 <button class="btn btn-secondary btn-sm" @click="loadCardKeys(1)">刷新</button>
+                <button class="btn btn-secondary btn-sm" @click="exportCardKeys">导出 CSV</button>
               </div>
             </div>
             <div class="card-body" style="overflow-x:auto">
@@ -1911,12 +1946,15 @@ body{
                 </div>
                 <div class="form-group">
                   <label>支付方式图标</label>
-                  <input v-model="cardPayIcon" class="form-control" placeholder="如：🔑 或 emoji">
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <span v-if="cardPayIcon" style="font-size:28px;width:40px;height:40px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:8px;background:var(--bg)">
+                      <img v-if="cardPayIcon.startsWith('data:image')" :src="cardPayIcon" style="max-width:36px;max-height:36px;border-radius:4px">
+                      <span v-else>{{cardPayIcon}}</span>
+                    </span>
+                    <input type="file" accept="image/*" @change="onCardIconUpload" style="font-size:13px">
+                    <button v-if="cardPayIcon" class="btn btn-sm btn-secondary" @click="cardPayIcon=''">清除</button>
+                  </div>
                 </div>
-              </div>
-              <div class="form-group">
-                <label>商品链接</label>
-                <input v-model="xianyuUrl" class="form-control" placeholder="用户点购买时跳转的链接，留空=用户不可用此方式">
               </div>
               <button class="btn btn-success" @click="saveXianyuConfig" style="margin-top:8px">保存设置</button>
             </div>
@@ -2008,6 +2046,107 @@ body{
                   <button class="btn btn-secondary btn-sm" :disabled="aiLogFilter.page<=1" @click="loadAiLogs(aiLogFilter.page-1)">上一页</button>
                   <span>第 {{aiLogFilter.page}} / {{Math.max(1,Math.ceil(aiLogTotal/aiLogFilter.limit))}} 页</span>
                   <button class="btn btn-secondary btn-sm" :disabled="aiLogFilter.page>=Math.ceil(aiLogTotal/aiLogFilter.limit)" @click="loadAiLogs(aiLogFilter.page+1)">下一页</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Bank Logs Page -->
+      <template v-if="page==='bank-logs'">
+        <header class="main-header">
+          <h2>题库调用日志</h2>
+          <nav class="breadcrumb-nav">
+            <a href="#" @click.prevent="page='dashboard'">控制台</a>
+            <span>/</span>
+            <span>日志监控</span>
+            <span>/</span>
+            <span>题库日志</span>
+          </nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="card">
+            <div class="card-header">
+              <h3>调用记录</h3>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <button class="btn btn-secondary btn-sm" @click="loadBankLogs(1)">查询</button>
+                <button class="btn btn-danger btn-sm" @click="clearBankLogs">按条件清空</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="filter-grid">
+                <input v-model="bankLogFilter.keyword" placeholder="搜索题目/hash/命中方式">
+                <select v-model="bankLogFilter.matched">
+                  <option value="">全部状态</option>
+                  <option value="1">命中</option>
+                  <option value="0">未命中</option>
+                </select>
+                <input v-model="bankLogFilter.date_from" placeholder="开始时间 2026-07-22 00:00:00">
+                <input v-model="bankLogFilter.date_to" placeholder="结束时间 2026-07-22 23:59:59">
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;color:var(--text2);font-size:12px">
+                <span class="chip">共 {{bankLogTotal}} 条</span>
+                <select v-model.number="bankLogFilter.limit" @change="loadBankLogs(1)" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)">
+                  <option :value="50">50条/页</option>
+                  <option :value="100">100条/页</option>
+                  <option :value="200">200条/页</option>
+                </select>
+              </div>
+              <div v-if="bankLogLoading" style="text-align:center;color:var(--text3);padding:32px 0;font-size:13px">正在加载题库日志...</div>
+              <div v-else-if="bankLogs.length===0" style="text-align:center;color:var(--text3);padding:40px 0;font-size:13px">暂无题库调用日志</div>
+              <div v-else style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1080px">
+                  <thead>
+                    <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
+                      <th style="text-align:left;padding:10px 8px">时间</th>
+                      <th style="text-align:left;padding:10px 8px">用户</th>
+                      <th style="text-align:left;padding:10px 8px">结果</th>
+                      <th style="text-align:left;padding:10px 8px">命中方式</th>
+                      <th style="text-align:left;padding:10px 8px">耗时</th>
+                      <th style="text-align:left;padding:10px 8px">题型</th>
+                      <th style="text-align:left;padding:10px 8px">题目</th>
+                      <th style="text-align:left;padding:10px 8px">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template v-for="log in bankLogs" :key="log.id">
+                      <tr style="border-bottom:1px solid var(--border);color:var(--text)">
+                        <td style="padding:10px 8px;color:var(--text3);white-space:nowrap">{{log.created_at}}</td>
+                        <td style="padding:10px 8px;white-space:nowrap;color:var(--accent2)">{{log.username||'-'}}</td>
+                        <td style="padding:10px 8px;white-space:nowrap">
+                          <span v-if="log.matched==1" style="color:var(--success);font-weight:600">命中</span>
+                          <span v-else style="color:var(--danger);font-weight:600">未命中</span>
+                        </td>
+                        <td style="padding:10px 8px;white-space:nowrap;color:var(--accent)">{{matchMethodText(log.match_method)}}</td>
+                        <td style="padding:10px 8px;white-space:nowrap">{{formatDuration(log.duration_ms)}}</td>
+                        <td style="padding:10px 8px;white-space:nowrap;color:var(--text2)">{{log.question_type||'-'}}</td>
+                        <td style="padding:10px 8px;max-width:360px;word-break:break-word;color:var(--text2)">{{shortText(log.question_text,100)}}</td>
+                        <td style="padding:10px 8px">
+                          <button class="btn btn-secondary btn-sm" @click="toggleBankLog(log.id)">{{expandedBankLogs[log.id]?'收起':'详情'}}</button>
+                        </td>
+                      </tr>
+                      <tr v-if="expandedBankLogs[log.id]">
+                        <td colspan="8" style="padding:0 8px 12px">
+                          <div class="log-detail">
+                            用户：{{log.username||'-'}}&#10;
+                            Hash：{{log.question_hash||'-'}}&#10;
+                            题型：{{log.question_type||'-'}}&#10;
+                            选项：{{log.options_text||'-'}}&#10;
+                            命中方式：{{matchMethodText(log.match_method)}}&#10;
+                            命中Hash：{{log.matched_hash||'-'}}&#10;&#10;
+                            题目：{{log.question_text||'-'}}
+                          </div>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+                <div class="pager">
+                  <button class="btn btn-secondary btn-sm" :disabled="bankLogFilter.page<=1" @click="loadBankLogs(bankLogFilter.page-1)">上一页</button>
+                  <span>第 {{bankLogFilter.page}} / {{Math.max(1,Math.ceil(bankLogTotal/bankLogFilter.limit))}} 页</span>
+                  <button class="btn btn-secondary btn-sm" :disabled="bankLogFilter.page>=Math.ceil(bankLogTotal/bankLogFilter.limit)" @click="loadBankLogs(bankLogFilter.page+1)">下一页</button>
                 </div>
               </div>
             </div>
@@ -2521,7 +2660,7 @@ body{
                   <option value="">全部</option>
                   <option value="alipay">支付宝</option>
                   <option value="wechat">微信支付</option>
-                  <option value="xianyu">闲鱼</option>
+                  <option value="card">{{cardPayLabel}}</option>
                 </select>
               </div>
               <div class="form-group" style="margin:0">
@@ -2573,9 +2712,7 @@ body{
                     <td style="padding:10px 12px">{{row.plan_type||'-'}}</td>
                     <td style="padding:10px 12px;font-weight:600;color:var(--success)">¥{{Number(row.price||0).toFixed(2)}}</td>
                     <td style="padding:10px 12px">{{row.points>0?row.points+'点':''}}{{row.days>0?(row.points>0?'/':'')+row.days+'天':''}}{{!row.points&&!row.days?'-':''}}</td>
-                    <td style="padding:10px 12px">{{row.pay_method==='alipay'?'支付宝':row.pay_method==='wechat'?'微信支付':row.pay_method==='xianyu'?'闲鱼':row.pay_method||'-'}}
-                      <span v-if="row.source==='xianyu'" style="margin-left:4px;font-size:10px;background:var(--warning);color:#fff;padding:1px 5px;border-radius:4px">闲鱼</span>
-                    </td>
+                    <td style="padding:10px 12px">{{row.pay_method==='alipay'?'支付宝':row.pay_method==='wechat'?'微信支付':row.pay_method==='card'?cardPayLabel:row.pay_method||'-'}}
                     <td style="padding:10px 12px">{{row.pay_type||'-'}}</td>
                     <td style="padding:10px 12px;font-family:monospace;font-size:12px">{{row.bank_order_no||'-'}}</td>
                     <td style="padding:10px 12px;font-family:monospace;font-size:12px">{{row.trade_no||'-'}}</td>
@@ -2982,6 +3119,7 @@ createApp({
       'card-keys':[{label:'卡密管理',group:'card'},{label:'卡密管理'}],
       'script-logs':[{label:'日志监控',group:'logs'},{label:'脚本日志'}],
       'ai-logs':[{label:'日志监控',group:'logs'},{label:'模型日志'}],
+      'bank-logs':[{label:'日志监控',group:'logs'},{label:'题库日志'}],
       'log-cleanup':[{label:'日志监控',group:'logs'},{label:'日志清理'}],
       'ai-config':[{label:'系统配置',group:'config'},{label:'模型配置'}],
       'email-config':[{label:'系统配置',group:'config'},{label:'邮箱配置'}],
@@ -2989,7 +3127,7 @@ createApp({
       'daily-report':[{label:'日志监控',group:'logs'},{label:'每日数据邮件'}],
       'profile':[{label:'个人中心'}]
     };
-    const GROUP_FIRST_PAGE={referral:'referral',payment:'payment-orders',card:'xianyu',logs:'script-logs',config:'question-bank'};
+    const GROUP_FIRST_PAGE={referral:'referral',payment:'payment-orders',card:'xianyu',logs:'script-logs',config:'question-bank',bank:'bank-logs'};
     const breadcrumbItems=computed(()=>BREADCRUMB_MAP[page.value]||[]);
     function navigateBreadcrumb(item,index){
       if(index===breadcrumbItems.value.length-1)return;
@@ -3086,7 +3224,7 @@ createApp({
        }
        htmlPreviewFrame.value.srcdoc=html;
      }
-    const newProvider=reactive({key:'',title:'',protocol:'openai',api_key:'',base_url:'',models:[]});
+    const newProvider=reactive({key:'',title:'',protocol:'openai',api_key:'',base_url:'',models:[],test_model:''});
     const loginForm=reactive({username:'admin',password:''});
     const forgotForm=reactive({email:''});
     const resetForm=reactive({email:'',code:'',newPassword:'',confirmPassword:''});
@@ -3125,6 +3263,11 @@ createApp({
     const scriptLogLoading=ref(false);
     const scriptLogTotal=ref(0);
     const scriptLogFilter=reactive({username:'',level:'',keyword:'',date_from:'',date_to:'',limit:100,page:1});
+    const bankLogs=ref([]);
+    const bankLogLoading=ref(false);
+    const bankLogTotal=ref(0);
+    const expandedBankLogs=reactive({});
+    const bankLogFilter=reactive({matched:'',keyword:'',date_from:'',date_to:'',limit:100,page:1});
      const questionBank=ref([]);
      const questionBankTotal=ref(0);
      const questionBankLoading=ref(false);
@@ -3417,6 +3560,26 @@ createApp({
         else showMsg(data.msg||'获取脚本日志失败','error');
       }catch(e){showMsg('获取脚本日志失败: '+(e.message||e),'error',6000);}
       finally{scriptLogLoading.value=false;}
+    }
+    async function loadBankLogs(page=bankLogFilter.page||1){
+      if(!token.value)return;
+      bankLogFilter.page=page;
+      bankLogLoading.value=true;
+      try{
+        const qs=new URLSearchParams();
+        qs.set('limit',String(bankLogFilter.limit||100));
+        qs.set('page',String(bankLogFilter.page||1));
+        if(bankLogFilter.matched)qs.set('matched',bankLogFilter.matched);
+        if(bankLogFilter.keyword)qs.set('keyword',bankLogFilter.keyword);
+        if(bankLogFilter.date_from)qs.set('date_from',bankLogFilter.date_from);
+        if(bankLogFilter.date_to)qs.set('date_to',bankLogFilter.date_to);
+        const res=await safeFetch('/admin/bank-logs?'+qs.toString(),{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){bankLogs.value=data.logs||[];bankLogTotal.value=Number(data.total||0);}
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'获取题库日志失败','error');
+      }catch(e){showMsg('获取题库日志失败: '+(e.message||e),'error',6000);}
+      finally{bankLogLoading.value=false;}
     }
     async function loadQuestionBank(page=questionBankFilter.page||1){
       if(!token.value)return;
@@ -3879,6 +4042,21 @@ createApp({
         else showMsg(data.msg||'修改失败','error');
       }catch(e){showMsg('请求失败: '+e,'error');}
     }
+    async function clearBankLogs(){
+      if(!token.value||!bankLogFilter)return;
+      if(!confirm('确认按当前筛选条件清空题库日志？'))return;
+      try{
+        const res=await fetch('/admin/bank-logs/clear',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({
+          matched:bankLogFilter.matched||'',
+          keyword:bankLogFilter.keyword||'',
+          date_from:bankLogFilter.date_from||'',
+          date_to:bankLogFilter.date_to||''
+        })});
+        const data=await res.json();
+        if(data.code===200){showMsg('题库日志已清空','success');loadBankLogs(1);}
+        else showMsg(data.msg||'清空失败','error');
+      }catch(e){showMsg('清空题库日志失败: '+(e.message||e),'error');}
+    }
     async function clearAiLogs(){
       const hasFilter=aiLogFilter.status||aiLogFilter.model||aiLogFilter.keyword||aiLogFilter.date_from||aiLogFilter.date_to;
       if(!confirm(hasFilter?'确定按当前筛选条件清空模型调用日志吗？':'当前没有筛选条件，将清空全部模型调用日志，确定继续吗？'))return;
@@ -3915,6 +4093,14 @@ createApp({
       }catch(e){showMsg('解除锁定失败: '+e,'error');}
     }
     function toggleLog(id){expandedLogs[id]=!expandedLogs[id];}
+    function toggleBankLog(id){expandedBankLogs[id]=!expandedBankLogs[id];}
+    function matchMethodText(m){
+      if(!m||m==='none')return '-';
+      if(m==='hash')return '精确Hash';
+      if(m==='standard')return '标准匹配';
+      if(m==='fuzzy')return '模糊匹配';
+      return m;
+    }
     function toggleBank(id){expandedBank[id]=!expandedBank[id];}
 
     // Provider
@@ -3978,7 +4164,8 @@ createApp({
       });
       if(!data)return;
       showAddModal.value=false;
-      Object.assign(newProvider,{key:'',title:'',protocol:'openai',api_key:'',base_url:''});
+      Object.assign(newProvider,{key:'',title:'',protocol:'openai',api_key:'',base_url:'',test_model:''});
+      newProviderTestResult.value=null;
       showMsg('添加成功，已写入数据库');
     }
     async function removeProvider(key){
@@ -3988,24 +4175,61 @@ createApp({
     function addModel(key){
       const oldProviders={...(config.value.providers||{})};
       const info={...(oldProviders[key]||{})};
-      info.models=[...(info.models||[]),{value:'',label:'',weight:100,daily_token_limit:0}];
+      info.models=[...(info.models||[]),{value:'',label:'',weight:100,daily_token_limit:0,total_token_limit:0}];
       oldProviders[key]=info;
       setProviders(oldProviders);
     }
     async function removeModel(key,idx){
       const model=(config.value.providers?.[key]?.models||[])[idx];
-      if(model&&model.value){
-        const data=await adminPost('/admin/model/delete',{key,idx});
-        if(data)showMsg('模型删除成功，已从数据库删除');
-        return;
-      }
+      const modelName=model?(model.label||model.value||'该模型'):'该模型';
+      if(!confirm('确定要删除模型「'+modelName+'」吗？'))return;
+      // 先从本地状态移除，确保 UI 立即响应
       const oldProviders={...(config.value.providers||{})};
       const info={...(oldProviders[key]||{})};
       info.models=(info.models||[]).filter((_,i)=>i!==idx);
       oldProviders[key]=info;
       setProviders(oldProviders);
+      // 如果模型有值（已保存到数据库），同步删除数据库记录
+      if(model&&model.value){
+        try{
+          const data=await adminPost('/admin/model/delete',{key,idx});
+          if(data)showMsg('模型「'+modelName+'」已删除');
+        }catch(e){
+          showMsg('本地已移除，数据库同步失败：'+(e.message||e),'error');
+        }
+      }else{
+        showMsg('模型「'+modelName+'」已移除（未保存到数据库）');
+      }
     }
     function protocolName(p){const map={openai:'OpenAI 兼容',claude:'Claude',gemini:'Gemini'};return map[p]||p;}
+    async function testModel(info,m,tag){
+      const model=(m.value||'').trim();
+      if(!model){modelTestResults[tag]={status:'fail',text:'✗ 请先填写模型ID'};return;}
+      if(!info.base_url||!info.api_key){modelTestResults[tag]={status:'fail',text:'✗ 请先填写 Base URL 和 API Key'};return;}
+      testingModel.value=tag;
+      modelTestResults[tag]={status:'loading',text:'⏳ 调试中，请稍候…'};
+      try{
+        const res=await fetch('/admin/provider/test',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({protocol:info.protocol,base_url:info.base_url,api_key:info.api_key,model})});
+        const d=await res.json();
+        if(d.success){modelTestResults[tag]={status:'ok',text:'✓ '+d.msg+(d.reply?('<br>回复：'+d.reply):'')};}
+        else{modelTestResults[tag]={status:'fail',text:'✗ '+(d.msg||'调试失败')};}
+      }catch(e){modelTestResults[tag]={status:'fail',text:'✗ 调试失败：网络错误'};}
+      finally{testingModel.value='';}
+    }
+    async function testNewProvider(){
+      const model=(newProvider.test_model||'').trim();
+      if(!model){newProviderTestResult.value={status:'fail',text:'✗ 请填写测试模型ID'};return;}
+      if(!newProvider.base_url||!newProvider.api_key){newProviderTestResult.value={status:'fail',text:'✗ 请先填写 Base URL 和 API Key'};return;}
+      testingNewProvider.value=true;
+      newProviderTestResult.value={status:'loading',text:'⏳ 调试中，请稍候…'};
+      try{
+        const res=await fetch('/admin/provider/test',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({protocol:newProvider.protocol,base_url:newProvider.base_url,api_key:newProvider.api_key,model})});
+        const d=await res.json();
+        if(d.success){newProviderTestResult.value={status:'ok',text:'✓ '+d.msg+(d.reply?('<br>回复：'+d.reply):'')};}
+        else{newProviderTestResult.value={status:'fail',text:'✗ '+(d.msg||'调试失败')};}
+      }catch(e){newProviderTestResult.value={status:'fail',text:'✗ 调试失败：网络错误'};}
+      finally{testingNewProvider.value=false;}
+    }
     function statusText(s){return s==='success'?'成功':s==='insufficient_quota'?'余额不足':'失败';}
     function formatDuration(ms){
       ms=Number(ms||0);
@@ -4137,7 +4361,7 @@ createApp({
       referral:{title:'推广运营',icon:'★',items:[{page:'referral',label:'返利配置',icon:'⚙',load:loadReferralConfig},{page:'referral-withdrawals',label:'提现审核',icon:'¥',load:loadReferralWithdrawals},{page:'feedback',label:'问题反馈',icon:'✎',load:()=>{loadFeedbackList();loadFeedbackAutoClose();loadFeedbackNotify();}}]},
       payment:{title:'支付财务',icon:'□',items:[{page:'payment-orders',label:'支付明细',icon:'▤',load:loadPaymentOrders},{page:'payment',label:'套餐配置',icon:'◈',load:loadPaymentConfig},{page:'pay-api',label:'支付接口',icon:'⌁',load:loadPayApiConfig},{page:'pay-test',label:'支付测试',icon:'◎',load:()=>{}},{page:'refund-requests',label:'退款申请',icon:'↩',load:loadRefundRequests}]},
       card:{title:'卡密管理',icon:'⚷',items:[{page:'xianyu',label:'商品配置',icon:'●',load:loadXianyuConfig},{page:'card-keys',label:'卡密管理',icon:'⚷',load:loadCardKeys}]},
-      logs:{title:'日志监控',icon:'☰',items:[{page:'script-logs',label:'脚本日志',icon:'⌘',load:loadScriptLogs},{page:'ai-logs',label:'模型日志',icon:'≡',load:loadAiLogs},{page:'log-cleanup',label:'日志清理',icon:'∅',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'⊙',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
+      logs:{title:'日志监控',icon:'☰',items:[{page:'script-logs',label:'脚本日志',icon:'⌘',load:loadScriptLogs},{page:'ai-logs',label:'模型日志',icon:'≡',load:loadAiLogs},{page:'bank-logs',label:'题库日志',icon:'◎',load:loadBankLogs},{page:'log-cleanup',label:'日志清理',icon:'∅',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'⊙',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
       config:{title:'系统配置',icon:'◇',items:[{page:'ai-config',label:'模型配置',icon:'◈',load:loadConfig},{page:'email-config',label:'邮箱配置',icon:'✉',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'db-config',label:'系统设置',icon:'⛁',load:loadDbConfig}]}
     };
     function openMobileSubmenu(key,title,icon){
@@ -4195,9 +4419,14 @@ createApp({
     const feedbackTotal=ref(0);
     const feedbackPendingCount=ref(0);
     const feedbackAutoCloseDays=ref(7);
+    const cardPayLabel=ref('卡密');
     const feedbackDetail=ref(null);
     const feedbackReplyText=ref('');
     const aiPolishing=ref(false);
+    const testingModel=ref('');
+    const testingNewProvider=ref(false);
+    const modelTestResults=reactive({});
+    const newProviderTestResult=ref(null);
     const feedbackNotifyEnabled=ref(false);
     const referralConfig=ref({referral_enabled:false,referral_rate:0.1,referral_min_withdraw:10,referral_settle_days:7});
     const referralSaving=ref(false);
@@ -4259,6 +4488,12 @@ createApp({
 
     // ========== 支付明细 ==========
     async function loadPaymentOrders(){
+      // 加载卡密支付方式名称
+      try{
+        const cr=await fetch('/api/payment/xianyu-config',{headers:{'Authorization':token.value}});
+        const cd=await cr.json();
+        if(cd.code===200)cardPayLabel.value=cd.card_pay_name||'卡密';
+      }catch(_){}
       const f=paymentOrdersFilter.value;
       const s=paymentOrdersSort.value;
       const params=new URLSearchParams({
@@ -4344,8 +4579,8 @@ createApp({
       try{
         const res=await safeFetch('/admin/card-keys?'+params.toString(),{headers:{'Authorization':token.value}});
         const d=await res.json();
-        if(d.code===200){ckList.value=d.rows||[];ckTotal.value=d.total||0;ckTotalPages.value=Math.ceil(ckTotal.value/20)||1;}
-      }catch(_){}
+        if(d.code===200){ckList.value=d.rows||[];ckTotal.value=d.total||0;ckTotalPages.value=Math.ceil(ckTotal.value/20)||1;}else showMsg(d.msg||'加载失败','error');
+      }catch(e){showMsg('加载卡密列表失败: '+e.message,'error');}
       // 加载套餐列表
       if(!paymentPlans.value.length){
         try{
@@ -4355,12 +4590,36 @@ createApp({
         }catch(_){}
       }
     }
+    function exportCardKeys(){
+      const rows=ckList.value;
+      if(!rows.length)return showMsg('没有数据可导出','error');
+      let csv='卡密,套餐,金额,状态,使用者,生成时间,使用时间\n';
+      rows.forEach(r=>{
+        const status=r.status==='unused'?'未使用':'已使用';
+        const created=(r.created_at||'').replace('T',' ').substring(0,16);
+        const used=r.used_at?String(r.used_at).replace('T',' ').substring(0,16):'-';
+        csv+=`${r.code},${r.plan_name||'-'},${Number(r.price||0).toFixed(2)},${status},${r.used_by||'-'},${created},${used}\n`;
+      });
+      const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download='卡密列表_'+new Date().toISOString().substring(0,10)+'.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
     async function loadXianyuConfig(){
       try{
         const res=await fetch('/api/payment/xianyu-config',{headers:{'Authorization':token.value}});
         const d=await res.json();
         if(d.code===200){xianyuEnabled.value=!!d.xianyu_enabled;xianyuUrl.value=d.xianyu_url||'';cardPayName.value=d.card_pay_name||'卡密激活';cardPayIcon.value=d.card_pay_icon||'🔑';}
       }catch(_){}
+    }
+    function onCardIconUpload(e){
+      const file=e.target.files[0];
+      if(!file)return;
+      const reader=new FileReader();
+      reader.onload=function(ev){cardPayIcon.value=ev.target.result;};
+      reader.readAsDataURL(file);
     }
     async function saveXianyuConfig(){
       try{
@@ -4377,7 +4636,7 @@ createApp({
         const d=await res.json();
         showMsg(d.msg||'操作完成',d.code===200?'success':'error');
         if(d.code===200)loadCardKeys(1);
-      }catch(_){showMsg('error','网络错误');}
+      }catch(e){showMsg('网络错误: '+e.message,'error');}
       ckGenerateSaving.value=false;
     }
 
@@ -4506,9 +4765,10 @@ createApp({
         showHtmlPreview,htmlPreviewFrame,htmlPreviewData,toggleHtmlPreview,updateHtmlPreview,switchToHtml,onHtmlInput,syncPlainFromHtml,
        paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,planForm,
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,
+      bankLogs,bankLogLoading,bankLogFilter,bankLogTotal,expandedBankLogs,
       questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,
       doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
-      loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,goToPaymentDetails,
+      loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,
       savePaymentConfig,savePayApiConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,openUserEdit,saveUserAdmin,
       toggleProvider,collapseAllProviders,togglePayApiSection,
       addProvider,removeProvider,addModel,removeModel,
@@ -4522,12 +4782,12 @@ createApp({
         rrFilterStatus,rrFilterUsername,rrFilterOrderNo,rrList,rrPage,rrTotalPages,rrTotal,rrQrPreview,
         loadRefundRequests,processRefundRequest,previewQr,
         xianyuEnabled,xianyuUrl,cardPayName,cardPayIcon,ckList,ckPage,ckTotalPages,ckTotal,ckFilterStatus,ckFilterPlanId,ckGeneratePlanId,ckGenerateCount,ckGenerateSaving,
-        loadCardKeys,loadXianyuConfig,saveXianyuConfig,generateCardKeys,
+        loadCardKeys,loadXianyuConfig,saveXianyuConfig,onCardIconUpload,exportCardKeys,generateCardKeys,
        feedbackList,feedbackFilter,feedbackPage,feedbackTotalPages,feedbackTotal,feedbackPendingCount,feedbackDetail,feedbackReplyText,
         loadFeedbackList,feedbackSearch,viewFeedbackDetail,replyFeedback,updateFeedbackStatus,feedbackPrev,feedbackNext,
-    feedbackAutoCloseDays,loadFeedbackAutoClose,saveFeedbackAutoClose,
+    feedbackAutoCloseDays,loadFeedbackAutoClose,saveFeedbackAutoClose,cardPayLabel,
     feedbackNotifyEnabled,loadFeedbackNotify,saveFeedbackNotify,
-   aiPolishing,aiPolishReply,
+   aiPolishing,aiPolishReply,testingModel,testingNewProvider,testModel,testNewProvider,modelTestResults,newProviderTestResult,
        dailyReportConfig,dailyReportPreview,loadDailyReport,saveDailyReport,sendDailyReportNow,previewDailyReport
     };
   }

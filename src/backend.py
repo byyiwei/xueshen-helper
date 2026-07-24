@@ -90,6 +90,27 @@ def enqueue_ai_log(item):
     except queue.Full:
         print("[AI日志队列] 队列已满，丢弃一条日志", flush=True)
 
+# 题库调用日志异步队列
+BANK_LOG_QUEUE = queue.Queue(maxsize=10000)
+
+def bank_log_worker():
+    while True:
+        item = BANK_LOG_QUEUE.get()
+        try:
+            db.save_bank_call_log(item)
+        except Exception as e:
+            print(f"[题库日志错误] {e}", flush=True)
+        finally:
+            BANK_LOG_QUEUE.task_done()
+
+threading.Thread(target=bank_log_worker, daemon=True).start()
+
+def enqueue_bank_log(item):
+    try:
+        BANK_LOG_QUEUE.put_nowait(item)
+    except queue.Full:
+        print("[题库日志队列] 队列已满，丢弃一条日志", flush=True)
+
 def set_system_keep_awake(enabled=True):
     """Windows 系统级防休眠/防息屏。开启后只要后端进程运行，系统会尽量保持唤醒。"""
     global POWER_KEEP_AWAKE_ENABLED
@@ -1402,18 +1423,21 @@ def question_type_matches(t1, t2):
     return t1 == t2
 
 def get_question_bank_match(question):
+    _t0 = time.time()
     info = parse_question_payload(question)
     current_type = info.get("question_type", "")
     qhash = make_question_hash(question)
     row = db.get_question_answer_by_hash(qhash)
     if row and row.get("answer"):
-        print(f"[题库匹配] hash 精确命中 {qhash[:12]} type={current_type}", flush=True)
-        return row, qhash
+        elapsed = (time.time() - _t0) * 1000
+        print(f"[题库匹配] hash 精确命中 {qhash[:12]} type={current_type} ({elapsed:.1f}ms)", flush=True)
+        return row, qhash, "hash", elapsed
     q_norm = normalize_question_text(info.get("question_text", ""))
     keyword = (info.get("question_text", "") or "")[:80]
     if keyword:
         try:
             candidates = db.search_question_bank(keyword=keyword, limit=20, page=1)
+            print(f"[题库匹配] 搜索返回 {len(candidates)} 条 ({(time.time()-_t0)*1000:.1f}ms)", flush=True)
             for item in candidates:
                 item_q_norm = normalize_question_text(item.get("question_text", ""))
                 if not item.get("answer") or not item_q_norm:
@@ -1422,19 +1446,22 @@ def get_question_bank_match(question):
                 if item_q_norm == q_norm or item_q_norm in q_norm or q_norm in item_q_norm:
                     if options_match(info.get("options", []), item.get("options_text", "")):
                         db.get_question_answer_by_hash(item.get("question_hash", ""))
-                        print(f"[题库匹配] 标准化兜底命中 {item.get('question_hash', '')[:12]} type={item.get('question_type','')}", flush=True)
-                        return item, item.get("question_hash", qhash)
+                        elapsed = (time.time() - _t0) * 1000
+                        print(f"[题库匹配] 标准化兜底命中 {item.get('question_hash', '')[:12]} type={item.get('question_type','')} ({elapsed:.1f}ms)", flush=True)
+                        return item, item.get("question_hash", qhash), "standard", elapsed
                 # 模糊匹配：相似度>=0.85 且选项匹配（不再限制题型）
                 if len(q_norm) >= 4 and len(item_q_norm) >= 4:
                     ratio = SequenceMatcher(None, q_norm, item_q_norm).ratio()
                     if ratio >= 0.85 and options_match(info.get("options", []), item.get("options_text", "")):
                         db.get_question_answer_by_hash(item.get("question_hash", ""))
-                        print(f"[题库匹配] 模糊匹配命中(相似度={ratio:.2f}) {item.get('question_hash', '')[:12]} type={item.get('question_type','')}", flush=True)
-                        return item, item.get("question_hash", qhash)
+                        elapsed = (time.time() - _t0) * 1000
+                        print(f"[题库匹配] 模糊匹配命中(相似度={ratio:.2f}) {item.get('question_hash', '')[:12]} type={item.get('question_type','')} ({elapsed:.1f}ms)", flush=True)
+                        return item, item.get("question_hash", qhash), "fuzzy", elapsed
         except Exception as e:
             print(f"[题库匹配] 兜底查询失败: {e}", flush=True)
-    print(f"[题库匹配] 未命中 {qhash[:12]} type={current_type}", flush=True)
-    return None, qhash
+    elapsed = (time.time() - _t0) * 1000
+    print(f"[题库匹配] 未命中 {qhash[:12]} type={current_type} ({elapsed:.1f}ms)", flush=True)
+    return None, qhash, None, elapsed
 
 def save_question_bank_answer(question, answer, model_name="", provider_name=""):
     if not answer:
@@ -1829,7 +1856,7 @@ def call_provider_chat(question, model_name, provider_info):
     else:
         return None, f"不支持的协议: {protocol}", 0
 
-# Token 限额缓存：{model_name: {"date": "2026-07-02", "tokens": 12345, "limit": 100000}}
+# Token 限额缓存：{model_name: {"date": "2026-07-02", "tokens": 12345, "limit": 100000, "total_used": 500000, "total_limit": 1000000}}
 MODEL_TOKEN_CACHE = {}
 
 def get_model_daily_limit(model_name):
@@ -1840,23 +1867,44 @@ def get_model_daily_limit(model_name):
                 return int(m.get("daily_token_limit") or 0)
     return 0
 
+def get_model_total_limit(model_name):
+    """从 providers 配置中获取模型的总额 token 限额"""
+    for pname, pinfo in PROVIDERS.items():
+        for m in pinfo.get("models", []):
+            if m.get("value") == model_name:
+                return int(m.get("total_token_limit") or 0)
+    return 0
+
 def is_model_token_exhausted(model_name):
-    """检查模型当日 token 是否已耗尽"""
-    limit = get_model_daily_limit(model_name)
-    if limit <= 0:
-        return False  # 未设限额
+    """检查模型 token 是否已耗尽（每日限额或总额限额任一触发即视为耗尽）"""
+    daily_limit = get_model_daily_limit(model_name)
+    total_limit = get_model_total_limit(model_name)
+    if daily_limit <= 0 and total_limit <= 0:
+        return False  # 未设任何限额
     today = datetime.now().strftime("%Y-%m-%d")
     cache = MODEL_TOKEN_CACHE.get(model_name)
     if not cache or cache.get("date") != today:
-        # 从数据库加载
+        # 从数据库加载今日用量和历史总额
         try:
-            usage = db.get_model_token_usage_today()
-            used = usage.get(model_name, {}).get("tokens", 0)
+            usage_today = db.get_model_token_usage_today()
+            used_today = usage_today.get(model_name, {}).get("tokens", 0)
         except:
-            used = 0
-        MODEL_TOKEN_CACHE[model_name] = {"date": today, "tokens": used, "limit": limit}
-        cache = MODEL_TOKEN_CACHE[model_name]
-    return cache["tokens"] >= cache["limit"]
+            used_today = 0
+        try:
+            usage_total = db.get_model_token_usage_total()
+            used_total = usage_total.get(model_name, 0)
+        except:
+            used_total = 0
+        cache = {"date": today, "tokens": used_today, "limit": daily_limit,
+                 "total_used": used_total, "total_limit": total_limit}
+        MODEL_TOKEN_CACHE[model_name] = cache
+    # 检查每日限额
+    if daily_limit > 0 and cache["tokens"] >= daily_limit:
+        return True
+    # 检查总额限额
+    if total_limit > 0 and cache["total_used"] >= total_limit:
+        return True
+    return False
 
 def record_model_token_usage(model_name, tokens):
     """记录模型 token 消耗"""
@@ -1865,9 +1913,17 @@ def record_model_token_usage(model_name, tokens):
     today = datetime.now().strftime("%Y-%m-%d")
     cache = MODEL_TOKEN_CACHE.get(model_name)
     if not cache or cache.get("date") != today:
-        cache = {"date": today, "tokens": 0, "limit": get_model_daily_limit(model_name)}
+        cache = {"date": today, "tokens": 0, "limit": get_model_daily_limit(model_name),
+                 "total_used": 0, "total_limit": get_model_total_limit(model_name)}
+        # 尝试从数据库加载已有总额
+        try:
+            usage_total = db.get_model_token_usage_total()
+            cache["total_used"] = usage_total.get(model_name, 0)
+        except:
+            pass
         MODEL_TOKEN_CACHE[model_name] = cache
     cache["tokens"] += tokens
+    cache["total_used"] += tokens
     try:
         db.add_model_token_usage(model_name, tokens)
     except Exception as e:
@@ -2000,6 +2056,87 @@ def call_provider_chat_with_messages(messages, model_name, provider_info):
         return do_gemini_chat(messages, model_name, api_key, base_url)
     else:
         return None, f"不支持的协议: {protocol}", 0
+
+
+def call_llm_lightweight(messages, model, provider_info, timeout=15):
+    """轻量级 LLM 调用，用于简单任务如文本润色，不做降级重试，超时短"""
+    api_key = provider_info.get("api_key", "")
+    base_url = provider_info.get("base_url", "")
+    protocol = provider_info.get("protocol", "openai")
+    
+    if protocol == "openai":
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.3,
+            "max_tokens": 4096
+        }
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            f"{base_url.rstrip('/')}/chat/completions",
+            data=data,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            method="POST"
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+            if "error" in result:
+                return None, result["error"].get("message", "Unknown error"), 0
+            if "choices" not in result or not result["choices"]:
+                return None, "API 无响应", 0
+            choice = result["choices"][0]
+            message = choice.get("message") or {}
+            # 保存原始响应供调试
+            with open("/tmp/ai_raw_response.json", "w") as _f:
+                _f.write(json.dumps(result, ensure_ascii=False, indent=2))
+            # 优先读 content，为空则读 reasoning_content（推理模型）
+            content = message.get("content") or ""
+            if not content or not str(content).strip():
+                reasoning = message.get("reasoning_content") or message.get("reasoning") or ""
+                if reasoning:
+                    content = str(reasoning).strip()
+            if not content:
+                content = choice.get("text") or ""
+            if isinstance(content, list):
+                content = "".join(
+                    item.get("text", "") if isinstance(item, dict) else str(item)
+                    for item in content
+                )
+            usage = result.get("usage") or {}
+            total_tokens = int(usage.get("total_tokens") or 0)
+            if not content or not str(content).strip():
+                print(f"[AI优化] API返回内容为空, raw={json.dumps(result, ensure_ascii=False)[:500]}", flush=True)
+                return None, "AI 返回内容为空，请重试", 0
+            text = str(content).strip()
+            # 提取推理模型的最终回复（去掉思考过程）
+            for marker in ["Thinking Process:", "思考过程:"]:
+                idx = text.find(marker)
+                if idx >= 0:
+                    after = text[idx + len(marker):]
+                    # 找最后一个看起来像回复的段落（不含编号和标记的中文段落）
+                    import re
+                    paragraphs = [p.strip() for p in re.split(r'\n\s*\n', after) if p.strip()]
+                    for p in reversed(paragraphs):
+                        # 跳过包含编号步骤/列表/加粗标题的段落
+                        if re.match(r'^[\d\*\-]', p) or '**' in p[:20]:
+                            continue
+                        if len(p) > 10:
+                            text = p
+                            break
+                    break
+            return text, None, total_tokens
+        except urllib.error.HTTPError as e:
+            body = e.read().decode('utf-8', errors='replace')
+            if e.code == 429:
+                retry_after = e.headers.get("Retry-After", "") if hasattr(e, 'headers') else ""
+                cooldown = min(int(retry_after), 60) if retry_after.isdigit() else 30
+                return None, f"__429__:{cooldown}:{body}", 0
+            return None, f"HTTP {e.code}: {body[:200]}", 0
+        except Exception as e:
+            return None, str(e), 0
+    else:
+        return call_provider_chat_with_messages(messages, model, provider_info)
 
 
 def call_agent_llm(messages):
@@ -3022,7 +3159,7 @@ class Handler(BaseHTTPRequestHandler):
                     methods.append({"value": "wechat", "label": "微信支付", "channels": wechat_channels})
                 if alipay_channels:
                     methods.append({"value": "alipay", "label": "支付宝支付", "channels": alipay_channels})
-                if admin.get("xianyu_enabled") and admin.get("xianyu_url"):
+                if admin.get("xianyu_enabled"):
                     methods.append({"value": "xianyu", "label": admin.get("card_pay_name") or "卡密激活", "icon": admin.get("card_pay_icon") or "🔑"})
                 self._send_json(200, {"code": 200, "methods": methods})
             except Exception as e:
@@ -3332,6 +3469,23 @@ class Handler(BaseHTTPRequestHandler):
                 date_to = qs.get("date_to", [""])[0]
                 logs = db.get_script_event_logs(limit=limit, page=page, username=username, level=level, keyword=keyword, date_from=date_from, date_to=date_to)
                 total = db.count_script_event_logs(username=username, level=level, keyword=keyword, date_from=date_from, date_to=date_to)
+                self._send_json(200, {"code": 200, "logs": logs, "total": total, "page": int(page or 1), "limit": int(limit or 100)})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/bank-logs":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                limit = qs.get("limit", ["100"])[0]
+                page = qs.get("page", ["1"])[0]
+                matched = qs.get("matched", [""])[0]
+                keyword = qs.get("keyword", [""])[0]
+                date_from = qs.get("date_from", [""])[0]
+                date_to = qs.get("date_to", [""])[0]
+                logs = db.get_bank_call_logs(limit=limit, matched=matched, keyword=keyword, date_from=date_from, date_to=date_to, page=page)
+                total = db.count_bank_call_logs(matched=matched, keyword=keyword, date_from=date_from, date_to=date_to)
                 self._send_json(200, {"code": 200, "logs": logs, "total": total, "page": int(page or 1), "limit": int(limit or 100)})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -4331,6 +4485,42 @@ class Handler(BaseHTTPRequestHandler):
                 print(f"[删除AI提供商] 错误: {str(e)}")
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        # 调试单个模型连通性（无需先保存配置，直接用表单填写的参数测试）
+        elif path == "/admin/provider/test":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                protocol = (data.get("protocol") or "openai").strip()
+                base_url = (data.get("base_url") or "").strip()
+                api_key = data.get("api_key") or ""
+                model = (data.get("model") or "").strip()
+                if not base_url or not api_key:
+                    self._send_json(200, {"code": 200, "success": False, "msg": "请填写 Base URL 和 API Key"})
+                    return
+                if not model:
+                    self._send_json(200, {"code": 200, "success": False, "msg": "请填写要测试的模型ID"})
+                    return
+                provider_info = {"protocol": protocol, "base_url": base_url, "api_key": api_key}
+                test_messages = [{"role": "user", "content": "请回复两个字：你好"}]
+                print(f"[模型调试] protocol={protocol}, model={model}, base_url={base_url}", flush=True)
+                t0 = time.time()
+                answer, err, tokens = call_llm_lightweight(test_messages, model, provider_info, timeout=30)
+                elapsed_ms = int((time.time() - t0) * 1000)
+                print(f"[模型调试] 耗时={elapsed_ms}ms, ok={bool(answer)}, err={err}, tokens={tokens}", flush=True)
+                if answer:
+                    self._send_json(200, {"code": 200, "success": True,
+                                          "msg": f"连接成功（{elapsed_ms}ms，消耗 {tokens} tokens）",
+                                          "reply": str(answer)[:200], "elapsed_ms": elapsed_ms, "tokens": tokens})
+                else:
+                    _err_lower = (err or "").lower()
+                    if "timed out" in _err_lower or "timeout" in _err_lower or "read operation" in _err_lower:
+                        err = "响应超时（30s），请检查 Base URL 是否正确或模型是否可用"
+                    self._send_json(200, {"code": 200, "success": False, "msg": err or "测试失败，模型未返回内容", "elapsed_ms": elapsed_ms})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         elif path == "/admin/model/delete":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -5021,28 +5211,86 @@ class Handler(BaseHTTPRequestHandler):
                     "2. 语气专业、友善、有耐心\n"
                     "3. 逻辑清晰，分段分明\n"
                     "4. 只输出优化后的回复内容，不要输出任何解释或前缀\n"
-                    "5. 如果原文已经很好，可以做轻微润色"
+                    "5. 如果原文已经很好，可以做轻微润色\n"
+                    "6. 不要输出思考过程，直接输出最终回复"
                 )
-                user_prompt = f"用户反馈标题：{feedback_title}\n用户反馈内容：{feedback_content}\n\n待优化的回复内容：\n{raw_text}\n\n请优化这段回复："
+                user_prompt = f"用户反馈标题：{feedback_title}\n用户反馈内容：{feedback_content}\n\n待优化的回复内容：\n{raw_text}\n\n请优化这段回复："  
                 messages = [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ]
-                answer, err, _model, _provider = call_agent_llm(messages)
-                # 内容审核拦截时，用简化 prompt 重试一次
-                if not answer and err and "内容审核拦截" in err:
-                    simple_prompt = f"请将以下客服回复内容润色得更加专业、礼貌、清晰，只输出润色后的内容：\n\n{raw_text}"
-                    answer, err2, _model, _provider = call_agent_llm([
-                        {"role": "user", "content": simple_prompt}
-                    ])
-                    if not answer:
-                        self._send_json(500, {"code": 500, "msg": "AI 内容审核拦截，请手动编辑回复内容"})
-                        return
+                # 并行获取候选模型，优先选择第一个可用的
+                candidates = get_enabled_model_candidates()
+                if not candidates:
+                    self._send_json(500, {"code": 500, "msg": "没有可用的 AI 模型"})
+                    return
+                
+                # 跳过冷却中的模型，优先选非推理模型（文本润色不需要推理）
+                now = time.time()
+                active = []
+                reasoning_models = {"deepseek-reasoner", "deepseek-r1", "o1", "o3", "o4-mini", "deepseek-v4-flash"}
+                for item in candidates:
+                    model_name = item[2]
+                    if MODEL_FAIL_COOLDOWN.get(model_name, 0) > now:
+                        continue
+                    if MODEL_429_COOLDOWN.get(model_name, 0) > now:
+                        continue
+                    if is_model_token_exhausted(model_name):
+                        continue
+                    active.append(item)
+                
+                if not active:
+                    self._send_json(500, {"code": 500, "msg": "AI 模型暂时不可用，请稍后重试"})
+                    return
+                
+                # 优先选非推理模型，按权重降序作为备选
+                active.sort(key=lambda x: (1 if x[2].lower() in reasoning_models else 0, -x[3]))
+                # 轻量级调用：最多尝试 3 个模型，单个模型 40 秒超时，失败/超时自动切换下一个
+                max_tries = min(3, len(active))
+                answer = None
+                err = None
+                tokens = 0
+                used_model = None
+                for idx in range(max_tries):
+                    provider_name, provider_info, model_name, _ = active[idx]
+                    # 首个模型用较短超时快速试探，慢模型/不可达时尽快切换备选；后续模型给充足时间
+                    per_timeout = 15 if idx == 0 else 30
+                    print(f"[AI优化] 尝试 {idx+1}/{max_tries} model={model_name}, provider={provider_name}, timeout={per_timeout}s", flush=True)
+                    t0 = time.time()
+                    answer, err, tokens = call_llm_lightweight(messages, model_name, provider_info, timeout=per_timeout)
+                    elapsed = time.time() - t0
+                    print(f"[AI优化] 耗时={elapsed:.1f}s, ok={bool(answer)}, err={err}, tokens={tokens}", flush=True)
+                    if answer:
+                        used_model = model_name
+                        break
+                    # 内容审核拦截：用简化 prompt 同模型重试一次
+                    if err and "内容审核拦截" in err:
+                        print(f"[AI优化] 内容审核拦截，简化重试 model={model_name}", flush=True)
+                        simple_prompt = f"请将以下客服回复内容润色得更加专业、礼貌、清晰，只输出润色后的内容：\n\n{raw_text}"
+                        t1 = time.time()
+                        answer, err2, tokens2 = call_llm_lightweight([
+                            {"role": "user", "content": simple_prompt}
+                        ], model_name, provider_info, timeout=30)
+                        print(f"[AI优化] 重试耗时={time.time()-t1:.1f}s, ok={bool(answer)}, err={err2}", flush=True)
+                        if answer:
+                            used_model = model_name
+                            tokens = tokens2
+                            break
+                    # 超时或其他错误：继续尝试下一个备选模型
                 if answer:
+                    record_model_token_usage(used_model or model_name, tokens)
                     self._send_json(200, {"code": 200, "text": answer.strip()})
                 else:
-                    self._send_json(500, {"code": 500, "msg": err or "AI 优化失败"})
+                    print(f"[AI优化] 全部模型失败: err={err}", flush=True)
+                    _err_lower = (err or "").lower()
+                    if "timed out" in _err_lower or "timeout" in _err_lower or "read operation" in _err_lower:
+                        self._send_json(500, {"code": 500, "msg": "AI 响应超时，请稍后重试或手动编辑回复内容"})
+                    else:
+                        self._send_json(500, {"code": 500, "msg": err or "AI 优化失败"})
             except Exception as e:
+                import traceback
+                with open("/tmp/ai_polish_error.log", "a") as f:
+                    f.write(f"[{datetime.now()}] {traceback.format_exc()}\n")
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
         elif path == "/admin/feedback/status":
@@ -5206,6 +5454,22 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        elif path == "/admin/bank-logs/clear":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                db.clear_bank_call_logs(
+                    matched=data.get("matched", ""),
+                    keyword=data.get("keyword", ""),
+                    date_from=data.get("date_from", ""),
+                    date_to=data.get("date_to", "")
+                )
+                self._send_json(200, {"code": 200, "msg": "清空成功"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         elif path == "/admin/question-bank/clear":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -5280,7 +5544,20 @@ class Handler(BaseHTTPRequestHandler):
                     }
                     resolved_model = custom_cfg["model"]
                     provider_name = "custom"
-                bank_row, question_hash = get_question_bank_match(question)
+                bank_row, question_hash, bank_method, bank_duration = get_question_bank_match(question)
+                _bank_info = parse_question_payload(question)
+                enqueue_bank_log({
+                    "username": user.get("username", ""),
+                    "question_hash": question_hash,
+                    "question_text": _bank_info.get("question_text", question)[:500],
+                    "question_type": _bank_info.get("question_type", ""),
+                    "options_text": " | ".join(_bank_info.get("options", [])),
+                    "matched": bool(bank_row),
+                    "matched_hash": bank_row.get("question_hash", "") if bank_row else "",
+                    "match_method": bank_method or "none",
+                    "duration_ms": int(bank_duration or 0),
+                    "client_ip": self.client_address[0] if self.client_address else ""
+                })
                 if bank_row:
                     answer = normalize_ai_answer(question, bank_row.get("answer", ""))
                     resolved_model = bank_row.get("source_model") or "题库"

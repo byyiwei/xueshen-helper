@@ -2059,7 +2059,7 @@
                 };
                 let html = payMethodsList.map(m => {
                     const checked = m.value === currentPayMethod ? 'checked' : '';
-                    const iconHtml = m.value === 'xianyu' ? `<span style="font-size:24px">${m.icon || '🔑'}</span>` : (icons[m.value] || '');
+                    const iconHtml = m.value === 'xianyu' ? (m.icon && m.icon.startsWith('data:image') ? `<img src="${m.icon}" style="width:28px;height:28px;border-radius:4px">` : `<span style="font-size:24px">${m.icon || '🔑'}</span>`) : (icons[m.value] || '');
                     return `<label class="pay-method-card ${checked ? 'active' : ''}" data-pay-method="${m.value}">
                         <span class="pm-icon">${iconHtml}</span>
                         <span class="pm-label">${m.label}</span>
@@ -2090,20 +2090,23 @@
                     const plansData=await plansRes.json();
                     const plan=(plansData.plans||[]).find(p=>String(p.id)===String(planId));
                     if(plan && plan.xianyu_url) window.open(plan.xianyu_url,'_blank');
+                    const cardMethod=(payMethodsList||[]).find(m=>m.value==='xianyu');
+                    const cardIcon=cardMethod&&cardMethod.icon||'🔑';
+                    const cardIconHtml=cardIcon.startsWith('data:image')?`<img src="${cardIcon}" style="width:24px;height:24px;vertical-align:middle">`:cardIcon;
                     $('planGrid').style.display='none';
                     $('payMethods').style.display='none';
                     $('ckSection').style.display='';
                     $('ckSection').innerHTML=`
                         <div style="padding:16px;text-align:center">
-                            <div style="font-size:16px;font-weight:700;margin-bottom:8px">🔑 输入卡密激活</div>
-                            <div style="color:var(--text2);margin-bottom:12px">请在闲鱼拍下对应套餐商品，将收到的卡密输入下方激活</div>
+                            <div style="font-size:16px;font-weight:700;margin-bottom:8px">${cardIconHtml} 输入卡密激活</div>
+                            <div style="color:var(--text2);margin-bottom:12px">请在对应平台拍下套餐商品，将收到的卡密输入下方激活</div>
                             <div style="background:var(--card);border-radius:12px;padding:14px;margin-bottom:12px;font-size:13px;text-align:left">
                                 <div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text2)">套餐</span><span style="font-weight:600">${plan?plan.name:'-'}</span></div>
                                 <div style="display:flex;justify-content:space-between;padding:4px 0"><span style="color:var(--text2)">金额</span><span style="color:var(--success);font-weight:600">¥${Number(price||0).toFixed(2)}</span></div>
                             </div>
                             <input id="xyCardInput" class="ck-input" placeholder="输入 16 位卡密" style="width:100%;padding:12px;border:2px solid var(--border);border-radius:8px;font-size:18px;text-align:center;letter-spacing:2px;box-sizing:border-box;background:var(--bg);color:var(--text);margin-bottom:12px" maxlength="16">
                             <button class="primary" id="xyCardBtn" style="width:100%;padding:12px;font-size:15px">激活卡密</button>
-                            <div style="margin-top:10px;font-size:12px;color:var(--text3)">卡密在闲鱼购买后由客服提供，一卡一用</div>
+                            <div style="margin-top:10px;font-size:12px;color:var(--text3)">卡密购买后由客服提供，一卡一用</div>
                         </div>
                     `;
                     $('xyCardBtn').onclick=async()=>{
