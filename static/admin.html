@@ -23,6 +23,11 @@
   --success:#10b981;
   --warn:#f59e0b;
   --danger:#ef4444;
+  --primary:#3b82f6;
+  --warning:#f59e0b;
+  --brand:#3b82f6;
+  --card:#111827;
+  --text1:#e5e7eb;
   --radius:12px;
   --radius-sm:8px;
   --sidebar-w:220px;
@@ -3127,7 +3132,7 @@ createApp({
       'daily-report':[{label:'日志监控',group:'logs'},{label:'每日数据邮件'}],
       'profile':[{label:'个人中心'}]
     };
-    const GROUP_FIRST_PAGE={referral:'referral',payment:'payment-orders',card:'xianyu',logs:'script-logs',config:'question-bank',bank:'bank-logs'};
+    const GROUP_FIRST_PAGE={referral:'referral',payment:'payment-orders',card:'xianyu',logs:'script-logs',config:'ai-config',bank:'bank-logs'};
     const breadcrumbItems=computed(()=>BREADCRUMB_MAP[page.value]||[]);
     function navigateBreadcrumb(item,index){
       if(index===breadcrumbItems.value.length-1)return;
@@ -3306,10 +3311,7 @@ createApp({
       const enabled=p&&((p.enabled===true)||p.enabled===1||String(p.enabled).toLowerCase()==='true'||String(p.enabled)==='1');
       return !!(enabled&&String(p.api_key||'').trim()&&(p.models||[]).length);
     }
-    const providerEntries=computed(()=>Object.entries(config.value?.providers||{}).map(([key,info])=>({
-      key,
-      info:{enabled:false,title:key,protocol:'openai',api_key:'',base_url:'',models:[],...(info||{})}
-    })));
+    const providerEntries=computed(()=>Object.entries(config.value?.providers||{}).map(([key,info])=>({key,info})));
     const enabledCount=computed(()=>providerReadyCount.value||Object.values(config.value.providers||{}).filter(providerReadyLocal).length);
 
     function showMsg(text,type='success',duration=3000){
