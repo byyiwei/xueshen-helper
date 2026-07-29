@@ -573,6 +573,8 @@ body{
 </head>
 <body>
 <div id="app">
+  <div v-if="loading" style="display:flex;align-items:center;justify-content:center;height:100vh;background:var(--bg);color:var(--text2);font-size:14px">加载中...</div>
+  <template v-else>
   <!-- ==================== LOGIN ==================== -->
   <div v-if="page==='login'" class="login-wrap">
     <!-- Normal Login -->
@@ -795,14 +797,14 @@ body{
             </div>
           </div>
           <div class="metric-grid">
-            <div class="metric-card"><div class="metric-label">用户数</div><div class="metric-value">{{dashboard.cards.users||0}}</div><div class="metric-sub">注册账户总数</div></div>
-            <div class="metric-card"><div class="metric-label">活跃数</div><div class="metric-value">{{dashboard.cards.active||0}}</div><div class="metric-sub">近 24 小时客户端</div></div>
-            <div class="metric-card"><div class="metric-label">题库总数</div><div class="metric-value">{{dashboard.cards.question_bank||0}}</div><div class="metric-sub">已沉淀题目</div></div>
-            <div class="metric-card"><div class="metric-label">题库命中数</div><div class="metric-value" style="color:var(--success)">{{dashboard.cards.bank_hits||0}}</div><div class="metric-sub">题库直接返回答案</div></div>
+            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(96,165,250,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='user-mgmt';loadUsers();loadLoginLocks()"><div class="metric-label">用户数</div><div class="metric-value">{{dashboard.cards.users||0}}</div><div class="metric-sub">点击管理用户 →</div></div>
+            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(96,165,250,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='user-mgmt';loadUsers();loadLoginLocks()"><div class="metric-label">活跃数</div><div class="metric-value">{{dashboard.cards.active||0}}</div><div class="metric-sub">点击查看用户 →</div></div>
+            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(16,185,129,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='question-bank';loadQuestionBank()"><div class="metric-label">题库总数</div><div class="metric-value">{{dashboard.cards.question_bank||0}}</div><div class="metric-sub">点击管理题库 →</div></div>
+            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(16,185,129,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='bank-logs';expandedGroups.logs=true;loadBankLogs()"><div class="metric-label">题库命中数</div><div class="metric-value" style="color:var(--success)">{{dashboard.cards.bank_hits||0}}</div><div class="metric-sub">点击查看日志 →</div></div>
             <div class="metric-card"><div class="metric-label">题库命中率</div><div class="metric-value" style="color:var(--accent2)">{{dashboard.cards.bank_hit_rate||0}}%</div><div class="metric-sub">占成功答题比例</div></div>
-            <div class="metric-card"><div class="metric-label">模型调用数</div><div class="metric-value">{{dashboard.cards.calls||0}}</div><div class="metric-sub">累计请求</div></div>
-            <div class="metric-card"><div class="metric-label">成功数</div><div class="metric-value" style="color:var(--success)">{{dashboard.cards.success||0}}</div><div class="metric-sub">成功返回答案</div></div>
-            <div class="metric-card"><div class="metric-label">失败数</div><div class="metric-value" style="color:var(--danger)">{{dashboard.cards.error||0}}</div><div class="metric-sub">接口失败或异常</div></div>
+            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(96,165,250,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='ai-logs';expandedGroups.logs=true;aiLogFilter.status='';loadAiLogs(1)"><div class="metric-label">模型调用数</div><div class="metric-value">{{dashboard.cards.calls||0}}</div><div class="metric-sub">点击查看日志 →</div></div>
+            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(16,185,129,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='ai-logs';expandedGroups.logs=true;aiLogFilter.status='success';loadAiLogs(1)"><div class="metric-label">成功数</div><div class="metric-value" style="color:var(--success)">{{dashboard.cards.success||0}}</div><div class="metric-sub">点击查看成功详情 →</div></div>
+            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(239,68,68,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='ai-logs';expandedGroups.logs=true;aiLogFilter.status='error';loadAiLogs(1)"><div class="metric-label">失败数</div><div class="metric-value" style="color:var(--danger)">{{dashboard.cards.error||0}}</div><div class="metric-sub">点击查看失败详情 →</div></div>
             <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(245,158,11,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='feedback';expandedGroups.referral=true;loadFeedbackList()"><div class="metric-label">待处理反馈</div><div class="metric-value" style="color:var(--warning)">{{feedbackPendingCount||0}}</div><div class="metric-sub">点击查看处理 →</div></div>
             <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(239,68,68,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='refund-requests';loadRefundRequests()"><div class="metric-label">待处理退款</div><div class="metric-value" style="color:var(--danger)">{{dashboard.cards?.refund_pending||0}}</div><div class="metric-sub">点击查看处理 →</div></div>
           </div>
@@ -909,11 +911,11 @@ body{
               <tbody>
                 <tr v-for="t in dashboard.token_usage" :key="t.model" style="border-bottom:1px solid var(--border)">
                   <td style="padding:8px">{{t.model}}</td>
-                  <td style="padding:8px;text-align:right">{{t.total_tokens.toLocaleString()}}</td>
+                  <td style="padding:8px;text-align:right">{{formatWan(t.total_tokens)}}</td>
                   <td style="padding:8px;text-align:right">{{t.call_count}}</td>
-                  <td style="padding:8px;text-align:right;color:#60a5fa">{{t.today_tokens.toLocaleString()}}</td>
-                  <td style="padding:8px;text-align:right">{{t.daily_limit>0?t.daily_limit.toLocaleString():'不限'}}</td>
-                  <td style="padding:8px;text-align:right" :style="{color:t.today_remaining===0?'#ef4444':t.daily_limit>0&&t.today_remaining<10000?'#f59e0b':'var(--text2)'}">{{t.daily_limit>0?t.today_remaining.toLocaleString():'—'}}</td>
+                  <td style="padding:8px;text-align:right;color:#60a5fa">{{formatWan(t.today_tokens)}}</td>
+                  <td style="padding:8px;text-align:right">{{t.daily_limit>0?formatWan(t.daily_limit):'不限'}}</td>
+                  <td style="padding:8px;text-align:right" :style="{color:t.today_remaining===0?'#ef4444':t.daily_limit>0&&t.today_remaining<10000?'#f59e0b':'var(--text2)'}">{{t.daily_limit>0?formatWan(t.today_remaining):'—'}}</td>
                   <td style="padding:8px;text-align:center">
                     <span v-if="t.daily_limit<=0" style="color:var(--text3)">未限额</span>
                     <span v-else-if="t.today_remaining===0" style="color:#ef4444">已耗尽</span>
@@ -3099,6 +3101,7 @@ body{
       </div>
     </div>
   </div>
+</template>
 </div>
 
 <script>
@@ -3106,7 +3109,8 @@ const {createApp,ref,computed,reactive,watch}=Vue;
 
 createApp({
   setup(){
-    const page=ref('login');
+    const loading=ref(true);
+    const page=ref('');
     const loginMode=ref('login');
     const BREADCRUMB_MAP={
       'dashboard':[{label:'运营概览'}],
@@ -4241,6 +4245,7 @@ createApp({
     function questionTypeName(t){return questionTypeMap[t]||t||'-';}
     const mailServerTotalWeight=computed(()=>{return mailServers.value.reduce((s,v)=>s+(parseInt(v.weight)||1),0)||1});
     function mailServerWeightPercent(s){const t=mailServerTotalWeight.value;const w=parseInt(s.weight)||1;return (w/t*100).toFixed(0);}
+    function formatWan(n){n=Number(n||0);return n>=10000?(n/10000).toFixed(1)+'万':n.toLocaleString();}
     function shortText(text,len=160){
       text=(text==null?'':String(text));
       return text.length>len?text.slice(0,len)+'...':text;
@@ -4758,10 +4763,11 @@ createApp({
     function feedbackNext(){if(feedbackPage.value<feedbackTotalPages.value){feedbackPage.value++;loadFeedbackList();}}
 
     if(token.value){page.value='dashboard';loadAll();}
-    else initAdminSlider();
+    else {page.value='login';initAdminSlider();}
+    loading.value=false;
 
     return{
-       page,loginMode,breadcrumbItems,navigateBreadcrumb,config,emailConfig,emailTemplates,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,SCENE_ICONS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
+       loading,page,loginMode,breadcrumbItems,navigateBreadcrumb,config,emailConfig,emailTemplates,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,SCENE_ICONS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
        mailServers,showServerForm,mailServerForm,showSmtpPass,mailServerTotalWeight,mailServerWeightPercent,toggleEmailEnabled,openServerForm,saveMailServer,deleteMailServer,
       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,users,userSearch,userSortBy,userSortOrder,showUserModal,userForm,
         showHtmlPreview,htmlPreviewFrame,htmlPreviewData,toggleHtmlPreview,updateHtmlPreview,switchToHtml,onHtmlInput,syncPlainFromHtml,
@@ -4774,7 +4780,7 @@ createApp({
       savePaymentConfig,savePayApiConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,openUserEdit,saveUserAdmin,
       toggleProvider,collapseAllProviders,togglePayApiSection,
       addProvider,removeProvider,addModel,removeModel,
-      protocolName,statusText,formatDuration,questionTypeName,shortText,formatScriptExtra,trendPoints,trendX,trendY,trendMax,stackBarX,stackBarY,stackBarH,modelBarWidth,revTrendPoints,revTrendArea,revTrendX,revStep,revY,revMax,
+      protocolName,statusText,formatDuration,questionTypeName,shortText,formatWan,formatScriptExtra,trendPoints,trendX,trendY,trendMax,stackBarX,stackBarY,stackBarH,modelBarWidth,revTrendPoints,revTrendArea,revTrendX,revStep,revY,revMax,
       loadLogCleanup,saveLogCleanup,runLogCleanupNow,logRetentionDays,logCleanupSaving,logCleanupRunning,logCleanupResult,payTestForm,payTestLoading,payTestResult,runPayTest,payApiWeightTotal,payApiWeightPercent,refreshSandpayParams,onSandpayAdvancedChange,
       referralTab,referralConfig,referralSaving,referralWithdrawals,referralWdFilter,referralWdSummary,referralStats,referralQrPreview,
       loadReferralConfig,saveReferralConfig,loadReferralWithdrawals,approveWithdrawal,rejectWithdrawal,loadReferralStats,
