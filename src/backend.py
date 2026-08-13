@@ -1328,7 +1328,7 @@ def normalize_question_text(text):
 
 def parse_question_payload(question):
     raw = str(question or "")
-    result = {"question_text": raw, "question_type": "", "options": []}
+    result = {"question_text": raw, "question_type": "", "options": [], "images": []}
     try:
         data = json.loads(raw)
         if isinstance(data, dict):
@@ -1337,6 +1337,11 @@ def parse_question_payload(question):
             options = data.get("options") or []
             if isinstance(options, list):
                 result["options"] = [str(x).strip() for x in options if str(x).strip()]
+            images = data.get("images") or []
+            if isinstance(images, list):
+                result["images"] = [str(x).strip() for x in images if str(x).strip()]
+            elif images:
+                result["images"] = [str(images).strip()]
     except Exception:
         pass
     return result
@@ -1426,6 +1431,12 @@ def get_question_bank_match(question):
     _t0 = time.time()
     info = parse_question_payload(question)
     current_type = info.get("question_type", "")
+    # 图片题(多模态)：不参与题库匹配，避免不同图片题因指令文字相似而互相误命中
+    if info.get("images"):
+        qhash = make_question_hash(question)
+        elapsed = (time.time() - _t0) * 1000
+        print(f"[题库匹配] 图片题跳过题库匹配 {qhash[:12]} ({elapsed:.1f}ms)", flush=True)
+        return None, qhash, None, elapsed
     qhash = make_question_hash(question)
     row = db.get_question_answer_by_hash(qhash)
     if row and row.get("answer"):
@@ -1470,6 +1481,9 @@ def save_question_bank_answer(question, answer, model_name="", provider_name="")
         print("[题库入库] 测试题已跳过，不写入题库", flush=True)
         return
     info = parse_question_payload(question)
+    if info.get("images"):
+        print("[题库入库] 图片题不写入题库", flush=True)
+        return
     qhash = make_question_hash(question)
     duplicate = find_existing_bank_duplicate(info)
     if duplicate and duplicate.get("question_hash"):
@@ -1601,16 +1615,30 @@ def do_openai_compatible_chat(messages, model, api_key, base_url):
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             method="POST"
         )
-        with urllib.request.urlopen(req, timeout=180) as resp:
+        with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
     # 第1次尝试：标准请求（system + user, temperature, max_tokens）
+    has_multimodal = any(isinstance(m.get("content"), list) for m in messages)
+    def _retry_messages():
+        """降级重试用的消息：去掉 system 并合并到 user。多模态时保留 content 数组结构。"""
+        if has_multimodal:
+            user_content = []
+            for m in messages:
+                if m["role"] == "system":
+                    user_content.append({"type": "text", "text": m["content"]})
+                elif isinstance(m["content"], list):
+                    user_content.extend(m["content"])
+                else:
+                    user_content.append({"type": "text", "text": m["content"]})
+            return [{"role": "user", "content": user_content}]
+        return [{"role": "user", "content": "\n".join(m["content"] for m in messages)}]
     for attempt, (msgs, use_temp, use_max_tokens, label) in enumerate([
         (messages, True, True, "标准请求"),
         # 第2次：去掉 system 消息，合并到 user 中（部分提供商不支持 system role）
-        ([{"role": "user", "content": "\n".join(m["content"] for m in messages)}], False, False, "简化请求(无system)"),
+        (_retry_messages(), False, False, "简化请求(无system)"),
         # 第3次：最小化请求，只保留 model + messages
-        ([{"role": "user", "content": "\n".join(m["content"] for m in messages)}], False, False, "最小请求"),
+        (_retry_messages(), False, False, "最小请求"),
     ]):
         try:
             result = _try_request(msgs, use_temp, use_max_tokens)
@@ -1744,18 +1772,38 @@ def get_enabled_providers():
             result.append((name, info))
     return result
 
-def get_enabled_model_candidates():
-    candidates = []
-    for pname, pinfo in get_enabled_providers():
-        if not pinfo.get("base_url"):
-            continue
-        for m in pinfo.get("models", []):
-            if m.get("value"):
+def get_enabled_model_candidates(need_vision=False, prefer_non_vision=True):
+    """获取启用的模型候选。
+
+    - need_vision=True: 只返回支持图片(vision)的模型（图片题）
+    - need_vision=False: 优先返回非 vision 模型（纯文本题，控制成本）；
+      若一个非 vision 模型都没有，则回退到 vision 模型
+    """
+    def _collect(only_vision):
+        result = []
+        for pname, pinfo in get_enabled_providers():
+            if not pinfo.get("base_url"):
+                continue
+            for m in pinfo.get("models", []):
+                if not m.get("value"):
+                    continue
+                is_vision = m.get("vision") is True or m.get("vision") == 1 or str(m.get("vision")).lower() in ("1", "true", "yes", "on")
+                if only_vision and not is_vision:
+                    continue
+                if not only_vision and is_vision and prefer_non_vision:
+                    continue
                 weight = int(m.get("weight") or 100)
                 if weight < 0:
                     weight = 0
-                candidates.append((pname, pinfo, m.get("value"), weight))
-    return candidates
+                result.append((pname, pinfo, m.get("value"), weight))
+        return result
+    if need_vision:
+        return _collect(only_vision=True)
+    candidates = _collect(only_vision=False)
+    if candidates:
+        return candidates
+    # 没有任何非 vision 模型，回退到 vision 模型
+    return _collect(only_vision=True)
 
 def weighted_pick(candidates):
     """按权重随机选择一个候选模型，返回排序后的列表（选中的排第一）"""
@@ -1803,10 +1851,10 @@ def find_provider_by_model(model_name):
                 return pname, pinfo
     return None, None
 
-def resolve_model_name(model_name):
+def resolve_model_name(model_name, need_vision=False):
     if model_name and model_name not in ("__auto__", "auto"):
         return model_name
-    candidates = get_enabled_model_candidates()
+    candidates = get_enabled_model_candidates(need_vision=need_vision)
     if candidates:
         picked = weighted_pick(candidates)
         return picked[0][2]
@@ -1831,7 +1879,15 @@ def build_ai_question_text(question_payload_str):
             parts.append(f"{letter}. {opt}")
     return "\n".join(parts)
 
-def call_provider_chat(question, model_name, provider_info):
+def is_multimodal_question(question_payload_str):
+    """判断题目是否包含图片（需要多模态模型）"""
+    info = parse_question_payload(question_payload_str)
+    return bool(info.get("images"))
+
+def build_ai_messages(question_payload_str):
+    """构造 AI 请求消息。若题目含图片，则使用多模态消息格式(content 数组)"""
+    info = parse_question_payload(question_payload_str)
+    images = info.get("images") or []
     system_prompt = (
         "你是答题助手，只输出最终答案，禁止输出任何解释、分析、思考过程或中间步骤。\n"
         "规则：\n"
@@ -1839,11 +1895,52 @@ def call_provider_chat(question, model_name, provider_info):
         "- 判断题：只输出 正确 或 错误\n"
         "- 填空题：只输出填空内容\n"
         "- 简答题：输出简洁答案，不超过50字\n"
+        "- 图片题：请识别图片中的题目，依据图片内容作答\n"
         "- 不要输出题目、不要重复选项内容、不要输出分析过程"
     )
-    # 将题目JSON格式化为简洁文本，减少输入token
-    question_text = build_ai_question_text(question)
-    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": question_text}]
+    if not images:
+        # 纯文本题目
+        text_content = build_ai_question_text(question_payload_str)
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text_content}
+        ]
+        return messages
+    # 多模态题目：OpenAI 兼容 content 数组
+    text_parts = []
+    q_text = info.get("question_text", "").strip()
+    q_type = info.get("question_type", "").strip()
+    options = info.get("options", [])
+    parts = []
+    if q_type:
+        type_map = {"single": "单选题", "multiple": "多选题", "judge": "判断题", "fill": "填空题", "short": "简答题"}
+        type_label = type_map.get(q_type, q_type)
+        parts.append(f"[{type_label}]")
+    if q_text:
+        parts.append(q_text)
+    if options:
+        parts.append("选项：")
+        for i, opt in enumerate(options):
+            letter = chr(65 + i)
+            parts.append(f"{letter}. {opt}")
+    text_parts.append("\n".join(parts))
+    user_content = []
+    if text_parts and text_parts[0].strip():
+        user_content.append({"type": "text", "text": text_parts[0]})
+    for img in images:
+        if img.startswith("data:"):
+            user_content.append({"type": "image_url", "image_url": {"url": img}})
+        else:
+            user_content.append({"type": "image_url", "image_url": {"url": img}})
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content}
+    ]
+    return messages
+
+def call_provider_chat(question, model_name, provider_info):
+    # 将题目JSON格式化为消息（含多模态图片支持）
+    messages = build_ai_messages(question)
     api_key = provider_info.get("api_key", "")
     base_url = provider_info.get("base_url", "")
     protocol = provider_info.get("protocol", "openai")
@@ -1929,9 +2026,11 @@ def record_model_token_usage(model_name, tokens):
     except Exception as e:
         print(f"[Token统计] 写入失败: {e}", flush=True)
 
-def ask_ai_auto(question):
-    candidates = get_enabled_model_candidates()
+def ask_ai_auto(question, need_vision=False):
+    candidates = get_enabled_model_candidates(need_vision=need_vision)
     if not candidates:
+        if need_vision:
+            return None, "本题包含图片，需要支持图片(多模态)的模型，但当前没有可用多模态模型，请在管理后台为模型勾选\"支持图片\"", "", ""
         return None, "没有可自动选择的 AI 模型", "", ""
     now = time.time()
     # 过滤掉冷却中的模型（包括404冷却、429限流冷却、token限额耗尽）
@@ -2025,7 +2124,7 @@ def ask_ai_custom(question, custom_cfg):
     return answer, err
 
 def ask_ai(question, model_name):
-    model_name = resolve_model_name(model_name)
+    model_name = resolve_model_name(model_name, need_vision=is_multimodal_question(question))
     if not model_name:
         return None, "未指定模型，且没有可自动选择的 AI 模型"
     provider_name, provider_info = find_provider_by_model(model_name)
@@ -3763,7 +3862,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 db.verify_user_email(email)
                 db.grant_registration_gift(username)
-                token = jwt_encode({"uid": username, "iat": time.time(), "exp": time.time() + 86400 * 7})
+                token = jwt_encode({"uid": username, "iat": time.time(), "exp": time.time() + 86400 * 180})
                 session_user = {"username": username, "email": email, "is_verified": True}
                 set_current_user_session(token, session_user)
                 self._send_json(200, {"code": 200, "msg": "注册成功", "token": token, "user": session_user, "profile": build_user_profile(username)})
@@ -3809,7 +3908,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(401, {"code": 401, "msg": "账号未验证邮箱，请先验证"})
                     return
                 real_username = user["username"]
-                token = jwt_encode({"uid": real_username, "iat": time.time(), "exp": time.time() + 86400 * 7})
+                token = jwt_encode({"uid": real_username, "iat": time.time(), "exp": time.time() + 86400 * 180})
                 session_user = {"username": real_username, "email": user["email"], "is_verified": bool(user.get("is_verified"))}
                 set_current_user_session(token, session_user)
                 clear_login_failures("user", self._client_ip(), username)
@@ -5596,8 +5695,9 @@ class Handler(BaseHTTPRequestHandler):
                     if not enabled:
                         self._send_json(500, {"code": 500, "msg": "没有启用的 AI 提供商，请先配置"})
                         return
-                    print(f"[AI请求] mode=auto, question={question[:60]}...", flush=True)
-                    answer, err, resolved_model, provider_name = ask_ai_auto(question)
+                    need_vision = is_multimodal_question(question)
+                    print(f"[AI请求] mode=auto, question={question[:60]}..., vision={need_vision}", flush=True)
+                    answer, err, resolved_model, provider_name = ask_ai_auto(question, need_vision=need_vision)
                 if model_mode != "custom" and not resolved_model:
                     self._send_json(500, {"code": 500, "msg": "没有启用的 AI 提供商，请先配置"})
                     return

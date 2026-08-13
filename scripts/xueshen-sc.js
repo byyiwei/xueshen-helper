@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.2.0
+// @version      5.2.3
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @author       IPYIWEI
@@ -10,6 +10,14 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.2.3 更新内容：
+// @changelog    1. 账号自动登录稳定性优化（仅 401/403 清除登录记忆，网络异常保留登录状态）
+// @changelog    2. 登录 Token 有效期延长至 180 天，减少频繁重新登录
+// @changelog    v5.2.2 更新内容：
+// @changelog    1. 优化账号登录记忆：仅在 Token 真正失效时才要求重新登录，网络波动不再误清登录状态
+// @changelog    2. 后端登录 Token 有效期延长至 180 天，减少频繁重新登录
+// @changelog    v5.2.1 更新内容：
+// @changelog    1. 新增江西开放大学继续教育平台(jxrtvu.com)域名支持
 // @changelog    v5.2.0 更新内容：
 // @changelog    1. 首页新增"推广返利"入口，一键跳转推广赚钱页面
 // @changelog    2. 账号登录区移除推广按钮，精简界面
@@ -24,6 +32,7 @@
 // @match        *://*.neauce.com/*
 // @match        *://*.zhihuishu.com/*
 // @match        *://*.edu.cn/*
+// @match        *://*.jxrtvu.com/*
 // @require      https://xs.openget.cn/libs/vue/3.4.31/vue.global.prod.js
 // @require      https://xs.openget.cn/libs/vue-demi/0.14.7/index.iife.js
 // @require      data:application/javascript,window.Vue%3DVue%3B
@@ -1876,9 +1885,15 @@
         loginBusy.value = true;
         loginMsg.value = "正在恢复上次登录状态...";
         const profile = await localBackendJson("https://xs.openget.cn/api/user/profile", null, remembered.token);
-        if (profile.code !== 200) {
+        if (profile.code === 401 || profile.code === 403) {
           loginMsg.value = "登录状态已过期，请重新登录";
           setRememberedLogin({ remember: rememberLogin.value, username: remembered.username || "" });
+          isAutoLoggedIn.value = false;
+          loginBusy.value = false;
+          return;
+        }
+        if (profile.code !== 200) {
+          loginMsg.value = "网络异常，暂未恢复登录状态（已保留登录记忆）";
           isAutoLoggedIn.value = false;
           loginBusy.value = false;
           return;

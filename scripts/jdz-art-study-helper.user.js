@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         景德镇艺术-学习助手
 // @namespace    https://github.com/jdzvuacj
-// @version      4.1.0
+// @version      4.2.0
 // @description  景德镇艺术职业学院 学习平台助手：自动播放、自定义倍速、自动下一节、考试/作业自动答题、AI云端答题、学习记录、日志面板、账号登录
 // @author       IPYIWEI
 // @match        *://*.o-learn.cn/*
@@ -1295,6 +1295,10 @@
                 .olvh-login-status { font-size: 11px; margin-top: 6px; color: #999; word-break: break-all; }
                 .olvh-logout-btn { width: 100%; padding: 4px; margin-top: 6px; background: #eee; color: #d32f2f; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 11px; }
                 .olvh-logout-btn:hover { background: #f5e3e3; }
+                .olvh-login-actions { display: flex; gap: 4px; margin-top: 6px; }
+                .olvh-login-actions button { flex: 1; padding: 4px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 11px; }
+                .olvh-usercenter-btn { background: #e3f2fd; color: #1565c0; }
+                .olvh-usercenter-btn:hover { background: #bbdefb; }
                 .olvh-task-switch { border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px; background: #fafafa; }
                 .olvh-task-desc { font-size: 10px; color: #999; margin-top: 4px; }
             </style>
@@ -1319,7 +1323,10 @@
                                 <input type="password" id="olvh-login-pwd" placeholder="密码">
                             </div>
                             <button class="olvh-login-btn" id="olvh-login-btn">登录并同步密钥</button>
-                            <button class="olvh-logout-btn" id="olvh-logout-btn" style="${store.account.scriptKey ? '' : 'display:none'}">退出登录</button>
+                            <div class="olvh-login-actions">
+                                <button class="olvh-usercenter-btn" id="olvh-usercenter-btn">👤 用户中心</button>
+                                <button class="olvh-logout-btn" id="olvh-logout-btn" style="${store.account.scriptKey ? '' : 'display:none'}">退出登录</button>
+                            </div>
                             <div class="olvh-login-status" id="olvh-login-status">${store.account.scriptKey ? '已登录' : '未登录'}</div>
                         </div>
                         <div class="olvh-hint">登录后自动获取脚本密钥，用于云端AI答题。也支持用户名或邮箱登录。</div>
@@ -1472,6 +1479,9 @@
         };
         loginBtn.addEventListener('click', doLogin);
         pwdInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+        document.getElementById('olvh-usercenter-btn').addEventListener('click', () => {
+            window.open(CONFIG.backendBase + '/user', '_blank');
+        });
         document.getElementById('olvh-logout-btn').addEventListener('click', () => {
             store.account = { username: '', token: '', scriptKey: '' };
             saveStore();

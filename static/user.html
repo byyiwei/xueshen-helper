@@ -924,20 +924,100 @@
         .modal-box .btn-confirm { background:#dc2626;color:#fff; }
         .modal-box .btn-confirm:hover { background:#b91c1c; }
         .modal-box .btn-confirm:disabled { background:#fca5a5;cursor:not-allowed; }
-        @media (prefers-color-scheme:dark) {
-            .modal-box { background:#1e293b; }
-            .modal-box h3 { color:#f1f5f9; }
-            .modal-box p { color:#94a3b8; }
-            .modal-box .btn-cancel { background:#334155;color:#cbd5e1; }
-            .modal-box .btn-cancel:hover { background:#475569; }
-        }
+        html[data-theme="dark"] .modal-box { background:#1e293b; }
+        html[data-theme="dark"] .modal-box h3 { color:#f1f5f9; }
+        html[data-theme="dark"] .modal-box p { color:#94a3b8; }
+        html[data-theme="dark"] .modal-box .btn-cancel { background:#334155;color:#cbd5e1; }
+        html[data-theme="dark"] .modal-box .btn-cancel:hover { background:#475569; }
         @media (max-width: 380px) {
             .hero { display: none; }
             .panel { min-height: calc(100vh - 20px); min-height: calc(100dvh - 20px); }
         }
+
+        /* ===================== 主题切换按钮 ===================== */
+        .theme-toggle {
+            width: 36px; height: 36px; border-radius: 12px;
+            border: 1px solid var(--v-border);
+            background: rgba(148, 163, 184, .08);
+            color: var(--v-text);
+            cursor: pointer; font-size: 15px; font-family: inherit;
+            display: inline-flex; align-items: center; justify-content: center;
+            transition: all .2s; flex: 0 0 auto; padding: 0;
+        }
+        .theme-toggle:hover { border-color: var(--v-primary); color: var(--v-primary-light); transform: translateY(-1px); }
+        .login-theme-toggle { position: fixed; top: 22px; right: 22px; z-index: 100; }
+        @media (max-width: 480px) { .login-theme-toggle { top: 12px; right: 12px; } }
+
+        /* ===================== 浅色主题 ===================== */
+        :root[data-theme="light"] {
+            --v-bg: #e8eef5;
+            --v-card: rgba(255, 255, 255, .92);
+            --v-text: #0f172a;
+            --v-text-2: #475569;
+            --v-muted: #7a8699;
+            --v-border: rgba(15, 23, 42, .12);
+            --v-border-2: rgba(15, 23, 42, .07);
+            --v-shadow: 0 12px 40px rgba(15, 23, 42, .12);
+            --v-shadow-sm: 0 4px 16px rgba(16, 185, 129, .10);
+            --v-glow: 0 0 28px rgba(16, 185, 129, .18);
+        }
+        html[data-theme="light"] body {
+            background:
+                radial-gradient(900px 600px at 12% -8%, rgba(16, 185, 129, .10), transparent 60%),
+                radial-gradient(800px 600px at 100% 0%, rgba(6, 182, 212, .08), transparent 55%),
+                radial-gradient(700px 700px at 80% 110%, rgba(16, 185, 129, .06), transparent 60%),
+                #e8eef5;
+        }
+        html[data-theme="light"] .shell { box-shadow: var(--v-shadow), 0 0 0 1px rgba(148, 163, 184, .18); }
+        html[data-theme="light"] .panel { background: rgba(255, 255, 255, .82); }
+        html[data-theme="light"] .tabs { background: rgba(15, 23, 42, .05); }
+        html[data-theme="light"] .tab:hover { color: var(--v-primary); }
+        html[data-theme="light"] input,
+        html[data-theme="light"] select,
+        html[data-theme="light"] textarea { background: #fff; }
+        html[data-theme="light"] input:focus,
+        html[data-theme="light"] select:focus { background: #fff; }
+        html[data-theme="light"] .slider-verify { background: rgba(255, 255, 255, .7); }
+        html[data-theme="light"] .slider-verify.done { background: rgba(34, 197, 94, .1); }
+        html[data-theme="light"] button.secondary { background: rgba(15, 23, 42, .05); }
+        html[data-theme="light"] .dash-card { background: rgba(255, 255, 255, .85); }
+        html[data-theme="light"] .user-app { background: rgba(255, 255, 255, .78); }
+        html[data-theme="light"] .user-sidebar { background: rgba(255, 255, 255, .8); }
+        html[data-theme="light"] .user-main { background: rgba(255, 255, 255, .5); }
+        html[data-theme="light"] .user-header { background: rgba(255, 255, 255, .85); }
+        html[data-theme="light"] .stat-card,
+        html[data-theme="light"] .user-card { background: rgba(255, 255, 255, .92); }
+        html[data-theme="light"] .info-item,
+        html[data-theme="light"] .setting-pill,
+        html[data-theme="light"] .pay-method-card { background: #fff; }
+        html[data-theme="light"] .plan-card { background: linear-gradient(180deg, #ffffff, #eef2f7); }
+        html[data-theme="light"] .plan-card.monthly { background: linear-gradient(180deg, rgba(6, 182, 212, .10), #ecfeff); }
+        html[data-theme="light"] .dash-table th { background: rgba(16, 185, 129, .12); }
+        html[data-theme="light"] .theme-toggle { background: #fff; }
+        @media (max-width: 900px) { html[data-theme="light"] .user-menu { background: rgba(255, 255, 255, .96); } }
     </style>
+    <script>
+        (function(){
+            try{
+                var KEY='ne21_admin_theme';
+                var mode=localStorage.getItem(KEY)||'auto';
+                var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: light)'):null;
+                function apply(){
+                    var t=(mode==='light')?'light':(mode==='dark')?'dark':(mq&&mq.matches?'light':'dark');
+                    document.documentElement.setAttribute('data-theme',t);
+                }
+                apply();
+                if(mq&&mq.addEventListener){mq.addEventListener('change',function(){if(mode==='auto')apply();});}
+                window.__adminTheme={
+                    getMode:function(){return mode;},
+                    setMode:function(m){mode=m;try{localStorage.setItem(KEY,m);}catch(_){}apply();}
+                };
+            }catch(_){}
+        })();
+    </script>
 </head>
 <body>
+    <button class="theme-toggle login-theme-toggle" title="主题切换">◐</button>
     <main class="shell">
         <section class="hero">
             <div>
@@ -1082,7 +1162,10 @@
                     <h2 id="userPageTitle">首页</h2>
                     <p id="userPageDesc">查看账号状态、默认模型和脚本同步设置。</p>
                 </div>
-                <button class="secondary" style="width:auto;margin:0" id="refreshUserBtn">刷新数据</button>
+                <div style="display:flex;align-items:center;gap:10px">
+                    <button class="theme-toggle" title="主题切换">◐</button>
+                    <button class="secondary" style="width:auto;margin:0" id="refreshUserBtn">刷新数据</button>
+                </div>
             </header>
             <div class="user-body">
                 <section class="user-section active" id="section-home">
@@ -3087,6 +3170,27 @@
 
         initUserSlider();
         startByPath();
+
+        // ===== 主题切换 =====
+        var themeIcons = { auto: '◐', light: '☀', dark: '☾' };
+        var themeLabels = { auto: '跟随系统', light: '浅色', dark: '深色' };
+        function syncThemeButtons() {
+            var mode = (window.__adminTheme && window.__adminTheme.getMode()) || 'auto';
+            document.querySelectorAll('.theme-toggle').forEach(function (btn) {
+                btn.textContent = themeIcons[mode];
+                btn.title = '主题：' + themeLabels[mode];
+            });
+        }
+        document.querySelectorAll('.theme-toggle').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var order = ['auto', 'light', 'dark'];
+                var mode = (window.__adminTheme && window.__adminTheme.getMode()) || 'auto';
+                var next = order[(order.indexOf(mode) + 1) % 3];
+                if (window.__adminTheme) window.__adminTheme.setMode(next);
+                syncThemeButtons();
+            });
+        });
+        syncThemeButtons();
     </script>
 </body>
 </html>

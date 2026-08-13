@@ -372,7 +372,7 @@ class Database:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
         # 兼容旧表：添加列（如果不存在）
-        for col, ddl in [("weight", "weight INT DEFAULT 100"), ("daily_token_limit", "daily_token_limit INT DEFAULT 0"), ("total_token_limit", "total_token_limit INT DEFAULT 0")]:
+        for col, ddl in [("weight", "weight INT DEFAULT 100"), ("daily_token_limit", "daily_token_limit INT DEFAULT 0"), ("total_token_limit", "total_token_limit INT DEFAULT 0"), ("vision", "vision TINYINT DEFAULT 0")]:
             try:
                 self.execute(f"ALTER TABLE ai_models ADD COLUMN {ddl}")
             except Exception:
@@ -2160,7 +2160,8 @@ class Database:
                     "label": m.get("model_label", ""),
                     "weight": int(m.get("weight", 100) or 100),
                     "daily_token_limit": int(m.get("daily_token_limit", 0) or 0),
-                    "total_token_limit": int(m.get("total_token_limit", 0) or 0)
+                    "total_token_limit": int(m.get("total_token_limit", 0) or 0),
+                    "vision": bool(m.get("vision"))
                 })
             providers = {}
             for p in provider_rows:
@@ -2208,8 +2209,8 @@ class Database:
                     continue
                 self.execute(
                     f"""INSERT INTO ai_models
-                        (provider_key, model_value, model_label, weight, daily_token_limit, total_token_limit, sort_order)
-                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+                        (provider_key, model_value, model_label, weight, daily_token_limit, total_token_limit, vision, sort_order)
+                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
                     (
                         provider_key,
                         model.get("value", ""),
@@ -2217,6 +2218,7 @@ class Database:
                         int(model.get("weight", 100) or 100),
                         int(model.get("daily_token_limit", 0) or 0),
                         int(model.get("total_token_limit", 0) or 0),
+                        1 if (model.get("vision") is True or model.get("vision") == 1 or str(model.get("vision")).lower() in ("1", "true", "yes", "on")) else 0,
                         idx
                     )
                 )
