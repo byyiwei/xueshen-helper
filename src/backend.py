@@ -3495,8 +3495,11 @@ class Handler(BaseHTTPRequestHandler):
                     sort_by = "created_at"
                 if sort_order not in ("asc", "desc"):
                     sort_order = "desc"
-                # 处理 last_login_at 排序时 NULL 值问题
-                sort_expr = f"{'COALESCE(last_login_at, created_at)' if sort_by == 'last_login_at' else sort_by} {sort_order}" if sort_by == 'last_login_at' else f"{sort_by} {sort_order}"
+                # 处理 last_login_at 排序：未登录（NULL）用户始终排在末尾，避免被按注册时间插入排序
+                if sort_by == 'last_login_at':
+                    sort_expr = f"(last_login_at IS NULL) ASC, last_login_at {sort_order}"
+                else:
+                    sort_expr = f"{sort_by} {sort_order}"
                 # 构建查询
                 sql = "SELECT id, username, email, is_verified, points_balance, member_until, is_banned, ban_reason, created_at, last_login_at FROM users"
                 params_list = []
