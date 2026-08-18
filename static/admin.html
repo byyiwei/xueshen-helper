@@ -803,20 +803,13 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
           </div>
         </div>
 
-        <!-- 数据分析组 -->
-        <div class="menu-group" :class="{expanded:expandedGroups.analysis}">
-          <div class="menu-group-header dock-item" :class="{active:['bank-analysis','user-analysis'].includes(page)}" @click="expandedGroups.analysis=!expandedGroups.analysis">
-            <span class="icon">◔</span>数据分析
-            <span class="arrow">▶</span>
-          </div>
-          <div class="menu-group-items">
-            <div class="menu-item" :class="{active:page==='bank-analysis'}" @click="page='bank-analysis';loadBankAnalysis()">
-              <span class="icon">▤</span>题库分析
-            </div>
-            <div class="menu-item" :class="{active:page==='user-analysis'}" @click="page='user-analysis';loadUserAnalysis()">
-              <span class="icon">◯</span>用户分析
-            </div>
-          </div>
+        <!-- 题库分析 -->
+        <div class="menu-item dock-item" :class="{active:page==='bank-analysis'}" @click="page='bank-analysis';loadBankAnalysis()">
+          <span class="icon">▦</span>题库分析
+        </div>
+        <!-- 用户分析 -->
+        <div class="menu-item dock-item" :class="{active:page==='user-analysis'}" @click="page='user-analysis';loadUserAnalysis()">
+          <span class="icon">◉</span>用户分析
         </div>
 
         <!-- 日志监控组 -->
@@ -3433,8 +3426,8 @@ createApp({
       'script-logs':[{label:'日志监控',group:'logs'},{label:'脚本日志'}],
       'ai-logs':[{label:'日志监控',group:'logs'},{label:'模型日志'}],
       'bank-logs':[{label:'日志监控',group:'logs'},{label:'题库日志'}],
-      'bank-analysis':[{label:'数据分析',group:'analysis'},{label:'题库分析'}],
-      'user-analysis':[{label:'数据分析',group:'analysis'},{label:'用户分析'}],
+      'bank-analysis':[{label:'题库分析'}],
+      'user-analysis':[{label:'用户分析'}],
       'log-cleanup':[{label:'日志监控',group:'logs'},{label:'日志清理'}],
       'ai-config':[{label:'系统配置',group:'config'},{label:'模型配置'}],
       'email-config':[{label:'系统配置',group:'config'},{label:'邮箱配置'}],
@@ -3442,7 +3435,7 @@ createApp({
       'daily-report':[{label:'日志监控',group:'logs'},{label:'每日数据邮件'}],
       'profile':[{label:'个人中心'}]
     };
-    const GROUP_FIRST_PAGE={referral:'referral',payment:'payment-orders',card:'xianyu',analysis:'bank-analysis',logs:'script-logs',config:'ai-config',bank:'bank-logs'};
+    const GROUP_FIRST_PAGE={referral:'referral',payment:'payment-orders',card:'xianyu',logs:'script-logs',config:'ai-config',bank:'bank-logs'};
     const breadcrumbItems=computed(()=>BREADCRUMB_MAP[page.value]||[]);
     function navigateBreadcrumb(item,index){
       if(index===breadcrumbItems.value.length-1)return;
@@ -4731,7 +4724,7 @@ createApp({
 
     // ========== 推广返利 ==========
     const referralTab=ref('config');
-    const expandedGroups=ref({referral:false,payment:false,card:false,analysis:false,logs:false,config:false});
+    const expandedGroups=ref({referral:false,payment:false,card:false,logs:false,config:false});
     const isMobile=ref(window.innerWidth<=768);
     const mobileSidebarOpen=ref(false);
     const mobileSubmenu=ref(null);
@@ -4739,7 +4732,6 @@ createApp({
       referral:{title:'推广运营',icon:'★',items:[{page:'referral',label:'返利配置',icon:'⚙',load:loadReferralConfig},{page:'referral-withdrawals',label:'提现审核',icon:'¥',load:loadReferralWithdrawals},{page:'feedback',label:'问题反馈',icon:'✎',load:()=>{loadFeedbackList();loadFeedbackAutoClose();loadFeedbackNotify();}}]},
       payment:{title:'支付财务',icon:'□',items:[{page:'payment-orders',label:'支付明细',icon:'▤',load:loadPaymentOrders},{page:'payment',label:'套餐配置',icon:'◈',load:loadPaymentConfig},{page:'pay-api',label:'支付接口',icon:'⌁',load:loadPayApiConfig},{page:'pay-test',label:'支付测试',icon:'◎',load:()=>{}},{page:'refund-requests',label:'退款申请',icon:'↩',load:loadRefundRequests}]},
       card:{title:'卡密管理',icon:'⚷',items:[{page:'xianyu',label:'商品配置',icon:'●',load:loadXianyuConfig},{page:'card-keys',label:'卡密管理',icon:'⚷',load:loadCardKeys}]},
-      analysis:{title:'数据分析',icon:'◔',items:[{page:'bank-analysis',label:'题库分析',icon:'▤',load:loadBankAnalysis},{page:'user-analysis',label:'用户分析',icon:'◯',load:loadUserAnalysis}]},
       logs:{title:'日志监控',icon:'☰',items:[{page:'script-logs',label:'脚本日志',icon:'⌘',load:loadScriptLogs},{page:'ai-logs',label:'模型日志',icon:'≡',load:loadAiLogs},{page:'bank-logs',label:'题库日志',icon:'◎',load:loadBankLogs},{page:'log-cleanup',label:'日志清理',icon:'∅',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'⊙',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
       config:{title:'系统配置',icon:'◇',items:[{page:'ai-config',label:'模型配置',icon:'◈',load:loadConfig},{page:'email-config',label:'邮箱配置',icon:'✉',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'db-config',label:'系统设置',icon:'⛁',load:loadDbConfig}]}
     };
