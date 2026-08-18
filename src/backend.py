@@ -2066,6 +2066,8 @@ def ask_ai_auto(question, need_vision=False):
     ordered = weighted_pick(active)
     print(f"[自动模型] 串行尝试 {len(ordered)} 个模型，顺序: {', '.join(f'{m[2]}(w={m[3]})' for m in ordered)}", flush=True)
     errors = []
+    error_logs = []  # 失败的模型日志，待确定最终成功模型后统一补记
+    final_model = ""
 
     for provider_name, provider_info, model_name, weight in ordered:
         print(f"[自动模型] 尝试 provider={provider_name}, model={model_name}, weight={weight}", flush=True)
@@ -2079,7 +2081,8 @@ def ask_ai_auto(question, need_vision=False):
             MODEL_FAIL_COOLDOWN.pop(model_name, None)
             MODEL_429_COOLDOWN.pop(model_name, None)
             record_model_token_usage(model_name, tokens)
-            return answer, None, model_name, provider_name
+            final_model = model_name
+            break
         elif err:
             if err.startswith("__429__:"):
                 parts = err.split(":", 2)
@@ -2087,7 +2090,7 @@ def ask_ai_auto(question, need_vision=False):
                 MODEL_429_COOLDOWN[model_name] = time.time() + cooldown_sec
                 print(f"[自动模型] 模型 {model_name} 触发429限流，冷却 {cooldown_sec}s", flush=True)
             else:
-                enqueue_ai_log({
+                error_logs.append({
                     "provider_key": provider_name or "",
                     "username": "",
                     "model": model_name,
@@ -2096,12 +2099,21 @@ def ask_ai_auto(question, need_vision=False):
                     "status": "error",
                     "error": err,
                     "duration_ms": int((time.time() - attempt_start) * 1000),
-                    "client_ip": ""
+                    "client_ip": "",
+                    "final_model": ""
                 })
                 if "HTTP 404" in err or "model is not found" in err.lower() or "模型" in err and "不存在" in err:
                     MODEL_FAIL_COOLDOWN[model_name] = time.time() + MODEL_FAIL_COOLDOWN_SECONDS
                     print(f"[自动模型] 模型不可用，进入冷却 {MODEL_FAIL_COOLDOWN_SECONDS}s: {model_name}，原因：{err}", flush=True)
             errors.append(f"{model_name}: {err}")
+
+    # 补记失败模型日志，标注最后成功调用的模型（全部失败则为空）
+    for item in error_logs:
+        item["final_model"] = final_model
+        enqueue_ai_log(item)
+
+    if final_model:
+        return answer, None, final_model, provider_name
 
     # 所有模型都失败
     last = ordered[-1] if ordered else (None, None, "", "")
@@ -3538,6 +3550,30 @@ class Handler(BaseHTTPRequestHandler):
                 logs = db.get_ai_call_logs(limit=limit, status=status, model=model, keyword=keyword, date_from=date_from, date_to=date_to, page=page)
                 total = db.count_ai_call_logs(status=status, model=model, keyword=keyword, date_from=date_from, date_to=date_to)
                 self._send_json(200, {"code": 200, "logs": logs, "total": total, "page": int(page or 1), "limit": int(limit or 100)})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/bank-analysis":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                new_from = qs.get("new_from", [""])[0]
+                new_to = qs.get("new_to", [""])[0]
+                stats = db.get_question_bank_stats(new_from=new_from, new_to=new_to)
+                self._send_json(200, {"code": 200, "stats": stats})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/user-analysis":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                date_from = qs.get("date_from", [""])[0]
+                date_to = qs.get("date_to", [""])[0]
+                stats = db.get_user_analysis(date_from=date_from, date_to=date_to)
+                self._send_json(200, {"code": 200, "stats": stats})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/api/script-logs/recent":

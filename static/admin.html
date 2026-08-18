@@ -110,7 +110,7 @@ body{
 .main-content{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative}
 .main-header{
   height:56px;background:var(--bg2);border-bottom:1px solid var(--border);
-  display:flex;align-items:center;justify-content:space-between;padding:0 96px 0 24px;
+  display:flex;align-items:center;justify-content:space-between;padding:0 118px 0 24px;
   flex-shrink:0;position:relative;
 }
 .main-header h2{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
@@ -130,12 +130,14 @@ body{
 .card-body [style*="overflow-x:auto"]::-webkit-scrollbar-track{background:transparent}
 .card-body [style*="overflow-x:auto"]::-webkit-scrollbar-thumb{background:rgba(148,163,184,.3);border-radius:10px;border:2px solid transparent;background-clip:content-box}
 .card-body [style*="overflow-x:auto"]::-webkit-scrollbar-thumb:hover{background:rgba(148,163,184,.5);background-clip:content-box}
-.top-account{position:fixed;right:22px;top:10px;z-index:80;padding-bottom:10px}
+.top-account{position:fixed;right:22px;top:10px;z-index:80;padding-bottom:10px;display:flex;align-items:center}
 .top-avatar{width:40px;height:40px;border-radius:16px;background:linear-gradient(135deg,var(--accent),#2563eb);border:1px solid rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;overflow:hidden;color:#fff;cursor:pointer;box-shadow:0 10px 24px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.22);transition:transform .18s,box-shadow .18s}
 .top-avatar:hover{transform:translateY(-1px);box-shadow:0 14px 30px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.25)}
 .top-menu{position:absolute;right:0;top:50px;min-width:156px;padding:8px;background:rgba(17,24,39,.98);border:1px solid rgba(96,165,250,.18);border-radius:16px;box-shadow:0 20px 48px rgba(0,0,0,.42);display:none}
 .top-menu::before{content:'';position:absolute;right:14px;top:-6px;width:10px;height:10px;background:rgba(17,24,39,.98);border-left:1px solid rgba(96,165,250,.18);border-top:1px solid rgba(96,165,250,.18);transform:rotate(45deg)}
-.top-account:hover .top-menu{display:block}
+.top-account:hover .top-menu,
+.top-avatar:hover ~ .top-menu,
+.top-menu:hover{display:block}
 .top-menu button{width:100%;display:flex;align-items:center;justify-content:flex-start;gap:8px;padding:9px 10px;border:0;border-radius:10px;background:transparent;color:var(--text2);cursor:pointer;font-size:13px}
 .top-menu button:hover{background:var(--bg3);color:var(--text)}
 .top-menu .danger{color:#fca5a5}
@@ -550,7 +552,7 @@ body{
   }
   .main-content{height:100vh;height:100dvh;width:100%}
   .top-account{right:12px;top:8px}
-  .main-header{padding:0 70px 0 48px}
+  .main-header{padding:0 108px 0 48px}
   .main-header .breadcrumb{display:none}
   .mobile-menu-toggle{display:flex !important}
   .form-row{grid-template-columns:1fr}
@@ -562,6 +564,7 @@ body{
   .card-header{align-items:flex-start;flex-direction:column}
   .provider-actions{width:100%;justify-content:flex-start}
   .metric-grid,.dash-grid{grid-template-columns:1fr}
+  .analysis-cols{grid-template-columns:1fr !important}
   .main-body{padding:16px}
   .data-table{font-size:12px}
   .data-table th,.data-table td{padding:8px 6px}
@@ -796,6 +799,22 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
             </div>
             <div class="menu-item" :class="{active:page==='card-keys'}" @click="page='card-keys';loadCardKeys()">
               <span class="icon">⚷</span>卡密管理
+            </div>
+          </div>
+        </div>
+
+        <!-- 数据分析组 -->
+        <div class="menu-group" :class="{expanded:expandedGroups.analysis}">
+          <div class="menu-group-header dock-item" :class="{active:['bank-analysis','user-analysis'].includes(page)}" @click="expandedGroups.analysis=!expandedGroups.analysis">
+            <span class="icon">◔</span>数据分析
+            <span class="arrow">▶</span>
+          </div>
+          <div class="menu-group-items">
+            <div class="menu-item" :class="{active:page==='bank-analysis'}" @click="page='bank-analysis';loadBankAnalysis()">
+              <span class="icon">▤</span>题库分析
+            </div>
+            <div class="menu-item" :class="{active:page==='user-analysis'}" @click="page='user-analysis';loadUserAnalysis()">
+              <span class="icon">◯</span>用户分析
             </div>
           </div>
         </div>
@@ -2115,6 +2134,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                       <th style="text-align:left;padding:10px 8px">用户</th>
                       <th style="text-align:left;padding:10px 8px">状态</th>
                       <th style="text-align:left;padding:10px 8px">模型</th>
+                      <th style="text-align:left;padding:10px 8px">最终成功模型</th>
                       <th style="text-align:left;padding:10px 8px">耗时</th>
                       <th style="text-align:left;padding:10px 8px">题目</th>
                       <th style="text-align:left;padding:10px 8px">返回答案</th>
@@ -2131,6 +2151,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                           <span :style="{color:log.status==='success'?'var(--success)':log.status==='insufficient_quota'?'var(--warning)':'var(--danger)',fontWeight:'600'}">{{statusText(log.status)}}</span>
                         </td>
                         <td style="padding:10px 8px;color:var(--accent2);max-width:180px;word-break:break-all">{{log.model||'-'}}</td>
+                        <td style="padding:10px 8px;color:var(--success);max-width:180px;word-break:break-all">{{log.status==='error'?(log.final_model||'-'):'-'}}</td>
                         <td style="padding:10px 8px;white-space:nowrap">{{formatDuration(log.duration_ms)}}</td>
                         <td style="padding:10px 8px;max-width:320px;word-break:break-word;color:var(--text2)">{{shortText(log.question,90)}}</td>
                         <td style="padding:10px 8px;max-width:260px;word-break:break-word;color:var(--success)">{{shortText(log.answer,80)}}</td>
@@ -2138,8 +2159,8 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                         <td style="padding:10px 8px"><button class="btn btn-secondary btn-sm" @click="toggleLog(log.id)">{{expandedLogs[log.id]?'收起':'详情'}}</button></td>
                       </tr>
                       <tr v-if="expandedLogs[log.id]">
-                        <td colspan="9" style="padding:0 8px 12px">
-                          <div class="log-detail">用户：{{log.username||'-'}}&#10;题目：{{log.question||'-'}}&#10;&#10;答案：{{log.answer||'-'}}&#10;&#10;错误：{{log.error||'-'}}</div>
+                        <td colspan="10" style="padding:0 8px 12px">
+                          <div class="log-detail">用户：{{log.username||'-'}}&#10;模型：{{log.model||'-'}}&#10;最终成功模型：{{log.status==='error'?(log.final_model||'无'):'-'}}&#10;题目：{{log.question||'-'}}&#10;&#10;答案：{{log.answer||'-'}}&#10;&#10;错误：{{log.error||'-'}}</div>
                         </td>
                       </tr>
                     </template>
@@ -2449,6 +2470,184 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
           </div>
         </div>
       </template>
+      <!-- Bank Analysis Page -->
+      <template v-if="page==='bank-analysis'">
+        <header class="main-header">
+          <h2>题库分析</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index<breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+
+          <div class="date-range" style="margin-bottom:18px">
+            <span style="font-size:13px;color:var(--text2);font-weight:600">新题统计范围</span>
+            <input class="date-input" type="date" v-model="bankAnalysisFilter.new_from">
+            <span style="color:var(--text3)">至</span>
+            <input class="date-input" type="date" v-model="bankAnalysisFilter.new_to">
+            <button class="btn btn-primary btn-sm" @click="loadBankAnalysis()">查询</button>
+            <button class="btn btn-secondary btn-sm" @click="setBankAnalysisRange(7)">近7天</button>
+            <button class="btn btn-secondary btn-sm" @click="setBankAnalysisRange(30)">近30天</button>
+            <button class="btn btn-secondary btn-sm" @click="setBankAnalysisRange(90)">近90天</button>
+          </div>
+
+          <div v-if="bankAnalysisLoading" style="text-align:center;color:var(--text3);padding:40px 0;font-size:13px">正在加载题库分析...</div>
+          <template v-else-if="bankAnalysis">
+            <div class="metric-grid" style="grid-template-columns:repeat(5,minmax(120px,1fr))">
+              <div class="metric-card"><div class="metric-label">总题目数</div><div class="metric-value">{{bankAnalysis.overview.total}}</div><div class="metric-sub">题库累计入库题目</div></div>
+              <div class="metric-card"><div class="metric-label">已调用题目</div><div class="metric-value">{{bankAnalysis.overview.hit_questions}}</div><div class="metric-sub">调用命中率 {{pct(bankAnalysis.overview.hit_questions,bankAnalysis.overview.total)}}%</div></div>
+              <div class="metric-card"><div class="metric-label">从未调用</div><div class="metric-value" style="color:var(--danger)">{{bankAnalysis.overview.never_hit}}</div><div class="metric-sub">占比 {{pct(bankAnalysis.overview.never_hit,bankAnalysis.overview.total)}}%</div></div>
+              <div class="metric-card"><div class="metric-label">新加入题目</div><div class="metric-value" style="color:var(--accent2)">{{bankAnalysis.overview.new_questions}}</div><div class="metric-sub">区间内新增，占比 {{pct(bankAnalysis.overview.new_questions,bankAnalysis.overview.total)}}%</div></div>
+              <div class="metric-card"><div class="metric-label">累计调用次数</div><div class="metric-value">{{bankAnalysis.overview.total_hits}}</div><div class="metric-sub">所有题目 hit_count 总和</div></div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><h3>题型分布</h3></div>
+              <div class="card-body" style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:520px">
+                  <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left"><th style="padding:8px">题型</th><th style="padding:8px">题目数</th><th style="padding:8px">题目数占比</th><th style="padding:8px">累计调用</th></tr></thead>
+                  <tbody>
+                    <tr v-for="t in bankAnalysis.type_dist" :key="t.question_type" style="border-bottom:1px solid var(--border)">
+                      <td style="padding:8px;color:var(--accent2)">{{questionTypeName(t.question_type)}}</td>
+                      <td style="padding:8px">{{t.count}}</td>
+                      <td style="padding:8px">
+                        <div style="display:flex;align-items:center;gap:8px">
+                          <div style="flex:1;max-width:220px;height:8px;background:var(--bg3);border-radius:6px;overflow:hidden"><div :style="{width:t.percent+'%',height:'100%',background:'var(--accent2)',borderRadius:'6px'}"></div></div>
+                          <span style="color:var(--text2);font-size:12px">{{t.percent}}%</span>
+                        </div>
+                      </td>
+                      <td style="padding:8px;color:var(--text2)">{{t.hits}}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px" class="analysis-cols">
+              <div class="card">
+                <div class="card-header"><h3>🔥 调用最多的题目 TOP 10</h3></div>
+                <div class="card-body" style="padding:8px 20px 20px">
+                  <table style="width:100%;border-collapse:collapse;font-size:12px">
+                    <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left"><th style="padding:8px">#</th><th style="padding:8px">题目</th><th style="padding:8px">题型</th><th style="padding:8px">调用次数</th></tr></thead>
+                    <tbody>
+                      <tr v-for="(q,idx) in bankAnalysis.top_list" :key="q.question_hash" style="border-bottom:1px solid var(--border)">
+                        <td style="padding:8px;color:var(--text3)">{{idx+1}}</td>
+                        <td style="padding:8px;max-width:280px;word-break:break-word;color:var(--text2)" :title="q.question_text">{{shortText(q.question_text,50)}}</td>
+                        <td style="padding:8px;color:var(--accent2);white-space:nowrap">{{questionTypeName(q.question_type)}}</td>
+                        <td style="padding:8px;font-weight:700;color:var(--accent2)">{{q.hit_count}}</td>
+                      </tr>
+                      <tr v-if="!bankAnalysis.top_list.length"><td colspan="4" style="padding:24px;text-align:center;color:var(--text3)">暂无调用记录</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-header"><h3>🐌 调用最少的题目 TOP 10</h3></div>
+                <div class="card-body" style="padding:8px 20px 20px">
+                  <table style="width:100%;border-collapse:collapse;font-size:12px">
+                    <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left"><th style="padding:8px">#</th><th style="padding:8px">题目</th><th style="padding:8px">题型</th><th style="padding:8px">调用次数</th></tr></thead>
+                    <tbody>
+                      <tr v-for="(q,idx) in bankAnalysis.least_list" :key="q.question_hash" style="border-bottom:1px solid var(--border)">
+                        <td style="padding:8px;color:var(--text3)">{{idx+1}}</td>
+                        <td style="padding:8px;max-width:280px;word-break:break-word;color:var(--text2)" :title="q.question_text">{{shortText(q.question_text,50)}}</td>
+                        <td style="padding:8px;color:var(--accent2);white-space:nowrap">{{questionTypeName(q.question_type)}}</td>
+                        <td style="padding:8px;font-weight:700;color:var(--danger)">{{q.hit_count}}</td>
+                      </tr>
+                      <tr v-if="!bankAnalysis.least_list.length"><td colspan="4" style="padding:24px;text-align:center;color:var(--text3)">暂无已调用题目</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><h3>从未被调用过的题目（最近入库 TOP 10）</h3></div>
+              <div class="card-body" style="padding:8px 20px 20px">
+                <table style="width:100%;border-collapse:collapse;font-size:12px">
+                  <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left"><th style="padding:8px">题目</th><th style="padding:8px">题型</th><th style="padding:8px">入库时间</th></tr></thead>
+                  <tbody>
+                    <tr v-for="q in bankAnalysis.never_list" :key="q.question_hash" style="border-bottom:1px solid var(--border)">
+                      <td style="padding:8px;max-width:400px;word-break:break-word;color:var(--text2)" :title="q.question_text">{{shortText(q.question_text,70)}}</td>
+                      <td style="padding:8px;color:var(--accent2);white-space:nowrap">{{questionTypeName(q.question_type)}}</td>
+                      <td style="padding:8px;color:var(--text3);white-space:nowrap">{{q.created_at}}</td>
+                    </tr>
+                    <tr v-if="!bankAnalysis.never_list.length"><td colspan="3" style="padding:24px;text-align:center;color:var(--text3)">所有题目均已被调用过 🎉</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+
+      <!-- User Analysis Page -->
+      <template v-if="page==='user-analysis'">
+        <header class="main-header">
+          <h2>用户分析</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index<breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+
+          <div class="date-range" style="margin-bottom:18px">
+            <span style="font-size:13px;color:var(--text2);font-weight:600">统计范围</span>
+            <input class="date-input" type="date" v-model="userAnalysisFilter.date_from">
+            <span style="color:var(--text3)">至</span>
+            <input class="date-input" type="date" v-model="userAnalysisFilter.date_to">
+            <button class="btn btn-primary btn-sm" @click="loadUserAnalysis()">查询</button>
+            <button class="btn btn-secondary btn-sm" @click="setUserAnalysisRange(7)">近7天</button>
+            <button class="btn btn-secondary btn-sm" @click="setUserAnalysisRange(30)">近30天</button>
+            <button class="btn btn-secondary btn-sm" @click="setUserAnalysisRange(90)">近90天</button>
+          </div>
+
+          <div v-if="userAnalysisLoading" style="text-align:center;color:var(--text3);padding:40px 0;font-size:13px">正在加载用户分析...</div>
+          <template v-else-if="userAnalysis">
+            <div class="metric-grid" style="grid-template-columns:repeat(4,minmax(120px,1fr))">
+              <div class="metric-card"><div class="metric-label">用户总数</div><div class="metric-value">{{userAnalysis.overview.total_users}}</div><div class="metric-sub">全部注册用户</div></div>
+              <div class="metric-card"><div class="metric-label">新增用户</div><div class="metric-value" style="color:var(--accent2)">{{userAnalysis.overview.new_users}}</div><div class="metric-sub">区间内注册，占总数 {{userAnalysis.overview.new_rate}}%</div></div>
+              <div class="metric-card"><div class="metric-label">活跃用户</div><div class="metric-value" style="color:var(--success)">{{userAnalysis.overview.active_users}}</div><div class="metric-sub">区间内登录过，活跃率 {{userAnalysis.overview.active_rate}}%</div></div>
+              <div class="metric-card"><div class="metric-label">回归老用户</div><div class="metric-value" style="color:#f59e0b">{{userAnalysis.overview.returned_users}}</div><div class="metric-sub">老用户中区间内回归 {{userAnalysis.overview.returned_rate}}%</div></div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><h3>💳 充值构成分析（区间内已支付订单，含闲鱼自动发货）</h3></div>
+              <div class="card-body">
+                <div class="metric-grid" style="grid-template-columns:repeat(4,minmax(120px,1fr))">
+                  <div class="metric-card"><div class="metric-label">充值订单数</div><div class="metric-value">{{userAnalysis.orders.total_orders}}</div><div class="metric-sub">支付+闲鱼</div></div>
+                  <div class="metric-card"><div class="metric-label">充值总金额</div><div class="metric-value" style="font-size:22px">¥{{userAnalysis.orders.total_amount}}</div><div class="metric-sub">区间内全部收入</div></div>
+                  <div class="metric-card"><div class="metric-label">老用户充值</div><div class="metric-value" style="color:var(--accent2);font-size:22px">¥{{userAnalysis.orders.old_amount}}</div><div class="metric-sub">{{userAnalysis.orders.old_orders}} 单，金额占 {{userAnalysis.orders.old_amount_rate}}%</div></div>
+                  <div class="metric-card"><div class="metric-label">新用户充值</div><div class="metric-value" style="color:var(--success);font-size:22px">¥{{userAnalysis.orders.new_amount}}</div><div class="metric-sub">{{userAnalysis.orders.new_orders}} 单，金额占 {{userAnalysis.orders.new_amount_rate}}%</div></div>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:16px;font-size:12px;color:var(--text2)">
+                  <span style="width:12px;height:12px;background:var(--accent2);border-radius:3px;display:inline-block"></span>老用户充值金额
+                  <span style="width:12px;height:12px;background:var(--success);border-radius:3px;display:inline-block;margin-left:12px"></span>新用户充值金额
+                  <div style="flex:1;max-width:360px;height:12px;background:var(--bg3);border-radius:6px;overflow:hidden;display:flex">
+                    <div :style="{width:userAnalysis.orders.old_amount_rate+'%',height:'100%',background:'var(--accent2)'}"></div>
+                    <div :style="{width:userAnalysis.orders.new_amount_rate+'%',height:'100%',background:'var(--success)'}"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><h3>🔙 回归老用户明细（区间内重新登录的老用户 TOP 20）</h3></div>
+              <div class="card-body" style="padding:8px 20px 20px">
+                <table style="width:100%;border-collapse:collapse;font-size:12px">
+                  <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left"><th style="padding:8px">用户</th><th style="padding:8px">注册时间</th><th style="padding:8px">最近登录</th></tr></thead>
+                  <tbody>
+                    <tr v-for="u in userAnalysis.returning_users" :key="u.username" style="border-bottom:1px solid var(--border)">
+                      <td style="padding:8px;color:var(--accent2)">{{u.username}}</td>
+                      <td style="padding:8px;color:var(--text3);white-space:nowrap">{{u.created_at}}</td>
+                      <td style="padding:8px;color:var(--success);white-space:nowrap">{{u.last_login_at}}</td>
+                    </tr>
+                    <tr v-if="!userAnalysis.returning_users.length"><td colspan="3" style="padding:24px;text-align:center;color:var(--text3)">区间内暂无老用户回归</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+        </div>
+      </template>
+
       <!-- Log Cleanup Page -->
       <template v-if="page==='log-cleanup'">
         <div class="card">
@@ -3234,6 +3433,8 @@ createApp({
       'script-logs':[{label:'日志监控',group:'logs'},{label:'脚本日志'}],
       'ai-logs':[{label:'日志监控',group:'logs'},{label:'模型日志'}],
       'bank-logs':[{label:'日志监控',group:'logs'},{label:'题库日志'}],
+      'bank-analysis':[{label:'数据分析',group:'analysis'},{label:'题库分析'}],
+      'user-analysis':[{label:'数据分析',group:'analysis'},{label:'用户分析'}],
       'log-cleanup':[{label:'日志监控',group:'logs'},{label:'日志清理'}],
       'ai-config':[{label:'系统配置',group:'config'},{label:'模型配置'}],
       'email-config':[{label:'系统配置',group:'config'},{label:'邮箱配置'}],
@@ -3241,7 +3442,7 @@ createApp({
       'daily-report':[{label:'日志监控',group:'logs'},{label:'每日数据邮件'}],
       'profile':[{label:'个人中心'}]
     };
-    const GROUP_FIRST_PAGE={referral:'referral',payment:'payment-orders',card:'xianyu',logs:'script-logs',config:'ai-config',bank:'bank-logs'};
+    const GROUP_FIRST_PAGE={referral:'referral',payment:'payment-orders',card:'xianyu',analysis:'bank-analysis',logs:'script-logs',config:'ai-config',bank:'bank-logs'};
     const breadcrumbItems=computed(()=>BREADCRUMB_MAP[page.value]||[]);
     function navigateBreadcrumb(item,index){
       if(index===breadcrumbItems.value.length-1)return;
@@ -3382,6 +3583,12 @@ createApp({
     const bankLogTotal=ref(0);
     const expandedBankLogs=reactive({});
     const bankLogFilter=reactive({matched:'',keyword:'',date_from:'',date_to:'',limit:100,page:1});
+    const bankAnalysis=ref(null);
+    const bankAnalysisLoading=ref(false);
+    const bankAnalysisFilter=reactive({new_from:'',new_to:''});
+    const userAnalysis=ref(null);
+    const userAnalysisLoading=ref(false);
+    const userAnalysisFilter=reactive({date_from:'',date_to:''});
      const questionBank=ref([]);
      const questionBankTotal=ref(0);
      const questionBankLoading=ref(false);
@@ -3692,6 +3899,65 @@ createApp({
       }catch(e){showMsg('获取题库日志失败: '+(e.message||e),'error',6000);}
       finally{bankLogLoading.value=false;}
     }
+    async function loadBankAnalysis(){
+      if(!token.value)return;
+      if(!bankAnalysisFilter.new_from||!bankAnalysisFilter.new_to){
+        const to=new Date(),from=new Date();
+        from.setDate(from.getDate()-29);
+        bankAnalysisFilter.new_from=from.toISOString().slice(0,10);
+        bankAnalysisFilter.new_to=to.toISOString().slice(0,10);
+      }
+      bankAnalysisLoading.value=true;
+      try{
+        const qs=new URLSearchParams();
+        if(bankAnalysisFilter.new_from)qs.set('new_from',bankAnalysisFilter.new_from);
+        if(bankAnalysisFilter.new_to)qs.set('new_to',bankAnalysisFilter.new_to);
+        const res=await safeFetch('/admin/bank-analysis?'+qs.toString(),{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){bankAnalysis.value=data.stats||null;}
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'获取题库分析失败','error');
+      }catch(e){showMsg('获取题库分析失败: '+(e.message||e),'error',6000);}
+      finally{bankAnalysisLoading.value=false;}
+    }
+    function setBankAnalysisRange(days){
+      const to=new Date();
+      const from=new Date();
+      from.setDate(from.getDate()-days+1);
+      bankAnalysisFilter.new_from=from.toISOString().slice(0,10);
+      bankAnalysisFilter.new_to=to.toISOString().slice(0,10);
+      loadBankAnalysis();
+    }
+    async function loadUserAnalysis(){
+      if(!token.value)return;
+      if(!userAnalysisFilter.date_from||!userAnalysisFilter.date_to){
+        const to=new Date(),from=new Date();
+        from.setDate(from.getDate()-29);
+        userAnalysisFilter.date_from=from.toISOString().slice(0,10);
+        userAnalysisFilter.date_to=to.toISOString().slice(0,10);
+      }
+      userAnalysisLoading.value=true;
+      try{
+        const qs=new URLSearchParams();
+        if(userAnalysisFilter.date_from)qs.set('date_from',userAnalysisFilter.date_from);
+        if(userAnalysisFilter.date_to)qs.set('date_to',userAnalysisFilter.date_to);
+        const res=await safeFetch('/admin/user-analysis?'+qs.toString(),{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){userAnalysis.value=data.stats||null;}
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'获取用户分析失败','error');
+      }catch(e){showMsg('获取用户分析失败: '+(e.message||e),'error',6000);}
+      finally{userAnalysisLoading.value=false;}
+    }
+    function setUserAnalysisRange(days){
+      const to=new Date();
+      const from=new Date();
+      from.setDate(from.getDate()-days+1);
+      userAnalysisFilter.date_from=from.toISOString().slice(0,10);
+      userAnalysisFilter.date_to=to.toISOString().slice(0,10);
+      loadUserAnalysis();
+    }
+    function pct(a,b){const t=Number(b);if(!t)return '0.0';return (Number(a)*100/t).toFixed(1);}
     async function loadQuestionBank(page=questionBankFilter.page||1){
       if(!token.value)return;
       questionBankFilter.page=page;
@@ -4465,7 +4731,7 @@ createApp({
 
     // ========== 推广返利 ==========
     const referralTab=ref('config');
-    const expandedGroups=ref({referral:false,payment:false,card:false,logs:false,config:false});
+    const expandedGroups=ref({referral:false,payment:false,card:false,analysis:false,logs:false,config:false});
     const isMobile=ref(window.innerWidth<=768);
     const mobileSidebarOpen=ref(false);
     const mobileSubmenu=ref(null);
@@ -4473,6 +4739,7 @@ createApp({
       referral:{title:'推广运营',icon:'★',items:[{page:'referral',label:'返利配置',icon:'⚙',load:loadReferralConfig},{page:'referral-withdrawals',label:'提现审核',icon:'¥',load:loadReferralWithdrawals},{page:'feedback',label:'问题反馈',icon:'✎',load:()=>{loadFeedbackList();loadFeedbackAutoClose();loadFeedbackNotify();}}]},
       payment:{title:'支付财务',icon:'□',items:[{page:'payment-orders',label:'支付明细',icon:'▤',load:loadPaymentOrders},{page:'payment',label:'套餐配置',icon:'◈',load:loadPaymentConfig},{page:'pay-api',label:'支付接口',icon:'⌁',load:loadPayApiConfig},{page:'pay-test',label:'支付测试',icon:'◎',load:()=>{}},{page:'refund-requests',label:'退款申请',icon:'↩',load:loadRefundRequests}]},
       card:{title:'卡密管理',icon:'⚷',items:[{page:'xianyu',label:'商品配置',icon:'●',load:loadXianyuConfig},{page:'card-keys',label:'卡密管理',icon:'⚷',load:loadCardKeys}]},
+      analysis:{title:'数据分析',icon:'◔',items:[{page:'bank-analysis',label:'题库分析',icon:'▤',load:loadBankAnalysis},{page:'user-analysis',label:'用户分析',icon:'◯',load:loadUserAnalysis}]},
       logs:{title:'日志监控',icon:'☰',items:[{page:'script-logs',label:'脚本日志',icon:'⌘',load:loadScriptLogs},{page:'ai-logs',label:'模型日志',icon:'≡',load:loadAiLogs},{page:'bank-logs',label:'题库日志',icon:'◎',load:loadBankLogs},{page:'log-cleanup',label:'日志清理',icon:'∅',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'⊙',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
       config:{title:'系统配置',icon:'◇',items:[{page:'ai-config',label:'模型配置',icon:'◈',load:loadConfig},{page:'email-config',label:'邮箱配置',icon:'✉',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'db-config',label:'系统设置',icon:'⛁',load:loadDbConfig}]}
     };
@@ -4879,6 +5146,8 @@ createApp({
        paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,planForm,
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,
       bankLogs,bankLogLoading,bankLogFilter,bankLogTotal,expandedBankLogs,
+      bankAnalysis,bankAnalysisLoading,bankAnalysisFilter,loadBankAnalysis,setBankAnalysisRange,
+      userAnalysis,userAnalysisLoading,userAnalysisFilter,loadUserAnalysis,setUserAnalysisRange,pct,
       questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,
       doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
       loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,

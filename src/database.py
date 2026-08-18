@@ -395,6 +395,7 @@ class Database:
                 provider_key VARCHAR(100),
                 username VARCHAR(50) DEFAULT '',
                 model VARCHAR(255),
+                final_model VARCHAR(255) DEFAULT '' COMMENT '最终成功调用的模型(auto切换失败后)',
                 question TEXT,
                 answer TEXT,
                 status VARCHAR(20) NOT NULL,
@@ -411,6 +412,7 @@ class Database:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
         self._add_column_if_missing("ai_call_logs", "username", "username VARCHAR(50) DEFAULT ''")
+        self._add_column_if_missing("ai_call_logs", "final_model", "final_model VARCHAR(255) DEFAULT ''")
         # 题库调用日志
         self.execute("""
             CREATE TABLE IF NOT EXISTS bank_call_logs (
@@ -2231,12 +2233,13 @@ class Database:
         ph = _ph()
         self.execute(
             f"""INSERT INTO ai_call_logs
-                (provider_key, username, model, question, answer, status, error, duration_ms, client_ip)
-                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+                (provider_key, username, model, final_model, question, answer, status, error, duration_ms, client_ip)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
             (
                 log.get("provider_key", ""),
                 log.get("username", ""),
                 log.get("model", ""),
+                log.get("final_model", ""),
                 log.get("question", ""),
                 log.get("answer", ""),
                 log.get("status", "unknown"),
@@ -2327,7 +2330,7 @@ class Database:
         page = max(1, page)
         offset = (page - 1) * limit
         where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to)
-        sql = "SELECT id, provider_key, username, model, question, answer, status, error, duration_ms, client_ip, created_at FROM ai_call_logs"
+        sql = "SELECT id, provider_key, username, model, final_model, question, answer, status, error, duration_ms, client_ip, created_at FROM ai_call_logs"
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY id DESC"
@@ -2495,6 +2498,136 @@ class Database:
             sql += " WHERE " + " AND ".join(where)
         row = self.fetchone(sql, tuple(params))
         return int(row.get("total", 0) if row else 0)
+
+    def get_question_bank_stats(self, new_from="", new_to=""):
+        """题库分析：总题数、调用最多/最少、新加入占比、题型分布"""
+        ph = _ph()
+        overview = {"total": 0, "hit_questions": 0, "never_hit": 0, "total_hits": 0, "new_questions": 0}
+        try:
+            row = self.fetchone("SELECT COUNT(*) AS total, COALESCE(SUM(hit_count), 0) AS total_hits FROM question_bank")
+            if row:
+                overview["total"] = int(row.get("total") or 0)
+                overview["total_hits"] = int(row.get("total_hits") or 0)
+            row = self.fetchone("SELECT COUNT(*) AS c FROM question_bank WHERE hit_count > 0")
+            overview["hit_questions"] = int(row.get("c") or 0) if row else 0
+            overview["never_hit"] = max(0, overview["total"] - overview["hit_questions"])
+            if new_from and new_to:
+                row = self.fetchone(
+                    f"SELECT COUNT(*) AS c FROM question_bank WHERE DATE(created_at) >= {ph} AND DATE(created_at) <= {ph}",
+                    (new_from, new_to)
+                )
+                overview["new_questions"] = int(row.get("c") or 0) if row else 0
+        except Exception as e:
+            print(f"[题库分析] 概览统计失败: {e}", flush=True)
+        top_list = self.fetchall(
+            "SELECT question_hash, question_text, question_type, hit_count, last_used_at, created_at "
+            "FROM question_bank ORDER BY hit_count DESC, id DESC LIMIT 10"
+        ) or []
+        least_list = self.fetchall(
+            "SELECT question_hash, question_text, question_type, hit_count, last_used_at, created_at "
+            "FROM question_bank WHERE hit_count > 0 ORDER BY hit_count ASC, id DESC LIMIT 10"
+        ) or []
+        never_list = self.fetchall(
+            "SELECT question_hash, question_text, question_type, hit_count, created_at "
+            "FROM question_bank WHERE hit_count = 0 ORDER BY id DESC LIMIT 10"
+        ) or []
+        type_rows = self.fetchall(
+            "SELECT question_type, COUNT(*) AS c, COALESCE(SUM(hit_count), 0) AS hits "
+            "FROM question_bank GROUP BY question_type ORDER BY c DESC"
+        ) or []
+        total = overview["total"] or 1
+        type_dist = [
+            {
+                "question_type": (r.get("question_type") or "未分类"),
+                "count": int(r.get("c") or 0),
+                "hits": int(r.get("hits") or 0),
+                "percent": round(int(r.get("c") or 0) * 100.0 / total, 1),
+            }
+            for r in type_rows
+        ]
+        return {"overview": overview, "top_list": top_list, "least_list": least_list, "never_list": never_list, "type_dist": type_dist}
+
+    def get_user_analysis(self, date_from="", date_to=""):
+        """用户分析：新老用户、回归老用户、充值构成（payment_orders + 闲鱼订单）"""
+        ph = _ph()
+        result = {"overview": {}, "orders": {}, "returning_users": []}
+        if not date_from:
+            date_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        if not date_to:
+            date_to = datetime.now().strftime("%Y-%m-%d")
+        try:
+            row = self.fetchone("SELECT COUNT(*) AS total FROM users")
+            total_users = int(row.get("total") or 0) if row else 0
+            row = self.fetchone(
+                f"SELECT COUNT(*) AS c FROM users WHERE DATE(created_at) >= {ph} AND DATE(created_at) <= {ph}",
+                (date_from, date_to)
+            )
+            new_users = int(row.get("c") or 0) if row else 0
+            row = self.fetchone(f"SELECT COUNT(*) AS c FROM users WHERE DATE(created_at) < {ph}", (date_from,))
+            old_users = int(row.get("c") or 0) if row else 0
+            row = self.fetchone(
+                f"SELECT COUNT(*) AS c FROM users WHERE last_login_at IS NOT NULL AND DATE(last_login_at) >= {ph} AND DATE(last_login_at) <= {ph}",
+                (date_from, date_to)
+            )
+            active_users = int(row.get("c") or 0) if row else 0
+            row = self.fetchone(
+                f"SELECT COUNT(*) AS c FROM users WHERE DATE(created_at) < {ph} AND last_login_at IS NOT NULL AND DATE(last_login_at) >= {ph} AND DATE(last_login_at) <= {ph}",
+                (date_from, date_from, date_to)
+            )
+            returned_users = int(row.get("c") or 0) if row else 0
+            result["overview"] = {
+                "total_users": total_users,
+                "new_users": new_users,
+                "old_users": old_users,
+                "active_users": active_users,
+                "returned_users": returned_users,
+                "new_rate": round(new_users * 100.0 / max(total_users, 1), 1),
+                "returned_rate": round(returned_users * 100.0 / max(old_users, 1), 1),
+                "active_rate": round(active_users * 100.0 / max(total_users, 1), 1),
+                "returned_share_active": round(returned_users * 100.0 / max(active_users, 1), 1),
+            }
+        except Exception as e:
+            print(f"[用户分析] 概览统计失败: {e}", flush=True)
+
+        def _recharge_sql(from_sql, where_sql, params):
+            return self.fetchone(
+                f"SELECT COUNT(*) AS c, COALESCE(SUM(price), 0) AS amt FROM {from_sql} WHERE {where_sql}",
+                tuple(params)
+            ) or {}
+
+        try:
+            base_w = f"status = {ph} AND DATE(created_at) >= {ph} AND DATE(created_at) <= {ph}"
+            po_join = f"payment_orders po JOIN users u ON u.username = po.username"
+            xy_join = f"xianyu_orders xo JOIN users u ON u.username = xo.username"
+            r1 = _recharge_sql(po_join, base_w, ["paid", date_from, date_to])
+            r2 = _recharge_sql(xy_join, base_w, ["paid", date_from, date_to])
+            total_orders = int(r1.get("c") or 0) + int(r2.get("c") or 0)
+            total_amount = round(float(r1.get("amt") or 0) + float(r2.get("amt") or 0), 2)
+            old_w = base_w + f" AND DATE(u.created_at) < {ph}"
+            r1o = _recharge_sql(po_join, old_w, ["paid", date_from, date_to, date_from])
+            r2o = _recharge_sql(xy_join, old_w, ["paid", date_from, date_to, date_from])
+            old_orders = int(r1o.get("c") or 0) + int(r2o.get("c") or 0)
+            old_amount = round(float(r1o.get("amt") or 0) + float(r2o.get("amt") or 0), 2)
+            result["orders"] = {
+                "total_orders": total_orders,
+                "total_amount": total_amount,
+                "old_orders": old_orders,
+                "old_amount": old_amount,
+                "new_orders": total_orders - old_orders,
+                "new_amount": round(total_amount - old_amount, 2),
+                "old_order_rate": round(old_orders * 100.0 / max(total_orders, 1), 1),
+                "old_amount_rate": round(old_amount * 100.0 / max(total_amount, 1), 1),
+            }
+        except Exception as e:
+            print(f"[用户分析] 充值统计失败: {e}", flush=True)
+        result["returning_users"] = self.fetchall(
+            f"""SELECT username, created_at, last_login_at FROM users
+                WHERE DATE(created_at) < {ph} AND last_login_at IS NOT NULL
+                  AND DATE(last_login_at) >= {ph} AND DATE(last_login_at) <= {ph}
+                ORDER BY last_login_at DESC LIMIT 20""",
+            (date_from, date_from, date_to)
+        ) or []
+        return result
 
     def upsert_question_bank(self, item):
         ph = _ph()
