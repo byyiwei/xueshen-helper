@@ -736,11 +736,36 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
         <div class="menu-item dock-item" :class="{active:page==='dashboard'}" @click="page='dashboard';loadDashboard()">
           <span class="icon">⌂</span>运营概览
         </div>
-        <div class="menu-item dock-item" :class="{active:page==='user-mgmt'}" @click="page='user-mgmt';loadUsers();loadLoginLocks()">
-          <span class="icon">◯</span>用户管理
+        <!-- 用户管理组 -->
+        <div class="menu-group" :class="{expanded:expandedGroups.users}">
+          <div class="menu-group-header dock-item" :class="{active:['user-mgmt','user-analysis'].includes(page)}" @click="expandedGroups.users=!expandedGroups.users">
+            <span class="icon">◯</span>用户管理
+            <span class="arrow">▶</span>
+          </div>
+          <div class="menu-group-items">
+            <div class="menu-item" :class="{active:page==='user-mgmt'}" @click="page='user-mgmt';loadUsers();loadLoginLocks()">
+              <span class="icon">◯</span>用户列表
+            </div>
+            <div class="menu-item" :class="{active:page==='user-analysis'}" @click="page='user-analysis';loadUserAnalysis()">
+              <span class="icon">◉</span>用户分析
+            </div>
+          </div>
         </div>
-        <div class="menu-item dock-item" :class="{active:page==='question-bank'}" @click="page='question-bank';loadQuestionBank()">
-          <span class="icon">▤</span>题库中心
+
+        <!-- 题库中心组 -->
+        <div class="menu-group" :class="{expanded:expandedGroups.questions}">
+          <div class="menu-group-header dock-item" :class="{active:['question-bank','bank-analysis'].includes(page)}" @click="expandedGroups.questions=!expandedGroups.questions">
+            <span class="icon">▤</span>题库中心
+            <span class="arrow">▶</span>
+          </div>
+          <div class="menu-group-items">
+            <div class="menu-item" :class="{active:page==='question-bank'}" @click="page='question-bank';loadQuestionBank()">
+              <span class="icon">▤</span>题库列表
+            </div>
+            <div class="menu-item" :class="{active:page==='bank-analysis'}" @click="page='bank-analysis';loadBankAnalysis()">
+              <span class="icon">▦</span>题库分析
+            </div>
+          </div>
         </div>
 
         <!-- 推广运营组 -->
@@ -801,15 +826,6 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
               <span class="icon">⚷</span>卡密管理
             </div>
           </div>
-        </div>
-
-        <!-- 题库分析 -->
-        <div class="menu-item dock-item" :class="{active:page==='bank-analysis'}" @click="page='bank-analysis';loadBankAnalysis()">
-          <span class="icon">▦</span>题库分析
-        </div>
-        <!-- 用户分析 -->
-        <div class="menu-item dock-item" :class="{active:page==='user-analysis'}" @click="page='user-analysis';loadUserAnalysis()">
-          <span class="icon">◉</span>用户分析
         </div>
 
         <!-- 日志监控组 -->
@@ -3411,8 +3427,8 @@ createApp({
     }
     const BREADCRUMB_MAP={
       'dashboard':[{label:'运营概览'}],
-      'user-mgmt':[{label:'用户管理'}],
-      'question-bank':[{label:'题库中心'}],
+      'user-mgmt':[{label:'用户管理',group:'users'},{label:'用户列表'}],
+      'question-bank':[{label:'题库中心',group:'questions'},{label:'题库列表'}],
       'referral':[{label:'推广运营',group:'referral'},{label:'返利配置'}],
       'referral-withdrawals':[{label:'推广运营',group:'referral'},{label:'提现审核'}],
       'feedback':[{label:'推广运营',group:'referral'},{label:'问题反馈'}],

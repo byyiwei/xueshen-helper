@@ -2596,16 +2596,18 @@ class Database:
             ) or {}
 
         try:
-            base_w = f"status = {ph} AND DATE(created_at) >= {ph} AND DATE(created_at) <= {ph}"
             po_join = f"payment_orders po JOIN users u ON u.username = po.username"
             xy_join = f"xianyu_orders xo JOIN users u ON u.username = xo.username"
-            r1 = _recharge_sql(po_join, base_w, ["paid", date_from, date_to])
-            r2 = _recharge_sql(xy_join, base_w, ["paid", date_from, date_to])
+            po_w = f"po.status = {ph} AND DATE(po.created_at) >= {ph} AND DATE(po.created_at) <= {ph}"
+            xy_w = f"xo.status = {ph} AND DATE(xo.created_at) >= {ph} AND DATE(xo.created_at) <= {ph}"
+            r1 = _recharge_sql(po_join, po_w, ["paid", date_from, date_to])
+            r2 = _recharge_sql(xy_join, xy_w, ["paid", date_from, date_to])
             total_orders = int(r1.get("c") or 0) + int(r2.get("c") or 0)
             total_amount = round(float(r1.get("amt") or 0) + float(r2.get("amt") or 0), 2)
-            old_w = base_w + f" AND DATE(u.created_at) < {ph}"
-            r1o = _recharge_sql(po_join, old_w, ["paid", date_from, date_to, date_from])
-            r2o = _recharge_sql(xy_join, old_w, ["paid", date_from, date_to, date_from])
+            old_po_w = po_w + f" AND DATE(u.created_at) < {ph}"
+            old_xy_w = xy_w + f" AND DATE(u.created_at) < {ph}"
+            r1o = _recharge_sql(po_join, old_po_w, ["paid", date_from, date_to, date_from])
+            r2o = _recharge_sql(xy_join, old_xy_w, ["paid", date_from, date_to, date_from])
             old_orders = int(r1o.get("c") or 0) + int(r2o.get("c") or 0)
             old_amount = round(float(r1o.get("amt") or 0) + float(r2o.get("amt") or 0), 2)
             result["orders"] = {
@@ -2617,6 +2619,8 @@ class Database:
                 "new_amount": round(total_amount - old_amount, 2),
                 "old_order_rate": round(old_orders * 100.0 / max(total_orders, 1), 1),
                 "old_amount_rate": round(old_amount * 100.0 / max(total_amount, 1), 1),
+                "new_order_rate": round((total_orders - old_orders) * 100.0 / max(total_orders, 1), 1),
+                "new_amount_rate": round((total_amount - old_amount) * 100.0 / max(total_amount, 1), 1),
             }
         except Exception as e:
             print(f"[用户分析] 充值统计失败: {e}", flush=True)
