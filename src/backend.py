@@ -241,6 +241,9 @@ def check_login_rate(scope, client_ip, username):
 # 格式: { "ip:path": {"count": N, "window_start": ts} }
 _API_RATE_BUCKETS = {}
 
+# 首页免费搜题：每日每用户最多搜索次数（不扣题数点数）
+WEB_SEARCH_DAILY_LIMIT = 30
+
 def check_api_rate(client_ip, path, max_count=30, window_sec=60):
     """通用 API 限流：每个 IP 在 window_sec 秒内对同一 path 最多 max_count 次"""
     key = f"{client_ip}:{path}"
@@ -3121,6 +3124,13 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, {"code": 200, "info": info})
         elif path == "/api/v1/auth":
             self._send_json(200, {"code": 200, "msg": "ok", "data": {"status": "running", "models": build_models_html()}})
+        elif path == "/api/v1/announce":
+            a = db.get_admin_config() or {}
+            self._send_json(200, {"code": 200, "data": {
+                "enabled": bool(a.get("announce_enabled")),
+                "title": a.get("announce_title") or "公告",
+                "text": a.get("announce_text") or ""
+            }})
         elif path == "/api/auth/current-session":
             session = load_current_user_session()
             token = session.get("token")
@@ -3711,6 +3721,17 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        # ==================== 公告通知（GET） ====================
+        elif path == "/admin/announce":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            a = db.get_admin_config() or {}
+            self._send_json(200, {"code": 200, "config": {
+                "announce_enabled": bool(a.get("announce_enabled")),
+                "announce_title": a.get("announce_title") or "公告",
+                "announce_text": a.get("announce_text") or ""
+            }})
         # ==================== 推广返利管理（GET） ====================
         elif path == "/admin/referral/config":
             if not self._check_admin():
@@ -3849,6 +3870,51 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {"code": 200, "template": template})
             else:
                 self._send_json(404, {"code": 404, "msg": "模板不存在"})
+
+        # ==================== 首页搜题（Web） ====================
+        elif path == "/api/web/random-questions":
+            # 首页题库精选：随机抽取题库题目展示，无需登录
+            ok_rate, retry_rate = check_api_rate(self._client_ip(), "/api/web/random-questions", 30, 60)
+            if not ok_rate:
+                self._send_json(429, {"code": 429, "msg": f"请求过于频繁，请 {retry_rate} 秒后再试"}, {"Retry-After": str(retry_rate)})
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                count = int(qs.get("count", ["6"])[0] or 6)
+                rows = db.get_random_bank_questions(count) or []
+                items = []
+                for r in rows:
+                    items.append({
+                        "question": (r.get("question_text") or "").strip(),
+                        "type": (r.get("question_type") or "").strip(),
+                        "options": [x.strip() for x in (r.get("options_text") or "").split("|") if x.strip()],
+                        "answer": (r.get("answer") or "").strip(),
+                        "hits": int(r.get("hit_count") or 0)
+                    })
+                try:
+                    total = db.count_question_bank()
+                except Exception:
+                    total = 0
+                self._send_json(200, {"code": 200, "items": items, "total": total})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/api/web/search-quota":
+            # 查询当前用户今日免费搜题剩余次数
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "未登录"})
+                return
+            try:
+                used = db.get_web_search_count(user["username"])
+                self._send_json(200, {
+                    "code": 200,
+                    "limit": WEB_SEARCH_DAILY_LIMIT,
+                    "used": used,
+                    "remaining": max(0, WEB_SEARCH_DAILY_LIMIT - used)
+                })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
 
         else:
             self._send_json(404, {"code": 404, "msg": "not found"})
@@ -5208,6 +5274,24 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send_json(500, {"code": 500, "msg": err})
 
+        # ==================== 公告通知（POST） ====================
+        elif path == "/admin/announce":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                enabled = 1 if data.get("announce_enabled") else 0
+                title = (data.get("announce_title") or "公告").strip()[:200]
+                text = (data.get("announce_text") or "").strip()
+                db.execute(
+                    "UPDATE admin_config SET announce_enabled=%s, announce_title=%s, announce_text=%s WHERE id=1",
+                    (enabled, title, text)
+                )
+                self._send_json(200, {"code": 200, "msg": "公告已保存"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         # ==================== 推广返利管理（POST） ====================
         elif path == "/admin/referral/config":
             if not self._check_admin():
@@ -5431,6 +5515,88 @@ class Handler(BaseHTTPRequestHandler):
                     f.write(f"[{datetime.now()}] {traceback.format_exc()}\n")
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        # ==================== AI 公告文案优化（POST） ====================
+        elif path == "/admin/ai/polish":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                raw_text = (data.get("text") or "").strip()
+                if not raw_text:
+                    self._send_json(400, {"code": 400, "msg": "请输入公告内容后再优化"})
+                    return
+                system_prompt = (
+                    "你是一位资深的产品运营与文案编辑专家。请将用户输入的公告文案优化得更加清晰、通顺、有感染力。"
+                    "要求：\n"
+                    "1. 保持原意不变，不添加不实信息或承诺\n"
+                    "2. 语言正式、简洁、重点突出\n"
+                    "3. 合理分段，适合在脚本首页公告栏展示\n"
+                    "4. 控制长度，避免冗长\n"
+                    "5. 只输出优化后的公告文案，不要输出任何解释、前缀或思考过程"
+                )
+                user_prompt = f"待优化的公告文案：\n{raw_text}\n\n请优化这段公告文案："
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ]
+                candidates = get_enabled_model_candidates()
+                if not candidates:
+                    self._send_json(500, {"code": 500, "msg": "没有可用的 AI 模型"})
+                    return
+                now = time.time()
+                reasoning_models = {"deepseek-reasoner", "deepseek-r1", "o1", "o3", "o4-mini", "deepseek-v4-flash"}
+                active = []
+                for item in candidates:
+                    model_name = item[2]
+                    if MODEL_FAIL_COOLDOWN.get(model_name, 0) > now:
+                        continue
+                    if MODEL_429_COOLDOWN.get(model_name, 0) > now:
+                        continue
+                    if is_model_token_exhausted(model_name):
+                        continue
+                    active.append(item)
+                if not active:
+                    self._send_json(500, {"code": 500, "msg": "AI 模型暂时不可用，请稍后重试"})
+                    return
+                active.sort(key=lambda x: (1 if x[2].lower() in reasoning_models else 0, -x[3]))
+                max_tries = min(3, len(active))
+                answer = None
+                err = None
+                tokens = 0
+                used_model = None
+                for idx in range(max_tries):
+                    provider_name, provider_info, model_name, _ = active[idx]
+                    per_timeout = 15 if idx == 0 else 30
+                    print(f"[AI公告优化] 尝试 {idx+1}/{max_tries} model={model_name}, provider={provider_name}, timeout={per_timeout}s", flush=True)
+                    answer, err, tokens = call_llm_lightweight(messages, model_name, provider_info, timeout=per_timeout)
+                    if answer:
+                        used_model = model_name
+                        break
+                    if err and "内容审核拦截" in err:
+                        simple_prompt = f"请将以下公告文案润色得更通顺、清晰、正式，只输出润色后的内容：\n\n{raw_text}"
+                        answer, err2, tokens2 = call_llm_lightweight([
+                            {"role": "user", "content": simple_prompt}
+                        ], model_name, provider_info, timeout=30)
+                        if answer:
+                            used_model = model_name
+                            tokens = tokens2
+                            break
+                if answer:
+                    record_model_token_usage(used_model or model_name, tokens)
+                    self._send_json(200, {"code": 200, "text": answer.strip()})
+                else:
+                    _err_lower = (err or "").lower()
+                    if "timed out" in _err_lower or "timeout" in _err_lower or "read operation" in _err_lower:
+                        self._send_json(500, {"code": 500, "msg": "AI 响应超时，请稍后重试或手动编辑公告内容"})
+                    else:
+                        self._send_json(500, {"code": 500, "msg": err or "AI 优化失败"})
+            except Exception as e:
+                import traceback
+                with open("/tmp/ai_polish_error.log", "a") as f:
+                    f.write(f"[{datetime.now()}] {traceback.format_exc()}\n")
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         elif path == "/admin/feedback/status":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -5635,6 +5801,79 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
         # ========== AI 答题接口 ==========
+        # ========== 首页免费搜题（仅题库直查，不扣题数点数，每日限 30 次） ==========
+        elif path == "/api/web/search":
+            try:
+                # 安全：答题接口限流，每 IP 每分钟最多 30 次
+                ok_rate, retry_rate = check_api_rate(self._client_ip(), "/api/web/search", 30, 60)
+                if not ok_rate:
+                    self._send_json(429, {"code": 429, "msg": f"请求过于频繁，请 {retry_rate} 秒后再试"}, {"Retry-After": str(retry_rate)})
+                    return
+                user = self._get_user_from_token()
+                if not user:
+                    self._send_json(401, {"code": 401, "msg": "请先登录后再搜题"})
+                    return
+                if user.get("is_banned"):
+                    self._send_json(403, {"code": 403, "msg": "账号已被封禁：" + (user.get("ban_reason") or "请联系管理员")})
+                    return
+                params = parse_qs(body)
+                question = (params.get("question", [""])[0] or "").strip()
+                if not question:
+                    self._send_json(400, {"code": 400, "msg": "请输入要搜索的题目"})
+                    return
+                if len(question) > 2000:
+                    self._send_json(400, {"code": 400, "msg": "题目内容过长，请控制在 2000 字以内"})
+                    return
+                username = user["username"]
+                used = db.get_web_search_count(username)
+                if used >= WEB_SEARCH_DAILY_LIMIT:
+                    self._send_json(429, {
+                        "code": 429,
+                        "msg": f"今日免费搜题次数已用完（每天 {WEB_SEARCH_DAILY_LIMIT} 次），明天再来吧",
+                        "limit": WEB_SEARCH_DAILY_LIMIT,
+                        "used": used,
+                        "remaining": 0
+                    })
+                    return
+                bank_row, question_hash, bank_method, bank_duration = get_question_bank_match(question)
+                _bank_info = parse_question_payload(question)
+                enqueue_bank_log({
+                    "username": username,
+                    "question_hash": question_hash,
+                    "question_text": _bank_info.get("question_text", question)[:500],
+                    "question_type": _bank_info.get("question_type", ""),
+                    "options_text": " | ".join(_bank_info.get("options", [])),
+                    "matched": bool(bank_row),
+                    "matched_hash": bank_row.get("question_hash", "") if bank_row else "",
+                    "match_method": ("web_" + bank_method) if bank_method else "web_none",
+                    "duration_ms": int(bank_duration or 0),
+                    "client_ip": self.client_address[0] if self.client_address else ""
+                })
+                used = db.increment_web_search_count(username)
+                remaining = max(0, WEB_SEARCH_DAILY_LIMIT - used)
+                quota_info = {"limit": WEB_SEARCH_DAILY_LIMIT, "used": used, "remaining": remaining}
+                if bank_row and bank_row.get("answer"):
+                    answer = normalize_ai_answer(question, bank_row.get("answer", ""))
+                    options = [x.strip() for x in (bank_row.get("options_text") or "").split("|") if x.strip()]
+                    print(f"[首页搜题] 命中 user={username} hash={question_hash[:12]} ({bank_duration:.1f}ms)", flush=True)
+                    self._send_json(200, {"code": 200, "msg": "搜索成功", "data": {
+                        "found": True,
+                        "question": (bank_row.get("question_text") or _bank_info.get("question_text") or question)[:500],
+                        "type": (bank_row.get("question_type") or _bank_info.get("question_type") or ""),
+                        "options": options,
+                        "answer": answer,
+                        "match": bank_method or "hash",
+                        **quota_info
+                    }})
+                else:
+                    print(f"[首页搜题] 未命中 user={username} question={question[:60]}...", flush=True)
+                    self._send_json(200, {"code": 200, "msg": "题库暂未收录该题目", "data": {
+                        "found": False,
+                        **quota_info
+                    }})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         elif path == "/api/v1/cx":
             start_ts = time.time()
             question = ""

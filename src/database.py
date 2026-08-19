@@ -697,6 +697,18 @@ class Database:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
 
+        # 首页免费搜题每日计数表（按 用户+日期 记录当天搜索次数）
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS web_search_daily (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                username VARCHAR(100) NOT NULL,
+                search_date DATE NOT NULL,
+                search_count INT DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE INDEX idx_user_date (username, search_date)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
     def _ensure_index(self, table, index_name, *columns):
         """确保普通索引存在，不存在则创建"""
         try:
@@ -975,6 +987,10 @@ class Database:
         self._add_column_if_missing("admin_config", "xianyu_url", "xianyu_url VARCHAR(255) DEFAULT ''")
         self._add_column_if_missing("admin_config", "card_pay_name", "card_pay_name VARCHAR(50) DEFAULT '卡密激活'")
         self._add_column_if_missing("admin_config", "card_pay_icon", "card_pay_icon TEXT")
+        # 公告通知配置
+        self._add_column_if_missing("admin_config", "announce_enabled", "announce_enabled TINYINT DEFAULT 0")
+        self._add_column_if_missing("admin_config", "announce_text", "announce_text TEXT")
+        self._add_column_if_missing("admin_config", "announce_title", "announce_title VARCHAR(200) DEFAULT ''")
 
     def _ensure_order_payment_columns(self):
         self._add_column_if_missing("payment_orders", "pay_method", "pay_method VARCHAR(20)")
@@ -2498,6 +2514,40 @@ class Database:
             sql += " WHERE " + " AND ".join(where)
         row = self.fetchone(sql, tuple(params))
         return int(row.get("total", 0) if row else 0)
+
+    def get_web_search_count(self, username):
+        """获取用户今日首页免费搜题已用次数"""
+        ph = _ph()
+        row = self.fetchone(
+            f"SELECT search_count FROM web_search_daily WHERE username = {ph} AND search_date = CURDATE()",
+            (username,)
+        )
+        return int(row.get("search_count") or 0) if row else 0
+
+    def increment_web_search_count(self, username):
+        """用户今日首页免费搜题次数 +1，返回最新次数"""
+        ph = _ph()
+        self.execute(
+            f"""INSERT INTO web_search_daily (username, search_date, search_count)
+                VALUES ({ph}, CURDATE(), 1)
+                ON DUPLICATE KEY UPDATE search_count = search_count + 1""",
+            (username,)
+        )
+        return self.get_web_search_count(username)
+
+    def get_random_bank_questions(self, count=6):
+        """从题库随机抽取有答案的题目，供首页展示"""
+        try:
+            count = int(count)
+        except Exception:
+            count = 6
+        count = max(1, min(count, 12))
+        sql = """SELECT question_hash, question_text, question_type, options_text, answer, hit_count
+                 FROM question_bank
+                 WHERE answer IS NOT NULL AND answer <> ''
+                   AND CHAR_LENGTH(question_text) >= 6 AND CHAR_LENGTH(question_text) <= 300
+                 ORDER BY RAND() LIMIT """ + str(count)
+        return self.fetchall(sql)
 
     def get_question_bank_stats(self, new_from="", new_to=""):
         """题库分析：总题数、调用最多/最少、新加入占比、题型分布"""

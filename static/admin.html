@@ -770,7 +770,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
 
         <!-- 推广运营组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.referral}">
-          <div class="menu-group-header dock-item" :class="{active:['referral','referral-withdrawals','feedback'].includes(page)}" @click="expandedGroups.referral=!expandedGroups.referral">
+          <div class="menu-group-header dock-item" :class="{active:['referral','referral-withdrawals','feedback','announce'].includes(page)}" @click="expandedGroups.referral=!expandedGroups.referral">
             <span class="icon">★</span>推广运营
             <span class="arrow">▶</span>
           </div>
@@ -783,6 +783,9 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
             </div>
             <div class="menu-item" :class="{active:page==='feedback'}" @click="page='feedback';loadFeedbackList();loadFeedbackAutoClose();loadFeedbackNotify()">
               <span class="icon">✎</span>问题反馈
+            </div>
+            <div class="menu-item" :class="{active:page==='announce'}" @click="page='announce';loadAnnounceConfig()">
+              <span class="icon">◎</span>公告通知
             </div>
           </div>
         </div>
@@ -2821,6 +2824,44 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
       <div v-if="referralQrPreview" style="position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999" @click="referralQrPreview=''">
         <img :src="referralQrPreview" style="max-width:80%;max-height:80%;border-radius:10px">
       </div>
+      <!-- 公告通知 -->
+      <template v-if="page==='announce'">
+        <header class="main-header">
+          <h2>公告通知</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index<breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="card">
+            <div class="card-header"><h3>脚本首页公告设置</h3></div>
+            <div class="card-body">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>启用公告</label>
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <label class="switch"><input type="checkbox" v-model="announceConfig.announce_enabled"><span class="slider"></span></label>
+                    <span style="font-size:13px;color:var(--text3)">{{announceConfig.announce_enabled?'已开启':'已关闭'}}</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label>公告标题</label>
+                  <input v-model="announceConfig.announce_title" class="form-control" placeholder="公告">
+                  <small style="color:var(--text3)">显示在公告条标题，默认「公告」</small>
+                </div>
+                <div class="form-group" style="width:100%">
+                  <label>公告内容</label>
+                  <div style="position:relative">
+                    <textarea v-model="announceConfig.announce_text" class="form-control" rows="6" placeholder="请输入公告内容，支持换行"></textarea>
+                    <button class="btn btn-primary" :disabled="announcePolishing" @click="aiPolishAnnounce" style="position:absolute;right:10px;bottom:10px;padding:3px 12px;font-size:12px;border-radius:4px;opacity:.95">{{announcePolishing?'优化中...':'✨ AI优化'}}</button>
+                  </div>
+                  <small style="color:var(--text3)">保存后，用户在脚本首页顶部即可看到该公告</small>
+                </div>
+              </div>
+              <button class="btn btn-success" :disabled="announceSaving" @click="saveAnnounceConfig" style="margin-top:16px">{{announceSaving?'保存中...':'保存公告'}}</button>
+            </div>
+          </div>
+        </div>
+      </template>
       <template v-if="page==='pay-test'">
         <header class="main-header">
           <h2>支付测试</h2>
@@ -3432,6 +3473,7 @@ createApp({
       'referral':[{label:'推广运营',group:'referral'},{label:'返利配置'}],
       'referral-withdrawals':[{label:'推广运营',group:'referral'},{label:'提现审核'}],
       'feedback':[{label:'推广运营',group:'referral'},{label:'问题反馈'}],
+      'announce':[{label:'推广运营',group:'referral'},{label:'公告通知'}],
       'payment-orders':[{label:'支付财务',group:'payment'},{label:'支付明细'}],
       'payment':[{label:'支付财务',group:'payment'},{label:'套餐配置'}],
       'pay-api':[{label:'支付财务',group:'payment'},{label:'支付接口'}],
@@ -4745,7 +4787,7 @@ createApp({
     const mobileSidebarOpen=ref(false);
     const mobileSubmenu=ref(null);
     const MOBILE_SUBMENU_MAP={
-      referral:{title:'推广运营',icon:'★',items:[{page:'referral',label:'返利配置',icon:'⚙',load:loadReferralConfig},{page:'referral-withdrawals',label:'提现审核',icon:'¥',load:loadReferralWithdrawals},{page:'feedback',label:'问题反馈',icon:'✎',load:()=>{loadFeedbackList();loadFeedbackAutoClose();loadFeedbackNotify();}}]},
+      referral:{title:'推广运营',icon:'★',items:[{page:'referral',label:'返利配置',icon:'⚙',load:loadReferralConfig},{page:'referral-withdrawals',label:'提现审核',icon:'¥',load:loadReferralWithdrawals},{page:'feedback',label:'问题反馈',icon:'✎',load:()=>{loadFeedbackList();loadFeedbackAutoClose();loadFeedbackNotify();}},{page:'announce',label:'公告通知',icon:'◎',load:loadAnnounceConfig}]},
       payment:{title:'支付财务',icon:'□',items:[{page:'payment-orders',label:'支付明细',icon:'▤',load:loadPaymentOrders},{page:'payment',label:'套餐配置',icon:'◈',load:loadPaymentConfig},{page:'pay-api',label:'支付接口',icon:'⌁',load:loadPayApiConfig},{page:'pay-test',label:'支付测试',icon:'◎',load:()=>{}},{page:'refund-requests',label:'退款申请',icon:'↩',load:loadRefundRequests}]},
       card:{title:'卡密管理',icon:'⚷',items:[{page:'xianyu',label:'商品配置',icon:'●',load:loadXianyuConfig},{page:'card-keys',label:'卡密管理',icon:'⚷',load:loadCardKeys}]},
       logs:{title:'日志监控',icon:'☰',items:[{page:'script-logs',label:'脚本日志',icon:'⌘',load:loadScriptLogs},{page:'ai-logs',label:'模型日志',icon:'≡',load:loadAiLogs},{page:'bank-logs',label:'题库日志',icon:'◎',load:loadBankLogs},{page:'log-cleanup',label:'日志清理',icon:'∅',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'⊙',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
@@ -4828,6 +4870,41 @@ createApp({
         const d=await res.json();
         if(d.code===200&&d.config){referralConfig.value={...d.config};}
       }catch(_){}
+    }
+    // ========== 公告通知 ==========
+    const announceConfig=ref({announce_enabled:false,announce_title:'公告',announce_text:''});
+    const announceSaving=ref(false);
+    async function loadAnnounceConfig(){
+      try{
+        const res=await safeFetch('/admin/announce',{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200&&d.config){announceConfig.value={...announceConfig.value,...d.config};}
+      }catch(_){}
+    }
+    async function saveAnnounceConfig(){
+      announceSaving.value=true;
+      try{
+        const res=await fetch('/admin/announce',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify(announceConfig.value)});
+        const d=await res.json();
+        showMsg(d.msg||'保存失败',d.code===200?'success':'error');
+        if(d.code===200)loadAnnounceConfig();
+      }catch(_){showMsg('网络错误','error');}
+      announceSaving.value=false;
+    }
+    const announcePolishing=ref(false);
+    async function aiPolishAnnounce(){
+      const text=announceConfig.value.announce_text.trim();
+      if(!text){showMsg('请先输入公告内容','error');return;}
+      announcePolishing.value=true;
+      try{
+        const res=await safeFetch('/admin/ai/polish',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({text})});
+        const d=await res.json();
+        if(d.code===200&&d.text){
+          announceConfig.value.announce_text=d.text;
+          showMsg('AI优化完成','success');
+        }else{showMsg(d.msg||'AI优化失败','error');}
+      }catch(_){showMsg('网络错误','error');}
+      announcePolishing.value=false;
     }
     async function saveReferralConfig(){
       referralSaving.value=true;
@@ -5166,6 +5243,7 @@ createApp({
       loadLogCleanup,saveLogCleanup,runLogCleanupNow,logRetentionDays,logCleanupSaving,logCleanupRunning,logCleanupResult,payTestForm,payTestLoading,payTestResult,runPayTest,payApiWeightTotal,payApiWeightPercent,refreshSandpayParams,onSandpayAdvancedChange,
       referralTab,referralConfig,referralSaving,referralWithdrawals,referralWdFilter,referralWdSummary,referralStats,referralQrPreview,
       loadReferralConfig,saveReferralConfig,loadReferralWithdrawals,approveWithdrawal,rejectWithdrawal,loadReferralStats,
+      announceConfig,announceSaving,announcePolishing,loadAnnounceConfig,saveAnnounceConfig,aiPolishAnnounce,
       expandedGroups,isMobile,mobileSidebarOpen,mobileSubmenu,openMobileSubmenu,handleGroupClick,
        paymentOrders,paymentOrdersFilter,paymentOrdersSort,paymentOrdersPage,paymentOrdersPageSize,paymentOrdersTotal,paymentOrdersTotalPages,paymentOrdersSum,
         loadPaymentOrders,togglePaymentSort,paymentOrdersSearch,paymentOrdersPrev,paymentOrdersNext,

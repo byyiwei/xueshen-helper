@@ -1,7 +1,7 @@
-﻿// ==UserScript==
+// ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.2.3
+// @version      5.2.4
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @author       IPYIWEI
@@ -10,6 +10,12 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.2.4 更新内容：
+// @changelog    1. 账号登录移至标题栏下方常驻，切换任意页面Tab登录状态均可见
+// @changelog    2. 视频倍速支持最高16倍，可在设置中自定义，设置后即时生效无需刷新页面
+// @changelog    3. 首页新增"QQ频道"入口，一键加入腾讯频道
+// @changelog    4. 最小化悬浮球及旋转光晕缩小，界面更精简
+// @changelog    5. 修复视频倍速设置偶发失效问题
 // @changelog    v5.2.3 更新内容：
 // @changelog    1. 账号自动登录稳定性优化（仅 401/403 清除登录记忆，网络异常保留登录状态）
 // @changelog    2. 登录 Token 有效期延长至 180 天，减少频繁重新登录
@@ -33,6 +39,7 @@
 // @match        *://*.zhihuishu.com/*
 // @match        *://*.edu.cn/*
 // @match        *://*.jxrtvu.com/*
+// @match        *://*.o-learn.cn/*
 // @require      https://cdn.jsdelivr.net/npm/vue@3.4.31/dist/vue.global.prod.js
 // @require      https://cdn.jsdelivr.net/npm/vue-demi@0.14.7/lib/index.iife.js
 // @require      data:application/javascript,window.Vue%3DVue%3B
@@ -53,6 +60,8 @@
 // @connect      chaoxing.com
 // @connect      zhihuishu.com
 // @connect      xs.openget.cn
+// @connect      *.o-learn.cn
+// @connect      *.webtrn.cn
 // @connect      127.0.0.1
 // @connect      localhost
 // @grant        GM_getResourceText
@@ -74,7 +83,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
 // === 内联数据结束 ===
 
 
-(e=>{document.__abcHelperCSS=e})(' .theme-light{--t-bg:#f5f6f8;--t-surface:#fff;--t-surface2:#f0f2f5;--t-border:#e2e5ea;--t-border2:#d1d5db;--t-text:#1a1a2e;--t-text2:#4b5563;--t-text3:#9ca3af;--t-primary:#2563eb;--t-primary-bg:#eff6ff;--t-primary-border:#bfdbfe;--t-accent:#7c3aed;--t-success:#16a34a;--t-warning:#d97706;--t-danger:#dc2626;--t-info:#0891b2;--t-pink:#db2777;--t-shadow:rgba(0,0,0,.08);--t-shadow2:rgba(0,0,0,.04)}.theme-dark{--t-bg:#0d1117;--t-surface:#161b22;--t-surface2:#1c2330;--t-border:#30363d;--t-border2:#484f58;--t-text:#e6edf3;--t-text2:#9198a1;--t-text3:#6e7681;--t-primary:#3b82f6;--t-primary-bg:rgba(59,130,246,.1);--t-primary-border:rgba(59,130,246,.3);--t-accent:#a78bfa;--t-success:#3fb950;--t-warning:#d29922;--t-danger:#f85149;--t-info:#22d3ee;--t-pink:#f472b6;--t-shadow:rgba(0,0,0,.3);--t-shadow2:rgba(0,0,0,.15)}.log-wrap{font:13px "Segoe UI",system-ui,-apple-system,sans-serif}.log-wrap{display:flex;flex-direction:column;height:100%}.log-wrap .console{flex:1;min-height:200px;max-height:calc(100vh - 120px);width:100%;box-sizing:border-box;overflow-y:scroll;background:var(--t-surface2);padding:10px;color:var(--t-text2);font-size:12px;border-radius:6px;border:1px solid var(--t-border)}.log-wrap .console div{padding:2px 0}.log-wrap .console div span{margin:0 3px}.log-wrap .console div span .module{background:var(--t-primary);color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:600}.log-wrap .console .log{color:var(--t-text3)}.log-wrap .console .warning{color:var(--t-warning)}.home-wrap[data-v-137ea562]{font:14px "Segoe UI",system-ui,-apple-system,sans-serif;color:var(--t-text)}.home-wrap a{color:var(--t-primary);text-decoration:none}.home-wrap a:hover{text-decoration:underline}.home-wrap ol li{line-height:26px;list-style-type:decimal;list-style-position:inside;color:var(--t-text2)}.home-wrap .tips ul li span{color:var(--t-warning)}.home-wrap .hero{padding:16px 14px;margin:8px;background:linear-gradient(135deg,var(--t-primary),var(--t-accent));border-radius:8px;color:#fff;text-align:center}.home-wrap .hero .hero-title{font-size:18px;font-weight:700;margin-bottom:4px}.home-wrap .hero .hero-sub{font-size:12px;opacity:.85}.home-wrap .home-section{margin:8px;padding:12px 14px;background:var(--t-surface);border:1px solid var(--t-border);border-radius:6px}.home-wrap .home-section .section-title{font-size:13px;font-weight:700;color:var(--t-text);margin-bottom:8px;display:flex;align-items:center;gap:4px}.home-wrap .home-section ul{list-style:none;padding:0;margin:0}.home-wrap .home-section ul li{list-style:none;padding:4px 0;color:var(--t-text2);font-size:12px;line-height:1.6}.collapsible-section{cursor:pointer;user-select:none;transition:background .15s}.collapsible-section:hover{background:var(--t-surface2)}.collapsible-section .section-title{justify-content:space-between;gap:8px;margin-bottom:0}.collapse-icon{font-size:14px;color:var(--t-text3);font-weight:700;width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:4px;background:var(--t-surface2);transition:all .15s}.collapsible-section:hover .collapse-icon{background:var(--t-primary-bg);color:var(--t-primary)}.home-card-btn{display:block;margin-top:8px;padding:10px 12px;background:linear-gradient(135deg,var(--t-primary),var(--t-accent));border-radius:6px;color:#fff!important;text-align:center;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;transition:opacity .15s,transform .15s}.home-card-btn:hover{opacity:.9;transform:translateY(-1px);color:#fff!important}.home-wrap .login-box{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}.home-wrap .login-box input{height:30px;width:140px;padding:0 8px;border:1px solid var(--t-border2);border-radius:4px;background:var(--t-surface);color:var(--t-text);font-size:12px;outline:none}.home-wrap .login-box input:focus{border-color:var(--t-primary)}.home-wrap .login-box button{height:30px;padding:0 12px;border:none;border-radius:4px;font-size:12px;cursor:pointer;font-weight:500;transition:opacity .15s}.home-wrap .login-box button:hover{opacity:.85}.home-wrap .login-box .btn-primary{background:var(--t-primary);color:#fff}.home-wrap .login-box .btn-ghost{background:var(--t-surface2);color:var(--t-text2);border:1px solid var(--t-border2)}.home-wrap .login-box .btn-outline{background:transparent;color:var(--t-primary);border:1px solid var(--t-primary)}.home-wrap .login-meta{display:flex;gap:8px;align-items:center;margin-top:6px;color:var(--t-text3);font-size:11px;flex-wrap:wrap}.home-wrap .login-msg{margin-top:6px;font-size:12px}.answer-wrap .search-info{-webkit-user-select:none;user-select:none;box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:4px;border:1px solid var(--t-border2);margin-right:4px;font-weight:600;font-size:11px;background:var(--t-surface2);color:var(--t-text3);flex-shrink:0}.answer-wrap .search-info.default{box-shadow:none}.answer-wrap .search-info.searching{box-shadow:0 0 6px 1px var(--t-primary-border);border-color:var(--t-primary);color:var(--t-primary);animation:pulse 1.2s ease infinite}.answer-wrap .search-info.success{color:#fff;border:0;background:var(--t-success)}.answer-wrap .search-info.ai-success{color:#fff;border:0;background:var(--t-accent)}.answer-wrap .search-info.warning{color:var(--t-warning);border:1px solid var(--t-warning)}.answer-wrap .answer-tips{font-size:12px;color:var(--t-text3)}.answer-wrap .answer-tips span{margin-right:4px}.answer-wrap .answer-tips .box-tips{display:flex;align-items:center}.answer-wrap .answer-tips .box-tips div{margin:0 4px 0 0!important}.answer-wrap .answer-tips .box-tips span{margin-right:8px}.answer-wrap .answer-list{flex-wrap:wrap;color:var(--t-text);display:flex}.answer-wrap .answer-list .search-info{cursor:pointer!important}.answer-wrap .answer-list div{margin:0 8px 8px 0!important;cursor:pointer!important}.answer-wrap .answer-detail{position:relative;max-height:200px;overflow-y:scroll;scroll-behavior:smooth}.answer-wrap .answer-detail .answer-item{margin-bottom:8px}.answer-wrap .answer-detail .answer-content{margin-top:4px;padding:8px 10px;border-radius:4px;background:var(--t-surface2);font-weight:600;color:var(--t-text);border-left:2px solid var(--t-primary);font-size:13px}.answer-wrap .answer-detail .answer-content .module{padding:1px 4px;border-radius:3px;color:var(--t-text3);border:1px solid var(--t-border2);font-size:10px}.ant-tooltip,.ant-select-dropdown{z-index:99999!important}.config-wrap{min-width:420px!important;width:420px!important;max-width:480px;color:var(--t-text);font-size:13px;padding:10px 16px;box-sizing:border-box}.config-wrap .config{margin-bottom:14px;display:flex;align-items:flex-start;gap:12px;min-height:32px}.config-wrap .config .config-name{display:flex;align-items:flex-start;width:120px;flex-shrink:0;font-size:12px;color:var(--t-text2);line-height:1.5;padding-top:6px}.config-wrap .config .config-input{flex:1;display:flex;align-items:center;justify-content:flex-start;gap:6px;min-width:0;padding-top:2px}.config-wrap .config .config-input .ant-select{width:100%!important;max-width:260px}.config-wrap .config .config-input .ant-input{width:100%!important;max-width:260px}.config-wrap .config .config-input .ant-input-number{width:100px!important}.config-wrap .config .config-input .ant-slider{flex:1;max-width:180px!important;margin:0 10px 0 0}.config-wrap .buy-btn{background:var(--t-primary);padding:5px 12px;border-radius:4px;height:28px;color:#fff;cursor:pointer;font-weight:600;border:none;font-size:12px;white-space:nowrap}.config-wrap .buy-btn a{color:#fff}.config-wrap .switch-item{display:inline-flex!important;width:calc(50% - 6px)!important;margin-right:12px;margin-bottom:12px!important;vertical-align:top;box-sizing:border-box;gap:8px}.config-wrap .switch-item .config-name{flex:1;width:auto!important;padding-top:0;line-height:1.5;word-break:break-word}.config-wrap .switch-item .config-input{width:auto!important;flex:none;padding-top:0}.config-wrap .switch-item .ant-switch{margin-top:0!important}.config-wrap .switch-item:nth-of-type(2n){margin-right:0}.ant-message{z-index:999999!important}.online-search-wrap{color:var(--t-text);width:420px;box-sizing:border-box}.online-search-wrap .config{padding:8px 10px 4px;display:flex}.online-search-wrap .config .config-name{width:150px}.online-search-wrap .config .config-input{display:flex;justify-content:right;flex:1}.online-search-wrap .searth-input-wrap{padding:8px 10px 4px;display:flex}.online-search-wrap .searth-input-wrap .title{padding-top:5px}.online-search-wrap .searth-input-wrap .searth-input{margin-left:16px;flex:1}.online-search-wrap .search-btn{padding-right:10px;display:flex;justify-content:right}.online-search-wrap .result-list{margin-top:8px;max-height:calc(100vh - 200px);overflow:auto}.online-search-wrap .result-list .result-item{margin-bottom:8px}.online-search-wrap .result-list .result-item em{font-weight:600;color:var(--t-warning)}.online-search-wrap .result-list .result-answer{margin-top:4px;padding:8px 10px;border-radius:4px;background:var(--t-surface2);font-weight:600;color:var(--t-text);border-left:2px solid var(--t-primary)}div{margin:0}.ai-wrapper{width:420px}.ai-message-role-avatar{margin:0}.ai-message-content{margin:0;padding:8px 10px;border-radius:6px;background:var(--t-surface2);font-size:14px;-webkit-user-select:text;user-select:text;word-break:break-word;border:1px solid var(--t-border);position:relative;transition:all .2s ease}.ai-message-content pre{white-space:pre-wrap;background:var(--t-bg);color:var(--t-text);padding:10px;border-radius:4px;border:1px solid var(--t-border);font-size:13px}.ai-message-container{display:flex;flex-direction:column;align-items:flex-start}.ai-message-container.user-message{align-items:flex-end}.ai-message-list{height:calc(100vh - 160px);max-height:360px;min-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:8px}.ai-message-item{width:100%}.user-avatar{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:4px;border:1px solid var(--t-border);background:var(--t-primary-bg);margin-bottom:4px;font-size:13px}.ai-input-wrapper{padding:8px;margin-top:8px;border-radius:6px;border:1px solid var(--t-border);display:flex;align-items:center;justify-content:center;background:var(--t-surface)}.ai-input-wrapper textarea{flex:1;height:46px;border:none;margin-right:8px;background:transparent;color:var(--t-text);resize:none;outline:none}.send-message-btn{display:flex;align-items:center;justify-content:center;height:34px;border-radius:4px;border:none;padding:0 12px;background:var(--t-primary);color:#fff;cursor:pointer!important;gap:4px;font-weight:600;font-size:13px}.send-message-btn:hover{opacity:.85}.loading-container{display:flex;align-items:center;justify-content:center;gap:4px}.record-wrap{padding-bottom:6px}.record-tip{display:flex;align-items:center;justify-content:space-between;padding:0 8px 6px;color:var(--t-text3);font-size:11px}.record-filter{display:flex;gap:6px;padding:0 8px 8px;flex-wrap:wrap}.filter-btn{padding:3px 8px;color:var(--t-text2);background:var(--t-surface2);border:1px solid var(--t-border);border-radius:3px;cursor:pointer;transition:all .15s ease;font-size:11px}.filter-btn:hover{color:var(--t-primary);border-color:var(--t-primary-border);background:var(--t-primary-bg)}.filter-btn.active{color:var(--t-primary);border-color:var(--t-primary);background:var(--t-primary-bg)}.record-list{display:flex;flex-direction:column;gap:6px;padding:0 8px 6px;max-height:calc(100vh - 160px);overflow-y:auto}.clear-btn{color:var(--t-text2);border-color:var(--t-border);background:var(--t-surface2);border-radius:3px;font-size:12px}.clear-btn:hover,.clear-btn:focus{color:var(--t-danger);border-color:var(--t-danger);background:rgba(220,38,38,.06)}.record-item{padding:8px 10px;border:1px solid var(--t-border);border-radius:4px;background:var(--t-surface);transition:border-color .15s}.record-item:hover{border-color:var(--t-border2)}.record-row{display:flex;align-items:flex-start;line-height:20px;font-size:12px}.record-label{width:60px;flex-shrink:0;color:var(--t-primary);font-weight:600;font-size:11px}.record-value{flex:1;color:var(--t-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tab-content{flex:1!important;min-width:420px!important;width:420px!important;min-height:320px;max-width:480px;max-height:calc(100vh - 96px);overflow-y:auto;padding:8px 12px;box-sizing:border-box}.ant-tabs-nav-operations{display:none!important}.box-content{min-width:300px;display:flex!important;flex-direction:row!important;gap:0!important}.separator{display:flex;align-items:center;padding:14px 0 10px;font-size:13px;font-weight:700;color:var(--t-text);border-top:1px solid var(--t-border);margin-top:6px}.separator:first-child{border-top:none;margin-top:0}.tips{padding:10px 12px;background:rgba(217,119,6,.06);border:1px solid rgba(217,119,6,.15);border-radius:6px;width:-webkit-fill-available;margin:4px 0 14px;line-height:22px;letter-spacing:.2px;color:var(--t-warning);font-size:12px;box-sizing:border-box}.tips button{background:var(--t-warning)!important;border-color:var(--t-warning)!important;color:#fff!important}.tips a{color:var(--t-primary);text-decoration:underline}.backend-dropdown-overlay{z-index:100001!important}.ant-dropdown-menu{background:var(--t-surface)!important;border:1px solid var(--t-border)!important;border-radius:4px!important;box-shadow:0 4px 16px var(--t-shadow)!important;padding:4px 0!important}.ant-dropdown-menu-item{color:var(--t-text)!important;font-size:12px!important;padding:6px 12px!important}.ant-dropdown-menu-item:hover{background:var(--t-primary-bg)!important;color:var(--t-primary)!important}.ant-dropdown-menu-item-divider{background-color:var(--t-border)!important}.main-wrap{position:fixed;top:0;z-index:99999!important;user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;pointer-events:auto}.message-container{margin-bottom:4px;position:absolute;bottom:100%;left:50%;width:100%;transform:translate(-50%);min-width:280px}.main-box{padding:0;font:13px "Segoe UI",system-ui,-apple-system,sans-serif;color:var(--t-text);background:var(--t-bg);box-shadow:0 8px 32px var(--t-shadow),0 0 0 1px var(--t-border);border-radius:8px;letter-spacing:0;overflow:hidden;transition:box-shadow .2s;display:flex;flex-direction:column;max-height:calc(100vh - 60px)}.main-box:hover{box-shadow:0 12px 32px var(--t-shadow),0 0 0 1px var(--t-border2)}.main-box .box-header{display:flex;justify-content:space-between;align-items:center;height:36px;cursor:move;padding:0 10px;background:var(--t-surface);border-bottom:1px solid var(--t-border);flex-shrink:0}.main-box .box-header div{margin:0}.main-box .box-header .header-left{display:flex;align-items:center;gap:6px}.main-box .box-header .script-info{-webkit-user-select:none!important;user-select:none!important;font-weight:700;color:var(--t-primary);letter-spacing:0;font-size:13px;display:flex;align-items:center;gap:4px}.main-box .box-header .script-info:before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--t-success);box-shadow:0 0 4px var(--t-success);margin-right:2px}.main-box .box-header .backend-entry{text-decoration:none;color:var(--t-text2);padding:3px 8px;border-radius:4px;cursor:pointer;-webkit-user-select:none!important;user-select:none!important;transition:all .15s ease;font-size:11px;background:var(--t-surface2);border:1px solid var(--t-border)}.main-box .box-header .backend-entry.active,.main-box .box-header .backend-entry:hover{color:var(--t-primary);background:var(--t-primary-bg);border-color:var(--t-primary-border)}.main-box .box-header .theme-toggle{width:28px;height:28px;border-radius:4px;border:1px solid var(--t-border);background:var(--t-surface2);color:var(--t-text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .15s ease}.main-box .box-header .theme-toggle:hover{color:var(--t-primary);border-color:var(--t-primary-border);background:var(--t-primary-bg)}.main-box .box-header .shrink-btn{width:28px;height:28px;border-radius:4px;border:1px solid var(--t-border);background:var(--t-surface2);color:var(--t-text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .15s ease}.main-box .box-header .shrink-btn:hover{color:var(--t-danger);border-color:var(--t-danger)}.main-box .box-content{display:flex;flex:1;overflow:hidden;min-height:0}.main-box .box-content.mini{display:none}.mini-ball{position:fixed;display:flex;align-items:center;gap:16px;height:82px;padding:0 38px 0 14px;border-radius:41px;background:linear-gradient(135deg,#0d1117 0%,#161b22 20%,#1a1a2e 40%,#2d1b4e 60%,#1a1a2e 80%,#0d1117 100%);background-size:400% 400%;box-shadow:0 12px 36px rgba(0,0,0,.6),0 0 0 2px rgba(139,92,246,.25),0 0 14px rgba(139,92,246,.2),0 0 28px rgba(124,58,237,.15),0 0 48px rgba(139,92,246,.1),inset 0 1px 2px rgba(255,255,255,.08);cursor:pointer;z-index:9999999;user-select:none;transition:transform .3s cubic-bezier(.34,1.56,.64,1),box-shadow .3s ease;animation:miniBallGradient 5s ease infinite,miniBallGlow 2.5s ease-in-out infinite}.mini-ball:hover{transform:scale(1.1) translateY(-4px);box-shadow:0 16px 44px rgba(0,0,0,.65),0 0 0 3px rgba(139,92,246,.35),0 0 20px rgba(139,92,246,.25),0 0 40px rgba(124,58,237,.2),0 0 64px rgba(139,92,246,.15),inset 0 1px 2px rgba(255,255,255,.12)}.mini-ball:active{transform:scale(.94)}.mini-ball-icon{width:62px;height:62px;border-radius:50%;background:rgba(139,92,246,.15);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:17px;font-weight:800;letter-spacing:1px;backdrop-filter:blur(10px);box-shadow:inset 0 1px 2px rgba(255,255,255,.15),0 0 18px rgba(139,92,246,.15);animation:miniBallIconPulse 2s ease-in-out infinite;gap:1px}.mini-ball-count{font-size:9px;font-weight:700;color:#a78bfa;text-shadow:0 0 6px rgba(167,139,250,.5);line-height:1}.mini-ball:hover .mini-ball-icon{animation:miniBallIconWiggle .5s ease}.mini-ball-body{display:flex;flex-direction:column;align-items:flex-start;gap:3px}.mini-ball-text{color:#fff;font-size:18px;font-weight:800;white-space:nowrap;text-shadow:0 1px 4px rgba(0,0,0,.3);animation:miniBallTextSlide .5s cubic-bezier(.22,1,.36,1)}.mini-ball-sub{color:rgba(255,255,255,.88);font-size:13px;font-weight:500;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,.25);animation:miniBallTextSlide .5s .1s cubic-bezier(.22,1,.36,1) both}.mini-ball-shine{position:absolute;inset:0;border-radius:41px;overflow:hidden;pointer-events:none}.mini-ball-shine:before{content:"";position:absolute;top:0;left:-100%;width:80%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent);transform:skewX(-20deg);animation:miniBallShine 3.5s ease-in-out infinite}.mini-ball-glow{position:absolute;inset:-8px;border-radius:49px;background:linear-gradient(135deg,#1a1a2e,#2d1b4e,#533483,#7c3aed);filter:blur(16px);opacity:.25;z-index:-1;animation:miniBallGlowRotate 6s linear infinite}.mini-ball-orbits{position:absolute;inset:0;border-radius:41px;overflow:hidden;pointer-events:none}.mini-ball-orbits i{position:absolute;width:7px;height:7px;border-radius:50%;background:#a78bfa;box-shadow:0 0 10px #a78bfa;opacity:.65}.mini-ball-orbits i:first-child{top:10px;right:20px;animation:miniBallOrbit1 2.5s linear infinite}.mini-ball-orbits i:last-child{bottom:10px;left:24px;animation:miniBallOrbit2 3s linear infinite}@keyframes miniBallGradient{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}@keyframes miniBallGlow{0%,100%{box-shadow:0 12px 36px rgba(0,0,0,.5),0 0 0 2px rgba(139,92,246,.2),0 0 14px rgba(139,92,246,.15),0 0 28px rgba(124,58,237,.12),0 0 48px rgba(139,92,246,.08),inset 0 1px 2px rgba(255,255,255,.06)}50%{box-shadow:0 14px 42px rgba(0,0,0,.55),0 0 0 2px rgba(139,92,246,.25),0 0 20px rgba(139,92,246,.2),0 0 38px rgba(139,92,246,.15),0 0 62px rgba(124,58,237,.12),inset 0 1px 2px rgba(255,255,255,.08)}}@keyframes miniBallGlowRotate{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}@keyframes miniBallIconPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.15),0 0 0 0 rgba(139,92,246,.2)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.15),0 0 0 14px rgba(139,92,246,0)}}@keyframes miniBallIconWiggle{0%,100%{transform:rotate(0)}25%{transform:rotate(-12deg)}75%{transform:rotate(12deg)}}@keyframes miniBallTextSlide{0%{opacity:0;transform:translateX(-14px)}100%{opacity:1;transform:translateX(0)}}@keyframes miniBallShine{0%,100%{left:-100%}50%,70%{left:150%}}@keyframes miniBallOrbit1{0%{transform:translate(0,0) scale(1);opacity:.6}50%{transform:translate(-18px,14px) scale(.6);opacity:.2}100%{transform:translate(0,0) scale(1);opacity:.6}}@keyframes miniBallOrbit2{0%{transform:translate(0,0) scale(.6);opacity:.2}50%{transform:translate(14px,-12px) scale(1);opacity:.6}100%{transform:translate(0,0) scale(.6);opacity:.2}}.ant-btn{border-radius:4px!important;font-size:12px!important}.ant-btn-primary{background:var(--t-primary)!important;border-color:var(--t-primary)!important}.ant-btn-primary:hover{opacity:.85!important}.ant-input,.ant-input-affix-wrapper{background:var(--t-surface)!important;border-color:var(--t-border2)!important;border-radius:4px!important;color:var(--t-text)!important;font-size:12px!important}.ant-input:focus,.ant-input-affix-wrapper-focused{border-color:var(--t-primary)!important;box-shadow:0 0 0 2px var(--t-primary-border)!important}.ant-input:hover,.ant-input-affix-wrapper:hover{border-color:var(--t-border2)!important}.ant-input-number{background:var(--t-surface)!important;border-color:var(--t-border2)!important;border-radius:4px!important;color:var(--t-text)!important;font-size:12px!important}.ant-input-number-input{color:var(--t-text)!important;background:transparent!important}.ant-input-number-focused{border-color:var(--t-primary)!important;box-shadow:0 0 0 2px var(--t-primary-border)!important}.ant-input-number-handler-wrap{background:var(--t-surface2)!important;border-left-color:var(--t-border)!important}.ant-input-number-handler span{color:var(--t-text2)!important}.ant-select-selector{background:var(--t-surface)!important;border-color:var(--t-border2)!important;border-radius:4px!important;color:var(--t-text)!important;font-size:12px!important;min-height:30px!important}.config-wrap .ant-select{width:100%!important;max-width:220px}.ant-select-selection-item{color:var(--t-text)!important}.ant-select-arrow{color:var(--t-text3)!important}.ant-switch-checked{background:var(--t-primary)!important}.config-wrap .ant-switch{margin-top:2px}.ant-card{background:var(--t-surface)!important;border-color:var(--t-border)!important;border-radius:6px!important;color:var(--t-text)!important;font-size:12px!important}.ant-modal-content{background:var(--t-surface)!important;border:1px solid var(--t-border)!important;border-radius:6px!important}.ant-modal-header{background:var(--t-surface)!important;border-bottom:1px solid var(--t-border)!important}.ant-modal-title{color:var(--t-text)!important;font-size:14px!important}.ant-modal-close-icon{color:var(--t-text3)!important}.ant-modal-body{color:var(--t-text)!important}.ant-checkbox-checked .ant-checkbox-inner{background:var(--t-primary)!important;border-color:var(--t-primary)!important}.ant-radio-checked .ant-radio-inner{border-color:var(--t-primary)!important}.ant-radio-inner:after{background:var(--t-primary)!important}.ant-message-notice-content{background:var(--t-surface)!important;border:1px solid var(--t-border)!important;border-radius:4px!important;box-shadow:0 4px 16px var(--t-shadow)!important;color:var(--t-text)!important}.ant-tooltip-inner{background:var(--t-surface)!important;border:1px solid var(--t-border)!important;border-radius:3px!important;font-size:11px!important;color:var(--t-text)!important}.ant-alert{border-radius:6px!important;font-size:12px!important;margin-bottom:12px!important;padding:10px 12px!important}.ant-alert-message{color:var(--t-text)!important;line-height:1.8!important}.ant-alert .ant-btn-primary{background:var(--t-warning)!important;border-color:var(--t-warning)!important}.ant-tabs{display:flex!important;flex-direction:column!important;width:80px!important;flex-shrink:0;border-right:1px solid var(--t-border)!important;background:var(--t-surface)!important;margin:0!important;height:auto!important}.ant-tabs-nav{margin:0!important;width:80px!important;border:none!important}.ant-tabs-nav::before{border:none!important}.ant-tabs-nav-wrap{width:80px!important}.ant-tabs-nav-list{flex-direction:column!important;width:80px!important;gap:0!important}.ant-tabs-tab{padding:10px 4px!important;margin:0!important;justify-content:center!important;width:80px!important;font-size:12px!important;border:none!important;background:transparent!important;border-radius:0!important}.ant-tabs-tab .ant-tabs-tab-btn{font-size:12px!important;text-align:center!important;padding:0!important;color:var(--t-text)!important}.ant-tabs-tab:hover{background:var(--t-primary-bg)!important}.ant-tabs-tab-active{background:var(--t-primary-bg)!important;position:relative}.ant-tabs-tab-active:after{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--t-primary)}.ant-tabs-tab-active .ant-tabs-tab-btn{color:var(--t-primary)!important;font-weight:600!important}.ant-tabs-ink-bar{display:none!important}.ant-tabs-content-holder{display:none!important}.ant-tabs-content{display:none!important}.ant-tabs-top>.ant-tabs-nav::before{border:none!important}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}@keyframes floatPulse{0%,100%{box-shadow:0 4px 16px var(--t-shadow),0 0 0 1px rgba(255,255,255,.1)}50%{box-shadow:0 4px 24px var(--t-shadow),0 0 0 3px var(--t-primary-border)}}@keyframes floatRing{0%{opacity:.6;transform:scale(1)}100%{opacity:0;transform:scale(1.3)}} ');
+(e=>{document.__abcHelperCSS=e})(' .theme-light{--t-bg:#f5f6f8;--t-surface:#fff;--t-surface2:#f0f2f5;--t-border:#e2e5ea;--t-border2:#d1d5db;--t-text:#1a1a2e;--t-text2:#4b5563;--t-text3:#9ca3af;--t-primary:#2563eb;--t-primary-bg:#eff6ff;--t-primary-border:#bfdbfe;--t-accent:#7c3aed;--t-success:#16a34a;--t-warning:#d97706;--t-danger:#dc2626;--t-info:#0891b2;--t-pink:#db2777;--t-shadow:rgba(0,0,0,.08);--t-shadow2:rgba(0,0,0,.04)}.theme-dark{--t-bg:#0d1117;--t-surface:#161b22;--t-surface2:#1c2330;--t-border:#30363d;--t-border2:#484f58;--t-text:#e6edf3;--t-text2:#9198a1;--t-text3:#6e7681;--t-primary:#3b82f6;--t-primary-bg:rgba(59,130,246,.1);--t-primary-border:rgba(59,130,246,.3);--t-accent:#a78bfa;--t-success:#3fb950;--t-warning:#d29922;--t-danger:#f85149;--t-info:#22d3ee;--t-pink:#f472b6;--t-shadow:rgba(0,0,0,.3);--t-shadow2:rgba(0,0,0,.15)}.log-wrap{font:13px "Segoe UI",system-ui,-apple-system,sans-serif}.log-wrap{display:flex;flex-direction:column;height:100%}.log-wrap .console{flex:1;min-height:200px;max-height:calc(100vh - 120px);width:100%;box-sizing:border-box;overflow-y:scroll;background:var(--t-surface2);padding:10px;color:var(--t-text2);font-size:12px;border-radius:6px;border:1px solid var(--t-border)}.log-wrap .console div{padding:2px 0}.log-wrap .console div span{margin:0 3px}.log-wrap .console div span .module{background:var(--t-primary);color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:600}.log-wrap .console .log{color:var(--t-text3)}.log-wrap .console .warning{color:var(--t-warning)}.home-wrap[data-v-137ea562]{font:14px "Segoe UI",system-ui,-apple-system,sans-serif;color:var(--t-text)}.home-wrap a{color:var(--t-primary);text-decoration:none}.home-wrap a:hover{text-decoration:underline}.home-wrap ol li{line-height:26px;list-style-type:decimal;list-style-position:inside;color:var(--t-text2)}.home-wrap .tips ul li span{color:var(--t-warning)}.home-wrap .hero{padding:16px 14px;margin:8px;background:linear-gradient(135deg,var(--t-primary),var(--t-accent));border-radius:8px;color:#fff;text-align:center}.home-wrap .hero .hero-title{font-size:18px;font-weight:700;margin-bottom:4px}.home-wrap .hero .hero-sub{font-size:12px;opacity:.85}.home-wrap .home-section{margin:8px;padding:12px 14px;background:var(--t-surface);border:1px solid var(--t-border);border-radius:6px}.home-wrap .home-section .section-title{font-size:13px;font-weight:700;color:var(--t-text);margin-bottom:8px;display:flex;align-items:center;gap:4px}.home-wrap .home-section ul{list-style:none;padding:0;margin:0}.home-wrap .home-section ul li{list-style:none;padding:4px 0;color:var(--t-text2);font-size:12px;line-height:1.6}.collapsible-section{cursor:pointer;user-select:none;transition:background .15s}.collapsible-section:hover{background:var(--t-surface2)}.collapsible-section .section-title{justify-content:space-between;gap:8px;margin-bottom:0}.collapse-icon{font-size:14px;color:var(--t-text3);font-weight:700;width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:4px;background:var(--t-surface2);transition:all .15s}.collapsible-section:hover .collapse-icon{background:var(--t-primary-bg);color:var(--t-primary)}.home-card-btn{display:block;margin-top:8px;padding:10px 12px;background:linear-gradient(135deg,var(--t-primary),var(--t-accent));border-radius:6px;color:#fff!important;text-align:center;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;transition:opacity .15s,transform .15s}.home-card-btn:hover{opacity:.9;transform:translateY(-1px);color:#fff!important}.home-wrap .login-box{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}.home-wrap .login-box input{height:30px;width:140px;padding:0 8px;border:1px solid var(--t-border2);border-radius:4px;background:var(--t-surface);color:var(--t-text);font-size:12px;outline:none}.home-wrap .login-box input:focus{border-color:var(--t-primary)}.home-wrap .login-box button{height:30px;padding:0 12px;border:none;border-radius:4px;font-size:12px;cursor:pointer;font-weight:500;transition:opacity .15s}.home-wrap .login-box button:hover{opacity:.85}.home-wrap .login-box .btn-primary{background:var(--t-primary);color:#fff}.home-wrap .login-box .btn-ghost{background:var(--t-surface2);color:var(--t-text2);border:1px solid var(--t-border2)}.home-wrap .login-box .btn-outline{background:transparent;color:var(--t-primary);border:1px solid var(--t-primary)}.home-wrap .login-meta{display:flex;gap:8px;align-items:center;margin-top:6px;color:var(--t-text3);font-size:11px;flex-wrap:wrap}.home-wrap .login-msg{margin-top:6px;font-size:12px}.answer-wrap .search-info{-webkit-user-select:none;user-select:none;box-sizing:border-box;display:flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:4px;border:1px solid var(--t-border2);margin-right:4px;font-weight:600;font-size:11px;background:var(--t-surface2);color:var(--t-text3);flex-shrink:0}.answer-wrap .search-info.default{box-shadow:none}.answer-wrap .search-info.searching{box-shadow:0 0 6px 1px var(--t-primary-border);border-color:var(--t-primary);color:var(--t-primary);animation:pulse 1.2s ease infinite}.answer-wrap .search-info.success{color:#fff;border:0;background:var(--t-success)}.answer-wrap .search-info.ai-success{color:#fff;border:0;background:var(--t-accent)}.answer-wrap .search-info.warning{color:var(--t-warning);border:1px solid var(--t-warning)}.answer-wrap .answer-tips{font-size:12px;color:var(--t-text3)}.answer-wrap .answer-tips span{margin-right:4px}.answer-wrap .answer-tips .box-tips{display:flex;align-items:center}.answer-wrap .answer-tips .box-tips div{margin:0 4px 0 0!important}.answer-wrap .answer-tips .box-tips span{margin-right:8px}.answer-wrap .answer-list{flex-wrap:wrap;color:var(--t-text);display:flex}.answer-wrap .answer-list .search-info{cursor:pointer!important}.answer-wrap .answer-list div{margin:0 8px 8px 0!important;cursor:pointer!important}.answer-wrap .answer-detail{position:relative;max-height:200px;overflow-y:scroll;scroll-behavior:smooth}.answer-wrap .answer-detail .answer-item{margin-bottom:8px}.answer-wrap .answer-detail .answer-content{margin-top:4px;padding:8px 10px;border-radius:4px;background:var(--t-surface2);font-weight:600;color:var(--t-text);border-left:2px solid var(--t-primary);font-size:13px}.answer-wrap .answer-detail .answer-content .module{padding:1px 4px;border-radius:3px;color:var(--t-text3);border:1px solid var(--t-border2);font-size:10px}.ant-tooltip,.ant-select-dropdown{z-index:99999!important}.config-wrap{min-width:420px!important;width:420px!important;max-width:480px;color:var(--t-text);font-size:13px;padding:10px 16px;box-sizing:border-box}.config-wrap .config{margin-bottom:14px;display:flex;align-items:flex-start;gap:12px;min-height:32px}.config-wrap .config .config-name{display:flex;align-items:flex-start;width:120px;flex-shrink:0;font-size:12px;color:var(--t-text2);line-height:1.5;padding-top:6px}.config-wrap .config .config-input{flex:1;display:flex;align-items:center;justify-content:flex-start;gap:6px;min-width:0;padding-top:2px}.config-wrap .config .config-input .ant-select{width:100%!important;max-width:260px}.config-wrap .config .config-input .ant-input{width:100%!important;max-width:260px}.config-wrap .config .config-input .ant-input-number{width:100px!important}.config-wrap .config .config-input .ant-slider{flex:1;max-width:180px!important;margin:0 10px 0 0}.config-wrap .buy-btn{background:var(--t-primary);padding:5px 12px;border-radius:4px;height:28px;color:#fff;cursor:pointer;font-weight:600;border:none;font-size:12px;white-space:nowrap}.config-wrap .buy-btn a{color:#fff}.config-wrap .switch-item{display:inline-flex!important;width:calc(50% - 6px)!important;margin-right:12px;margin-bottom:12px!important;vertical-align:top;box-sizing:border-box;gap:8px}.config-wrap .switch-item .config-name{flex:1;width:auto!important;padding-top:0;line-height:1.5;word-break:break-word}.config-wrap .switch-item .config-input{width:auto!important;flex:none;padding-top:0}.config-wrap .switch-item .ant-switch{margin-top:0!important}.config-wrap .switch-item:nth-of-type(2n){margin-right:0}.ant-message{z-index:999999!important}.online-search-wrap{color:var(--t-text);width:420px;box-sizing:border-box}.online-search-wrap .config{padding:8px 10px 4px;display:flex}.online-search-wrap .config .config-name{width:150px}.online-search-wrap .config .config-input{display:flex;justify-content:right;flex:1}.online-search-wrap .searth-input-wrap{padding:8px 10px 4px;display:flex}.online-search-wrap .searth-input-wrap .title{padding-top:5px}.online-search-wrap .searth-input-wrap .searth-input{margin-left:16px;flex:1}.online-search-wrap .search-btn{padding-right:10px;display:flex;justify-content:right}.online-search-wrap .result-list{margin-top:8px;max-height:calc(100vh - 200px);overflow:auto}.online-search-wrap .result-list .result-item{margin-bottom:8px}.online-search-wrap .result-list .result-item em{font-weight:600;color:var(--t-warning)}.online-search-wrap .result-list .result-answer{margin-top:4px;padding:8px 10px;border-radius:4px;background:var(--t-surface2);font-weight:600;color:var(--t-text);border-left:2px solid var(--t-primary)}div{margin:0}.ai-wrapper{width:420px}.ai-message-role-avatar{margin:0}.ai-message-content{margin:0;padding:8px 10px;border-radius:6px;background:var(--t-surface2);font-size:14px;-webkit-user-select:text;user-select:text;word-break:break-word;border:1px solid var(--t-border);position:relative;transition:all .2s ease}.ai-message-content pre{white-space:pre-wrap;background:var(--t-bg);color:var(--t-text);padding:10px;border-radius:4px;border:1px solid var(--t-border);font-size:13px}.ai-message-container{display:flex;flex-direction:column;align-items:flex-start}.ai-message-container.user-message{align-items:flex-end}.ai-message-list{height:calc(100vh - 160px);max-height:360px;min-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:8px}.ai-message-item{width:100%}.user-avatar{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:4px;border:1px solid var(--t-border);background:var(--t-primary-bg);margin-bottom:4px;font-size:13px}.ai-input-wrapper{padding:8px;margin-top:8px;border-radius:6px;border:1px solid var(--t-border);display:flex;align-items:center;justify-content:center;background:var(--t-surface)}.ai-input-wrapper textarea{flex:1;height:46px;border:none;margin-right:8px;background:transparent;color:var(--t-text);resize:none;outline:none}.send-message-btn{display:flex;align-items:center;justify-content:center;height:34px;border-radius:4px;border:none;padding:0 12px;background:var(--t-primary);color:#fff;cursor:pointer!important;gap:4px;font-weight:600;font-size:13px}.send-message-btn:hover{opacity:.85}.loading-container{display:flex;align-items:center;justify-content:center;gap:4px}.record-wrap{padding-bottom:6px}.record-tip{display:flex;align-items:center;justify-content:space-between;padding:0 8px 6px;color:var(--t-text3);font-size:11px}.record-filter{display:flex;gap:6px;padding:0 8px 8px;flex-wrap:wrap}.filter-btn{padding:3px 8px;color:var(--t-text2);background:var(--t-surface2);border:1px solid var(--t-border);border-radius:3px;cursor:pointer;transition:all .15s ease;font-size:11px}.filter-btn:hover{color:var(--t-primary);border-color:var(--t-primary-border);background:var(--t-primary-bg)}.filter-btn.active{color:var(--t-primary);border-color:var(--t-primary);background:var(--t-primary-bg)}.record-list{display:flex;flex-direction:column;gap:6px;padding:0 8px 6px;max-height:calc(100vh - 160px);overflow-y:auto}.clear-btn{color:var(--t-text2);border-color:var(--t-border);background:var(--t-surface2);border-radius:3px;font-size:12px}.clear-btn:hover,.clear-btn:focus{color:var(--t-danger);border-color:var(--t-danger);background:rgba(220,38,38,.06)}.record-item{padding:8px 10px;border:1px solid var(--t-border);border-radius:4px;background:var(--t-surface);transition:border-color .15s}.record-item:hover{border-color:var(--t-border2)}.record-row{display:flex;align-items:flex-start;line-height:20px;font-size:12px}.record-label{width:60px;flex-shrink:0;color:var(--t-primary);font-weight:600;font-size:11px}.record-value{flex:1;color:var(--t-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tab-content{flex:1!important;min-width:420px!important;width:420px!important;min-height:320px;max-width:480px;max-height:calc(100vh - 96px);overflow-y:auto;padding:8px 12px;box-sizing:border-box}.ant-tabs-nav-operations{display:none!important}.box-content{min-width:300px;display:flex!important;flex-direction:row!important;gap:0!important}.separator{display:flex;align-items:center;padding:14px 0 10px;font-size:13px;font-weight:700;color:var(--t-text);border-top:1px solid var(--t-border);margin-top:6px}.separator:first-child{border-top:none;margin-top:0}.tips{padding:10px 12px;background:rgba(217,119,6,.06);border:1px solid rgba(217,119,6,.15);border-radius:6px;width:-webkit-fill-available;margin:4px 0 14px;line-height:22px;letter-spacing:.2px;color:var(--t-warning);font-size:12px;box-sizing:border-box}.tips button{background:var(--t-warning)!important;border-color:var(--t-warning)!important;color:#fff!important}.tips a{color:var(--t-primary);text-decoration:underline}.backend-dropdown-overlay{z-index:100001!important}.ant-dropdown-menu{background:var(--t-surface)!important;border:1px solid var(--t-border)!important;border-radius:4px!important;box-shadow:0 4px 16px var(--t-shadow)!important;padding:4px 0!important}.ant-dropdown-menu-item{color:var(--t-text)!important;font-size:12px!important;padding:6px 12px!important}.ant-dropdown-menu-item:hover{background:var(--t-primary-bg)!important;color:var(--t-primary)!important}.ant-dropdown-menu-item-divider{background-color:var(--t-border)!important}.main-wrap{position:fixed;top:0;z-index:99999!important;user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;pointer-events:auto}.message-container{margin-bottom:4px;position:absolute;bottom:100%;left:50%;width:100%;transform:translate(-50%);min-width:280px}.main-box{padding:0;font:13px "Segoe UI",system-ui,-apple-system,sans-serif;color:var(--t-text);background:var(--t-bg);box-shadow:0 8px 32px var(--t-shadow),0 0 0 1px var(--t-border);border-radius:8px;letter-spacing:0;overflow:hidden;transition:box-shadow .2s;display:flex;flex-direction:column;max-height:calc(100vh - 60px)}.main-box:hover{box-shadow:0 12px 32px var(--t-shadow),0 0 0 1px var(--t-border2)}.main-box .box-header{display:flex;justify-content:space-between;align-items:center;height:36px;cursor:move;padding:0 10px;background:var(--t-surface);border-bottom:1px solid var(--t-border);flex-shrink:0}.main-box .box-header div{margin:0}.main-box .box-header .header-left{display:flex;align-items:center;gap:6px}.main-box .box-header .script-info{-webkit-user-select:none!important;user-select:none!important;font-weight:700;color:var(--t-primary);letter-spacing:0;font-size:13px;display:flex;align-items:center;gap:4px}.main-box .box-header .script-info:before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--t-success);box-shadow:0 0 4px var(--t-success);margin-right:2px}.main-box .box-header .backend-entry{text-decoration:none;color:var(--t-text2);padding:3px 8px;border-radius:4px;cursor:pointer;-webkit-user-select:none!important;user-select:none!important;transition:all .15s ease;font-size:11px;background:var(--t-surface2);border:1px solid var(--t-border)}.main-box .box-header .backend-entry.active,.main-box .box-header .backend-entry:hover{color:var(--t-primary);background:var(--t-primary-bg);border-color:var(--t-primary-border)}.main-box .box-header .theme-toggle{width:28px;height:28px;border-radius:4px;border:1px solid var(--t-border);background:var(--t-surface2);color:var(--t-text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .15s ease}.main-box .box-header .theme-toggle:hover{color:var(--t-primary);border-color:var(--t-primary-border);background:var(--t-primary-bg)}.main-box .box-header .shrink-btn{width:28px;height:28px;border-radius:4px;border:1px solid var(--t-border);background:var(--t-surface2);color:var(--t-text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .15s ease}.main-box .box-header .shrink-btn:hover{color:var(--t-danger);border-color:var(--t-danger)}.main-box .box-content{display:flex;flex:1;overflow:hidden;min-height:0}.main-box .box-content.mini{display:none}.mini-ball{position:fixed;display:flex;align-items:center;gap:13px;height:64px;padding:0 30px 0 12px;border-radius:32px;background:linear-gradient(135deg,#0d1117 0%,#161b22 20%,#1a1a2e 40%,#2d1b4e 60%,#1a1a2e 80%,#0d1117 100%);background-size:400% 400%;box-shadow:0 10px 24px rgba(0,0,0,.55),0 0 0 1.5px rgba(139,92,246,.2),0 0 10px rgba(139,92,246,.15),0 0 18px rgba(124,58,237,.09),0 0 26px rgba(139,92,246,.06),inset 0 1px 2px rgba(255,255,255,.08);cursor:pointer;z-index:9999999;user-select:none;transition:transform .3s cubic-bezier(.34,1.56,.64,1),box-shadow .3s ease;animation:miniBallGradient 5s ease infinite,miniBallGlow 2.5s ease-in-out infinite}.mini-ball:hover{transform:scale(1.1) translateY(-4px);box-shadow:0 16px 44px rgba(0,0,0,.65),0 0 0 3px rgba(139,92,246,.35),0 0 20px rgba(139,92,246,.25),0 0 40px rgba(124,58,237,.2),0 0 64px rgba(139,92,246,.15),inset 0 1px 2px rgba(255,255,255,.12)}.mini-ball:active{transform:scale(.94)}.mini-ball-icon{width:48px;height:48px;border-radius:50%;background:rgba(139,92,246,.15);display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-size:14px;font-weight:800;letter-spacing:1px;backdrop-filter:blur(10px);box-shadow:inset 0 1px 2px rgba(255,255,255,.15),0 0 18px rgba(139,92,246,.15);animation:miniBallIconPulse 2s ease-in-out infinite;gap:1px}.mini-ball-count{font-size:8px;font-weight:700;color:#a78bfa;text-shadow:0 0 6px rgba(167,139,250,.5);line-height:1}.mini-ball:hover .mini-ball-icon{animation:miniBallIconWiggle .5s ease}.mini-ball-body{display:flex;flex-direction:column;align-items:flex-start;gap:3px}.mini-ball-text{color:#fff;font-size:15px;font-weight:800;white-space:nowrap;text-shadow:0 1px 4px rgba(0,0,0,.3);animation:miniBallTextSlide .5s cubic-bezier(.22,1,.36,1)}.mini-ball-sub{color:rgba(255,255,255,.88);font-size:11px;font-weight:500;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,.25);animation:miniBallTextSlide .5s .1s cubic-bezier(.22,1,.36,1) both}.mini-ball-shine{position:absolute;inset:0;border-radius:32px;overflow:hidden;pointer-events:none}.mini-ball-shine:before{content:"";position:absolute;top:0;left:-100%;width:80%;height:100%;background:linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent);transform:skewX(-20deg);animation:miniBallShine 3.5s ease-in-out infinite}.mini-ball-glow{position:absolute;inset:12px;border-radius:20px;background:linear-gradient(135deg,#1a1a2e,#2d1b4e,#533483,#7c3aed);filter:blur(5px);opacity:.1;z-index:-1;animation:miniBallGlowRotate 10s linear infinite}.mini-ball-orbits{position:absolute;inset:0;border-radius:32px;overflow:hidden;pointer-events:none}.mini-ball-orbits i{position:absolute;width:6px;height:6px;border-radius:50%;background:#a78bfa;box-shadow:0 0 10px #a78bfa;opacity:.65}.mini-ball-orbits i:first-child{top:10px;right:20px;animation:miniBallOrbit1 2.5s linear infinite}.mini-ball-orbits i:last-child{bottom:10px;left:24px;animation:miniBallOrbit2 3s linear infinite}@keyframes miniBallGradient{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}@keyframes miniBallGlow{0%,100%{box-shadow:0 10px 24px rgba(0,0,0,.45),0 0 0 1.5px rgba(139,92,246,.18),0 0 10px rgba(139,92,246,.12),0 0 18px rgba(124,58,237,.09),0 0 26px rgba(139,92,246,.06),inset 0 1px 2px rgba(255,255,255,.06)}50%{box-shadow:0 11px 28px rgba(0,0,0,.5),0 0 0 1.5px rgba(139,92,246,.2),0 0 14px rgba(139,92,246,.16),0 0 24px rgba(139,92,246,.1),0 0 32px rgba(124,58,237,.08),inset 0 1px 2px rgba(255,255,255,.08)}}@keyframes miniBallGlowRotate{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}@keyframes miniBallIconPulse{0%,100%{box-shadow:inset 0 1px 2px rgba(255,255,255,.15),0 0 0 0 rgba(139,92,246,.2)}50%{box-shadow:inset 0 1px 2px rgba(255,255,255,.15),0 0 0 14px rgba(139,92,246,0)}}@keyframes miniBallIconWiggle{0%,100%{transform:rotate(0)}25%{transform:rotate(-12deg)}75%{transform:rotate(12deg)}}@keyframes miniBallTextSlide{0%{opacity:0;transform:translateX(-14px)}100%{opacity:1;transform:translateX(0)}}@keyframes miniBallShine{0%,100%{left:-100%}50%,70%{left:150%}}@keyframes miniBallOrbit1{0%{transform:translate(0,0) scale(1);opacity:.6}50%{transform:translate(-18px,14px) scale(.6);opacity:.2}100%{transform:translate(0,0) scale(1);opacity:.6}}@keyframes miniBallOrbit2{0%{transform:translate(0,0) scale(.6);opacity:.2}50%{transform:translate(14px,-12px) scale(1);opacity:.6}100%{transform:translate(0,0) scale(.6);opacity:.2}}.ant-btn{border-radius:4px!important;font-size:12px!important}.ant-btn-primary{background:var(--t-primary)!important;border-color:var(--t-primary)!important}.ant-btn-primary:hover{opacity:.85!important}.ant-input,.ant-input-affix-wrapper{background:var(--t-surface)!important;border-color:var(--t-border2)!important;border-radius:4px!important;color:var(--t-text)!important;font-size:12px!important}.ant-input:focus,.ant-input-affix-wrapper-focused{border-color:var(--t-primary)!important;box-shadow:0 0 0 2px var(--t-primary-border)!important}.ant-input:hover,.ant-input-affix-wrapper:hover{border-color:var(--t-border2)!important}.ant-input-number{background:var(--t-surface)!important;border-color:var(--t-border2)!important;border-radius:4px!important;color:var(--t-text)!important;font-size:12px!important}.ant-input-number-input{color:var(--t-text)!important;background:transparent!important}.ant-input-number-focused{border-color:var(--t-primary)!important;box-shadow:0 0 0 2px var(--t-primary-border)!important}.ant-input-number-handler-wrap{background:var(--t-surface2)!important;border-left-color:var(--t-border)!important}.ant-input-number-handler span{color:var(--t-text2)!important}.ant-select-selector{background:var(--t-surface)!important;border-color:var(--t-border2)!important;border-radius:4px!important;color:var(--t-text)!important;font-size:12px!important;min-height:30px!important}.config-wrap .ant-select{width:100%!important;max-width:220px}.ant-select-selection-item{color:var(--t-text)!important}.ant-select-arrow{color:var(--t-text3)!important}.ant-switch-checked{background:var(--t-primary)!important}.config-wrap .ant-switch{margin-top:2px}.ant-card{background:var(--t-surface)!important;border-color:var(--t-border)!important;border-radius:6px!important;color:var(--t-text)!important;font-size:12px!important}.ant-modal-content{background:var(--t-surface)!important;border:1px solid var(--t-border)!important;border-radius:6px!important}.ant-modal-header{background:var(--t-surface)!important;border-bottom:1px solid var(--t-border)!important}.ant-modal-title{color:var(--t-text)!important;font-size:14px!important}.ant-modal-close-icon{color:var(--t-text3)!important}.ant-modal-body{color:var(--t-text)!important}.ant-checkbox-checked .ant-checkbox-inner{background:var(--t-primary)!important;border-color:var(--t-primary)!important}.ant-radio-checked .ant-radio-inner{border-color:var(--t-primary)!important}.ant-radio-inner:after{background:var(--t-primary)!important}.ant-message-notice-content{background:var(--t-surface)!important;border:1px solid var(--t-border)!important;border-radius:4px!important;box-shadow:0 4px 16px var(--t-shadow)!important;color:var(--t-text)!important}.ant-tooltip-inner{background:var(--t-surface)!important;border:1px solid var(--t-border)!important;border-radius:3px!important;font-size:11px!important;color:var(--t-text)!important}.ant-alert{border-radius:6px!important;font-size:12px!important;margin-bottom:12px!important;padding:10px 12px!important}.ant-alert-message{color:var(--t-text)!important;line-height:1.8!important}.ant-alert .ant-btn-primary{background:var(--t-warning)!important;border-color:var(--t-warning)!important}.ant-tabs{display:flex!important;flex-direction:column!important;width:80px!important;flex-shrink:0;border-right:1px solid var(--t-border)!important;background:var(--t-surface)!important;margin:0!important;height:auto!important}.ant-tabs-nav{margin:0!important;width:80px!important;border:none!important}.ant-tabs-nav::before{border:none!important}.ant-tabs-nav-wrap{width:80px!important}.ant-tabs-nav-list{flex-direction:column!important;width:80px!important;gap:0!important}.ant-tabs-tab{padding:10px 4px!important;margin:0!important;justify-content:center!important;width:80px!important;font-size:12px!important;border:none!important;background:transparent!important;border-radius:0!important}.ant-tabs-tab .ant-tabs-tab-btn{font-size:12px!important;text-align:center!important;padding:0!important;color:var(--t-text)!important}.ant-tabs-tab:hover{background:var(--t-primary-bg)!important}.ant-tabs-tab-active{background:var(--t-primary-bg)!important;position:relative}.ant-tabs-tab-active:after{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--t-primary)}.ant-tabs-tab-active .ant-tabs-tab-btn{color:var(--t-primary)!important;font-weight:600!important}.ant-tabs-ink-bar{display:none!important}.ant-tabs-content-holder{display:none!important}.ant-tabs-content{display:none!important}.ant-tabs-top>.ant-tabs-nav::before{border:none!important}@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}@keyframes floatPulse{0%,100%{box-shadow:0 4px 16px var(--t-shadow),0 0 0 1px rgba(255,255,255,.1)}50%{box-shadow:0 4px 24px var(--t-shadow),0 0 0 3px var(--t-primary-border)}}@keyframes floatRing{0%{opacity:.6;transform:scale(1)}100%{opacity:0;transform:scale(1.3)}} ');
 
 (function (vue, Antd, pinia, marked, rxjs, md5, DOMPurify) {
   'use strict';
@@ -1712,13 +1721,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             videoPlayrate: {
               text: "视频倍速",
               value: 2,
-              type: "select",
-              tips: "❗❗❗视频观看倍速，高倍速可能面临进度清空风险，请慎重选择，建议（1-2倍速）",
-              options: [
-                { value: 1, label: "1 x" },
-                { value: 1.5, label: "1.5 x" },
-                { value: 2, label: "2 x" }
-              ]
+              type: "input-number",
+              min: 1,
+              max: 16,
+              step: 0.5,
+              precision: 1,
+              tips: "❗❗❗视频观看倍速（支持自定义，0.5 递增），高倍速可能面临进度清空风险，请慎重选择"
             },
             reqIntervalTime: {
               text: "搜题间隔（秒）",
@@ -1726,6 +1734,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               type: "input-number",
               min: 1,
               max: 3,
+              precision: 0,
               tips: "每题搜题间隔，不建议太低，避免服务器压力过大"
             },
             accuracy: {
@@ -1785,6 +1794,15 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         const localStore = JSON.parse(_GM_getValue("setting"));
         if (localStore) {
           const merged = deepMerge(defaultSetting, localStore);
+          const vpConfig = merged.config && merged.config.basicConfig && merged.config.basicConfig.videoPlayrate;
+          if (vpConfig) {
+            vpConfig.type = "input-number";
+            delete vpConfig.options;
+            if (vpConfig.min === undefined) vpConfig.min = 1;
+            if (vpConfig.max === undefined) vpConfig.max = 16;
+            if (vpConfig.step === undefined) vpConfig.step = 0.5;
+            if (vpConfig.precision === undefined) vpConfig.precision = 1;
+          }
           merged.version = scriptInfo.version;
           return merged;
         }
@@ -1811,111 +1829,27 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       const scriptInfo = getScriptInfo();
       const setting = useSettingStore();
       const { latestVersion, chatWebUrl, shopLink } = pinia.storeToRefs(setting);
-      const remembered = getRememberedLogin();
-      const loginUser = vue.ref(remembered.username || "");
-      const loginPwd = vue.ref("");
-      const loginMsg = vue.ref("");
-      const loginBusy = vue.ref(false);
-      const rememberLogin = vue.ref(remembered.remember !== false);
-      const isAutoLoggedIn = vue.ref(!!remembered.token);
-      const openUserCenter = () => {
-        const token = (remembered && remembered.token) || "";
-        const user = (remembered && remembered.user) || "";
-        const userStr = typeof user === "string" ? user : JSON.stringify(user);
-        const url = token
-          ? `${LOCAL_USER_CENTER_URL}&token=${encodeURIComponent(token)}&user=${encodeURIComponent(userStr)}`
-          : setting.shopLink || LOCAL_USER_CENTER_URL;
-        window.open(url, "_blank");
-      };
-      const openPricing = () => {
-        const token = (remembered && remembered.token) || "";
-        const user = (remembered && remembered.user) || "";
-        const userStr = typeof user === "string" ? user : JSON.stringify(user);
-        const baseUrl = "https://xs.openget.cn/user?section=billing";
-        const url = token
-          ? `${baseUrl}&token=${encodeURIComponent(token)}&user=${encodeURIComponent(userStr)}`
-          : baseUrl;
-        window.open(url, "_blank");
-      };
-      const openRegister = () => {
-        window.open("https://xs.openget.cn/register", "_blank");
-      };
-      const openForgot = () => {
-        window.open("https://xs.openget.cn/forgot", "_blank");
-      };
-      const loginLocalBackend = async () => {
-        if (!loginUser.value.trim() || !loginPwd.value.trim()) {
-          loginMsg.value = "请填写用户名/邮箱和密码";
-          return;
-        }
-        loginBusy.value = true;
-        loginMsg.value = "正在登录用户中心...";
-        try {
-          const password_hash = await sha256Text(loginPwd.value.trim());
-          const loginRes = await localBackendJson("https://xs.openget.cn/api/auth/login", {
-            username: loginUser.value.trim(),
-            password_hash
-          });
-          if (loginRes.code !== 200 || !loginRes.token) {
-            loginMsg.value = loginRes.msg || "登录失败";
-            return;
-          }
-          const syncRes = await syncLoginTokenToScriptKey(setting, loginRes.token);
-          if (syncRes.ok) {
-            if (rememberLogin.value) {
-              setRememberedLogin({
-                remember: true,
-                username: loginUser.value.trim(),
-                token: loginRes.token,
-                savedAt: Date.now()
-              });
-            } else {
-              setRememberedLogin({ remember: false, username: loginUser.value.trim() });
-            }
-            isAutoLoggedIn.value = true;
-            loginMsg.value = "登录成功，已记住登录状态并同步密钥";
-          } else {
-            loginMsg.value = syncRes.msg || "登录成功，但脚本密钥获取失败，请点用户中心手动复制";
-          }
-        } catch (e) {
-          loginMsg.value = "登录失败，请检查本地后端是否运行";
-        } finally {
-          loginBusy.value = false;
-        }
-      };
-      const autoLoginByRememberedToken = async () => {
-        if (!remembered.token) return;
-        loginBusy.value = true;
-        loginMsg.value = "正在恢复上次登录状态...";
-        const profile = await localBackendJson("https://xs.openget.cn/api/user/profile", null, remembered.token);
-        if (profile.code === 401 || profile.code === 403) {
-          loginMsg.value = "登录状态已过期，请重新登录";
-          setRememberedLogin({ remember: rememberLogin.value, username: remembered.username || "" });
-          isAutoLoggedIn.value = false;
-          loginBusy.value = false;
-          return;
-        }
-        if (profile.code !== 200) {
-          loginMsg.value = "网络异常，暂未恢复登录状态（已保留登录记忆）";
-          isAutoLoggedIn.value = false;
-          loginBusy.value = false;
-          return;
-        }
-        const syncRes = await syncLoginTokenToScriptKey(setting, remembered.token);
-        loginMsg.value = syncRes.ok ? "已恢复登录状态并同步密钥" : syncRes.msg || "自动登录失败";
-        loginBusy.value = false;
-      };
-      const clearRememberedLogin = () => {
-        setRememberedLogin({ remember: rememberLogin.value, username: loginUser.value.trim() });
-        isAutoLoggedIn.value = false;
-        loginMsg.value = "已清除脚本页登录记忆";
-      };
-      const showLogin = vue.ref(true);
       const showTips = vue.ref(false);
       const showTutorial = vue.ref(false);
-      vue.onMounted(autoLoginByRememberedToken);
+      const announce = vue.ref(null);
+      vue.onMounted(async () => {
+        const res = await localBackendJson("https://xs.openget.cn/api/v1/announce");
+        if (res && res.code === 200 && res.data && res.data.enabled && res.data.text) {
+          announce.value = res.data;
+        }
+      });
       return (_ctx, _cache) => {
         return vue.openBlock(), vue.createElementBlock("div", _hoisted_1$7, [
+          announce.value ? (vue.openBlock(), vue.createElementBlock("div", {
+            key: "announce",
+            style: { "margin": "8px", "padding": "10px 12px", "background": "linear-gradient(135deg,#ffa940,#ff6a00)", "border": "1px solid rgba(255,255,255,.35)", "border-radius": "8px", "color": "#fff", "font-size": "13px", "line-height": "1.6", "white-space": "pre-line" }
+          }, [
+            vue.createElementVNode("div", { style: { "font-weight": "700", "font-size": "14px", "margin-bottom": "4px", "display": "flex", "align-items": "center", "gap": "6px" } }, [
+              vue.createTextVNode("📢 "),
+              vue.createTextVNode(vue.toDisplayString(announce.value.title), 1)
+            ]),
+            vue.createTextVNode(vue.toDisplayString(announce.value.text), 1)
+          ])) : vue.createCommentVNode("", true),
           vue.createElementVNode("div", { class: "home-section", style: {"margin-top":"8px"} }, [
             vue.createElementVNode("div", { class: "section-title" }, "推广返利"),
             vue.createElementVNode("a", {
@@ -1924,98 +1858,18 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               target: "_blank"
             }, "💰 去推广赚钱")
           ]),
-          !showLogin.value ? (vue.openBlock(), vue.createElementBlock("div", {
-            key: "login-collapsed",
-            class: "home-section collapsible-section",
-            style: {"margin-top":"8px"}
-          }, [
-            vue.createElementVNode("div", {
-              class: "section-title",
-              title: "点击展开"
+          vue.createElementVNode("div", { class: "home-section", style: {"margin-top":"8px"} }, [
+            vue.createElementVNode("div", { class: "section-title" }, "QQ频道"),
+            vue.createElementVNode("a", {
+              class: "home-card-btn",
+              href: "https://pd.qq.com/s/ga2bgmmf8",
+              target: "_blank",
+              style: { "background": "linear-gradient(135deg,#12b7f5,#0a6bff)", "border": "1px solid rgba(255,255,255,.35)" }
             }, [
-              vue.createTextVNode("🔑 账号登录"),
-              vue.createElementVNode("span", {
-                class: "collapse-icon",
-                onClick: ($event) => showLogin.value = true
-              }, "+")
+              vue.createTextVNode("💬 加入腾讯频道【学神助手】"),
+              vue.createElementVNode("span", { style: { "display": "block", "font-size": "11px", "font-weight": "400", "opacity": ".9", "margin-top": "2px" } }, "频道号 pd22434767 · 点击立即加入")
             ])
-          ])) : vue.createCommentVNode("", true),
-          showLogin.value ? (vue.openBlock(), vue.createElementBlock("div", {
-            key: "login",
-            class: "home-section collapsible-section",
-            style: {"margin-top":"8px"}
-          }, [
-            vue.createElementVNode("div", {
-              class: "section-title",
-              title: "点击收起"
-            }, [
-              vue.createTextVNode("🔑 账号登录"),
-              vue.createElementVNode("span", {
-                class: "collapse-icon",
-                onClick: ($event) => showLogin.value = false
-              }, "−")
-            ]),
-            vue.createElementVNode("div", {
-              style: { "padding": "10px 12px", "margin-top": "8px", "background": "var(--t-surface)", "border": "1px solid var(--t-border)", "border-radius": "6px" }
-            }, [
-            vue.createElementVNode("div", { style: { "display": "flex", "gap": "8px", "flex-wrap": "wrap", "align-items": "center" } }, [
-              vue.createElementVNode("input", {
-                value: loginUser.value,
-                onInput: ($event) => loginUser.value = $event.target.value,
-                placeholder: "用户名/邮箱",
-                style: { "height": "30px", "width": "140px", "padding": "0 8px", "border": "1px solid var(--t-border2)", "border-radius": "4px", "background": "var(--t-surface)", "color": "var(--t-text)" }
-              }, null, 40, ["value"]),
-              vue.createElementVNode("input", {
-                value: loginPwd.value,
-                onInput: ($event) => loginPwd.value = $event.target.value,
-                onKeydown: vue.withKeys(loginLocalBackend, ["enter"]),
-                type: "password",
-                placeholder: "密码",
-                style: { "height": "30px", "width": "140px", "padding": "0 8px", "border": "1px solid var(--t-border2)", "border-radius": "4px", "background": "var(--t-surface)", "color": "var(--t-text)" }
-              }, null, 40, ["value"]),
-              vue.createElementVNode("button", {
-                onClick: loginLocalBackend,
-                disabled: loginBusy.value,
-                style: { "height": "30px", "padding": "0 12px", "border": "none", "border-radius": "4px", "background": "var(--t-primary)", "color": "#fff", "cursor": "pointer", "font-size": "12px", "font-weight": "500" }
-              }, vue.toDisplayString(loginBusy.value ? "登录中..." : "登录"), 9, ["disabled"]),
-              vue.createElementVNode("button", {
-                onClick: openForgot,
-                style: { "height": "30px", "padding": "0 10px", "border": "1px solid var(--t-border2)", "border-radius": "4px", "background": "var(--t-surface2)", "color": "var(--t-text2)", "cursor": "pointer", "font-size": "12px" }
-              }, "找回密码"),
-              vue.createElementVNode("button", {
-                onClick: openRegister,
-                style: { "height": "30px", "padding": "0 10px", "border": "1px solid var(--t-border2)", "border-radius": "4px", "background": "var(--t-surface2)", "color": "var(--t-text2)", "cursor": "pointer", "font-size": "12px" }
-              }, "注册账号"),
-              vue.createElementVNode("button", {
-                onClick: openPricing,
-                style: { "height": "30px", "padding": "0 10px", "border": "1px solid var(--t-primary)", "border-radius": "4px", "background": "var(--t-primary-bg)", "color": "var(--t-primary)", "cursor": "pointer", "font-size": "12px" }
-              }, "套餐购买")
-            ]),
-            vue.createElementVNode("div", { style: { "display": "flex", "gap": "10px", "align-items": "center", "margin-top": "8px", "color": "var(--t-text3)", "font-size": "11px", "line-height": "1.6", "flex-wrap": "wrap" } }, [
-              vue.createElementVNode("label", { style: { "display": "inline-flex", "align-items": "center", "gap": "4px", "cursor": "pointer" } }, [
-                vue.createElementVNode("input", {
-                  type: "checkbox",
-                  checked: rememberLogin.value,
-                  onChange: ($event) => {
-                    rememberLogin.value = $event.target.checked;
-                    if (!rememberLogin.value) clearRememberedLogin();
-                  }
-                }, null, 40, ["checked"]),
-                vue.createTextVNode("记住登录状态")
-              ]),
-              isAutoLoggedIn.value ? (vue.openBlock(), vue.createElementBlock("button", {
-                key: 0,
-                onClick: clearRememberedLogin,
-                style: { "height": "24px", "padding": "0 8px", "border": "1px solid var(--t-danger)", "border-radius": "4px", "background": "var(--t-surface2)", "color": "var(--t-danger)", "cursor": "pointer", "font-size": "11px" }
-              }, "清除记忆")) : vue.createCommentVNode("", true),
-              vue.createElementVNode("span", null, "登录会自动获取并配置你自己的密钥；也可以到设置页手动粘贴别人的密钥。")
-            ]),
-            loginMsg.value ? (vue.openBlock(), vue.createElementBlock("div", {
-              key: 2,
-              style: { "margin-top": "8px", "color": loginMsg.value.includes("成功") ? "var(--t-success)" : "var(--t-danger)" }
-            }, vue.toDisplayString(loginMsg.value), 5)) : vue.createCommentVNode("", true)
-          ])
-          ])) : vue.createCommentVNode("", true),
+          ]),
           vue.createElementVNode("div", {
             class: "home-section collapsible-section",
             style: {"margin-top":"8px"}
@@ -2320,7 +2174,11 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       vue.watch(
         () => setting.config.basicConfig.videoPlayrate,
         (newVal) => {
-          window.location.reload();
+          const rate = newVal && newVal.value;
+          if (rate) {
+            applyVideoRateToPage(rate);
+            useLogStore().insertLog(`已更新视频倍速为 ${rate}x（无需刷新页面）`);
+          }
         },
         {
           deep: true
@@ -2411,12 +2269,15 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                           "tip-formatter": formatter
                         }, null, 8, ["value", "onUpdate:value"])) : config2.type === "input-number" ? (vue.openBlock(), vue.createBlock(_component_a_input_number, {
                           key: 1,
-                          precision: 0,
+                          precision: config2.precision,
+                          step: config2.step,
                           value: config2.value,
-                          "onUpdate:value": ($event) => config2.value = $event,
+                          onChange: ($event) => {
+                            if ($event !== null && $event !== undefined) config2.value = $event;
+                          },
                           min: config2.min,
                           max: config2.max
-                        }, null, 8, ["value", "onUpdate:value", "min", "max"])) : config2.type === "switch" ? (vue.openBlock(), vue.createBlock(_component_a_switch, {
+                        }, null, 8, ["value", "onChange", "min", "max", "precision", "step"])) : config2.type === "switch" ? (vue.openBlock(), vue.createBlock(_component_a_switch, {
                           key: 2,
                           size: "small",
                           checked: config2.value,
@@ -2571,7 +2432,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     if (/^[A-Z](?:[\s,，、;；|]+[A-Z])+$/.test(text.toUpperCase())) {
       return text.toUpperCase().split(/[\s,，、;；|]+/).filter(Boolean);
     }
-    return text.split(/\s*\|\s*|\s*；\s*|\s*;\s*/).map((x) => x.trim()).filter(Boolean);
+    return text.split(/\s*\|\s*|\s*；\s*|\s*;\s*|\s*[,，、]\s*/).map((x) => x.trim()).filter(Boolean);
   };
   const buildLocalBackendQuestionPayload = (question) => {
     return JSON.stringify({
@@ -7816,10 +7677,13 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 const fillSuccess = this.fillQuestion(question);
                 if (!fillSuccess) {
                   question.answer.code = 0;
+                  if (mode === "questionBank") {
+                    continue;
+                  }
+                } else {
+                  this.correctNum += 1;
                   continue;
                 }
-                this.correctNum += 1;
-                continue;
               }
               if (mode === "questionBank" || answerData.code !== -1004) {
                 question.answer = {
@@ -8276,6 +8140,45 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       }
     }
     applyHookToVideo(video);
+  };
+  const applyVideoRateToPage = (rate) => {
+    if (!rate || isNaN(rate)) return;
+    const applyOnDoc = (doc) => {
+      if (!doc) return;
+      doc.querySelectorAll("video, audio").forEach((el) => {
+        try {
+          delete el.playbackRate;
+        } catch (e) {
+        }
+        try {
+          el.playbackRate = rate;
+        } catch (e) {
+        }
+        try {
+          Object.defineProperty(el, "playbackRate", {
+            configurable: true,
+            get: () => rate,
+            set: () => {
+            }
+          });
+        } catch (e) {
+        }
+      });
+    };
+    const collectFrames = (doc, depth) => {
+      if (depth > 3 || !doc) return;
+      doc.querySelectorAll("iframe").forEach((frame) => {
+        try {
+          if (frame.contentDocument) {
+            applyOnDoc(frame.contentDocument);
+            collectFrames(frame.contentDocument, depth + 1);
+          }
+        } catch (e) {
+        }
+      });
+    };
+    applyOnDoc(document);
+    collectFrames(document, 0);
   };
   const FACE_CHECK_INTERVAL_SECONDS = 3;
   const FACE_RECOGNITION_TEXTS = [
@@ -8957,10 +8860,13 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 if (errorStatus) {
                   question.answer.code = 0;
                   fillFailed = true;
+                  if (mode === "questionBank") {
+                    handled = true;
+                  }
                 } else {
                   this.correctNum += 1;
+                  handled = true;
                 }
-                handled = true;
               } else if (mode === "questionBank" || answerData.code !== -1004) {
                 question.answer = {
                   code: answerData.code,
@@ -9039,13 +8945,14 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         let isSelected = false;
         if (!this._window) return;
         const optionsDOM = document.querySelectorAll(".subject_node")[index].querySelectorAll(".node_detail");
+        const normalizeOptText = (str) => String(str ?? "").replace(/^[A-Z][.、．]\s*/i, "").replace(/\s+/g, "").replace(/[^\p{L}\p{N}√×]/gu, "").toLowerCase();
         if (question.type === "单选题" || question.type === "多选题") {
           question.answer.answer.forEach((answer) => {
             optionsDOM.forEach((optionDOM) => {
-              if (answer == this.removeHtml(optionDOM.innerHTML)) {
-                isSelected = true;
-                optionDOM.click();
-              } else if (this.removeAllTags(answer) == this.removeAllTags(optionDOM.innerHTML)) {
+              const optionText = this.removeHtml(optionDOM.innerHTML);
+              const nAnswer = normalizeOptText(answer);
+              const nOption = normalizeOptText(optionText);
+              if (answer == optionText || this.removeAllTags(answer) == this.removeAllTags(optionText) || (nAnswer.length >= 2 && nOption && nOption.includes(nAnswer))) {
                 isSelected = true;
                 optionDOM.click();
               }
@@ -9588,7 +9495,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         videoEl.muted = true;
         videoEl.play().catch(() => {
         });
-        const rates = [2, 1.75, 1.5, 1.25];
+        const userRate = Number(setting.config.basicConfig.videoPlayrate.value) || 1;
+        const rates = [userRate, 2, 1.75, 1.5, 1.25];
         for (const rate of rates) {
           try {
             videoEl.playbackRate = rate;
@@ -9949,7 +9857,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         };
         (_a = document.body) == null ? void 0 : _a.addEventListener("click", muteHandler, { once: true });
         (_b = document.querySelector("#container")) == null ? void 0 : _b.addEventListener("click", muteHandler, { once: true });
-        const rates = [2, 1.75, 1.5, 1.25];
+        const userRate = Number(setting.config.basicConfig.videoPlayrate.value) || 1;
+        const rates = [userRate, 2, 1.75, 1.5, 1.25];
         for (const rate of rates) {
           try {
             videoEl.playbackRate = rate;
@@ -10293,7 +10202,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     };
     const getVideoRate = () => {
       const rate = Number(setting.config.basicConfig.videoPlayrate.value);
-      return Math.min(rate || 1, 1.5);
+      return Math.min(rate || 1, 16);
     };
     const getResourceCards = () => Array.from(document.querySelectorAll('[class*="card-container"]'));
     const getActiveCard = () => getResourceCards().find((card) => card.classList.contains("active")) || null;
@@ -10649,7 +10558,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     };
     const getRate = () => {
       const rate = Number(setting.config.basicConfig.videoPlayrate.value);
-      return Math.min(rate || 1, 1.5);
+      return Math.min(rate || 1, 16);
     };
     const getCourseName = () => {
       var _a, _b;
@@ -11274,6 +11183,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       const { answerMode } = setting.config.basicConfig;
       const mode = answerMode.value;
       let handled = false;
+      let bankFilled = false;
       const apiQuestion = toApiQuestion(question);
       if (mode !== "ai") {
         const answerData = await getAccurateAnswer(apiQuestion);
@@ -11285,7 +11195,15 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             answer: answerData.data.answer,
             source: "accurate"
           });
-          handled = true;
+          if (fillQuestion(question)) {
+            bankFilled = true;
+            handled = true;
+          } else if (mode === "questionBank") {
+            question.answer.code = 0;
+            handled = true;
+          } else {
+            question.answer.code = 0;
+          }
         } else if (mode === "questionBank" || answerData.code !== -1004) {
           question.answer = { code: answerData.code, answer: [answerData.msg] };
           handled = true;
@@ -11309,6 +11227,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           question.answer = { code: -1, answer: ["该题型不支持AI答题"] };
         }
       }
+      if (bankFilled) return true;
       if ([1, 2].includes(question.answer.code)) {
         const filled = fillQuestion(question);
         if (!filled) question.answer.code = 0;
@@ -11719,7 +11638,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     };
     const getConfiguredRate = () => {
       const rate = Number(setting.config.basicConfig.videoPlayrate.value);
-      return Math.min(rate || 1, 1.5);
+      return Math.min(rate || 1, 16);
     };
     const getReloadCount = () => Number(sessionStorage.getItem(RELOAD_COUNT_KEY) || 0);
     const setReloadCount = (count) => {
@@ -12340,6 +12259,106 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       const headerLeftRef = vue.ref(null);
       const boxSize = vue.ref({ width: 400, height: 700 });
       const setting = useSettingStore();
+      const remembered = getRememberedLogin();
+      const loginUser = vue.ref(remembered.username || "");
+      const loginPwd = vue.ref("");
+      const loginMsg = vue.ref("");
+      const loginBusy = vue.ref(false);
+      const rememberLogin = vue.ref(remembered.remember !== false);
+      const isAutoLoggedIn = vue.ref(!!remembered.token);
+      const openUserCenter = () => {
+        const token = (remembered && remembered.token) || "";
+        const user = (remembered && remembered.user) || "";
+        const userStr = typeof user === "string" ? user : JSON.stringify(user);
+        const url = token
+          ? `${LOCAL_USER_CENTER_URL}&token=${encodeURIComponent(token)}&user=${encodeURIComponent(userStr)}`
+          : setting.shopLink || LOCAL_USER_CENTER_URL;
+        window.open(url, "_blank");
+      };
+      const openPricing = () => {
+        const token = (remembered && remembered.token) || "";
+        const user = (remembered && remembered.user) || "";
+        const userStr = typeof user === "string" ? user : JSON.stringify(user);
+        const baseUrl = "https://xs.openget.cn/user?section=billing";
+        const url = token
+          ? `${baseUrl}&token=${encodeURIComponent(token)}&user=${encodeURIComponent(userStr)}`
+          : baseUrl;
+        window.open(url, "_blank");
+      };
+      const openRegister = () => {
+        window.open("https://xs.openget.cn/register", "_blank");
+      };
+      const openForgot = () => {
+        window.open("https://xs.openget.cn/forgot", "_blank");
+      };
+      const loginLocalBackend = async () => {
+        if (!loginUser.value.trim() || !loginPwd.value.trim()) {
+          loginMsg.value = "请填写用户名/邮箱和密码";
+          return;
+        }
+        loginBusy.value = true;
+        loginMsg.value = "正在登录用户中心...";
+        try {
+          const password_hash = await sha256Text(loginPwd.value.trim());
+          const loginRes = await localBackendJson("https://xs.openget.cn/api/auth/login", {
+            username: loginUser.value.trim(),
+            password_hash
+          });
+          if (loginRes.code !== 200 || !loginRes.token) {
+            loginMsg.value = loginRes.msg || "登录失败";
+            return;
+          }
+          const syncRes = await syncLoginTokenToScriptKey(setting, loginRes.token);
+          if (syncRes.ok) {
+            if (rememberLogin.value) {
+              setRememberedLogin({
+                remember: true,
+                username: loginUser.value.trim(),
+                token: loginRes.token,
+                savedAt: Date.now()
+              });
+            } else {
+              setRememberedLogin({ remember: false, username: loginUser.value.trim() });
+            }
+            isAutoLoggedIn.value = true;
+            loginMsg.value = "登录成功，已记住登录状态并同步密钥";
+          } else {
+            loginMsg.value = syncRes.msg || "登录成功，但脚本密钥获取失败，请点用户中心手动复制";
+          }
+        } catch (e) {
+          loginMsg.value = "登录失败，请检查本地后端是否运行";
+        } finally {
+          loginBusy.value = false;
+        }
+      };
+      const autoLoginByRememberedToken = async () => {
+        if (!remembered.token) return;
+        loginBusy.value = true;
+        loginMsg.value = "正在恢复上次登录状态...";
+        const profile = await localBackendJson("https://xs.openget.cn/api/user/profile", null, remembered.token);
+        if (profile.code === 401 || profile.code === 403) {
+          loginMsg.value = "登录状态已过期，请重新登录";
+          setRememberedLogin({ remember: rememberLogin.value, username: remembered.username || "" });
+          isAutoLoggedIn.value = false;
+          loginBusy.value = false;
+          return;
+        }
+        if (profile.code !== 200) {
+          loginMsg.value = "网络异常，暂未恢复登录状态（已保留登录记忆）";
+          isAutoLoggedIn.value = false;
+          loginBusy.value = false;
+          return;
+        }
+        const syncRes = await syncLoginTokenToScriptKey(setting, remembered.token);
+        loginMsg.value = syncRes.ok ? "已恢复登录状态并同步密钥" : syncRes.msg || "自动登录失败";
+        loginBusy.value = false;
+      };
+      const clearRememberedLogin = () => {
+        setRememberedLogin({ remember: rememberLogin.value, username: loginUser.value.trim() });
+        isAutoLoggedIn.value = false;
+        loginMsg.value = "已清除脚本页登录记忆";
+      };
+      vue.onMounted(autoLoginByRememberedToken);
       const isShow = vue.ref(true);
       const messageStore = useMessageStore();
       const messageList = vue.ref(messageStore.messageList);
@@ -12673,6 +12692,71 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 }, "—")
               ]),
             ], 32),
+            !isMini.value ? (vue.openBlock(), vue.createElementBlock("div", {
+              key: 1,
+              class: "login-bar",
+              style: { "padding": "8px 10px", "background": "var(--t-surface2)", "border-bottom": "1px solid var(--t-border)", "display": "flex", "flex-direction": "column", "gap": "6px" }
+            }, [
+              vue.createElementVNode("div", { style: { "display": "flex", "gap": "6px", "align-items": "center" } }, [
+                vue.createElementVNode("span", { style: { "font-size": "12px", "color": "var(--t-text3)", "font-weight": "600", "flex": "none" } }, "🔑"),
+                vue.createElementVNode("input", {
+                  value: loginUser.value,
+                  onInput: ($event) => loginUser.value = $event.target.value,
+                  placeholder: "用户名/邮箱",
+                  style: { "flex": "1", "min-width": "0", "height": "28px", "padding": "0 8px", "border": "1px solid var(--t-border2)", "border-radius": "4px", "background": "var(--t-surface)", "color": "var(--t-text)", "font-size": "12px" }
+                }, null, 40, ["value"]),
+                vue.createElementVNode("input", {
+                  value: loginPwd.value,
+                  onInput: ($event) => loginPwd.value = $event.target.value,
+                  onKeydown: vue.withKeys(loginLocalBackend, ["enter"]),
+                  type: "password",
+                  placeholder: "密码",
+                  style: { "flex": "1", "min-width": "0", "height": "28px", "padding": "0 8px", "border": "1px solid var(--t-border2)", "border-radius": "4px", "background": "var(--t-surface)", "color": "var(--t-text)", "font-size": "12px" }
+                }, null, 40, ["value"]),
+                vue.createElementVNode("button", {
+                  onClick: loginLocalBackend,
+                  disabled: loginBusy.value,
+                  style: { "height": "28px", "padding": "0 12px", "border": "none", "border-radius": "4px", "background": "var(--t-primary)", "color": "#fff", "cursor": "pointer", "font-size": "12px", "font-weight": "500", "flex": "none" }
+                }, vue.toDisplayString(loginBusy.value ? "登录中..." : "登录"), 9, ["disabled"])
+              ]),
+              vue.createElementVNode("div", { style: { "display": "flex", "gap": "10px", "align-items": "center", "color": "var(--t-text3)", "font-size": "11px", "flex-wrap": "wrap" } }, [
+                vue.createElementVNode("label", { style: { "display": "inline-flex", "align-items": "center", "gap": "4px", "cursor": "pointer" } }, [
+                  vue.createElementVNode("input", {
+                    type: "checkbox",
+                    checked: rememberLogin.value,
+                    onChange: ($event) => {
+                      rememberLogin.value = $event.target.checked;
+                      if (!rememberLogin.value) clearRememberedLogin();
+                    }
+                  }, null, 40, ["checked"]),
+                  vue.createTextVNode("记住登录")
+                ]),
+                vue.createElementVNode("a", {
+                  href: "javascript:void(0)",
+                  onClick: vue.withModifiers(openForgot, ["stop", "prevent"]),
+                  style: { "color": "var(--t-primary)", "cursor": "pointer", "text-decoration": "none" }
+                }, "找回密码"),
+                vue.createElementVNode("a", {
+                  href: "javascript:void(0)",
+                  onClick: vue.withModifiers(openRegister, ["stop", "prevent"]),
+                  style: { "color": "var(--t-primary)", "cursor": "pointer", "text-decoration": "none" }
+                }, "注册"),
+                vue.createElementVNode("a", {
+                  href: "javascript:void(0)",
+                  onClick: vue.withModifiers(openPricing, ["stop", "prevent"]),
+                  style: { "color": "var(--t-primary)", "cursor": "pointer", "text-decoration": "none" }
+                }, "套餐"),
+                isAutoLoggedIn.value ? (vue.openBlock(), vue.createElementBlock("button", {
+                  key: 0,
+                  onClick: clearRememberedLogin,
+                  style: { "height": "20px", "padding": "0 6px", "border": "1px solid var(--t-danger)", "border-radius": "4px", "background": "var(--t-surface2)", "color": "var(--t-danger)", "cursor": "pointer", "font-size": "11px" }
+                }, "清除记忆")) : vue.createCommentVNode("", true),
+                loginMsg.value ? (vue.openBlock(), vue.createElementBlock("span", {
+                  key: 2,
+                  style: { "color": loginMsg.value.includes("成功") ? "var(--t-success)" : "var(--t-danger)" }
+                }, vue.toDisplayString(loginMsg.value), 1)) : vue.createCommentVNode("", true)
+              ])
+            ])) : vue.createCommentVNode("", true),
             vue.createVNode(_sfc_main$2, {
               class: vue.normalizeClass(`box-content ${isMini.value ? "mini" : ""}`),
               onCustomEvent: _cache[8] || (_cache[8] = (newValue) => isShow.value = newValue)
@@ -12801,3 +12885,1693 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
   }
 
 })(Vue, antd, Pinia, marked, rxjs, md5, DOMPurify);
+
+/* ==================== 景德镇艺术职业学院（o-learn.cn）课程助手 ==================== */
+(function () {
+  'use strict';
+  if (!/o-learn\.cn$/i.test(location.hostname)) return;
+
+
+    /* ======================== 配置 ======================== */
+    const CONFIG = {
+        defaultSpeed: 2,          // 默认倍速
+        autoPlay: true,           // 默认开启自动播放
+        autoMute: true,           // 默认静音播放（浏览器策略要求，播放后自动取消）
+        autoNext: true,           // 视频结束自动进入下一节
+        retryInterval: 3000,      // 定期扫描兜底间隔(ms)
+        speedLockInterval: 1000,  // 倍速锁定间隔(ms)
+        playRetryMax: 10,         // 自动播放最大重试次数
+        playRetryDelay: 1000,     // 自动播放重试间隔(ms)
+        quizInterval: 2000,       // 答题轮询间隔(ms)
+        logMax: 200,              // 日志面板最大条数
+        backendBase: 'https://xs.openget.cn',
+    };
+
+    /* ======================== 持久化存储 ======================== */
+    const STORE_KEY = 'jdz-art-settings-v4';
+    let store = {
+        account: { username: '', token: '', scriptKey: '' },
+        tasks: { exam: true, quiz: true, video: true },   // 任务开关：考试 / 答题 / 视频
+        speed: CONFIG.defaultSpeed,
+        autoPlay: CONFIG.autoPlay,
+        autoMute: CONFIG.autoMute,
+        autoNext: CONFIG.autoNext,
+    };
+    function loadStore() {
+        try {
+            const raw = GM_getValue(STORE_KEY, '');
+            if (raw) store = Object.assign(store, JSON.parse(raw));
+        } catch (e) { /* ignore */ }
+    }
+    function saveStore() {
+        try { GM_setValue(STORE_KEY, JSON.stringify(store)); } catch (e) { /* ignore */ }
+    }
+
+    /* ======================== 状态 ======================== */
+    let state = {
+        currentVideo: null,
+        examStarted: false,
+        examAnswered: false,
+    };
+
+    const SPEED_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 8, 16];
+
+    /* ======================== 日志 ======================== */
+    const logStore = { list: [] };
+    function log(...args) {
+        const msg = args.map(a => {
+            if (typeof a === 'string') return a;
+            if (a instanceof Element) {
+                const id = a.id ? `#${a.id}` : '';
+                const cls = typeof a.className === 'string' && a.className.trim() ? `.${a.className.trim().split(/\s+/).join('.')}` : '';
+                return `<${a.tagName.toLowerCase()}${id}${cls}>`;
+            }
+            if (a instanceof Error) return `${a.name}: ${a.message}`;
+            if (a && typeof a === 'object') {
+                const s = JSON.stringify(a);
+                return s && s.length > 120 ? s.slice(0, 120) + '…' : s;
+            }
+            return String(a);
+        }).join(' ');
+        logStore.list.push({ time: new Date(), msg });
+        if (logStore.list.length > CONFIG.logMax) logStore.list.shift();
+        console.log('%c[景德镇艺术助手]', 'color:#4CAF50;font-weight:bold', msg);
+        renderLogPanel();
+    }
+
+    /* ======================== 学习记录 ======================== */
+    const RECORD_KEY = 'jdz-art-records';
+    let records = [];
+    function loadRecords() {
+        try { records = JSON.parse(localStorage.getItem(RECORD_KEY)) || []; }
+        catch (e) { records = []; }
+    }
+    function saveRecords() {
+        try { localStorage.setItem(RECORD_KEY, JSON.stringify(records)); }
+        catch (e) { /* ignore */ }
+    }
+    function getRecordKey(video) {
+        return video.currentSrc || video.src || location.href;
+    }
+    function ensureRecord(video) {
+        const key = getRecordKey(video);
+        let rec = records.find(r => r.key === key);
+        if (!rec) {
+            rec = {
+                key,
+                title: document.title || key,
+                firstTime: Date.now(),
+                watched: 0,
+                done: false,
+                lastSeen: Date.now(),
+            };
+            records.unshift(rec);
+            saveRecords();
+        } else {
+            rec.lastSeen = Date.now();
+        }
+        return rec;
+    }
+    function formatDuration(sec) {
+        sec = Math.floor(sec);
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        const s = sec % 60;
+        return h ? `${h}时${m}分` : m ? `${m}分${s}秒` : `${s}秒`;
+    }
+    function formatTime(ts) {
+        const d = new Date(ts);
+        return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    }
+    function safeText(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    /* ======================== 后端 API ======================== */
+    function backendRequest(path, { method = 'GET', data = null, token = '' } = {}) {
+        return new Promise((resolve) => {
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) headers['Authorization'] = 'Bearer ' + token;
+            GM_xmlhttpRequest({
+                url: CONFIG.backendBase + path,
+                method,
+                headers,
+                data: data ? JSON.stringify(data) : undefined,
+                timeout: 20000,
+                onload: (res) => {
+                    try { resolve(JSON.parse(res.responseText || '{}')); }
+                    catch (e) { resolve({ code: 500, msg: '响应解析失败' }); }
+                },
+                onerror: () => resolve({ code: 500, msg: '无法连接本地后端' }),
+                ontimeout: () => resolve({ code: 500, msg: '后端请求超时' }),
+            });
+        });
+    }
+    async function sha256Text(text) {
+        const enc = new TextEncoder();
+        const buf = await crypto.subtle.digest('SHA-256', enc.encode(text || ''));
+        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    async function backendLogin(username, password) {
+        const hash = await sha256Text(password);
+        const res = await backendRequest('/api/auth/login', { method: 'POST', data: { username, password_hash: hash } });
+        if (res.code !== 200 || !res.token) return { ok: false, msg: res.msg || '登录失败' };
+        // 同步脚本密钥
+        const keyRes = await backendRequest('/api/user/script-key', { token: res.token });
+        if (keyRes.code === 200 && keyRes.script_key) {
+            store.account = { username, token: res.token, scriptKey: keyRes.script_key };
+            saveStore();
+            return { ok: true, msg: '登录成功并已同步密钥', scriptKey: keyRes.script_key };
+        }
+        return { ok: false, msg: '登录成功但密钥获取失败，请到用户中心手动复制' };
+    }
+    async function backendProfile() {
+        const token = store.account.scriptKey || store.account.token;
+        if (!token) return null;
+        const res = await backendRequest('/api/user/profile', { token });
+        if (res.code === 200 && res.profile) return res.profile;
+        return null;
+    }
+    async function refreshAccountBadge() {
+        try {
+            const prof = await backendProfile();
+            if (prof) {
+                store.account.profile = {
+                    points_balance: prof.active_member ? null : Number(prof.points_balance || 0),
+                    active_member: !!prof.active_member,
+                    member_until: prof.member_until || '',
+                };
+                saveStore();
+            }
+        } catch (e) { /* ignore */ }
+        if (loginStatusEl) updateLoginStatus();
+    }
+    function formatQuotaText() {
+        const p = store.account.profile;
+        if (!p) return '';
+        if (p.active_member) return ` · 🎉包月不限题数`;
+        if (p.points_balance === null || p.points_balance === undefined) return '';
+        return ` · 剩余 ${p.points_balance} 题`;
+    }
+    function callAnswer(questionPayload, { u = '' } = {}) {
+        return new Promise((resolve) => {
+            const token = store.account.scriptKey || store.account.token || '';
+            const data = 'question=' + encodeURIComponent(JSON.stringify(questionPayload))
+                + '&u=' + encodeURIComponent(u)
+                + '&model_mode=auto';
+            GM_xmlhttpRequest({
+                url: CONFIG.backendBase + '/api/v1/cx?v=xs-5.0',
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+                    'Authorization': token ? 'Bearer ' + token : '',
+                },
+                data,
+                timeout: 180000,
+                onload: (res) => {
+                    try {
+                        const obj = JSON.parse(res.responseText || '{}');
+                        if (obj.code === 200 && obj.data) {
+                            // 同步权益信息（剩余题数 / 包月状态），无需额外请求
+                            if (obj.data.remainCount !== undefined || obj.data.profile) {
+                                const prof = obj.data.profile || {};
+                                const isActive = !!(prof.active_member !== undefined ? prof.active_member : store.account.profile && store.account.profile.active_member);
+                                store.account.profile = {
+                                    points_balance: isActive ? null : Number(prof.points_balance !== undefined ? prof.points_balance : obj.data.remainCount),
+                                    active_member: isActive,
+                                    member_until: prof.member_until || (store.account.profile && store.account.profile.member_until) || '',
+                                };
+                                saveStore();
+                                if (loginStatusEl) updateLoginStatus();
+                            }
+                            resolve({ ok: true, data: obj.data, msg: obj.msg || (obj.data.bank ? '题库命中' : obj.data.cache ? '缓存命中' : 'AI回答') });
+                        } else if (res.status === 401 || obj.code === 401) {
+                            resolve({ ok: false, msg: '登录态失效，请重新登录用户中心' });
+                        } else {
+                            resolve({ ok: false, msg: obj.msg || '未命中' });
+                        }
+                    } catch (e) {
+                        resolve({ ok: false, msg: '响应解析失败' });
+                    }
+                },
+                onerror: () => resolve({ ok: false, msg: '无法连接后端' }),
+                ontimeout: () => resolve({ ok: false, msg: '后端请求超时' }),
+            });
+        });
+    }
+
+    /* ======================== 图片转 base64 ======================== */
+    function downloadImageAsDataURL(url) {
+        return new Promise((resolve) => {
+            GM_xmlhttpRequest({
+                url,
+                method: 'GET',
+                responseType: 'arraybuffer',
+                timeout: 30000,
+                onload: (res) => {
+                    try {
+                        const bytes = new Uint8Array(res.response);
+                        let binary = '';
+                        const chunk = 0x8000;
+                        for (let i = 0; i < bytes.length; i += chunk) {
+                            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+                        }
+                        const type = (res.responseHeaders.match(/content-type:\s*([^\s;\r\n]+)/i) || [])[1] || 'image/jpeg';
+                        resolve('data:' + type + ';base64,' + btoa(binary));
+                    } catch (e) {
+                        resolve(null);
+                    }
+                },
+                onerror: () => resolve(null),
+                ontimeout: () => resolve(null),
+            });
+        });
+    }
+
+    /* ======================== 倍速控制 ======================== */
+    function applySpeed(video, rate) {
+        if (!video) return;
+        try {
+            if (video.__rateHijacked) restorePlaybackRate(video);
+            video.playbackRate = rate;
+            video.defaultPlaybackRate = rate;
+        } catch (e) { /* ignore */ }
+        hijackPlaybackRate(video);
+        if (video.__vjsPlayer) {
+            try { video.__vjsPlayer.playbackRate(rate); } catch (e) { /* ignore */ }
+        }
+    }
+
+    let speedLockTimer = null;
+    function startSpeedLock(video) {
+        stopSpeedLock();
+        speedLockTimer = setInterval(() => {
+            if (!video || !state.currentVideo) return;
+            try {
+                if (video.__realRate !== store.speed) {
+                    video.__realRate = store.speed;
+                    video.defaultPlaybackRate = store.speed;
+                    try { video.playbackRate = store.speed; } catch (e) {}
+                }
+            } catch (e) { /* ignore */ }
+        }, CONFIG.speedLockInterval);
+    }
+    function stopSpeedLock() {
+        if (speedLockTimer) { clearInterval(speedLockTimer); speedLockTimer = null; }
+    }
+
+    function hijackPlaybackRate(video) {
+        if (video.__rateHijacked) return;
+        video.__rateHijacked = true;
+        video.__realRate = store.speed;
+        try {
+            const desc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'playbackRate');
+            Object.defineProperty(video, 'playbackRate', {
+                configurable: true,
+                get: function () { return video.__realRate; },
+                set: function (v) {
+                    const numV = Number(v);
+                    if (isNaN(numV)) return;
+                    if (numV !== store.speed) {
+                        log('🛡️ 网页想修改倍速，已保持为', store.speed + 'x');
+                        if (desc && desc.set) desc.set.call(video, store.speed);
+                        video.__realRate = store.speed;
+                        return;
+                    }
+                    if (desc && desc.set) desc.set.call(video, numV);
+                    video.__realRate = numV;
+                }
+            });
+        } catch (e) {
+            log('⚠️ 倍速锁定遇到小问题，已自动改用备用方式', e);
+        }
+    }
+
+    function restorePlaybackRate(video) {
+        if (!video.__rateHijacked) return;
+        try { delete video.playbackRate; } catch (e) { /* ignore */ }
+        video.__rateHijacked = false;
+    }
+
+    /* ======================== 拦截 pause ======================== */
+    function hijackPause(video) {
+        if (video.__pauseHijacked) return;
+        video.__pauseHijacked = true;
+        const originalPause = video.pause.bind(video);
+        video.__originalPause = originalPause;
+        video.pause = function () {
+            if (store.autoPlay && !video.ended && !video.__userPaused) {
+                log('🛡️ 网页想暂停视频，已拦截，继续播放');
+                return;
+            }
+            return originalPause();
+        };
+        video.addEventListener('click', () => {
+            video.__userPaused = video.paused;
+        });
+    }
+
+    /* ======================== 自动播放 ======================== */
+    function autoPlayVideo(video, fromUserGesture) {
+        if (!video || !store.autoPlay) return;
+        let retryCount = 0;
+        const allowSound = fromUserGesture || store.autoMute === false;
+        function attemptPlay() {
+            if (!store.autoPlay || !video || video.ended) return;
+            if (retryCount >= CONFIG.playRetryMax) {
+                log('⚠️ 自动播放多次失败，请在页面上手动点击一次播放按钮');
+                statusEl && (statusEl.textContent = '请手动点击播放一次');
+                return;
+            }
+            retryCount++;
+            log(`▶️ 自动播放尝试 #${retryCount}（共 ${CONFIG.playRetryMax} 次）`);
+            if (!video.src && !video.currentSrc) {
+                log('⏳ 视频还在加载中，稍等一下...');
+                return;
+            }
+            video.muted = !allowSound;
+            video.volume = allowSound ? 1 : 0;
+            const doPlay = (target) => {
+                const p = target.play();
+                return p || Promise.reject(new Error('no promise'));
+            };
+            doPlay(video)
+                .then(() => {
+                    log('✅ 自动播放成功' + (allowSound ? '(带声)' : '(静音)'));
+                    setTimeout(() => {
+                        if (allowSound) { video.muted = false; video.volume = 1; }
+                    }, 500);
+                    applySpeed(video, store.speed);
+                    updateUI();
+                })
+                .catch((e) => {
+                    log(`❌ 浏览器阻止了自动播放，正在尝试其他方式...`);
+                    if (video.__vjsPlayer) {
+                        try {
+                            video.__vjsPlayer.play().then(() => {
+                                log('✅ 自动播放成功' + (allowSound ? '(带声)' : '(静音)'));
+                                applySpeed(video, store.speed);
+                                updateUI();
+                            }).catch(() => { fallbackMuted(); });
+                            return;
+                        } catch (err) { /* ignore */ }
+                    }
+                    fallbackMuted();
+                });
+            function fallbackMuted() {
+                if (!allowSound) { setTimeout(attemptPlay, CONFIG.playRetryDelay); return; }
+                video.muted = true;
+                video.volume = 0;
+                const p = (video.__vjsPlayer ? video.__vjsPlayer.play() : video.play());
+                if (p && p.then) {
+                    p.then(() => log('✅ 静音播放成功'))
+                     .catch(() => { log('静音播放也失败，等待用户交互后重试'); setTimeout(attemptPlay, CONFIG.playRetryDelay); });
+                } else {
+                    setTimeout(attemptPlay, CONFIG.playRetryDelay);
+                }
+            }
+        }
+        const events = ['loadedmetadata', 'loadeddata', 'canplay', 'canplaythrough', 'durationchange'];
+        const handler = (e) => {
+            if (store.autoPlay && video.paused) { log('▶️ 视频已就绪，自动开始播放'); attemptPlay(); }
+        };
+        events.forEach(evt => video.addEventListener(evt, handler));
+        attemptPlay();
+        const retryTimer = setInterval(() => {
+            if (video.ended || !store.autoPlay) { clearInterval(retryTimer); return; }
+            if (video.paused && video.readyState >= 2) { attemptPlay(); }
+            else if (!video.paused) { clearInterval(retryTimer); }
+        }, CONFIG.playRetryDelay);
+    }
+
+    /* ======================== 绑定视频 ======================== */
+    function getVjsPlayer(video) {
+        try {
+            if (window.videojs) {
+                const id = (video.id || '').replace(/_html5_api$/, '');
+                if (window.videojs.getPlayer) {
+                    const p = window.videojs.getPlayer(id);
+                    if (p) return p;
+                }
+                const players = window.videojs.getAllPlayers ? window.videojs.getAllPlayers() : [];
+                for (const p of players) {
+                    try {
+                        if (p.tech_ && p.tech_.el && p.tech_.el() === video) return p;
+                        if (p.el && p.el() && p.el().contains(video)) return p;
+                    } catch (e) { /* ignore */ }
+                }
+            }
+        } catch (e) { /* ignore */ }
+        return null;
+    }
+
+    function bindVideo(video) {
+        if (video.__bound) return;
+        video.__bound = true;
+        state.currentVideo = video;
+        video.__vjsPlayer = getVjsPlayer(video);
+        video.__record = ensureRecord(video);
+        log('🎬 发现视频，开始接管', video.__vjsPlayer ? '' : '', `时长=${video.duration ? formatDuration(video.duration) : '未知'}`);
+        video.autoplay = true;
+        video.preload = 'auto';
+        hijackPause(video);
+        hijackPlaybackRate(video);
+        applySpeed(video, store.speed);
+        startSpeedLock(video);
+        if (store.autoPlay) autoPlayVideo(video);
+        video.addEventListener('pause', () => {
+            if (store.autoPlay && !video.ended && !video.__userPaused) {
+                log('🔄 视频被暂停了，马上自动恢复播放');
+                setTimeout(() => {
+                    if (store.autoPlay && !video.ended) {
+                        video.muted = true;
+                        video.play().catch(() => {});
+                    }
+                }, 800);
+            }
+        });
+        video.addEventListener('ended', () => {
+            log('🏁 视频播放结束');
+            if (video.__record) {
+                video.__record.done = true;
+                saveRecords();
+                renderRecordPanel();
+            }
+            if (store.autoNext) gotoNextCourseware();
+        });
+        video.addEventListener('ratechange', () => {
+            if (video.__realRate !== store.speed) {
+                log('🔁 网页改了播放速度，已自动改回', store.speed + 'x');
+                applySpeed(video, store.speed);
+            }
+        });
+        updateUI();
+    }
+
+    /* ======================== 自动下一节 ======================== */
+    function gotoNextCourseware() {
+        log('🔜 视频播完了，正在自动进入下一节...');
+        const nextTexts = ['下一节', '下一个', '下一页', '下一章', 'next', 'Next', '继续学习'];
+        const allClickable = document.querySelectorAll('button, a, [role="button"], [class*="next"], [class*="Next"]');
+        for (const btn of allClickable) {
+            const text = (btn.textContent || '').trim();
+            if (text && nextTexts.some(t => text.includes(t))) {
+                log('📍 找到"下一节"按钮，自动点击:', text);
+                btn.click();
+                return;
+            }
+        }
+        const outlineItems = document.querySelectorAll(
+            '[class*="courseware"] li, [class*="chapter"] li, [class*="lesson"] li, [class*="catalog"] li, [class*="tree"] li, [class*="outline"] li, [class*="menu-item"], [class*="node"]'
+        );
+        let foundCurrent = false;
+        for (const item of outlineItems) {
+            if (foundCurrent) {
+                log('📍 从课程目录中点击下一项:', item.textContent?.trim()?.substring(0, 20));
+                item.click();
+                return;
+            }
+            if (item.classList.contains('active') || item.classList.contains('current') ||
+                item.getAttribute('aria-current') === 'page' ||
+                item.querySelector('.active, .current, [class*="active"], [class*="current"]')) {
+                foundCurrent = true;
+            }
+        }
+        log('⌨️ 没找到"下一节"按钮，尝试用键盘切换');
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', keyCode: 39, bubbles: true }));
+    }
+
+    /* ======================== 考试自动答题 ======================== */
+    const JUDGE_OPTIONS = { 0: '正确', 1: '错误' };
+
+    function isExamPage() {
+        return /examflow_index|examflow|examPaper|examQuestion/i.test(location.href)
+            || !!document.getElementById('paperSheet')
+            || !!document.querySelector('.exam_page, #examPage');
+    }
+
+    /* ---- 答案解析：把后端返回文本解析为 字母列表 或 判断题 目标值 ---- */
+    function parseAnswerText(text, type) {
+        text = String(text || '').trim();
+        if (!text) return null;
+        const isJudge = type === '判断题' || type === 'judge';
+        if (isJudge) {
+            const correct = /正确|true|对|yes|right|^1\b|^1$/.test(text);
+            const wrong = /错误|false|错|no|^0\b|^0$/.test(text);
+            const target = correct && !wrong ? '0' : wrong ? '1' : null;
+            return target === null ? null : { judge: target };
+        }
+        // 多选题/单选题：提取字母，兼容 "答案：ABC"、"A、文本,B、文本"、"A,B,C"
+        const letters = text.match(/[A-F]/gi) || [];
+        if (letters.length) {
+            const unique = [];
+            for (const l of letters) {
+                const u = l.toUpperCase();
+                if (!unique.includes(u)) unique.push(u);
+            }
+            return { letters: unique };
+        }
+        // 数字索引 1,2,3
+        const nums = text.match(/\d+/g) || [];
+        if (nums.length) return { letters: nums.map(n => String.fromCharCode(64 + parseInt(n, 10))) };
+        return null;
+    }
+
+    /* ---- 双结构题目解析 ----
+       结构A(纯文本): #qContent{N} > .divQuestionTitle .q-title-text + .questionOptions .q_option(input + .a11y-option)
+       结构B(图片/旧): #paperSheet > .set-group > .set-item (.score + a.option / label.exam_radio + 题干图片)
+    */
+    function getExamQuestions() {
+        const result = [];
+        // 结构A：qContent{N}
+        const qContents = document.querySelectorAll('.exam_page .q_content, #examPage .q_content, div.q_content[id^="qContent"]');
+        if (qContents.length) {
+            qContents.forEach(qc => {
+                const idMatch = (qc.id || '').match(/qContent(\d+)/);
+                const titleEl = qc.querySelector('.q-title-text');
+                const title = titleEl ? (titleEl.textContent || '').replace(/\s+/g, ' ').trim() : '';
+                const qidInput = qc.querySelector('input[name="quesId"]');
+                const qid = qidInput ? qidInput.value : '';
+                const typeEl = qc.querySelector('.divQuestionTitle');
+                const typeName = typeEl ? (typeEl.getAttribute('data-q-type-name') || '') : '';
+                const opts = [];
+                qc.querySelectorAll('.q_option').forEach(op => {
+                    const input = op.querySelector('input[type=radio], input[type=checkbox]');
+                    const clickable = op.querySelector('.a11y-option') || op.querySelector('.radio_off') || op.querySelector('.checkbox_off') || op;
+                    const labelEl = clickable;
+                    const labelText = (labelEl.textContent || '').replace(/\s+/g, ' ').trim();
+                    const optLetter = clickable.getAttribute && (clickable.getAttribute('data-option-label') || '');
+                    const inputVal = input ? input.value : '';
+                    const checked = input ? !!input.checked : false;
+                    opts.push({ text: labelText, el: clickable, input, value: inputVal, letter: optLetter, checked });
+                });
+                const imgs = Array.from(qc.querySelectorAll('img'));
+                const imgSrcs = imgs.map(img => img.src || img.getAttribute('data-src') || '').filter(Boolean);
+                if (idMatch) {
+                    result.push({
+                        num: parseInt(idMatch[1], 10),
+                        type: typeName,
+                        title,
+                        qid,
+                        opts,
+                        judges: typeName === '判断题' ? opts.map((o, i) => ({ value: o.value, text: o.text, el: o.el })) : [],
+                        stemText: title,
+                        imgSrcs,
+                        el: qc,
+                        mode: 'A',
+                        isJudge: typeName === '判断题',
+                    });
+                }
+            });
+            if (result.length) return result;
+        }
+        // 结构B：paperSheet set-item
+        const sheet = document.getElementById('paperSheet');
+        if (!sheet) return [];
+        const items = sheet.querySelectorAll('.set-item');
+        items.forEach((item, i) => {
+            const scoreEl = item.querySelector('.score');
+            const numMatch = scoreEl ? (scoreEl.textContent || '').match(/(\d+)/) : null;
+            if (!numMatch) return;
+            const num = parseInt(numMatch[1], 10);
+            const opts = [];
+            item.querySelectorAll('a.option').forEach(o => {
+                opts.push({ text: (o.textContent || '').trim(), el: o, letter: (o.getAttribute('data-option-label') || (o.textContent || '').trim()).toUpperCase() });
+            });
+            const radioEls = item.querySelectorAll('label.exam_radio');
+            const judges = [];
+            radioEls.forEach(label => {
+                const input = label.querySelector('input[type=radio]');
+                judges.push({ value: input ? input.value : '', text: (label.textContent || '').trim(), el: label });
+            });
+            const stemEl = item.querySelector('.stem, [class*="stem"], .fl, .question-content, [class*="question"]');
+            const stemText = stemEl ? (stemEl.textContent || '').replace(/\s+/g, ' ').trim() : '';
+            const imgs = item.querySelectorAll('img');
+            const imgSrcs = Array.from(imgs).map(img => img.src || img.getAttribute('data-src') || '').filter(Boolean);
+            result.push({ num, opts, judges, stemText, imgSrcs, el: item, mode: 'B', isJudge: judges.length > 0, type: judges.length ? '判断题' : (opts.length ? '单选题' : '') });
+        });
+        return result;
+    }
+
+    /* ---- 选项文本匹配：模型可能直接返回选项内容（如"发展"）而非字母 ---- */
+    function matchOptionTextToLetters(q, answer) {
+        const clean = (s) => String(s || '')
+            .replace(/^[A-F][、.．)）:：]\s*/i, '')
+            .replace(/^答案[:：]\s*/i, '')
+            .replace(/^选项[:：]\s*/i, '')
+            .replace(/\s+/g, '').trim();
+        const ans = clean(answer).toLowerCase();
+        if (!ans) return [];
+        const isSingle = /单选/.test(q.type || '') || (q.opts[0] && q.opts[0].input && q.opts[0].input.type === 'radio');
+        const found = [];
+        q.opts.forEach((o, idx) => {
+            const optText = clean(o.text || o.textContent || '').toLowerCase();
+            if (!optText) return;
+            const hit = optText === ans || optText.includes(ans) || (ans.length >= 2 && ans.includes(optText));
+            if (hit) {
+                const letter = o.letter ? o.letter.toUpperCase() : String.fromCharCode(65 + idx);
+                if (!found.includes(letter)) found.push(letter);
+            }
+        });
+        return isSingle ? found.slice(0, 1) : found;
+    }
+
+    /* ---- 单题填答：兼容两套结构 ---- */
+    function fillExamAnswer(q, answer) {
+        const parsed = parseAnswerText(answer, q.type);
+        // 判断题
+        if (q.isJudge) {
+            let targetValue = parsed ? parsed.judge : null;
+            // 模型可能返回字母（A=正确/第一个选项，B=错误/第二个选项），按选项顺序映射
+            if (targetValue === null) {
+                const letterMatch = String(answer || '').match(/\b([A-F])\b/i);
+                if (letterMatch) {
+                    const idx = letterMatch[1].toUpperCase().charCodeAt(0) - 65;
+                    const list = q.mode === 'A' ? q.opts : q.judges;
+                    if (list && list[idx] !== undefined) targetValue = String(list[idx].value);
+                }
+            }
+            if (targetValue === null) return false;
+            if (q.mode === 'A') {
+                // 结构A: 通过全局 renderCheckboxOrRadioByLabel(num, qid, idx) 或点击
+                let clicked = false;
+                q.opts.forEach((o, idx) => {
+                    if (String(o.value) === targetValue && !o.input.checked) {
+                        const fn = window.renderCheckboxOrRadioByLabel;
+                        if (typeof fn === 'function') {
+                            try { fn(String(q.num), q.qid, String(idx)); clicked = true; } catch (e) {}
+                        } else {
+                            o.el.click();
+                            clicked = true;
+                        }
+                    }
+                });
+                return clicked;
+            }
+            // 结构B
+            for (const j of q.judges) {
+                if (String(j.value) === targetValue) {
+                    j.el.classList.add('r_on');
+                    if (typeof renderCheckboxOrRadio === 'function') {
+                        try { renderCheckboxOrRadio(q.num, q.el.querySelector('.wrap') ? q.el.querySelector('.wrap').id : '', JSON.stringify(targetValue)); } catch (e) {}
+                    }
+                    const input = j.el.querySelector('input[type=radio]');
+                    if (input) input.checked = true;
+                    return true;
+                }
+            }
+            return false;
+        }
+        // 选择题（单选/多选）
+        let letters = parsed ? (parsed.letters || []) : [];
+        // 答案没含字母时，尝试按选项文本匹配（模型可能直接返回选项内容）
+        if (!letters.length) {
+            letters = matchOptionTextToLetters(q, answer);
+        }
+        if (!letters.length) return false;
+        let clicked = 0;
+        q.opts.forEach((o, idx) => {
+            // 计算该选项对应的字母（数据里可能已有 letter，否则用索引）
+            const letter = o.letter ? o.letter.toUpperCase() : String.fromCharCode(65 + idx);
+            const want = letters.includes(letter);
+            if (want && !o.checked) {
+                if (q.mode === 'A' && typeof window.renderCheckboxOrRadioByLabel === 'function') {
+                    try { window.renderCheckboxOrRadioByLabel(String(q.num), q.qid, String(idx)); clicked++; } catch (e) {}
+                } else {
+                    o.el.click();
+                    clicked++;
+                }
+            }
+        });
+        return clicked >= 0;
+    }
+
+    function formatAnswerForLog(raw) {
+        // 清理答案文本：只保留有效字母（或 正确/错误），去掉 "答案：" 等前缀
+        const s = String(raw || '').trim();
+        if (!s) return '';
+        const judge = s.match(/正确|错误|对|错/);
+        if (judge) return judge[0];
+        const letters = s.match(/[A-F]/gi);
+        if (letters && letters.length) return letters.map(l => l.toUpperCase()).join('');
+        return s.slice(0, 20);
+    }
+
+    function formatModelForLog(model) {
+        const m = String(model || '');
+        if (!m) return '';
+        // 去掉厂商前缀 tencent/ qwen/ deepseek/ 等，只留模型名
+        const seg = m.split('/').pop();
+        return seg.slice(0, 24);
+    }
+
+    async function answerExamQuestion(q, index) {
+        let payload = { question: q.stemText || q.title, type: q.type || (q.isJudge ? 'judge' : 'single') };
+        if (q.opts.length) payload.options = q.opts.map(o => o.text);
+        // 图片题：下载图片
+        const dataURLs = [];
+        for (const src of q.imgSrcs) {
+            const dataUrl = await downloadImageAsDataURL(src);
+            if (dataUrl) dataURLs.push(dataUrl);
+        }
+        if (dataURLs.length) payload.images = dataURLs;
+        if (!q.stemText && !dataURLs.length) return { ok: false, msg: '题目为空' };
+        log(`📝 [${q.num}题] 调后端获取答案...`);
+        let res = await callAnswer(payload, { u: store.account.username || '' });
+        // 超时/网络失败时自动重试一次（后端冷却机制会让下一次换模型）
+        if (!res.ok && /超时|无法连接|未命中|响应解析/.test(res.msg || '')) {
+            log(`⚠️ [${q.num}题] ${res.msg}，3秒后自动重试...`);
+            await new Promise(r => setTimeout(r, 3000));
+            res = await callAnswer(payload, { u: store.account.username || '' });
+            if (res.ok) log(`✅ [${q.num}题] 重试成功`);
+        }
+        if (!res.ok) return res;
+        return { ok: true, answer: res.data.answer, model: res.data.model, msg: res.msg || '' };
+    }
+
+    /* ---- 整页图片试卷模式 ----
+       试卷题干是整页大图（#docImagesViewArea 下 .cont > img），一张图含多道题。
+       逐张图调用后端视觉模型，返回 JSON: [{"num":1,"answer":"A"}, ...]，再逐题填答。
+       扣点按实际 API 调用次数（每张图一次调用扣1点，包月不扣）。
+    */
+    function extractImagePages() {
+        const area = document.getElementById('docImagesViewArea');
+        if (!area) return [];
+        const srcs = [];
+        area.querySelectorAll('img').forEach(img => {
+            const s = img.src || img.getAttribute('data-src') || '';
+            if (s && /(\.jpe?g|\.png|\.gif|\.webp)(\?|$)/i.test(s)) srcs.push(s);
+        });
+        // 若 docImagesViewArea 为空，退回找页面里非主题的整页大图
+        if (!srcs.length) {
+            document.querySelectorAll('img').forEach(img => {
+                const s = img.src || '';
+                if (s && /preview-office-convert|resourcePath|upload/.test(s) && img.naturalWidth > 300) srcs.push(s);
+            });
+        }
+        return srcs;
+    }
+
+    function parseImagePageAnswers(text) {
+        // 兼容: [{"num":1,"answer":"A"},...] / {1:"A",...} / 逐行 "1.A"
+        const raw = String(text || '').trim();
+        if (!raw) return null;
+        try {
+            const arr = JSON.parse(raw);
+            if (Array.isArray(arr)) {
+                const map = {};
+                arr.forEach(item => {
+                    const num = parseInt(item.num !== undefined ? item.num : item.index, 10);
+                    if (num && item.answer !== undefined) map[num] = String(item.answer).trim();
+                });
+                return map;
+            }
+            if (typeof arr === 'object') {
+                const map = {};
+                Object.keys(arr).forEach(k => {
+                    const num = parseInt(k, 10);
+                    if (num) map[num] = String(arr[k]).trim();
+                });
+                return map;
+            }
+        } catch (e) { /* not pure json */ }
+        const map = {};
+        // 兼容 "1.A 2.B 3.C" 或 "1、A" 等
+        const re = /(\d{1,3})\s*[.、:：)）]\s*([A-F]+|正确|错误)/gi;
+        let m;
+        while ((m = re.exec(raw))) map[parseInt(m[1], 10)] = m[2].toUpperCase();
+        return Object.keys(map).length ? map : null;
+    }
+
+    async function answerImagePages() {
+        const pages = extractImagePages();
+        if (!pages.length) return false;
+        log(`🖼️ 检测到整页图片型试卷，共 ${pages.length} 张整页图，开始识别...`);
+        // 等待 set-item 渲染（填答需要）
+        let items = [];
+        for (let i = 0; i < 10; i++) {
+            items = getExamQuestions();
+            if (items.length) break;
+            await new Promise(r => setTimeout(r, 1000));
+        }
+        if (!items.length) {
+            log('⚠️ 图片已找到但题目选项未渲染');
+            return false;
+        }
+        const byNum = {};
+        items.forEach(q => { byNum[q.num] = q; });
+        let filledCount = 0;
+        for (let p = 0; p < pages.length; p++) {
+            log(`🖼️ [第${p + 1}/${pages.length}张图] 下载并识别...`);
+            const dataUrl = await downloadImageAsDataURL(pages[p]);
+            if (!dataUrl) { log(`❌ 第${p + 1}张图下载失败`); continue; }
+            const payload = {
+                question: '请识别这张试卷图片中的全部题目（题干、选项），并按题号逐题给出答案。只输出 JSON 数组，格式：[{"num":1,"answer":"A"},{"num":2,"answer":"B,C"},...]。判断题用"正确"或"错误"。不要输出其他任何内容。',
+                images: [dataUrl],
+                type: 'image',
+                platform: 'jdz-exam-image',
+                refer: location.href,
+            };
+            const res = await callAnswer(payload, { u: store.account.username || '' });
+            if (!res.ok) { log(`❌ 第${p + 1}张图识别失败: ${res.msg}`); continue; }
+            const answers = parseImagePageAnswers(res.data.answer);
+            if (!answers) { log(`⚠️ 第${p + 1}张图返回无法解析: ${String(res.data.answer).slice(0, 120)}`); continue; }
+            const nums = Object.keys(answers).map(Number);
+            log(`✅ 第${p + 1}张图识别出 ${nums.length} 题答案 (${res.msg})`);
+            for (const num of nums) {
+                const q = byNum[num];
+                if (!q) { log(`⚠️ 题${num}未在页面中找到选项，跳过`); continue; }
+                const ok = fillExamAnswer(q, answers[num]);
+                if (ok) filledCount++;
+                log(`${ok ? '✅' : '⚠️'} [${num}题] ${ok ? '已填写' : '未能填写'} 答案=${formatAnswerForLog(answers[num]) || answers[num]}`);
+                await new Promise(r => setTimeout(r, 800));
+            }
+            await new Promise(r => setTimeout(r, 1500));
+        }
+        log(`🏁 整页图片答题完成，共填写 ${filledCount} 题`);
+        return filledCount > 0;
+    }
+
+    async function runExamAutoAnswer() {
+        if (state.examStarted) return;
+        state.examStarted = true;
+        log('📖 检测到考试页面，开始自动答题');
+        // 整页图片型试卷优先处理
+        if (extractImagePages().length) {
+            const ok = await answerImagePages();
+            state.examStarted = false;
+            if (ok && store.tasks.examAutoSubmit) {
+                setTimeout(() => { trySubmitExam(); }, 2000);
+            }
+            return;
+        }
+        // 等待题目渲染
+        for (let i = 0; i < 10; i++) {
+            const qs = getExamQuestions();
+            if (qs.length >= 1) break;
+            await new Promise(r => setTimeout(r, 1000));
+        }
+        const questions = getExamQuestions();
+        if (!questions.length) {
+            log('⚠️ 未解析到题目，可能是整页图片型试卷，跳过');
+            state.examStarted = false;
+            return;
+        }
+        log(`🔍 解析到 ${questions.length} 道题 (${questions[0].mode === 'A' ? '文本结构' : '图片结构'})`);
+        for (let i = 0; i < questions.length; i++) {
+            const q = questions[i];
+            const answered = q.isJudge ? q.opts.some(o => o.checked) : q.opts.some(o => o.checked);
+            if (answered) continue;
+            const res = await answerExamQuestion(q, i);
+            if (!res.ok) {
+                log(`❌ [${q.num}题] 获取失败: ${res.msg}`);
+                continue;
+            }
+            const ok = fillExamAnswer(q, res.answer);
+            const ansShow = formatAnswerForLog(res.answer);
+            const hit = res.msg && /命中/.test(res.msg) ? ` ${res.msg}` : '';
+            log(`${ok ? '✅' : '⚠️'} [${q.num}题] ${ok ? '已填写' : '未能填写'} 答案=${ansShow || '?'}${hit}`);
+            await new Promise(r => setTimeout(r, 1500));
+        }
+        state.examStarted = false;
+        log('🏁 考试自动答题完成');
+        if (store.tasks.examAutoSubmit) {
+            setTimeout(() => { trySubmitExam(); }, 2000);
+        }
+    }
+
+    function trySubmitExam() {
+        const links = document.querySelectorAll('a, button');
+        for (const el of links) {
+            const t = (el.textContent || '').trim();
+            if (t === '交卷') {
+                log('📤 自动点击交卷');
+                el.click();
+                setTimeout(() => {
+                    document.querySelectorAll('button').forEach(b => {
+                        const bt = (b.textContent || '').trim();
+                        if (bt === '交卷') b.click();
+                    });
+                }, 1000);
+                return;
+            }
+        }
+    }
+
+    function setupExamWatcher() {
+        setInterval(() => {
+            if (!store.tasks.exam) return;
+            if (isExamPage() && !state.examStarted) {
+                runExamAutoAnswer();
+            }
+        }, 3000);
+    }
+
+    /* ======================== 作业/测验自动答题 ======================== */
+    function extractWorkQuestions() {
+        // 通用提取：页面上可见的题目容器
+        const selectors = [
+            '[class*="question"]', '[class*="exam"]', '[class*="work"]', '[class*="quiz"]',
+            '.set-item', '[class*="stem"]'
+        ];
+        const seen = new Set();
+        const questions = [];
+        document.querySelectorAll(selectors.join(',')).forEach(el => {
+            if (seen.has(el)) return;
+            seen.add(el);
+            const text = (el.textContent || '').trim();
+            if (text.length < 4) return;
+            // 选项
+            const opts = [];
+            el.querySelectorAll('input[type=radio], input[type=checkbox]').forEach(inp => {
+                const label = inp.closest('label');
+                const optText = label ? (label.textContent || '').replace(/\s+/g, ' ').trim() : '';
+                if (optText) opts.push({ text: optText, el: label || inp, input: inp });
+            });
+            questions.push({ el, text, opts });
+        });
+        return questions;
+    }
+
+    async function runWorkAutoAnswer() {
+        const questions = extractWorkQuestions();
+        if (!questions.length) return;
+        log(`📝 检测到作业/测验 ${questions.length} 个题目容器`);
+        for (let i = 0; i < questions.length; i++) {
+            const q = questions[i];
+            const opts = q.opts;
+            if (!opts.length) continue;
+            const already = opts.some(o => o.input && o.input.checked);
+            if (already) continue;
+            log(`📝 作业第${i + 1}题 调后端...`);
+            const payload = { question: q.text.slice(0, 300), options: opts.map(o => o.text), type: 'single' };
+            const res = await callAnswer(payload, { u: store.account.username || '' });
+            if (!res.ok) { log(`❌ 作业第${i + 1}题失败: ${res.msg}`); continue; }
+            const answer = String(res.data.answer || '').trim();
+            const letters = answer.match(/[A-E]/gi) || [];
+            let clicked = 0;
+            opts.forEach((o, idx) => {
+                const letter = String.fromCharCode(65 + idx);
+                if (letters.some(l => l.toUpperCase() === letter)) {
+                    if (o.input && !o.input.checked) {
+                        o.el.click();
+                        clicked++;
+                    }
+                }
+            });
+            log(`${clicked ? '✅' : '⚠️'} 作业第${i + 1}题 已处理 (${res.msg})`);
+            await new Promise(r => setTimeout(r, 1500));
+        }
+    }
+
+    function setupWorkWatcher() {
+        setInterval(() => {
+            if (!store.tasks.quiz) return;
+            if (/work|homework|quiz|test|作业|测验/.test(location.href)) {
+                runWorkAutoAnswer();
+            }
+        }, 5000);
+    }
+
+    /* ======================== 视频检测（含 Shadow DOM） ======================== */
+    function findVideosInShadow(root) {
+        const results = [];
+        try {
+            root.querySelectorAll('video').forEach(v => results.push(v));
+            root.querySelectorAll('*').forEach(el => {
+                if (el.shadowRoot) {
+                    el.shadowRoot.querySelectorAll('video').forEach(v => results.push(v));
+                    findVideosInShadow(el.shadowRoot).forEach(v => results.push(v));
+                }
+            });
+        } catch (e) { /* ignore */ }
+        return results;
+    }
+
+    function scanForVideos() {
+        if (!store.tasks.video) return;
+        let videos = findVideosInShadow(document);
+        document.querySelectorAll('iframe').forEach((iframe) => {
+            try {
+                const iframeVideos = findVideosInShadow(iframe.contentDocument);
+                iframeVideos.forEach(v => { if (!videos.includes(v)) videos.push(v); });
+            } catch (e) { /* 跨域 */ }
+        });
+        if (videos.length > 0) {
+            videos.forEach(bindVideo);
+            if (!state.currentVideo || !document.contains(state.currentVideo)) {
+                state.currentVideo = videos[videos.length - 1];
+            }
+            updateUI();
+        }
+    }
+
+    /* ======================== SPA 路由监听 ======================== */
+    let lastUrl = location.href;
+    function watchRouteChange() {
+        const check = () => {
+            if (location.href !== lastUrl) {
+                lastUrl = location.href;
+                log('🔀 页面已切换，正在重新检测视频...');
+                state.currentVideo = null;
+                stopSpeedLock();
+                setTimeout(scanForVideos, 1500);
+                setTimeout(scanForVideos, 3000);
+                setTimeout(scanForVideos, 5000);
+            }
+        };
+        window.addEventListener('hashchange', check);
+        window.addEventListener('popstate', check);
+        const originalPushState = history.pushState;
+        const originalReplaceState = history.replaceState;
+        history.pushState = function (...args) {
+            originalPushState.apply(this, args);
+            setTimeout(check, 200);
+        };
+        history.replaceState = function (...args) {
+            originalReplaceState.apply(this, args);
+            setTimeout(check, 200);
+        };
+    }
+
+    /* ======================== MutationObserver ======================== */
+    function setupGlobalObserver() {
+        const observer = new MutationObserver((mutations) => {
+            for (const mutation of mutations) {
+                for (const node of mutation.addedNodes) {
+                    if (node.nodeType !== 1) continue;
+                    if (node.tagName === 'VIDEO') {
+                        bindVideo(node);
+                    } else if (node.querySelector) {
+                        try {
+                            const vids = node.querySelectorAll('video');
+                            vids.forEach(v => { if (!v.__bound) bindVideo(v); });
+                        } catch (e) { /* ignore */ }
+                    }
+                }
+            }
+        });
+        const start = () => {
+            observer.observe(document.documentElement, { childList: true, subtree: true });
+            log('✅ 视频自动检测已开启，持续监测页面变化');
+        };
+        if (document.documentElement) start();
+        else document.addEventListener('DOMContentLoaded', start);
+    }
+
+    /* ======================== Page Visibility ======================== */
+    function setupVisibilityHandler() {
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && store.autoPlay && state.currentVideo) {
+                if (state.currentVideo.paused && !state.currentVideo.ended) {
+                    log('🔄 回到页面了，恢复播放');
+                    state.currentVideo.__userPaused = false;
+                    state.currentVideo.muted = true;
+                    state.currentVideo.play().catch(() => {});
+                }
+            }
+        });
+    }
+
+    /* ======================== 用户交互解锁 ======================== */
+    function setupUserInteractionUnlock() {
+        const unlock = () => {
+            if (store.autoPlay && state.currentVideo && state.currentVideo.paused) {
+                log('✅ 检测到你的操作，开始播放');
+                state.currentVideo.play().catch(() => {});
+            }
+        };
+        document.addEventListener('click', unlock, { once: false });
+        document.addEventListener('keydown', unlock, { once: false });
+    }
+
+    /* ======================== UI ======================== */
+    let panelEl = null;
+    let speedDisplayEl = null;
+    let statusEl = null;
+    let homeTitleEl = null;
+    let logListEl = null;
+    let recordListEl = null;
+    let activePage = 'home';
+    let loginStatusEl = null;
+
+    function switchPage(name) {
+        activePage = name;
+        document.querySelectorAll('.olvh-tab').forEach(t => t.classList.toggle('active', t.dataset.page === name));
+        document.querySelectorAll('.olvh-page').forEach(p => p.classList.toggle('active', p.id === 'olvh-page-' + name));
+    }
+
+    function renderLogPanel() {
+        if (!logListEl) return;
+        if (!logStore.list.length) {
+            logListEl.innerHTML = '<div class="olvh-empty">暂无日志</div>';
+            return;
+        }
+        const html = logStore.list.slice().reverse().map(item => {
+            const t = item.time;
+            const ts = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}:${String(t.getSeconds()).padStart(2, '0')}`;
+            return `<div class="olvh-log-item"><span class="t">${ts}</span>${safeText(item.msg)}</div>`;
+        }).join('');
+        logListEl.innerHTML = html;
+        logListEl.scrollTop = 0;
+    }
+
+    function renderRecordPanel() {
+        if (!recordListEl) return;
+        if (!records.length) {
+            recordListEl.innerHTML = '<div class="olvh-empty">暂无学习记录</div>';
+            return;
+        }
+        const html = records.map(r => {
+            const badge = r.done
+                ? '<span class="rd done">已完成</span>'
+                : '<span class="rd ing">学习中</span>';
+            return `<div class="olvh-record-item">
+                <div class="rt">${safeText(r.title)}</div>
+                <div class="rs">${badge} · 已学 ${formatDuration(r.watched)} · ${formatTime(r.lastSeen)}</div>
+            </div>`;
+        }).join('');
+        recordListEl.innerHTML = html;
+    }
+
+    function updateLoginStatus() {
+        if (!loginStatusEl) return;
+        if (store.account.scriptKey) {
+            loginStatusEl.innerHTML = `✅ 已登录：<b>${safeText(store.account.username || '')}</b>${formatQuotaText()}`;
+        } else if (store.account.token) {
+            loginStatusEl.innerHTML = `✅ 已登录（未同步密钥）：<b>${safeText(store.account.username || '')}</b>`;
+        } else {
+            loginStatusEl.innerHTML = '❌ 未登录，请填写账号密码';
+        }
+    }
+
+    function createPanel() {
+        if (window.top !== window.self) return;
+        if (document.getElementById('olvh-panel')) return;
+        if (!document.body) {
+            document.addEventListener('DOMContentLoaded', createPanel);
+            return;
+        }
+
+        panelEl = document.createElement('div');
+        panelEl.id = 'olvh-panel';
+        panelEl.innerHTML = `
+            <style>
+                #olvh-panel {
+                    position: fixed; top: 80px; right: 20px; z-index: 999999;
+                    font-family: -apple-system, "Microsoft YaHei", sans-serif; font-size: 13px;
+                    width: 280px;
+                }
+                #olvh-header {
+                    background: linear-gradient(135deg, #4CAF50, #2E7D32); color: #fff;
+                    padding: 8px 12px; border-radius: 8px 8px 0 0; cursor: move;
+                    display: flex; align-items: center; justify-content: space-between;
+                    font-weight: 600; user-select: none; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+                }
+                #olvh-header .title { font-size: 13px; }
+                #olvh-toggle {
+                    background: rgba(255,255,255,0.2); border: none; color: #fff;
+                    width: 22px; height: 22px; border-radius: 50%; cursor: pointer;
+                    font-size: 14px; line-height: 1; display: flex; align-items: center; justify-content: center;
+                }
+                #olvh-toggle:hover { background: rgba(255,255,255,0.35); }
+                #olvh-body {
+                    background: #fff; border: 1px solid #e0e0e0; border-top: none;
+                    border-radius: 0 0 8px 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+                }
+                #olvh-body.collapsed { display: none; }
+                .olvh-tabs { display: flex; background: #f5f5f5; border-bottom: 1px solid #e0e0e0; }
+                .olvh-tab {
+                    flex: 1; text-align: center; padding: 8px 0; cursor: pointer;
+                    color: #666; font-size: 12px; border-bottom: 2px solid transparent; transition: all 0.15s;
+                }
+                .olvh-tab:hover { background: #e8f5e9; color: #2E7D32; }
+                .olvh-tab.active { color: #4CAF50; font-weight: 700; border-bottom-color: #4CAF50; background: #fff; }
+                .olvh-page { display: none; padding: 10px; max-height: 380px; overflow-y: auto; }
+                .olvh-page.active { display: block; }
+                .olvh-section { margin-bottom: 10px; }
+                .olvh-section:last-child { margin-bottom: 0; }
+                .olvh-label { color: #666; font-size: 11px; margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center; }
+                .olvh-speed-value { font-weight: 700; color: #4CAF50; font-size: 14px; }
+                .olvh-speed-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+                .olvh-speed-btn {
+                    padding: 5px 0; border: 1px solid #ddd; background: #f9f9f9; border-radius: 4px;
+                    cursor: pointer; text-align: center; font-size: 12px; color: #333; transition: all 0.15s;
+                }
+                .olvh-speed-btn:hover { background: #e8f5e9; border-color: #4CAF50; }
+                .olvh-speed-btn.active { background: #4CAF50; color: #fff; border-color: #4CAF50; font-weight: 600; }
+                .olvh-custom-speed { display: flex; gap: 4px; margin-top: 4px; }
+                .olvh-custom-speed input { flex: 1; padding: 4px 6px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; outline: none; width: 0; }
+                .olvh-custom-speed input:focus { border-color: #4CAF50; }
+                .olvh-custom-speed button { padding: 4px 10px; background: #4CAF50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+                .olvh-toggle-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
+                .olvh-toggle-row span { color: #555; }
+                .olvh-switch { position: relative; width: 36px; height: 20px; background: #ccc; border-radius: 10px; cursor: pointer; transition: background 0.2s; }
+                .olvh-switch.on { background: #4CAF50; }
+                .olvh-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; background: #fff; border-radius: 50%; transition: left 0.2s; }
+                .olvh-switch.on::after { left: 18px; }
+                .olvh-status { font-size: 11px; color: #999; margin-top: 8px; padding-top: 8px; border-top: 1px solid #eee; }
+                .olvh-status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+                .olvh-status .dot.green { background: #4CAF50; }
+                .olvh-status .dot.gray { background: #ccc; }
+                .olvh-status .dot.red { background: #f44336; }
+                .olvh-force-btn {
+                    width: 100%; padding: 6px; margin-top: 6px; background: #ff9800; color: #fff;
+                    border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;
+                }
+                .olvh-force-btn:hover { background: #f57c00; }
+                .olvh-log-list { font-family: Consolas, Monaco, monospace; font-size: 11px; line-height: 1.6; color: #444; }
+                .olvh-log-item { padding: 2px 0; border-bottom: 1px dashed #f0f0f0; word-break: break-all; }
+                .olvh-log-item .t { color: #aaa; margin-right: 4px; }
+                .olvh-record-item { padding: 6px 0; border-bottom: 1px dashed #f0f0f0; }
+                .olvh-record-item .rt { font-size: 11px; color: #333; word-break: break-all; margin-bottom: 2px; }
+                .olvh-record-item .rs { font-size: 11px; color: #999; }
+                .olvh-record-item .rd { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px; color: #fff; }
+                .olvh-record-item .rd.done { background: #4CAF50; }
+                .olvh-record-item .rd.ing { background: #ff9800; }
+                .olvh-hint { font-size: 11px; color: #999; margin-top: 6px; line-height: 1.5; }
+                .olvh-empty { color: #bbb; font-size: 11px; text-align: center; padding: 12px 0; }
+                .olvh-title-row { font-size: 11px; color: #333; word-break: break-all; margin-bottom: 6px; }
+                .olvh-clear-btn { width: 100%; padding: 4px; margin-top: 6px; background: #eee; color: #666; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 11px; }
+                .olvh-clear-btn:hover { background: #e0e0e0; }
+                .olvh-login-box { border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px; background: #fafafa; }
+                .olvh-login-row { display: flex; gap: 4px; margin-bottom: 6px; }
+                .olvh-login-row input { flex: 1; padding: 5px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px; outline: none; min-width: 0; }
+                .olvh-login-row input:focus { border-color: #4CAF50; }
+                .olvh-login-btn { width: 100%; padding: 6px; background: #4CAF50; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; }
+                .olvh-login-btn:hover { background: #388E3C; }
+                .olvh-login-btn:disabled { background: #a5d6a7; cursor: not-allowed; }
+                .olvh-login-status { font-size: 11px; margin-top: 6px; color: #999; word-break: break-all; }
+                .olvh-logout-btn { width: 100%; padding: 4px; margin-top: 6px; background: #eee; color: #d32f2f; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 11px; }
+                .olvh-logout-btn:hover { background: #f5e3e3; }
+                .olvh-login-actions { display: flex; gap: 4px; margin-top: 6px; }
+                .olvh-login-actions button { flex: 1; padding: 4px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 11px; }
+                .olvh-usercenter-btn { background: #e3f2fd; color: #1565c0; }
+                .olvh-usercenter-btn:hover { background: #bbdefb; }
+                .olvh-task-switch { border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px; background: #fafafa; }
+                .olvh-task-desc { font-size: 10px; color: #999; margin-top: 4px; }
+            </style>
+            <div id="olvh-header">
+                <span class="title">🎨 景德镇艺术-学习助手</span>
+                <button id="olvh-toggle">−</button>
+            </div>
+            <div id="olvh-body">
+                <div class="olvh-tabs">
+                    <div class="olvh-tab active" data-page="home">首页</div>
+                    <div class="olvh-tab" data-page="quiz">答题</div>
+                    <div class="olvh-tab" data-page="log">日志</div>
+                    <div class="olvh-tab" data-page="record">记录</div>
+                    <div class="olvh-tab" data-page="settings">设置</div>
+                </div>
+                <div class="olvh-page active" id="olvh-page-home">
+                    <div class="olvh-section">
+                        <div class="olvh-title-row">🔑 账号登录</div>
+                        <div class="olvh-login-box">
+                            <div class="olvh-login-row">
+                                <input type="text" id="olvh-login-user" placeholder="用户名/邮箱">
+                                <input type="password" id="olvh-login-pwd" placeholder="密码">
+                            </div>
+                            <button class="olvh-login-btn" id="olvh-login-btn">登录并同步密钥</button>
+                            <div class="olvh-login-actions">
+                                <button class="olvh-usercenter-btn" id="olvh-usercenter-btn">👤 用户中心</button>
+                                <button class="olvh-logout-btn" id="olvh-logout-btn" style="${store.account.scriptKey ? '' : 'display:none'}">退出登录</button>
+                            </div>
+                            <div class="olvh-login-status" id="olvh-login-status">${store.account.scriptKey ? '已登录' : '未登录'}</div>
+                        </div>
+                        <div class="olvh-hint">登录后自动获取脚本密钥，用于云端AI答题。也支持用户名或邮箱登录。</div>
+                    </div>
+                    <div class="olvh-section">
+                        <div class="olvh-title-row" id="olvh-home-title">尚未检测到视频</div>
+                        <div class="olvh-status" id="olvh-status">
+                            <span class="dot gray" id="olvh-status-dot"></span>
+                            <span id="olvh-status-text">等待检测视频...</span>
+                        </div>
+                        <button class="olvh-force-btn" id="olvh-force-play">▶ 强制播放</button>
+                    </div>
+                </div>
+                <div class="olvh-page" id="olvh-page-quiz">
+                    <div class="olvh-section">
+                        <div class="olvh-title-row">📋 自动任务</div>
+                        <div class="olvh-task-switch">
+                            <div class="olvh-toggle-row">
+                                <span>📖 考试自动答题</span>
+                                <div class="olvh-switch ${store.tasks.exam ? 'on' : ''}" id="olvh-task-exam"></div>
+                            </div>
+                            <div class="olvh-task-desc">进入考试页自动识别题目并填写答案</div>
+                            <div class="olvh-toggle-row">
+                                <span>📝 作业/测验自动答题</span>
+                                <div class="olvh-switch ${store.tasks.quiz ? 'on' : ''}" id="olvh-task-quiz"></div>
+                            </div>
+                            <div class="olvh-task-desc">进入作业/测验页自动填写答案</div>
+                            <div class="olvh-toggle-row">
+                                <span>🎬 视频自动处理</span>
+                                <div class="olvh-switch ${store.tasks.video ? 'on' : ''}" id="olvh-task-video"></div>
+                            </div>
+                            <div class="olvh-task-desc">自动播放、倍速、自动下一节</div>
+                        </div>
+                        <div class="olvh-hint">勾选的任务才会执行，未勾选则跳过。</div>
+                    </div>
+                </div>
+                <div class="olvh-page" id="olvh-page-log">
+                    <div class="olvh-section">
+                        <div class="olvh-log-list" id="olvh-log-list"><div class="olvh-empty">暂无日志</div></div>
+                        <button class="olvh-clear-btn" id="olvh-log-clear">清空日志</button>
+                    </div>
+                </div>
+                <div class="olvh-page" id="olvh-page-record">
+                    <div class="olvh-section">
+                        <div id="olvh-record-list"><div class="olvh-empty">暂无学习记录</div></div>
+                        <button class="olvh-clear-btn" id="olvh-record-clear">清空记录</button>
+                    </div>
+                </div>
+                <div class="olvh-page" id="olvh-page-settings">
+                    <div class="olvh-section">
+                        <div class="olvh-label">
+                            <span>视频倍数</span>
+                            <span class="olvh-speed-value" id="olvh-speed-display">${store.speed}x</span>
+                        </div>
+                        <div class="olvh-speed-grid" id="olvh-speed-grid">
+                            ${SPEED_PRESETS.map(s => `<div class="olvh-speed-btn ${s === store.speed ? 'active' : ''}" data-speed="${s}">${s}x</div>`).join('')}
+                        </div>
+                        <div class="olvh-custom-speed">
+                            <input type="number" id="olvh-custom-input" placeholder="自定义" min="0.1" max="16" step="0.1">
+                            <button id="olvh-custom-btn">设置</button>
+                        </div>
+                    </div>
+                    <div class="olvh-section">
+                        <div class="olvh-toggle-row">
+                            <span>自动播放</span>
+                            <div class="olvh-switch ${store.autoPlay ? 'on' : ''}" id="olvh-autoplay-switch"></div>
+                        </div>
+                        <div class="olvh-toggle-row">
+                            <span>静音播放</span>
+                            <div class="olvh-switch ${store.autoMute ? 'on' : ''}" id="olvh-mute-switch"></div>
+                        </div>
+                        <div class="olvh-toggle-row">
+                            <span>自动下一节</span>
+                            <div class="olvh-switch ${store.autoNext ? 'on' : ''}" id="olvh-autonext-switch"></div>
+                        </div>
+                        <div class="olvh-toggle-row">
+                            <span>考试自动交卷</span>
+                            <div class="olvh-switch ${store.tasks.examAutoSubmit ? 'on' : ''}" id="olvh-autosubmit-switch"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(panelEl);
+
+        speedDisplayEl = document.getElementById('olvh-speed-display');
+        statusEl = document.getElementById('olvh-status-text');
+        homeTitleEl = document.getElementById('olvh-home-title');
+        logListEl = document.getElementById('olvh-log-list');
+        recordListEl = document.getElementById('olvh-record-list');
+        loginStatusEl = document.getElementById('olvh-login-status');
+
+        bindUIEvents();
+        makeDraggable();
+        renderLogPanel();
+        renderRecordPanel();
+        updateLoginStatus();
+    }
+
+    function bindUIEvents() {
+        const toggleBtn = document.getElementById('olvh-toggle');
+        const body = document.getElementById('olvh-body');
+        toggleBtn.addEventListener('click', () => {
+            body.classList.toggle('collapsed');
+            toggleBtn.textContent = body.classList.contains('collapsed') ? '+' : '−';
+        });
+
+        document.querySelectorAll('.olvh-tab').forEach(tab => {
+            tab.addEventListener('click', () => switchPage(tab.dataset.page));
+        });
+
+        document.getElementById('olvh-speed-grid').addEventListener('click', (e) => {
+            const btn = e.target.closest('.olvh-speed-btn');
+            if (!btn) return;
+            setSpeed(parseFloat(btn.dataset.speed));
+        });
+
+        const customInput = document.getElementById('olvh-custom-input');
+        const customBtn = document.getElementById('olvh-custom-btn');
+        const applyCustom = () => {
+            const val = parseFloat(customInput.value);
+            if (val > 0 && val <= 16) setSpeed(val);
+            else { customInput.value = ''; customInput.placeholder = '0.1~16'; }
+        };
+        customBtn.addEventListener('click', applyCustom);
+        customInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') applyCustom(); });
+
+        // 登录
+        const loginBtn = document.getElementById('olvh-login-btn');
+        const userInput = document.getElementById('olvh-login-user');
+        const pwdInput = document.getElementById('olvh-login-pwd');
+        const doLogin = async () => {
+            const u = userInput.value.trim();
+            const p = pwdInput.value;
+            if (!u || !p) { loginStatusEl.textContent = '请填写用户名和密码'; return; }
+            loginBtn.disabled = true;
+            loginBtn.textContent = '登录中...';
+            const res = await backendLogin(u, p);
+            loginStatusEl.textContent = res.msg;
+            if (res.ok) {
+                userInput.value = '';
+                pwdInput.value = '';
+                document.getElementById('olvh-logout-btn').style.display = '';
+                updateLoginStatus();
+                log('🔑', res.msg);
+                refreshAccountBadge();
+            }
+            loginBtn.disabled = false;
+            loginBtn.textContent = '登录并同步密钥';
+        };
+        loginBtn.addEventListener('click', doLogin);
+        pwdInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+        document.getElementById('olvh-usercenter-btn').addEventListener('click', () => {
+            window.open(CONFIG.backendBase + '/user', '_blank');
+        });
+        document.getElementById('olvh-logout-btn').addEventListener('click', () => {
+            store.account = { username: '', token: '', scriptKey: '' };
+            saveStore();
+            document.getElementById('olvh-logout-btn').style.display = 'none';
+            updateLoginStatus();
+            log('👋 已退出登录');
+        });
+
+        // 任务开关
+        const bindSwitch = (id, key, logText) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('click', () => {
+                store.tasks[key] = !store.tasks[key];
+                el.classList.toggle('on', store.tasks[key]);
+                saveStore();
+                log(logText, store.tasks[key] ? '开启' : '关闭');
+            });
+        };
+        bindSwitch('olvh-task-exam', 'exam', '考试自动答题');
+        bindSwitch('olvh-task-quiz', 'quiz', '作业/测验自动答题');
+        bindSwitch('olvh-task-video', 'video', '视频自动处理');
+
+        document.getElementById('olvh-autoplay-switch').addEventListener('click', function () {
+            store.autoPlay = !store.autoPlay;
+            saveStore();
+            this.classList.toggle('on', store.autoPlay);
+            if (store.autoPlay && state.currentVideo) {
+                state.currentVideo.__userPaused = false;
+                autoPlayVideo(state.currentVideo);
+            }
+            log('自动播放:', store.autoPlay);
+        });
+        document.getElementById('olvh-mute-switch').addEventListener('click', function () {
+            store.autoMute = !store.autoMute;
+            saveStore();
+            this.classList.toggle('on', store.autoMute);
+            if (state.currentVideo) {
+                state.currentVideo.muted = store.autoMute;
+                state.currentVideo.volume = store.autoMute ? 0 : 1;
+            }
+            log('静音播放:', store.autoMute);
+        });
+        document.getElementById('olvh-autonext-switch').addEventListener('click', function () {
+            store.autoNext = !store.autoNext;
+            saveStore();
+            this.classList.toggle('on', store.autoNext);
+            log('自动下一节:', store.autoNext);
+        });
+        document.getElementById('olvh-autosubmit-switch').addEventListener('click', function () {
+            store.tasks.examAutoSubmit = !store.tasks.examAutoSubmit;
+            saveStore();
+            this.classList.toggle('on', store.tasks.examAutoSubmit);
+            log('考试自动交卷:', store.tasks.examAutoSubmit);
+        });
+
+        document.getElementById('olvh-log-clear').addEventListener('click', () => {
+            logStore.list = [];
+            renderLogPanel();
+            log('日志已清空');
+        });
+
+        document.getElementById('olvh-record-clear').addEventListener('click', () => {
+            records = [];
+            saveRecords();
+            renderRecordPanel();
+            log('学习记录已清空');
+        });
+
+        document.getElementById('olvh-force-play').addEventListener('click', () => {
+            log('手动触发强制播放');
+            if (state.currentVideo) {
+                const v = state.currentVideo;
+                v.__userPaused = false;
+                const wantSound = store.autoMute === false;
+                v.muted = !wantSound;
+                v.volume = wantSound ? 1 : 0;
+                const target = v.__vjsPlayer || v;
+                target.play().then(() => {
+                    log('✅ 强制播放成功' + (wantSound ? '(带声)' : '(静音)'));
+                    if (wantSound) setTimeout(() => { v.muted = false; v.volume = 1; }, 400);
+                }).catch(e => {
+                    v.muted = true; v.volume = 0;
+                    v.play().then(() => log('✅ 备用静音播放成功')).catch(err => log('强制播放失败:', err));
+                });
+                applySpeed(v, store.speed);
+            } else {
+                log('未检测到视频，重新扫描...');
+                scanForVideos();
+            }
+        });
+    }
+
+    function setSpeed(rate) {
+        store.speed = rate;
+        saveStore();
+        log('设置倍速:', rate);
+        if (state.currentVideo) {
+            applySpeed(state.currentVideo, rate);
+        }
+        updateUI();
+    }
+
+    function updateUI() {
+        if (!panelEl) return;
+        if (speedDisplayEl) speedDisplayEl.textContent = store.speed + 'x';
+        document.querySelectorAll('.olvh-speed-btn').forEach(btn => {
+            btn.classList.toggle('active', parseFloat(btn.dataset.speed) === store.speed);
+        });
+        if (statusEl) {
+            const dot = document.getElementById('olvh-status-dot');
+            if (state.currentVideo) {
+                const playing = !state.currentVideo.paused;
+                const rate = state.currentVideo.__realRate || store.speed;
+                statusEl.textContent = playing
+                    ? `播放中 · ${rate}x · ${Math.round(state.currentVideo.currentTime)}s`
+                    : `已检测 · 暂停中 · ${rate}x`;
+                if (dot) dot.className = 'dot ' + (playing ? 'green' : 'red');
+            } else {
+                statusEl.textContent = '等待检测视频...';
+                if (dot) dot.className = 'dot gray';
+            }
+        }
+        if (homeTitleEl) {
+            if (state.currentVideo) {
+                homeTitleEl.textContent = `📺 ${document.title || '当前视频'}`;
+            } else {
+                homeTitleEl.textContent = '尚未检测到视频';
+            }
+        }
+    }
+
+    function startUIRefresh() {
+        setInterval(() => {
+            if (state.currentVideo) {
+                if (!state.currentVideo.paused && !state.currentVideo.ended && state.currentVideo.__record) {
+                    state.currentVideo.__record.watched += 1;
+                    state.currentVideo.__record.lastSeen = Date.now();
+                    saveRecords();
+                }
+                updateUI();
+            }
+        }, 1000);
+    }
+
+    function makeDraggable() {
+        const header = document.getElementById('olvh-header');
+        const panel = document.getElementById('olvh-panel');
+        let isDragging = false, startX, startY, startLeft, startTop;
+        header.addEventListener('mousedown', (e) => {
+            if (e.target.id === 'olvh-toggle') return;
+            isDragging = true;
+            startX = e.clientX; startY = e.clientY;
+            const rect = panel.getBoundingClientRect();
+            startLeft = rect.left; startTop = rect.top;
+            panel.style.right = 'auto';
+            panel.style.left = startLeft + 'px';
+            panel.style.top = startTop + 'px';
+            e.preventDefault();
+        });
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            panel.style.left = (startLeft + e.clientX - startX) + 'px';
+            panel.style.top = (startTop + e.clientY - startY) + 'px';
+        });
+        document.addEventListener('mouseup', () => { isDragging = false; });
+    }
+
+    /* ======================== 启动 ======================== */
+    function init() {
+        loadStore();
+        loadRecords();
+        log('景德镇艺术-学习助手 v4.1.0 启动');
+
+        setupExamWatcher();
+        setupWorkWatcher();
+        setupGlobalObserver();
+
+        const start = () => {
+            createPanel();
+            watchRouteChange();
+            setupVisibilityHandler();
+            setupUserInteractionUnlock();
+            startUIRefresh();
+
+            if (isExamPage()) {
+                log('📖 检测到考试页面');
+                if (store.tasks.exam) runExamAutoAnswer();
+            }
+
+            scanForVideos();
+            setTimeout(scanForVideos, 1500);
+            setTimeout(scanForVideos, 3000);
+            setTimeout(scanForVideos, 5000);
+            setTimeout(scanForVideos, 8000);
+
+            setInterval(scanForVideos, CONFIG.retryInterval);
+        };
+
+        if (document.body) start();
+        else document.addEventListener('DOMContentLoaded', start);
+    }
+
+  const __jdzInit = init;
+  init = function () {
+    try {
+      if (!store.account.token && !store.account.scriptKey) {
+        const raw = GM_getValue('localBackendLogin', '');
+        if (raw) {
+          const saved = JSON.parse(raw);
+          if (saved && saved.token) {
+            store.account.username = saved.username || '';
+            store.account.token = saved.token;
+            saveStore();
+            log('🔑 已同步学神助手登录态，可直接答题');
+          }
+        }
+      }
+    } catch (e) {}
+    __jdzInit();
+  };
+  init();
+})();
+
