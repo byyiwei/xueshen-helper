@@ -8629,6 +8629,103 @@
         }, 2500);
       });
     };
+    const processRead = async (iframe, iframeWindow) => {
+      try {
+        const triggerFinish = () => {
+          try {
+            if (iframeWindow && typeof iframeWindow.finishJob === "function" && iframeWindow.jobid) {
+              iframeWindow.finishJob(iframeWindow.jobid);
+              return true;
+            }
+          } catch (e) {
+          }
+          return false;
+        };
+        if (!triggerFinish()) {
+          const subFrame = (iframe.contentDocument == null ? void 0 : iframe.contentDocument.querySelector('iframe[src*="readjob"]')) || null;
+          const subWin = (subFrame == null ? void 0 : subFrame.contentWindow) || null;
+          try {
+            if (subWin && subWin.parent && typeof subWin.parent.finishJob === "function" && subWin.data && subWin.data.jobid) {
+              subWin.parent.finishJob(subWin.data.jobid);
+            }
+          } catch (e) {
+          }
+        }
+        let waited = 0;
+        while (waited < 15000) {
+          const parentEl = iframe.parentElement;
+          if (parentEl && parentEl.className.includes("ans-job-finished")) return Promise.resolve();
+          await sleep(1000);
+          waited += 1000;
+        }
+        log.insertLog("阅读任务完成超时，请手动检查", "warning", 4);
+        return Promise.resolve();
+      } catch (e) {
+        return Promise.resolve();
+      }
+    };
+    const processLive = async (iframe, iframeWindow) => {
+      try {
+        if (iframeWindow) {
+          const bodyTxt = (iframeWindow.document.body == null ? void 0 : iframeWindow.document.body.innerText) || "";
+          if (bodyTxt.includes("已完成") && /观看|任务/.test(bodyTxt)) {
+            log.insertLog("直播任务已完成，自动继续", "success", 4);
+            return Promise.resolve();
+          }
+        }
+        if (iframeWindow && !iframeWindow.__xsLiveOpened) {
+          try {
+            const card = (iframeWindow == null ? void 0 : iframeWindow.document) == null ? void 0 : iframeWindow.document.querySelector(".liveHref");
+            if (card) {
+              card.click();
+              iframeWindow.__xsLiveOpened = true;
+              log.insertLog("已自动打开直播回放，观看时长达到90%后将自动完成并跳转", "info", 4);
+            } else {
+              log.insertLog("当前直播未开播或不可回放", "warning", 4);
+              return Promise.resolve();
+            }
+          } catch (e) {
+          }
+        }
+        const readLiveProgress = () => {
+          try {
+            const info = iframeWindow.document.querySelector(".LiveInfo2");
+            const txt = (info == null ? void 0 : info.textContent) || "";
+            const m = txt.match(/观看进度为\s*([\d.]+)\s*%/);
+            return m ? parseFloat(m[1]) : null;
+          } catch (e) {
+            return null;
+          }
+        };
+        let waited = 0;
+        while (waited < 3 * 60 * 60 * 1000) {
+          const parentEl = iframe.parentElement;
+          if (parentEl && parentEl.className.includes("ans-job-finished")) {
+            log.insertLog("直播任务已完成，自动继续", "success", 4);
+            return Promise.resolve();
+          }
+          const pct = readLiveProgress();
+          if (pct !== null && pct >= 90) {
+            log.insertLog("直播观看进度已达90%，刷新页面确认任务完成", "success", 4);
+            try {
+              iframeWindow.top.location.reload();
+            } catch (e) {
+              location.reload();
+            }
+            return Promise.resolve();
+          }
+          await sleep(30000);
+          waited += 30000;
+          if (waited % 600000 === 0) {
+            log.insertLog(`直播挂机中，已等待 ${Math.round(waited / 60000)} 分钟（进度${pct === null ? "未知" : pct + "%"}），请保持回放页在前台播放`, "warning", 4);
+          }
+        }
+        log.insertLog("直播任务超时未完成，请手动检查", "warning", 4);
+        return Promise.resolve();
+      } catch (e) {
+        return Promise.resolve();
+      }
+    };
     const processIframe = async (iframe) => {
       var _a, _b;
       const iframeSrc = iframe.src;
@@ -8640,6 +8737,12 @@
       const parentClass = ((_a = iframe.parentElement) == null ? void 0 : _a.className) || "";
       if (parentClass.includes("ans-job-finished")) ;
       else {
+        if (iframeSrc.includes("modules/read")) {
+          return processRead(iframe, iframeWindow);
+        }
+        if (iframeSrc.includes("modules/live")) {
+          return processLive(iframe, iframeWindow);
+        }
         if (iframeSrc.includes("api/work")) {
           selectTextSearchLogic(iframeDocument, iframeWindow);
           return processWork(iframe, iframeDocument, iframeWindow);
@@ -8665,6 +8768,52 @@
     setupFaceRecognitionWatcher();
     processIframeTask();
     setupInterceptor();
+  };
+  const cxLiveReplayLogic = () => {
+    const log = useLogStore();
+    log.insertLog("进入直播回放页，脚本正在控制视频播放..");
+    let notified = false;
+    const getVideo = () => document.querySelector("video");
+    const ensurePlaying = async () => {
+      const v = getVideo();
+      if (!v) return;
+      if (v.paused || v.ended) {
+        v.muted = true;
+        try {
+          await v.play();
+        } catch (e) {
+        }
+      }
+    };
+    const isWatchedEnough = () => {
+      const v = getVideo();
+      if (!v || typeof watchTime === "undefined") return false;
+      return watchTime >= v.duration * 0.9;
+    };
+    const checkTask = async () => {
+      await ensurePlaying();
+      if (notified || !isWatchedEnough()) return;
+      notified = true;
+      log.insertLog("直播观看进度已达90%，正在返回课程页确认完成", "success", 4);
+      try {
+        const opener = window.opener;
+        if (opener && !opener.closed) {
+          try {
+            opener.location.reload();
+          } catch (e) {
+          }
+        }
+      } catch (e) {
+      }
+      setTimeout(() => {
+        try {
+          window.close();
+        } catch (e) {
+        }
+      }, 1500);
+    };
+    setInterval(checkTask, 5000);
+    setTimeout(checkTask, 1500);
   };
   const cxHomeworkLogic = async () => {
     const log = useLogStore();
@@ -8797,6 +8946,7 @@
   };
   const cxRoutes = {
     match: [
+      { keyword: "zhibo.chaoxing.com", tab: "0", logic: cxLiveReplayLogic },
       { keyword: "/base", tab: "0" },
       { keyword: "/space/index", tab: "0" },
       // 积分课程
