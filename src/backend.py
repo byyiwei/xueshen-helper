@@ -53,8 +53,10 @@ MODEL_FAIL_COOLDOWN_SECONDS = 600
 # 429 限流冷却：{model_name: expire_timestamp}
 MODEL_429_COOLDOWN = {}
 MODEL_429_DEFAULT_SECONDS = 60  # 默认冷却60秒
-# 自动答题整体时间预算（秒）：含多模型切换，必须小于前端请求超时(120s)，否则前端会先超时放弃
-ANSWER_TIME_BUDGET = 110
+# 自动答题整体时间预算（秒）：含多模型切换，需小于前端请求超时与 nginx proxy_read_timeout
+ANSWER_TIME_BUDGET = 200
+# 单个模型最多耗时（秒）：防止某个慢/挂掉的模型独占预算，让其他提供商兜底模型有机会被尝试
+MAX_MODEL_BUDGET = 45
 DASHBOARD_CACHE = {"time": 0, "data": None}
 DASHBOARD_CACHE_SECONDS = 5
 REVOKED_USER_TOKENS = set()
@@ -1858,6 +1860,25 @@ def weighted_pick(candidates):
     result.extend(rest)
     return result
 
+def provider_round_robin_rest(ordered):
+    """保留首选，其余候选按提供商轮询打散：避免同一提供商（如大量同权重模型）连续霸占尝试机会，
+    让不同提供商（如硅基流动 MiniMax、阿里云 qwen）尽早都有机会被尝试。"""
+    if not ordered:
+        return ordered
+    result = [ordered[0]]
+    pools = {}
+    for item in ordered[1:]:
+        pools.setdefault(item[0], []).append(item)
+    for p in pools:
+        pools[p].sort(key=lambda x: -x[3])
+    while pools:
+        for p in list(pools.keys()):
+            if pools[p]:
+                result.append(pools[p].pop(0))
+            if not pools[p]:
+                del pools[p]
+    return result
+
 def build_models_html():
     options = []
     for name, info in PROVIDERS.items():
@@ -2088,9 +2109,9 @@ def ask_ai_auto(question, need_vision=False):
         if cooling_429:
             return None, "所有模型429限流冷却中，请稍后重试", "", ""
         return None, "所有模型均不可用（404冷却中）", "", ""
-    # 按权重排序，串行依次尝试，权重高的优先调用
-    ordered = weighted_pick(active)
-    print(f"[自动模型] 串行尝试 {len(ordered)} 个模型，顺序: {', '.join(f'{m[2]}(w={m[3]})' for m in ordered)}", flush=True)
+    # 按权重排序，串行依次尝试，权重高的优先调用；再按提供商轮询打散避免单家霸占
+    ordered = provider_round_robin_rest(weighted_pick(active))
+    print(f"[自动模型] 串行尝试 {len(ordered)} 个模型，顺序: {', '.join(f'{m[2]}({m[0]},w={m[3]})' for m in ordered)}", flush=True)
     errors = []
     error_logs = []  # 失败的模型日志，待确定最终成功模型后统一补记
     final_model = ""
@@ -2104,7 +2125,7 @@ def ask_ai_auto(question, need_vision=False):
             print(f"[自动模型] 整体时间预算({ANSWER_TIME_BUDGET}s)即将耗尽，跳过剩余模型", flush=True)
             break
         try:
-            answer, err, tokens = call_provider_chat(question, model_name, provider_info, time_budget=remaining)
+            answer, err, tokens = call_provider_chat(question, model_name, provider_info, time_budget=min(MAX_MODEL_BUDGET, remaining))
         except Exception as e:
             err = str(e)
             answer = None
