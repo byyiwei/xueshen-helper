@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         江西开放大学-学习助手
 // @namespace    https://github.com/jxrtvu-helper
-// @version      1.0.0
+// @version      1.0.1
 // @description  江西开放大学 学习平台助手：自动播放、自定义倍速、自动下一节、考试/作业自动答题、AI云端答题、学习记录、日志面板、账号登录
 // @author       IPYIWEI
 // @match        *://*.jxrtvu.com/*
@@ -217,7 +217,7 @@
                     'Authorization': token ? 'Bearer ' + token : '',
                 },
                 data,
-                timeout: 180000,
+                timeout: 300000,
                 onload: (res) => {
                     try {
                         const obj = JSON.parse(res.responseText || '{}');

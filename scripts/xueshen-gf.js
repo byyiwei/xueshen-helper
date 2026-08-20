@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.2.4
+// @version      5.2.5
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @author       IPYIWEI
@@ -10,6 +10,8 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.2.5 更新内容：
+// @changelog    1. 优化 AI 答题超时处理：后端自动重试/切换模型耗时较长时，前端答题请求不再提前超时（120s→240s、180s→300s），重试成功后自动填充答案
 // @changelog    v5.2.4 更新内容：
 // @changelog    1. 账号登录移至标题栏下方常驻，切换任意页面Tab登录状态均可见
 // @changelog    2. 视频倍速支持最高16倍，可在设置中自定义，设置后即时生效无需刷新页面
@@ -2504,7 +2506,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           "Authorization": token ? "Bearer " + token : ""
         },
         data,
-        timeout: 12e4,
+        timeout: 24e4,
         onload: (response) => {
           try {
             const obj = JSON.parse(response.responseText || "{}");
@@ -13237,7 +13239,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                     'Authorization': token ? 'Bearer ' + token : '',
                 },
                 data,
-                timeout: 180000,
+                timeout: 300000,
                 onload: (res) => {
                     try {
                         const obj = JSON.parse(res.responseText || '{}');

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         景德镇艺术-学习助手
 // @namespace    https://github.com/jdzvuacj
-// @version      4.2.0
+// @version      4.2.1
 // @description  景德镇艺术职业学院 学习平台助手：自动播放、自定义倍速、自动下一节、考试/作业自动答题、AI云端答题、学习记录、日志面板、账号登录
 // @author       IPYIWEI
 // @match        *://*.o-learn.cn/*
@@ -218,7 +218,7 @@
                     'Authorization': token ? 'Bearer ' + token : '',
                 },
                 data,
-                timeout: 180000,
+                timeout: 300000,
                 onload: (res) => {
                     try {
                         const obj = JSON.parse(res.responseText || '{}');

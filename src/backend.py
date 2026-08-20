@@ -10,6 +10,7 @@ import json
 import os
 import re
 import time
+import socket
 import hashlib
 import uuid
 import random
@@ -52,6 +53,8 @@ MODEL_FAIL_COOLDOWN_SECONDS = 600
 # 429 限流冷却：{model_name: expire_timestamp}
 MODEL_429_COOLDOWN = {}
 MODEL_429_DEFAULT_SECONDS = 60  # 默认冷却60秒
+# 自动答题整体时间预算（秒）：含多模型切换，必须小于前端请求超时(120s)，否则前端会先超时放弃
+ANSWER_TIME_BUDGET = 110
 DASHBOARD_CACHE = {"time": 0, "data": None}
 DASHBOARD_CACHE_SECONDS = 5
 REVOKED_USER_TOKENS = set()
@@ -1599,13 +1602,15 @@ def normalize_ai_answer(question, answer):
     text = re.sub(r"^\s*[A-D]\s*[:：、.．)]\s*", "", text).strip()
     return text
 
-def do_openai_compatible_chat(messages, model, api_key, base_url):
+def do_openai_compatible_chat(messages, model, api_key, base_url, time_budget=None):
     if not api_key:
         return None, "API Key 为空，请先在管理后台配置 AI 提供商的 API Key", 0
     if not base_url:
         return None, "Base URL 为空，请先在管理后台配置 AI 提供商的接口地址", 0
 
-    def _try_request(msgs, use_temp=True, use_max_tokens=True):
+    _budget_start = time.time()
+
+    def _try_request(msgs, use_temp=True, use_max_tokens=True, timeout=30):
         payload = {"model": model, "messages": msgs}
         if use_temp:
             payload["temperature"] = 0.1
@@ -1618,7 +1623,7 @@ def do_openai_compatible_chat(messages, model, api_key, base_url):
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             method="POST"
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
     # 第1次尝试：标准请求（system + user, temperature, max_tokens）
@@ -1636,6 +1641,8 @@ def do_openai_compatible_chat(messages, model, api_key, base_url):
                     user_content.append({"type": "text", "text": m["content"]})
             return [{"role": "user", "content": user_content}]
         return [{"role": "user", "content": "\n".join(m["content"] for m in messages)}]
+    # 超时类错误（上游慢/网络抖动）逐次放宽超时，并在重试前退避等待
+    attempt_timeouts = [30, 45, 60]
     for attempt, (msgs, use_temp, use_max_tokens, label) in enumerate([
         (messages, True, True, "标准请求"),
         # 第2次：去掉 system 消息，合并到 user 中（部分提供商不支持 system role）
@@ -1643,8 +1650,15 @@ def do_openai_compatible_chat(messages, model, api_key, base_url):
         # 第3次：最小化请求，只保留 model + messages
         (_retry_messages(), False, False, "最小请求"),
     ]):
+        if time_budget is not None:
+            remaining = time_budget - (time.time() - _budget_start)
+            if remaining <= 0:
+                return None, "API 请求超时（超出整体时间预算）", 0
+            attempt_timeout = min(attempt_timeouts[attempt], remaining)
+        else:
+            attempt_timeout = attempt_timeouts[attempt]
         try:
-            result = _try_request(msgs, use_temp, use_max_tokens)
+            result = _try_request(msgs, use_temp, use_max_tokens, timeout=attempt_timeout)
             if "error" in result:
                 err_msg = result["error"].get("message", json.dumps(result["error"]))
                 if attempt < 2:
@@ -1697,6 +1711,15 @@ def do_openai_compatible_chat(messages, model, api_key, base_url):
             return None, f"API HTTP {e.code} (模型:{model}): {err_msg}", 0
         except Exception as e:
             if attempt < 2:
+                # 超时类错误：上游慢/网络抖动，退避后再重试（配合逐次放宽的超时时间）
+                if isinstance(e, (TimeoutError, socket.timeout)):
+                    if time_budget is not None:
+                        remaining = time_budget - (time.time() - _budget_start)
+                        sleep_s = min(1 + attempt, max(remaining, 0))
+                    else:
+                        sleep_s = 1 + attempt
+                    if sleep_s > 0:
+                        time.sleep(sleep_s)
                 continue
             return None, f"API 异常: {str(e)}", 0
     return None, "API 请求失败：所有重试均被拒绝，请检查模型名称和接口配置", 0
@@ -1941,14 +1964,14 @@ def build_ai_messages(question_payload_str):
     ]
     return messages
 
-def call_provider_chat(question, model_name, provider_info):
+def call_provider_chat(question, model_name, provider_info, time_budget=None):
     # 将题目JSON格式化为消息（含多模态图片支持）
     messages = build_ai_messages(question)
     api_key = provider_info.get("api_key", "")
     base_url = provider_info.get("base_url", "")
     protocol = provider_info.get("protocol", "openai")
     if protocol == "openai":
-        return do_openai_compatible_chat(messages, model_name, api_key, base_url)
+        return do_openai_compatible_chat(messages, model_name, api_key, base_url, time_budget=time_budget)
     elif protocol == "claude":
         return do_claude_chat(messages, model_name, api_key, base_url)
     elif protocol == "gemini":
@@ -2071,12 +2094,17 @@ def ask_ai_auto(question, need_vision=False):
     errors = []
     error_logs = []  # 失败的模型日志，待确定最终成功模型后统一补记
     final_model = ""
+    deadline = time.time() + ANSWER_TIME_BUDGET
 
     for provider_name, provider_info, model_name, weight in ordered:
         print(f"[自动模型] 尝试 provider={provider_name}, model={model_name}, weight={weight}", flush=True)
         attempt_start = time.time()
+        remaining = max(deadline - time.time(), 0)
+        if remaining <= 5:
+            print(f"[自动模型] 整体时间预算({ANSWER_TIME_BUDGET}s)即将耗尽，跳过剩余模型", flush=True)
+            break
         try:
-            answer, err, tokens = call_provider_chat(question, model_name, provider_info)
+            answer, err, tokens = call_provider_chat(question, model_name, provider_info, time_budget=remaining)
         except Exception as e:
             err = str(e)
             answer = None
@@ -2109,6 +2137,9 @@ def ask_ai_auto(question, need_vision=False):
                     MODEL_FAIL_COOLDOWN[model_name] = time.time() + MODEL_FAIL_COOLDOWN_SECONDS
                     print(f"[自动模型] 模型不可用，进入冷却 {MODEL_FAIL_COOLDOWN_SECONDS}s: {model_name}，原因：{err}", flush=True)
             errors.append(f"{model_name}: {err}")
+            # 超时类错误：上游慢/网络抖动，切换下一个模型前退避等待，避免连续打击同一网络
+            if "timed out" in err.lower() or "timeout" in err.lower():
+                time.sleep(min(3, max(deadline - time.time(), 0)))
 
     # 补记失败模型日志，标注最后成功调用的模型（全部失败则为空）
     for item in error_logs:
