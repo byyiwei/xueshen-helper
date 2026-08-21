@@ -4441,7 +4441,8 @@ createApp({
         const res=await fetch('/admin/qq-bot',{headers:{'Authorization':token.value}});
         const data=await res.json();
         if(data.code===200){
-          qqBot.value=data.config||{enabled:false,appid:'',secret:'',sandbox:false,reply_template:'{answer}',max_answer_len:0};
+          const def={enabled:false,appid:'',secret:'',sandbox:false,reply_template:'{answer}',max_answer_len:0};
+          qqBot.value={config: data.config||def};
           qqBotStatus.value=data.status||{running:false,last_error:'',started_at:0,last_message_at:0};
           qqBotLogs.value=data.logs||[];
           qqBotBotpyAvailable.value=!!data.botpy_available;
@@ -4465,7 +4466,7 @@ createApp({
         const data=await res.json();
         if(data.code===200){
           showMsg('QQ频道机器人配置已保存并应用');
-          qqBot.value=data.config||qqBot.value;
+          qqBot.value={config: data.config||(qqBot.value&&qqBot.value.config)||{}};
           qqBotStatus.value=data.status||qqBotStatus.value;
           await loadQqBot();
         }else if(data.code===403){logout();showMsg('登录已过期','error');}
