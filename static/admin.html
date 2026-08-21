@@ -879,13 +879,16 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
 
         <!-- 系统配置组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.config}">
-          <div class="menu-group-header dock-item" :class="{active:['ai-config','email-config','db-config'].includes(page)}" @click="expandedGroups.config=!expandedGroups.config">
+          <div class="menu-group-header dock-item" :class="{active:['ai-config','email-config','db-config','qq-bot'].includes(page)}" @click="expandedGroups.config=!expandedGroups.config">
             <span class="icon">◇</span>系统配置
             <span class="arrow">▶</span>
           </div>
           <div class="menu-group-items">
             <div class="menu-item" :class="{active:page==='ai-config'}" @click="page='ai-config';loadConfig()">
               <span class="icon">◈</span>模型配置
+            </div>
+            <div class="menu-item" :class="{active:page==='qq-bot'}" @click="page='qq-bot';loadQqBot()">
+              <span class="icon">🤖</span>QQ频道机器人
             </div>
             <div class="menu-item" :class="{active:page==='email-config'}" @click="page='email-config';loadEmailConfig();loadEmailTemplates()">
               <span class="icon">✉</span>邮箱配置
@@ -1344,6 +1347,86 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
           <div style="display:flex;gap:10px;justify-content:center;padding:10px 0">
             <button class="btn btn-secondary" @click="showAddModal=true">添加提供商</button>
             <button class="btn btn-success" :disabled="saveConfigLoading" @click="saveConfig">{{saveConfigLoading?'保存中...':'保存配置'}}</button>
+          </div>
+        </div>
+      </template>
+
+      <!-- QQ Channel Bot Page -->
+      <template v-if="page==='qq-bot'">
+        <header class="main-header">
+          <h2>QQ频道机器人</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index<breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+
+          <div class="card">
+            <div class="card-header"><h3>运行状态</h3>
+              <div class="provider-actions">
+                <span class="status-dot" :class="qqBotStatus.running?'on':'off'"></span>
+                <span v-if="qqBotStatus.running" style="color:var(--text2);font-size:13px">运行中</span>
+                <span v-else style="color:var(--text2);font-size:13px">已停止</span>
+                <button class="btn btn-secondary btn-sm" @click="loadQqBot()">刷新</button>
+              </div>
+            </div>
+            <div class="card-body" style="display:flex;flex-wrap:wrap;gap:18px;font-size:13px;color:var(--text2)">
+              <div>SDK：<b :style="{color: qqBotBotpyAvailable?'var(--accent)':'var(--danger)'}">{{qqBotBotpyAvailable?'已安装 botpy':'未安装 botpy（需 pip install qq-botpy）'}}</b></div>
+              <div>启用：<b>{{qqBot.config&&qqBot.config.enabled?'是':'否'}}</b></div>
+              <div v-if="qqBotStatus.started_at">启动于：<b>{{new Date(qqBotStatus.started_at*1000).toLocaleString()}}</b></div>
+              <div v-if="qqBotStatus.last_message_at">最近消息：<b>{{new Date(qqBotStatus.last_message_at*1000).toLocaleString()}}</b></div>
+            </div>
+            <div v-if="qqBotStatus.last_error" class="card-body" style="color:var(--danger);font-size:13px;padding-top:0">⚠ 最近错误：{{qqBotStatus.last_error}}</div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h3>机器人配置</h3>
+              <div class="provider-actions">
+                <button class="btn btn-primary btn-sm" :disabled="qqBotSaving" @click="saveQqBot()">{{qqBotSaving?'保存中…':'保存并应用'}}</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>启用机器人</label>
+                  <div class="toggle" :class="qqBot.config&&qqBot.config.enabled?'on':''" @click="qqBot.config.enabled=!qqBot.config.enabled"></div>
+                </div>
+                <div class="form-group">
+                  <label>沙箱环境（测试机器人）</label>
+                  <div class="toggle" :class="qqBot.config&&qqBot.config.sandbox?'on':''" @click="qqBot.config.sandbox=!qqBot.config.sandbox"></div>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>AppID</label><input v-model="qqBot.config.appid" placeholder="QQ机器人 AppID"></div>
+                <div class="form-group"><label>AppSecret</label><input type="password" v-model="qqBot.config.secret" placeholder="QQ机器人 AppSecret"></div>
+              </div>
+              <div class="form-group" style="margin-top:6px">
+                <label>回复模板（{answer} 替换为题库答案）</label>
+                <input v-model="qqBot.config.reply_template" placeholder="{answer}">
+              </div>
+              <div class="form-group" style="margin-top:6px;max-width:240px">
+                <label>答案最大长度（0=不截断）</label>
+                <input v-model.number="qqBot.config.max_answer_len" type="number" min="0" placeholder="0">
+              </div>
+              <p style="color:var(--text3);font-size:12px;margin-top:8px">说明：机器人在频道内被 @ 时，会从题库搜索答案并免费回复，不扣除任何用户额度。仅回复 @ 消息。</p>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h3>最近调用日志</h3></div>
+            <div class="card-body" v-if="!qqBotLogs.length" style="color:var(--text2);text-align:center">暂无日志</div>
+            <div v-else style="overflow-x:auto">
+              <table class="data-table">
+                <thead><tr><th>时间</th><th>问题</th><th>答案</th><th>状态</th></tr></thead>
+                <tbody>
+                  <tr v-for="l in qqBotLogs" :key="l.id">
+                    <td style="white-space:nowrap;color:var(--text3);font-size:12px">{{l.created_at}}</td>
+                    <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="l.question">{{l.question}}</td>
+                    <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="l.answer">{{l.answer}}</td>
+                    <td><span class="quota-badge" :class="l.status==='success'?'ok':'exhausted'">{{l.status==='success'?'成功':'未命中'}}</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </template>
@@ -3545,6 +3628,7 @@ createApp({
       'user-analysis':[{label:'用户分析'}],
       'log-cleanup':[{label:'日志监控',group:'logs'},{label:'日志清理'}],
       'ai-config':[{label:'系统配置',group:'config'},{label:'模型配置'}],
+      'qq-bot':[{label:'系统配置',group:'config'},{label:'QQ频道机器人'}],
       'email-config':[{label:'系统配置',group:'config'},{label:'邮箱配置'}],
       'db-config':[{label:'系统配置',group:'config'},{label:'系统设置'}],
       'daily-report':[{label:'日志监控',group:'logs'},{label:'每日数据邮件'}],
@@ -3562,6 +3646,11 @@ createApp({
     }
     const token=ref(localStorage.getItem('ne21_admin_token')||'');
     const config=ref({providers:{}});
+    const qqBot=ref({config:{enabled:false,appid:'',secret:'',sandbox:false,reply_template:'{answer}',max_answer_len:0}});
+    const qqBotStatus=ref({running:false,last_error:'',started_at:0,last_message_at:0});
+    const qqBotLogs=ref([]);
+    const qqBotBotpyAvailable=ref(false);
+    const qqBotSaving=ref(false);
     const modelUsageTotal=ref({});
     const modelUsageToday=ref({});
     const dbConfig=ref({host:'',port:3306,user:'',password:'',database:''});
@@ -4346,6 +4435,44 @@ createApp({
         saveConfigLoading.value=false;
       }
     }
+    async function loadQqBot(){
+      if(!token.value)return;
+      try{
+        const res=await fetch('/admin/qq-bot',{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){
+          qqBot.value=data.config||{enabled:false,appid:'',secret:'',sandbox:false,reply_template:'{answer}',max_answer_len:0};
+          qqBotStatus.value=data.status||{running:false,last_error:'',started_at:0,last_message_at:0};
+          qqBotLogs.value=data.logs||[];
+          qqBotBotpyAvailable.value=!!data.botpy_available;
+        }else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'加载失败','error');
+      }catch(e){showMsg('加载失败: '+e,'error');}
+    }
+    async function saveQqBot(){
+      if(!token.value)return;
+      qqBotSaving.value=true;
+      const payload={
+        enabled:!!qqBot.value.config.enabled,
+        appid:qqBot.value.config.appid||'',
+        secret:qqBot.value.config.secret||'',
+        sandbox:!!qqBot.value.config.sandbox,
+        reply_template:qqBot.value.config.reply_template||'{answer}',
+        max_answer_len:Number(qqBot.value.config.max_answer_len||0)
+      };
+      try{
+        const res=await fetch('/admin/qq-bot',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify(payload)});
+        const data=await res.json();
+        if(data.code===200){
+          showMsg('QQ频道机器人配置已保存并应用');
+          qqBot.value=data.config||qqBot.value;
+          qqBotStatus.value=data.status||qqBotStatus.value;
+          await loadQqBot();
+        }else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'保存失败','error');
+      }catch(e){showMsg('保存失败: '+e,'error');}
+      finally{qqBotSaving.value=false;}
+    }
     async function saveEmailConfig(){
       try{
         const res=await fetch('/admin/email-config',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({enabled:emailConfig.value.enabled,test_recipient:emailConfig.value.test_recipient})});
@@ -4912,7 +5039,7 @@ createApp({
       payment:{title:'支付财务',icon:'□',items:[{page:'payment-orders',label:'支付明细',icon:'▤',load:loadPaymentOrders},{page:'payment',label:'套餐配置',icon:'◈',load:loadPaymentConfig},{page:'pay-api',label:'支付接口',icon:'⌁',load:loadPayApiConfig},{page:'pay-test',label:'支付测试',icon:'◎',load:()=>{}},{page:'refund-requests',label:'退款申请',icon:'↩',load:loadRefundRequests}]},
       card:{title:'卡密管理',icon:'⚷',items:[{page:'xianyu',label:'商品配置',icon:'●',load:loadXianyuConfig},{page:'card-keys',label:'卡密管理',icon:'⚷',load:loadCardKeys}]},
       logs:{title:'日志监控',icon:'☰',items:[{page:'script-logs',label:'脚本日志',icon:'⌘',load:loadScriptLogs},{page:'ai-logs',label:'模型日志',icon:'≡',load:loadAiLogs},{page:'bank-logs',label:'题库日志',icon:'◎',load:loadBankLogs},{page:'log-cleanup',label:'日志清理',icon:'∅',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'⊙',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
-      config:{title:'系统配置',icon:'◇',items:[{page:'ai-config',label:'模型配置',icon:'◈',load:loadConfig},{page:'email-config',label:'邮箱配置',icon:'✉',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'db-config',label:'系统设置',icon:'⛁',load:loadDbConfig}]}
+      config:{title:'系统配置',icon:'◇',items:[{page:'ai-config',label:'模型配置',icon:'◈',load:loadConfig},{page:'qq-bot',label:'QQ频道机器人',icon:'🤖',load:loadQqBot},{page:'email-config',label:'邮箱配置',icon:'✉',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'db-config',label:'系统设置',icon:'⛁',load:loadDbConfig}]}
     };
     function openMobileSubmenu(key,title,icon){
       const cfg=MOBILE_SUBMENU_MAP[key];
@@ -5361,6 +5488,7 @@ createApp({
       toggleProvider,collapseAllProviders,togglePayApiSection,
        addProvider,removeProvider,addModel,removeModel,
        modelUsageTotal,modelUsageToday,modelTotalExhausted,modelDailyExhausted,modelQuotaLeft,modelQuotaTitle,weightSegments,
+       qqBot,qqBotStatus,qqBotLogs,qqBotBotpyAvailable,qqBotSaving,loadQqBot,saveQqBot,
       protocolName,statusText,formatDuration,questionTypeName,shortText,formatWan,formatScriptExtra,trendPoints,trendX,trendY,trendMax,stackBarX,stackBarY,stackBarH,modelBarWidth,revTrendPoints,revTrendArea,revTrendX,revStep,revY,revMax,
       loadLogCleanup,saveLogCleanup,runLogCleanupNow,logRetentionDays,logCleanupSaving,logCleanupRunning,logCleanupResult,payTestForm,payTestLoading,payTestResult,runPayTest,payApiWeightTotal,payApiWeightPercent,refreshSandpayParams,onSandpayAdvancedChange,
       referralTab,referralConfig,referralSaving,referralWithdrawals,referralWdFilter,referralWdSummary,referralStats,referralQrPreview,

@@ -2362,6 +2362,18 @@ class Database:
         row = self.fetchone(sql, tuple(params))
         return int(row.get("total", 0) if row else 0)
 
+    def get_qq_bot_logs(self, limit=50):
+        """获取 QQ 频道机器人产生的调用日志（username='qq_bot'）"""
+        ph = _ph()
+        sql = ("SELECT id, provider_key, username, model, final_model, question, answer, status, error, "
+               "duration_ms, client_ip, created_at FROM ai_call_logs "
+               "WHERE username = 'qq_bot' ORDER BY id DESC LIMIT " + ph)
+        try:
+            return self.fetchall(sql, (limit,))
+        except Exception as e:
+            print(f"[QQ机器人日志] 查询失败: {e}", flush=True)
+            return []
+
     def clear_ai_call_logs(self, status="", model="", keyword="", date_from="", date_to=""):
         where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to)
         sql = "DELETE FROM ai_call_logs"

@@ -20,6 +20,8 @@ import threading
 import queue
 import base64
 import secrets
+import traceback
+import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from difflib import SequenceMatcher
 from urllib.parse import parse_qs, urlparse, urlencode
@@ -27,6 +29,15 @@ from urllib.request import urlopen
 from email.mime.text import MIMEText
 from email.utils import formataddr
 from datetime import datetime, timedelta
+
+try:
+    import botpy
+    from botpy.message import Message
+    BOTPY_AVAILABLE = True
+except Exception:
+    botpy = None
+    Message = None
+    BOTPY_AVAILABLE = False
 
 from database import db, hash_password, verify_password, is_legacy_password, get_db_config, save_db_config
 
@@ -855,6 +866,174 @@ def save_providers(providers):
         pass
 
 PROVIDERS = load_providers()
+
+# ==================== QQ 频道机器人配置 ====================
+QQ_BOT_FILE = os.path.join(BASE_DIR, "config", "qq_bot.json")
+QQ_BOT_DEFAULT = {
+    "enabled": False,
+    "appid": "",
+    "secret": "",
+    "sandbox": False,
+    "reply_template": "{answer}",   # 回复模板，{answer} 替换为题库答案
+    "max_answer_len": 0,             # 0 表示不截断
+}
+
+def load_qq_bot():
+    if os.path.exists(QQ_BOT_FILE):
+        try:
+            with open(QQ_BOT_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            cfg = dict(QQ_BOT_DEFAULT)
+            cfg.update(data)
+            return cfg
+        except Exception as e:
+            print(f"[QQ机器人] 读取配置失败: {e}", flush=True)
+    return dict(QQ_BOT_DEFAULT)
+
+def save_qq_bot(cfg):
+    data = dict(QQ_BOT_DEFAULT)
+    data.update(cfg or {})
+    try:
+        with open(QQ_BOT_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[QQ机器人] 保存配置失败: {e}", flush=True)
+        raise
+    return data
+
+# 机器人运行时状态（不持久化）
+QQ_BOT_STATUS = {"running": False, "last_error": "", "started_at": 0, "last_message_at": 0, "pid": 0}
+QQ_BOT_THREAD = None
+QQ_BOT_CLIENT = None
+QQ_BOT_STOP = threading.Event()
+
+def _strip_mention(text):
+    """去掉 QQ 频道 @消息 中的提及前缀，提取真正的提问内容"""
+    if not text:
+        return ""
+    text = re.sub(r"<@!?\w+>", "", text)
+    return text.strip()
+
+class QQBotClient(botpy.Client if botpy else object):
+    async def on_ready(self):
+        QQ_BOT_STATUS["running"] = True
+        QQ_BOT_STATUS["started_at"] = time.time()
+        QQ_BOT_STATUS["last_error"] = ""
+        print(f"[QQ机器人] on_ready: {getattr(self.robot, 'name', '')}", flush=True)
+
+    async def on_at_message_create(self, message):
+        try:
+            QQ_BOT_STATUS["last_message_at"] = time.time()
+            question = _strip_mention(message.content)
+            if not question:
+                return
+            t0 = time.time()
+            row, qhash, method, _elapsed = get_question_bank_match(question)
+            if row and row.get("answer"):
+                answer = str(row.get("answer", "")).strip()
+                maxlen = QQ_BOT_CONFIG.get("max_answer_len", 0) or 0
+                if maxlen and len(answer) > maxlen:
+                    answer = answer[:maxlen] + "…"
+                tpl = QQ_BOT_CONFIG.get("reply_template", "{answer}") or "{answer}"
+                content = tpl.replace("{answer}", answer)
+                status = "success"
+                err = ""
+            else:
+                content = "抱歉，题库中暂未收录该题目，无法回答～"
+                status = "error"
+                err = "题库未命中"
+            duration_ms = int((time.time() - t0) * 1000)
+            try:
+                await message.reply(content=content)
+            except Exception as e:
+                err = f"回复失败: {e}"
+                status = "error"
+            enqueue_ai_log({
+                "provider_key": "question_bank",
+                "username": "qq_bot",
+                "model": row.get("source_model", "题库") if row else "题库",
+                "question": question,
+                "answer": (row.get("answer", "") if row else ""),
+                "status": status,
+                "error": err,
+                "duration_ms": duration_ms,
+                "client_ip": "",
+            })
+        except Exception as e:
+            print(f"[QQ机器人] on_at_message_create 异常: {e}\n{traceback.format_exc()}", flush=True)
+
+def _run_qq_bot_forever(cfg):
+    global QQ_BOT_CLIENT
+    QQ_BOT_STOP.clear()
+    try:
+        if not BOTPY_AVAILABLE:
+            QQ_BOT_STATUS["running"] = False
+            QQ_BOT_STATUS["last_error"] = "未安装 botpy SDK，请执行 pip install qq-botpy"
+            print("[QQ机器人] 未安装 botpy，无法启动", flush=True)
+            return
+        if not (cfg.get("appid") and cfg.get("secret")):
+            QQ_BOT_STATUS["running"] = False
+            QQ_BOT_STATUS["last_error"] = "AppID 或 AppSecret 未配置"
+            return
+        client = QQBotClient(intents=botpy.Intents(public_guild_messages=True), is_sandbox=bool(cfg.get("sandbox", False)))
+        QQ_BOT_CLIENT = client
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(client.run(
+                appid=str(cfg["appid"]),
+                secret=str(cfg["secret"]),
+            ))
+        except Exception as e:
+            QQ_BOT_STATUS["last_error"] = f"运行异常: {e}"
+            print(f"[QQ机器人] 运行异常: {e}\n{traceback.format_exc()}", flush=True)
+        finally:
+            QQ_BOT_STATUS["running"] = False
+            QQ_BOT_CLIENT = None
+    except Exception as e:
+        QQ_BOT_STATUS["running"] = False
+        QQ_BOT_STATUS["last_error"] = f"启动失败: {e}"
+        print(f"[QQ机器人] 启动失败: {e}", flush=True)
+
+def _start_qq_bot_thread():
+    """根据当前配置决定是否启动机器人（在后台线程中运行）"""
+    global QQ_BOT_THREAD
+    cfg = load_qq_bot()
+    QQ_BOT_CONFIG.clear()
+    QQ_BOT_CONFIG.update(cfg)
+    if not cfg.get("enabled"):
+        QQ_BOT_STATUS["running"] = False
+        QQ_BOT_STATUS["last_error"] = ""
+        return
+    if QQ_BOT_THREAD and QQ_BOT_THREAD.is_alive():
+        return
+    QQ_BOT_THREAD = threading.Thread(target=_run_qq_bot_forever, args=(cfg,), daemon=True)
+    QQ_BOT_THREAD.start()
+    print("[QQ机器人] 已启动后台线程", flush=True)
+
+def _stop_qq_bot():
+    global QQ_BOT_THREAD, QQ_BOT_CLIENT
+    QQ_BOT_STOP.set()
+    client = QQ_BOT_CLIENT
+    if client is not None:
+        try:
+            client.close()
+        except Exception:
+            pass
+    th = QQ_BOT_THREAD
+    if th and th.is_alive():
+        th.join(timeout=5)
+    QQ_BOT_THREAD = None
+    QQ_BOT_CLIENT = None
+    QQ_BOT_STATUS["running"] = False
+
+def _restart_qq_bot():
+    _stop_qq_bot()
+    time.sleep(0.5)
+    _start_qq_bot_thread()
+
+# QQ 机器人当前生效配置（供事件回调读取）
+QQ_BOT_CONFIG = load_qq_bot()
 
 import re as _re
 
@@ -3470,6 +3649,15 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 model_usage_today = {}
             self._send_json(200, {"code": 200, "config": {"providers": PROVIDERS}, "ready_count": provider_ready_count(PROVIDERS), "provider_count": len(PROVIDERS or {}), "model_usage_total": model_usage_total, "model_usage_today": model_usage_today})
+        elif path == "/admin/qq-bot":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                logs = db.get_qq_bot_logs(limit=50)
+            except Exception:
+                logs = []
+            self._send_json(200, {"code": 200, "config": load_qq_bot(), "status": QQ_BOT_STATUS, "botpy_available": BOTPY_AVAILABLE, "logs": logs})
         elif path == "/admin/db-config":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -4630,6 +4818,16 @@ class Handler(BaseHTTPRequestHandler):
                 model_usage_today = {}
             self._send_json(200, {"code": 200, "config": {"providers": PROVIDERS}, "ready_count": provider_ready_count(PROVIDERS), "provider_count": len(PROVIDERS or {}), "model_usage_total": model_usage_total, "model_usage_today": model_usage_today})
 
+        elif path == "/admin/qq-bot":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                logs = db.get_qq_bot_logs(limit=50)
+            except Exception:
+                logs = []
+            self._send_json(200, {"code": 200, "config": load_qq_bot(), "status": QQ_BOT_STATUS, "botpy_available": BOTPY_AVAILABLE, "logs": logs})
+
         elif path == "/admin/db-config":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -4666,6 +4864,24 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {"code": 200, "msg": "保存成功"})
             except Exception as e:
                 print(f"[保存AI配置] 错误: {str(e)}")
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/qq-bot" and method == "POST":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                print(f"[保存QQ机器人配置] 收到: {json.dumps(data, ensure_ascii=False)[:500]}")
+                cfg = save_qq_bot(data)
+                # 根据启用状态重启机器人
+                if cfg.get("enabled"):
+                    _restart_qq_bot()
+                else:
+                    _stop_qq_bot()
+                self._send_json(200, {"code": 200, "msg": "保存成功", "config": cfg, "status": QQ_BOT_STATUS})
+            except Exception as e:
+                print(f"[保存QQ机器人配置] 错误: {str(e)}")
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
         elif path == "/admin/log-cleanup":
@@ -6199,6 +6415,7 @@ if __name__ == "__main__":
     print("=" * 60)
     _start_log_cleanup_thread()
     _start_daily_report_thread()
+    _start_qq_bot_thread()
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     try:
         server.serve_forever()
