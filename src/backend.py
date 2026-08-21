@@ -2073,7 +2073,7 @@ def record_model_token_usage(model_name, tokens):
     except Exception as e:
         print(f"[Token统计] 写入失败: {e}", flush=True)
 
-def ask_ai_auto(question, need_vision=False):
+def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
     candidates = get_enabled_model_candidates(need_vision=need_vision)
     if not candidates:
         if need_vision:
@@ -2144,14 +2144,14 @@ def ask_ai_auto(question, need_vision=False):
             else:
                 error_logs.append({
                     "provider_key": provider_name or "",
-                    "username": "",
+                    "username": username,
                     "model": model_name,
                     "question": question,
                     "answer": "",
                     "status": "error",
                     "error": err,
                     "duration_ms": int((time.time() - attempt_start) * 1000),
-                    "client_ip": "",
+                    "client_ip": client_ip,
                     "final_model": ""
                 })
                 if "HTTP 404" in err or "model is not found" in err.lower() or "模型" in err and "不存在" in err:
@@ -6045,7 +6045,7 @@ class Handler(BaseHTTPRequestHandler):
                         return
                     need_vision = is_multimodal_question(question)
                     print(f"[AI请求] mode=auto, question={question[:60]}..., vision={need_vision}", flush=True)
-                    answer, err, resolved_model, provider_name = ask_ai_auto(question, need_vision=need_vision)
+                    answer, err, resolved_model, provider_name = ask_ai_auto(question, need_vision=need_vision, username=user.get("username", "") if user else "", client_ip=self.client_address[0] if self.client_address else "")
                 if model_mode != "custom" and not resolved_model:
                     self._send_json(500, {"code": 500, "msg": "没有启用的 AI 提供商，请先配置"})
                     return
