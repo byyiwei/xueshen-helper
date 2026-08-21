@@ -3460,7 +3460,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
             PROVIDERS = refresh_providers_from_storage()
-            self._send_json(200, {"code": 200, "config": {"providers": PROVIDERS}, "ready_count": provider_ready_count(PROVIDERS), "provider_count": len(PROVIDERS or {})})
+            try:
+                model_usage_total = db.get_model_token_usage_total()
+            except Exception:
+                model_usage_total = {}
+            try:
+                usage_today = db.get_model_token_usage_today()
+                model_usage_today = {k: v.get("tokens", 0) for k, v in (usage_today or {}).items()}
+            except Exception:
+                model_usage_today = {}
+            self._send_json(200, {"code": 200, "config": {"providers": PROVIDERS}, "ready_count": provider_ready_count(PROVIDERS), "provider_count": len(PROVIDERS or {}), "model_usage_total": model_usage_total, "model_usage_today": model_usage_today})
         elif path == "/admin/db-config":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -4610,7 +4619,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
             PROVIDERS = refresh_providers_from_storage()
-            self._send_json(200, {"code": 200, "config": {"providers": PROVIDERS}, "ready_count": provider_ready_count(PROVIDERS), "provider_count": len(PROVIDERS or {})})
+            try:
+                model_usage_total = db.get_model_token_usage_total()
+            except Exception:
+                model_usage_total = {}
+            try:
+                usage_today = db.get_model_token_usage_today()
+                model_usage_today = {k: v.get("tokens", 0) for k, v in (usage_today or {}).items()}
+            except Exception:
+                model_usage_today = {}
+            self._send_json(200, {"code": 200, "config": {"providers": PROVIDERS}, "ready_count": provider_ready_count(PROVIDERS), "provider_count": len(PROVIDERS or {}), "model_usage_total": model_usage_total, "model_usage_today": model_usage_today})
 
         elif path == "/admin/db-config":
             if not self._check_admin():

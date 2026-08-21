@@ -303,6 +303,27 @@ body{
 }
 .btn-test:hover{background:rgba(124,58,237,.1)}
 .btn-test:disabled{opacity:.5;cursor:not-allowed}
+.quota-badge{
+  font-size:11px;font-weight:600;padding:2px 7px;border-radius:10px;white-space:nowrap;line-height:1.6;
+}
+.quota-badge.exhausted{background:rgba(239,68,68,.12);color:#ef4444;border:1px solid rgba(239,68,68,.3)}
+.quota-badge.daily{background:rgba(245,158,11,.12);color:#f59e0b;border:1px solid rgba(245,158,11,.3)}
+.quota-badge.ok{background:rgba(34,197,94,.1);color:#16a34a;border:1px solid rgba(34,197,94,.25)}
+.quota-badge.none{background:var(--bg4);color:var(--text3);border:1px solid var(--border)}
+.weight-chart{margin:14px 4px 4px;padding:12px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:12px}
+.weight-chart-title{font-size:12px;color:var(--text3);font-weight:600;margin-bottom:10px}
+.weight-chart-body{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+.weight-legend{display:flex;flex-direction:column;gap:5px;flex:1;min-width:160px}
+.legend-item{display:flex;align-items:center;gap:8px;font-size:12px}
+.legend-dot{width:10px;height:10px;border-radius:3px;flex:none}
+.legend-label{color:var(--text2);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.legend-pct{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+.weight-empty{color:var(--text3);font-size:12px;padding:6px 0}
+.model-search-bar{display:flex;align-items:center;gap:8px;margin:0 0 14px}
+.search-input{flex:1;max-width:360px;padding:9px 14px;background:var(--bg4);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;box-sizing:border-box}
+.search-input:focus{outline:none;border-color:var(--accent)}
+.search-clear{border:none;background:var(--bg4);color:var(--text3);cursor:pointer;font-size:18px;width:32px;height:32px;border-radius:8px;flex:none}
+.search-clear:hover{color:var(--danger)}
 .model-test-result{
   margin:-2px 4px 8px;padding:7px 12px;border-radius:6px;font-size:12px;
   line-height:1.6;word-break:break-all;animation:slideUp .2s;
@@ -1179,7 +1200,12 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
             </span>
           </div>
 
-          <div v-for="entry in providerEntries" :key="entry.key" class="card provider-card">
+          <div class="model-search-bar">
+            <input v-model="modelSearch" class="search-input" placeholder="搜索 模型ID / 名称 / 供应商">
+            <button v-if="modelSearch" class="search-clear" type="button" @click="modelSearch=''" title="清除">×</button>
+          </div>
+
+          <div v-for="entry in filteredProviderEntries" :key="entry.key" class="card provider-card">
             <div class="card-header">
               <h3>
                 <span>◇</span>{{entry.info.title||entry.key}}
@@ -1209,17 +1235,18 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
               </div>
               <div class="models-title">模型列表 <span style="font-size:12px;color:var(--text3);font-weight:400">权重越高被调用概率越大（默认100），每日/总额Token限额为0表示不限制，总额超过后自动停用不再调用</span></div>
               <div style="display:flex;gap:8px;padding:0 4px 6px;font-size:11px;color:var(--text3);font-weight:600;letter-spacing:.3px;align-items:center">
-                <div style="flex:1.5">模型ID</div>
-                <div style="flex:1.5">显示名称</div>
+                <div style="flex:1">模型ID</div>
+                <div style="flex:1">显示名称</div>
                 <div style="width:70px;flex:none;text-align:center">调用占比</div>
                 <div style="width:80px;flex:none;text-align:center">每日Token限额</div>
                 <div style="width:80px;flex:none;text-align:center">总额Token限额</div>
                 <div style="width:64px;flex:none;text-align:center">支持图片</div>
-                <div style="width:72px;flex:none"></div>
+                <div style="width:96px;flex:none;text-align:center">额度状态</div>
+                <div style="width:72px;flex:none;text-align:center">操作</div>
               </div>
-              <template v-for="(m,idx) in entry.info.models" :key="idx"><div class="model-row">
-                <input v-model="m.value" placeholder="如: deepseek-chat" style="flex:1.5;min-width:0">
-                <input v-model="m.label" placeholder="如: DeepSeek V3" style="flex:1.5;min-width:0">
+              <template v-for="(m,idx) in entry.info.models" :key="idx"><div class="model-row" v-if="modelRowVisible(entry,m)">
+                <input v-model="m.value" placeholder="如: deepseek-chat" style="flex:1;min-width:0;font-size:12px">
+                <input v-model="m.label" placeholder="如: DeepSeek V3" style="flex:1;min-width:0;font-size:12px">
                 <div style="width:70px;flex:none;display:flex;align-items:center;justify-content:center">
                   <input v-model.number="m.weight" type="number" min="0" max="100" placeholder="100" title="调用权重(0-100)" style="width:60px;text-align:center;padding:8px 2px">
                 </div>
@@ -1232,16 +1259,46 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                 <div style="width:64px;flex:none;display:flex;align-items:center;justify-content:center">
                   <input type="checkbox" v-model="m.vision" title="该模型支持图片输入(多模态)" style="width:auto;flex:none">
                 </div>
+                <div style="width:96px;flex:none;display:flex;align-items:center;justify-content:center">
+                  <span v-if="modelTotalExhausted(m)" class="quota-badge exhausted" title="总额Token已用完，已自动停用">已用完</span>
+                  <span v-else-if="modelDailyExhausted(m)" class="quota-badge daily" title="今日Token已用完，今日不再调用">今日已满</span>
+                  <span v-else-if="!m.daily_token_limit && !m.total_token_limit" class="quota-badge none" title="未设置限额">不限</span>
+                  <span v-else class="quota-badge ok" :title="modelQuotaTitle(m)">可用 {{modelQuotaLeft(m)}}</span>
+                </div>
                 <button class="btn-test" :disabled="testingModel===(entry.key+'-'+idx)" :title="'调试 '+(m.value||'模型')" @click="testModel(entry.info,m,entry.key+'-'+idx)">{{testingModel===(entry.key+'-'+idx)?'…':'⚡'}}</button>
                 <button class="btn-del" @click="removeModel(entry.key,idx)">×</button>
               </div>
-              <div v-if="modelTestResults[entry.key+'-'+idx]" class="model-test-result" :class="modelTestResults[entry.key+'-'+idx].status" v-html="modelTestResults[entry.key+'-'+idx].text"></div>
+              <div v-if="modelRowVisible(entry,m) && modelTestResults[entry.key+'-'+idx]" class="model-test-result" :class="modelTestResults[entry.key+'-'+idx].status" v-html="modelTestResults[entry.key+'-'+idx].text"></div>
               </template>
               <button class="btn-add" @click="addModel(entry.key)">+ 添加模型</button>
+              <div class="weight-chart">
+                <div class="weight-chart-title">调用比例（按权重实时计算）</div>
+                <div v-if="weightSegments(entry).hasData" class="weight-chart-body">
+                  <svg width="120" height="120" viewBox="0 0 120 120" style="flex:none">
+                    <circle cx="60" cy="60" r="50" fill="none" stroke="var(--bg4)" stroke-width="14"></circle>
+                    <g transform="rotate(-90 60 60)">
+                      <circle v-for="(s,i) in weightSegments(entry).segments" :key="i" cx="60" cy="60" r="50" fill="none" :stroke="s.color" stroke-width="14" :stroke-dasharray="s.dash+' '+s.gap" :stroke-dashoffset="s.offset"></circle>
+                    </g>
+                    <text x="60" y="56" text-anchor="middle" font-size="10" fill="var(--text3)">总权重</text>
+                    <text x="60" y="72" text-anchor="middle" font-size="15" font-weight="700" fill="var(--text)">{{weightSegments(entry).total}}</text>
+                  </svg>
+                  <div class="weight-legend">
+                    <div v-for="(s,i) in weightSegments(entry).segments" :key="i" class="legend-item">
+                      <span class="legend-dot" :style="{background:s.color}"></span>
+                      <span class="legend-label" :title="s.label">{{s.label}}</span>
+                      <span class="legend-pct">{{s.pctText}}</span>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="weight-empty">未设置有效权重（权重需大于0），所有模型默认均分调用（各100）</div>
+              </div>
             </div>
           </div>
           <div v-if="!providerEntries.length" class="card">
             <div class="card-body" style="text-align:center;color:var(--text2)">未读取到模型配置，请点击“添加提供商”或刷新页面。</div>
+          </div>
+          <div v-else-if="modelSearch && !filteredProviderEntries.length" class="card">
+            <div class="card-body" style="text-align:center;color:var(--text2)">未找到匹配的模型或供应商：「{{modelSearch}}」</div>
           </div>
 
           <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal=false">
@@ -3505,6 +3562,8 @@ createApp({
     }
     const token=ref(localStorage.getItem('ne21_admin_token')||'');
     const config=ref({providers:{}});
+    const modelUsageTotal=ref({});
+    const modelUsageToday=ref({});
     const dbConfig=ref({host:'',port:3306,user:'',password:'',database:''});
     const dbTesting=ref(false);
     const dbSaving=ref(false);
@@ -3679,6 +3738,30 @@ createApp({
       return !!(enabled&&String(p.api_key||'').trim()&&(p.models||[]).length);
     }
     const providerEntries=computed(()=>Object.entries(config.value?.providers||{}).map(([key,info])=>({key,info})));
+    const modelSearch=ref('');
+    const filteredProviderEntries=computed(()=>{
+      const q=(modelSearch.value||'').trim().toLowerCase();
+      const all=providerEntries.value;
+      if(!q)return all;
+      return all.filter(({key,info})=>{
+        const pname=((info.title||'')+' '+(key||'')).toLowerCase();
+        if(pname.includes(q))return true;
+        return (info.models||[]).some(m=>{
+          const id=(m.value||'').toLowerCase();
+          const label=(m.label||'').toLowerCase();
+          return id.includes(q)||label.includes(q);
+        });
+      });
+    });
+    function modelRowVisible(entry,m){
+      const q=(modelSearch.value||'').trim().toLowerCase();
+      if(!q)return true;
+      const pname=((entry.info.title||'')+' '+(entry.key||'')).toLowerCase();
+      if(pname.includes(q))return true;
+      const id=(m.value||'').toLowerCase();
+      const label=(m.label||'').toLowerCase();
+      return id.includes(q)||label.includes(q);
+    }
     const enabledCount=computed(()=>providerReadyCount.value||Object.values(config.value.providers||{}).filter(providerReadyLocal).length);
 
     function showMsg(text,type='success',duration=3000){
@@ -4044,6 +4127,8 @@ createApp({
         const data=await res.json();
         if(data.code===200){
           config.value=data.config||{providers:{}};
+          modelUsageTotal.value=data.model_usage_total||{};
+          modelUsageToday.value=data.model_usage_today||{};
           providerReadyCount.value=Number(data.ready_count||0);
           providerTotalCount.value=Number(data.provider_count||Object.keys(config.value.providers||{}).length);
           if(providerTotalCount.value>0&&providerReadyCount.value===0)showMsg('已读取到模型配置，但没有可用提供商：请检查是否启用、API Key 是否为空、模型列表是否为空','error',6000);
@@ -4599,6 +4684,42 @@ createApp({
     async function removeProvider(key){
       const data=await adminPost('/admin/provider/delete',{key});
       if(data)showMsg('删除成功，已从数据库删除');
+    }
+    function modelTotalUsed(m){return Number(modelUsageTotal.value[m.value]||0);}
+    function modelDailyUsed(m){return Number(modelUsageToday.value[m.value]||0);}
+    function modelTotalExhausted(m){const lim=Number(m.total_token_limit||0);return lim>0&&modelTotalUsed(m)>=lim;}
+    function modelDailyExhausted(m){const lim=Number(m.daily_token_limit||0);return lim>0&&modelDailyUsed(m)>=lim;}
+    function modelQuotaLeft(m){
+      const tlim=Number(m.total_token_limit||0), dlim=Number(m.daily_token_limit||0);
+      const parts=[];
+      if(tlim>0)parts.push('总额剩 '+(tlim-modelTotalUsed(m)));
+      if(dlim>0)parts.push('今日剩 '+(dlim-modelDailyUsed(m)));
+      return parts.join(' / ')||'';
+    }
+    function modelQuotaTitle(m){
+      const tlim=Number(m.total_token_limit||0), dlim=Number(m.daily_token_limit||0);
+      const parts=[];
+      if(dlim>0)parts.push('今日已用 '+modelDailyUsed(m)+' / '+dlim);
+      if(tlim>0)parts.push('总额已用 '+modelTotalUsed(m)+' / '+tlim);
+      return parts.join('，')||'未设置限额';
+    }
+    const WEIGHT_COLORS=['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#84cc16','#f97316','#6366f1'];
+    function weightSegments(entry){
+      const models=(entry&&entry.info&&entry.info.models)||[];
+      const valid=models.filter(m=>Number(m.weight||0)>0&&m.value);
+      const total=valid.reduce((s,m)=>s+Number(m.weight||0),0);
+      if(total<=0)return{hasData:false,total:0,segments:[]};
+      const C=2*Math.PI*50;
+      let cum=0;
+      const segments=valid.map((m,i)=>{
+        const w=Number(m.weight||0);
+        const pct=w/total;
+        const dash=pct*C;
+        const seg={label:(m.label||m.value||('模型'+(i+1))),color:WEIGHT_COLORS[i%WEIGHT_COLORS.length],pct,pctText:(pct*100).toFixed(1)+'%',dash,gap:C,offset:-cum};
+        cum+=dash;
+        return seg;
+      });
+      return{hasData:true,total,segments};
     }
     function addModel(key){
       const oldProviders={...(config.value.providers||{})};
@@ -5226,7 +5347,7 @@ createApp({
     return{
        loading,page,loginMode,themeMode,themeLabels,themeIcons,cycleTheme,breadcrumbItems,navigateBreadcrumb,config,emailConfig,emailTemplates,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,SCENE_ICONS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
        mailServers,showServerForm,mailServerForm,showSmtpPass,mailServerTotalWeight,mailServerWeightPercent,toggleEmailEnabled,openServerForm,saveMailServer,deleteMailServer,
-      loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,users,userSearch,userSortBy,userSortOrder,showUserModal,userForm,
+       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,userSearch,userSortBy,userSortOrder,showUserModal,userForm,
         showHtmlPreview,htmlPreviewFrame,htmlPreviewData,toggleHtmlPreview,updateHtmlPreview,switchToHtml,onHtmlInput,syncPlainFromHtml,
        paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,planForm,
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,
@@ -5238,7 +5359,8 @@ createApp({
       loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,
       savePaymentConfig,savePayApiConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,openUserEdit,saveUserAdmin,
       toggleProvider,collapseAllProviders,togglePayApiSection,
-      addProvider,removeProvider,addModel,removeModel,
+       addProvider,removeProvider,addModel,removeModel,
+       modelUsageTotal,modelUsageToday,modelTotalExhausted,modelDailyExhausted,modelQuotaLeft,modelQuotaTitle,weightSegments,
       protocolName,statusText,formatDuration,questionTypeName,shortText,formatWan,formatScriptExtra,trendPoints,trendX,trendY,trendMax,stackBarX,stackBarY,stackBarH,modelBarWidth,revTrendPoints,revTrendArea,revTrendX,revStep,revY,revMax,
       loadLogCleanup,saveLogCleanup,runLogCleanupNow,logRetentionDays,logCleanupSaving,logCleanupRunning,logCleanupResult,payTestForm,payTestLoading,payTestResult,runPayTest,payApiWeightTotal,payApiWeightPercent,refreshSandpayParams,onSandpayAdvancedChange,
       referralTab,referralConfig,referralSaving,referralWithdrawals,referralWdFilter,referralWdSummary,referralStats,referralQrPreview,
