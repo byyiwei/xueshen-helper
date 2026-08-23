@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.2.5
+// @version      5.2.6
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @author       IPYIWEI
@@ -10,6 +10,9 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.2.6 更新内容：
+// @changelog    1. 网页搜题升级：搜题结果返回题库中所有相关题目与答案（多结果展示），与后台查询一致，解决只返回单条的问题
+// @changelog    2. 网页搜题免费、登录后可用、每日限 30 次（由服务端统一控制）
 // @changelog    v5.2.5 更新内容：
 // @changelog    1. 优化 AI 答题超时处理：后端自动重试/切换模型耗时较长时，前端答题请求不再提前超时（120s→240s、180s→300s），重试成功后自动填充答案
 // @changelog    v5.2.4 更新内容：

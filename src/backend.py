@@ -1643,18 +1643,30 @@ def get_question_bank_match(question):
 def get_bank_match_all(question):
     """返回题库中所有匹配该题的候选（同题可多个答案版本），用于网页搜题多结果展示。"""
     _t0 = time.time()
+    info = parse_question_payload(question)
     mkey = make_matching_key(question)
     candidates = db.get_question_bank_by_matching_key(mkey)
     if not candidates:
         # 用户仅输入题干（无选项）时，用不含选项的 match_stem 定位同题所有版本
-        info = parse_question_payload(question)
         if not info.get("options"):
             stem = make_match_stem(question)
             candidates = db.get_question_bank_by_match_stem(stem)
+    if not candidates:
+        # 哈希精确匹配未命中：模糊关键词回退（容忍 标点/前后缀/个别用字差异），
+        # 与后台 search_question_bank 行为一致，避免"后台有、首页搜不到"。
+        q_norm = normalize_question_text(info.get("question_text", ""))
+        if len(q_norm) >= 4:
+            fb = db.search_question_bank(keyword=q_norm, limit=20)
+            candidates = [{"question_hash": r.get("question_hash")} for r in fb if r.get("answer")]
     candidates = [c for c in candidates if c.get("answer")]
     rows = []
+    seen = set()
     for c in candidates:
-        row = db.get_question_answer_by_hash(c.get("question_hash", ""))
+        qh = c.get("question_hash", "")
+        if not qh or qh in seen:
+            continue
+        seen.add(qh)
+        row = db.get_question_answer_by_hash(qh)
         if row and row.get("answer"):
             rows.append(row)
     elapsed = (time.time() - _t0) * 1000
