@@ -61,6 +61,44 @@ def _ph():
     return "%s"
 
 
+# ==================== 题型归一化 ====================
+# 题库中的题型存在多种编码：数字(0/1/2...)、英文(single/multiple)、中文(单选题) 等，
+# 统一归一化到语义名称，用于题型分布合并与题库查询筛选。
+QUESTION_TYPE_NAME_TO_VALUES = {
+    "单选题": ["0", "single", "单选题", "单项选择题", "单项选择", "单选", "A1型选择题", "A1型题", "A1型", "X型选择题"],
+    "多选题": ["1", "multiple", "多选题", "多项选择题", "多项选择", "多选", "X型题", "X型"],
+    "判断题": ["3", "judge", "判断题", "是非题", "判断"],
+    "填空题": ["2", "fill", "填空题", "填空", "思政元素", "完型填空", "完形填空题", "完形填空", "14"],
+    "简答题": ["4", "short", "简答题", "简答"],
+    "名词解释": ["5", "名词解释"],
+    "论述题": ["6", "论述题", "论述"],
+    "计算题": ["7", "计算题", "计算"],
+    "连线题": ["11", "连线题", "匹配题", "匹配"],
+    "阅读理解": ["15", "阅读理解", "阅读"],
+}
+
+
+def _question_type_values(name):
+    """根据归一化题型名返回对应的 question_type 原值列表；无法识别时返回空列表。"""
+    if name == "_image_":
+        return []
+    if name == "未分类":
+        return [""]
+    return QUESTION_TYPE_NAME_TO_VALUES.get(name, [])
+
+
+def _normalize_question_type_name(t):
+    t = str(t or "").strip()
+    if not t:
+        return "未分类"
+    for name, values in QUESTION_TYPE_NAME_TO_VALUES.items():
+        if t in values:
+            return name
+    if t in ("999",):
+        return "未知"
+    return t
+
+
 def _adapt_params(params):
     """适配参数（主要是 datetime 类型）"""
     return tuple(params)
@@ -477,6 +515,12 @@ class Database:
         # 题库索引优化（提升大数据量下的搜索和排序性能）
         self._ensure_index("question_bank", "idx_updated_at", "updated_at")
         self._ensure_index("question_bank", "idx_last_used", "last_used_at")
+        self._add_column_if_missing("question_bank", "matching_key", "matching_key VARCHAR(64) NOT NULL DEFAULT '' COMMENT '匹配键: 题面+题型+选项'")
+        self._ensure_index("question_bank", "idx_matching_key", "matching_key")
+        self._add_column_if_missing("question_bank", "is_image", "is_image TINYINT NOT NULL DEFAULT 0 COMMENT '是否图片题'")
+        self._ensure_index("question_bank", "idx_is_image", "is_image")
+        self._add_column_if_missing("question_bank", "match_stem", "match_stem VARCHAR(64) NOT NULL DEFAULT '' COMMENT '匹配主干: 题面+题型+图片(不含选项)'")
+        self._ensure_index("question_bank", "idx_match_stem", "match_stem")
         self._ensure_index("question_bank", "idx_source_provider", "source_provider")
         # 全文索引（大幅提升关键词搜索性能，MySQL 5.7+ 支持 ngram 分词）
         self._ensure_fulltext_index("question_bank", "ft_question_text", "question_text", "answer")
@@ -2468,7 +2512,23 @@ class Database:
             )
         return row
 
-    def search_question_bank(self, keyword="", question_hash="", limit=100, page=1):
+    def get_question_bank_by_matching_key(self, matching_key):
+        ph = _ph()
+        rows = self.fetchall(
+            f"SELECT * FROM question_bank WHERE matching_key = {ph} ORDER BY id ASC",
+            (matching_key,)
+        )
+        return rows or []
+
+    def get_question_bank_by_match_stem(self, match_stem):
+        ph = _ph()
+        rows = self.fetchall(
+            f"SELECT * FROM question_bank WHERE match_stem = {ph} ORDER BY id ASC",
+            (match_stem,)
+        )
+        return rows or []
+
+    def search_question_bank(self, keyword="", question_hash="", limit=100, page=1, question_type="", is_image=None):
         ph = _ph()
         try:
             limit = int(limit)
@@ -2486,6 +2546,17 @@ class Database:
         if question_hash:
             where.append(f"question_hash = {ph}")
             params.append(question_hash)
+        if question_type:
+            type_values = _question_type_values(question_type)
+            if type_values:
+                where.append(f"question_type IN ({','.join([ph] * len(type_values))})")
+                params.extend(type_values)
+            elif question_type != "_image_":
+                where.append(f"question_type = {ph}")
+                params.append(question_type)
+        if is_image is not None and is_image != "":
+            where.append(f"is_image = {ph}")
+            params.append(1 if str(is_image) in ("1", "true", "图片", "__image__") else 0)
         if keyword:
             # 优先使用全文索引（MATCH AGAINST），大幅提升大数据量搜索性能
             # ngram 分词器支持中文，2字以上可命中
@@ -2505,13 +2576,24 @@ class Database:
         params.extend([limit, offset])
         return self.fetchall(sql, tuple(params))
 
-    def count_question_bank(self, keyword="", question_hash=""):
+    def count_question_bank(self, keyword="", question_hash="", question_type="", is_image=None):
         ph = _ph()
         where = []
         params = []
         if question_hash:
             where.append(f"question_hash = {ph}")
             params.append(question_hash)
+        if question_type:
+            type_values = _question_type_values(question_type)
+            if type_values:
+                where.append(f"question_type IN ({','.join([ph] * len(type_values))})")
+                params.extend(type_values)
+            elif question_type != "_image_":
+                where.append(f"question_type = {ph}")
+                params.append(question_type)
+        if is_image is not None and is_image != "":
+            where.append(f"is_image = {ph}")
+            params.append(1 if str(is_image) in ("1", "true", "图片", "__image__") else 0)
         if keyword:
             kw = keyword.strip()
             if len(kw) >= 2:
@@ -2562,23 +2644,48 @@ class Database:
         return self.fetchall(sql)
 
     def get_question_bank_stats(self, new_from="", new_to=""):
-        """题库分析：总题数、调用最多/最少、新加入占比、题型分布"""
+        """题库分析：总题数、调用最多/最少、新加入占比、题型分布（按时间范围）"""
         ph = _ph()
         overview = {"total": 0, "hit_questions": 0, "never_hit": 0, "total_hits": 0, "new_questions": 0}
         try:
-            row = self.fetchone("SELECT COUNT(*) AS total, COALESCE(SUM(hit_count), 0) AS total_hits FROM question_bank")
+            # 总题目数：截至 new_to 当天的累计存量
+            if new_to:
+                row = self.fetchone(
+                    f"SELECT COUNT(*) AS total FROM question_bank WHERE created_at < {ph}",
+                    (new_to + " 23:59:59",)
+                )
+            else:
+                row = self.fetchone("SELECT COUNT(*) AS total FROM question_bank")
             if row:
                 overview["total"] = int(row.get("total") or 0)
-                overview["total_hits"] = int(row.get("total_hits") or 0)
-            row = self.fetchone("SELECT COUNT(*) AS c FROM question_bank WHERE hit_count > 0")
-            overview["hit_questions"] = int(row.get("c") or 0) if row else 0
-            overview["never_hit"] = max(0, overview["total"] - overview["hit_questions"])
             if new_from and new_to:
+                nd = new_to + " 23:59:59"
+                # 已调用题目：区间内被命中过的不同题目（库题 hash）
                 row = self.fetchone(
-                    f"SELECT COUNT(*) AS c FROM question_bank WHERE DATE(created_at) >= {ph} AND DATE(created_at) <= {ph}",
-                    (new_from, new_to)
+                    f"SELECT COUNT(DISTINCT matched_hash) AS c FROM bank_call_logs WHERE matched = 1 AND matched_hash <> '' AND created_at >= {ph} AND created_at < {ph}",
+                    (new_from, nd)
+                )
+                overview["hit_questions"] = int(row.get("c") or 0) if row else 0
+                # 累计调用次数：区间内命中次数
+                row = self.fetchone(
+                    f"SELECT COUNT(*) AS c FROM bank_call_logs WHERE matched = 1 AND created_at >= {ph} AND created_at < {ph}",
+                    (new_from, nd)
+                )
+                overview["total_hits"] = int(row.get("c") or 0) if row else 0
+                # 新加入题目：区间内新增
+                row = self.fetchone(
+                    f"SELECT COUNT(*) AS c FROM question_bank WHERE created_at >= {ph} AND created_at < {ph}",
+                    (new_from, nd)
                 )
                 overview["new_questions"] = int(row.get("c") or 0) if row else 0
+                # 从未调用：截至 new_to 的存量中，区间内未被调用过的
+                overview["never_hit"] = max(0, overview["total"] - overview["hit_questions"])
+            else:
+                row = self.fetchone("SELECT COUNT(*) AS c FROM question_bank WHERE hit_count > 0")
+                overview["hit_questions"] = int(row.get("c") or 0) if row else 0
+                row = self.fetchone("SELECT COALESCE(SUM(hit_count), 0) AS s FROM question_bank")
+                overview["total_hits"] = int(row.get("s") or 0) if row else 0
+                overview["never_hit"] = max(0, overview["total"] - overview["hit_questions"])
         except Exception as e:
             print(f"[题库分析] 概览统计失败: {e}", flush=True)
         top_list = self.fetchall(
@@ -2595,17 +2702,25 @@ class Database:
         ) or []
         type_rows = self.fetchall(
             "SELECT question_type, COUNT(*) AS c, COALESCE(SUM(hit_count), 0) AS hits "
-            "FROM question_bank GROUP BY question_type ORDER BY c DESC"
+            "FROM question_bank GROUP BY question_type"
         ) or []
         total = overview["total"] or 1
+        agg = {}
+        for r in type_rows:
+            name = _normalize_question_type_name(r.get("question_type"))
+            c = int(r.get("c") or 0)
+            h = int(r.get("hits") or 0)
+            item = agg.setdefault(name, {"count": 0, "hits": 0})
+            item["count"] += c
+            item["hits"] += h
         type_dist = [
             {
-                "question_type": (r.get("question_type") or "未分类"),
-                "count": int(r.get("c") or 0),
-                "hits": int(r.get("hits") or 0),
-                "percent": round(int(r.get("c") or 0) * 100.0 / total, 1),
+                "question_type": name,
+                "count": item["count"],
+                "hits": item["hits"],
+                "percent": round(item["count"] * 100.0 / total, 1),
             }
-            for r in type_rows
+            for name, item in sorted(agg.items(), key=lambda kv: kv[1]["count"], reverse=True)
         ]
         return {"overview": overview, "top_list": top_list, "least_list": least_list, "never_list": never_list, "type_dist": type_dist}
 
@@ -2699,14 +2814,17 @@ class Database:
         ph = _ph()
         self.execute(
             f"""INSERT INTO question_bank
-                (question_hash, question_text, question_type, options_text, answer, source_model, source_provider, hit_count, last_used_at)
-                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 0, CURRENT_TIMESTAMP)
+                (question_hash, matching_key, match_stem, question_text, question_type, options_text, answer, source_model, source_provider, hit_count, last_used_at, is_image)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 0, CURRENT_TIMESTAMP, {ph})
                 ON DUPLICATE KEY UPDATE
                 answer=VALUES(answer), source_model=VALUES(source_model), source_provider=VALUES(source_provider),
-                options_text=VALUES(options_text), question_type=VALUES(question_type), updated_at=CURRENT_TIMESTAMP""",
+                options_text=VALUES(options_text), question_type=VALUES(question_type), matching_key=VALUES(matching_key),
+                match_stem=VALUES(match_stem), is_image=VALUES(is_image), updated_at=CURRENT_TIMESTAMP""",
             (
-                item.get("question_hash", ""), item.get("question_text", ""), item.get("question_type", ""),
-                item.get("options_text", ""), item.get("answer", ""), item.get("source_model", ""), item.get("source_provider", "")
+                item.get("question_hash", ""), item.get("matching_key", ""), item.get("match_stem", ""),
+                item.get("question_text", ""), item.get("question_type", ""),
+                item.get("options_text", ""), item.get("answer", ""), item.get("source_model", ""), item.get("source_provider", ""),
+                item.get("is_image", 0)
             )
         )
 

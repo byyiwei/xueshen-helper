@@ -2377,6 +2377,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     return "https://xs.openget.cn";
   };
   const LOCAL_BACKEND_ANSWER_URL = "https://xs.openget.cn/api/v1/cx";
+  const LOCAL_BACKEND_SEARCH_URL = "https://xs.openget.cn/api/web/search";
   const TIMEOUT_ERROR_MSG$1 = "请求超时，请前往设置尝试切换节点..";
   const SERVER_MAINTENANCE_ERROR_MSG$1 = "服务器维护中，请前往设置尝试切换节点，自动学习功能正常使用..";
   const handleError$1 = (msg) => ({
@@ -2548,26 +2549,45 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     return callLocalBackendAnswer(question);
   };
   const fetchFuzzySearch = async (question) => {
-    const res = await callLocalBackendAnswer({
-      title: question,
-      optionsText: [],
-      type: ""
-    });
-    if (res.code === 1) {
-      return {
-        code: 1,
-        data: {
-          items: [{
-            title: question,
-            options: "[]",
-            answer: JSON.stringify(res.data.answer || []),
-            type: "8"
-          }]
+    const setting = useSettingStore();
+    const token = setting.config.basicConfig.token.value || getLocalBackendToken() || "";
+    const data = "question=" + encodeURIComponent(question);
+    return new Promise((resolve) => {
+      GM_xmlhttpRequest({
+        url: LOCAL_BACKEND_SEARCH_URL,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+          "Authorization": token ? "Bearer " + token : ""
         },
-        msg: res.msg || "success"
-      };
-    }
-    return { code: res.code, data: { items: [] }, msg: res.msg || "未查询到答案" };
+        data,
+        timeout: 24e4,
+        onload: (response) => {
+          try {
+            const obj = JSON.parse(response.responseText || "{}");
+            if (obj.code === 200 && obj.data && obj.data.found) {
+              const matches = obj.data.matches || [];
+              const items = matches.map((m) => ({
+                title: m.question || question,
+                options: JSON.stringify(m.options || []),
+                answer: JSON.stringify([m.answer || ""]),
+                type: String(m.type || "8")
+              }));
+              resolve({ code: 1, data: { items }, msg: obj.msg || "success" });
+            } else if (response.status === 401 || obj.code === 401) {
+              resolve(handleError$1("本地后端未登录或登录态失效，请先登录用户中心"));
+            } else {
+              const miss = obj.data && obj.data.found === false;
+              resolve({ code: obj.code || -1004, data: { items: [] }, msg: miss ? "题库暂未收录这道题" : (obj.msg || "未查询到答案") });
+            }
+          } catch (e) {
+            resolve({ code: -1004, data: { items: [] }, msg: "搜索响应解析失败" });
+          }
+        },
+        onerror: () => resolve({ code: -1004, data: { items: [] }, msg: "无法连接本地后端" }),
+        ontimeout: () => resolve({ code: -1004, data: { items: [] }, msg: "搜索请求超时，请稍后重试" })
+      });
+    });
   };
   const getAIAnswer = async (question) => {
     return callLocalBackendAnswer(question);

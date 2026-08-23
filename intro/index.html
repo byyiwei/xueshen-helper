@@ -781,7 +781,10 @@
     if (!t) return '题目';
     var map = {
       single: '单选题', multiple: '多选题', judgement: '判断题', truefalse: '判断题',
-      completion: '填空题', blank: '填空题', subjective: '主观题', choice: '选择题'
+      completion: '填空题', blank: '填空题', subjective: '主观题', choice: '选择题',
+      '0': '单选题', '1': '多选题', '2': '填空题', '3': '判断题', '4': '简答题',
+      '5': '名词解释', '6': '论述题', '7': '计算题', '11': '连线题', '14': '完型填空',
+      '15': '阅读理解', '999': '未知'
     };
     var lower = t.toLowerCase();
     if (map[lower]) return map[lower];
@@ -943,25 +946,33 @@
   function showResult(data) {
     var area = document.getElementById('resultArea');
     var card = document.getElementById('resultCard');
-    var optionsHtml = '';
-    if (data.options && data.options.length) {
-      optionsHtml = '<ul class="result-options">' + data.options.map(function (opt, i) {
-        var text = String(opt).replace(/^[A-ZＡ-Ｚ][\.、．:：]\s*/i, '');
-        return '<li><span class="opt-label">' + optLabel(i) + '.</span>' + escapeHtml(text) + '</li>';
-      }).join('') + '</ul>';
-    }
-    card.innerHTML =
-      '<div class="result-head">' +
-        '<span class="q-tag hit">✓ 题库命中</span>' +
-        (data.type ? '<span class="q-tag">' + escapeHtml(typeLabel(data.type)) + '</span>' : '') +
-      '</div>' +
-      '<div class="result-q">' + escapeHtml(data.question || '') + '</div>' +
-      optionsHtml +
-      '<div class="answer-box">' +
-        '<div class="answer-label">📖 参考答案</div>' +
-        '<div class="answer-text">' + escapeHtml(data.answer || '') + '</div>' +
-      '</div>' +
+    var matches = (data.matches && data.matches.length) ? data.matches : [{question:data.question,type:data.type,options:data.options||[],answer:data.answer}];
+    var html = '';
+    matches.forEach(function (m, idx) {
+      var optionsHtml = '';
+      if (m.options && m.options.length) {
+        optionsHtml = '<ul class="result-options">' + m.options.map(function (opt, i) {
+          var text = String(opt).replace(/^[A-ZＡ-Ｚ][\.、．:：]\s*/i, '');
+          return '<li><span class="opt-label">' + optLabel(i) + '.</span>' + escapeHtml(text) + '</li>';
+        }).join('') + '</ul>';
+      }
+      html +=
+        '<div class="result-item"' + (idx > 0 ? ' style="margin-top:16px;padding-top:16px;border-top:1px dashed rgba(148,163,184,.25)"' : '') + '>' +
+          '<div class="result-head">' +
+            '<span class="q-tag hit">✓ 题库命中</span>' +
+            (m.type ? '<span class="q-tag">' + escapeHtml(typeLabel(m.type)) + '</span>' : '') +
+          '</div>' +
+          '<div class="result-q">' + escapeHtml(m.question || '') + '</div>' +
+          optionsHtml +
+          '<div class="answer-box">' +
+            '<div class="answer-label">📖 参考答案</div>' +
+            '<div class="answer-text">' + escapeHtml(m.answer || '') + '</div>' +
+          '</div>' +
+        '</div>';
+    });
+    card.innerHTML = html +
       '<div class="result-foot">' +
+        (matches.length > 1 ? '<span>共命中 ' + matches.length + ' 条</span>' : '') +
         '<span>答案由题库提供，仅供参考，请自行核对</span>' +
         '<span>本次搜题免费 · 未扣题数</span>' +
       '</div>';

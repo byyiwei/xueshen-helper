@@ -946,7 +946,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
           <div class="metric-grid">
             <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(96,165,250,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='user-mgmt';loadUsers();loadLoginLocks()"><div class="metric-label">用户数</div><div class="metric-value">{{dashboard.cards.users||0}}</div><div class="metric-sub">点击管理用户 →</div></div>
             <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(96,165,250,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='user-mgmt';loadUsers();loadLoginLocks()"><div class="metric-label">活跃数</div><div class="metric-value">{{dashboard.cards.active||0}}</div><div class="metric-sub">点击查看用户 →</div></div>
-            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(16,185,129,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='question-bank';loadQuestionBank()"><div class="metric-label">题库总数</div><div class="metric-value">{{dashboard.cards.question_bank||0}}</div><div class="metric-sub">点击管理题库 →</div></div>
+            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(16,185,129,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='question-bank';loadQuestionBank()"><div class="metric-label">题库总数</div><div class="metric-value">{{dashboard.cards.question_bank||0}}</div><div class="metric-sub">区间新增 {{dashboard.cards.bank_new||0}} · 点击管理题库 →</div></div>
             <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(16,185,129,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='bank-logs';expandedGroups.logs=true;loadBankLogs()"><div class="metric-label">题库命中数</div><div class="metric-value" style="color:var(--success)">{{dashboard.cards.bank_hits||0}}</div><div class="metric-sub">点击查看日志 →</div></div>
             <div class="metric-card"><div class="metric-label">题库命中率</div><div class="metric-value" style="color:var(--accent2)">{{dashboard.cards.bank_hit_rate||0}}%</div><div class="metric-sub">占成功答题比例</div></div>
             <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(96,165,250,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='ai-logs';expandedGroups.logs=true;aiLogFilter.status='';loadAiLogs(1)"><div class="metric-label">模型调用数</div><div class="metric-value">{{dashboard.cards.calls||0}}</div><div class="metric-sub">点击查看日志 →</div></div>
@@ -2518,8 +2518,12 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
               </div>
             </div>
             <div class="card-body">
-              <div class="filter-grid" style="grid-template-columns:1fr 120px">
-                <input v-model="questionBankFilter.keyword" placeholder="搜索题干 / 选项 / 答案">
+              <div class="filter-grid" style="grid-template-columns:1fr 140px 120px">
+                <input v-model="questionBankFilter.keyword" placeholder="搜索题干 / 选项 / 答案" @keyup.enter="loadQuestionBank(1)">
+                <select v-model="questionBankFilter.type_name" @change="loadQuestionBank(1)">
+                  <option value="">全部题型</option>
+                  <option v-for="t in bankTypeOptions" :key="t.value" :value="t.value">{{t.label}}</option>
+                </select>
                 <select v-model.number="questionBankFilter.limit" @change="loadQuestionBank(1)">
                   <option :value="50">50条/页</option>
                   <option :value="100">100条/页</option>
@@ -2645,11 +2649,11 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
           <div v-if="bankAnalysisLoading" style="text-align:center;color:var(--text3);padding:40px 0;font-size:13px">正在加载题库分析...</div>
           <template v-else-if="bankAnalysis">
             <div class="metric-grid" style="grid-template-columns:repeat(5,minmax(120px,1fr))">
-              <div class="metric-card"><div class="metric-label">总题目数</div><div class="metric-value">{{bankAnalysis.overview.total}}</div><div class="metric-sub">题库累计入库题目</div></div>
-              <div class="metric-card"><div class="metric-label">已调用题目</div><div class="metric-value">{{bankAnalysis.overview.hit_questions}}</div><div class="metric-sub">调用命中率 {{pct(bankAnalysis.overview.hit_questions,bankAnalysis.overview.total)}}%</div></div>
-              <div class="metric-card"><div class="metric-label">从未调用</div><div class="metric-value" style="color:var(--danger)">{{bankAnalysis.overview.never_hit}}</div><div class="metric-sub">占比 {{pct(bankAnalysis.overview.never_hit,bankAnalysis.overview.total)}}%</div></div>
+              <div class="metric-card"><div class="metric-label">总题目数</div><div class="metric-value">{{bankAnalysis.overview.total}}</div><div class="metric-sub">截至所选日期累计入库</div></div>
+              <div class="metric-card"><div class="metric-label">已调用题目</div><div class="metric-value">{{bankAnalysis.overview.hit_questions}}</div><div class="metric-sub">区间内被调用，占比 {{pct(bankAnalysis.overview.hit_questions,bankAnalysis.overview.total)}}%</div></div>
+              <div class="metric-card"><div class="metric-label">从未调用</div><div class="metric-value" style="color:var(--danger)">{{bankAnalysis.overview.never_hit}}</div><div class="metric-sub">存量中区间内未调用，占比 {{pct(bankAnalysis.overview.never_hit,bankAnalysis.overview.total)}}%</div></div>
               <div class="metric-card"><div class="metric-label">新加入题目</div><div class="metric-value" style="color:var(--accent2)">{{bankAnalysis.overview.new_questions}}</div><div class="metric-sub">区间内新增，占比 {{pct(bankAnalysis.overview.new_questions,bankAnalysis.overview.total)}}%</div></div>
-              <div class="metric-card"><div class="metric-label">累计调用次数</div><div class="metric-value">{{bankAnalysis.overview.total_hits}}</div><div class="metric-sub">所有题目 hit_count 总和</div></div>
+              <div class="metric-card"><div class="metric-label">累计调用次数</div><div class="metric-value">{{bankAnalysis.overview.total_hits}}</div><div class="metric-sub">区间内命中次数</div></div>
             </div>
 
             <div class="card">
@@ -3793,7 +3797,7 @@ createApp({
      const questionBankLoading=ref(false);
      const pluginData=reactive({framework:'',content:''});
     const expandedBank=reactive({});
-    const questionBankFilter=reactive({keyword:'',limit:100,page:1});
+    const questionBankFilter=reactive({keyword:'',limit:100,page:1,type_name:'',is_image:''});
     const loginLocks=ref([]);
     const loginLockLoading=ref(false);
     const saveConfigLoading=ref(false);
@@ -3811,13 +3815,14 @@ createApp({
     const logCleanupRunning=ref(false);
     const logCleanupResult=ref(null);
     const collapsedProviders=reactive(JSON.parse(localStorage.getItem('ne21_collapsed_providers')||'{}'));
-    const dashboard=ref({cards:{users:0,active:0,question_bank:0,calls:0,success:0,error:0,bank_hits:0,bank_hit_rate:0},trend:[],models:[]});
-    const dashStartDate=ref(new Date().toISOString().slice(0,10));
-    const dashEndDate=ref(new Date().toISOString().slice(0,10));
-    const todayStr=new Date().toISOString().slice(0,10);
-    const d7ago=new Date(Date.now()-7*86400000).toISOString().slice(0,10);
-    const d30ago=new Date(Date.now()-30*86400000).toISOString().slice(0,10);
-    const d90ago=new Date(Date.now()-90*86400000).toISOString().slice(0,10);
+    function fmtLocalDate(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),da=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${da}`;}
+    const dashboard=ref({cards:{users:0,active:0,question_bank:0,bank_new:0,calls:0,success:0,error:0,bank_hits:0,bank_hit_rate:0},trend:[],models:[]});
+    const dashStartDate=ref(fmtLocalDate(new Date()));
+    const dashEndDate=ref(fmtLocalDate(new Date()));
+    const todayStr=fmtLocalDate(new Date());
+    const d7ago=fmtLocalDate(new Date(Date.now()-7*86400000));
+    const d30ago=fmtLocalDate(new Date(Date.now()-30*86400000));
+    const d90ago=fmtLocalDate(new Date(Date.now()-90*86400000));
     const adminSlider=reactive({id:'',target:130,x:0,token:'',verified:false,loading:false,dragging:false,trackEl:null});
     const providerReadyCount=ref(0);
     const providerTotalCount=ref(0);
@@ -3990,13 +3995,13 @@ createApp({
       }catch(_){}
     }
     function setQuickRange(type){
-      const today=new Date().toISOString().slice(0,10);
+      const today=fmtLocalDate(new Date());
       if(type==='today'){
         dashStartDate.value=today;
         dashEndDate.value=today;
       }else{
         const d=parseInt(type);
-        const start=new Date(Date.now()-d*86400000).toISOString().slice(0,10);
+        const start=fmtLocalDate(new Date(Date.now()-d*86400000));
         dashStartDate.value=start;
         dashEndDate.value=today;
       }
@@ -4125,10 +4130,9 @@ createApp({
     async function loadBankAnalysis(){
       if(!token.value)return;
       if(!bankAnalysisFilter.new_from||!bankAnalysisFilter.new_to){
-        const to=new Date(),from=new Date();
-        from.setDate(from.getDate()-29);
-        bankAnalysisFilter.new_from=from.toISOString().slice(0,10);
-        bankAnalysisFilter.new_to=to.toISOString().slice(0,10);
+        const today=fmtLocalDate(new Date());
+        bankAnalysisFilter.new_from=today;
+        bankAnalysisFilter.new_to=today;
       }
       bankAnalysisLoading.value=true;
       try{
@@ -4147,8 +4151,8 @@ createApp({
       const to=new Date();
       const from=new Date();
       from.setDate(from.getDate()-days+1);
-      bankAnalysisFilter.new_from=from.toISOString().slice(0,10);
-      bankAnalysisFilter.new_to=to.toISOString().slice(0,10);
+      bankAnalysisFilter.new_from=fmtLocalDate(from);
+      bankAnalysisFilter.new_to=fmtLocalDate(to);
       loadBankAnalysis();
     }
     async function loadUserAnalysis(){
@@ -4156,8 +4160,8 @@ createApp({
       if(!userAnalysisFilter.date_from||!userAnalysisFilter.date_to){
         const to=new Date(),from=new Date();
         from.setDate(from.getDate()-29);
-        userAnalysisFilter.date_from=from.toISOString().slice(0,10);
-        userAnalysisFilter.date_to=to.toISOString().slice(0,10);
+        userAnalysisFilter.date_from=fmtLocalDate(from);
+        userAnalysisFilter.date_to=fmtLocalDate(to);
       }
       userAnalysisLoading.value=true;
       try{
@@ -4176,8 +4180,8 @@ createApp({
       const to=new Date();
       const from=new Date();
       from.setDate(from.getDate()-days+1);
-      userAnalysisFilter.date_from=from.toISOString().slice(0,10);
-      userAnalysisFilter.date_to=to.toISOString().slice(0,10);
+      userAnalysisFilter.date_from=fmtLocalDate(from);
+      userAnalysisFilter.date_to=fmtLocalDate(to);
       loadUserAnalysis();
     }
     function pct(a,b){const t=Number(b);if(!t)return '0.0';return (Number(a)*100/t).toFixed(1);}
@@ -4190,6 +4194,8 @@ createApp({
         qs.set('limit',String(questionBankFilter.limit||100));
         qs.set('page',String(questionBankFilter.page||1));
         if(questionBankFilter.keyword)qs.set('keyword',questionBankFilter.keyword);
+        if(questionBankFilter.type_name==='__image__'){qs.set('is_image','1');}
+        else if(questionBankFilter.type_name){qs.set('question_type',questionBankFilter.type_name);}
         const res=await fetch('/admin/question-bank?'+qs.toString(),{headers:{'Authorization':token.value}});
         const data=await res.json();
         if(data.code===200){questionBank.value=data.items||[];questionBankTotal.value=Number(data.total||0);}
@@ -4914,6 +4920,21 @@ createApp({
     }
     const questionTypeMap={0:'单选题',1:'多选题',2:'判断题',3:'填空题',4:'简答题','single':'单选题','multiple':'多选题','judge':'判断题','fill':'填空题','short':'简答题'};
     function questionTypeName(t){return questionTypeMap[t]||t||'-';}
+    const bankTypeOptions=[
+      {label:'单选题',value:'单选题'},
+      {label:'多选题',value:'多选题'},
+      {label:'判断题',value:'判断题'},
+      {label:'填空题',value:'填空题'},
+      {label:'简答题',value:'简答题'},
+      {label:'名词解释',value:'名词解释'},
+      {label:'论述题',value:'论述题'},
+      {label:'计算题',value:'计算题'},
+      {label:'连线题',value:'连线题'},
+      {label:'完型填空',value:'完型填空'},
+      {label:'阅读理解',value:'阅读理解'},
+      {label:'图片题',value:'__image__'},
+      {label:'未分类',value:'未分类'},
+    ];
     const mailServerTotalWeight=computed(()=>{return mailServers.value.reduce((s,v)=>s+(parseInt(v.weight)||1),0)||1});
     function mailServerWeightPercent(s){const t=mailServerTotalWeight.value;const w=parseInt(s.weight)||1;return (w/t*100).toFixed(0);}
     function formatWan(n){n=Number(n||0);return n>=10000?(n/10000).toFixed(1)+'万':n.toLocaleString();}
@@ -5482,7 +5503,7 @@ createApp({
       bankLogs,bankLogLoading,bankLogFilter,bankLogTotal,expandedBankLogs,
       bankAnalysis,bankAnalysisLoading,bankAnalysisFilter,loadBankAnalysis,setBankAnalysisRange,
       userAnalysis,userAnalysisLoading,userAnalysisFilter,loadUserAnalysis,setUserAnalysisRange,pct,
-      questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,
+      questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,bankTypeOptions,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,
       doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
       loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,
       savePaymentConfig,savePayApiConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,openUserEdit,saveUserAdmin,

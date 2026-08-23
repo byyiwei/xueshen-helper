@@ -1533,41 +1533,72 @@ def parse_question_payload(question):
         pass
     return result
 
-def make_question_hash(question):
+def _image_fingerprint(info):
+    images = info.get("images") or []
+    items = sorted({str(x).strip() for x in images if str(x).strip()})
+    if not items:
+        return ""
+    return hashlib.sha256("|".join(items).encode("utf-8")).hexdigest()
+
+
+def _normalized_components(question):
     info = parse_question_payload(question)
-    normalized = {
-        "q": normalize_question_text(info.get("question_text", "")),
-        "type": normalize_question_text(info.get("question_type", "")),
-        "options": [normalize_question_text(x) for x in info.get("options", [])]
-    }
+    q = normalize_question_text(info.get("question_text", ""))
+    t = normalize_question_text(info.get("question_type", ""))
+    opts = sorted({normalize_question_text(x) for x in info.get("options", []) if normalize_question_text(x)})
+    img_fp = _image_fingerprint(info)
+    return q, t, opts, img_fp
+
+
+def make_matching_key(question):
+    """匹配键：题面 + 题型 + 选项 + 图片指纹 (不含答案)，用于题库命中定位候选。"""
+    q, t, opts, img_fp = _normalized_components(question)
+    normalized = {"q": q, "type": t, "options": opts}
+    if img_fp:
+        normalized["img"] = img_fp
     return hashlib.sha256(json.dumps(normalized, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
 
-def _strip_option_prefix(text):
-    """去除选项前缀，如 'A. xxx' -> 'xxx', 'B、xxx' -> 'xxx'"""
-    text = str(text or "").strip()
-    # 匹配 A. A、 A) A： A: 等
-    m = re.match(r"^\s*[A-Za-z][\.\、\)\）:：．]\s*(.*)$", text)
-    if m:
-        return m.group(1).strip()
-    # 匹配 1. 1、 1) 等
-    m = re.match(r"^\s*\d+[\.\、\)\）:：．]\s*(.*)$", text)
-    if m:
-        return m.group(1).strip()
-    return text
 
-def options_match(input_options, bank_options_text):
-    """匹配选项：输入选项是题库选项的子集即可（允许题库有更多选项）"""
-    input_clean = [_strip_option_prefix(x) for x in (input_options or [])]
-    input_set = {normalize_question_text(x) for x in input_clean if normalize_question_text(x)}
-    if not input_set:
-        return True  # 无选项视为通配
-    bank_options = re.split(r"\s*\|\s*|\n+", str(bank_options_text or ""))
-    bank_clean = [_strip_option_prefix(x) for x in bank_options]
-    bank_set = {normalize_question_text(x) for x in bank_clean if normalize_question_text(x)}
-    if not bank_set:
-        return True  # 题库无选项视为通配
-    # 放宽：输入选项是题库选项的子集即可（允许题库有额外选项）
-    return input_set.issubset(bank_set)
+def make_match_stem(question):
+    """匹配主干：题面 + 图片 (不含题型与选项)，用于用户仅输入题干时的匹配定位。"""
+    q, t, opts, img_fp = _normalized_components(question)
+    normalized = {"q": q}
+    if img_fp:
+        normalized["img"] = img_fp
+    return hashlib.sha256(json.dumps(normalized, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def normalize_answer_for_hash(answer):
+    """把答案归一化为稳定字符串，用于指纹（选项字母排序/判断题/轻量归一化）。"""
+    if not answer:
+        return ""
+    text = str(answer).strip()
+    m = re.match(r"^\s*(?:正确答案是?|答案是?|选择?|选|应该选|应该选择?)\s*([A-Da-d])", text, re.I)
+    if m:
+        return m.group(1).upper()
+    clean = re.sub(r"[\s、,，&+与和]+", "", text)
+    if re.fullmatch(r"[A-Da-d]+", clean):
+        uniq = sorted(set(c.upper() for c in clean))
+        return ",".join(uniq)
+    low = text[:30].lower()
+    if any(k in low for k in ["正确", "对", "true", "√", "right"]):
+        return "正确"
+    if any(k in low for k in ["错误", "不对", "错", "false", "×", "✗", "wrong"]):
+        return "错误"
+    t = re.sub(r"\s+", "", text)
+    t = re.sub(r"[，。！？；：,.!?;:\-—_【】\[\]（）()\"'“”‘’]", "", t)
+    return t.lower()
+
+
+def make_question_hash(question, answer=None):
+    """题目指纹：题面 + 题型 + 选项 + 图片指纹 + 归一化答案。答案不同即不同指纹(新题)。"""
+    q, t, opts, img_fp = _normalized_components(question)
+    a = normalize_answer_for_hash(answer) if answer is not None else ""
+    normalized = {"q": q, "type": t, "options": opts, "answer": a}
+    if img_fp:
+        normalized["img"] = img_fp
+    return hashlib.sha256(json.dumps(normalized, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+
 
 def is_test_question_for_bank(question):
     info = parse_question_payload(question)
@@ -1587,79 +1618,51 @@ def is_test_question_for_bank(question):
         return True
     return False
 
-def find_existing_bank_duplicate(info):
-    q_norm = normalize_question_text(info.get("question_text", ""))
-    keyword = (info.get("question_text", "") or "")[:80]
-    if not q_norm or not keyword:
-        return None
-    try:
-        candidates = db.search_question_bank(keyword=keyword, limit=30, page=1)
-        for item in candidates:
-            item_q_norm = normalize_question_text(item.get("question_text", ""))
-            if item_q_norm == q_norm and options_match(info.get("options", []), item.get("options_text", "")):
-                # 题型也要匹配才算重复（避免同题不同类型被覆盖）
-                if question_type_matches(info.get("question_type", ""), item.get("question_type", "")):
-                    return item
-    except Exception as e:
-        print(f"[题库去重] 查询失败: {e}", flush=True)
-    return None
-
-def question_type_matches(t1, t2):
-    """判断两个题型是否匹配（空值视为通配，但有值时必须一致）"""
-    t1 = (t1 or "").strip().lower()
-    t2 = (t2 or "").strip().lower()
-    if not t1 and not t2:
-        return True  # 都为空，视为匹配
-    if not t1 or not t2:
-        return False  # 一个有值一个没值，不匹配
-    return t1 == t2
 
 def get_question_bank_match(question):
     _t0 = time.time()
     info = parse_question_payload(question)
     current_type = info.get("question_type", "")
-    # 图片题(多模态)：不参与题库匹配，避免不同图片题因指令文字相似而互相误命中
-    if info.get("images"):
-        qhash = make_question_hash(question)
-        elapsed = (time.time() - _t0) * 1000
-        print(f"[题库匹配] 图片题跳过题库匹配 {qhash[:12]} ({elapsed:.1f}ms)", flush=True)
-        return None, qhash, None, elapsed
-    qhash = make_question_hash(question)
-    row = db.get_question_answer_by_hash(qhash)
-    if row and row.get("answer"):
-        elapsed = (time.time() - _t0) * 1000
-        print(f"[题库匹配] hash 精确命中 {qhash[:12]} type={current_type} ({elapsed:.1f}ms)", flush=True)
-        return row, qhash, "hash", elapsed
-    q_norm = normalize_question_text(info.get("question_text", ""))
-    keyword = (info.get("question_text", "") or "")[:80]
-    if keyword:
-        try:
-            candidates = db.search_question_bank(keyword=keyword, limit=20, page=1)
-            print(f"[题库匹配] 搜索返回 {len(candidates)} 条 ({(time.time()-_t0)*1000:.1f}ms)", flush=True)
-            for item in candidates:
-                item_q_norm = normalize_question_text(item.get("question_text", ""))
-                if not item.get("answer") or not item_q_norm:
-                    continue
-                # 精确匹配
-                if item_q_norm == q_norm or item_q_norm in q_norm or q_norm in item_q_norm:
-                    if options_match(info.get("options", []), item.get("options_text", "")):
-                        db.get_question_answer_by_hash(item.get("question_hash", ""))
-                        elapsed = (time.time() - _t0) * 1000
-                        print(f"[题库匹配] 标准化兜底命中 {item.get('question_hash', '')[:12]} type={item.get('question_type','')} ({elapsed:.1f}ms)", flush=True)
-                        return item, item.get("question_hash", qhash), "standard", elapsed
-                # 模糊匹配：相似度>=0.85 且选项匹配（不再限制题型）
-                if len(q_norm) >= 4 and len(item_q_norm) >= 4:
-                    ratio = SequenceMatcher(None, q_norm, item_q_norm).ratio()
-                    if ratio >= 0.85 and options_match(info.get("options", []), item.get("options_text", "")):
-                        db.get_question_answer_by_hash(item.get("question_hash", ""))
-                        elapsed = (time.time() - _t0) * 1000
-                        print(f"[题库匹配] 模糊匹配命中(相似度={ratio:.2f}) {item.get('question_hash', '')[:12]} type={item.get('question_type','')} ({elapsed:.1f}ms)", flush=True)
-                        return item, item.get("question_hash", qhash), "fuzzy", elapsed
-        except Exception as e:
-            print(f"[题库匹配] 兜底查询失败: {e}", flush=True)
+    mkey = make_matching_key(question)
+    candidates = db.get_question_bank_by_matching_key(mkey)
+    candidates = [c for c in candidates if c.get("answer")]
     elapsed = (time.time() - _t0) * 1000
-    print(f"[题库匹配] 未命中 {qhash[:12]} type={current_type} ({elapsed:.1f}ms)", flush=True)
-    return None, qhash, None, elapsed
+    if not candidates:
+        print(f"[题库匹配] 未命中 {mkey[:12]} type={current_type} ({elapsed:.1f}ms)", flush=True)
+        return None, mkey, None, elapsed
+    # 同题仅一个答案版本 -> 命中复用（省钱）
+    if len(candidates) == 1:
+        row = db.get_question_answer_by_hash(candidates[0]["question_hash"])
+        print(f"[题库匹配] 精确命中 {row['question_hash'][:12]} type={current_type} ({elapsed:.1f}ms)", flush=True)
+        return row, row["question_hash"], "hash", elapsed
+    # 同题已有多个答案版本 -> 放行重新调AI，新答案不同则新增
+    print(f"[题库匹配] 同题多答案版本({len(candidates)})，放行重算 {mkey[:12]} ({elapsed:.1f}ms)", flush=True)
+    return None, mkey, None, elapsed
+
+
+def get_bank_match_all(question):
+    """返回题库中所有匹配该题的候选（同题可多个答案版本），用于网页搜题多结果展示。"""
+    _t0 = time.time()
+    mkey = make_matching_key(question)
+    candidates = db.get_question_bank_by_matching_key(mkey)
+    if not candidates:
+        # 用户仅输入题干（无选项）时，用不含选项的 match_stem 定位同题所有版本
+        info = parse_question_payload(question)
+        if not info.get("options"):
+            stem = make_match_stem(question)
+            candidates = db.get_question_bank_by_match_stem(stem)
+    candidates = [c for c in candidates if c.get("answer")]
+    rows = []
+    for c in candidates:
+        row = db.get_question_answer_by_hash(c.get("question_hash", ""))
+        if row and row.get("answer"):
+            rows.append(row)
+    elapsed = (time.time() - _t0) * 1000
+    if not rows:
+        print(f"[首页搜题] 未命中 {mkey[:12]} ({elapsed:.1f}ms)", flush=True)
+    else:
+        print(f"[首页搜题] 命中 {len(rows)} 条 {mkey[:12]} ({elapsed:.1f}ms)", flush=True)
+    return rows, mkey, elapsed
 
 def save_question_bank_answer(question, answer, model_name="", provider_name=""):
     if not answer:
@@ -1668,22 +1671,20 @@ def save_question_bank_answer(question, answer, model_name="", provider_name="")
         print("[题库入库] 测试题已跳过，不写入题库", flush=True)
         return
     info = parse_question_payload(question)
-    if info.get("images"):
-        print("[题库入库] 图片题不写入题库", flush=True)
-        return
-    qhash = make_question_hash(question)
-    duplicate = find_existing_bank_duplicate(info)
-    if duplicate and duplicate.get("question_hash"):
-        qhash = duplicate.get("question_hash")
-        print(f"[题库去重] 已存在相同题目，仅更新 {qhash[:12]}", flush=True)
+    qhash = make_question_hash(question, answer)
+    mkey = make_matching_key(question)
+    stem = make_match_stem(question)
     db.upsert_question_bank({
         "question_hash": qhash,
+        "matching_key": mkey,
+        "match_stem": stem,
         "question_text": info.get("question_text", ""),
         "question_type": info.get("question_type", ""),
         "options_text": " | ".join(info.get("options", [])),
         "answer": answer,
         "source_model": model_name or "",
-        "source_provider": provider_name or ""
+        "source_provider": provider_name or "",
+        "is_image": 1 if info.get("images") else 0
     })
 
 def extract_options_from_question(question):
@@ -2896,6 +2897,7 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
         SELECT
           (SELECT COUNT(*) FROM users) AS users,
           (SELECT COUNT(*) FROM question_bank) AS question_bank,
+          (SELECT COUNT(*) FROM question_bank WHERE created_at >= {ph} AND created_at < {ph}) AS bank_new,
           COUNT(DISTINCT CASE
             WHEN COALESCE(username,'') <> '' THEN username
             WHEN COALESCE(client_ip,'') <> '' THEN client_ip
@@ -2955,7 +2957,7 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
     conn = db._new_mysql_conn()
     try:
         cursor = conn.cursor()
-        cursor.execute(card_sql, (sd, ed_next))
+        cursor.execute(card_sql, (sd, ed_next, sd, ed_next))
         card_stats = cursor.fetchone() or {}
         cursor.execute(trend_sql, (sd, ed_next))
         trend_rows = cursor.fetchall()
@@ -3002,6 +3004,7 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
             "users": int(card_stats.get("users") or 0),
             "active": int(card_stats.get("active") or 0),
             "question_bank": int(card_stats.get("question_bank") or 0),
+            "bank_new": int(card_stats.get("bank_new") or 0),
             "calls": int(card_stats.get("calls") or 0),
             "success": int(card_stats.get("success") or 0),
             "error": int(card_stats.get("error") or 0),
@@ -3895,8 +3898,10 @@ class Handler(BaseHTTPRequestHandler):
                 limit = qs.get("limit", ["100"])[0]
                 page = qs.get("page", ["1"])[0]
                 keyword = qs.get("keyword", [""])[0]
-                rows = db.search_question_bank(keyword=keyword, limit=limit, page=page)
-                total = db.count_question_bank(keyword=keyword)
+                question_type = qs.get("question_type", [""])[0]
+                is_image = qs.get("is_image", [""])[0]
+                rows = db.search_question_bank(keyword=keyword, limit=limit, page=page, question_type=question_type, is_image=is_image or None)
+                total = db.count_question_bank(keyword=keyword, question_type=question_type, is_image=is_image or None)
                 self._send_json(200, {"code": 200, "items": rows, "total": total, "page": int(page or 1), "limit": int(limit or 100)})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -6121,37 +6126,52 @@ class Handler(BaseHTTPRequestHandler):
                         "remaining": 0
                     })
                     return
-                bank_row, question_hash, bank_method, bank_duration = get_question_bank_match(question)
+                matches, mkey, elapsed = get_bank_match_all(question)
                 _bank_info = parse_question_payload(question)
                 enqueue_bank_log({
                     "username": username,
-                    "question_hash": question_hash,
+                    "question_hash": mkey,
                     "question_text": _bank_info.get("question_text", question)[:500],
                     "question_type": _bank_info.get("question_type", ""),
                     "options_text": " | ".join(_bank_info.get("options", [])),
-                    "matched": bool(bank_row),
-                    "matched_hash": bank_row.get("question_hash", "") if bank_row else "",
-                    "match_method": ("web_" + bank_method) if bank_method else "web_none",
-                    "duration_ms": int(bank_duration or 0),
+                    "matched": bool(matches),
+                    "matched_hash": matches[0].get("question_hash", "") if matches else "",
+                    "match_method": ("web_" + ("hash" if matches else "none")),
+                    "duration_ms": int(elapsed or 0),
                     "client_ip": self.client_address[0] if self.client_address else ""
                 })
-                used = db.increment_web_search_count(username)
-                remaining = max(0, WEB_SEARCH_DAILY_LIMIT - used)
-                quota_info = {"limit": WEB_SEARCH_DAILY_LIMIT, "used": used, "remaining": remaining}
-                if bank_row and bank_row.get("answer"):
-                    answer = normalize_ai_answer(question, bank_row.get("answer", ""))
-                    options = [x.strip() for x in (bank_row.get("options_text") or "").split("|") if x.strip()]
-                    print(f"[首页搜题] 命中 user={username} hash={question_hash[:12]} ({bank_duration:.1f}ms)", flush=True)
+                if matches:
+                    # 仅命中才扣一次搜题额度
+                    used = db.increment_web_search_count(username)
+                    remaining = max(0, WEB_SEARCH_DAILY_LIMIT - used)
+                    quota_info = {"limit": WEB_SEARCH_DAILY_LIMIT, "used": used, "remaining": remaining}
+                    items = []
+                    for r in matches:
+                        options = [x.strip() for x in (r.get("options_text") or "").split("|") if x.strip()]
+                        items.append({
+                            "question": (r.get("question_text") or "")[:500],
+                            "type": r.get("question_type") or "",
+                            "options": options,
+                            "answer": normalize_ai_answer(question, r.get("answer", "")),
+                        })
+                    print(f"[首页搜题] 命中 {len(items)} 条 user={username} hash={mkey[:12]} ({elapsed:.1f}ms)", flush=True)
+                    first = items[0] if items else {}
                     self._send_json(200, {"code": 200, "msg": "搜索成功", "data": {
                         "found": True,
-                        "question": (bank_row.get("question_text") or _bank_info.get("question_text") or question)[:500],
-                        "type": (bank_row.get("question_type") or _bank_info.get("question_type") or ""),
-                        "options": options,
-                        "answer": answer,
-                        "match": bank_method or "hash",
+                        "matches": items,
+                        "total": len(items),
+                        "question": first.get("question", ""),
+                        "type": first.get("type", ""),
+                        "options": first.get("options", []),
+                        "answer": first.get("answer", ""),
+                        "match": "hash",
                         **quota_info
                     }})
                 else:
+                    # 未收录不扣额度
+                    used = db.get_web_search_count(username)
+                    remaining = max(0, WEB_SEARCH_DAILY_LIMIT - used)
+                    quota_info = {"limit": WEB_SEARCH_DAILY_LIMIT, "used": used, "remaining": remaining}
                     print(f"[首页搜题] 未命中 user={username} question={question[:60]}...", flush=True)
                     self._send_json(200, {"code": 200, "msg": "题库暂未收录该题目", "data": {
                         "found": False,
