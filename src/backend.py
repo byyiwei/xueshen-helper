@@ -5,9 +5,10 @@
 MySQL 数据库
 管理后台: https://xs.openget.cn/admin
 """
-
 import json
+
 import os
+import tempfile
 import re
 import time
 import socket
@@ -1531,6 +1532,15 @@ def parse_question_payload(question):
                 result["images"] = [str(images).strip()]
     except Exception:
         pass
+    # 兜底：从 question_text 中提取 <img> URL，防止客户端未传 images 字段
+    q_text = result.get("question_text", "")
+    if q_text:
+        text_imgs = re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', q_text)
+        existing = set(result["images"])
+        for url in text_imgs:
+            url = url.strip()
+            if url and url not in existing:
+                result["images"].append(url)
     return result
 
 def _image_fingerprint(info):
@@ -2107,7 +2117,14 @@ def build_ai_question_text(question_payload_str):
     options = info.get("options", [])
     parts = []
     if q_type:
-        type_map = {"single": "单选题", "multiple": "多选题", "judge": "判断题", "fill": "填空题", "short": "简答题"}
+        type_map = {
+            "single": "单选题", "multiple": "多选题", "judge": "判断题", "fill": "填空题", "short": "简答题",
+            "0": "单选题", "1": "多选题", "2": "填空题", "3": "判断题", "4": "简答题",
+            "5": "名词解释", "6": "论述题", "7": "计算题", "8": "其它", "9": "分录题",
+            "10": "资料题", "11": "连线题", "13": "排序题", "14": "完型填空", "15": "阅读理解",
+            "17": "程序题", "18": "口语题", "19": "听力题", "20": "共用选项题", "21": "测评题",
+            "23": "钟表题", "24": "选词填空", "25": "选做题",
+        }
         type_label = type_map.get(q_type, q_type)
         parts.append(f"[{type_label}]")
     parts.append(q_text)
@@ -2152,7 +2169,14 @@ def build_ai_messages(question_payload_str):
     options = info.get("options", [])
     parts = []
     if q_type:
-        type_map = {"single": "单选题", "multiple": "多选题", "judge": "判断题", "fill": "填空题", "short": "简答题"}
+        type_map = {
+            "single": "单选题", "multiple": "多选题", "judge": "判断题", "fill": "填空题", "short": "简答题",
+            "0": "单选题", "1": "多选题", "2": "填空题", "3": "判断题", "4": "简答题",
+            "5": "名词解释", "6": "论述题", "7": "计算题", "8": "其它", "9": "分录题",
+            "10": "资料题", "11": "连线题", "13": "排序题", "14": "完型填空", "15": "阅读理解",
+            "17": "程序题", "18": "口语题", "19": "听力题", "20": "共用选项题", "21": "测评题",
+            "23": "钟表题", "24": "选词填空", "25": "选做题",
+        }
         type_label = type_map.get(q_type, q_type)
         parts.append(f"[{type_label}]")
     if q_text:
@@ -2446,7 +2470,7 @@ def call_llm_lightweight(messages, model, provider_info, timeout=15):
             choice = result["choices"][0]
             message = choice.get("message") or {}
             # 保存原始响应供调试
-            with open("/tmp/ai_raw_response.json", "w") as _f:
+            with open(os.path.join(tempfile.gettempdir(), "ai_raw_response.json"), "w") as _f:
                 _f.write(json.dumps(result, ensure_ascii=False, indent=2))
             # 优先读 content，为空则读 reasoning_content（推理模型）
             content = message.get("content") or ""
@@ -5770,15 +5794,17 @@ class Handler(BaseHTTPRequestHandler):
                 
                 # 优先选非推理模型，按权重降序作为备选
                 active.sort(key=lambda x: (1 if x[2].lower() in reasoning_models else 0, -x[3]))
-                # 轻量级调用：最多尝试 3 个模型，单个模型 40 秒超时，失败/超时自动切换下一个
-                max_tries = min(3, len(active))
+                # 跨提供商轮询打散：避免单一提供商（如已配额耗尽的 sensenova）独占前几次尝试，
+                # 让其它可用提供商（qwen / siliconflow 等）尽早被尝试
+                active = provider_round_robin_rest(active)
+                # 轻量级调用：最多尝试 5 个模型，单个模型超时后自动切换下一个提供商
+                max_tries = min(5, len(active))
                 answer = None
                 err = None
                 tokens = 0
                 used_model = None
                 for idx in range(max_tries):
                     provider_name, provider_info, model_name, _ = active[idx]
-                    # 首个模型用较短超时快速试探，慢模型/不可达时尽快切换备选；后续模型给充足时间
                     per_timeout = 15 if idx == 0 else 30
                     print(f"[AI优化] 尝试 {idx+1}/{max_tries} model={model_name}, provider={provider_name}, timeout={per_timeout}s", flush=True)
                     t0 = time.time()
@@ -5814,7 +5840,7 @@ class Handler(BaseHTTPRequestHandler):
                         self._send_json(500, {"code": 500, "msg": err or "AI 优化失败"})
             except Exception as e:
                 import traceback
-                with open("/tmp/ai_polish_error.log", "a") as f:
+                with open(os.path.join(tempfile.gettempdir(), "ai_polish_error.log"), "a") as f:
                     f.write(f"[{datetime.now()}] {traceback.format_exc()}\n")
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -5863,7 +5889,9 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(500, {"code": 500, "msg": "AI 模型暂时不可用，请稍后重试"})
                     return
                 active.sort(key=lambda x: (1 if x[2].lower() in reasoning_models else 0, -x[3]))
-                max_tries = min(3, len(active))
+                # 跨提供商轮询打散：避免单一提供商（如已配额耗尽的 sensenova）独占前几次尝试
+                active = provider_round_robin_rest(active)
+                max_tries = min(5, len(active))
                 answer = None
                 err = None
                 tokens = 0
@@ -5896,7 +5924,7 @@ class Handler(BaseHTTPRequestHandler):
                         self._send_json(500, {"code": 500, "msg": err or "AI 优化失败"})
             except Exception as e:
                 import traceback
-                with open("/tmp/ai_polish_error.log", "a") as f:
+                with open(os.path.join(tempfile.gettempdir(), "ai_polish_error.log"), "a") as f:
                     f.write(f"[{datetime.now()}] {traceback.format_exc()}\n")
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -6085,6 +6113,60 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(body or "{}")
                 db.clear_question_bank(keyword=data.get("keyword", ""))
                 self._send_json(200, {"code": 200, "msg": "清空成功"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/question-bank/retrain":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                q_hash = (data.get("question_hash") or "").strip()
+                model_name = (data.get("model_name") or "").strip()
+                if not q_hash:
+                    self._send_json(400, {"code": 400, "msg": "缺少题目指纹"})
+                    return
+                if not model_name:
+                    self._send_json(400, {"code": 400, "msg": "请选择模型"})
+                    return
+                # 从题库查找原题
+                rows = db.search_question_bank(question_hash=q_hash, limit=1, page=1)
+                if not rows:
+                    self._send_json(404, {"code": 404, "msg": "题库中未找到该题目"})
+                    return
+                row = rows[0]
+                q_text = row.get("question_text") or ""
+                q_type = row.get("question_type") or ""
+                opts_raw = row.get("options_text") or ""
+                options = [x.strip() for x in opts_raw.split("|") if x.strip()]
+                # 从 question_text 提取图片 URL（支持 <img src="..."> 格式）
+                img_urls = re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', q_text)
+                # 重建题目 JSON payload
+                payload = json.dumps({
+                    "question": q_text,
+                    "type": q_type,
+                    "options": options,
+                    "images": img_urls
+                }, ensure_ascii=False)
+                # 调用指定模型
+                provider_name, provider_info = find_provider_by_model(model_name)
+                if not provider_info:
+                    self._send_json(400, {"code": 400, "msg": f"模型 '{model_name}' 不可用，请检查配置"})
+                    return
+                answer, err, tokens = call_provider_chat(payload, model_name, provider_info)
+                if err:
+                    self._send_json(500, {"code": 500, "msg": f"模型调用失败：{err}"})
+                    return
+                if answer:
+                    record_model_token_usage(model_name, tokens)
+                    save_question_bank_answer(payload, answer, model_name, provider_name or "")
+                print(f"[题库重训练] hash={q_hash[:16]}... model={model_name} answer={answer[:60] if answer else 'N/A'}...", flush=True)
+                self._send_json(200, {"code": 200, "msg": "重训练成功", "data": {
+                    "answer": answer,
+                    "model": model_name,
+                    "provider": provider_name or ""
+                }})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 

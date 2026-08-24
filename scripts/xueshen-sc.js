@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.2.6
+// @version      5.2.8
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @author       IPYIWEI
@@ -10,6 +10,10 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.2.8 更新内容：
+// @changelog    1. 修复包月用户答题菜单答案显示"包月权益生效，本题不扣点"的问题，后端返回200但无答案时正确提示"未找到答案"
+// @changelog    v5.2.7 更新内容：
+// @changelog    1. 网页搜题未命中提示优化：后端返回 200 但无答案时，提示"未找到答案"而非"本地题库未命中"
 // @changelog    v5.2.6 更新内容：
 // @changelog    1. 网页搜题升级：搜题结果返回题库中所有相关题目与答案（多结果展示），与后台查询一致，解决只返回单条的问题
 // @changelog    2. 网页搜题免费、登录后可用、每日限 30 次（由服务端统一控制）
@@ -2524,7 +2528,8 @@
             } else if (response.status === 401 || obj.code === 401) {
               resolve(handleError$1("本地后端未登录或登录态失效，请先登录用户中心"));
             } else {
-              resolve({ code: -1004, data: { answer: [], remainCount: 0 }, msg: obj.msg || "本地题库未命中" });
+              const is200NoAnswer = obj.code === 200 && !(obj.data && obj.data.answer);
+              resolve({ code: -1004, data: { answer: [], remainCount: 0 }, msg: is200NoAnswer ? "未找到答案" : (obj.msg || "本地题库未命中") });
             }
           } catch (e) {
             resolve(handleError$1("本地后端响应解析失败"));

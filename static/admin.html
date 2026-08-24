@@ -780,7 +780,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
             <span class="arrow">▶</span>
           </div>
           <div class="menu-group-items">
-            <div class="menu-item" :class="{active:page==='question-bank'}" @click="page='question-bank';loadQuestionBank()">
+            <div class="menu-item" :class="{active:page==='question-bank'}" @click="page='question-bank';loadQuestionBank();loadConfig()">
               <span class="icon">▤</span>题库列表
             </div>
             <div class="menu-item" :class="{active:page==='bank-analysis'}" @click="page='bank-analysis';loadBankAnalysis()">
@@ -2563,6 +2563,19 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                       <tr v-if="expandedBank[item.id]">
                         <td colspan="7" style="padding:0 8px 12px">
                           <div class="log-detail">题目：{{item.question_text}}&#10;&#10;选项：{{item.options_text||'-'}}&#10;&#10;答案：{{item.answer}}&#10;&#10;题目指纹：{{item.question_hash}}</div>
+                          <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                            <span style="font-size:12px;color:var(--text2)">重新训练：</span>
+                            <span v-if="questionHasImage(item)" style="font-size:11px;color:var(--accent2)">🖼 含图片，仅显示视觉模型</span>
+                            <select v-model="retrainModel[item.id]" style="padding:4px 8px;font-size:12px;border:1px solid var(--border);border-radius:4px;background:var(--bg2);color:var(--text);min-width:180px">
+                              <option value="">请选择模型</option>
+                              <option v-for="m in retrainModelsForItem(item)" :key="m.value" :value="m.value">{{m.label}}{{m.vision?' 🖼':''}} ({{m.provider}})</option>
+                            </select>
+                            <button class="btn btn-primary btn-sm" :disabled="retrainLoading[item.id]||!retrainModel[item.id]" @click="retrainQuestion(item)">{{retrainLoading[item.id]?'训练中...':'重新训练'}}</button>
+                          </div>
+                          <div v-if="retrainResult[item.id]" style="margin-top:8px;padding:8px 12px;background:var(--bg2);border-radius:6px;font-size:12px">
+                            <span style="color:var(--success)">新答案：</span><span style="color:var(--text)">{{retrainResult[item.id].answer}}</span>
+                            <span style="color:var(--text3);margin-left:8px">模型：{{retrainResult[item.id].model}}</span>
+                          </div>
                         </td>
                       </tr>
                     </template>
@@ -3798,6 +3811,9 @@ createApp({
      const pluginData=reactive({framework:'',content:''});
     const expandedBank=reactive({});
     const questionBankFilter=reactive({keyword:'',limit:100,page:1,type_name:'',is_image:''});
+    const retrainModel=reactive({});
+    const retrainLoading=reactive({});
+    const retrainResult=reactive({});
     const loginLocks=ref([]);
     const loginLockLoading=ref(false);
     const saveConfigLoading=ref(false);
@@ -4749,6 +4765,50 @@ createApp({
       return m;
     }
     function toggleBank(id){expandedBank[id]=!expandedBank[id];}
+    function questionHasImage(item){
+      return (item.question_text||'').includes('<img')||item.is_image==1;
+    }
+    function retrainModelsForItem(item){
+      const providers=(config.value&&config.value.providers)||{};
+      const needVision=questionHasImage(item);
+      const models=[];
+      for(const[pk,pinfo]of Object.entries(providers)){
+        if(!pinfo.enabled)continue;
+        if(!pinfo.api_key)continue;
+        for(const m of(pinfo.models||[])){
+          const isVision=!!m.vision;
+          if(needVision&&!isVision)continue;
+          models.push({value:m.value,label:m.label||m.value,provider:pk,vision:isVision});
+        }
+      }
+      return models;
+    }
+    async function retrainQuestion(item){
+      const model=retrainModel[item.id];
+      if(!model){showMsg('请先选择模型','error');return;}
+      retrainLoading[item.id]=true;
+      retrainResult[item.id]=null;
+      try{
+        const res=await fetch('/admin/question-bank/retrain',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':token.value},
+          body:JSON.stringify({question_hash:item.question_hash,model_name:model})
+        });
+        const data=await res.json();
+        if(data.code===200){
+          retrainResult[item.id]=data.data;
+          item.answer=data.data.answer;
+          item.source_model=data.data.model;
+          showMsg('重训练成功','success');
+        }else{
+          showMsg(data.msg||'重训练失败','error');
+        }
+      }catch(e){
+        showMsg('重训练失败: '+e,'error');
+      }finally{
+        retrainLoading[item.id]=false;
+      }
+    }
 
     // Provider
     function setProviders(nextProviders){
@@ -5503,7 +5563,7 @@ createApp({
       bankLogs,bankLogLoading,bankLogFilter,bankLogTotal,expandedBankLogs,
       bankAnalysis,bankAnalysisLoading,bankAnalysisFilter,loadBankAnalysis,setBankAnalysisRange,
       userAnalysis,userAnalysisLoading,userAnalysisFilter,loadUserAnalysis,setUserAnalysisRange,pct,
-      questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,bankTypeOptions,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,
+      questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,bankTypeOptions,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,
       doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
       loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,
       savePaymentConfig,savePayApiConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,openUserEdit,saveUserAdmin,
