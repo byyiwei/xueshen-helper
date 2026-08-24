@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.2.8
+// @version      5.2.9
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @author       IPYIWEI
@@ -10,6 +10,9 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.2.9 更新内容：
+// @changelog    1. 新增脚本自动检测更新功能，发现新版本顶部提示一键更新
+// @changelog    2. 兼容 Tampermonkey / ScriptCat / Greasemonkey 三大脚本管理器
 // @changelog    v5.2.8 更新内容：
 // @changelog    1. 修复包月用户答题菜单答案显示"包月权益生效，本题不扣点"的问题，后端返回200但无答案时正确提示"未找到答案"
 // @changelog    v5.2.7 更新内容：
@@ -80,6 +83,8 @@
 // @grant        GM_info
 // @grant        GM_setValue
 // @grant        GM_xmlhttpRequest
+// @grant        GM_openInTab
+// @grant        GM.openInTab
 // @grant        unsafeWindow
 // @run-at       document-start
 // @tag          自动学习
@@ -13041,7 +13046,12 @@
           "ul,ol{padding-inline-start:20px}",
           ".pin-btn{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:4px;cursor:pointer;font-size:14px;opacity:0.5;transition:all 0.2s;user-select:none}",
           ".pin-btn:hover{opacity:0.8}",
-          ".pin-btn.pinned{opacity:1;color:var(--t-primary,#1677ff)}"
+          ".pin-btn.pinned{opacity:1;color:var(--t-primary,#1677ff)}",
+          ".update-notify-bar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;font-size:13px;border-radius:8px 8px 0 0;pointer-events:auto}",
+          ".update-notify-btn{padding:3px 12px;background:rgba(255,255,255,.25);border-radius:4px;cursor:pointer;white-space:nowrap;font-weight:600;transition:background .2s}",
+          ".update-notify-btn:hover{background:rgba(255,255,255,.4)}",
+          ".update-dismiss-btn{cursor:pointer;opacity:.6;font-size:16px;padding:0 4px;transition:opacity .2s}",
+          ".update-dismiss-btn:hover{opacity:1}"
         ].join("\n");
         shadow.appendChild(resetStyle);
         injectCSSIntoShadow(shadow);
@@ -13055,6 +13065,64 @@
         app.use(pinia$1);
         app.use(Antd);
         app.mount(appDiv);
+        // === 自动检测更新 + 顶部提示条 ===
+        (function() {
+          var _showUpdateBar = function(remote) {
+            var _insertBar = function() {
+              if (shadow.querySelector('.update-notify-bar')) return;
+              var mainBox = shadow.querySelector('.main-box');
+              if (!mainBox) return false;
+              var bar = document.createElement('div');
+              bar.className = 'update-notify-bar';
+              bar.innerHTML = '<span style="flex:1">🎉 发现新版本 v' + remote.version + '，点击右侧按钮更新</span>' +
+                '<span class="update-notify-btn">立即更新</span>' +
+                '<span class="update-dismiss-btn">✕</span>';
+              mainBox.insertBefore(bar, mainBox.firstChild);
+              bar.querySelector('.update-notify-btn').addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (typeof GM_openInTab === 'function') {
+                  GM_openInTab(remote.download_url, { active: true, insert: true });
+                } else if (typeof GM !== 'undefined' && typeof GM.openInTab === 'function') {
+                  GM.openInTab(remote.download_url, { active: true });
+                } else {
+                  window.open(remote.download_url, '_blank');
+                }
+              });
+              bar.querySelector('.update-dismiss-btn').addEventListener('click', function(e) {
+                e.stopPropagation();
+                bar.remove();
+              });
+              return true;
+            };
+            if (_insertBar()) return;
+            var _obs = new MutationObserver(function(mutations, obs) {
+              if (_insertBar()) obs.disconnect();
+            });
+            _obs.observe(shadow, { childList: true, subtree: true });
+          };
+          var currentVersion = (_GM_info && _GM_info.script && _GM_info.script.version) || "0.0.0";
+          GM_xmlhttpRequest({
+            method: 'GET',
+            url: 'https://xs.openget.cn/scripts/version.json?t=' + Date.now(),
+            onload: function(res) {
+              try {
+                var data = JSON.parse(res.responseText);
+                var remote = data['xueshen-sc'];
+                if (!remote) return;
+                var rv = remote.version.split('.').map(Number);
+                var lv = currentVersion.split('.').map(Number);
+                var newer = false;
+                for (var i = 0; i < Math.max(rv.length, lv.length); i++) {
+                  var r = rv[i] || 0, l = lv[i] || 0;
+                  if (r > l) { newer = true; break; }
+                  if (r < l) break;
+                }
+                if (newer) _showUpdateBar(remote);
+              } catch(e) {}
+            },
+            onerror: function() {}
+          });
+        })();
       }
     }, 100);
   }
