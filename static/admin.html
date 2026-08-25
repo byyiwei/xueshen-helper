@@ -2558,7 +2558,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                         <td style="padding:10px 8px;color:var(--accent2);max-width:180px;word-break:break-all">{{item.source_model||'-'}}</td>
                         <td style="padding:10px 8px">{{item.hit_count||0}}</td>
                         <td style="padding:10px 8px;color:var(--text3);white-space:nowrap">{{item.updated_at}}</td>
-                        <td style="padding:10px 8px"><button class="btn btn-secondary btn-sm" @click="toggleBank(item.id)">{{expandedBank[item.id]?'收起':'详情'}}</button></td>
+                        <td style="padding:10px 8px;display:flex;gap:4px"><button class="btn btn-secondary btn-sm" @click="toggleBank(item.id)">{{expandedBank[item.id]?'收起':'详情'}}</button><button class="btn btn-sm" style="background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.2)" @click="deleteQuestionBankItem(item)">删除</button></td>
                       </tr>
                       <tr v-if="expandedBank[item.id]">
                         <td colspan="7" style="padding:0 8px 12px">
@@ -3401,6 +3401,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     <th style="padding:10px 12px">用户</th>
                     <th style="padding:10px 12px">类型</th>
                     <th style="padding:10px 12px">标题</th>
+                    <th style="padding:10px 12px">回复</th>
                     <th style="padding:10px 12px">状态</th>
                     <th style="padding:10px 12px">提交时间</th>
                     <th style="padding:10px 12px">操作</th>
@@ -3411,6 +3412,11 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     <td style="padding:10px 12px">{{f.username}}</td>
                     <td style="padding:10px 12px">{{f.category==='bug'?'Bug反馈':f.category==='feature'?'功能建议':f.category==='payment'?'支付问题':f.category==='account'?'账号问题':'其他'}}</td>
                     <td style="padding:10px 12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{f.title}}</td>
+                        <td style="padding:10px 12px;white-space:nowrap">
+                          <span v-if="f.reply_count" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:2px 8px;border-radius:10px;background:rgba(59,130,246,.1);color:#60a5fa">{{f.reply_count}} 条</span>
+                          <span v-else style="font-size:12px;color:var(--text3)">-</span>
+                          <div v-if="f.last_reply_at" style="font-size:11px;color:var(--text3);margin-top:2px">{{f.last_reply_sender==='user'?'用户':'管理员'}} · {{String(f.last_reply_at).replace('T',' ').substring(0,16)}}</div>
+                        </td>
                     <td style="padding:10px 12px">
                       <span :style="{color:f.status==='pending'?'var(--warning)':f.status==='processing'?'var(--accent2)':f.status==='resolved'?'var(--success)':'var(--text3)'}">{{f.status==='pending'?'待处理':f.status==='processing'?'处理中':f.status==='resolved'?'已回复':'已关闭'}}</span>
                     </td>
@@ -3422,7 +3428,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     </td>
                   </tr>
                   <tr v-if="feedbackList.length===0">
-                    <td colspan="6" style="padding:30px;text-align:center;color:var(--text3)">暂无反馈记录</td>
+                    <td colspan="7" style="padding:30px;text-align:center;color:var(--text3)">暂无反馈记录</td>
                   </tr>
                 </tbody>
               </table>
@@ -4809,6 +4815,25 @@ createApp({
         retrainLoading[item.id]=false;
       }
     }
+    async function deleteQuestionBankItem(item){
+      if(!confirm('确定要删除这道题吗？删除后不可恢复。'))return;
+      try{
+        const res=await fetch('/admin/question-bank/delete',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':token.value},
+          body:JSON.stringify({question_hash:item.question_hash})
+        });
+        const data=await res.json();
+        if(data.code===200){
+          showMsg('删除成功','success');
+          loadQuestionBank(questionBankFilter.page);
+        }else{
+          showMsg(data.msg||'删除失败','error');
+        }
+      }catch(e){
+        showMsg('删除失败: '+e,'error');
+      }
+    }
 
     // Provider
     function setProviders(nextProviders){
@@ -5563,7 +5588,7 @@ createApp({
       bankLogs,bankLogLoading,bankLogFilter,bankLogTotal,expandedBankLogs,
       bankAnalysis,bankAnalysisLoading,bankAnalysisFilter,loadBankAnalysis,setBankAnalysisRange,
       userAnalysis,userAnalysisLoading,userAnalysisFilter,loadUserAnalysis,setUserAnalysisRange,pct,
-      questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,bankTypeOptions,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,
+      questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,deleteQuestionBankItem,bankTypeOptions,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,
       doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
       loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,
       savePaymentConfig,savePayApiConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,openUserEdit,saveUserAdmin,

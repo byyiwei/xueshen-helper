@@ -2140,6 +2140,46 @@ def is_multimodal_question(question_payload_str):
     info = parse_question_payload(question_payload_str)
     return bool(info.get("images"))
 
+def _download_image_to_base64(url, timeout=15):
+    """下载远程图片并转为 base64 data URL，供多模态模型使用。失败时返回 None。"""
+    # 已经是 base64 data URL，直接返回
+    if url.startswith("data:"):
+        return url
+    # 多组请求头尝试，应对超星等需要 Referer 的站点
+    header_sets = [
+        {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+         "Referer": "https://mooc1.chaoxing.com/", "Accept": "image/*,*/*;q=0.8"},
+        {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+         "Referer": url.rsplit("/", 1)[0] + "/" if "/" in url else ""},
+        {"User-Agent": "Mozilla/5.0"},
+    ]
+    for hdrs in header_sets:
+        try:
+            req = urllib.request.Request(url, headers={k: v for k, v in hdrs.items() if v})
+            with urlopen(req, timeout=timeout) as resp:
+                data = resp.read()
+            ct = resp.headers.get("Content-Type", "")
+            mime = ct.split(";")[0].strip() if ct else ""
+            if not mime or not mime.startswith("image/"):
+                lower = url.lower().split("?")[0]
+                if lower.endswith(".png"):
+                    mime = "image/png"
+                elif lower.endswith((".jpg", ".jpeg")):
+                    mime = "image/jpeg"
+                elif lower.endswith(".gif"):
+                    mime = "image/gif"
+                elif lower.endswith(".webp"):
+                    mime = "image/webp"
+                else:
+                    mime = "image/png"
+            b64 = base64.b64encode(data).decode("utf-8")
+            return f"data:{mime};base64,{b64}"
+        except Exception as e:
+            print(f"[图片下载尝试] {url}: {e}", flush=True)
+            continue
+    print(f"[图片下载最终失败] {url}", flush=True)
+    return None
+
 def build_ai_messages(question_payload_str):
     """构造 AI 请求消息。若题目含图片，则使用多模态消息格式(content 数组)"""
     info = parse_question_payload(question_payload_str)
@@ -2190,11 +2230,24 @@ def build_ai_messages(question_payload_str):
     user_content = []
     if text_parts and text_parts[0].strip():
         user_content.append({"type": "text", "text": text_parts[0]})
+    failed_imgs = 0
     for img in images:
         if img.startswith("data:"):
             user_content.append({"type": "image_url", "image_url": {"url": img}})
         else:
-            user_content.append({"type": "image_url", "image_url": {"url": img}})
+            # 下载远程图片转 base64，防止 AI 提供商无法访问需登录态的图片 URL
+            img_data = _download_image_to_base64(img)
+            if img_data is None:
+                failed_imgs += 1
+                print(f"[build_ai_messages] 跳过无法下载的图片: {img}", flush=True)
+            else:
+                user_content.append({"type": "image_url", "image_url": {"url": img_data}})
+    if failed_imgs and not user_content:
+        # 所有图片都失败且无文本，退回纯文本模式
+        user_content.append({"type": "text", "text": text_parts[0] if text_parts else "[图片无法加载]"})
+    if failed_imgs and user_content:
+        note = f"（注：{failed_imgs}张图片无法下载，请仅根据可见内容作答）"
+        user_content.insert(0, {"type": "text", "text": note})
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_content}
@@ -4088,6 +4141,18 @@ class Handler(BaseHTTPRequestHandler):
             for r in result["rows"]:
                 r["created_at"] = str(r.get("created_at") or "")
                 r["replied_at"] = str(r.get("replied_at") or "") if r.get("replied_at") else ""
+                # 补充回复数和最后回复信息
+                replies = db.list_feedback_replies(r["id"])
+                r["reply_count"] = len(replies)
+                if replies:
+                    last = replies[-1]
+                    r["last_reply_at"] = str(last.get("created_at") or "")
+                    r["last_reply_sender"] = last.get("sender") or ""
+                    r["last_reply_content"] = (last.get("content") or "")[:80]
+                else:
+                    r["last_reply_at"] = ""
+                    r["last_reply_sender"] = ""
+                    r["last_reply_content"] = ""
             self._send_json(200, {"code": 200, "data": result})
 
         elif path == "/admin/feedback-auto-close":
@@ -6160,6 +6225,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 if answer:
                     record_model_token_usage(model_name, tokens)
+                    answer = normalize_ai_answer(payload, answer)
                     save_question_bank_answer(payload, answer, model_name, provider_name or "")
                 print(f"[题库重训练] hash={q_hash[:16]}... model={model_name} answer={answer[:60] if answer else 'N/A'}...", flush=True)
                 self._send_json(200, {"code": 200, "msg": "重训练成功", "data": {
@@ -6167,6 +6233,21 @@ class Handler(BaseHTTPRequestHandler):
                     "model": model_name,
                     "provider": provider_name or ""
                 }})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/question-bank/delete":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                q_hash = (data.get("question_hash") or "").strip()
+                if not q_hash:
+                    self._send_json(400, {"code": 400, "msg": "缺少题目指纹"})
+                    return
+                db.delete_question_bank_item(q_hash)
+                self._send_json(200, {"code": 200, "msg": "删除成功"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 

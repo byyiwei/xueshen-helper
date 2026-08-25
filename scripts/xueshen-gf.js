@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.2.9
+// @version      5.3.0
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @author       IPYIWEI
@@ -10,6 +10,9 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.3.0 更新内容：
+// @changelog    1. 修复含图片题目 AI 无法识别的问题：答题时自动提取题目中的图片并转 base64 发送给 AI 模型
+// @changelog    2. 后端同步优化：图片下载失败时自动跳过并提示，不再因无效图片链接导致 AI 报错
 // @changelog    v5.2.9 更新内容：
 // @changelog    1. 新增脚本自动检测更新功能，发现新版本顶部提示一键更新
 // @changelog    2. 兼容 Tampermonkey / ScriptCat / Greasemonkey 三大脚本管理器
@@ -2502,10 +2505,62 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       });
     });
   };
+  const _downloadImg = (url) => new Promise((resolve) => {
+    GM_xmlhttpRequest({
+      url, method: 'GET', responseType: 'arraybuffer', timeout: 15000,
+      onload: (res) => {
+        try {
+          const bytes = new Uint8Array(res.response);
+          let binary = '';
+          const chunk = 0x8000;
+          for (let i = 0; i < bytes.length; i += chunk)
+            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+          const type = (res.responseHeaders.match(/content-type:\s*([^\s;\r\n]+)/i) || [])[1] || 'image/jpeg';
+          resolve('data:' + type + ';base64,' + btoa(binary));
+        } catch (e) { resolve(null); }
+      },
+      onerror: () => resolve(null),
+      ontimeout: () => resolve(null),
+    });
+  });
   const callLocalBackendAnswer = async (question) => {
     const setting = useSettingStore();
     const token = setting.config.basicConfig.token.value || getLocalBackendToken() || "";
-    const payload = buildLocalBackendQuestionPayload(question);
+    // 提取题目中的图片并下载为 base64
+    const images = [];
+    const el = question.element;
+    if (el && el.querySelectorAll) {
+      const imgEls = el.querySelectorAll('img');
+      for (const img of imgEls) {
+        const src = img.src || img.getAttribute('data-src') || '';
+        if (src) {
+          const dataUrl = await _downloadImg(src);
+          if (dataUrl) images.push(dataUrl);
+        }
+      }
+    }
+    // 兜底：从 title HTML 中提取 <img> URL（element 不可用时）
+    if (!images.length && question.title) {
+      const titleImgs = [];
+      let m;
+      const re = /<img[^>]+src=["']([^"']+)["']/gi;
+      while ((m = re.exec(question.title))) {
+        if (m[1] && m[1].startsWith('http')) titleImgs.push(m[1]);
+      }
+      for (const src of titleImgs) {
+        const dataUrl = await _downloadImg(src);
+        if (dataUrl) images.push(dataUrl);
+      }
+    }
+    const payloadObj = {
+      question: question.title || "",
+      options: question.optionsText || [],
+      type: question.type || "",
+      platform: "abc-helper",
+      refer: question.refer || location.href
+    };
+    if (images.length) payloadObj.images = images;
+    const payload = JSON.stringify(payloadObj);
     const data = "question=" + encodeURIComponent(payload)
       + "&u=" + encodeURIComponent(getCookieValue("_uid") || getCookieValue("UID") || "")
       + "&model_mode=auto";

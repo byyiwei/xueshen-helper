@@ -3092,6 +3092,10 @@ class Database:
         else:
             self.execute("DELETE FROM question_bank")
 
+    def delete_question_bank_item(self, question_hash):
+        ph = _ph()
+        return self.execute(f"DELETE FROM question_bank WHERE question_hash = {ph}", (question_hash,))
+
     def get_user_dashboard(self, username):
         ph = _ph()
         result = {}
