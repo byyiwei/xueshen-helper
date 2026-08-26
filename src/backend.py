@@ -1803,8 +1803,8 @@ def normalize_ai_answer(question, answer):
                 return ans_lines[-1].strip()
 
     # 普通返回：去掉可能的选项字母前缀，但不要误删 Thinking 的首字母。
-    text = re.sub(r"^\s*[A-D]\s*[:：、.．)]\s*", "", text).strip()
-    return text
+    cleaned = re.sub(r"^\s*[A-D]\s*[:：、.．)]\s*", "", text).strip()
+    return cleaned or text
 
 def do_openai_compatible_chat(messages, model, api_key, base_url, time_budget=None):
     if not api_key:
@@ -6418,6 +6418,11 @@ class Handler(BaseHTTPRequestHandler):
                 })
                 if bank_row:
                     answer = normalize_ai_answer(question, bank_row.get("answer", ""))
+                    if not answer:
+                        err = "题库答案为空"
+                        print(f"[题库命中但答案为空] hash={question_hash[:12]}", flush=True)
+                        self._send_json(500, {"code": 500, "msg": err})
+                        return
                     resolved_model = bank_row.get("source_model") or "题库"
                     provider_name = "question_bank"
                     status = "success"
@@ -6434,6 +6439,11 @@ class Handler(BaseHTTPRequestHandler):
                 cached = get_ai_cache(cache_key)
                 if cached:
                     answer = cached.get("answer", "")
+                    if not answer:
+                        err = "缓存答案为空"
+                        print(f"[AI缓存命中但答案为空] mode={model_mode}", flush=True)
+                        self._send_json(500, {"code": 500, "msg": err})
+                        return
                     resolved_model = cached.get("model") or resolved_model or model
                     provider_name = cached.get("provider") or provider_name
                     status = "success"
@@ -6462,6 +6472,11 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 if answer:
                     answer = normalize_ai_answer(question, answer)
+                    if not answer:
+                        err = "AI 返回内容为空，无法提取答案"
+                        print(f"[AI错误] {err}", flush=True)
+                        self._send_json(500, {"code": 500, "msg": err})
+                        return
                     status = "success"
                     set_ai_cache(cache_key, answer, resolved_model, provider_name)
                     save_question_bank_answer(question, answer, resolved_model, provider_name)
