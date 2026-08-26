@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "5.3.1",
+    "version": "5.3.2",
     "download_url": "https://update.greasyfork.org/scripts/585106/%E5%AD%A6%E4%B9%A0%E9%80%9A%E5%AD%A6%E7%A5%9E%E5%8A%A9%E6%89%8B%EF%BD%9C%E8%B6%85%E6%98%9F%C2%B7%E6%99%BA%E6%85%A7%E6%A0%91%E5%85%A8%E8%83%BD%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%EF%BD%9C%E5%AD%A6%E7%A5%9E%E5%8A%A9%E6%89%8B%EF%BD%9CAI%E6%99%BA%E8%83%BD%E8%BE%85%E5%8A%A9%E5%AD%A6%E4%B9%A0%EF%BD%9C%E8%87%AA%E5%8A%A8%E5%88%B7%E8%AF%BE%EF%BD%9C%E8%A7%86%E9%A2%91%E5%80%8D%E9%80%9F%EF%BD%9C%E4%BD%9C%E4%B8%9A%E8%80%83%E8%AF%95.user.js",
-    "changelog": "v5.3.1 修复多选题无分隔符答案(如ABCD)无法全选、图片选项匹配错误、月卡用户显示错误提示的问题"
+    "changelog": "v5.3.2 彻底修复多选题答案拆分问题，改用子串匹配，答案含任何标点都能正确全选"
   },
   "xueshen-gf": {
-    "version": "5.3.1",
+    "version": "5.3.2",
     "download_url": "https://update.greasyfork.org/scripts/585106/%E5%AD%A6%E4%B9%A0%E9%80%9A%E5%AD%A6%E7%A5%9E%E5%8A%A9%E6%89%8B%EF%BD%9C%E8%B6%85%E6%98%9F%C2%B7%E6%99%BA%E6%85%A7%E6%A0%91%E5%85%A8%E8%83%BD%E5%AD%A6%E4%B9%A0%E5%8A%A9%E6%89%8B%EF%BD%9C%E5%AD%A6%E7%A5%9E%E5%8A%A9%E6%89%8B%EF%BD%9CAI%E6%99%BA%E8%83%BD%E8%BE%85%E5%8A%A9%E5%AD%A6%E4%B9%A0%EF%BD%9C%E8%87%AA%E5%8A%A8%E5%88%B7%E8%AF%BE%EF%BD%9C%E8%A7%86%E9%A2%91%E5%80%8D%E9%80%9F%EF%BD%9C%E4%BD%9C%E4%B8%9A%E8%80%83%E8%AF%95.user.js",
-    "changelog": "v5.3.1 修复多选题无分隔符答案(如ABCD)无法全选、图片选项匹配错误、月卡用户显示错误提示的问题"
+    "changelog": "v5.3.2 彻底修复多选题答案拆分问题，改用子串匹配，答案含任何标点都能正确全选"
   }
 }

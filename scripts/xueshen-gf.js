@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.3.1
+// @version      5.3.2
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @author       IPYIWEI
@@ -10,6 +10,8 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.3.2 更新内容：
+// @changelog    1. 彻底修复多选题答案拆分问题：不再依赖分隔符切割，改用子串匹配，答案含任何标点都能正确全选
 // @changelog    v5.3.1 更新内容：
 // @changelog    1. 修复多选题答案无分隔符(如ABCD)无法全选的问题
 // @changelog    2. 修复图片选项匹配失败：改用文件名提取比较，解决URL被normalize清空导致无法匹配
@@ -2458,7 +2460,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     if (/^[A-Z](?:[\s,，、;；|]+[A-Z])+$/.test(text.toUpperCase())) {
       return text.toUpperCase().split(/[\s,，、;；|]+/).filter(Boolean);
     }
-    return text.split(/\s*\|\s*|\s*；\s*|\s*;\s*|\s*[,，、]\s*/).map((x) => x.trim()).filter(Boolean);
+    // 文本答案不再按分隔符拆分（选项内容可能包含任何标点），保留完整字符串由 fillChoice 子串匹配
+    return [text];
   };
   const buildLocalBackendQuestionPayload = (question) => {
     return JSON.stringify({
@@ -11411,11 +11414,19 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       const judgementAnswer = normalizedAnswers[0];
       // 检查答案是否包含图片URL
       const answerImgs = answers.filter(a => /https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp)/i.test(a));
+      // 保留原始答案文本用于子串匹配
+      const rawAnswers = answers.map(a => String(a).trim()).filter(Boolean);
       optionEls.forEach((option) => {
         const optionText = normalize(option.textContent);
         const isJudgementMatched = question.type === "判断题" && (/^(正确|是|对|√|t|true|right)$/i.test(judgementAnswer) && /^(正确|是|对|√|t|true|right)$/i.test(optionText) || /^(错误|否|错|×|f|false|wrong)$/i.test(judgementAnswer) && /^(错误|否|错|×|f|false|wrong)$/i.test(optionText));
-        // 文本匹配
+        // 精确匹配
         if (normalizedAnswers.includes(optionText) || isJudgementMatched) {
+          selected = true;
+          option.click();
+          option.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        }
+        // 子串匹配兜底：答案可能含任何标点无法拆分，用选项文本在答案中查找包含关系
+        else if (optionText && optionText.length >= 2 && rawAnswers.some(raw => normalize(raw).includes(optionText))) {
           selected = true;
           option.click();
           option.dispatchEvent(new MouseEvent("click", { bubbles: true }));
