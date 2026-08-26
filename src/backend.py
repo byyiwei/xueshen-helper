@@ -1722,35 +1722,47 @@ def normalize_ai_answer(question, answer):
     if not answer:
         return answer
     text = str(answer).strip()
+    # 已是清洗后的 JSON 数组（多选干净格式），直接返回，避免二次处理破坏
+    if text.startswith("[") and text.endswith("]"):
+        try:
+            _arr = json.loads(text)
+            if isinstance(_arr, list) and _arr and all(isinstance(x, str) for x in _arr):
+                return text
+        except Exception:
+            pass
     options = extract_options_from_question(question)
 
     if options:
         # 匹配各种 "答案格式": "A" "答案是A" "正确答案是A" "选A" "选择A" "A. xxx" "A：xxx" 等
-        m = re.match(r"^\s*(?:正确答案是?|答案是?|选择?|选|应该选|应该选择?)([A-D])", text, re.I)
+        m = re.match(r"^\s*(?:正确答案是?|答案是?|选择?|选|应该选|应该选择?)([A-Z])", text, re.I)
         if m:
             idx = ord(m.group(1).upper()) - ord("A")
             if 0 <= idx < len(options):
                 return options[idx]
             return m.group(1).upper()
         # "A" or "A. xxx" or "A：xxx" or "A、xxx"
-        m = re.match(r"^\s*([A-D])(?:\s*[:：.．、)\）]|[\s]+)(.*)$", text, re.I)
+        m = re.match(r"^\s*([A-Z])(?:\s*[:：.．、)\）]|[\s]+)(.*)$", text, re.I)
         if m:
             idx = ord(m.group(1).upper()) - ord("A")
             rest = m.group(2).strip()
-            if 0 <= idx < len(options):
-                return options[idx]
-            if rest:
-                return rest
-        # 纯字母答案 "AB" "A,B" "A、B" "A和B"
+            # 守卫：rest 也是纯字母序列（如 "A、B、D" 的 "B、D"），说明是多选，跳到纯字母分支处理
+            rest_clean = re.sub(r"[\s、,，&+]+", "", rest).upper()
+            if not (rest_clean and re.match(r"^[A-Z]+$", rest_clean)):
+                if 0 <= idx < len(options):
+                    return options[idx]
+                if rest:
+                    return rest
+        # 纯字母答案 "AB" "A,B" "A、B" "A和B"（字母范围按实际选项数，支持 E/F 等更多选项）
         clean = re.sub(r"[\s、,，&+]+", "", text).upper()
-        if re.match(r"^[A-D]{1,4}$", clean) and len(clean) <= len(options):
+        if re.match(r"^[A-Z]{1,%d}$" % max(len(options), 1), clean) and len(clean) <= len(options):
             result = []
             for c in clean:
                 idx = ord(c) - ord("A")
                 if 0 <= idx < len(options):
                     result.append(options[idx])
             if result:
-                return ",".join(result) if len(result) > 1 else result[0]
+                # 多选返回 JSON 数组字符串（脚本端可可靠解析）；单选保持返回选项文本
+                return json.dumps(result, ensure_ascii=False) if len(result) > 1 else result[0]
         # 判断题特殊处理
         if any(kw in text[:20].lower() for kw in ["正确", "对", "true", "√", "right"]):
             return "正确"
@@ -1760,26 +1772,35 @@ def normalize_ai_answer(question, answer):
     # 日日新有时会把最终答案藏在 reasoning/Thinking Process 里，这里从尾部结论区提取。
     if re.search(r"Thinking Process|Analyze the Request|Final Answer|Construct Output|Therefore|最逻辑|最可能|Final Output|Final decision|Decoded question|最终答案", text, re.I):
         tail = text[-2000:]
-        letter = None
+        letters = []
+        # 捕获字母序列：紧凑形式 "AD" 或分隔形式 "A, D"（避免误抓英文单词首字母）
+        _seq = r"([A-Z]{2,}|[A-Z](?:\s*[,，、&]\s*[A-Z])*)"
         for pattern in [
-            r"(?:Final Answer|Answer|答案|Construct Output|Therefore|因此|所以|最终答案|最终)[\s\S]{0,200}?\b([A-D])\b",
-            r"(?:Option|选项)\s*([A-D])\b",
-            r"\b([A-D])\s*[:：、.．)]",
-            r"Answer:\s*([A-D])\b",
-            r"答案[：:]\s*([A-D])\b",
-            r"(?:正确答案是?|答案是?|选择?|选|应该选)\s*([A-D])\b",
+            r"(?:Final Answer|Answer|答案|Construct Output|Therefore|因此|所以|最终答案|最终)[\s\S]{0,200}?\b" + _seq + r"\b",
+            r"(?:Option|选项)\s*" + _seq + r"\b",
+            r"Answer[：:]\s*" + _seq + r"\b",
+            r"答案[：:]\s*" + _seq + r"\b",
+            r"(?:正确答案是?|答案是?|选择?|选|应该选)\s*" + _seq + r"\b",
         ]:
             m = re.search(pattern, tail, re.I)
             if m:
-                letter = m.group(1).upper()
+                for c in re.findall(r"[A-Z]", m.group(1).upper()):
+                    if c not in letters:
+                        letters.append(c)
                 break
-        if letter and options:
-            idx = ord(letter) - ord("A")
-            if 0 <= idx < len(options):
-                return options[idx]
-            return letter
-        if letter and not options:
-            return letter
+        if letters and options:
+            mapped = []
+            for c in letters:
+                idx = ord(c) - ord("A")
+                if 0 <= idx < len(options):
+                    mapped.append(options[idx])
+            if len(mapped) > 1:
+                return json.dumps(mapped, ensure_ascii=False)
+            if mapped:
+                return mapped[0]
+            return "".join(letters)
+        if letters and not options:
+            return "".join(letters)
 
         # 优先从结论区匹配选项文本，避免匹配到开头列出的所有选项。
         if options:
@@ -1803,7 +1824,7 @@ def normalize_ai_answer(question, answer):
                 return ans_lines[-1].strip()
 
     # 普通返回：去掉可能的选项字母前缀，但不要误删 Thinking 的首字母。
-    cleaned = re.sub(r"^\s*[A-D]\s*[:：、.．)]\s*", "", text).strip()
+    cleaned = re.sub(r"^\s*[A-Z]\s*[:：、.．)]\s*", "", text).strip()
     return cleaned or text
 
 def do_openai_compatible_chat(messages, model, api_key, base_url, time_budget=None):

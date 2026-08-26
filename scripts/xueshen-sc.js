@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.3.2
+// @version      5.3.3
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @author       IPYIWEI
@@ -10,6 +10,9 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.3.3 更新内容：
+// @changelog    1. 彻底修复多选题填充：新增字母答案(A/ABD)按选项序号直接映射，考试页与超星/智慧树作业页全覆盖
+// @changelog    2. 后端多选答案改返回结构化数组，支持E及更多选项字母，修复5个及以上选项无法匹配的问题
 // @changelog    v5.3.2 更新内容：
 // @changelog    1. 彻底修复多选题答案拆分问题：不再依赖分隔符切割，改用子串匹配，答案含任何标点都能正确全选
 // @changelog    v5.3.1 更新内容：
@@ -7998,13 +8001,26 @@
         if (!this._window) return false;
         let filled = false;
         if (question.type === "0" || question.type === "1") {
+          const optionKeys = Object.keys(question.options);
           question.answer.answer.forEach((answer) => {
             const clearAnswer = this.removeHtml(answer);
             let isSelected = false;
-            for (const key in question.options) {
-              if (key === clearAnswer) {
-                isSelected = this.selectChoiceOption(question.options[key]);
-                break;
+            // 字母答案映射：A=第1个选项（兼容数组项 ["A","B","D"] 与紧凑串 "ABD"）
+            const letterText = String(clearAnswer).trim();
+            const isCompactLetters = /^[A-Za-z]{2,10}$/.test(letterText) && !optionKeys.some((k) => this.clearMark(k) === this.clearMark(letterText));
+            const lettersToMap = /^[A-Za-z]$/.test(letterText) ? [letterText.toUpperCase()] : isCompactLetters ? letterText.toUpperCase().split("") : [];
+            for (const c of lettersToMap) {
+              const idx = c.charCodeAt(0) - 65;
+              if (idx >= 0 && idx < optionKeys.length) {
+                if (this.selectChoiceOption(question.options[optionKeys[idx]])) isSelected = true;
+              }
+            }
+            if (!isSelected) {
+              for (const key in question.options) {
+                if (key === clearAnswer) {
+                  isSelected = this.selectChoiceOption(question.options[key]);
+                  break;
+                }
               }
             }
             if (!isSelected) {
@@ -9194,7 +9210,17 @@
         const normalizeOptText = (str) => String(str ?? "").replace(/^[A-Z][.、．]\s*/i, "").replace(/\s+/g, "").replace(/[^\p{L}\p{N}√×]/gu, "").toLowerCase();
         if (question.type === "单选题" || question.type === "多选题") {
           question.answer.answer.forEach((answer) => {
-            optionsDOM.forEach((optionDOM) => {
+            // 字母答案映射：A=第1个选项
+            const letterText = String(answer || "").trim();
+            const letterIdx = /^[A-Za-z]$/.test(letterText) ? letterText.toUpperCase().charCodeAt(0) - 65 : -1;
+            optionsDOM.forEach((optionDOM, optIdx) => {
+              if (letterIdx >= 0) {
+                if (optIdx === letterIdx) {
+                  isSelected = true;
+                  optionDOM.click();
+                }
+                return;
+              }
               const optionText = this.removeHtml(optionDOM.innerHTML);
               const nAnswer = normalizeOptText(answer);
               const nOption = normalizeOptText(optionText);
@@ -11411,11 +11437,26 @@
       const answerImgs = answers.filter(a => /https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp)/i.test(a));
       // 保留原始答案文本用于子串匹配
       const rawAnswers = answers.map(a => String(a).trim()).filter(Boolean);
-      optionEls.forEach((option) => {
+      // 纯字母答案收集：["A","B","D"] 或紧凑串 ["ABD"] → 按索引映射（A=第1个选项）
+      // 紧凑串仅在不等于任何选项文本时才按字母拆，避免把单词选项误拆成字母
+      const letterAnswers = [];
+      answers.forEach(a => {
+        const t = String(a || "").trim();
+        if (/^[A-Za-z]$/.test(t)) {
+          if (!letterAnswers.includes(t.toUpperCase())) letterAnswers.push(t.toUpperCase());
+        } else if (/^[A-Za-z]{2,10}$/.test(t)) {
+          const isOptionText = optionEls.some(op => normalize(op.textContent) === normalize(t));
+          if (!isOptionText) t.toUpperCase().split("").forEach(c => { if (!letterAnswers.includes(c)) letterAnswers.push(c); });
+        }
+      });
+      const maxLetterIdx = letterAnswers.length ? Math.max(...letterAnswers.map(c => c.charCodeAt(0) - 65)) : -1;
+      const letterMappingOk = letterAnswers.length > 0 && maxLetterIdx < optionEls.length;
+      optionEls.forEach((option, idx) => {
         const optionText = normalize(option.textContent);
+        const isLetterMatched = letterMappingOk && letterAnswers.includes(String.fromCharCode(65 + idx));
         const isJudgementMatched = question.type === "判断题" && (/^(正确|是|对|√|t|true|right)$/i.test(judgementAnswer) && /^(正确|是|对|√|t|true|right)$/i.test(optionText) || /^(错误|否|错|×|f|false|wrong)$/i.test(judgementAnswer) && /^(错误|否|错|×|f|false|wrong)$/i.test(optionText));
-        // 精确匹配
-        if (normalizedAnswers.includes(optionText) || isJudgementMatched) {
+        // 精确匹配 / 字母索引匹配
+        if (isLetterMatched || normalizedAnswers.includes(optionText) || isJudgementMatched) {
           selected = true;
           option.click();
           option.dispatchEvent(new MouseEvent("click", { bubbles: true }));
