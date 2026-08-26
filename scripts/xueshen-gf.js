@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.3.0
+// @version      5.3.1
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @author       IPYIWEI
@@ -10,6 +10,10 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.3.1 更新内容：
+// @changelog    1. 修复多选题答案无分隔符(如ABCD)无法全选的问题
+// @changelog    2. 修复图片选项匹配失败：改用文件名提取比较，解决URL被normalize清空导致无法匹配
+// @changelog    3. 修复月卡用户答题时显示"包月权益生效"而非正确答案的问题
 // @changelog    v5.3.0 更新内容：
 // @changelog    1. 修复含图片题目 AI 无法识别的问题：答题时自动提取题目中的图片并转 base64 发送给 AI 模型
 // @changelog    2. 后端同步优化：图片下载失败时自动跳过并提示，不再因无效图片链接导致 AI 报错
@@ -2446,6 +2450,10 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       const parsed = JSON.parse(text);
       if (Array.isArray(parsed)) return parsed.map((x) => String(x).trim()).filter(Boolean);
     } catch (_) {
+    }
+    // 处理无分隔符的连续字母序列，如 "ABCD" → ["A","B","C","D"]
+    if (/^[A-Da-d]{2,}$/.test(text)) {
+      return text.toUpperCase().split("").filter(Boolean);
     }
     if (/^[A-Z](?:[\s,，、;；|]+[A-Z])+$/.test(text.toUpperCase())) {
       return text.toUpperCase().split(/[\s,，、;；|]+/).filter(Boolean);
@@ -7778,7 +7786,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               if (mode === "questionBank" || answerData.code !== -1004) {
                 question.answer = {
                   code: answerData.code,
-                  answer: [answerData.msg]
+                  answer: []
                 };
                 continue;
               }
@@ -7805,7 +7813,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               } else {
                 question.answer = {
                   code: answerData.code,
-                  answer: [answerData.msg]
+                  answer: []
                 };
               }
             } else {
@@ -9110,7 +9118,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               } else if (mode === "questionBank" || answerData.code !== -1004) {
                 question.answer = {
                   code: answerData.code,
-                  answer: [answerData.msg]
+                  answer: []
                 };
                 handled = true;
               }
@@ -9143,7 +9151,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 } else {
                   question.answer = {
                     code: aiAnswerData.code,
-                    answer: [aiAnswerData.msg]
+                    answer: []
                   };
                 }
               } else {
@@ -11397,17 +11405,45 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         question.element.querySelectorAll(
           ".optionUl label, label.user-select.group, .radio-view li.clearfix, .checkbox-views label.el-checkbox, label, [role='radio'], [role='checkbox']"
         )
-      ).filter((option) => cleanText(option.textContent));
+      );
       let selected = false;
       const normalizedAnswers = answers.map((answer) => normalize(answer));
       const judgementAnswer = normalizedAnswers[0];
+      // 检查答案是否包含图片URL
+      const answerImgs = answers.filter(a => /https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp)/i.test(a));
       optionEls.forEach((option) => {
         const optionText = normalize(option.textContent);
         const isJudgementMatched = question.type === "判断题" && (/^(正确|是|对|√|t|true|right)$/i.test(judgementAnswer) && /^(正确|是|对|√|t|true|right)$/i.test(optionText) || /^(错误|否|错|×|f|false|wrong)$/i.test(judgementAnswer) && /^(错误|否|错|×|f|false|wrong)$/i.test(optionText));
+        // 文本匹配
         if (normalizedAnswers.includes(optionText) || isJudgementMatched) {
           selected = true;
           option.click();
           option.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        }
+        // 图片匹配：如果答案包含图片URL，尝试匹配选项中的图片
+        else if (answerImgs.length > 0) {
+          const getImgKey = (url) => {
+            const m = url.match(/\/([^\/]+)\.(?:jpg|jpeg|png|gif|webp)/i);
+            return m ? m[1].toLowerCase() : url.toLowerCase();
+          };
+          const optionImgs = Array.from(option.querySelectorAll('img')).map(img => img.src || img.getAttribute('data-src') || '').filter(Boolean);
+          let matched = false;
+          for (const answerImg of answerImgs) {
+            if (matched) break;
+            const answerKey = getImgKey(answerImg);
+            for (const optionImg of optionImgs) {
+              const optionKey = getImgKey(optionImg);
+              if (answerKey && optionKey && (answerKey === optionKey || answerKey.includes(optionKey) || optionKey.includes(answerKey))) {
+                matched = true;
+                break;
+              }
+            }
+          }
+          if (matched) {
+            selected = true;
+            option.click();
+            option.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+          }
         }
       });
       return selected;
@@ -11445,7 +11481,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             question.answer.code = 0;
           }
         } else if (mode === "questionBank" || answerData.code !== -1004) {
-          question.answer = { code: answerData.code, answer: [answerData.msg] };
+          // 错误情况：不将 msg 设为 answer，避免将"包月权益生效"等提示当作答案显示
+          question.answer = { code: answerData.code, answer: [] };
           handled = true;
         }
       }
@@ -11461,7 +11498,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               source: "ai"
             });
           } else {
-            question.answer = { code: aiAnswerData.code, answer: [aiAnswerData.msg] };
+            // 错误情况：不将 msg 设为 answer，避免将错误提示当作答案显示
+            question.answer = { code: aiAnswerData.code, answer: [] };
           }
         } else {
           question.answer = { code: -1, answer: ["该题型不支持AI答题"] };
