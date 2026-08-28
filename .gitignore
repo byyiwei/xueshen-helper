@@ -41,3 +41,6 @@ Thumbs.db
 .DS_Store
 echo .trae/
 .trae-html-share-packages/
+
+# 本地工具记忆文件（含记忆/备份，勿推远程）
+.workbuddy/
