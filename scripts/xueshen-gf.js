@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.3.3
+// @version      5.3.4
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @author       IPYIWEI
@@ -10,6 +10,9 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.3.4 更新内容：
+// @changelog    1. 修复无扩展名图片URL（超星部分CDN图）无法匹配填充的问题：图片比对改用URL末段哈希，兼容有无扩展名
+// @changelog    2. 图片匹配加固：短哈希仅精确比对防误选，http/https与查询串差异不再影响匹配
 // @changelog    v5.3.3 更新内容：
 // @changelog    1. 彻底修复多选题填充：新增字母答案(A/ABD)按选项序号直接映射，考试页与超星/智慧树作业页全覆盖
 // @changelog    2. 后端多选答案改返回结构化数组，支持E及更多选项字母，修复5个及以上选项无法匹配的问题
@@ -11438,8 +11441,16 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       let selected = false;
       const normalizedAnswers = answers.map((answer) => normalize(answer));
       const judgementAnswer = normalizedAnswers[0];
-      // 检查答案是否包含图片URL
-      const answerImgs = answers.filter(a => /https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp)/i.test(a));
+      // 收集答案中的图片 URL：提取 <img src="...">（超星 CDN 部分图 URL 无扩展名）+ 带扩展名的裸 URL
+      const answerImgs = [];
+      answers.forEach(a => {
+        const s = String(a || "");
+        const imgSrcRe = /<img[^>]+src=["']([^"']+)["']/gi;
+        let imgM;
+        while ((imgM = imgSrcRe.exec(s))) { if (!answerImgs.includes(imgM[1])) answerImgs.push(imgM[1]); }
+        const bareImg = s.match(/https?:\/\/[^\s"'<>]+\.(?:jpg|jpeg|png|gif|webp)/i);
+        if (bareImg && !answerImgs.includes(bareImg[0])) answerImgs.push(bareImg[0]);
+      });
       // 保留原始答案文本用于子串匹配
       const rawAnswers = answers.map(a => String(a).trim()).filter(Boolean);
       // 纯字母答案收集：["A","B","D"] 或紧凑串 ["ABD"] → 按索引映射（A=第1个选项）
@@ -11472,12 +11483,15 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           option.click();
           option.dispatchEvent(new MouseEvent("click", { bubbles: true }));
         }
-        // 图片匹配：如果答案包含图片URL，尝试匹配选项中的图片
+        // 图片匹配：按 URL 最后一段（去查询串/扩展名）比对，兼容超星无扩展名 CDN 图
         else if (answerImgs.length > 0) {
           const getImgKey = (url) => {
-            const m = url.match(/\/([^\/]+)\.(?:jpg|jpeg|png|gif|webp)/i);
-            return m ? m[1].toLowerCase() : url.toLowerCase();
+            const clean = String(url || "").split(/[?#]/)[0].replace(/\/+$/, "");
+            const seg = (clean.split("/").pop() || clean).replace(/\.(jpg|jpeg|png|gif|webp)$/i, "");
+            return seg.toLowerCase();
           };
+          // 短 key（如 latex 公式图的数字段）只允许完全相等，防止 includes 误撞（912 vs 9120）
+          const imgKeyMatch = (a, b) => a === b || (a.length >= 8 && b.length >= 8 && (a.includes(b) || b.includes(a)));
           const optionImgs = Array.from(option.querySelectorAll('img')).map(img => img.src || img.getAttribute('data-src') || '').filter(Boolean);
           let matched = false;
           for (const answerImg of answerImgs) {
@@ -11485,7 +11499,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             const answerKey = getImgKey(answerImg);
             for (const optionImg of optionImgs) {
               const optionKey = getImgKey(optionImg);
-              if (answerKey && optionKey && (answerKey === optionKey || answerKey.includes(optionKey) || optionKey.includes(answerKey))) {
+              if (answerKey && optionKey && imgKeyMatch(answerKey, optionKey)) {
                 matched = true;
                 break;
               }
