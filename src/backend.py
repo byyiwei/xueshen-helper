@@ -3657,11 +3657,15 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 qs = parse_qs(parsed.query)
                 params = {k: v[0] for k, v in qs.items()}
+                print(f"[支付FM回调] 参数: {params}", flush=True)
                 if verify_zhifufm_notify(params) and params.get("state") == "1":
                     order_no = params.get("orderNo", "")
                     order = db.get_order(order_no)
                     if order and order.get("status") != "paid":
+                        db.update_order_payment(order_no, channel_order_no=params.get("channelOrderNo", ""))
                         db.apply_paid_order(order_no)
+                    else:
+                        db.update_order_payment(order_no, channel_order_no=params.get("channelOrderNo", ""))
                     self._send_text(200, "success")
                 else:
                     self._send_text(200, "fail")

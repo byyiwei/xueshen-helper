@@ -1358,6 +1358,50 @@
 
                 <section class="user-section" id="section-feedback">
                     <div class="user-card">
+                        <h3>我的反馈记录</h3>
+                        <div id="fbListView" style="margin-top:12px">
+                            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+                                <div id="fbStatusTabs" style="display:flex;gap:4px;flex-wrap:wrap">
+                                    <button class="fb-tab active" data-status="" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:rgba(59,130,246,.15);color:#60a5fa">全部</button>
+                                    <button class="fb-tab" data-status="pending" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">待处理</button>
+                                    <button class="fb-tab" data-status="processing" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">处理中</button>
+                                    <button class="fb-tab" data-status="resolved" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">已回复</button>
+                                    <button class="fb-tab" data-status="closed" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">已关闭</button>
+                                </div>
+                                <input type="text" id="fbSearchInput" placeholder="搜索标题或内容..." style="flex:1;min-width:140px;padding:6px 12px;border-radius:8px;border:1px solid var(--v-border);background:var(--v-card-bg);color:var(--v-text);font-size:13px">
+                            </div>
+                            <div id="fbTimeTabs" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px">
+                                <button class="fb-time-tab active" data-days="7" style="padding:4px 10px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:rgba(59,130,246,.15);color:#60a5fa">近7天</button>
+                                <button class="fb-time-tab" data-days="30" style="padding:4px 10px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">近30天</button>
+                                <button class="fb-time-tab" data-days="90" style="padding:4px 10px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">近3个月</button>
+                                <button class="fb-time-tab" data-days="0" style="padding:4px 10px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">全部</button>
+                            </div>
+                            <div id="fbList" style="margin-top:4px">
+                                <div style="padding:24px;text-align:center;color:var(--v-muted)">暂无反馈记录</div>
+                            </div>
+                        </div>
+                        <!-- 聊天详情视图 -->
+                        <div id="fbChatView" style="display:none">
+                            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--v-border)">
+                                <button id="fbChatBack" style="border:none;background:transparent;color:var(--v-muted);cursor:pointer;font-size:18px;padding:4px 8px">←</button>
+                                <span id="fbChatTitle" style="font-weight:600;font-size:15px;color:var(--v-text)"></span>
+                                <span id="fbChatStatus" style="font-size:11px;padding:2px 8px;border-radius:6px"></span>
+                            </div>
+                            <div id="fbChatBody" style="display:flex;flex-direction:column;gap:12px;min-height:200px"></div>
+                            <div id="fbChatReplyArea" style="margin-top:14px;border-top:1px solid var(--v-border);padding-top:14px">
+                                <textarea id="fbChatInput" rows="2" maxlength="2000" placeholder="输入追问内容..." style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--v-border);background:var(--v-card-bg);color:var(--v-text);font-size:13px;resize:vertical;line-height:1.5"></textarea>
+                                <div style="display:flex;justify-content:flex-end;margin-top:8px">
+                                    <button id="fbChatSend" class="primary" style="padding:6px 20px;font-size:13px">发送</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="user-card" style="margin-top:16px">
+                        <div id="fbOpenTicketNotice" style="display:none;align-items:center;gap:10px;padding:10px 14px;margin-bottom:14px;border-radius:10px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3)">
+                            <span style="font-size:18px">💡</span>
+                            <span style="flex:1;font-size:13px;color:#f59e0b;line-height:1.5">您有 <strong id="fbOpenCount">0</strong> 条未关闭的反馈，建议先在原反馈中追问，无需重复提交。</span>
+                            <button id="fbJumpToRecords" style="padding:4px 12px;border-radius:8px;border:none;background:rgba(245,158,11,.2);color:#f59e0b;font-size:12px;cursor:pointer;white-space:nowrap">查看记录</button>
+                        </div>
                         <h3>提交问题反馈</h3>
                         <p class="hint">遇到问题或有建议？提交反馈，我们会通过邮件回复您。</p>
                         <div style="display:grid;gap:14px;margin-top:16px">
@@ -1384,39 +1428,6 @@
                             </div>
                             <div>
                                 <button class="primary" id="fbSubmitBtn" style="width:auto;padding:10px 28px">提交反馈</button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="user-card" style="margin-top:16px">
-                        <h3>我的反馈记录</h3>
-                        <div id="fbListView" style="margin-top:12px">
-                            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-                                <div id="fbStatusTabs" style="display:flex;gap:4px;flex-wrap:wrap">
-                                    <button class="fb-tab active" data-status="" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:rgba(59,130,246,.15);color:#60a5fa">全部</button>
-                                    <button class="fb-tab" data-status="pending" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">待处理</button>
-                                    <button class="fb-tab" data-status="processing" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">处理中</button>
-                                    <button class="fb-tab" data-status="resolved" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">已回复</button>
-                                    <button class="fb-tab" data-status="closed" style="padding:5px 12px;border-radius:8px;border:none;font-size:12px;cursor:pointer;background:var(--v-card-bg);color:var(--v-muted)">已关闭</button>
-                                </div>
-                                <input type="text" id="fbSearchInput" placeholder="搜索标题或内容..." style="flex:1;min-width:140px;padding:6px 12px;border-radius:8px;border:1px solid var(--v-border);background:var(--v-card-bg);color:var(--v-text);font-size:13px">
-                            </div>
-                            <div id="fbList" style="margin-top:4px">
-                                <div style="padding:24px;text-align:center;color:var(--v-muted)">暂无反馈记录</div>
-                            </div>
-                        </div>
-                        <!-- 聊天详情视图 -->
-                        <div id="fbChatView" style="display:none">
-                            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--v-border)">
-                                <button id="fbChatBack" style="border:none;background:transparent;color:var(--v-muted);cursor:pointer;font-size:18px;padding:4px 8px">←</button>
-                                <span id="fbChatTitle" style="font-weight:600;font-size:15px;color:var(--v-text)"></span>
-                                <span id="fbChatStatus" style="font-size:11px;padding:2px 8px;border-radius:6px"></span>
-                            </div>
-                            <div id="fbChatBody" style="display:flex;flex-direction:column;gap:12px;min-height:200px"></div>
-                            <div id="fbChatReplyArea" style="margin-top:14px;border-top:1px solid var(--v-border);padding-top:14px">
-                                <textarea id="fbChatInput" rows="2" maxlength="2000" placeholder="输入追问内容..." style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--v-border);background:var(--v-card-bg);color:var(--v-text);font-size:13px;resize:vertical;line-height:1.5"></textarea>
-                                <div style="display:flex;justify-content:flex-end;margin-top:8px">
-                                    <button id="fbChatSend" class="primary" style="padding:6px 20px;font-size:13px">发送</button>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -2832,6 +2843,7 @@
         const FB_STATUS_MAP = { pending: { label: '待处理', color: '#f59e0b' }, processing: { label: '处理中', color: '#3b82f6' }, resolved: { label: '已回复', color: '#10b981' }, closed: { label: '已关闭', color: '#6b7280' } };
         let fbList = [];
         let fbFilterStatus = '';
+        let fbFilterDays = 7;
         let fbSearchKeyword = '';
 
         async function loadFeedback() {
@@ -2850,6 +2862,13 @@
         function getFilteredFeedback() {
             let list = fbList;
             if (fbFilterStatus) list = list.filter(f => f.status === fbFilterStatus);
+            if (fbFilterDays > 0) {
+                const cutoff = Date.now() - fbFilterDays * 86400000;
+                list = list.filter(f => {
+                    const t = new Date((f.created_at || '').replace(' ', 'T')).getTime();
+                    return !isNaN(t) && t >= cutoff;
+                });
+            }
             if (fbSearchKeyword) {
                 const kw = fbSearchKeyword.toLowerCase();
                 list = list.filter(f => (f.title || '').toLowerCase().includes(kw) || (f.content || '').toLowerCase().includes(kw));
@@ -2857,7 +2876,18 @@
             return list;
         }
 
+        function updateFbNotice() {
+            const openCount = fbList.filter(f => f.status !== 'closed').length;
+            const notice = $('fbOpenTicketNotice');
+            if (notice) {
+                notice.style.display = openCount > 0 ? 'flex' : 'none';
+                const countEl = $('fbOpenCount');
+                if (countEl) countEl.textContent = openCount;
+            }
+        }
+
         function renderFeedbackList() {
+            updateFbNotice();
             const el = $('fbList');
             const list = getFilteredFeedback();
             if (!list.length) {
@@ -3019,6 +3049,21 @@
                 renderFeedbackList();
             });
         });
+        // 时间筛选标签
+        document.querySelectorAll('#fbTimeTabs .fb-time-tab').forEach(btn => {
+            btn.addEventListener('click', function () {
+                document.querySelectorAll('#fbTimeTabs .fb-time-tab').forEach(b => {
+                    b.classList.remove('active');
+                    b.style.background = 'var(--v-card-bg)';
+                    b.style.color = 'var(--v-muted)';
+                });
+                this.classList.add('active');
+                this.style.background = 'rgba(59,130,246,.15)';
+                this.style.color = '#60a5fa';
+                fbFilterDays = parseInt(this.dataset.days) || 0;
+                renderFeedbackList();
+            });
+        });
         // 搜索框
         let fbSearchTimer = null;
         $('fbSearchInput').addEventListener('input', function () {
@@ -3027,6 +3072,12 @@
                 fbSearchKeyword = this.value.trim();
                 renderFeedbackList();
             }, 300);
+        });
+        $('fbJumpToRecords').addEventListener('click', function () {
+            $('fbChatView').style.display = 'none';
+            $('fbListView').style.display = 'block';
+            fbCurrentChat = null;
+            $('fbListView').scrollIntoView({ behavior: 'smooth', block: 'center' });
         });
         $('fbSubmitBtn').onclick = async function () {
             const category = $('fbCategory').value;
@@ -3047,8 +3098,14 @@
                     $('fbTitle').value = '';
                     $('fbContent').value = '';
                     $('fbCharCount').textContent = '0/2000';
-                    loadFeedback();
-                    alert('提交成功！我们会尽快处理并通过邮件回复您。');
+                    await loadFeedback();
+                    if (fbList.length > 0) {
+                        openFbChat(fbList[0].id);
+                        $('section-feedback').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        setTimeout(() => alert('提交成功！您可以在上方"我的反馈记录"中查看回复并继续追问。'), 400);
+                    } else {
+                        alert('提交成功！我们会尽快处理并通过邮件回复您。');
+                    }
                 } else {
                     alert(d.msg || '提交失败');
                 }

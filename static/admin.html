@@ -2059,8 +2059,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     <th style="text-align:left;padding:10px 8px">申请时间</th>
                     <th style="text-align:left;padding:10px 8px">用户</th>
                     <th style="text-align:left;padding:10px 8px">订单</th>
-                    <th style="text-align:left;padding:10px 8px">银行单号</th>
-                    <th style="text-align:left;padding:10px 8px">银联流水号</th>
+                    <th style="text-align:left;padding:10px 8px">银联单号</th>
                     <th style="text-align:left;padding:10px 8px">套餐</th>
                     <th style="text-align:left;padding:10px 8px">金额</th>
                     <th style="text-align:left;padding:10px 8px">原因</th>
@@ -2074,8 +2073,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     <td style="padding:10px 8px;color:var(--text3);white-space:nowrap">{{String(r.created_at||'').replace('T',' ').substring(0,16)}}</td>
                     <td style="padding:10px 8px;color:var(--accent2)">{{r.username}}</td>
                     <td style="padding:10px 8px;font-family:monospace;font-size:12px">{{r.order_no}}</td>
-                    <td style="padding:10px 8px;font-family:monospace;font-size:12px;color:var(--text2)">{{r.bank_order_no||'-'}}</td>
-                    <td style="padding:10px 8px;font-family:monospace;font-size:12px;color:var(--text2)">{{r.trade_no||'-'}}</td>
+                    <td style="padding:10px 8px;font-family:monospace;font-size:12px;color:var(--text2)">{{r.channel_order_no||'-'}}</td>
                     <td style="padding:10px 8px">{{r.plan_name||'-'}}</td>
                     <td style="padding:10px 8px;color:var(--success)">¥{{Number(r.price||0).toFixed(2)}}</td>
                     <td style="padding:10px 8px;max-width:200px;word-break:break-all;font-size:12px;color:var(--text2)">{{r.reason||'-'}}</td>
@@ -2103,7 +2101,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                       <span v-else style="font-size:12px;color:var(--text3)">{{r.admin_note||'-'}}</span>
                     </td>
                   </tr>
-                  <tr v-if="rrList.length===0"><td colspan="11" style="text-align:center;padding:40px 0;color:var(--text3);font-size:13px">暂无退款申请</td></tr>
+                  <tr v-if="rrList.length===0"><td colspan="10" style="text-align:center;padding:40px 0;color:var(--text3);font-size:13px">暂无退款申请</td></tr>
                 </tbody>
               </table>
               <div v-if="rrTotalPages>1" style="display:flex;justify-content:center;gap:6px;margin-top:16px">
@@ -3197,6 +3195,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                 <thead>
                   <tr style="text-align:left;color:var(--text3);border-bottom:1px solid var(--border)">
                     <th style="padding:10px 12px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('order_no')">订单号 {{paymentOrdersSort.field==='order_no'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
+                    <th style="padding:10px 12px;white-space:nowrap">银联单号</th>
                     <th style="padding:10px 12px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('username')">用户名 {{paymentOrdersSort.field==='username'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
                     <th style="padding:10px 12px;white-space:nowrap">套餐名称</th>
                     <th style="padding:10px 12px;white-space:nowrap">业务类型</th>
@@ -3205,8 +3204,6 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     <th style="padding:10px 12px;white-space:nowrap">点数/天数</th>
                     <th style="padding:10px 12px;white-space:nowrap">支付方式</th>
                     <th style="padding:10px 12px;white-space:nowrap">支付类型</th>
-                    <th style="padding:10px 12px;white-space:nowrap">银行单号</th>
-                    <th style="padding:10px 12px;white-space:nowrap">银联流水号</th>
                     <th style="padding:10px 12px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('status')">状态 {{paymentOrdersSort.field==='status'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
                     <th style="padding:10px 12px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('created_at')">创建时间 {{paymentOrdersSort.field==='created_at'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
                     <th style="padding:10px 12px;white-space:nowrap">操作</th>
@@ -3215,6 +3212,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                 <tbody>
                   <tr v-for="row in paymentOrders" :key="row.id" style="border-bottom:1px solid var(--border)">
                     <td style="padding:10px 12px;font-family:monospace;font-size:12px">{{row.order_no}}</td>
+                    <td style="padding:10px 12px;font-family:monospace;font-size:12px">{{row.channel_order_no||'-'}}</td>
                     <td style="padding:10px 12px">{{row.username}}</td>
                     <td style="padding:10px 12px">{{row.plan_name||'-'}}</td>
                     <td style="padding:10px 12px">{{row.business_type||'-'}}</td>
@@ -3223,8 +3221,6 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     <td style="padding:10px 12px">{{row.points>0?row.points+'点':''}}{{row.days>0?(row.points>0?'/':'')+row.days+'天':''}}{{!row.points&&!row.days?'-':''}}</td>
                     <td style="padding:10px 12px">{{row.pay_method==='alipay'?'支付宝':row.pay_method==='wechat'?'微信支付':row.pay_method==='card'?cardPayLabel:row.pay_method||'-'}}
                     <td style="padding:10px 12px">{{row.pay_type||'-'}}</td>
-                    <td style="padding:10px 12px;font-family:monospace;font-size:12px">{{row.bank_order_no||'-'}}</td>
-                    <td style="padding:10px 12px;font-family:monospace;font-size:12px">{{row.trade_no||'-'}}</td>
                     <td style="padding:10px 12px">
                       <span :style="{color:row.status==='paid'?'var(--success)':row.status==='refunded'?'var(--danger)':row.status==='pending'?'var(--warning)':'var(--text3)'}">{{row.status==='paid'?'已支付':row.status==='refunded'?'已退款':row.status==='pending'?'待支付':row.status==='cancelled'?'已取消':row.status}}</span>
                       <div v-if="row.status==='refunded'" style="font-size:11px;color:var(--text3);margin-top:2px">{{String(row.refunded_at||'').replace('T',' ').substring(0,16)}}</div>
@@ -3235,7 +3231,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     </td>
                   </tr>
                   <tr v-if="paymentOrders.length===0">
-                    <td colspan="14" style="padding:30px;text-align:center;color:var(--text3)">暂无支付记录</td>
+                    <td colspan="13" style="padding:30px;text-align:center;color:var(--text3)">暂无支付记录</td>
                   </tr>
                 </tbody>
               </table>

@@ -1044,6 +1044,7 @@ class Database:
         self._add_column_if_missing("payment_orders", "pay_url", "pay_url TEXT")
         self._add_column_if_missing("payment_orders", "paid_at", "paid_at TIMESTAMP NULL")
         self._add_column_if_missing("payment_orders", "bank_order_no", "bank_order_no VARCHAR(128)")
+        self._add_column_if_missing("payment_orders", "channel_order_no", "channel_order_no VARCHAR(128) COMMENT '商户订单号(签约类型支付方式有值)'")
         self._add_column_if_missing("payment_orders", "pay_type", "pay_type VARCHAR(50)")
         self._add_column_if_missing("payment_orders", "business_type", "business_type VARCHAR(50)")
 
@@ -1317,7 +1318,7 @@ class Database:
         ph = _ph()
         return self.fetchone(f"SELECT * FROM payment_orders WHERE order_no = {ph}", (order_no,))
 
-    def update_order_payment(self, order_no, trade_no="", qr_code="", status=None, pay_url="", bank_order_no="", pay_type="", paid_at=None):
+    def update_order_payment(self, order_no, trade_no="", qr_code="", status=None, pay_url="", bank_order_no="", pay_type="", paid_at=None, channel_order_no=""):
         ph = _ph()
         sets = []
         params = []
@@ -1336,6 +1337,9 @@ class Database:
         if bank_order_no:
             sets.append(f"bank_order_no = {ph}")
             params.append(bank_order_no)
+        if channel_order_no:
+            sets.append(f"channel_order_no = {ph}")
+            params.append(channel_order_no)
         if pay_type:
             sets.append(f"pay_type = {ph}")
             params.append(pay_type)
@@ -1496,7 +1500,7 @@ class Database:
         offset = (page - 1) * page_size
         rows = self.fetchall(
             f"SELECT r.*, o.plan_name, o.price, o.created_at order_created_at, "
-            f"o.bank_order_no, o.trade_no, "
+            f"o.bank_order_no, o.trade_no, o.channel_order_no, "
             f"p.alipay_account, p.alipay_qr, p.wechat_account, p.wechat_qr "
             f"FROM refund_requests r "
             f"LEFT JOIN payment_orders o ON r.order_no = o.order_no "
@@ -1912,22 +1916,24 @@ class Database:
             SELECT * FROM (
                 SELECT po.id, po.order_no, po.username, po.plan_id, po.plan_name, po.plan_type,
                        po.price, po.points, po.days, po.status, po.pay_method, po.pay_channel,
-                       po.trade_no, po.qr_code, po.pay_url, po.created_at, po.paid_at,
-                       po.refunded_at, po.refund_reason, po.refunded_by,
-                       po.bank_order_no, po.pay_type, po.business_type,
-                       'payment' as source
+                        po.trade_no, po.qr_code, po.pay_url, po.created_at, po.paid_at,
+                        po.refunded_at, po.refund_reason, po.refunded_by,
+                        po.bank_order_no, po.pay_type, po.business_type,
+                        po.channel_order_no,
+                        'payment' as source
                 FROM payment_orders po{po_where_sql}
                 UNION ALL
                 SELECT xo.id, xo.order_no, xo.username, xo.plan_id, xo.plan_name,
-                       COALESCE((SELECT pp.plan_type FROM payment_plans pp WHERE pp.id = xo.plan_id), 'points') as plan_type,
-                       xo.price, 0 as points, 0 as days,
-                       CASE WHEN xo.status = 'paid' THEN 'paid' ELSE 'pending' END as status,
-                       'xianyu' as pay_method, '' as pay_channel,
-                       '' as trade_no, '' as qr_code, xo.card_code as pay_url,
-                       xo.created_at, xo.paid_at,
-                       NULL as refunded_at, '' as refund_reason, '' as refunded_by,
-                       '' as bank_order_no, '' as pay_type, '' as business_type,
-                       'xianyu' as source
+                        COALESCE((SELECT pp.plan_type FROM payment_plans pp WHERE pp.id = xo.plan_id), 'points') as plan_type,
+                        xo.price, 0 as points, 0 as days,
+                        CASE WHEN xo.status = 'paid' THEN 'paid' ELSE 'pending' END as status,
+                        'xianyu' as pay_method, '' as pay_channel,
+                        '' as trade_no, '' as qr_code, xo.card_code as pay_url,
+                        xo.created_at, xo.paid_at,
+                        NULL as refunded_at, '' as refund_reason, '' as refunded_by,
+                        '' as bank_order_no, '' as pay_type, '' as business_type,
+                        '' as channel_order_no,
+                        'xianyu' as source
                 FROM xianyu_orders xo{xy_where_sql}
             ) combined ORDER BY {sort_field} {order_dir} LIMIT {int(page_size)} OFFSET {offset}
         """
