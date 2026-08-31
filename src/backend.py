@@ -1543,9 +1543,35 @@ def parse_question_payload(question):
                 result["images"].append(url)
     return result
 
+_IMG_SRC_RE = re.compile(r'<img[^>]+src=["\']([^"\']+)["\']', re.I)
+
+
+def _canonical_img_url(url):
+    """图片 URL 归一化：去查询串/fragment、去末尾图片扩展名、小写。
+    兼容超星 CDN 同图两种形态：.../origin/<hash>.png 与 .../origin/<hash>。"""
+    u = str(url or "").strip()
+    if not u:
+        return ""
+    u = u.split("?")[0].split("#")[0].rstrip("/")
+    u = re.sub(r"\.(jpg|jpeg|png|gif|webp|bmp|svg)$", "", u, flags=re.I)
+    return u.lower()
+
+
+def _canonicalize_img_urls_in_text(text):
+    """把文本里 <img src="..."> 的 URL 替换为归一化形式，保证指纹/匹配不受 URL 形态影响。"""
+    def _rep(m):
+        return m.group(0).replace(m.group(1), _canonical_img_url(m.group(1)))
+    return _IMG_SRC_RE.sub(_rep, str(text or ""))
+
+
 def _image_fingerprint(info):
-    images = info.get("images") or []
-    items = sorted({str(x).strip() for x in images if str(x).strip()})
+    """图片指纹：题面+选项内嵌 img URL（归一化后）的 sha256。
+    不采用 payload.images（客户端传的是 base64 dataURL，内容/张数跨会话不稳定，
+    会导致同题指纹漂移、题库永不命中）；题面与选项里的 img URL 才是稳定标识。"""
+    urls = _IMG_SRC_RE.findall(str(info.get("question_text") or ""))
+    for opt in info.get("options") or []:
+        urls.extend(_IMG_SRC_RE.findall(str(opt or "")))
+    items = sorted({_canonical_img_url(u) for u in urls if _canonical_img_url(u)})
     if not items:
         return ""
     return hashlib.sha256("|".join(items).encode("utf-8")).hexdigest()
@@ -1553,9 +1579,9 @@ def _image_fingerprint(info):
 
 def _normalized_components(question):
     info = parse_question_payload(question)
-    q = normalize_question_text(info.get("question_text", ""))
+    q = normalize_question_text(_canonicalize_img_urls_in_text(info.get("question_text", "")))
     t = normalize_question_text(info.get("question_type", ""))
-    opts = sorted({normalize_question_text(x) for x in info.get("options", []) if normalize_question_text(x)})
+    opts = sorted({normalize_question_text(_canonicalize_img_urls_in_text(x)) for x in info.get("options", []) if normalize_question_text(_canonicalize_img_urls_in_text(x))})
     img_fp = _image_fingerprint(info)
     return q, t, opts, img_fp
 
@@ -1582,7 +1608,7 @@ def normalize_answer_for_hash(answer):
     """把答案归一化为稳定字符串，用于指纹（选项字母排序/判断题/轻量归一化）。"""
     if not answer:
         return ""
-    text = str(answer).strip()
+    text = _canonicalize_img_urls_in_text(str(answer).strip())
     m = re.match(r"^\s*(?:正确答案是?|答案是?|选择?|选|应该选|应该选择?)\s*([A-Da-d])", text, re.I)
     if m:
         return m.group(1).upper()
@@ -6403,8 +6429,9 @@ class Handler(BaseHTTPRequestHandler):
                 params = parse_qs(body)
                 question = params.get("question", [""])[0]
                 model = params.get("model", [""])[0]
-                model_mode = params.get("model_mode", ["auto"])[0] or "auto"
+                req_model_mode = params.get("model_mode", ["auto"])[0] or "auto"
                 custom_cfg = {}
+                quota_msg = ""
                 if not question:
                     self._send_json(400, {"code": 400, "msg": "缺少 question 参数"})
                     return
@@ -6413,20 +6440,36 @@ class Handler(BaseHTTPRequestHandler):
                     err = "账号已被封禁：" + (ent.get("ban_reason") or "请联系管理员")
                     self._send_json(403, {"code": 403, "msg": err})
                     return
-                if not ent or (not ent.get("active_member") and int(ent.get("points_balance") or 0) <= 0):
-                    err = "题数余额不足，请到用户中心购买点数或包月套餐"
-                    status = "insufficient_quota"
-                    self._send_json(402, {"code": 402, "msg": err})
-                    return
-                if model_mode == "custom":
+                # 自有模型判定：优先使用请求参数，否则回退到用户在用户中心“模型设置”中保存的偏好
+                use_custom = req_model_mode == "custom"
+                if use_custom:
                     custom_cfg = {
                         "protocol": params.get("custom_protocol", ["openai"])[0],
                         "base_url": params.get("custom_base_url", [""])[0],
                         "api_key": params.get("custom_api_key", [""])[0],
                         "model": params.get("custom_model", [""])[0],
                     }
-                    resolved_model = custom_cfg["model"]
+                else:
+                    saved_settings, _ = db.get_user_settings(user["username"])
+                    if isinstance(saved_settings, dict) and saved_settings.get("modelMode") == "custom":
+                        cproto = saved_settings.get("customProtocol") or "openai"
+                        cbase = saved_settings.get("customBaseUrl") or ""
+                        cmodel = saved_settings.get("customModel") or ""
+                        ckey = saved_settings.get("customApiKey") or ""
+                        if cmodel and cbase and ckey:
+                            use_custom = True
+                            custom_cfg = {"protocol": cproto, "base_url": cbase, "api_key": ckey, "model": cmodel}
+                model_mode = "custom" if use_custom else "auto"
+                # 自有模型：使用用户自己的接口，不扣题数、不校验包月/题数余额
+                if use_custom:
+                    resolved_model = custom_cfg.get("model") or ""
                     provider_name = "custom"
+                else:
+                    if not ent or (not ent.get("active_member") and int(ent.get("points_balance") or 0) <= 0):
+                        err = "题数余额不足，请到用户中心购买点数或包月套餐"
+                        status = "insufficient_quota"
+                        self._send_json(402, {"code": 402, "msg": err})
+                        return
                 bank_row, question_hash, bank_method, bank_duration = get_question_bank_match(question)
                 _bank_info = parse_question_payload(question)
                 enqueue_bank_log({
@@ -6441,7 +6484,7 @@ class Handler(BaseHTTPRequestHandler):
                     "duration_ms": int(bank_duration or 0),
                     "client_ip": self.client_address[0] if self.client_address else ""
                 })
-                if bank_row:
+                if bank_row and not use_custom:
                     answer = normalize_ai_answer(question, bank_row.get("answer", ""))
                     if not answer:
                         err = "题库答案为空"
@@ -6462,7 +6505,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 cache_key = make_ai_cache_key(question, model_mode, model, custom_cfg)
                 cached = get_ai_cache(cache_key)
-                if cached:
+                if cached and not use_custom:
                     answer = cached.get("answer", "")
                     if not answer:
                         err = "缓存答案为空"
@@ -6481,7 +6524,7 @@ class Handler(BaseHTTPRequestHandler):
                     profile_after = build_user_profile(user["username"])
                     self._send_json(200, {"code": 200, "msg": quota_msg, "data": {"answer": answer, "model": resolved_model, "mode": model_mode, "cache": True, "profile": profile_after, "remainCount": 999999 if profile_after and profile_after.get("active_member") else int((profile_after or {}).get("points_balance") or 0)}})
                     return
-                if model_mode == "custom":
+                if use_custom:
                     print(f"[AI请求] mode=custom, model={resolved_model}, question={question[:60]}...", flush=True)
                     answer, err = ask_ai_custom(question, custom_cfg)
                 else:
@@ -6492,7 +6535,7 @@ class Handler(BaseHTTPRequestHandler):
                     need_vision = is_multimodal_question(question)
                     print(f"[AI请求] mode=auto, question={question[:60]}..., vision={need_vision}", flush=True)
                     answer, err, resolved_model, provider_name = ask_ai_auto(question, need_vision=need_vision, username=user.get("username", "") if user else "", client_ip=self.client_address[0] if self.client_address else "")
-                if model_mode != "custom" and not resolved_model:
+                if not use_custom and not resolved_model:
                     self._send_json(500, {"code": 500, "msg": "没有启用的 AI 提供商，请先配置"})
                     return
                 if answer:
@@ -6504,14 +6547,19 @@ class Handler(BaseHTTPRequestHandler):
                         return
                     status = "success"
                     set_ai_cache(cache_key, answer, resolved_model, provider_name)
-                    save_question_bank_answer(question, answer, resolved_model, provider_name)
-                    ok_quota, quota_msg, ent_after = consume_answer_quota(user["username"], question_hash)
-                    if not ok_quota:
-                        err = quota_msg
-                        self._send_json(402, {"code": 402, "msg": quota_msg})
-                        return
+                    # 自有模型产生的答案不写入共享题库，避免影响其它用户
+                    if not use_custom:
+                        save_question_bank_answer(question, answer, resolved_model, provider_name)
+                    if use_custom:
+                        quota_msg = "自有模型已作答，本次未消耗题数"
+                    else:
+                        ok_quota, quota_msg, ent_after = consume_answer_quota(user["username"], question_hash)
+                        if not ok_quota:
+                            err = quota_msg
+                            self._send_json(402, {"code": 402, "msg": quota_msg})
+                            return
                     profile_after = build_user_profile(user["username"])
-                    self._send_json(200, {"code": 200, "msg": quota_msg, "data": {"answer": answer, "model": resolved_model, "mode": model_mode, "cache": False, "profile": profile_after, "remainCount": 999999 if profile_after and profile_after.get("active_member") else int((profile_after or {}).get("points_balance") or 0)}})
+                    self._send_json(200, {"code": 200, "msg": quota_msg, "data": {"answer": answer, "model": resolved_model, "mode": model_mode, "cache": False, "profile": profile_after, "remainCount": 999999 if (use_custom or (profile_after and profile_after.get("active_member"))) else int((profile_after or {}).get("points_balance") or 0)}})
                 else:
                     print(f"[AI错误] {err}", flush=True)
                     self._send_json(500, {"code": 500, "msg": err or "AI 请求失败"})
