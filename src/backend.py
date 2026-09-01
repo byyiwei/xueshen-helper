@@ -65,6 +65,8 @@ MODEL_FAIL_COOLDOWN_SECONDS = 600
 # 429 限流冷却：{model_name: expire_timestamp}
 MODEL_429_COOLDOWN = {}
 MODEL_429_DEFAULT_SECONDS = 60  # 默认冷却60秒
+# 运行时标记不支图片的模型（API返回400 "does not support image"），避免后续图片题继续选它
+MODEL_NON_VISION = set()
 # 自动答题整体时间预算（秒）：含多模型切换，需小于前端请求超时与 nginx proxy_read_timeout
 ANSWER_TIME_BUDGET = 200
 # 单个模型最多耗时（秒）：防止某个慢/挂掉的模型独占预算，让其他提供商兜底模型有机会被尝试
@@ -1547,13 +1549,14 @@ _IMG_SRC_RE = re.compile(r'<img[^>]+src=["\']([^"\']+)["\']', re.I)
 
 
 def _canonical_img_url(url):
-    """图片 URL 归一化：去查询串/fragment、去末尾图片扩展名、小写。
-    兼容超星 CDN 同图两种形态：.../origin/<hash>.png 与 .../origin/<hash>。"""
+    """图片 URL 归一化：去 scheme(http/https 等价)、去查询串/fragment、去末尾图片扩展名、小写。
+    兼容超星 CDN 同图多种形态：http/https、.../origin/<hash>.png 与 .../origin/<hash>。"""
     u = str(url or "").strip()
     if not u:
         return ""
     u = u.split("?")[0].split("#")[0].rstrip("/")
     u = re.sub(r"\.(jpg|jpeg|png|gif|webp|bmp|svg)$", "", u, flags=re.I)
+    u = re.sub(r"^https?://", "", u, flags=re.I)
     return u.lower()
 
 
@@ -1871,7 +1874,7 @@ def do_openai_compatible_chat(messages, model, api_key, base_url, time_budget=No
         req = urllib.request.Request(
             f"{base_url.rstrip('/')}/chat/completions",
             data=data,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"},
             method="POST"
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -1958,6 +1961,9 @@ def do_openai_compatible_chat(messages, model, api_key, base_url, time_budget=No
                 # DeepSeek 内容审核错误，重试也没用，直接返回
                 if "Output data may contain" in err_msg or "content_filter" in err_msg.lower():
                     return None, f"内容审核拦截(模型:{model}): AI 生成的回复可能包含敏感内容，请手动编辑回复", 0
+                # 模型不支持图片，重试也不会成功，直接返回让上层切换模型
+                if "not support image" in err_msg.lower() or "does not support image" in err_msg.lower() or "multimodal" in err_msg.lower() and "not support" in err_msg.lower():
+                    return None, f"API HTTP 400 (模型:{model}): This model does not support image", 0
                 continue
             return None, f"API HTTP {e.code} (模型:{model}): {err_msg}", 0
         except Exception as e:
@@ -1987,7 +1993,7 @@ def do_claude_chat(messages, model, api_key, base_url):
     req = urllib.request.Request(
         f"{base_url.rstrip('/')}/messages",
         data=data,
-        headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json"},
+        headers={"x-api-key": api_key, "anthropic-version": "2023-06-01", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"},
         method="POST"
     )
     try:
@@ -2019,7 +2025,7 @@ def do_gemini_chat(messages, model, api_key, base_url):
     data = json.dumps({"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.3, "maxOutputTokens": 2048}}).encode("utf-8")
     req = urllib.request.Request(
         f"{base_url.rstrip('/')}/models/{model}:generateContent?key={api_key}",
-        data=data, headers={"Content-Type": "application/json"}, method="POST"
+        data=data, headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"}, method="POST"
     )
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
@@ -2065,7 +2071,7 @@ def get_enabled_model_candidates(need_vision=False, prefer_non_vision=True):
                 if not m.get("value"):
                     continue
                 is_vision = m.get("vision") is True or m.get("vision") == 1 or str(m.get("vision")).lower() in ("1", "true", "yes", "on")
-                if only_vision and not is_vision:
+                if only_vision and (not is_vision or m.get("value") in MODEL_NON_VISION):
                     continue
                 if not only_vision and is_vision and prefer_non_vision:
                     continue
@@ -2227,10 +2233,10 @@ def _download_image_to_base64(url, timeout=15):
     print(f"[图片下载最终失败] {url}", flush=True)
     return None
 
-def build_ai_messages(question_payload_str):
+def build_ai_messages(question_payload_str, force_text_only=False):
     """构造 AI 请求消息。若题目含图片，则使用多模态消息格式(content 数组)"""
     info = parse_question_payload(question_payload_str)
-    images = info.get("images") or []
+    images = [] if force_text_only else (info.get("images") or [])
     system_prompt = (
         "你是答题助手，只输出最终答案，禁止输出任何解释、分析、思考过程或中间步骤。\n"
         "规则：\n"
@@ -2301,9 +2307,9 @@ def build_ai_messages(question_payload_str):
     ]
     return messages
 
-def call_provider_chat(question, model_name, provider_info, time_budget=None):
+def call_provider_chat(question, model_name, provider_info, time_budget=None, force_text_only=False):
     # 将题目JSON格式化为消息（含多模态图片支持）
-    messages = build_ai_messages(question)
+    messages = build_ai_messages(question, force_text_only=force_text_only)
     api_key = provider_info.get("api_key", "")
     base_url = provider_info.get("base_url", "")
     protocol = provider_info.get("protocol", "openai")
@@ -2473,6 +2479,9 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
                 if "HTTP 404" in err or "model is not found" in err.lower() or "模型" in err and "不存在" in err:
                     MODEL_FAIL_COOLDOWN[model_name] = time.time() + MODEL_FAIL_COOLDOWN_SECONDS
                     print(f"[自动模型] 模型不可用，进入冷却 {MODEL_FAIL_COOLDOWN_SECONDS}s: {model_name}，原因：{err}", flush=True)
+                if "not support image" in err.lower() or "does not support image" in err.lower():
+                    MODEL_NON_VISION.add(model_name)
+                    print(f"[自动模型] 模型 {model_name} 不支持图片，已标记为非视觉模型", flush=True)
             errors.append(f"{model_name}: {err}")
             # 超时类错误：上游慢/网络抖动，切换下一个模型前退避等待，避免连续打击同一网络
             if "timed out" in err.lower() or "timeout" in err.lower():
@@ -2484,7 +2493,62 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
         enqueue_ai_log(item)
 
     if final_model:
+        enqueue_ai_log({
+            "provider_key": provider_name or "",
+            "username": username,
+            "model": final_model,
+            "question": question,
+            "answer": answer,
+            "status": "success",
+            "error": "",
+            "duration_ms": 0,
+            "client_ip": client_ip,
+            "final_model": final_model
+        })
         return answer, None, final_model, provider_name
+
+    # 图片题所有视觉模型都失败：回退到纯文本模式，用非视觉模型尝试（去掉图片只发文字）
+    if need_vision:
+        text_candidates = get_enabled_model_candidates(need_vision=False, prefer_non_vision=True)
+        if text_candidates:
+            active_txt = [item for item in text_candidates if item[2] not in MODEL_NON_VISION]
+            if active_txt:
+                ordered_txt = provider_round_robin_rest(weighted_pick(active_txt))
+                print(f"[自动模型] 视觉模型全部失败，回退纯文本模式尝试 {len(ordered_txt)} 个模型", flush=True)
+                for pname_txt, pinfo_txt, mname_txt, w_txt in ordered_txt:
+                    remaining = max(deadline - time.time(), 0)
+                    if remaining <= 5:
+                        break
+                    try:
+                        answer, err, tokens = call_provider_chat(question, mname_txt, pinfo_txt,
+                                                                  time_budget=min(MAX_MODEL_BUDGET, remaining),
+                                                                  force_text_only=True)
+                    except Exception as e:
+                        err = str(e)
+                        answer = None
+                    if answer:
+                        record_model_token_usage(mname_txt, tokens)
+                        final_model = mname_txt
+                        provider_name = pname_txt
+                        break
+                    elif err:
+                        errors.append(f"{mname_txt}(纯文本): {err}")
+                if final_model:
+                    for item in error_logs:
+                        item["final_model"] = final_model
+                    enqueue_ai_log({
+                        "provider_key": provider_name or "",
+                        "username": username,
+                        "model": final_model,
+                        "question": question,
+                        "answer": answer,
+                        "status": "success",
+                        "error": "",
+                        "duration_ms": 0,
+                        "client_ip": client_ip,
+                        "final_model": final_model
+                    })
+                    return answer, None, final_model, provider_name
 
     # 所有模型都失败
     last = ordered[-1] if ordered else (None, None, "", "")
@@ -2503,7 +2567,16 @@ def ask_ai_custom(question, custom_cfg):
         return None, "自有模型未配置 API Key"
     if not provider_info["base_url"]:
         return None, "自有模型未配置 Base URL"
-    answer, err, _tokens = call_provider_chat(question, model_name, provider_info)
+    # 已知不支持图片的自有模型直接走纯文本，避免每次图片题都先白调一次 400
+    force_text = model_name in MODEL_NON_VISION
+    answer, err, _tokens = call_provider_chat(question, model_name, provider_info, force_text_only=force_text)
+    if not answer and err and ("not support image" in err.lower() or "does not support image" in err.lower()):
+        # 自有模型不支持图片：降级为纯文本模式重试（剥离图片，仅发送题面/选项文字）
+        MODEL_NON_VISION.add(model_name)
+        print(f"[自有模型] {model_name} 不支持图片，降级纯文本模式重试", flush=True)
+        answer, err, _tokens = call_provider_chat(question, model_name, provider_info, force_text_only=True)
+        if not answer and err:
+            err = f"{err}（提示：自有模型 {model_name} 不支持图片，已自动降级纯文本作答；图片题建议换用支持图片的多模态模型）"
     return answer, err
 
 def ask_ai(question, model_name):
@@ -2557,7 +2630,7 @@ def call_llm_lightweight(messages, model, provider_info, timeout=15):
         req = urllib.request.Request(
             f"{base_url.rstrip('/')}/chat/completions",
             data=data,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"},
             method="POST"
         )
         try:
@@ -3040,7 +3113,7 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
             ELSE NULL END) AS active,
           COUNT(*) AS calls,
           SUM(CASE WHEN status='success' THEN 1 ELSE 0 END) AS success,
-          SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) AS error,
+          SUM(CASE WHEN status='error' AND COALESCE(final_model,'')='' THEN 1 ELSE 0 END) AS error,
           SUM(CASE WHEN status='success' AND provider_key='question_bank' THEN 1 ELSE 0 END) AS bank_hits
         FROM ai_call_logs
         WHERE created_at >= {ph} AND created_at < {ph}
@@ -3050,7 +3123,7 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
         SELECT DATE(created_at) AS day,
                COUNT(*) AS total,
                SUM(CASE WHEN status='success' THEN 1 ELSE 0 END) AS success,
-               SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) AS error
+               SUM(CASE WHEN status='error' AND COALESCE(final_model,'')='' THEN 1 ELSE 0 END) AS error
         FROM ai_call_logs
         WHERE created_at >= %s AND created_at < %s
         GROUP BY DATE(created_at)
@@ -3949,8 +4022,9 @@ class Handler(BaseHTTPRequestHandler):
                 keyword = qs.get("keyword", [""])[0]
                 date_from = qs.get("date_from", [""])[0]
                 date_to = qs.get("date_to", [""])[0]
-                logs = db.get_ai_call_logs(limit=limit, status=status, model=model, keyword=keyword, date_from=date_from, date_to=date_to, page=page)
-                total = db.count_ai_call_logs(status=status, model=model, keyword=keyword, date_from=date_from, date_to=date_to)
+                source = qs.get("source", [""])[0]
+                logs = db.get_ai_call_logs(limit=limit, status=status, model=model, keyword=keyword, date_from=date_from, date_to=date_to, page=page, source=source)
+                total = db.count_ai_call_logs(status=status, model=model, keyword=keyword, date_from=date_from, date_to=date_to, source=source)
                 self._send_json(200, {"code": 200, "logs": logs, "total": total, "page": int(page or 1), "limit": int(limit or 100)})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -4151,6 +4225,28 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
             self._send_json(200, {"code": 200, "stats": db.referral_stats()})
+
+        elif path == "/admin/referral/details":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            qs = parse_qs(parsed.query)
+            username = qs.get("username", [""])[0]
+            if not username:
+                self._send_json(400, {"code": 400, "msg": "缺少 username 参数"})
+                return
+            details = db.get_referral_details(username)
+            self._send_json(200, {"code": 200, "details": details, "username": username})
+
+        elif path == "/admin/referral/referrers":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            qs = parse_qs(parsed.query)
+            page = int(qs.get("page", ["1"])[0] or "1")
+            per_page = int(qs.get("per_page", ["20"])[0] or "20")
+            data = db.get_all_referrers(page=page, per_page=per_page)
+            self._send_json(200, {"code": 200, "data": data})
 
         # ==================== 支付明细管理 ====================
         elif path == "/admin/payment-orders":
@@ -4692,6 +4788,30 @@ class Handler(BaseHTTPRequestHandler):
                 if not ok:
                     self._send_json(400, {"code": 400, "msg": msg})
                     return
+                # 邮件通知管理员
+                try:
+                    order = db.get_order(order_no)
+                    plan_name = (order or {}).get("plan_name") or ""
+                    price = str((order or {}).get("price") or "0")
+                    admin_cfg = db.get_admin_config() or {}
+                    admin_email = (admin_cfg.get("admin_email") or "").strip()
+                    if admin_email:
+                        threading.Thread(target=send_email, args=(
+                            admin_email,
+                            f"新退款申请 - {order_no}",
+                        ), kwargs={
+                            "scene": "refund_request",
+                            "variables": {
+                                "username": username,
+                                "order_no": order_no,
+                                "plan_name": plan_name,
+                                "price": price,
+                                "reason": reason or "用户未填写",
+                                "subject": f"新退款申请 - {order_no}"
+                            }
+                        }, daemon=True).start()
+                except Exception as e:
+                    print(f"[退款申请] 管理员邮件通知失败: {e}", flush=True)
                 self._send_json(200, {"code": 200, "msg": msg})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -5435,6 +5555,27 @@ class Handler(BaseHTTPRequestHandler):
                 admin_cfg = db.get_admin_config() or {}
                 operator = admin_cfg.get("username") or "admin"
                 ok, msg = db.refund_order(order_no, reason=reason, operator=operator)
+                if ok:
+                    order = db.get_order(order_no)
+                    user_row = db.fetchone("SELECT email, username FROM users WHERE username = %s", (order["username"],)) if order else None
+                    if user_row and user_row.get("email"):
+                        plan_name = (order or {}).get("plan_name") or ""
+                        price = str((order or {}).get("price") or "0")
+                        threading.Thread(target=send_email, args=(
+                            user_row["email"],
+                            f"退款通知 - {order_no}",
+                        ), kwargs={
+                            "scene": "refund_approved",
+                            "variables": {
+                                "username": user_row["username"],
+                                "order_no": order_no,
+                                "plan_name": plan_name,
+                                "price": price,
+                                "reason": reason or "管理员退款",
+                                "note": "管理员直接退款",
+                                "subject": f"退款通知 - {order_no}"
+                            }
+                        }, daemon=True).start()
                 self._send_json(200 if ok else 400, {"code": 200 if ok else 400, "msg": msg})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -5663,6 +5804,22 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 db.set_payment_plan_enabled(plan_id, enabled)
                 self._send_json(200, {"code": 200, "msg": "套餐已" + ("启用" if enabled else "停用"), "plans": db.list_payment_plans(False)})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/payment-plan/reorder":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                plan_id = int(data.get("id") or 0)
+                direction = data.get("direction", "")
+                if not plan_id or direction not in ("up", "down"):
+                    self._send_json(400, {"code": 400, "msg": "参数无效"})
+                    return
+                db.reorder_payment_plan(plan_id, direction)
+                self._send_json(200, {"code": 200, "msg": "排序已更新", "plans": db.list_payment_plans(False)})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -6074,7 +6231,7 @@ class Handler(BaseHTTPRequestHandler):
             content_type = (data.get("content_type") or "text").strip()
             variables = (data.get("variables") or "").strip()
             is_resend = 1 if data.get("is_resend") else 0
-            if not scene or scene not in ("user_register", "user_reset", "admin_reset", "referral_withdrawal", "feedback_reply", "daily_report", "feedback_new"):
+            if not scene or scene not in ("user_register", "user_reset", "admin_reset", "referral_withdrawal", "feedback_reply", "daily_report", "feedback_new", "refund_approved", "refund_rejected", "refund_request"):
                 self._send_json(400, {"code": 400, "msg": "请选择有效的应用场景"})
                 return
             if not subject:
@@ -6199,7 +6356,8 @@ class Handler(BaseHTTPRequestHandler):
                     model=data.get("model", ""),
                     keyword=data.get("keyword", ""),
                     date_from=data.get("date_from", ""),
-                    date_to=data.get("date_to", "")
+                    date_to=data.get("date_to", ""),
+                    source=data.get("source", "")
                 )
                 self._send_json(200, {"code": 200, "msg": "清空成功"})
             except Exception as e:
@@ -6572,6 +6730,7 @@ class Handler(BaseHTTPRequestHandler):
                         "provider_key": provider_name or "",
                         "username": user.get("username", "") if user else "",
                         "model": resolved_model or model,
+                        "final_model": resolved_model or "",
                         "question": question,
                         "answer": answer or "",
                         "status": status,

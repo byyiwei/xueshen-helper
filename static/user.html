@@ -682,7 +682,7 @@
         .plan-benefits { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; position: relative; z-index: 1; }
         .plan-benefits .benefit { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 999px; background: rgba(255, 255, 255, .14); border: 1px solid rgba(255, 255, 255, .2); font-size: 12px; font-weight: 600; }
         .plan-benefits .benefit .bi { color: #6ee7b7; font-size: 14px; }
-        .plan-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+        .plan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 16px; margin-top: 16px; max-height: 680px; overflow-y: auto; padding-right: 4px; }
         .plan-card { position: relative; overflow: hidden; border: 1px solid var(--v-border); border-radius: var(--v-radius); padding: 22px 20px; background: linear-gradient(180deg, rgba(18, 26, 44, .7), rgba(13, 19, 33, .6)); box-shadow: var(--v-shadow); -webkit-backdrop-filter: blur(14px); transition: transform .25s, box-shadow .25s, border-color .25s; }
         .plan-card:hover { transform: translateY(-6px); border-color: rgba(16, 185, 129, .5); box-shadow: 0 18px 44px rgba(16, 185, 129, .25); }
         .plan-card.monthly { background: linear-gradient(180deg, rgba(6, 182, 212, .16), rgba(8, 47, 73, .5)); border-color: rgba(6, 182, 212, .35); }
@@ -696,6 +696,8 @@
         .plan-price { font-size: 38px; font-weight: 700; color: var(--v-primary-light); margin: 10px 0; position: relative; z-index: 1; text-shadow: 0 0 24px rgba(16, 185, 129, .4); }
         .plan-price small { font-size: 13px; color: var(--v-muted); font-weight: 600; }
         .plan-card.monthly .plan-price { color: #22d3ee; text-shadow: 0 0 24px rgba(6, 182, 212, .4); }
+        .plan-unit-price { display: inline-block; padding: 3px 10px; border-radius: 8px; background: rgba(16, 185, 129, .12); color: var(--v-primary-light); font-size: 12px; font-weight: 600; position: relative; z-index: 1; margin-bottom: 4px; }
+        .plan-card.monthly .plan-unit-price { background: rgba(6, 182, 212, .12); color: #22d3ee; }
         .plan-meta { color: var(--v-text-2); font-size: 13px; line-height: 1.7; min-height: 44px; position: relative; z-index: 1; }
         .plan-features { list-style: none; padding: 0; margin: 12px 0 0; position: relative; z-index: 1; }
         .plan-features li { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--v-text-2); margin-bottom: 7px; line-height: 1.5; }
@@ -2106,28 +2108,39 @@
                 const plans = data.plans || [];
                 $('planGrid').innerHTML = plans.length ? plans.map(p => {
                     const isMonthly = p.plan_type === 'monthly';
-                    const features = isMonthly ? [
-                        '有效期内不限题数，畅刷无忧',
-                        'AI 智能答题 + 海量题库',
-                        '视频音频自动倍速完成',
-                        '作业考试自动答题提交',
-                        '题数余额永久保留不扣减'
-                    ] : [
-                        '购买后实时到账，立即使用',
-                        'AI 智能答题 + 海量题库',
-                        '包月期间不消耗题数',
-                        '永久有效，用完为止',
-                        '支持所有题型自动解答'
-                    ];
+                    const price = Number(p.price || 0);
+                    const days = Number(p.days || 30);
+                    const points = Number(p.points || 0);
+                    let unitPrice = '';
+                    let features;
+                    if (isMonthly) {
+                        unitPrice = price > 0 && days > 0 ? `￥${(price / days).toFixed(2)}/天` : '';
+                        features = [
+                            `包月${days}天 · 有效期内不限题数畅刷`,
+                            'AI 智能答题 + 海量题库',
+                            '购买后实时到账，立即使用',
+                            '支持所有题型自动解答'
+                        ];
+                    } else {
+                        unitPrice = price > 0 && points > 0 ? `￥${(price / points).toFixed(4)}/题` : '';
+                        features = [
+                            `${points}题 · 永久有效，用完为止`,
+                            'AI 智能答题 + 海量题库',
+                            '购买后实时到账，立即使用',
+                            '支持所有题型自动解答'
+                        ];
+                    }
                     const featHtml = features.map(f => `<li><span class="fi">✓</span>${f}</li>`).join('');
+                    const unitHtml = unitPrice ? `<div class="plan-unit-price">${unitPrice}</div>` : '';
                     return `
                     <div class="plan-card ${isMonthly ? 'monthly' : 'points'}">
                         ${isMonthly ? '<span class="plan-tag">推荐</span>' : ''}
                         <span class="plan-badge">${isMonthly ? '包月畅答' : '题数加油包'}</span>
                         <b>${p.name}</b>
-                        <div class="plan-price">￥${p.price || 0}<small> / ${isMonthly ? (p.days || 30) + '天' : (p.points || 0) + '题'}</small></div>
+                        <div class="plan-price">￥${price}<small> / ${isMonthly ? days + '天' : points + '题'}</small></div>
+                        ${unitHtml}
                         <ul class="plan-features">${featHtml}</ul>
-                        <button class="primary" data-buy-plan="${p.id}" data-plan-price="${p.price || 0}">${isMonthly ? '立即开通包月' : '立即购买题数'}</button>
+                        <button class="primary" data-buy-plan="${p.id}" data-plan-price="${price}">${isMonthly ? '立即开通包月' : '立即购买题数'}</button>
                     </div>`;
                 }).join('') : '<p class="hint">暂无可购买套餐，请联系管理员配置。</p>';
                 document.querySelectorAll('[data-buy-plan]').forEach(btn => btn.onclick = () => buyPlan(btn.dataset.buyPlan, btn, Number(btn.dataset.planPrice || 0)));

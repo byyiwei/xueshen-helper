@@ -931,6 +931,27 @@ class Database:
                 "body_text": "━━━━━━━━━━━━━━━━━━━━\n    学神助手 · 每日运营数据日报\n━━━━━━━━━━━━━━━━━━━━\n\n统计日期：{{date}}\n\n【注册情况】\n    新增注册用户：{{reg_count}} 人\n\n【收入情况】\n    支付订单数：{{order_count}} 笔\n    总收入：{{revenue_total}} 元\n    ├─ 月度会员：{{monthly_count}} 笔 / {{monthly_revenue}} 元\n    └─ 积分套餐：{{points_count}} 笔 / {{points_revenue}} 元\n\n━━━━━━━━━━━━━━━━━━━━\n本邮件由系统定时发送。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━",
                 "body_html": '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}.card{animation:fadeInUp .6s ease-out}.metric{background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px}</style></head><body style="margin:0;padding:0;background:#eef2f7;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:40px 20px;"><table class="card" width="520" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#6366f1,#4f46e5);padding:28px 32px;text-align:center;"><div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:1px;">学神助手</div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">{{subject}}</div></td></tr><tr><td style="padding:28px 32px;"><p style="margin:0 0 20px;color:#6b7280;font-size:14px;">统计日期：<b style="color:#1f2937">{{date}}</b></p><h3 style="margin:0 0 12px;color:#4f46e5;font-size:15px;">注册情况</h3><div class="metric" style="margin:0 0 22px;"><p style="margin:0;color:#6b7280;font-size:13px;">新增注册用户</p><p style="margin:4px 0 0;color:#1f2937;font-size:26px;font-weight:700;">{{reg_count}} <span style="font-size:14px;font-weight:400;color:#6b7280;">人</span></p></div><h3 style="margin:0 0 12px;color:#4f46e5;font-size:15px;">收入情况</h3><div class="metric" style="margin:0 0 14px;"><p style="margin:0;color:#6b7280;font-size:13px;">支付订单数 / 总收入</p><p style="margin:4px 0 0;color:#1f2937;font-size:18px;font-weight:700;">{{order_count}} 笔 · ¥{{revenue_total}}</p></div><table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;border-collapse:collapse;"><tr><td class="metric" style="width:50%;border-radius:12px 0 0 12px;"><p style="margin:0;color:#6b7280;font-size:12px;">月度会员</p><p style="margin:4px 0 0;color:#1f2937;font-size:15px;font-weight:600;">{{monthly_count}} 笔</p><p style="margin:2px 0 0;color:#16a34a;font-size:14px;">¥{{monthly_revenue}}</p></td><td class="metric" style="width:50%;border-left:none;border-radius:0 12px 12px 0;"><p style="margin:0;color:#6b7280;font-size:12px;">积分套餐</p><p style="margin:4px 0 0;color:#1f2937;font-size:15px;font-weight:600;">{{points_count}} 笔</p><p style="margin:2px 0 0;color:#16a34a;font-size:14px;">¥{{points_revenue}}</p></td></tr></table></div><div style="border-top:1px solid #e5e7eb;padding:16px 32px;background:#fafafa;"><p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由系统定时发送。</p><p style="margin:6px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由 <b>{{from_addr}}</b> 发送</p></div></td></tr></table></td></tr></table></body></html>',
                 "variables": "date,reg_count,order_count,revenue_total,monthly_count,monthly_revenue,points_count,points_revenue,subject,from_addr"
+            },
+            {
+                "scene": "refund_approved",
+                "subject": "学神助手 - 退款已通过",
+                "body_text": "━━━━━━━━━━━━━━━━━━━━\n    学神助手 · {{subject}}\n━━━━━━━━━━━━━━━━━━━━\n\n尊敬的 {{username}}，您好！\n\n您的退款申请已通过，详细信息如下：\n\n    订单号：{{order_no}}\n    套餐：{{plan_name}}\n    金额：¥{{price}}\n    退款原因：{{reason}}\n    管理员备注：{{note}}\n\n退款将在1-3个工作日内到账。\n\n━━━━━━━━━━━━━━━━━━━━\n如有疑问请联系管理员。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━",
+                "body_html": '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}.card{animation:fadeInUp .6s ease-out}</style></head><body style="margin:0;padding:0;background:#fef2f2;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:40px 20px;"><table class="card" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#ef4444,#dc2626);padding:28px 32px;text-align:center;"><div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:1px;">学神助手</div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">{{subject}}</div></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 16px;color:#1f2937;font-size:15px;line-height:1.6;">尊敬的 <b>{{username}}</b>，您好！</p><p style="margin:0 0 20px;color:#4b5563;font-size:14px;line-height:1.6;">您的退款申请已通过，详细信息如下：</p><div style="background:#fef2f2;border-radius:12px;padding:20px;margin:0 0 20px;border:1px solid #fecaca;"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:14px;"><tr><td style="padding:4px 0;color:#6b7280;">订单号</td><td style="padding:4px 0;color:#1f2937;font-weight:600;text-align:right;">{{order_no}}</td></tr><tr><td style="padding:4px 0;color:#6b7280;">套餐</td><td style="padding:4px 0;color:#1f2937;text-align:right;">{{plan_name}}</td></tr><tr><td style="padding:4px 0;color:#6b7280;">金额</td><td style="padding:4px 0;color:#1f2937;font-weight:700;text-align:right;">¥{{price}}</td></tr><tr><td style="padding:4px 0;color:#6b7280;">退款原因</td><td style="padding:4px 0;color:#1f2937;text-align:right;">{{reason}}</td></tr><tr><td style="padding:4px 0;color:#6b7280;">管理员备注</td><td style="padding:4px 0;color:#1f2937;text-align:right;">{{note}}</td></tr></table></div><p style="margin:0 0 12px;color:#6b7280;font-size:13px;line-height:1.6;">退款将在1-3个工作日内到账。</p><div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:20px;"><p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">如有疑问请联系管理员。</p><p style="margin:8px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由 <b style="color:#6b7280;">{{from_addr}}</b> 发送</p></div></td></tr></table></td></tr></table></body></html>',
+                "variables": "username,order_no,plan_name,price,reason,note,subject,from_addr"
+            },
+            {
+                "scene": "refund_rejected",
+                "subject": "学神助手 - 退款申请已拒绝",
+                "body_text": "━━━━━━━━━━━━━━━━━━━━\n    学神助手 · {{subject}}\n━━━━━━━━━━━━━━━━━━━━\n\n尊敬的 {{username}}，您好！\n\n您的退款申请已被拒绝，详细信息如下：\n\n    订单号：{{order_no}}\n    套餐：{{plan_name}}\n    金额：¥{{price}}\n    退款原因：{{reason}}\n    管理员备注：{{note}}\n\n━━━━━━━━━━━━━━━━━━━━\n如有疑问请联系管理员。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━",
+                "body_html": '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}.card{animation:fadeInUp .6s ease-out}</style></head><body style="margin:0;padding:0;background:#fffbeb;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:40px 20px;"><table class="card" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#f59e0b,#d97706);padding:28px 32px;text-align:center;"><div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:1px;">学神助手</div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">{{subject}}</div></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 16px;color:#1f2937;font-size:15px;line-height:1.6;">尊敬的 <b>{{username}}</b>，您好！</p><p style="margin:0 0 20px;color:#4b5563;font-size:14px;line-height:1.6;">您的退款申请已被拒绝，详细信息如下：</p><div style="background:#fffbeb;border-radius:12px;padding:20px;margin:0 0 20px;border:1px solid #fde68a;"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:14px;"><tr><td style="padding:4px 0;color:#6b7280;">订单号</td><td style="padding:4px 0;color:#1f2937;font-weight:600;text-align:right;">{{order_no}}</td></tr><tr><td style="padding:4px 0;color:#6b7280;">套餐</td><td style="padding:4px 0;color:#1f2937;text-align:right;">{{plan_name}}</td></tr><tr><td style="padding:4px 0;color:#6b7280;">金额</td><td style="padding:4px 0;color:#1f2937;font-weight:700;text-align:right;">¥{{price}}</td></tr><tr><td style="padding:4px 0;color:#6b7280;">退款原因</td><td style="padding:4px 0;color:#1f2937;text-align:right;">{{reason}}</td></tr><tr><td style="padding:4px 0;color:#6b7280;">管理员备注</td><td style="padding:4px 0;color:#1f2937;text-align:right;">{{note}}</td></tr></table></div><div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:20px;"><p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">如有疑问请联系管理员。</p><p style="margin:8px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由 <b style="color:#6b7280;">{{from_addr}}</b> 发送</p></div></td></tr></table></td></tr></table></body></html>',
+                "variables": "username,order_no,plan_name,price,reason,note,subject,from_addr"
+            },
+            {
+                "scene": "refund_request",
+                "subject": "学神助手 - 新退款申请通知",
+                "body_text": "━━━━━━━━━━━━━━━━━━━━\n    学神助手 · 新退款申请通知\n━━━━━━━━━━━━━━━━━━━━\n\n管理员您好！\n\n收到一条新的用户退款申请：\n\n    用户：{{username}}\n    订单号：{{order_no}}\n    套餐：{{plan_name}}\n    金额：¥{{price}}\n    退款原因：{{reason}}\n\n━━━━━━━━━━━━━━━━━━━━\n请及时登录管理后台审核处理。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━",
+                "body_html": '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}.card{animation:fadeInUp .6s ease-out}</style></head><body style="margin:0;padding:0;background:#fef2f2;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:40px 20px;"><table class="card" width="480" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#ef4444,#dc2626);padding:28px 32px;text-align:center;"><div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:1px;">学神助手</div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">新退款申请通知</div></td></tr><tr><td style="padding:32px;"><p style="margin:0 0 16px;color:#1f2937;font-size:15px;line-height:1.6;">管理员您好！</p><p style="margin:0 0 20px;color:#4b5563;font-size:14px;line-height:1.6;">收到一条新的用户退款申请：</p><div style="background:#fef2f2;border-radius:12px;padding:20px;margin:0 0 20px;border:1px solid #fecaca;"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size:14px;"><tr><td style="padding:4px 0;color:#6b7280;">用户</td><td style="padding:4px 0;color:#1f2937;font-weight:600;text-align:right;">{{username}}</td></tr><tr><td style="padding:4px 0;color:#6b7280;">订单号</td><td style="padding:4px 0;color:#1f2937;font-weight:600;text-align:right;">{{order_no}}</td></tr><tr><td style="padding:4px 0;color:#6b7280;">套餐</td><td style="padding:4px 0;color:#1f2937;text-align:right;">{{plan_name}}</td></tr><tr><td style="padding:4px 0;color:#6b7280;">金额</td><td style="padding:4px 0;color:#1f2937;font-weight:700;text-align:right;">¥{{price}}</td></tr><tr><td style="padding:4px 0;color:#6b7280;">退款原因</td><td style="padding:4px 0;color:#1f2937;text-align:right;">{{reason}}</td></tr></table></div><div style="border-top:1px solid #e5e7eb;padding-top:16px;margin-top:20px;"><p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">请及时登录管理后台审核处理。</p><p style="margin:8px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由 <b style="color:#6b7280;">{{from_addr}}</b> 发送</p></div></td></tr></table></td></tr></table></body></html>',
+                "variables": "username,order_no,plan_name,price,reason,subject,from_addr"
             }
         ]
         for d in defaults:
@@ -1281,6 +1302,24 @@ class Database:
     def set_payment_plan_enabled(self, plan_id, enabled):
         ph = _ph()
         self.execute(f"UPDATE payment_plans SET enabled = {ph} WHERE id = {ph}", (1 if enabled else 0, int(plan_id)))
+
+    def reorder_payment_plan(self, plan_id, direction):
+        ph = _ph()
+        plans = self.fetchall("SELECT id, sort_order FROM payment_plans ORDER BY sort_order ASC, id ASC")
+        if len(plans) < 2:
+            return
+        idx = next((i for i, p in enumerate(plans) if int(p["id"]) == int(plan_id)), -1)
+        if idx < 0:
+            return
+        swap_idx = idx - 1 if direction == "up" else idx + 1
+        if swap_idx < 0 or swap_idx >= len(plans):
+            return
+        cur = int(plans[idx]["sort_order"] or 0)
+        nxt = int(plans[swap_idx]["sort_order"] or 0)
+        if cur == nxt:
+            nxt = cur + (1 if direction == "down" else -1)
+        self.execute(f"UPDATE payment_plans SET sort_order = {ph} WHERE id = {ph}", (nxt, int(plans[idx]["id"])))
+        self.execute(f"UPDATE payment_plans SET sort_order = {ph} WHERE id = {ph}", (cur, int(plans[swap_idx]["id"])))
 
     def create_paid_order_and_apply(self, username, plan):
         ph = _ph()
@@ -2360,7 +2399,7 @@ class Database:
         )
         return rows
 
-    def _build_ai_log_where(self, status="", model="", keyword="", date_from="", date_to=""):
+    def _build_ai_log_where(self, status="", model="", keyword="", date_from="", date_to="", source=""):
         ph = _ph()
         where = []
         params = []
@@ -2370,6 +2409,14 @@ class Database:
         if model:
             where.append(f"model = {ph}")
             params.append(model)
+        if source == "custom":
+            # 用户自有模型（provider_key='custom'）
+            where.append(f"provider_key = {ph}")
+            params.append("custom")
+        elif source == "platform":
+            # 后台配置的平台模型
+            where.append(f"(provider_key IS NULL OR provider_key <> {ph})")
+            params.append("custom")
         if keyword:
             like = f"%{keyword}%"
             where.append(f"(question LIKE {ph} OR answer LIKE {ph} OR error LIKE {ph})")
@@ -2382,7 +2429,7 @@ class Database:
             params.append(date_to)
         return where, params
 
-    def get_ai_call_logs(self, limit=100, status="", model="", keyword="", date_from="", date_to="", page=1):
+    def get_ai_call_logs(self, limit=100, status="", model="", keyword="", date_from="", date_to="", page=1, source=""):
         ph = _ph()
         try:
             limit = int(limit)
@@ -2395,7 +2442,7 @@ class Database:
         limit = max(1, min(limit, 200))
         page = max(1, page)
         offset = (page - 1) * limit
-        where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to)
+        where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to, source)
         sql = "SELECT id, provider_key, username, model, final_model, question, answer, status, error, duration_ms, client_ip, created_at FROM ai_call_logs"
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -2404,8 +2451,8 @@ class Database:
         params.extend([limit, offset])
         return self.fetchall(sql, tuple(params))
 
-    def count_ai_call_logs(self, status="", model="", keyword="", date_from="", date_to=""):
-        where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to)
+    def count_ai_call_logs(self, status="", model="", keyword="", date_from="", date_to="", source=""):
+        where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to, source)
         sql = "SELECT COUNT(*) AS total FROM ai_call_logs"
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -2424,8 +2471,8 @@ class Database:
             print(f"[QQ机器人日志] 查询失败: {e}", flush=True)
             return []
 
-    def clear_ai_call_logs(self, status="", model="", keyword="", date_from="", date_to=""):
-        where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to)
+    def clear_ai_call_logs(self, status="", model="", keyword="", date_from="", date_to="", source=""):
+        where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to, source)
         sql = "DELETE FROM ai_call_logs"
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -3423,14 +3470,14 @@ class Database:
         """管理员统计：top10 邀请人 + 总佣金 + 提现统计"""
         top10 = self.fetchall(
             "SELECT r.inviter_username AS username, COUNT(*) AS invited_count, "
-            "COALESCE(SUM(c.commission_amount),0) AS total_commission "
+            "COALESCE(SUM(CASE WHEN c.status != 'refunded' THEN c.commission_amount ELSE 0 END),0) AS total_commission "
             "FROM referrals r LEFT JOIN commission_logs c ON r.inviter_username = c.inviter "
             "GROUP BY r.inviter_username ORDER BY invited_count DESC LIMIT 10"
         )
         for r in (top10 or []):
             r["invited_count"] = int(r.get("invited_count") or 0)
             r["total_commission"] = float(r.get("total_commission") or 0)
-        total = self.fetchone("SELECT COALESCE(SUM(commission_amount),0) AS total, COUNT(*) AS cnt FROM commission_logs") or {}
+        total = self.fetchone("SELECT COALESCE(SUM(CASE WHEN status != 'refunded' THEN commission_amount ELSE 0 END),0) AS total, COUNT(*) AS cnt FROM commission_logs WHERE status != 'refunded'") or {}
         # 提现统计
         wd_approved = self.fetchone("SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt FROM withdrawals WHERE status='approved'") or {}
         wd_pending = self.fetchone("SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt FROM withdrawals WHERE status='pending'") or {}
@@ -3459,6 +3506,69 @@ class Database:
             "pending_total": float(pending.get("total") or 0),
             "pending_count": int(pending.get("cnt") or 0)
         }
+
+    def get_referral_details(self, inviter_username, limit=200):
+        """查看某个推广人邀请的所有用户明细，含充值金额和佣金"""
+        ph = _ph()
+        rows = self.fetchall(
+            f"""SELECT r.invitee_username, r.created_at AS referred_at,
+                       COALESCE(po.total_paid, 0) AS total_recharge,
+                       COALESCE(cl.commission_amount, 0) AS commission_amount,
+                       cl.status AS commission_status, cl.order_no, cl.order_amount
+                FROM referrals r
+                LEFT JOIN (
+                    SELECT username, SUM(price) AS total_paid
+                    FROM payment_orders WHERE status = 'paid'
+                    GROUP BY username
+                ) po ON po.username = r.invitee_username
+                LEFT JOIN commission_logs cl ON cl.invitee = r.invitee_username AND cl.inviter = r.inviter_username
+                WHERE r.inviter_username = {ph}
+                ORDER BY r.created_at DESC
+                LIMIT {ph}""",
+            (inviter_username, limit)
+        )
+        result = []
+        for row in (rows or []):
+            result.append({
+                "invitee": row.get("invitee_username", ""),
+                "referred_at": str(row.get("referred_at") or ""),
+                "total_recharge": float(row.get("total_recharge") or 0),
+                "commission_amount": float(row.get("commission_amount") or 0),
+                "commission_status": row.get("commission_status") or "",
+                "order_no": row.get("order_no") or "",
+                "order_amount": float(row.get("order_amount") or 0)
+            })
+        return result
+
+    def get_all_referrers(self, page=1, per_page=20):
+        """分页获取所有推广人及其推广统计"""
+        ph = _ph()
+        offset = (max(1, page) - 1) * per_page
+        rows = self.fetchall(
+            f"""SELECT r.inviter_username AS username,
+                       COUNT(*) AS invited_count,
+                       COALESCE(SUM(CASE WHEN c.status != 'refunded' THEN c.commission_amount ELSE 0 END), 0) AS total_commission,
+                       COALESCE(SUM(CASE WHEN c.status = 'paid' THEN c.commission_amount ELSE 0 END), 0) AS paid_commission,
+                       COALESCE(SUM(CASE WHEN c.status = 'pending' THEN c.commission_amount ELSE 0 END), 0) AS pending_commission
+                FROM referrals r
+                LEFT JOIN commission_logs c ON c.inviter = r.inviter_username
+                GROUP BY r.inviter_username
+                ORDER BY invited_count DESC
+                LIMIT {ph} OFFSET {ph}""",
+            (per_page, offset)
+        )
+        total_row = self.fetchone("SELECT COUNT(DISTINCT inviter_username) AS cnt FROM referrals") or {}
+        total = int(total_row.get("cnt") or 0)
+        result = []
+        for row in (rows or []):
+            result.append({
+                "username": row.get("username", ""),
+                "invited_count": int(row.get("invited_count") or 0),
+                "total_commission": float(row.get("total_commission") or 0),
+                "paid_commission": float(row.get("paid_commission") or 0),
+                "pending_commission": float(row.get("pending_commission") or 0)
+            })
+        return {"list": result, "total": total, "page": page, "per_page": per_page}
 
 
 def hash_password(password):
