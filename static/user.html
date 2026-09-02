@@ -682,30 +682,34 @@
         .plan-benefits { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; position: relative; z-index: 1; }
         .plan-benefits .benefit { display: inline-flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: 999px; background: rgba(255, 255, 255, .14); border: 1px solid rgba(255, 255, 255, .2); font-size: 12px; font-weight: 600; }
         .plan-benefits .benefit .bi { color: #6ee7b7; font-size: 14px; }
-        .plan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 16px; margin-top: 16px; max-height: 680px; overflow-y: auto; padding-right: 4px; }
-        .plan-card { position: relative; overflow: hidden; border: 1px solid var(--v-border); border-radius: var(--v-radius); padding: 22px 20px; background: linear-gradient(180deg, rgba(18, 26, 44, .7), rgba(13, 19, 33, .6)); box-shadow: var(--v-shadow); -webkit-backdrop-filter: blur(14px); transition: transform .25s, box-shadow .25s, border-color .25s; }
-        .plan-card:hover { transform: translateY(-6px); border-color: rgba(16, 185, 129, .5); box-shadow: 0 18px 44px rgba(16, 185, 129, .25); }
+        .plan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-top: 12px; }
+        .plan-card { position: relative; overflow: hidden; border: 1px solid var(--v-border); border-radius: var(--v-radius); padding: 18px 16px; background: linear-gradient(180deg, rgba(18, 26, 44, .7), rgba(13, 19, 33, .6)); box-shadow: var(--v-shadow); -webkit-backdrop-filter: blur(14px); transition: transform .25s, box-shadow .25s, border-color .25s; }
+        .plan-card:hover { transform: translateY(-4px); border-color: rgba(16, 185, 129, .5); box-shadow: 0 14px 36px rgba(16, 185, 129, .22); }
         .plan-card.monthly { background: linear-gradient(180deg, rgba(6, 182, 212, .16), rgba(8, 47, 73, .5)); border-color: rgba(6, 182, 212, .35); }
-        .plan-card.monthly:hover { border-color: rgba(6, 182, 212, .6); box-shadow: 0 18px 44px rgba(6, 182, 212, .3); }
-        .plan-card::after { content: ''; position: absolute; right: -50px; top: -50px; width: 140px; height: 140px; border-radius: 50%; background: rgba(16, 185, 129, .14); opacity: .6; }
+        .plan-card.monthly:hover { border-color: rgba(6, 182, 212, .6); box-shadow: 0 14px 36px rgba(6, 182, 212, .28); }
+        .plan-card::after { content: ''; position: absolute; right: -50px; top: -50px; width: 120px; height: 120px; border-radius: 50%; background: rgba(16, 185, 129, .14); opacity: .6; }
         .plan-card.monthly::after { background: rgba(6, 182, 212, .16); }
-        .plan-badge { display: inline-flex; align-items: center; padding: 5px 12px; border-radius: 999px; background: var(--v-primary-soft); color: var(--v-primary-light); font-size: 12px; font-weight: 700; position: relative; z-index: 1; border: 1px solid rgba(16, 185, 129, .25); }
+        .plan-badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: var(--v-primary-soft); color: var(--v-primary-light); font-size: 11px; font-weight: 700; position: relative; z-index: 1; border: 1px solid rgba(16, 185, 129, .25); }
         .plan-card.monthly .plan-badge { background: linear-gradient(135deg, #06b6d4, #0891b2); color: #ecfeff; box-shadow: 0 4px 14px rgba(6, 182, 212, .35); border-color: transparent; }
-        .plan-card .plan-tag { position: absolute; top: 0; right: 0; padding: 4px 14px; background: linear-gradient(135deg, #f43f5e, #e11d48); color: #fff; font-size: 11px; font-weight: 800; border-radius: 0 var(--v-radius) 0 var(--v-radius-sm); z-index: 2; letter-spacing: 1px; }
-        .plan-card b { display: block; font-size: 19px; margin: 12px 0 4px; position: relative; z-index: 1; color: var(--v-text); }
-        .plan-price { font-size: 38px; font-weight: 700; color: var(--v-primary-light); margin: 10px 0; position: relative; z-index: 1; text-shadow: 0 0 24px rgba(16, 185, 129, .4); }
-        .plan-price small { font-size: 13px; color: var(--v-muted); font-weight: 600; }
+        .plan-card .plan-tag { position: absolute; top: 0; right: 0; padding: 4px 12px; background: linear-gradient(135deg, #f43f5e, #e11d48); color: #fff; font-size: 11px; font-weight: 800; border-radius: 0 var(--v-radius) 0 var(--v-radius-sm); z-index: 2; letter-spacing: 1px; }
+        .plan-card b { display: block; font-size: 17px; margin: 10px 0 2px; position: relative; z-index: 1; color: var(--v-text); }
+        .plan-price { font-size: 32px; font-weight: 700; color: var(--v-primary-light); margin: 8px 0; position: relative; z-index: 1; text-shadow: 0 0 24px rgba(16, 185, 129, .4); }
+        .plan-price small { font-size: 12px; color: var(--v-muted); font-weight: 600; }
         .plan-card.monthly .plan-price { color: #22d3ee; text-shadow: 0 0 24px rgba(6, 182, 212, .4); }
-        .plan-unit-price { display: inline-block; padding: 3px 10px; border-radius: 8px; background: rgba(16, 185, 129, .12); color: var(--v-primary-light); font-size: 12px; font-weight: 600; position: relative; z-index: 1; margin-bottom: 4px; }
+        .plan-unit-price { display: inline-block; padding: 2px 8px; border-radius: 6px; background: rgba(16, 185, 129, .12); color: var(--v-primary-light); font-size: 11px; font-weight: 600; position: relative; z-index: 1; margin-bottom: 2px; }
         .plan-card.monthly .plan-unit-price { background: rgba(6, 182, 212, .12); color: #22d3ee; }
-        .plan-meta { color: var(--v-text-2); font-size: 13px; line-height: 1.7; min-height: 44px; position: relative; z-index: 1; }
-        .plan-features { list-style: none; padding: 0; margin: 12px 0 0; position: relative; z-index: 1; }
-        .plan-features li { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--v-text-2); margin-bottom: 7px; line-height: 1.5; }
-        .plan-features li .fi { color: var(--v-primary-light); font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+        .plan-meta { color: var(--v-text-2); font-size: 12px; line-height: 1.6; min-height: 36px; position: relative; z-index: 1; }
+        .plan-features { list-style: none; padding: 0; margin: 10px 0 0; position: relative; z-index: 1; }
+        .plan-features li { display: flex; align-items: flex-start; gap: 6px; font-size: 12px; color: var(--v-text-2); margin-bottom: 5px; line-height: 1.4; }
+        .plan-features li .fi { color: var(--v-primary-light); font-size: 13px; flex-shrink: 0; margin-top: 1px; }
         .plan-card.monthly .plan-features li .fi { color: #22d3ee; }
-        .plan-card .primary { position: relative; z-index: 1; box-shadow: 0 8px 20px rgba(16, 185, 129, .3); margin-top: 14px; width: 100%; font-size: 15px; padding: 12px 0; font-weight: 700; }
-        .plan-card.monthly .primary { background: linear-gradient(135deg, #22d3ee, #0891b2); color: #042f2e; box-shadow: 0 8px 22px rgba(6, 182, 212, .4); }
+        .plan-card .primary { position: relative; z-index: 1; box-shadow: 0 6px 16px rgba(16, 185, 129, .3); margin-top: 12px; width: 100%; font-size: 14px; padding: 10px 0; font-weight: 700; }
+        .plan-card.monthly .primary { background: linear-gradient(135deg, #22d3ee, #0891b2); color: #042f2e; box-shadow: 0 6px 18px rgba(6, 182, 212, .4); }
         .plan-card.monthly .primary:hover { background: linear-gradient(135deg, #06b6d4, #0e7490); }
+        .plan-tabs { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+        .plan-tab { padding: 7px 18px; border-radius: 999px; border: 1px solid var(--v-border); background: rgba(10, 16, 28, .5); color: var(--v-text-2); font-size: 13px; font-weight: 600; cursor: pointer; transition: all .2s; }
+        .plan-tab:hover { border-color: rgba(16, 185, 129, .4); color: var(--v-primary-light); }
+        .plan-tab.active { background: var(--v-primary-soft); color: var(--v-primary-light); border-color: var(--v-primary); }
         .pay-methods { display: flex; gap: 12px; flex-wrap: wrap; margin: 16px 0 4px; }
         .pay-method-card { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border: 2px solid var(--v-border); border-radius: var(--v-radius-sm); background: rgba(10, 16, 28, .5); cursor: pointer; font-weight: 600; color: var(--v-text); font-size: 14px; transition: all .18s; user-select: none; }
         .pay-method-card:hover { border-color: rgba(16, 185, 129, .4); background: rgba(16, 185, 129, .08); }
@@ -1520,6 +1524,11 @@
                             </div>
                         </div>
                         <div id="payMethods" class="pay-methods"></div>
+                        <div class="plan-tabs" id="planTabs">
+                            <button class="plan-tab active" data-filter="all">全部</button>
+                            <button class="plan-tab" data-filter="monthly">包月套餐</button>
+                            <button class="plan-tab" data-filter="points">题数套餐</button>
+                        </div>
                         <div id="planGrid" class="plan-grid"></div>
                         <div id="ckSection" class="ck-activate-section" style="display:none;margin-top:16px">
                             <div class="ck-input-row">
@@ -2100,50 +2109,64 @@
                 }
             }catch(_){msg('billingMsg','激活失败，请检查网络',false);}
         }
+        let _allPlans = [];
+        let _planFilter = 'all';
+        function renderPlans() {
+            const plans = _allPlans.filter(p => _planFilter === 'all' || (_planFilter === 'monthly' ? p.plan_type === 'monthly' : p.plan_type !== 'monthly'));
+            $('planGrid').innerHTML = plans.length ? plans.map(p => {
+                const isMonthly = p.plan_type === 'monthly';
+                const price = Number(p.price || 0);
+                const days = Number(p.days || 30);
+                const points = Number(p.points || 0);
+                let unitPrice = '';
+                let features;
+                if (isMonthly) {
+                    unitPrice = price > 0 && days > 0 ? `￥${(price / days).toFixed(2)}/天` : '';
+                    features = [
+                        `包月${days}天 · 有效期内不限题数畅刷`,
+                        'AI 智能答题 + 海量题库',
+                        '购买后实时到账，立即使用',
+                        '支持所有题型自动解答'
+                    ];
+                } else {
+                    unitPrice = price > 0 && points > 0 ? `￥${(price / points).toFixed(4)}/题` : '';
+                    features = [
+                        `${points}题 · 永久有效，用完为止`,
+                        'AI 智能答题 + 海量题库',
+                        '购买后实时到账，立即使用',
+                        '支持所有题型自动解答'
+                    ];
+                }
+                const featHtml = features.map(f => `<li><span class="fi">✓</span>${f}</li>`).join('');
+                const unitHtml = unitPrice ? `<div class="plan-unit-price">${unitPrice}</div>` : '';
+                return `
+                <div class="plan-card ${isMonthly ? 'monthly' : 'points'}">
+                    ${isMonthly ? '<span class="plan-tag">推荐</span>' : ''}
+                    <span class="plan-badge">${isMonthly ? '包月畅答' : '题数加油包'}</span>
+                    <b>${p.name}</b>
+                    <div class="plan-price">￥${price}<small> / ${isMonthly ? days + '天' : points + '题'}</small></div>
+                    ${unitHtml}
+                    <ul class="plan-features">${featHtml}</ul>
+                    <button class="primary" data-buy-plan="${p.id}" data-plan-price="${price}">${isMonthly ? '立即开通包月' : '立即购买题数'}</button>
+                </div>`;
+            }).join('') : '<p class="hint">该分类下暂无套餐。</p>';
+            document.querySelectorAll('[data-buy-plan]').forEach(btn => btn.onclick = () => buyPlan(btn.dataset.buyPlan, btn, Number(btn.dataset.planPrice || 0)));
+        }
         async function loadPlans() {
             try {
                 await loadPaymentMethods();
                 const res = await fetch('/api/payment/plans');
                 const data = await res.json();
-                const plans = data.plans || [];
-                $('planGrid').innerHTML = plans.length ? plans.map(p => {
-                    const isMonthly = p.plan_type === 'monthly';
-                    const price = Number(p.price || 0);
-                    const days = Number(p.days || 30);
-                    const points = Number(p.points || 0);
-                    let unitPrice = '';
-                    let features;
-                    if (isMonthly) {
-                        unitPrice = price > 0 && days > 0 ? `￥${(price / days).toFixed(2)}/天` : '';
-                        features = [
-                            `包月${days}天 · 有效期内不限题数畅刷`,
-                            'AI 智能答题 + 海量题库',
-                            '购买后实时到账，立即使用',
-                            '支持所有题型自动解答'
-                        ];
-                    } else {
-                        unitPrice = price > 0 && points > 0 ? `￥${(price / points).toFixed(4)}/题` : '';
-                        features = [
-                            `${points}题 · 永久有效，用完为止`,
-                            'AI 智能答题 + 海量题库',
-                            '购买后实时到账，立即使用',
-                            '支持所有题型自动解答'
-                        ];
-                    }
-                    const featHtml = features.map(f => `<li><span class="fi">✓</span>${f}</li>`).join('');
-                    const unitHtml = unitPrice ? `<div class="plan-unit-price">${unitPrice}</div>` : '';
-                    return `
-                    <div class="plan-card ${isMonthly ? 'monthly' : 'points'}">
-                        ${isMonthly ? '<span class="plan-tag">推荐</span>' : ''}
-                        <span class="plan-badge">${isMonthly ? '包月畅答' : '题数加油包'}</span>
-                        <b>${p.name}</b>
-                        <div class="plan-price">￥${price}<small> / ${isMonthly ? days + '天' : points + '题'}</small></div>
-                        ${unitHtml}
-                        <ul class="plan-features">${featHtml}</ul>
-                        <button class="primary" data-buy-plan="${p.id}" data-plan-price="${price}">${isMonthly ? '立即开通包月' : '立即购买题数'}</button>
-                    </div>`;
-                }).join('') : '<p class="hint">暂无可购买套餐，请联系管理员配置。</p>';
-                document.querySelectorAll('[data-buy-plan]').forEach(btn => btn.onclick = () => buyPlan(btn.dataset.buyPlan, btn, Number(btn.dataset.planPrice || 0)));
+                _allPlans = data.plans || [];
+                renderPlans();
+                document.querySelectorAll('.plan-tab').forEach(tab => {
+                    tab.onclick = () => {
+                        _planFilter = tab.dataset.filter;
+                        document.querySelectorAll('.plan-tab').forEach(t => t.classList.remove('active'));
+                        tab.classList.add('active');
+                        renderPlans();
+                    };
+                });
                 $('ckActivateBtn').onclick = activateCardKey;
                 $('ckInput').onkeydown = e => { if(e.key==='Enter')activateCardKey(); };
             } catch (_) {
