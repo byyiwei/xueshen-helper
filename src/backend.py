@@ -4052,6 +4052,26 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {"code": 200, "stats": stats})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/old-user-recharge-details":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                date_from = qs.get("date_from", [""])[0]
+                date_to = qs.get("date_to", [""])[0]
+                page = int(qs.get("page", ["1"])[0] or 1)
+                page_size = int(qs.get("page_size", ["15"])[0] or 15)
+                result = db.get_old_user_recharge_details(
+                    date_from=date_from, date_to=date_to,
+                    page=page, page_size=page_size
+                )
+                for r in result["rows"]:
+                    r["price"] = float(r.get("price") or 0)
+                    r["created_at"] = str(r.get("created_at") or "")
+                self._send_json(200, {"code": 200, "data": result})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/api/script-logs/recent":
             try:
                 user = self._get_user_from_token()

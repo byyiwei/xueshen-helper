@@ -1397,11 +1397,67 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
               <div>启用：<b>{{qqBot.config&&qqBot.config.enabled?'是':'否'}}</b></div>
               <div v-if="qqBotStatus.started_at">启动于：<b>{{new Date(qqBotStatus.started_at*1000).toLocaleString()}}</b></div>
               <div v-if="qqBotStatus.last_message_at">最近消息：<b>{{new Date(qqBotStatus.last_message_at*1000).toLocaleString()}}</b></div>
+                </div>
+              </div>
             </div>
-            <div v-if="qqBotStatus.last_error" class="card-body" style="color:var(--danger);font-size:13px;padding-top:0">⚠ 最近错误：{{qqBotStatus.last_error}}</div>
-          </div>
 
-          <div class="card">
+            <div v-if="oldUserRechargeExpanded" class="card" style="margin-top:-8px;border-top-left-radius:0;border-top-right-radius:0">
+              <div class="card-header" style="border-bottom:1px solid var(--border)">
+                <h3>📋 老用户充值明细（区间内老用户已支付订单）</h3>
+              </div>
+              <div class="card-body" style="padding:0">
+                <div style="display:flex;gap:16px;padding:12px 20px;background:var(--bg2);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center">
+                  <div style="font-size:13px;color:var(--text3)">合计：<b style="color:var(--accent2);font-size:15px">¥{{Number(oldUserRechargeSum.amount||0).toFixed(2)}}</b> <span style="color:var(--text3);font-size:12px">({{oldUserRechargeSum.count||0}}笔)</span></div>
+                  <div style="width:1px;height:20px;background:var(--border)"></div>
+                  <div style="font-size:13px;color:var(--text3)">当前第 <b style="color:var(--text)">{{oldUserRechargePage}}</b> / {{oldUserRechargeTotalPages}} 页，共 {{oldUserRechargeTotal}} 条</div>
+                  <div v-if="oldUserRechargeLoading" style="font-size:12px;color:var(--accent2)">加载中...</div>
+                </div>
+                <div style="overflow-x:auto">
+                  <table class="data-table" style="width:100%;font-size:13px">
+                    <thead>
+                      <tr style="text-align:left;color:var(--text3);border-bottom:1px solid var(--border)">
+                        <th style="padding:10px 12px;white-space:nowrap">订单号</th>
+                        <th style="padding:10px 12px;white-space:nowrap">用户名</th>
+                        <th style="padding:10px 12px;white-space:nowrap">套餐名称</th>
+                        <th style="padding:10px 12px;white-space:nowrap">业务类型</th>
+                        <th style="padding:10px 12px;white-space:nowrap">类型</th>
+                        <th style="padding:10px 12px;white-space:nowrap">金额</th>
+                        <th style="padding:10px 12px;white-space:nowrap">点数/天数</th>
+                        <th style="padding:10px 12px;white-space:nowrap">支付方式</th>
+                        <th style="padding:10px 12px;white-space:nowrap">订单来源</th>
+                        <th style="padding:10px 12px;white-space:nowrap">创建时间</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="row in oldUserRechargeDetails" :key="row.id" style="border-bottom:1px solid var(--border)">
+                        <td style="padding:10px 12px;font-family:monospace;font-size:12px">{{row.order_no}}</td>
+                        <td style="padding:10px 12px;color:var(--accent2)">{{row.username}}</td>
+                        <td style="padding:10px 12px">{{row.plan_name||'-'}}</td>
+                        <td style="padding:10px 12px">{{row.business_type||'-'}}</td>
+                        <td style="padding:10px 12px">{{row.plan_type||'-'}}</td>
+                        <td style="padding:10px 12px;font-weight:600;color:var(--success)">¥{{Number(row.price||0).toFixed(2)}}</td>
+                        <td style="padding:10px 12px">{{row.points>0?row.points+'点':''}}{{row.days>0?(row.points>0?'/':'')+row.days+'天':''}}{{!row.points&&!row.days?'-':''}}</td>
+                        <td style="padding:10px 12px">{{row.pay_method==='alipay'?'支付宝':row.pay_method==='wechat'?'微信支付':row.pay_method==='card'?'卡密':row.pay_method==='xianyu'?'闲鱼':row.pay_method||'-'}}</td>
+                        <td style="padding:10px 12px"><span :style="{color:row.source==='xianyu'?'var(--warning)':'var(--text)'}">{{row.source==='xianyu'?'闲鱼':'支付'}}</span></td>
+                        <td style="padding:10px 12px;color:var(--text3);font-size:12px">{{String(row.created_at||'').replace('T',' ').substring(0,19)}}</td>
+                      </tr>
+                      <tr v-if="!oldUserRechargeDetails.length&&!oldUserRechargeLoading">
+                        <td colspan="10" style="padding:30px;text-align:center;color:var(--text3)">区间内暂无老用户充值记录</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div v-if="oldUserRechargeTotalPages>1" style="display:flex;justify-content:center;padding:16px 20px;border-top:1px solid var(--border)">
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <button class="btn btn-secondary" style="padding:4px 12px" :disabled="oldUserRechargePage<=1" @click="loadOldUserRechargeDetails(oldUserRechargePage-1)">上一页</button>
+                    <span style="font-size:13px">{{oldUserRechargePage}} / {{oldUserRechargeTotalPages}}</span>
+                    <button class="btn btn-secondary" style="padding:4px 12px" :disabled="oldUserRechargePage>=oldUserRechargeTotalPages" @click="loadOldUserRechargeDetails(oldUserRechargePage+1)">下一页</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
             <div class="card-header"><h3>机器人配置</h3>
               <div class="provider-actions">
                 <button class="btn btn-primary btn-sm" :disabled="qqBotSaving" @click="saveQqBot()">{{qqBotSaving?'保存中…':'保存并应用'}}</button>
@@ -2835,7 +2891,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                 <div class="metric-grid" style="grid-template-columns:repeat(4,minmax(120px,1fr))">
                   <div class="metric-card"><div class="metric-label">充值订单数</div><div class="metric-value">{{userAnalysis.orders.total_orders}}</div><div class="metric-sub">支付+闲鱼</div></div>
                   <div class="metric-card"><div class="metric-label">充值总金额</div><div class="metric-value" style="font-size:22px">¥{{userAnalysis.orders.total_amount}}</div><div class="metric-sub">区间内全部收入</div></div>
-                  <div class="metric-card"><div class="metric-label">老用户充值</div><div class="metric-value" style="color:var(--accent2);font-size:22px">¥{{userAnalysis.orders.old_amount}}</div><div class="metric-sub">{{userAnalysis.orders.old_orders}} 单，金额占 {{userAnalysis.orders.old_amount_rate}}%</div></div>
+                   <div class="metric-card" style="cursor:pointer" @click="toggleOldUserRecharge()"><div class="metric-label">老用户充值 {{oldUserRechargeExpanded?'▲':'▼'}}</div><div class="metric-value" style="color:var(--accent2);font-size:22px">¥{{userAnalysis.orders.old_amount}}</div><div class="metric-sub">{{userAnalysis.orders.old_orders}} 单，金额占 {{userAnalysis.orders.old_amount_rate}}% · 点击查看详情</div></div>
                   <div class="metric-card"><div class="metric-label">新用户充值</div><div class="metric-value" style="color:var(--success);font-size:22px">¥{{userAnalysis.orders.new_amount}}</div><div class="metric-sub">{{userAnalysis.orders.new_orders}} 单，金额占 {{userAnalysis.orders.new_amount_rate}}%</div></div>
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;margin-top:16px;font-size:12px;color:var(--text2)">
@@ -2844,6 +2900,62 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                   <div style="flex:1;max-width:360px;height:12px;background:var(--bg3);border-radius:6px;overflow:hidden;display:flex">
                     <div :style="{width:userAnalysis.orders.old_amount_rate+'%',height:'100%',background:'var(--accent2)'}"></div>
                     <div :style="{width:userAnalysis.orders.new_amount_rate+'%',height:'100%',background:'var(--success)'}"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="oldUserRechargeExpanded" class="card" style="margin-top:-8px;border-top-left-radius:0;border-top-right-radius:0">
+              <div class="card-header" style="border-bottom:1px solid var(--border)">
+                <h3>📋 老用户充值明细（区间内老用户已支付订单）</h3>
+              </div>
+              <div class="card-body" style="padding:0">
+                <div style="display:flex;gap:16px;padding:12px 20px;background:var(--bg2);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center">
+                  <div style="font-size:13px;color:var(--text3)">合计：<b style="color:var(--accent2);font-size:15px">¥{{Number(oldUserRechargeSum.amount||0).toFixed(2)}}</b> <span style="color:var(--text3);font-size:12px">({{oldUserRechargeSum.count||0}}笔)</span></div>
+                  <div style="width:1px;height:20px;background:var(--border)"></div>
+                  <div style="font-size:13px;color:var(--text3)">当前第 <b style="color:var(--text)">{{oldUserRechargePage}}</b> / {{oldUserRechargeTotalPages}} 页，共 {{oldUserRechargeTotal}} 条</div>
+                  <div v-if="oldUserRechargeLoading" style="font-size:12px;color:var(--accent2)">加载中...</div>
+                </div>
+                <div style="overflow-x:auto">
+                  <table class="data-table" style="width:100%;font-size:13px">
+                    <thead>
+                      <tr style="text-align:left;color:var(--text3);border-bottom:1px solid var(--border)">
+                        <th style="padding:10px 12px;white-space:nowrap">订单号</th>
+                        <th style="padding:10px 12px;white-space:nowrap">用户名</th>
+                        <th style="padding:10px 12px;white-space:nowrap">套餐名称</th>
+                        <th style="padding:10px 12px;white-space:nowrap">业务类型</th>
+                        <th style="padding:10px 12px;white-space:nowrap">类型</th>
+                        <th style="padding:10px 12px;white-space:nowrap">金额</th>
+                        <th style="padding:10px 12px;white-space:nowrap">点数/天数</th>
+                        <th style="padding:10px 12px;white-space:nowrap">支付方式</th>
+                        <th style="padding:10px 12px;white-space:nowrap">订单来源</th>
+                        <th style="padding:10px 12px;white-space:nowrap">创建时间</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="row in oldUserRechargeDetails" :key="row.id" style="border-bottom:1px solid var(--border)">
+                        <td style="padding:10px 12px;font-family:monospace;font-size:12px">{{row.order_no}}</td>
+                        <td style="padding:10px 12px;color:var(--accent2)">{{row.username}}</td>
+                        <td style="padding:10px 12px">{{row.plan_name||'-'}}</td>
+                        <td style="padding:10px 12px">{{row.business_type||'-'}}</td>
+                        <td style="padding:10px 12px">{{row.plan_type||'-'}}</td>
+                        <td style="padding:10px 12px;font-weight:600;color:var(--success)">¥{{Number(row.price||0).toFixed(2)}}</td>
+                        <td style="padding:10px 12px">{{row.points>0?row.points+'点':''}}{{row.days>0?(row.points>0?'/':'')+row.days+'天':''}}{{!row.points&&!row.days?'-':''}}</td>
+                        <td style="padding:10px 12px">{{row.pay_method==='alipay'?'支付宝':row.pay_method==='wechat'?'微信支付':row.pay_method==='card'?'卡密':row.pay_method==='xianyu'?'闲鱼':row.pay_method||'-'}}</td>
+                        <td style="padding:10px 12px"><span :style="{color:row.source==='xianyu'?'var(--warning)':'var(--text)'}">{{row.source==='xianyu'?'闲鱼':'支付'}}</span></td>
+                        <td style="padding:10px 12px;color:var(--text3);font-size:12px">{{String(row.created_at||'').replace('T',' ').substring(0,19)}}</td>
+                      </tr>
+                      <tr v-if="!oldUserRechargeDetails.length&&!oldUserRechargeLoading">
+                        <td colspan="10" style="padding:30px;text-align:center;color:var(--text3)">区间内暂无老用户充值记录</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div v-if="oldUserRechargeTotalPages>1" style="display:flex;justify-content:center;padding:16px 20px;border-top:1px solid var(--border)">
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <button class="btn btn-secondary" style="padding:4px 12px" :disabled="oldUserRechargePage<=1" @click="loadOldUserRechargeDetails(oldUserRechargePage-1)">上一页</button>
+                    <span style="font-size:13px">{{oldUserRechargePage}} / {{oldUserRechargeTotalPages}}</span>
+                    <button class="btn btn-secondary" style="padding:4px 12px" :disabled="oldUserRechargePage>=oldUserRechargeTotalPages" @click="loadOldUserRechargeDetails(oldUserRechargePage+1)">下一页</button>
                   </div>
                 </div>
               </div>
@@ -3908,6 +4020,13 @@ createApp({
     const userAnalysis=ref(null);
     const userAnalysisLoading=ref(false);
     const userAnalysisFilter=reactive({date_from:'',date_to:''});
+    const oldUserRechargeExpanded=ref(false);
+    const oldUserRechargeDetails=ref([]);
+    const oldUserRechargePage=ref(1);
+    const oldUserRechargeTotal=ref(0);
+    const oldUserRechargeTotalPages=ref(0);
+    const oldUserRechargeSum=reactive({amount:0,count:0});
+    const oldUserRechargeLoading=ref(false);
      const questionBank=ref([]);
      const questionBankTotal=ref(0);
      const questionBankLoading=ref(false);
@@ -4303,6 +4422,37 @@ createApp({
       userAnalysisFilter.date_from=fmtLocalDate(from);
       userAnalysisFilter.date_to=fmtLocalDate(to);
       loadUserAnalysis();
+    }
+    function toggleOldUserRecharge(){
+      oldUserRechargeExpanded.value=!oldUserRechargeExpanded.value;
+      if(oldUserRechargeExpanded.value&&oldUserRechargeDetails.value.length===0){
+        loadOldUserRechargeDetails(1);
+      }
+    }
+    async function loadOldUserRechargeDetails(page=1){
+      if(!token.value)return;
+      oldUserRechargeLoading.value=true;
+      oldUserRechargePage.value=page;
+      try{
+        const qs=new URLSearchParams();
+        if(userAnalysisFilter.date_from)qs.set('date_from',userAnalysisFilter.date_from);
+        if(userAnalysisFilter.date_to)qs.set('date_to',userAnalysisFilter.date_to);
+        qs.set('page',String(page));
+        qs.set('page_size','15');
+        const res=await safeFetch('/admin/old-user-recharge-details?'+qs.toString(),{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){
+          const d=data.data||{};
+          oldUserRechargeDetails.value=d.rows||[];
+          oldUserRechargeTotal.value=d.total||0;
+          oldUserRechargeTotalPages.value=d.total_pages||0;
+          oldUserRechargeSum.amount=d.sum_amount||0;
+          oldUserRechargeSum.count=d.sum_count||0;
+        }
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'获取老用户充值明细失败','error');
+      }catch(e){showMsg('获取老用户充值明细失败: '+(e.message||e),'error',6000);}
+      finally{oldUserRechargeLoading.value=false;}
     }
     function pct(a,b){const t=Number(b);if(!t)return '0.0';return (Number(a)*100/t).toFixed(1);}
     async function loadQuestionBank(page=questionBankFilter.page||1){
@@ -5713,6 +5863,7 @@ createApp({
       bankLogs,bankLogLoading,bankLogFilter,bankLogTotal,expandedBankLogs,
       bankAnalysis,bankAnalysisLoading,bankAnalysisFilter,loadBankAnalysis,setBankAnalysisRange,
       userAnalysis,userAnalysisLoading,userAnalysisFilter,loadUserAnalysis,setUserAnalysisRange,pct,
+      oldUserRechargeExpanded,oldUserRechargeDetails,oldUserRechargePage,oldUserRechargeTotal,oldUserRechargeTotalPages,oldUserRechargeSum,oldUserRechargeLoading,toggleOldUserRecharge,loadOldUserRechargeDetails,
       questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,deleteQuestionBankItem,bankTypeOptions,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,
       doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
       loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,

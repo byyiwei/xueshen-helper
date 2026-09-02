@@ -2863,6 +2863,90 @@ class Database:
         ) or []
         return result
 
+    def get_old_user_recharge_details(self, date_from="", date_to="", page=1, page_size=15):
+        """老用户充值明细：查询指定区间内老用户的已支付订单"""
+        ph = _ph()
+        if not date_from:
+            date_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        if not date_to:
+            date_to = datetime.now().strftime("%Y-%m-%d")
+        page = max(1, int(page))
+        page_size = max(1, min(100, int(page_size)))
+        offset = (page - 1) * page_size
+
+        # 老用户定义：注册时间在区间起始之前
+        # payment_orders 筛选条件
+        po_where = [
+            f"po.status = {ph}",
+            f"DATE(po.created_at) >= {ph}",
+            f"DATE(po.created_at) <= {ph}",
+            f"DATE(u.created_at) < {ph}"
+        ]
+        po_params = ["paid", date_from, date_to, date_from]
+
+        # xianyu_orders 筛选条件
+        xy_where = [
+            f"xo.status = {ph}",
+            f"DATE(xo.created_at) >= {ph}",
+            f"DATE(xo.created_at) <= {ph}",
+            f"DATE(u.created_at) < {ph}"
+        ]
+        xy_params = ["paid", date_from, date_to, date_from]
+
+        po_where_sql = " AND ".join(po_where)
+        xy_where_sql = " AND ".join(xy_where)
+
+        # 总数查询
+        total_sql = f"""
+            SELECT COUNT(*) AS cnt FROM (
+                SELECT po.id FROM payment_orders po JOIN users u ON u.username = po.username WHERE {po_where_sql}
+                UNION ALL
+                SELECT xo.id FROM xianyu_orders xo JOIN users u ON u.username = xo.username WHERE {xy_where_sql}
+            ) t
+        """
+        total_row = self.fetchone(total_sql, po_params + xy_params) or {}
+        total = int(total_row.get("cnt") or 0)
+
+        # 数据查询
+        data_sql = f"""
+            SELECT * FROM (
+                SELECT po.id, po.order_no, po.username, po.plan_name, po.plan_type,
+                       po.price, po.points, po.days, po.pay_method, po.pay_type, po.business_type,
+                       po.created_at, 'payment' as source
+                FROM payment_orders po JOIN users u ON u.username = po.username
+                WHERE {po_where_sql}
+                UNION ALL
+                SELECT xo.id, xo.order_no, xo.username, xo.plan_name,
+                       COALESCE((SELECT pp.plan_type FROM payment_plans pp WHERE pp.id = xo.plan_id), 'points') as plan_type,
+                       xo.price, 0 as points, 0 as days,
+                       'xianyu' as pay_method, '' as pay_type, '' as business_type,
+                       xo.created_at, 'xianyu' as source
+                FROM xianyu_orders xo JOIN users u ON u.username = xo.username
+                WHERE {xy_where_sql}
+            ) combined ORDER BY created_at DESC LIMIT {page_size} OFFSET {offset}
+        """
+        rows = self.fetchall(data_sql, po_params + xy_params) or []
+
+        # 合计查询
+        sum_sql = f"""
+            SELECT COALESCE(SUM(price),0) AS total_amount, COUNT(*) AS cnt FROM (
+                SELECT po.price FROM payment_orders po JOIN users u ON u.username = po.username WHERE {po_where_sql}
+                UNION ALL
+                SELECT xo.price FROM xianyu_orders xo JOIN users u ON u.username = xo.username WHERE {xy_where_sql}
+            ) t
+        """
+        sum_row = self.fetchone(sum_sql, po_params + xy_params) or {}
+
+        return {
+            "rows": rows,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size if total > 0 else 0,
+            "sum_amount": float(sum_row.get("total_amount") or 0),
+            "sum_count": int(sum_row.get("cnt") or 0)
+        }
+
     def upsert_question_bank(self, item):
         ph = _ph()
         self.execute(
