@@ -1419,6 +1419,26 @@ def _start_daily_report_thread():
     print("[每日数据邮件] 定时发送线程已启动", flush=True)
 
 
+def _commission_settle_worker():
+    """后台线程：每小时自动结算所有超过冷却期的待结算佣金"""
+    import time as _time
+    while True:
+        try:
+            n = db.settle_all_pending_commissions()
+            if n:
+                print(f"[佣金结算] 自动结算 {n} 个推广人的待结算佣金", flush=True)
+        except Exception as e:
+            print(f"[佣金结算] 定时结算异常: {e}", flush=True)
+        _time.sleep(3600)
+
+
+def _start_commission_settle_thread():
+    import threading
+    t = threading.Thread(target=_commission_settle_worker, daemon=True)
+    t.start()
+    print("[佣金结算] 定时结算线程已启动", flush=True)
+
+
 def _send_feedback_notify(feedback_id, notify_type="new", username="", category="", title="", content=""):
     """向管理员发送反馈通知邮件（新反馈/用户追问）"""
     try:
@@ -1751,6 +1771,21 @@ def normalize_ai_answer(question, answer):
     if not answer:
         return answer
     text = str(answer).strip()
+    # 推理模型（DeepSeek 等）把思考过程包在 <think>...</think> 内；部分 OpenAI 兼容代理
+    # 还会把 </think> 结束符漏进正文、并把答案字母重复一次，形成
+    # "C</think>C" / "A,B,C</think>A,B,C" 这类脏答案。这里彻底清洗：
+    # 1) 去掉完整的 <think>...</think> 块（含其中内容）
+    text = re.sub(r"<\s*think\s*>[\s\S]*?<\s*/\s*think\s*>", " ", text, flags=re.I)
+    # 2) 去掉残留的孤立 <think> / </think> 标签
+    text = re.sub(r"<\s*/?\s*think\s*>", "", text, flags=re.I)
+    text = text.strip()
+    # 3) "C</think>C" 去标签后变 "CC"，"A,B,C</think>A,B,C" 变 "A,B,CA,B,C"，
+    #    "错误错误" 变自身，"1000001010000010" 同理：若整串为「前半==后半」的重复
+    #    （短答案，<=60 字符），则取前半（即正确答案）。不限字母，中文/数字重复同样折叠。
+    if len(text) <= 60:
+        _dm = re.match(r"^(.+)\1$", text)
+        if _dm:
+            text = _dm.group(1).strip()
     # 已是清洗后的 JSON 数组（多选干净格式），直接返回，避免二次处理破坏
     if text.startswith("[") and text.endswith("]"):
         try:
@@ -1762,6 +1797,13 @@ def normalize_ai_answer(question, answer):
     options = extract_options_from_question(question)
 
     if options:
+        # 答案形如 "C<题干/说明混入>"：字母后紧跟非字母（中文/标点/结尾），直接按字母索引取选项文本。
+        # 例："C路由选择协议位于( ) \nC" -> 取第 C 项；纯英文选项文本（如 "CPU..."）因字母后仍是字母不会被误命中。
+        _lead = re.match(r"^\s*([A-Z])\s*(?![A-Za-z])", text, re.I)
+        if _lead:
+            _idx = ord(_lead.group(1).upper()) - ord("A")
+            if 0 <= _idx < len(options):
+                return options[_idx]
         # 匹配各种 "答案格式": "A" "答案是A" "正确答案是A" "选A" "选择A" "A. xxx" "A：xxx" 等
         m = re.match(r"^\s*(?:正确答案是?|答案是?|选择?|选|应该选|应该选择?)([A-Z])", text, re.I)
         if m:
@@ -4023,8 +4065,9 @@ class Handler(BaseHTTPRequestHandler):
                 date_from = qs.get("date_from", [""])[0]
                 date_to = qs.get("date_to", [""])[0]
                 source = qs.get("source", [""])[0]
-                logs = db.get_ai_call_logs(limit=limit, status=status, model=model, keyword=keyword, date_from=date_from, date_to=date_to, page=page, source=source)
-                total = db.count_ai_call_logs(status=status, model=model, keyword=keyword, date_from=date_from, date_to=date_to, source=source)
+                username = qs.get("username", [""])[0]
+                logs = db.get_ai_call_logs(limit=limit, status=status, model=model, keyword=keyword, date_from=date_from, date_to=date_to, page=page, source=source, username=username)
+                total = db.count_ai_call_logs(status=status, model=model, keyword=keyword, date_from=date_from, date_to=date_to, source=source, username=username)
                 self._send_json(200, {"code": 200, "logs": logs, "total": total, "page": int(page or 1), "limit": int(limit or 100)})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -4123,6 +4166,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {"code": 200, "logs": logs, "total": total, "page": int(page or 1), "limit": int(limit or 100)})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/question-bank/models":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                self._send_json(200, {"code": 200, "models": db.list_question_bank_models()})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/question-bank":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -4134,8 +4185,9 @@ class Handler(BaseHTTPRequestHandler):
                 keyword = qs.get("keyword", [""])[0]
                 question_type = qs.get("question_type", [""])[0]
                 is_image = qs.get("is_image", [""])[0]
-                rows = db.search_question_bank(keyword=keyword, limit=limit, page=page, question_type=question_type, is_image=is_image or None)
-                total = db.count_question_bank(keyword=keyword, question_type=question_type, is_image=is_image or None)
+                source_model = qs.get("source_model", [""])[0]
+                rows = db.search_question_bank(keyword=keyword, limit=limit, page=page, question_type=question_type, is_image=is_image or None, source_model=source_model)
+                total = db.count_question_bank(keyword=keyword, question_type=question_type, is_image=is_image or None, source_model=source_model)
                 self._send_json(200, {"code": 200, "items": rows, "total": total, "page": int(page or 1), "limit": int(limit or 100)})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -6377,7 +6429,8 @@ class Handler(BaseHTTPRequestHandler):
                     keyword=data.get("keyword", ""),
                     date_from=data.get("date_from", ""),
                     date_to=data.get("date_to", ""),
-                    source=data.get("source", "")
+                    source=data.get("source", ""),
+                    username=data.get("username", "")
                 )
                 self._send_json(200, {"code": 200, "msg": "清空成功"})
             except Exception as e:
@@ -6434,8 +6487,14 @@ class Handler(BaseHTTPRequestHandler):
                 q_type = row.get("question_type") or ""
                 opts_raw = row.get("options_text") or ""
                 options = [x.strip() for x in opts_raw.split("|") if x.strip()]
-                # 从 question_text 提取图片 URL（支持 <img src="..."> 格式）
-                img_urls = re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', q_text)
+                # 从 question_text 与选项一并提取图片 URL（支持 <img src="..."> 格式）
+                # 注意：指纹按「题面 + 选项内嵌图」计算，只取题面会算出不同的指纹，导致重训练后匹配不上原题
+                img_re = re.compile(r'<img[^>]+src=["\']([^"\']+)["\']', re.I)
+                img_urls = []
+                for _src_text in [q_text] + options:
+                    for _u in img_re.findall(_src_text or ""):
+                        if _u and _u not in img_urls:
+                            img_urls.append(_u)
                 # 重建题目 JSON payload
                 payload = json.dumps({
                     "question": q_text,
@@ -6448,19 +6507,45 @@ class Handler(BaseHTTPRequestHandler):
                 if not provider_info:
                     self._send_json(400, {"code": 400, "msg": f"模型 '{model_name}' 不可用，请检查配置"})
                     return
-                answer, err, tokens = call_provider_chat(payload, model_name, provider_info)
+                # 图片题 + 所选模型不支持图片 → 直接走纯文本，避免 400
+                need_vision = is_multimodal_question(payload)
+                force_text = False
+                if need_vision:
+                    vision_models = {m[2] for m in get_enabled_model_candidates(need_vision=True)}
+                    force_text = model_name not in vision_models
+                    if force_text:
+                        print(f"[题库重训练] 模型 {model_name} 不支持图片，使用纯文本模式作答", flush=True)
+                answer, err, tokens = call_provider_chat(payload, model_name, provider_info, force_text_only=force_text)
                 if err:
                     self._send_json(500, {"code": 500, "msg": f"模型调用失败：{err}"})
                     return
-                if answer:
-                    record_model_token_usage(model_name, tokens)
-                    answer = normalize_ai_answer(payload, answer)
-                    save_question_bank_answer(payload, answer, model_name, provider_name or "")
-                print(f"[题库重训练] hash={q_hash[:16]}... model={model_name} answer={answer[:60] if answer else 'N/A'}...", flush=True)
+                if not answer:
+                    self._send_json(500, {"code": 500, "msg": "模型未返回有效答案"})
+                    return
+                record_model_token_usage(model_name, tokens)
+                answer = normalize_ai_answer(payload, answer)
+                # 指纹含答案，答案变化 → 新指纹；这里原地更新原记录，而不是新插一条
+                new_hash = make_question_hash(payload, answer)
+                new_mkey = make_matching_key(payload)
+                new_stem = make_match_stem(payload)
+                _info = parse_question_payload(payload)
+                write_mode = db.update_question_bank_answer(
+                    q_hash, new_hash, answer, model_name, provider_name or "",
+                    matching_key=new_mkey, match_stem=new_stem,
+                    is_image=1 if _info.get("images") else 0
+                )
+                if write_mode == "missing":
+                    self._send_json(404, {"code": 404, "msg": "题库中未找到该题目（可能已被删除）"})
+                    return
+                print(f"[题库重训练] hash={q_hash[:12]}->{new_hash[:12]} ({write_mode}) model={model_name} answer={answer[:60]}...", flush=True)
                 self._send_json(200, {"code": 200, "msg": "重训练成功", "data": {
                     "answer": answer,
                     "model": model_name,
-                    "provider": provider_name or ""
+                    "provider": provider_name or "",
+                    "question_hash": new_hash,
+                    "old_question_hash": q_hash,
+                    "hash_changed": new_hash != q_hash,
+                    "write_mode": write_mode
                 }})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -6877,6 +6962,7 @@ if __name__ == "__main__":
     print("=" * 60)
     _start_log_cleanup_thread()
     _start_daily_report_thread()
+    _start_commission_settle_thread()
     _start_qq_bot_thread()
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     try:

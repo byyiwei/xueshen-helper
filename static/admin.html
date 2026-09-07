@@ -2356,7 +2356,8 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
             <div class="card-body">
               <div class="filter-grid">
                 <input v-model="aiLogFilter.keyword" placeholder="搜索题目/答案/错误">
-                <input v-model="aiLogFilter.model" placeholder="模型 ID">
+<input v-model="aiLogFilter.username" placeholder="用户邮箱/用户名">
+<input v-model="aiLogFilter.model" placeholder="模型 ID">
                 <select v-model="aiLogFilter.status">
                   <option value="">全部状态</option>
                   <option value="success">成功</option>
@@ -2626,11 +2627,15 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
               </div>
             </div>
             <div class="card-body">
-              <div class="filter-grid" style="grid-template-columns:1fr 140px 120px">
+              <div class="filter-grid" style="grid-template-columns:1fr 140px 180px 120px">
                 <input v-model="questionBankFilter.keyword" placeholder="搜索题干 / 选项 / 答案" @keyup.enter="loadQuestionBank(1)">
                 <select v-model="questionBankFilter.type_name" @change="loadQuestionBank(1)">
                   <option value="">全部题型</option>
                   <option v-for="t in bankTypeOptions" :key="t.value" :value="t.value">{{t.label}}</option>
+                </select>
+                <select v-model="questionBankFilter.source_model" @change="loadQuestionBank(1)">
+                  <option value="">全部模型</option>
+                  <option v-for="m in bankModelOptions" :key="m.model||'__empty__'" :value="m.model">{{m.model||'（未记录）'}}（{{m.count}}）</option>
                 </select>
                 <select v-model.number="questionBankFilter.limit" @change="loadQuestionBank(1)">
                   <option :value="50">50条/页</option>
@@ -4004,7 +4009,7 @@ createApp({
     const aiLogLoading=ref(false);
     const aiLogTotal=ref(0);
     const expandedLogs=reactive({});
-    const aiLogFilter=reactive({status:'',model:'',keyword:'',date_from:'',date_to:'',source:'',limit:100,page:1});
+    const aiLogFilter=reactive({status:'',model:'',keyword:'',username:'',date_from:'',date_to:'',source:'',limit:100,page:1});
     const scriptLogs=ref([]);
     const scriptLogLoading=ref(false);
     const scriptLogTotal=ref(0);
@@ -4032,7 +4037,8 @@ createApp({
      const questionBankLoading=ref(false);
      const pluginData=reactive({framework:'',content:''});
     const expandedBank=reactive({});
-    const questionBankFilter=reactive({keyword:'',limit:100,page:1,type_name:'',is_image:''});
+    const questionBankFilter=reactive({keyword:'',limit:100,page:1,type_name:'',is_image:'',source_model:''});
+    const bankModelOptions=ref([]);
     const retrainModel=reactive({});
     const retrainLoading=reactive({});
     const retrainResult=reactive({});
@@ -4314,6 +4320,7 @@ createApp({
         if(aiLogFilter.status)qs.set('status',aiLogFilter.status);
         if(aiLogFilter.model)qs.set('model',aiLogFilter.model);
         if(aiLogFilter.keyword)qs.set('keyword',aiLogFilter.keyword);
+if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         if(aiLogFilter.date_from)qs.set('date_from',aiLogFilter.date_from);
         if(aiLogFilter.date_to)qs.set('date_to',aiLogFilter.date_to);
         if(aiLogFilter.source)qs.set('source',aiLogFilter.source);
@@ -4455,8 +4462,18 @@ createApp({
       finally{oldUserRechargeLoading.value=false;}
     }
     function pct(a,b){const t=Number(b);if(!t)return '0.0';return (Number(a)*100/t).toFixed(1);}
+    async function loadBankModels(force=false){
+      if(!token.value)return;
+      if(!force&&bankModelOptions.value.length)return;
+      try{
+        const res=await fetch('/admin/question-bank/models',{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200)bankModelOptions.value=data.models||[];
+      }catch(e){/* 模型列表加载失败不影响题库查询 */}
+    }
     async function loadQuestionBank(page=questionBankFilter.page||1){
       if(!token.value)return;
+      loadBankModels();
       questionBankFilter.page=page;
       questionBankLoading.value=true;
       try{
@@ -4466,6 +4483,7 @@ createApp({
         if(questionBankFilter.keyword)qs.set('keyword',questionBankFilter.keyword);
         if(questionBankFilter.type_name==='__image__'){qs.set('is_image','1');}
         else if(questionBankFilter.type_name){qs.set('question_type',questionBankFilter.type_name);}
+        if(questionBankFilter.source_model)qs.set('source_model',questionBankFilter.source_model);
         const res=await fetch('/admin/question-bank?'+qs.toString(),{headers:{'Authorization':token.value}});
         const data=await res.json();
         if(data.code===200){questionBank.value=data.items||[];questionBankTotal.value=Number(data.total||0);}
@@ -4983,7 +5001,7 @@ createApp({
       if(!confirm(hasFilter?'确定按当前筛选条件清空模型调用日志吗？':'当前没有筛选条件，将清空全部模型调用日志，确定继续吗？'))return;
       try{
         const res=await fetch('/admin/ai-logs/clear',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({
-          status:aiLogFilter.status,model:aiLogFilter.model,keyword:aiLogFilter.keyword,date_from:aiLogFilter.date_from,date_to:aiLogFilter.date_to,source:aiLogFilter.source
+          status:aiLogFilter.status,model:aiLogFilter.model,keyword:aiLogFilter.keyword,date_from:aiLogFilter.date_from,date_to:aiLogFilter.date_to,source:aiLogFilter.source,username:aiLogFilter.username
         })});
         const data=await res.json();
         if(data.code===403){logout();showMsg('登录已过期','error');return;}
@@ -5057,7 +5075,14 @@ createApp({
           retrainResult[item.id]=data.data;
           item.answer=data.data.answer;
           item.source_model=data.data.model;
-          showMsg('重训练成功','success');
+          const nh=data.data.question_hash||'';
+          loadBankModels(true);
+          if(nh&&nh!==item.question_hash){
+            item.question_hash=nh;
+            showMsg('重训练成功：答案已原地更新，题目指纹刷新为 '+nh.slice(0,12)+'…','success',6000);
+          }else{
+            showMsg('重训练成功（答案未变化，指纹保持原样）','success');
+          }
         }else{
           showMsg(data.msg||'重训练失败','error');
         }
@@ -5864,7 +5889,7 @@ createApp({
       bankAnalysis,bankAnalysisLoading,bankAnalysisFilter,loadBankAnalysis,setBankAnalysisRange,
       userAnalysis,userAnalysisLoading,userAnalysisFilter,loadUserAnalysis,setUserAnalysisRange,pct,
       oldUserRechargeExpanded,oldUserRechargeDetails,oldUserRechargePage,oldUserRechargeTotal,oldUserRechargeTotalPages,oldUserRechargeSum,oldUserRechargeLoading,toggleOldUserRecharge,loadOldUserRechargeDetails,
-      questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,deleteQuestionBankItem,bankTypeOptions,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,
+      questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,deleteQuestionBankItem,bankTypeOptions,bankModelOptions,loadBankModels,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,
       doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
       loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,
       savePaymentConfig,savePayApiConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,movePlan,openUserEdit,saveUserAdmin,

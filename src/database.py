@@ -2399,10 +2399,13 @@ class Database:
         )
         return rows
 
-    def _build_ai_log_where(self, status="", model="", keyword="", date_from="", date_to="", source=""):
+    def _build_ai_log_where(self, status="", model="", keyword="", date_from="", date_to="", source="", username=""):
         ph = _ph()
         where = []
         params = []
+        if username:
+            where.append(f"username = {ph}")
+            params.append(username)
         if status:
             where.append(f"status = {ph}")
             params.append(status)
@@ -2429,7 +2432,7 @@ class Database:
             params.append(date_to)
         return where, params
 
-    def get_ai_call_logs(self, limit=100, status="", model="", keyword="", date_from="", date_to="", page=1, source=""):
+    def get_ai_call_logs(self, limit=100, status="", model="", keyword="", date_from="", date_to="", page=1, source="", username=""):
         ph = _ph()
         try:
             limit = int(limit)
@@ -2442,7 +2445,7 @@ class Database:
         limit = max(1, min(limit, 200))
         page = max(1, page)
         offset = (page - 1) * limit
-        where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to, source)
+        where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to, source, username)
         sql = "SELECT id, provider_key, username, model, final_model, question, answer, status, error, duration_ms, client_ip, created_at FROM ai_call_logs"
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -2451,8 +2454,8 @@ class Database:
         params.extend([limit, offset])
         return self.fetchall(sql, tuple(params))
 
-    def count_ai_call_logs(self, status="", model="", keyword="", date_from="", date_to="", source=""):
-        where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to, source)
+    def count_ai_call_logs(self, status="", model="", keyword="", date_from="", date_to="", source="", username=""):
+        where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to, source, username)
         sql = "SELECT COUNT(*) AS total FROM ai_call_logs"
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -2471,8 +2474,8 @@ class Database:
             print(f"[QQ机器人日志] 查询失败: {e}", flush=True)
             return []
 
-    def clear_ai_call_logs(self, status="", model="", keyword="", date_from="", date_to="", source=""):
-        where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to, source)
+    def clear_ai_call_logs(self, status="", model="", keyword="", date_from="", date_to="", source="", username=""):
+        where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to, source, username)
         sql = "DELETE FROM ai_call_logs"
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -2581,7 +2584,7 @@ class Database:
         )
         return rows or []
 
-    def search_question_bank(self, keyword="", question_hash="", limit=100, page=1, question_type="", is_image=None):
+    def search_question_bank(self, keyword="", question_hash="", limit=100, page=1, question_type="", is_image=None, source_model=""):
         ph = _ph()
         try:
             limit = int(limit)
@@ -2610,6 +2613,9 @@ class Database:
         if is_image is not None and is_image != "":
             where.append(f"is_image = {ph}")
             params.append(1 if str(is_image) in ("1", "true", "图片", "__image__") else 0)
+        if source_model:
+            where.append(f"source_model = {ph}")
+            params.append(source_model)
         if keyword:
             # 优先使用全文索引（MATCH AGAINST），大幅提升大数据量搜索性能
             # ngram 分词器支持中文，2字以上可命中
@@ -2629,7 +2635,7 @@ class Database:
         params.extend([limit, offset])
         return self.fetchall(sql, tuple(params))
 
-    def count_question_bank(self, keyword="", question_hash="", question_type="", is_image=None):
+    def count_question_bank(self, keyword="", question_hash="", question_type="", is_image=None, source_model=""):
         ph = _ph()
         where = []
         params = []
@@ -2647,6 +2653,9 @@ class Database:
         if is_image is not None and is_image != "":
             where.append(f"is_image = {ph}")
             params.append(1 if str(is_image) in ("1", "true", "图片", "__image__") else 0)
+        if source_model:
+            where.append(f"source_model = {ph}")
+            params.append(source_model)
         if keyword:
             kw = keyword.strip()
             if len(kw) >= 2:
@@ -2661,6 +2670,18 @@ class Database:
             sql += " WHERE " + " AND ".join(where)
         row = self.fetchone(sql, tuple(params))
         return int(row.get("total", 0) if row else 0)
+
+    def list_question_bank_models(self):
+        """题库中出现过的来源模型及其题量，用于后台按模型筛选题库。"""
+        try:
+            rows = self.fetchall(
+                "SELECT COALESCE(source_model,'') AS model, COUNT(*) AS cnt FROM question_bank "
+                "GROUP BY COALESCE(source_model,'') ORDER BY cnt DESC, model ASC"
+            )
+            return [{"model": r.get("model") or "", "count": int(r.get("cnt") or 0)} for r in rows]
+        except Exception as e:
+            print(f"[题库模型列表] 查询失败: {e}", flush=True)
+            return []
 
     def get_web_search_count(self, username):
         """获取用户今日首页免费搜题已用次数"""
@@ -2964,6 +2985,63 @@ class Database:
                 item.get("is_image", 0)
             )
         )
+
+    def update_question_bank_answer(self, old_hash, new_hash, answer, model_name="", provider_name="",
+                                    matching_key="", match_stem="", is_image=None):
+        """重训练专用：在**原记录上原地更新**答案。
+
+        题库指纹含答案，答案变化会产生新指纹。若沿用 upsert 会变成「插入一条新记录 + 旧记录原封不动」，
+        因此这里显式按旧指纹定位并 UPDATE，指纹同步刷新。
+        若新指纹已被同题的另一条记录占用，则更新那条并删除旧记录，避免重复。
+        返回 'updated' | 'merged' | 'missing'。
+        """
+        ph = _ph()
+        row = self.fetchone(f"SELECT id FROM question_bank WHERE question_hash = {ph}", (old_hash,))
+        if not row:
+            return "missing"
+        dup = self.fetchone(
+            f"SELECT id FROM question_bank WHERE question_hash = {ph} AND id <> {ph}",
+            (new_hash, row.get("id"))
+        )
+        sets = [f"answer = {ph}", f"source_model = {ph}", f"source_provider = {ph}"]
+        params = [answer, model_name, provider_name]
+        if matching_key:
+            sets.append(f"matching_key = {ph}")
+            params.append(matching_key)
+        if match_stem:
+            sets.append(f"match_stem = {ph}")
+            params.append(match_stem)
+        if is_image is not None:
+            sets.append(f"is_image = {ph}")
+            params.append(is_image)
+        sets.append("updated_at = CURRENT_TIMESTAMP")
+        if dup:
+            # 新指纹已存在：更新它，删除旧记录，避免同一题留下两条
+            params.append(new_hash)
+            self.execute(f"UPDATE question_bank SET {', '.join(sets)} WHERE question_hash = {ph}", tuple(params))
+            self.execute(f"DELETE FROM question_bank WHERE question_hash = {ph}", (old_hash,))
+        else:
+            sets.append(f"question_hash = {ph}")
+            params.append(new_hash)
+            params.append(old_hash)
+            self.execute(f"UPDATE question_bank SET {', '.join(sets)} WHERE question_hash = {ph}", tuple(params))
+        # 兜底：重训练后，同一题(matching_key) 只能留一条权威记录。
+        # 必须保住「本次重训练产出的那条」即 question_hash = new_hash 的行：
+        # 重训练是原地 UPDATE（id 不变，可能是旧小 id），不能简单地 ORDER BY id DESC 取最高 id，
+        # 否则会误删刚更新的权威行、留下旧重复版本，导致「答案漂移 / 匹配轮空」。
+        # 旧版 retrain 用 upsert 插入新行产生多版本，这里是最终收敛手段。
+        if matching_key:
+            cur = self.fetchone(
+                f"SELECT id FROM question_bank WHERE matching_key = {ph} AND question_hash = {ph} ORDER BY id DESC LIMIT 1",
+                (matching_key, new_hash)
+            )
+            keep_id = cur.get("id") if cur else None
+            if keep_id is not None:
+                self.execute(
+                    f"DELETE FROM question_bank WHERE matching_key = {ph} AND id <> {ph}",
+                    (matching_key, keep_id)
+                )
+        return "merged" if dup else "updated"
 
     # ==================== AI 持久化缓存 ====================
 
@@ -3470,6 +3548,16 @@ class Database:
             # 状态转 paid（带条件防并发重复）
             self.execute(f"UPDATE commission_logs SET status = 'paid' WHERE id = {ph} AND status = 'pending'", (r["id"],))
 
+    def settle_all_pending_commissions(self):
+        """批量结算所有推广人的待结算佣金，供后台定时任务调用"""
+        rows = self.fetchall("SELECT DISTINCT inviter FROM commission_logs WHERE status = 'pending'") or []
+        for r in rows:
+            try:
+                self.settle_pending_commissions(r["inviter"])
+            except Exception as e:
+                print(f"[佣金结算] 批量结算失败 inviter={r.get('inviter')}: {e}", flush=True)
+        return len(rows)
+
     def get_referral_profile(self, username):
         """返回推广概览"""
         ph = _ph()
@@ -3594,6 +3682,7 @@ class Database:
     def get_referral_details(self, inviter_username, limit=200):
         """查看某个推广人邀请的所有用户明细，含充值金额和佣金"""
         ph = _ph()
+        self.settle_pending_commissions(inviter_username)
         rows = self.fetchall(
             f"""SELECT r.invitee_username, r.created_at AS referred_at,
                        COALESCE(po.total_paid, 0) AS total_recharge,
@@ -3628,6 +3717,8 @@ class Database:
         """分页获取所有推广人及其推广统计"""
         ph = _ph()
         offset = (max(1, page) - 1) * per_page
+        for r in (self.fetchall(f"SELECT DISTINCT inviter_username FROM referrals LIMIT {ph} OFFSET {ph}", (per_page, offset)) or []):
+            self.settle_pending_commissions(r["inviter_username"])
         rows = self.fetchall(
             f"""SELECT r.inviter_username AS username,
                        COUNT(*) AS invited_count,
