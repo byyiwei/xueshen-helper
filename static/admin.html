@@ -2579,6 +2579,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
                       <th style="text-align:left;padding:10px 8px">时间</th>
                       <th style="text-align:left;padding:10px 8px">用户</th>
+                      <th style="text-align:left;padding:10px 8px">剩余/到期</th>
                       <th style="text-align:left;padding:10px 8px">级别</th>
                       <th style="text-align:left;padding:10px 8px">日志内容</th>
                       <th style="text-align:left;padding:10px 8px">页面</th>
@@ -2589,6 +2590,10 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     <tr v-for="log in scriptLogs" :key="log.id" style="border-bottom:1px solid var(--border);color:var(--text)">
                       <td style="padding:10px 8px;white-space:nowrap;color:var(--text3)">{{log.created_at}}</td>
                       <td style="padding:10px 8px;white-space:nowrap">{{log.username||'-'}}</td>
+                      <td style="padding:10px 8px;white-space:nowrap;font-size:12px">
+                        <div v-if="log.points_balance!=null" :style="pointsColorStyle(log.points_balance)">{{log.points_balance}} 题</div>
+                        <div v-if="log.member_until" :style="memberColorStyle(log.member_until)">会员 {{fmtMemberExpire(log.member_until)}}</div>
+                      </td>
                       <td style="padding:10px 8px;white-space:nowrap;color:var(--accent2)">{{log.level||'-'}}</td>
                       <td style="padding:10px 8px;max-width:420px;word-break:break-word">
                         <div>{{shortText(log.message,180)}}</div>
@@ -2883,11 +2888,12 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
 
           <div v-if="userAnalysisLoading" style="text-align:center;color:var(--text3);padding:40px 0;font-size:13px">正在加载用户分析...</div>
           <template v-else-if="userAnalysis">
-            <div class="metric-grid" style="grid-template-columns:repeat(4,minmax(120px,1fr))">
+            <div class="metric-grid" style="grid-template-columns:repeat(5,minmax(120px,1fr))">
               <div class="metric-card"><div class="metric-label">用户总数</div><div class="metric-value">{{userAnalysis.overview.total_users}}</div><div class="metric-sub">全部注册用户</div></div>
               <div class="metric-card"><div class="metric-label">新增用户</div><div class="metric-value" style="color:var(--accent2)">{{userAnalysis.overview.new_users}}</div><div class="metric-sub">区间内注册，占总数 {{userAnalysis.overview.new_rate}}%</div></div>
               <div class="metric-card"><div class="metric-label">活跃用户</div><div class="metric-value" style="color:var(--success)">{{userAnalysis.overview.active_users}}</div><div class="metric-sub">区间内登录过，活跃率 {{userAnalysis.overview.active_rate}}%</div></div>
               <div class="metric-card"><div class="metric-label">回归老用户</div><div class="metric-value" style="color:#f59e0b">{{userAnalysis.overview.returned_users}}</div><div class="metric-sub">老用户中区间内回归 {{userAnalysis.overview.returned_rate}}%</div></div>
+              <div class="metric-card"><div class="metric-label">自有模型用户</div><div class="metric-value" style="color:#a855f7">{{userAnalysis.overview.custom_model_users}}</div><div class="metric-sub">答题 {{userAnalysis.overview.custom_model_calls}} 次，占活跃 {{userAnalysis.overview.custom_user_rate}}%</div></div>
             </div>
 
             <div class="card">
@@ -2978,6 +2984,25 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                       <td style="padding:8px;color:var(--success);white-space:nowrap">{{u.last_login_at}}</td>
                     </tr>
                     <tr v-if="!userAnalysis.returning_users.length"><td colspan="3" style="padding:24px;text-align:center;color:var(--text3)">区间内暂无老用户回归</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><h3>🤖 自有模型答题用户 TOP 20</h3></div>
+              <div class="card-body" style="padding:8px 20px 20px">
+                <table style="width:100%;border-collapse:collapse;font-size:12px">
+                  <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left"><th style="padding:8px">排名</th><th style="padding:8px">用户</th><th style="padding:8px">答题次数</th><th style="padding:8px">注册时间</th><th style="padding:8px">最近登录</th></tr></thead>
+                  <tbody>
+                    <tr v-for="(u,idx) in userAnalysis.custom_model_top_users" :key="u.username" style="border-bottom:1px solid var(--border)">
+                      <td style="padding:8px;color:var(--text3);font-weight:600">{{idx+1}}</td>
+                      <td style="padding:8px;color:var(--accent2);cursor:pointer;text-decoration:underline" @click="gotoUserSearch(u.username)">{{u.username}}</td>
+                      <td style="padding:8px;color:#a855f7;font-weight:600">{{u.calls}}</td>
+                      <td style="padding:8px;color:var(--text3);white-space:nowrap">{{u.created_at?String(u.created_at).substring(0,10):'-'}}</td>
+                      <td style="padding:8px;color:var(--success);white-space:nowrap">{{u.last_login_at?String(u.last_login_at).substring(0,16).replace('T',' '):'-'}}</td>
+                    </tr>
+                    <tr v-if="!userAnalysis.custom_model_top_users.length"><td colspan="5" style="padding:24px;text-align:center;color:var(--text3)">区间内暂无自有模型答题记录</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -4280,6 +4305,12 @@ createApp({
       }
       loadUsers();
     }
+    function gotoUserSearch(username){
+      userSearch.value=username;
+      page.value='user-mgmt';
+      expandedGroups.value.users=true;
+      loadUsers();
+    }
     function resetUserSearch(){
       userSearch.value='';
       userSortBy.value='created_at';
@@ -5319,6 +5350,27 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         return parts.join('｜');
       }catch(e){return '';}
     }
+    function isMembershipActive(expire){
+      if(!expire)return false;
+      return new Date(expire).getTime()>Date.now();
+    }
+    function fmtMemberExpire(expire){
+      if(!expire)return '-';
+      const d=new Date(expire);
+      const now=new Date();
+      const diff=Math.ceil((d.getTime()-now.getTime())/(1000*60*60*24));
+      const dateStr=d.toISOString().substring(0,10);
+      if(diff>0)return dateStr+' (剩'+diff+'天)';
+      return dateStr+' (已过期)';
+    }
+    function pointsColorStyle(points){
+      const p=Number(points||0);
+      const color=p>100?'var(--success)':p>10?'var(--warning)':'var(--danger)';
+      return {color,fontWeight:'600'};
+    }
+    function memberColorStyle(expire){
+      return {color:isMembershipActive(expire)?'var(--accent2)':'var(--text3)',fontSize:'11px'};
+    }
     function saveCollapsedProviders(){
       localStorage.setItem('ne21_collapsed_providers',JSON.stringify(collapsedProviders));
     }
@@ -5881,7 +5933,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     return{
        loading,page,loginMode,themeMode,themeLabels,themeIcons,cycleTheme,breadcrumbItems,navigateBreadcrumb,config,emailConfig,emailTemplates,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,SCENE_ICONS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
        mailServers,showServerForm,mailServerForm,showSmtpPass,mailServerTotalWeight,mailServerWeightPercent,toggleEmailEnabled,openServerForm,saveMailServer,deleteMailServer,
-       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,userSearch,userSortBy,userSortOrder,showUserModal,userForm,
+       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,userSearch,userSortBy,userSortOrder,showUserModal,userForm,gotoUserSearch,
         showHtmlPreview,htmlPreviewFrame,htmlPreviewData,toggleHtmlPreview,updateHtmlPreview,switchToHtml,onHtmlInput,syncPlainFromHtml,
        paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,planForm,
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,
@@ -5897,7 +5949,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
        addProvider,removeProvider,addModel,removeModel,
        modelUsageTotal,modelUsageToday,modelTotalExhausted,modelDailyExhausted,modelQuotaLeft,modelQuotaTitle,weightSegments,
        qqBot,qqBotStatus,qqBotLogs,qqBotBotpyAvailable,qqBotSaving,loadQqBot,saveQqBot,
-      protocolName,statusText,formatDuration,questionTypeName,shortText,formatWan,formatScriptExtra,trendPoints,trendX,trendY,trendMax,stackBarX,stackBarY,stackBarH,modelBarWidth,revTrendPoints,revTrendArea,revTrendX,revStep,revY,revMax,
+      protocolName,statusText,formatDuration,questionTypeName,shortText,formatWan,formatScriptExtra,isMembershipActive,fmtMemberExpire,pointsColorStyle,memberColorStyle,trendPoints,trendX,trendY,trendMax,stackBarX,stackBarY,stackBarH,modelBarWidth,revTrendPoints,revTrendArea,revTrendX,revStep,revY,revMax,
       loadLogCleanup,saveLogCleanup,runLogCleanupNow,logRetentionDays,logCleanupSaving,logCleanupRunning,logCleanupResult,payTestForm,payTestLoading,payTestResult,runPayTest,payApiWeightTotal,payApiWeightPercent,refreshSandpayParams,onSandpayAdvancedChange,
       referralTab,referralConfig,referralSaving,referralWithdrawals,referralWdFilter,referralWdSummary,referralStats,referralQrPreview,
       loadReferralConfig,saveReferralConfig,loadReferralWithdrawals,approveWithdrawal,rejectWithdrawal,loadReferralStats,

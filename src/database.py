@@ -2208,7 +2208,7 @@ class Database:
         if date_to:
             where.append(f"created_at <= {ph}")
             params.append(date_to)
-        sql = "SELECT id, username, event_type, level, message, page_url, course_id, task_id, client_ip, extra_json, created_at FROM script_event_logs"
+        sql = "SELECT s.id, s.username, s.event_type, s.level, s.message, s.page_url, s.course_id, s.task_id, s.client_ip, s.extra_json, s.created_at, u.points_balance, u.member_until FROM script_event_logs s LEFT JOIN users u ON u.username = s.username"
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY created_at DESC, id DESC"
@@ -2875,6 +2875,39 @@ class Database:
             }
         except Exception as e:
             print(f"[用户分析] 充值统计失败: {e}", flush=True)
+
+        # —— 自有模型使用统计 ——
+        try:
+            row = self.fetchone(
+                f"""SELECT COUNT(DISTINCT username) AS users, COUNT(*) AS calls
+                    FROM ai_call_logs
+                    WHERE provider_key = {ph}
+                      AND DATE(created_at) >= {ph} AND DATE(created_at) <= {ph}""",
+                ("custom", date_from, date_to)
+            ) or {}
+            custom_users = int(row.get("users") or 0)
+            custom_calls = int(row.get("calls") or 0)
+            result["overview"]["custom_model_users"] = custom_users
+            result["overview"]["custom_model_calls"] = custom_calls
+            result["overview"]["custom_user_rate"] = round(custom_users * 100.0 / max(active_users, 1), 1)
+            # 自有模型 TOP 用户
+            result["custom_model_top_users"] = self.fetchall(
+                f"""SELECT a.username, COUNT(*) AS calls,
+                           u.created_at, u.last_login_at
+                    FROM ai_call_logs a
+                    LEFT JOIN users u ON u.username = a.username
+                    WHERE a.provider_key = {ph}
+                      AND DATE(a.created_at) >= {ph} AND DATE(a.created_at) <= {ph}
+                    GROUP BY a.username ORDER BY calls DESC LIMIT 20""",
+                ("custom", date_from, date_to)
+            ) or []
+        except Exception as e:
+            print(f"[用户分析] 自有模型统计失败: {e}", flush=True)
+            result["overview"]["custom_model_users"] = 0
+            result["overview"]["custom_model_calls"] = 0
+            result["overview"]["custom_user_rate"] = 0
+            result["custom_model_top_users"] = []
+
         result["returning_users"] = self.fetchall(
             f"""SELECT username, created_at, last_login_at FROM users
                 WHERE DATE(created_at) < {ph} AND last_login_at IS NOT NULL
