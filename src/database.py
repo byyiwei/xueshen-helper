@@ -2446,7 +2446,7 @@ class Database:
         page = max(1, page)
         offset = (page - 1) * limit
         where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to, source, username)
-        sql = "SELECT id, provider_key, username, model, final_model, question, answer, status, error, duration_ms, client_ip, created_at FROM ai_call_logs"
+        sql = "SELECT a.id, a.provider_key, a.username, a.model, a.final_model, a.question, a.answer, a.status, a.error, a.duration_ms, a.client_ip, a.created_at, u.points_balance, u.member_until FROM ai_call_logs a LEFT JOIN users u ON u.username = a.username"
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY id DESC"
@@ -2532,9 +2532,11 @@ class Database:
         page = max(1, page)
         offset = (page - 1) * limit
         where, params = self._build_bank_log_where(matched, keyword, date_from, date_to)
-        sql = """SELECT id, username, question_hash, question_text, question_type, options_text,
-                        matched, matched_hash, match_method, duration_ms, client_ip, created_at
-                 FROM bank_call_logs"""
+        sql = """SELECT b.id, b.username, b.question_hash, b.question_text, b.question_type, b.options_text,
+                        b.matched, b.matched_hash, b.match_method, b.duration_ms, b.client_ip, b.created_at,
+                        u.points_balance, u.member_until
+                 FROM bank_call_logs b
+                 LEFT JOIN users u ON u.username = b.username"""
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY id DESC"

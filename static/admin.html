@@ -2385,11 +2385,12 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                 暂无模型调用日志
               </div>
               <div v-else style="overflow-x:auto">
-                <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1080px">
+                <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1200px">
                   <thead>
                     <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
                       <th style="text-align:left;padding:10px 8px">时间</th>
                       <th style="text-align:left;padding:10px 8px">用户</th>
+                      <th style="text-align:left;padding:10px 8px">剩余/到期</th>
                       <th style="text-align:left;padding:10px 8px">状态</th>
                       <th style="text-align:left;padding:10px 8px">模型</th>
                       <th style="text-align:left;padding:10px 8px">最终成功模型</th>
@@ -2405,6 +2406,10 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                       <tr style="border-bottom:1px solid var(--border);color:var(--text)">
                         <td style="padding:10px 8px;color:var(--text3);white-space:nowrap">{{log.created_at}}</td>
                         <td style="padding:10px 8px;white-space:nowrap;color:var(--accent2)">{{log.username||'-'}}</td>
+                        <td style="padding:10px 8px;white-space:nowrap;font-size:12px">
+                          <div v-if="log.points_balance!=null" :style="pointsColorStyle(log.points_balance)">{{log.points_balance}} 题</div>
+                          <div v-if="log.member_until" :style="memberColorStyle(log.member_until)">会员 {{fmtMemberExpire(log.member_until)}}</div>
+                        </td>
                         <td style="padding:10px 8px;white-space:nowrap">
                           <span :style="{color:log.status==='success'?'var(--success)':log.status==='insufficient_quota'?'var(--warning)':'var(--danger)',fontWeight:'600'}">{{statusText(log.status)}}</span>
                         </td>
@@ -2420,7 +2425,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                         <td style="padding:10px 8px"><button class="btn btn-secondary btn-sm" @click="toggleLog(log.id)">{{expandedLogs[log.id]?'收起':'详情'}}</button></td>
                       </tr>
                       <tr v-if="expandedLogs[log.id]">
-                        <td colspan="10" style="padding:0 8px 12px">
+                        <td colspan="11" style="padding:0 8px 12px">
                           <div class="log-detail">用户：{{log.username||'-'}}&#10;来源：{{log.provider_key==='custom'?'自有模型（用户自带）':'平台模型（后台配置）'}}&#10;模型：{{log.model||'-'}}&#10;最终成功模型：{{log.status==='error'?(log.final_model||'无'):'-'}}&#10;题目：{{log.question||'-'}}&#10;&#10;答案：{{log.answer||'-'}}&#10;&#10;错误：{{log.error||'-'}}</div>
                         </td>
                       </tr>
@@ -2482,11 +2487,12 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
               <div v-if="bankLogLoading" style="text-align:center;color:var(--text3);padding:32px 0;font-size:13px">正在加载题库日志...</div>
               <div v-else-if="bankLogs.length===0" style="text-align:center;color:var(--text3);padding:40px 0;font-size:13px">暂无题库调用日志</div>
               <div v-else style="overflow-x:auto">
-                <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1080px">
+                <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1200px">
                   <thead>
                     <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
                       <th style="text-align:left;padding:10px 8px">时间</th>
                       <th style="text-align:left;padding:10px 8px">用户</th>
+                      <th style="text-align:left;padding:10px 8px">剩余/到期</th>
                       <th style="text-align:left;padding:10px 8px">结果</th>
                       <th style="text-align:left;padding:10px 8px">命中方式</th>
                       <th style="text-align:left;padding:10px 8px">耗时</th>
@@ -2500,24 +2506,28 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                       <tr style="border-bottom:1px solid var(--border);color:var(--text)">
                         <td style="padding:10px 8px;color:var(--text3);white-space:nowrap">{{log.created_at}}</td>
                         <td style="padding:10px 8px;white-space:nowrap;color:var(--accent2)">{{log.username||'-'}}</td>
+                        <td style="padding:10px 8px;white-space:nowrap;font-size:12px">
+                          <div v-if="log.points_balance!=null" :style="pointsColorStyle(log.points_balance)">{{log.points_balance}} 题</div>
+                          <div v-if="log.member_until" :style="memberColorStyle(log.member_until)">会员 {{fmtMemberExpire(log.member_until)}}</div>
+                        </td>
                         <td style="padding:10px 8px;white-space:nowrap">
                           <span v-if="log.matched==1" style="color:var(--success);font-weight:600">命中</span>
                           <span v-else style="color:var(--danger);font-weight:600">未命中</span>
                         </td>
                         <td style="padding:10px 8px;white-space:nowrap;color:var(--accent)">{{matchMethodText(log.match_method)}}</td>
                         <td style="padding:10px 8px;white-space:nowrap">{{formatDuration(log.duration_ms)}}</td>
-                        <td style="padding:10px 8px;white-space:nowrap;color:var(--text2)">{{log.question_type||'-'}}</td>
+                        <td style="padding:10px 8px;white-space:nowrap;color:var(--text2)">{{questionTypeName(log.question_type)||'-'}}</td>
                         <td style="padding:10px 8px;max-width:360px;word-break:break-word;color:var(--text2)">{{shortText(log.question_text,100)}}</td>
                         <td style="padding:10px 8px">
                           <button class="btn btn-secondary btn-sm" @click="toggleBankLog(log.id)">{{expandedBankLogs[log.id]?'收起':'详情'}}</button>
                         </td>
                       </tr>
                       <tr v-if="expandedBankLogs[log.id]">
-                        <td colspan="8" style="padding:0 8px 12px">
+                        <td colspan="9" style="padding:0 8px 12px">
                           <div class="log-detail">
                             用户：{{log.username||'-'}}&#10;
                             Hash：{{log.question_hash||'-'}}&#10;
-                            题型：{{log.question_type||'-'}}&#10;
+                            题型：{{questionTypeName(log.question_type)||'-'}}&#10;
                             选项：{{log.options_text||'-'}}&#10;
                             命中方式：{{matchMethodText(log.match_method)}}&#10;
                             命中Hash：{{log.matched_hash||'-'}}&#10;&#10;
