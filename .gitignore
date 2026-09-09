@@ -44,3 +44,6 @@ echo .trae/
 
 # 本地工具记忆文件（含记忆/备份，勿推远程）
 .workbuddy/
+
+# Windows系统文件
+nul

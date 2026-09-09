@@ -68,9 +68,9 @@ MODEL_429_DEFAULT_SECONDS = 60  # 默认冷却60秒
 # 运行时标记不支图片的模型（API返回400 "does not support image"），避免后续图片题继续选它
 MODEL_NON_VISION = set()
 # 自动答题整体时间预算（秒）：含多模型切换，需小于前端请求超时与 nginx proxy_read_timeout
-ANSWER_TIME_BUDGET = 200
+ANSWER_TIME_BUDGET = 300
 # 单个模型最多耗时（秒）：防止某个慢/挂掉的模型独占预算，让其他提供商兜底模型有机会被尝试
-MAX_MODEL_BUDGET = 45
+MAX_MODEL_BUDGET = 60
 DASHBOARD_CACHE = {"time": 0, "data": None}
 DASHBOARD_CACHE_SECONDS = 5
 REVOKED_USER_TOKENS = set()
@@ -1735,16 +1735,48 @@ def get_bank_match_all(question):
         print(f"[首页搜题] 命中 {len(rows)} 条 {mkey[:12]} ({elapsed:.1f}ms)", flush=True)
     return rows, mkey, elapsed
 
+def is_pure_image_answer(answer):
+    """判断答案是否为纯图片（没有有效文字内容）
+    
+    纯图片答案对用户没有意义，不应该写入题库。
+    """
+    if not answer:
+        return False
+    ans = str(answer).strip()
+    if not ans:
+        return False
+    # 去掉所有 <img ... /> 标签
+    text_only = re.sub(r'<img[^>]*>', '', ans, flags=re.I)
+    # 去掉空白和标点
+    text_only = re.sub(r'[\s\u3000\r\n\t，。！？、；：,.!?;:\-—_【】\[\]（）()\"\'“”‘’《》]', '', text_only)
+    return len(text_only.strip()) < 2
+
 def save_question_bank_answer(question, answer, model_name="", provider_name=""):
     if not answer:
         return
     if is_test_question_for_bank(question):
         print("[题库入库] 测试题已跳过，不写入题库", flush=True)
         return
+    # 质量校验：纯图片答案不入库（用户看不到有效答案）
+    if is_pure_image_answer(answer):
+        print(f"[题库入库] 纯图片答案跳过，不写入题库 model={model_name}", flush=True)
+        return
     info = parse_question_payload(question)
     qhash = make_question_hash(question, answer)
     mkey = make_matching_key(question)
     stem = make_match_stem(question)
+    # is_image 检测：images 数组 + question/options 中的 <img> 标签
+    is_img = 0
+    if info.get("images") and any(str(x).strip() for x in info["images"] if x):
+        is_img = 1
+    elif info.get("question_text") and '<img' in str(info["question_text"]).lower():
+        is_img = 1
+    else:
+        options = info.get("options") or []
+        for opt in options:
+            if opt and '<img' in str(opt).lower():
+                is_img = 1
+                break
     db.upsert_question_bank({
         "question_hash": qhash,
         "matching_key": mkey,
@@ -1755,7 +1787,7 @@ def save_question_bank_answer(question, answer, model_name="", provider_name="")
         "answer": answer,
         "source_model": model_name or "",
         "source_provider": provider_name or "",
-        "is_image": 1 if info.get("images") else 0
+        "is_image": is_img
     })
 
 def extract_options_from_question(question):
@@ -1938,7 +1970,7 @@ def do_openai_compatible_chat(messages, model, api_key, base_url, time_budget=No
             return [{"role": "user", "content": user_content}]
         return [{"role": "user", "content": "\n".join(m["content"] for m in messages)}]
     # 超时类错误（上游慢/网络抖动）逐次放宽超时，并在重试前退避等待
-    attempt_timeouts = [30, 45, 60]
+    attempt_timeouts = [40, 55, 70]
     for attempt, (msgs, use_temp, use_max_tokens, label) in enumerate([
         (messages, True, True, "标准请求"),
         # 第2次：去掉 system 消息，合并到 user 中（部分提供商不支持 system role）
@@ -2231,9 +2263,46 @@ def build_ai_question_text(question_payload_str):
     return "\n".join(parts)
 
 def is_multimodal_question(question_payload_str):
-    """判断题目是否包含图片（需要多模态模型）"""
+    """判断题目是否包含图片（需要多模态模型）
+    
+    检测顺序：
+    1. images 数组字段（脚本/客户端显式上传的图片）
+    2. question 字段中的 <img> 标签
+    3. options 选项中的 <img> 标签
+    任一包含图片即视为图片题
+    """
     info = parse_question_payload(question_payload_str)
-    return bool(info.get("images"))
+    # 1. 检测 images 数组
+    images = info.get("images") or []
+    if isinstance(images, list) and any(str(x).strip() for x in images if x):
+        return True
+    if images and not isinstance(images, list) and str(images).strip():
+        return True
+    # 2. 检测 question 字段中的 <img> 标签
+    q_text = info.get("question_text") or ""
+    if q_text and '<img' in q_text.lower():
+        return True
+    # 3. 检测 options 选项中的 <img> 标签
+    options = info.get("options") or []
+    if isinstance(options, list):
+        for opt in options:
+            if opt and '<img' in str(opt).lower():
+                return True
+    return False
+
+def is_pure_image_question(question_payload_str):
+    """判断是否是纯图片题（题干只有图片没有有效文字）
+    
+    纯图片题降级到纯文本模型没有意义，因为模型看不到题目内容。
+    判断标准：去掉所有 <img> 标签和空白后，题干文字少于 5 个字符。
+    """
+    info = parse_question_payload(question_payload_str)
+    q_text = info.get("question_text") or ""
+    # 去掉所有 <img ... /> 标签
+    text_only = re.sub(r'<img[^>]*>', '', q_text, flags=re.I)
+    # 去掉空白和常见标点
+    text_only = re.sub(r'[\s\u3000\r\n\t，。！？、；：,.!?;:\-—_【】\[\]（）()\"\'“”‘’《》]', '', text_only)
+    return len(text_only.strip()) < 5
 
 def _download_image_to_base64(url, timeout=15):
     """下载远程图片并转为 base64 data URL，供多模态模型使用。失败时返回 None。"""
@@ -2549,52 +2618,60 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
         })
         return answer, None, final_model, provider_name
 
-    # 图片题所有视觉模型都失败：回退到纯文本模式，用非视觉模型尝试（去掉图片只发文字）
+    # 图片题所有视觉模型都失败：判断是否降级到纯文本模式
     if need_vision:
-        text_candidates = get_enabled_model_candidates(need_vision=False, prefer_non_vision=True)
-        if text_candidates:
-            active_txt = [item for item in text_candidates if item[2] not in MODEL_NON_VISION]
-            if active_txt:
-                ordered_txt = provider_round_robin_rest(weighted_pick(active_txt))
-                print(f"[自动模型] 视觉模型全部失败，回退纯文本模式尝试 {len(ordered_txt)} 个模型", flush=True)
-                for pname_txt, pinfo_txt, mname_txt, w_txt in ordered_txt:
-                    remaining = max(deadline - time.time(), 0)
-                    if remaining <= 5:
-                        break
-                    try:
-                        answer, err, tokens = call_provider_chat(question, mname_txt, pinfo_txt,
-                                                                  time_budget=min(MAX_MODEL_BUDGET, remaining),
-                                                                  force_text_only=True)
-                    except Exception as e:
-                        err = str(e)
-                        answer = None
-                    if answer:
-                        record_model_token_usage(mname_txt, tokens)
-                        final_model = mname_txt
-                        provider_name = pname_txt
-                        break
-                    elif err:
-                        errors.append(f"{mname_txt}(纯文本): {err}")
-                if final_model:
-                    for item in error_logs:
-                        item["final_model"] = final_model
-                    enqueue_ai_log({
-                        "provider_key": provider_name or "",
-                        "username": username,
-                        "model": final_model,
-                        "question": question,
-                        "answer": answer,
-                        "status": "success",
-                        "error": "",
-                        "duration_ms": 0,
-                        "client_ip": client_ip,
-                        "final_model": final_model
-                    })
-                    return answer, None, final_model, provider_name
+        pure_image = is_pure_image_question(question)
+        if pure_image:
+            print("[自动模型] 纯图片题，视觉模型全部失败，不降级到纯文本模型（模型看不到题目内容）", flush=True)
+        else:
+            text_candidates = get_enabled_model_candidates(need_vision=False, prefer_non_vision=True)
+            if text_candidates:
+                active_txt = [item for item in text_candidates if item[2] not in MODEL_NON_VISION]
+                if active_txt:
+                    ordered_txt = provider_round_robin_rest(weighted_pick(active_txt))
+                    print(f"[自动模型] 视觉模型全部失败，回退纯文本模式尝试 {len(ordered_txt)} 个模型", flush=True)
+                    for pname_txt, pinfo_txt, mname_txt, w_txt in ordered_txt:
+                        remaining = max(deadline - time.time(), 0)
+                        if remaining <= 5:
+                            break
+                        try:
+                            answer, err, tokens = call_provider_chat(question, mname_txt, pinfo_txt,
+                                                                      time_budget=min(MAX_MODEL_BUDGET, remaining),
+                                                                      force_text_only=True)
+                        except Exception as e:
+                            err = str(e)
+                            answer = None
+                        if answer:
+                            record_model_token_usage(mname_txt, tokens)
+                            final_model = mname_txt
+                            provider_name = pname_txt
+                            break
+                        elif err:
+                            errors.append(f"{mname_txt}(纯文本): {err}")
+                    if final_model:
+                        for item in error_logs:
+                            item["final_model"] = final_model
+                        enqueue_ai_log({
+                            "provider_key": provider_name or "",
+                            "username": username,
+                            "model": final_model,
+                            "question": question,
+                            "answer": answer,
+                            "status": "success",
+                            "error": "",
+                            "duration_ms": 0,
+                            "client_ip": client_ip,
+                            "final_model": final_model
+                        })
+                        return answer, None, final_model, provider_name
 
     # 所有模型都失败
     last = ordered[-1] if ordered else (None, None, "", "")
-    return None, "自动模型全部尝试失败；" + "；".join(errors[-5:]), last[2], last[0]
+    if need_vision and is_pure_image_question(question):
+        err_msg = "本题为纯图片题，所有支持图片的模型均失败（超时/不可用），未降级到纯文本模型；" + "；".join(errors[-5:])
+    else:
+        err_msg = "自动模型全部尝试失败；" + "；".join(errors[-5:])
+    return None, err_msg, last[2], last[0]
 
 def ask_ai_custom(question, custom_cfg):
     model_name = (custom_cfg.get("model") or "").strip()
@@ -6524,15 +6601,32 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 record_model_token_usage(model_name, tokens)
                 answer = normalize_ai_answer(payload, answer)
+                # 质量校验：纯图片答案不入库
+                if is_pure_image_answer(answer):
+                    print(f"[题库重训练] 纯图片答案跳过，不更新 model={model_name}", flush=True)
+                    self._send_json(500, {"code": 500, "msg": "模型返回纯图片答案，质量不达标，已跳过入库"})
+                    return
                 # 指纹含答案，答案变化 → 新指纹；这里原地更新原记录，而不是新插一条
                 new_hash = make_question_hash(payload, answer)
                 new_mkey = make_matching_key(payload)
                 new_stem = make_match_stem(payload)
                 _info = parse_question_payload(payload)
+                # is_image 检测：images 数组 + question/options 中的 <img> 标签
+                _is_img = 0
+                if _info.get("images") and any(str(x).strip() for x in _info["images"] if x):
+                    _is_img = 1
+                elif _info.get("question_text") and '<img' in str(_info["question_text"]).lower():
+                    _is_img = 1
+                else:
+                    _opts = _info.get("options") or []
+                    for _opt in _opts:
+                        if _opt and '<img' in str(_opt).lower():
+                            _is_img = 1
+                            break
                 write_mode = db.update_question_bank_answer(
                     q_hash, new_hash, answer, model_name, provider_name or "",
                     matching_key=new_mkey, match_stem=new_stem,
-                    is_image=1 if _info.get("images") else 0
+                    is_image=_is_img
                 )
                 if write_mode == "missing":
                     self._send_json(404, {"code": 404, "msg": "题库中未找到该题目（可能已被删除）"})
