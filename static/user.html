@@ -1529,6 +1529,15 @@
                             </div>
                         </div>
                         <div id="payMethods" class="pay-methods"></div>
+                        <div id="customModelBuy" style="display:none;margin-bottom:14px;padding:16px;border:1px solid rgba(6,182,212,.35);border-radius:var(--v-radius-sm);background:linear-gradient(135deg,rgba(6,182,212,.1),rgba(8,47,73,.15))">
+                            <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+                                <div>
+                                    <div style="font-weight:700;font-size:14px;color:var(--v-text);display:flex;align-items:center;gap:6px"><span style="font-size:16px">🔑</span> 自有模型</div>
+                                    <div id="customModelStatus" style="font-size:12px;color:var(--v-text-2);margin-top:4px"></div>
+                                </div>
+                                <button class="primary" id="customModelBuyBtn" style="width:auto;padding:10px 22px;margin-top:0;font-size:13px" onclick="buyCustomModel()">立即开通</button>
+                            </div>
+                        </div>
                         <div class="plan-tabs" id="planTabs">
                             <button class="plan-tab active" data-filter="all">全部</button>
                             <button class="plan-tab" data-filter="monthly">包月套餐</button>
@@ -1567,6 +1576,7 @@
                                 <span>使用你自己配置的协议、地址、模型 ID 和 API Key。</span>
                             </label>
                         </div>
+                        <div id="customModelHint" style="display:none;padding:10px 14px;border-radius:var(--v-radius-sm);margin-bottom:12px;font-size:12.5px;line-height:1.7"></div>
                         <div class="backend-model-tip" id="backendModelTip">
                             当前选择的是自动模型，将直接使用后端后台配置的模型池，不需要填写 Base URL、模型 ID 或 API Key。
                         </div>
@@ -1920,11 +1930,11 @@
             if (el) el.classList.add('active');
             setPageTitle((titles[name] || titles.home)[0], (titles[name] || titles.home)[1]);
             if (name === 'script') loadScriptSettings();
-            if (name === 'model') loadScriptSettings();
+            if (name === 'model') { loadScriptSettings(); loadCustomModelConfig(); }
             if (name === 'account') loadScriptKey(false);
             if (name === 'home') loadDashboard();
             if (name === 'consumption') loadDashboard();
-            if (name === 'billing') { loadProfile(); loadPlans(); }
+            if (name === 'billing') { loadProfile(); loadPlans(); loadCustomModelConfig(); }
             if (name === 'promotion') loadPromotion();
             if (name === 'feedback') loadFeedback();
             if (name === 'payment-info') loadPaymentInfo();
@@ -2040,6 +2050,82 @@
             $('billingPoints').textContent = points;
             $('billingMemberUntil').textContent = until;
             if (profile.email) $('accountEmail').textContent = profile.email;
+            _profile = profile;
+            renderCustomModelBuy();
+        }
+        let _profile = null;
+        let _cmConfig = null;
+        async function loadCustomModelConfig() {
+            try {
+                const res = await fetch('/api/custom-model/config');
+                const data = await res.json().catch(() => ({}));
+                if (data.code === 200) { _cmConfig = data; renderCustomModelBuy(); }
+            } catch (_) {}
+        }
+        function renderCustomModelBuy() {
+            if (!_cmConfig) { $('customModelBuy').style.display = 'none'; $('customModelHint').style.display = 'none'; return; }
+            if (!$cmConfig.enabled) {
+                $('customModelBuy').style.display = 'none';
+                $('customModelHint').style.display = 'none';
+                return;
+            }
+            $('customModelBuy').style.display = '';
+            const price = Number(_cmConfig.price || 0);
+            const period = _cmConfig.period === 'monthly' ? '按月' : '永久';
+            const active = _profile && _profile.custom_model_active;
+            const until = _profile && _profile.custom_model_until;
+            if (active) {
+                $('customModelStatus').innerHTML = '✓ 已开通 · ' + period + (until ? '（到期：' + until + '）' : '');
+                $('customModelStatus').style.color = 'var(--v-primary-light)';
+                $('customModelBuyBtn').style.display = 'none';
+            } else if (price > 0) {
+                $('customModelStatus').textContent = '未开通 · 需付费 ￥' + price.toFixed(2) + '（' + period + '）后使用';
+                $('customModelBuyBtn').textContent = '立即开通 ￥' + price.toFixed(2);
+                $('customModelBuyBtn').style.display = '';
+            } else {
+                $('customModelStatus').textContent = '免费 · 点击开通即可使用';
+                $('customModelBuyBtn').textContent = '免费开通';
+                $('customModelBuyBtn').style.display = '';
+            }
+            // 模型设置区的自有模型提示
+            const hint = $('customModelHint');
+            if (active) {
+                hint.style.display = '';
+                hint.style.background = 'rgba(16,185,129,.12)';
+                hint.style.border = '1px solid rgba(16,185,129,.3)';
+                hint.innerHTML = '<span style="color:var(--v-primary-light)">✓ 自有模型已开通</span>，可正常使用';
+            } else if (price > 0) {
+                hint.style.display = '';
+                hint.style.background = 'rgba(245,158,11,.1)';
+                hint.style.border = '1px solid rgba(245,158,11,.3)';
+                hint.innerHTML = '<span style="color:#fbbf24">⚠ 自有模型未开通</span>，需支付 ￥' + price.toFixed(2) + '（' + period + '）<a href="javascript:void(0)" onclick="document.querySelector(\'[data-section=billing]\').click()" style="color:#fbbf24;text-decoration:underline;margin-left:6px">去开通</a>';
+            } else {
+                hint.style.display = 'none';
+            }
+        }
+        async function buyCustomModel() {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) return msg('billingMsg', '请先登录', false);
+            const price = _cmConfig ? Number(_cmConfig.price || 0) : 0;
+            if (price > 0 && !payMethodsList.length) return msg('billingMsg', '暂无可用支付方式，请联系管理员配置', false);
+            setBusy($('customModelBuyBtn'), true, '处理中...');
+            try {
+                if (price <= 0) {
+                    const res = await post('/api/payment/purchase', { plan_type: 'custom_model' }, token);
+                    if (res.code === 200) { fillProfile(res.profile); msg('billingMsg', res.msg || '开通成功', true); }
+                    else msg('billingMsg', res.msg || '开通失败', false);
+                } else {
+                    const payWin = window.open('', '_blank');
+                    const res = await post('/api/payment/purchase', { plan_type: 'custom_model', pay_method: currentPayMethod }, token);
+                    if (res.code === 200) {
+                        if (res.paying) {
+                            if (res.pay_url) { if (payWin) payWin.location.href = res.pay_url; else window.open(res.pay_url, '_blank'); showPayQr(res.order_no, null, res.pay_url); msg('billingMsg', res.msg || '订单已创建，请完成付款', true); }
+                            else if (res.qr_code) { if (payWin) payWin.close(); showPayQr(res.order_no, res.qr_code, null); msg('billingMsg', res.msg || '订单已创建，请扫码付款', true); }
+                        } else { if (payWin) payWin.close(); fillProfile(res.profile); msg('billingMsg', res.msg || '开通成功', true); }
+                    } else { if (payWin) payWin.close(); msg('billingMsg', res.msg || '购买失败', false); }
+                }
+            } catch (_) { msg('billingMsg', '购买失败，请检查后端服务是否运行', false); }
+            finally { setBusy($('customModelBuyBtn'), false); }
         }
         let payMethodsList = [];
         let currentPayMethod = 'wechat';
@@ -2563,7 +2649,8 @@
                 const ok = await loadScriptSettings();
                 await loadProfile();
                 await loadDashboard();
-                await loadPlans();
+await loadPlans();
+                await loadCustomModelConfig();
                 msg('homeMsg', ok ? '用户数据刷新成功' : '用户数据刷新失败', !!ok);
             } catch (_) {
                 msg('homeMsg', '刷新失败，请检查后端服务是否运行', false);
@@ -2705,6 +2792,14 @@
             }
         };
         $('saveModelPanelBtn').onclick = async function () {
+            const isCustom = $('ucModelCustom').checked;
+            if (isCustom && _cmConfig && _cmConfig.enabled) {
+                const price = Number(_cmConfig.price || 0);
+                if (price > 0 && !(_profile && _profile.custom_model_active)) {
+                    msg('modelPanelMsg', '自有模型需付费开通后方可使用，请先到套餐购买页开通', false);
+                    return;
+                }
+            }
             setBusy(this, true, '保存中...');
             msg('modelPanelMsg', '正在保存模型设置...', true);
             const modelSettings = collectModelSettings();

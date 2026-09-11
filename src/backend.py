@@ -159,6 +159,9 @@ def build_user_profile(username):
     member_until = ent.get("member_until")
     if isinstance(member_until, datetime):
         member_until = member_until.strftime("%Y-%m-%d %H:%M:%S")
+    custom_model_until = ent.get("custom_model_until")
+    if isinstance(custom_model_until, datetime):
+        custom_model_until = custom_model_until.strftime("%Y-%m-%d %H:%M:%S")
     return {
         "username": ent.get("username"),
         "email": ent.get("email"),
@@ -166,6 +169,8 @@ def build_user_profile(username):
         "points_balance": int(ent.get("points_balance") or 0),
         "member_until": member_until or "",
         "active_member": bool(ent.get("active_member")),
+        "custom_model_until": custom_model_until or "",
+        "custom_model_active": bool(ent.get("custom_model_active")),
         "is_banned": bool(ent.get("is_banned")),
         "ban_reason": ent.get("ban_reason") or "",
         "commission_balance": float(ent.get("commission_balance") or 0)
@@ -471,8 +476,20 @@ def alipay_api_call(method, biz_content, skip_enabled_check=False):
         raise RuntimeError(res.get("sub_msg") or res.get("msg") or "支付宝接口调用失败")
     return res
 
+def _plan_business_type(plan):
+    """根据套餐类型生成 payment_orders.business_type，自有模型把周期编码进去"""
+    pt = plan.get("plan_type")
+    if pt == "monthly":
+        return "套餐购买"
+    if pt == "custom_model":
+        period = (plan.get("business_type") or "").strip()
+        if period in ("custom_model_monthly", "custom_model_lifetime"):
+            return period
+        return "custom_model"
+    return "点数充值"
+
 def create_alipay_precreate_order(username, plan, skip_enabled_check=False):
-    business_type = "套餐购买" if plan.get("plan_type") == "monthly" else "点数充值"
+    business_type = _plan_business_type(plan)
     order_no = db.create_pending_order(username, plan, pay_method="alipay", pay_channel="alipay", pay_type="alipay_precreate", business_type=business_type)
     subject = f"学神助手-{plan.get('name')}"
     res = alipay_api_call("alipay.trade.precreate", {
@@ -512,7 +529,7 @@ def create_zhifufm_order(username, plan, pay_type="alipay", skip_enabled_check=F
     return_url = (admin.get("zhifufm_return_url") or "").strip()
     if not api_url or not merchant_num or not secret:
         raise RuntimeError("支付FM配置不完整")
-    business_type = "套餐购买" if plan.get("plan_type") == "monthly" else "点数充值"
+    business_type = _plan_business_type(plan)
     order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="zhifufm", pay_type="sandpayh5", business_type=business_type)
     amount = f"{float(plan.get('price') or 0):.2f}"
     # 按支付FM文档：待签名字符串=商户号+商户订单号+支付金额+异步通知地址+接入密钥
@@ -586,7 +603,7 @@ def create_sandpay_order(username, plan, pay_type="alipay", skip_enabled_check=F
     private_key_text = admin.get("sandpay_private_key") or ""
     if not api_url or not mid:
         raise RuntimeError("杉德支付配置不完整")
-    business_type = "套餐购买" if plan.get("plan_type") == "monthly" else "点数充值"
+    business_type = _plan_business_type(plan)
     # 若传入了自定义body且含orderCode，则使用该orderCode作为数据库订单号
     custom_order_no = (custom_body or {}).get("orderCode", "") if custom_body else ""
     if custom_order_no:
@@ -751,7 +768,7 @@ def create_epay_order(username, plan, pay_type="alipay", skip_enabled_check=Fals
     return_url = (admin.get("epay_return_url") or "").strip()
     if not api_url or not pid or not key:
         raise RuntimeError("易支付配置不完整")
-    business_type = "套餐购买" if plan.get("plan_type") == "monthly" else "点数充值"
+    business_type = _plan_business_type(plan)
     order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="epay", pay_type=pay_type, business_type=business_type)
     amount = f"{float(plan.get('price') or 0):.2f}"
     name = f"学神助手-{plan.get('name', '')}"
@@ -3757,6 +3774,13 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        elif path == "/api/custom-model/config":
+            try:
+                cfg = db.get_custom_model_config()
+                self._send_json(200, {"code": 200, "enabled": cfg["enabled"], "price": cfg["price"], "period": cfg["period"]})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         elif path == "/api/user/script-key":
             user = self._get_user_from_token()
             if not user:
@@ -4037,7 +4061,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, {"code": 200, "config": {
                 "gift_type": admin.get("gift_type") or "none",
                 "gift_points": int(admin.get("gift_points") or 0),
-                "gift_days": int(admin.get("gift_days") or 0)
+                "gift_days": int(admin.get("gift_days") or 0),
+                "custom_model_enabled": bool(admin.get("custom_model_enabled")),
+                "custom_model_price": float(admin.get("custom_model_price") or 0),
+                "custom_model_period": (admin.get("custom_model_period") or "permanent").strip() or "permanent"
             }, "plans": db.list_payment_plans(False)})
         elif path == "/admin/pay-api-config":
             if not self._check_admin():
@@ -5047,22 +5074,39 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(403, {"code": 403, "msg": "账号已被封禁，无法购买"})
                     return
                 data = json.loads(body or "{}")
-                plan = db.get_payment_plan(int(data.get("plan_id") or 0))
-                if not plan or not plan.get("enabled"):
-                    self._send_json(404, {"code": 404, "msg": "套餐不存在或未启用"})
-                    return
-                if float(plan.get("price") or 0) <= 0:
-                    # 安全：免费套餐每人限领一次，防止重复领取
-                    existing = db.fetchall(
-                        "SELECT id FROM payment_orders WHERE username = %s AND plan_id = %s AND status = 'paid'",
-                        (user["username"], int(plan.get("id") or 0))
-                    )
-                    if existing:
-                        self._send_json(400, {"code": 400, "msg": "该免费套餐已领取过，不可重复领取"})
+                # —— 自有模型权限购买（不走 payment_plans，使用 admin_config 的开关与定价）——
+                if data.get("plan_type") == "custom_model":
+                    cm_cfg = db.get_custom_model_config()
+                    if not cm_cfg.get("enabled"):
+                        self._send_json(400, {"code": 400, "msg": "自有模型功能未开启"})
                         return
-                    order_no = db.create_paid_order_and_apply(user["username"], plan)
-                    self._send_json(200, {"code": 200, "msg": "免费套餐已到账", "order_no": order_no, "profile": build_user_profile(user["username"])})
-                    return
+                    cm_price = float(cm_cfg.get("price") or 0)
+                    plan = {
+                        "id": 0, "name": "自有模型开通", "plan_type": "custom_model",
+                        "price": cm_price, "points": 0, "days": 0,
+                        "enabled": True, "business_type": "custom_model_" + ("monthly" if cm_cfg.get("period") == "monthly" else "lifetime")
+                    }
+                    if cm_price <= 0:
+                        order_no = db.create_paid_order_and_apply(user["username"], plan)
+                        self._send_json(200, {"code": 200, "msg": "自有模型已开通", "order_no": order_no, "profile": build_user_profile(user["username"])})
+                        return
+                else:
+                    plan = db.get_payment_plan(int(data.get("plan_id") or 0))
+                    if not plan or not plan.get("enabled"):
+                        self._send_json(404, {"code": 404, "msg": "套餐不存在或未启用"})
+                        return
+                    if float(plan.get("price") or 0) <= 0:
+                        # 安全：免费套餐每人限领一次，防止重复领取
+                        existing = db.fetchall(
+                            "SELECT id FROM payment_orders WHERE username = %s AND plan_id = %s AND status = 'paid'",
+                            (user["username"], int(plan.get("id") or 0))
+                        )
+                        if existing:
+                            self._send_json(400, {"code": 400, "msg": "该免费套餐已领取过，不可重复领取"})
+                            return
+                        order_no = db.create_paid_order_and_apply(user["username"], plan)
+                        self._send_json(200, {"code": 200, "msg": "免费套餐已到账", "order_no": order_no, "profile": build_user_profile(user["username"])})
+                        return
                 pay_method = (data.get("pay_method") or "wechat").strip()
                 # 前端只传 pay_method=wechat/alipay，后端根据权重随机选择通道
                 admin = db.get_admin_config() or {}
@@ -5904,11 +5948,16 @@ class Handler(BaseHTTPRequestHandler):
                 gift_type = data.get("gift_type", "none")
                 gift_points = int(data.get("gift_points") or 0)
                 gift_days = int(data.get("gift_days") or 0)
+                custom_model_enabled = 1 if data.get("custom_model_enabled") else 0
+                custom_model_price = float(data.get("custom_model_price") or 0)
+                period = (data.get("custom_model_period") or "permanent").strip()
+                if period not in ("monthly", "permanent"):
+                    period = "permanent"
                 db.execute(
-                    "UPDATE admin_config SET gift_type = %s, gift_points = %s, gift_days = %s WHERE id = 1",
-                    (gift_type, gift_points, gift_days)
+                    "UPDATE admin_config SET gift_type = %s, gift_points = %s, gift_days = %s, custom_model_enabled = %s, custom_model_price = %s, custom_model_period = %s WHERE id = 1",
+                    (gift_type, gift_points, gift_days, custom_model_enabled, custom_model_price, period)
                 )
-                self._send_json(200, {"code": 200, "msg": "注册赠送配置已保存"})
+                self._send_json(200, {"code": 200, "msg": "付费配置已保存"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -6819,6 +6868,16 @@ class Handler(BaseHTTPRequestHandler):
                 model_mode = "custom" if use_custom else "auto"
                 # 自有模型：使用用户自己的接口，不扣题数、不校验包月/题数余额
                 if use_custom:
+                    cm_cfg = db.get_custom_model_config()
+                    if not cm_cfg.get("enabled"):
+                        self._send_json(403, {"code": 403, "msg": "自有模型功能未开启，请使用自动模型继续答题"})
+                        return
+                    cm_price = float(cm_cfg.get("price") or 0)
+                    if cm_price > 0 and not (ent and ent.get("custom_model_active")):
+                        cm_period = cm_cfg.get("period") or "permanent"
+                        period_text = "按月开通" if cm_period == "monthly" else "永久开通"
+                        self._send_json(402, {"code": 402, "msg": f"自有模型需付费开通后方可使用（¥{cm_price:.2f}，{period_text}），请到用户中心购买", "status": "custom_model_not_paid"})
+                        return
                     resolved_model = custom_cfg.get("model") or ""
                     provider_name = "custom"
                 else:

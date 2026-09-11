@@ -1916,6 +1916,29 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
             </div>
           </div>
           <div class="card">
+            <div class="card-header"><h3><span>🔑</span>自有模型</h3><button class="btn btn-success btn-sm" @click="savePaymentConfig">保存自有模型配置</button></div>
+            <div class="card-body">
+              <div class="info-tips" style="margin-bottom:14px">
+                <div class="tip-row"><span class="tip-num">i</span><span class="tip-text">控制用户端"自有模型"功能的可见性与使用权限。开启后用户可在模型设置中选择自有模型；设置价格后用户需付费开通才能使用。</span></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>功能开关</label>
+                  <label style="display:flex;gap:8px;align-items:center;margin:0;cursor:pointer"><input type="checkbox" v-model="paymentConfig.custom_model_enabled" style="width:auto"> <span style="font-size:13px;color:var(--text2)">{{paymentConfig.custom_model_enabled?'已开启 — 用户可使用自有模型':'已关闭 — 用户无法使用自有模型'}}</span></label>
+                </div>
+                <div class="form-group"><label>收费价格（元）</label><input type="number" min="0" step="0.01" v-model.number="paymentConfig.custom_model_price" :disabled="!paymentConfig.custom_model_enabled" placeholder="0 = 免费"></div>
+                <div class="form-group"><label>有效期</label><select v-model="paymentConfig.custom_model_period" :disabled="!paymentConfig.custom_model_enabled"><option value="permanent">永久有效</option><option value="monthly">按月（30天）</option></select></div>
+              </div>
+              <div class="info-tips" style="margin-top:10px;background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.2)">
+                <div class="tip-row"><span class="tip-num" style="background:var(--primary);color:#fff">✓</span><span class="tip-text">
+                  <b v-if="!paymentConfig.custom_model_enabled">关闭状态：用户端隐藏自有模型选项，所有人使用平台模型。</b>
+                  <b v-else-if="Number(paymentConfig.custom_model_price)||0>0">开启收费：用户需支付 ￥{{Number(paymentConfig.custom_model_price).toFixed(2)}}（{{paymentConfig.custom_model_period==='monthly'?'按月':'永久'}}）后方可使用自有模型。</b>
+                  <b v-else>开启免费：所有用户可直接使用自有模型，无需付费。</b>
+                </span></div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
             <div class="card-header"><h3><span>◈</span>套餐配置</h3><button class="btn btn-secondary btn-sm" @click="newPlan()">新增套餐</button></div>
             <div class="card-body">
               <div class="info-tips" style="margin-bottom:14px">
@@ -2835,9 +2858,9 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                       <tr v-if="!bankAnalysis.top_list.length"><td colspan="4" style="padding:24px;text-align:center;color:var(--text3)">暂无调用记录</td></tr>
                     </tbody>
                   </table>
-                </div>
-              </div>
-              <div class="card">
+            </div>
+          </div>
+          <div class="card">
                 <div class="card-header"><h3>🐌 调用最少的题目 TOP 10</h3></div>
                 <div class="card-body" style="padding:8px 20px 20px">
                   <table style="width:100%;border-collapse:collapse;font-size:12px">
@@ -4023,7 +4046,7 @@ createApp({
     const showUserModal=ref(false);
     const userForm=reactive({username:'',email:'',password:'',points_delta:0,member_days_delta:0,member_until:'',is_banned:false,ban_reason:'',reason:''});
     const paymentPlans=ref([]);
-    const paymentConfig=reactive({gift_type:'none',gift_points:0,gift_days:0});
+    const paymentConfig=reactive({gift_type:'none',gift_points:0,gift_days:0,custom_model_enabled:false,custom_model_price:0,custom_model_period:'permanent'});
     const payApiConfig=reactive({
       // 支付宝官方
       alipay_enabled:false,alipay_app_id:'',alipay_gateway:'https://openapi.alipay.com/gateway.do',alipay_private_key:'',alipay_public_key:'',

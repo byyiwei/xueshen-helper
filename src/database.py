@@ -981,6 +981,8 @@ class Database:
         self._add_column_if_missing("users", "member_until", "member_until TIMESTAMP NULL")
         self._add_column_if_missing("users", "is_banned", "is_banned TINYINT DEFAULT 0")
         self._add_column_if_missing("users", "ban_reason", "ban_reason VARCHAR(255)")
+        # 自有模型权限到期时间（NULL=未开通，9999-12-31=永久）
+        self._add_column_if_missing("users", "custom_model_until", "custom_model_until TIMESTAMP NULL")
         # 推广返利
         self._add_column_if_missing("users", "invite_code", "invite_code VARCHAR(16)")
         self._add_column_if_missing("users", "commission_balance", "commission_balance DECIMAL(10,2) DEFAULT 0.00")
@@ -996,6 +998,10 @@ class Database:
         self._add_column_if_missing("admin_config", "gift_type", "gift_type VARCHAR(20) DEFAULT 'none'")
         self._add_column_if_missing("admin_config", "gift_points", "gift_points INT DEFAULT 0")
         self._add_column_if_missing("admin_config", "gift_days", "gift_days INT DEFAULT 0")
+        # 自有模型开关与定价
+        self._add_column_if_missing("admin_config", "custom_model_enabled", "custom_model_enabled TINYINT DEFAULT 0")
+        self._add_column_if_missing("admin_config", "custom_model_price", "custom_model_price DECIMAL(10,2) DEFAULT 0")
+        self._add_column_if_missing("admin_config", "custom_model_period", "custom_model_period VARCHAR(20) DEFAULT 'permanent'")
         # 支付宝官方接口
         self._add_column_if_missing("admin_config", "alipay_enabled", "alipay_enabled TINYINT DEFAULT 0")
         self._add_column_if_missing("admin_config", "alipay_app_id", "alipay_app_id VARCHAR(128)")
@@ -1212,7 +1218,7 @@ class Database:
     def get_user_entitlement(self, username):
         ph = _ph()
         row = self.fetchone(
-            f"SELECT username, email, is_verified, points_balance, member_until, is_banned, ban_reason, invite_code, commission_balance FROM users WHERE username = {ph}",
+            f"SELECT username, email, is_verified, points_balance, member_until, is_banned, ban_reason, invite_code, commission_balance, custom_model_until FROM users WHERE username = {ph}",
             (username,)
         )
         if not row:
@@ -1228,10 +1234,22 @@ class Database:
                 active_member = datetime.now() < member_dt
             except Exception:
                 active_member = False
+        custom_model_until = row.get("custom_model_until")
+        custom_model_active = False
+        if custom_model_until:
+            try:
+                if isinstance(custom_model_until, str):
+                    cm_dt = datetime.strptime(custom_model_until.split(".")[0], "%Y-%m-%d %H:%M:%S")
+                else:
+                    cm_dt = custom_model_until
+                custom_model_active = datetime.now() < cm_dt
+            except Exception:
+                custom_model_active = False
         row["points_balance"] = int(row.get("points_balance") or 0)
         row["is_banned"] = bool(row.get("is_banned"))
         row["active_member"] = active_member
         row["commission_balance"] = float(row.get("commission_balance") or 0)
+        row["custom_model_active"] = custom_model_active
         return row
 
     def grant_registration_gift(self, username):
@@ -1324,13 +1342,14 @@ class Database:
     def create_paid_order_and_apply(self, username, plan):
         ph = _ph()
         order_no = f"ORD{int(time.time()*1000)}{abs(hash(username)) % 10000:04d}"
+        business_type = (plan.get("business_type") or "")[:50]
         self.execute(
-            f"""INSERT INTO payment_orders (order_no, username, plan_id, plan_name, plan_type, price, points, days, status, paid_at)
-                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'paid', CURRENT_TIMESTAMP)""",
+            f"""INSERT INTO payment_orders (order_no, username, plan_id, plan_name, plan_type, price, points, days, status, paid_at, business_type)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'paid', CURRENT_TIMESTAMP, {ph})""",
             (
                 order_no, username, int(plan.get("id") or 0), plan.get("name", ""),
                 plan.get("plan_type", ""), float(plan.get("price") or 0),
-                int(plan.get("points") or 0), int(plan.get("days") or 0)
+                int(plan.get("points") or 0), int(plan.get("days") or 0), business_type
             )
         )
         self.apply_paid_order(order_no)
@@ -1409,6 +1428,13 @@ class Database:
             return True, "订单正在处理中"
         if order.get("plan_type") == "monthly":
             self.extend_user_membership(order["username"], int(order.get("days") or 30), f"购买套餐：{order.get('plan_name','包月套餐')}")
+        elif order.get("plan_type") == "custom_model":
+            # 自有模型权限：business_type 编码 period => custom_model_monthly / custom_model_lifetime
+            period = "permanent"
+            bt = order.get("business_type") or ""
+            if "monthly" in bt:
+                period = "monthly"
+            self.grant_custom_model_access(order["username"], period)
         else:
             self.adjust_user_points(order["username"], int(order.get("points") or 0), f"购买套餐：{order.get('plan_name','点数套餐')}")
         self.execute(f"UPDATE payment_orders SET status = 'paid' WHERE order_no = {ph}", (order_no,))
@@ -1831,6 +1857,36 @@ class Database:
         until = base + timedelta(days=max(0, days))
         self.execute(f"UPDATE users SET member_until = {ph} WHERE username = {ph}", (until, username))
         return True, until
+
+    def grant_custom_model_access(self, username, period="permanent"):
+        """发放自有模型使用权限。period: monthly(自现有到期顺延30天) / permanent(永久)"""
+        ph = _ph()
+        row = self.get_user_entitlement(username)
+        if not row:
+            return False, "用户不存在"
+        if period == "monthly":
+            base = datetime.now()
+            current = row.get("custom_model_until")
+            try:
+                if current:
+                    current_dt = datetime.strptime(current.split(".")[0], "%Y-%m-%d %H:%M:%S") if isinstance(current, str) else current
+                    if current_dt > base:
+                        base = current_dt
+            except Exception:
+                pass
+            until = base + timedelta(days=30)
+        else:
+            until = datetime(2099, 12, 31, 23, 59, 59)
+        self.execute(f"UPDATE users SET custom_model_until = {ph} WHERE username = {ph}", (until, username))
+        return True, until
+
+    def get_custom_model_config(self):
+        """读取自有模型开关与定价配置"""
+        admin = self.get_admin_config() or {}
+        enabled = bool(admin.get("custom_model_enabled"))
+        price = float(admin.get("custom_model_price") or 0)
+        period = (admin.get("custom_model_period") or "permanent").strip() or "permanent"
+        return {"enabled": enabled, "price": price, "period": period}
 
     def set_user_member_until(self, username, member_until):
         ph = _ph()
