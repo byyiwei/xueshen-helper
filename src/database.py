@@ -2193,25 +2193,25 @@ class Database:
         page = max(int(page or 1), 1)
         where, params = [], []
         if username:
-            where.append(f"username = {ph}")
+            where.append(f"s.username = {ph}")
             params.append(username)
         if level:
-            where.append(f"level = {ph}")
+            where.append(f"s.level = {ph}")
             params.append(level)
         if keyword:
             like = f"%{keyword}%"
-            where.append(f"(message LIKE {ph} OR page_url LIKE {ph})")
+            where.append(f"(s.message LIKE {ph} OR s.page_url LIKE {ph})")
             params.extend([like, like])
         if date_from:
-            where.append(f"created_at >= {ph}")
+            where.append(f"s.created_at >= {ph}")
             params.append(date_from)
         if date_to:
-            where.append(f"created_at <= {ph}")
+            where.append(f"s.created_at <= {ph}")
             params.append(date_to)
         sql = "SELECT s.id, s.username, s.event_type, s.level, s.message, s.page_url, s.course_id, s.task_id, s.client_ip, s.extra_json, s.created_at, u.points_balance, u.member_until FROM script_event_logs s LEFT JOIN users u ON u.username = s.username"
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY created_at DESC, id DESC"
+        sql += " ORDER BY s.created_at DESC, s.id DESC"
         offset = (page - 1) * limit
         sql += f" LIMIT {ph} OFFSET {ph}"
         params.extend([limit, offset])
@@ -2404,31 +2404,29 @@ class Database:
         where = []
         params = []
         if username:
-            where.append(f"username = {ph}")
+            where.append(f"a.username = {ph}")
             params.append(username)
         if status:
-            where.append(f"status = {ph}")
+            where.append(f"a.status = {ph}")
             params.append(status)
         if model:
-            where.append(f"model = {ph}")
+            where.append(f"a.model = {ph}")
             params.append(model)
         if source == "custom":
-            # 用户自有模型（provider_key='custom'）
-            where.append(f"provider_key = {ph}")
+            where.append(f"a.provider_key = {ph}")
             params.append("custom")
         elif source == "platform":
-            # 后台配置的平台模型
-            where.append(f"(provider_key IS NULL OR provider_key <> {ph})")
+            where.append(f"(a.provider_key IS NULL OR a.provider_key <> {ph})")
             params.append("custom")
         if keyword:
             like = f"%{keyword}%"
-            where.append(f"(question LIKE {ph} OR answer LIKE {ph} OR error LIKE {ph})")
+            where.append(f"(a.question LIKE {ph} OR a.answer LIKE {ph} OR a.error LIKE {ph})")
             params.extend([like, like, like])
         if date_from:
-            where.append(f"created_at >= {ph}")
+            where.append(f"a.created_at >= {ph}")
             params.append(date_from)
         if date_to:
-            where.append(f"created_at <= {ph}")
+            where.append(f"a.created_at <= {ph}")
             params.append(date_to)
         return where, params
 
@@ -2456,7 +2454,7 @@ class Database:
 
     def count_ai_call_logs(self, status="", model="", keyword="", date_from="", date_to="", source="", username=""):
         where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to, source, username)
-        sql = "SELECT COUNT(*) AS total FROM ai_call_logs"
+        sql = "SELECT COUNT(*) AS total FROM ai_call_logs a"
         if where:
             sql += " WHERE " + " AND ".join(where)
         row = self.fetchone(sql, tuple(params))
@@ -2476,7 +2474,7 @@ class Database:
 
     def clear_ai_call_logs(self, status="", model="", keyword="", date_from="", date_to="", source="", username=""):
         where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to, source, username)
-        sql = "DELETE FROM ai_call_logs"
+        sql = "DELETE a FROM ai_call_logs a"
         if where:
             sql += " WHERE " + " AND ".join(where)
         self.execute(sql, tuple(params))
@@ -2508,17 +2506,17 @@ class Database:
         where = []
         params = []
         if matched:
-            where.append(f"matched = {ph}")
+            where.append(f"b.matched = {ph}")
             params.append(1 if matched in ("1", "true", "yes", "命中") else 0)
         if keyword:
             like = f"%{keyword}%"
-            where.append(f"(question_text LIKE {ph} OR question_hash LIKE {ph} OR match_method LIKE {ph})")
+            where.append(f"(b.question_text LIKE {ph} OR b.question_hash LIKE {ph} OR b.match_method LIKE {ph})")
             params.extend([like, like, like])
         if date_from:
-            where.append(f"created_at >= {ph}")
+            where.append(f"b.created_at >= {ph}")
             params.append(date_from)
         if date_to:
-            where.append(f"created_at <= {ph}")
+            where.append(f"b.created_at <= {ph}")
             params.append(date_to)
         return where, params
 
@@ -2546,7 +2544,7 @@ class Database:
 
     def count_bank_call_logs(self, matched="", keyword="", date_from="", date_to=""):
         where, params = self._build_bank_log_where(matched, keyword, date_from, date_to)
-        sql = "SELECT COUNT(*) AS total FROM bank_call_logs"
+        sql = "SELECT COUNT(*) AS total FROM bank_call_logs b"
         if where:
             sql += " WHERE " + " AND ".join(where)
         row = self.fetchone(sql, tuple(params))
@@ -2554,7 +2552,7 @@ class Database:
 
     def clear_bank_call_logs(self, matched="", keyword="", date_from="", date_to=""):
         where, params = self._build_bank_log_where(matched, keyword, date_from, date_to)
-        sql = "DELETE FROM bank_call_logs"
+        sql = "DELETE b FROM bank_call_logs b"
         if where:
             sql += " WHERE " + " AND ".join(where)
         self.execute(sql, tuple(params))
