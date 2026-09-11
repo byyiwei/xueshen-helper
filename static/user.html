@@ -1005,6 +1005,17 @@
         html[data-theme="light"] .mode-card { background: rgba(255,255,255,.85); }
         html[data-theme="light"] .mode-card span { color: var(--v-muted); }
         html[data-theme="light"] .check-card { background: rgba(255,255,255,.85); }
+        html[data-theme="light"] .plan-tab { background: #fff; color: var(--v-muted); border-color: var(--v-border); }
+        html[data-theme="light"] .plan-tab.active { background: var(--v-primary-soft); color: var(--v-primary); border-color: var(--v-primary); }
+        html[data-theme="light"] .plan-badge { background: rgba(16,185,129,.1); color: #059669; border-color: rgba(16,185,129,.2); }
+        html[data-theme="light"] .plan-card.monthly .plan-badge { background: linear-gradient(135deg, #06b6d4, #0891b2); color: #fff; }
+        html[data-theme="light"] .plan-card b { color: var(--v-text); }
+        html[data-theme="light"] .plan-card .plan-price { color: #059669; }
+        html[data-theme="light"] .plan-card.monthly .plan-price { color: #0891b2; }
+        html[data-theme="light"] .plan-card .plan-unit-price { background: rgba(16,185,129,.1); color: #059669; }
+        html[data-theme="light"] .plan-card.monthly .plan-unit-price { background: rgba(6,182,212,.1); color: #0891b2; }
+        html[data-theme="light"] .plan-card .plan-features li .fi { color: #059669; }
+        html[data-theme="light"] .plan-card.monthly .plan-features li .fi { color: #0891b2; }
         @media (max-width: 900px) { html[data-theme="light"] .user-menu { background: rgba(255, 255, 255, .96); } }
     </style>
     <script>
@@ -2064,17 +2075,17 @@
         }
         function renderCustomModelBuy() {
             if (!_cmConfig) { $('customModelBuy').style.display = 'none'; $('customModelHint').style.display = 'none'; return; }
-            if (!$cmConfig.enabled) {
-                $('customModelBuy').style.display = 'none';
-                $('customModelHint').style.display = 'none';
-                return;
-            }
             $('customModelBuy').style.display = '';
+            const enabled = _cmConfig.enabled;
             const price = Number(_cmConfig.price || 0);
             const period = _cmConfig.period === 'monthly' ? '按月' : '永久';
             const active = _profile && _profile.custom_model_active;
             const until = _profile && _profile.custom_model_until;
-            if (active) {
+            if (!enabled) {
+                $('customModelStatus').textContent = '该功能已关闭';
+                $('customModelStatus').style.color = 'var(--v-text-3)';
+                $('customModelBuyBtn').style.display = 'none';
+            } else if (active) {
                 $('customModelStatus').innerHTML = '✓ 已开通 · ' + period + (until ? '（到期：' + until + '）' : '');
                 $('customModelStatus').style.color = 'var(--v-primary-light)';
                 $('customModelBuyBtn').style.display = 'none';
@@ -2087,9 +2098,14 @@
                 $('customModelBuyBtn').textContent = '免费开通';
                 $('customModelBuyBtn').style.display = '';
             }
-            // 模型设置区的自有模型提示
+// 模型设置区的自有模型提示
             const hint = $('customModelHint');
-            if (active) {
+            if (!enabled) {
+                hint.style.display = '';
+                hint.style.background = 'rgba(107,114,128,.08)';
+                hint.style.border = '1px solid rgba(107,114,128,.2)';
+                hint.innerHTML = '<span style="color:#9ca3af">⊘ 自有模型功能已关闭</span>，请联系管理员开启';
+            } else if (active) {
                 hint.style.display = '';
                 hint.style.background = 'rgba(16,185,129,.12)';
                 hint.style.border = '1px solid rgba(16,185,129,.3)';
@@ -2106,7 +2122,8 @@
         async function buyCustomModel() {
             const token = localStorage.getItem(TOKEN_KEY);
             if (!token) return msg('billingMsg', '请先登录', false);
-            const price = _cmConfig ? Number(_cmConfig.price || 0) : 0;
+            if (!_cmConfig || !_cmConfig.enabled) return msg('billingMsg', '自有模型功能已关闭，暂无法开通', false);
+            const price = Number(_cmConfig.price || 0);
             if (price > 0 && !payMethodsList.length) return msg('billingMsg', '暂无可用支付方式，请联系管理员配置', false);
             setBusy($('customModelBuyBtn'), true, '处理中...');
             try {
@@ -2793,7 +2810,11 @@ await loadPlans();
         };
         $('saveModelPanelBtn').onclick = async function () {
             const isCustom = $('ucModelCustom').checked;
-            if (isCustom && _cmConfig && _cmConfig.enabled) {
+            if (isCustom && _cmConfig) {
+                if (!_cmConfig.enabled) {
+                    msg('modelPanelMsg', '自有模型功能已关闭，请切换为自动模型或联系管理员开启', false);
+                    return;
+                }
                 const price = Number(_cmConfig.price || 0);
                 if (price > 0 && !(_profile && _profile.custom_model_active)) {
                     msg('modelPanelMsg', '自有模型需付费开通后方可使用，请先到套餐购买页开通', false);
