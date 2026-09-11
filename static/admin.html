@@ -1926,8 +1926,8 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                   <label>功能开关</label>
                   <label style="display:flex;gap:8px;align-items:center;margin:0;cursor:pointer"><input type="checkbox" v-model="paymentConfig.custom_model_enabled" style="width:auto"> <span style="font-size:13px;color:var(--text2)">{{paymentConfig.custom_model_enabled?'已开启 — 用户可使用自有模型':'已关闭 — 用户无法使用自有模型'}}</span></label>
                 </div>
-                <div class="form-group"><label>收费价格（元）</label><input type="number" min="0" step="0.01" v-model.number="paymentConfig.custom_model_price" :disabled="!paymentConfig.custom_model_enabled" placeholder="0 = 免费"></div>
-                <div class="form-group"><label>有效期</label><select v-model="paymentConfig.custom_model_period" :disabled="!paymentConfig.custom_model_enabled"><option value="permanent">永久有效</option><option value="monthly">按月（30天）</option></select></div>
+                <div class="form-group"><label>收费价格（元）</label><input type="number" min="0" step="0.01" v-model.number="paymentConfig.custom_model_price" placeholder="0 = 免费"></div>
+                <div class="form-group"><label>有效期</label><select v-model="paymentConfig.custom_model_period"><option value="permanent">永久有效</option><option value="monthly">按月（30天）</option></select></div>
               </div>
               <div class="info-tips" style="margin-top:10px;background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.2)">
                 <div class="tip-row"><span class="tip-num" style="background:var(--primary);color:#fff">✓</span><span class="tip-text">
