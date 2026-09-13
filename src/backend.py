@@ -1329,7 +1329,9 @@ def get_daily_report_stats(stat_date):
                     SUM(CASE WHEN plan_type='monthly' THEN 1 ELSE 0 END) AS monthly_count,
                     SUM(CASE WHEN plan_type='monthly' THEN price ELSE 0 END) AS monthly_revenue,
                     SUM(CASE WHEN plan_type='points' THEN 1 ELSE 0 END) AS points_count,
-                    SUM(CASE WHEN plan_type='points' THEN price ELSE 0 END) AS points_revenue
+                    SUM(CASE WHEN plan_type='points' THEN price ELSE 0 END) AS points_revenue,
+                    SUM(CASE WHEN plan_type='custom_model' THEN 1 ELSE 0 END) AS custom_model_count,
+                    SUM(CASE WHEN plan_type='custom_model' THEN price ELSE 0 END) AS custom_model_revenue
                 FROM payment_orders
                 WHERE status='paid' AND DATE(created_at) = %s
                 """,
@@ -1345,6 +1347,8 @@ def get_daily_report_stats(stat_date):
                 "monthly_revenue": round(float(rev.get("monthly_revenue") or 0), 2),
                 "points_count": int(rev.get("points_count") or 0),
                 "points_revenue": round(float(rev.get("points_revenue") or 0), 2),
+                "custom_model_count": int(rev.get("custom_model_count") or 0),
+                "custom_model_revenue": round(float(rev.get("custom_model_revenue") or 0), 2),
             }
         finally:
             conn.close()
@@ -1359,6 +1363,8 @@ def get_daily_report_stats(stat_date):
             "monthly_revenue": 0,
             "points_count": 0,
             "points_revenue": 0,
+            "custom_model_count": 0,
+            "custom_model_revenue": 0,
         }
 
 
@@ -3283,7 +3289,9 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
             SUM(CASE WHEN plan_type='monthly' THEN 1 ELSE 0 END) AS monthly_count,
             SUM(CASE WHEN plan_type='monthly' THEN price ELSE 0 END) AS monthly_revenue,
             SUM(CASE WHEN plan_type='points' THEN 1 ELSE 0 END) AS points_count,
-            SUM(CASE WHEN plan_type='points' THEN price ELSE 0 END) AS points_revenue
+            SUM(CASE WHEN plan_type='points' THEN price ELSE 0 END) AS points_revenue,
+            SUM(CASE WHEN plan_type='custom_model' THEN 1 ELSE 0 END) AS custom_model_count,
+            SUM(CASE WHEN plan_type='custom_model' THEN price ELSE 0 END) AS custom_model_revenue
         FROM payment_orders
         WHERE status='paid' AND created_at >= %s AND created_at < %s
     """
@@ -3366,6 +3374,8 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
             "monthly_orders": int(rev_stats.get("monthly_count") or 0),
             "points_revenue": round(float(rev_stats.get("points_revenue") or 0), 2),
             "points_orders": int(rev_stats.get("points_count") or 0),
+            "custom_model_revenue": round(float(rev_stats.get("custom_model_revenue") or 0), 2),
+            "custom_model_orders": int(rev_stats.get("custom_model_count") or 0),
             "trend": rev_trend,
         },
         "token_usage": _get_token_usage_data(sd, ed_next),

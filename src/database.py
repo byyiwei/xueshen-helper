@@ -928,9 +928,9 @@ class Database:
             {
                 "scene": "daily_report",
                 "subject": "学神助手 - {{date}} 每日运营数据日报",
-                "body_text": "━━━━━━━━━━━━━━━━━━━━\n    学神助手 · 每日运营数据日报\n━━━━━━━━━━━━━━━━━━━━\n\n统计日期：{{date}}\n\n【注册情况】\n    新增注册用户：{{reg_count}} 人\n\n【收入情况】\n    支付订单数：{{order_count}} 笔\n    总收入：{{revenue_total}} 元\n    ├─ 月度会员：{{monthly_count}} 笔 / {{monthly_revenue}} 元\n    └─ 积分套餐：{{points_count}} 笔 / {{points_revenue}} 元\n\n━━━━━━━━━━━━━━━━━━━━\n本邮件由系统定时发送。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━",
-                "body_html": '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}.card{animation:fadeInUp .6s ease-out}.metric{background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px}</style></head><body style="margin:0;padding:0;background:#eef2f7;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:40px 20px;"><table class="card" width="520" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#6366f1,#4f46e5);padding:28px 32px;text-align:center;"><div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:1px;">学神助手</div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">{{subject}}</div></td></tr><tr><td style="padding:28px 32px;"><p style="margin:0 0 20px;color:#6b7280;font-size:14px;">统计日期：<b style="color:#1f2937">{{date}}</b></p><h3 style="margin:0 0 12px;color:#4f46e5;font-size:15px;">注册情况</h3><div class="metric" style="margin:0 0 22px;"><p style="margin:0;color:#6b7280;font-size:13px;">新增注册用户</p><p style="margin:4px 0 0;color:#1f2937;font-size:26px;font-weight:700;">{{reg_count}} <span style="font-size:14px;font-weight:400;color:#6b7280;">人</span></p></div><h3 style="margin:0 0 12px;color:#4f46e5;font-size:15px;">收入情况</h3><div class="metric" style="margin:0 0 14px;"><p style="margin:0;color:#6b7280;font-size:13px;">支付订单数 / 总收入</p><p style="margin:4px 0 0;color:#1f2937;font-size:18px;font-weight:700;">{{order_count}} 笔 · ¥{{revenue_total}}</p></div><table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;border-collapse:collapse;"><tr><td class="metric" style="width:50%;border-radius:12px 0 0 12px;"><p style="margin:0;color:#6b7280;font-size:12px;">月度会员</p><p style="margin:4px 0 0;color:#1f2937;font-size:15px;font-weight:600;">{{monthly_count}} 笔</p><p style="margin:2px 0 0;color:#16a34a;font-size:14px;">¥{{monthly_revenue}}</p></td><td class="metric" style="width:50%;border-left:none;border-radius:0 12px 12px 0;"><p style="margin:0;color:#6b7280;font-size:12px;">积分套餐</p><p style="margin:4px 0 0;color:#1f2937;font-size:15px;font-weight:600;">{{points_count}} 笔</p><p style="margin:2px 0 0;color:#16a34a;font-size:14px;">¥{{points_revenue}}</p></td></tr></table></div><div style="border-top:1px solid #e5e7eb;padding:16px 32px;background:#fafafa;"><p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由系统定时发送。</p><p style="margin:6px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由 <b>{{from_addr}}</b> 发送</p></div></td></tr></table></td></tr></table></body></html>',
-                "variables": "date,reg_count,order_count,revenue_total,monthly_count,monthly_revenue,points_count,points_revenue,subject,from_addr"
+                "body_text": "━━━━━━━━━━━━━━━━━━━━\n    学神助手 · 每日运营数据日报\n━━━━━━━━━━━━━━━━━━━━\n\n统计日期：{{date}}\n\n【注册情况】\n    新增注册用户：{{reg_count}} 人\n\n【收入情况】\n    支付订单数：{{order_count}} 笔\n    总收入：{{revenue_total}} 元\n    ├─ 月度会员：{{monthly_count}} 笔 / {{monthly_revenue}} 元\n    ├─ 积分套餐：{{points_count}} 笔 / {{points_revenue}} 元\n    └─ 自有模型：{{custom_model_count}} 笔 / {{custom_model_revenue}} 元\n\n━━━━━━━━━━━━━━━━━━━━\n本邮件由系统定时发送。\n本邮件由 {{from_addr}} 发送\n━━━━━━━━━━━━━━━━━━━━",
+                "body_html": '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}.card{animation:fadeInUp .6s ease-out}.metric{background:#f8fafc;border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px}</style></head><body style="margin:0;padding:0;background:#eef2f7;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:40px 20px;"><table class="card" width="520" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;width:100%;background:#ffffff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#6366f1,#4f46e5);padding:28px 32px;text-align:center;"><div style="color:#ffffff;font-size:18px;font-weight:600;letter-spacing:1px;">学神助手</div><div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">{{subject}}</div></td></tr><tr><td style="padding:28px 32px;"><p style="margin:0 0 20px;color:#6b7280;font-size:14px;">统计日期：<b style="color:#1f2937">{{date}}</b></p><h3 style="margin:0 0 12px;color:#4f46e5;font-size:15px;">注册情况</h3><div class="metric" style="margin:0 0 22px;"><p style="margin:0;color:#6b7280;font-size:13px;">新增注册用户</p><p style="margin:4px 0 0;color:#1f2937;font-size:26px;font-weight:700;">{{reg_count}} <span style="font-size:14px;font-weight:400;color:#6b7280;">人</span></p></div><h3 style="margin:0 0 12px;color:#4f46e5;font-size:15px;">收入情况</h3><div class="metric" style="margin:0 0 14px;"><p style="margin:0;color:#6b7280;font-size:13px;">支付订单数 / 总收入</p><p style="margin:4px 0 0;color:#1f2937;font-size:18px;font-weight:700;">{{order_count}} 笔 · ¥{{revenue_total}}</p></div><table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 20px;border-collapse:collapse;"><tr><td class="metric" style="width:33%;border-radius:12px 0 0 12px;"><p style="margin:0;color:#6b7280;font-size:12px;">月度会员</p><p style="margin:4px 0 0;color:#1f2937;font-size:15px;font-weight:600;">{{monthly_count}} 笔</p><p style="margin:2px 0 0;color:#16a34a;font-size:14px;">¥{{monthly_revenue}}</p></td><td class="metric" style="width:33%;border-left:none;"><p style="margin:0;color:#6b7280;font-size:12px;">积分套餐</p><p style="margin:4px 0 0;color:#1f2937;font-size:15px;font-weight:600;">{{points_count}} 笔</p><p style="margin:2px 0 0;color:#16a34a;font-size:14px;">¥{{points_revenue}}</p></td><td class="metric" style="width:33%;border-left:none;border-radius:0 12px 12px 0;"><p style="margin:0;color:#6b7280;font-size:12px;">自有模型</p><p style="margin:4px 0 0;color:#1f2937;font-size:15px;font-weight:600;">{{custom_model_count}} 笔</p><p style="margin:2px 0 0;color:#16a34a;font-size:14px;">¥{{custom_model_revenue}}</p></td></tr></table></div><div style="border-top:1px solid #e5e7eb;padding:16px 32px;background:#fafafa;"><p style="margin:0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由系统定时发送。</p><p style="margin:6px 0 0;color:#9ca3af;font-size:12px;line-height:1.6;">本邮件由 <b>{{from_addr}}</b> 发送</p></div></td></tr></table></td></tr></table></body></html>',
+                "variables": "date,reg_count,order_count,revenue_total,monthly_count,monthly_revenue,points_count,points_revenue,custom_model_count,custom_model_revenue,subject,from_addr"
             },
             {
                 "scene": "refund_approved",
@@ -982,7 +982,7 @@ class Database:
         self._add_column_if_missing("users", "is_banned", "is_banned TINYINT DEFAULT 0")
         self._add_column_if_missing("users", "ban_reason", "ban_reason VARCHAR(255)")
         # 自有模型权限到期时间（NULL=未开通，9999-12-31=永久）
-        self._add_column_if_missing("users", "custom_model_until", "custom_model_until TIMESTAMP NULL")
+        self._add_column_if_missing("users", "custom_model_until", "custom_model_until DATETIME NULL")
         # 推广返利
         self._add_column_if_missing("users", "invite_code", "invite_code VARCHAR(16)")
         self._add_column_if_missing("users", "commission_balance", "commission_balance DECIMAL(10,2) DEFAULT 0.00")
@@ -1426,17 +1426,20 @@ class Database:
         if not cur or cur.rowcount == 0:
             # 被其他请求抢先处理了
             return True, "订单正在处理中"
-        if order.get("plan_type") == "monthly":
-            self.extend_user_membership(order["username"], int(order.get("days") or 30), f"购买套餐：{order.get('plan_name','包月套餐')}")
-        elif order.get("plan_type") == "custom_model":
-            # 自有模型权限：business_type 编码 period => custom_model_monthly / custom_model_lifetime
-            period = "permanent"
-            bt = order.get("business_type") or ""
-            if "monthly" in bt:
-                period = "monthly"
-            self.grant_custom_model_access(order["username"], period)
-        else:
-            self.adjust_user_points(order["username"], int(order.get("points") or 0), f"购买套餐：{order.get('plan_name','点数套餐')}")
+        try:
+            if order.get("plan_type") == "monthly":
+                self.extend_user_membership(order["username"], int(order.get("days") or 30), f"购买套餐：{order.get('plan_name','包月套餐')}")
+            elif order.get("plan_type") == "custom_model":
+                # 自有模型权限：business_type 编码 period => custom_model_monthly / custom_model_lifetime
+                period = "permanent"
+                bt = order.get("business_type") or ""
+                if "monthly" in bt:
+                    period = "monthly"
+                self.grant_custom_model_access(order["username"], period)
+            else:
+                self.adjust_user_points(order["username"], int(order.get("points") or 0), f"购买套餐：{order.get('plan_name','点数套餐')}")
+        except Exception as e:
+            print(f"[支付到账] 权益发放异常 order={order_no}: {e}", flush=True)
         self.execute(f"UPDATE payment_orders SET status = 'paid' WHERE order_no = {ph}", (order_no,))
         # 推广返利：首单佣金结算（仅付费订单 price>0 触发）
         try:
@@ -1476,6 +1479,15 @@ class Database:
             self.execute(
                 f"INSERT INTO usage_logs (username, delta_points, balance_after, reason) VALUES ({ph}, 0, 0, {ph})",
                 (order["username"], f"退款撤销包月：{order.get('plan_name','')} ({order_no}) 原因：{reason or '管理员退款'}")
+            )
+        elif order.get("plan_type") == "custom_model":
+            self.execute(
+                f"UPDATE users SET custom_model_until = NULL WHERE username = {ph}",
+                (order["username"],)
+            )
+            self.execute(
+                f"INSERT INTO usage_logs (username, delta_points, balance_after, reason) VALUES ({ph}, 0, 0, {ph})",
+                (order["username"], f"退款撤销自有模型：{order.get('plan_name','')} ({order_no}) 原因：{reason or '管理员退款'}")
             )
         else:
             points = int(order.get("points") or 0)
@@ -1948,8 +1960,11 @@ class Database:
             po_where.append(f"po.status = {ph}")
             po_params.append(status)
         if plan_name:
-            po_where.append(f"po.plan_name = {ph}")
-            po_params.append(plan_name)
+            if plan_name == "__custom_model__":
+                po_where.append(f"po.plan_type = 'custom_model'")
+            else:
+                po_where.append(f"po.plan_name = {ph}")
+                po_params.append(plan_name)
         if pay_method:
             if pay_method == "xianyu":
                 po_where.append("1=0")
@@ -1979,8 +1994,11 @@ class Database:
                 xy_where.append(f"xo.status = {ph}")
                 xy_params.append(s)
         if plan_name:
-            xy_where.append(f"xo.plan_name = {ph}")
-            xy_params.append(plan_name)
+            if plan_name == "__custom_model__":
+                xy_where.append("1=0")
+            else:
+                xy_where.append(f"xo.plan_name = {ph}")
+                xy_params.append(plan_name)
         if pay_method:
             if pay_method != "xianyu":
                 xy_where.append("1=0")

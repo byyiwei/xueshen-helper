@@ -1588,6 +1588,9 @@
                             </label>
                         </div>
                         <div id="customModelHint" style="display:none;padding:10px 14px;border-radius:var(--v-radius-sm);margin-bottom:12px;font-size:12.5px;line-height:1.7"></div>
+                        <div id="customModelPayBtn" style="display:none;margin-bottom:12px;text-align:right">
+                            <button class="primary" id="customModelPayBtnInner" style="width:auto;padding:8px 20px;font-size:13px" onclick="buyCustomModelFromModel()">立即开通</button>
+                        </div>
                         <div class="backend-model-tip" id="backendModelTip">
                             当前选择的是自动模型，将直接使用后端后台配置的模型池，不需要填写 Base URL、模型 ID 或 API Key。
                         </div>
@@ -2074,30 +2077,15 @@
             } catch (_) {}
         }
         function renderCustomModelBuy() {
-            if (!_cmConfig) { $('customModelBuy').style.display = 'none'; $('customModelHint').style.display = 'none'; return; }
-            $('customModelBuy').style.display = '';
+            if (!_cmConfig) { $('customModelBuy').style.display = 'none'; $('customModelHint').style.display = 'none'; $('customModelPayBtn').style.display = 'none'; return; }
+            $('customModelBuy').style.display = 'none';
             const enabled = _cmConfig.enabled;
             const price = Number(_cmConfig.price || 0);
             const period = _cmConfig.period === 'monthly' ? '按月' : '永久';
             const active = _profile && _profile.custom_model_active;
             const until = _profile && _profile.custom_model_until;
-            if (!enabled) {
-                $('customModelStatus').textContent = '该功能已关闭';
-                $('customModelStatus').style.color = 'var(--v-text-3)';
-                $('customModelBuyBtn').style.display = 'none';
-            } else if (active) {
-                $('customModelStatus').innerHTML = '✓ 已开通 · ' + period + (until ? '（到期：' + until + '）' : '');
-                $('customModelStatus').style.color = 'var(--v-primary-light)';
-                $('customModelBuyBtn').style.display = 'none';
-            } else if (price > 0) {
-                $('customModelStatus').textContent = '未开通 · 需付费 ￥' + price.toFixed(2) + '（' + period + '）后使用';
-                $('customModelBuyBtn').textContent = '立即开通 ￥' + price.toFixed(2);
-                $('customModelBuyBtn').style.display = '';
-            } else {
-                $('customModelStatus').textContent = '免费 · 点击开通即可使用';
-                $('customModelBuyBtn').textContent = '免费开通';
-                $('customModelBuyBtn').style.display = '';
-            }
+            const payBtn = $('customModelPayBtn');
+            const payBtnInner = $('customModelPayBtnInner');
 // 模型设置区的自有模型提示
             const hint = $('customModelHint');
             if (!enabled) {
@@ -2105,18 +2093,27 @@
                 hint.style.background = 'rgba(107,114,128,.08)';
                 hint.style.border = '1px solid rgba(107,114,128,.2)';
                 hint.innerHTML = '<span style="color:#9ca3af">⊘ 自有模型功能已关闭</span>，请联系管理员开启';
+                payBtn.style.display = 'none';
             } else if (active) {
                 hint.style.display = '';
                 hint.style.background = 'rgba(16,185,129,.12)';
                 hint.style.border = '1px solid rgba(16,185,129,.3)';
-                hint.innerHTML = '<span style="color:var(--v-primary-light)">✓ 自有模型已开通</span>，可正常使用';
+                hint.innerHTML = '<span style="color:var(--v-primary-light)">✓ 自有模型已开通</span>，可正常使用' + (until ? '（到期：' + until + '）' : '');
+                payBtn.style.display = 'none';
             } else if (price > 0) {
                 hint.style.display = '';
                 hint.style.background = 'rgba(245,158,11,.1)';
                 hint.style.border = '1px solid rgba(245,158,11,.3)';
-                hint.innerHTML = '<span style="color:#fbbf24">⚠ 自有模型未开通</span>，需支付 ￥' + price.toFixed(2) + '（' + period + '）<a href="javascript:void(0)" onclick="document.querySelector(\'[data-section=billing]\').click()" style="color:#fbbf24;text-decoration:underline;margin-left:6px">去开通</a>';
+                hint.innerHTML = '<span style="color:#fbbf24">⚠ 自有模型未开通</span>，需支付 ￥' + price.toFixed(2) + '（' + period + '）后使用';
+                payBtn.style.display = '';
+                payBtnInner.textContent = '立即开通 ￥' + price.toFixed(2);
             } else {
-                hint.style.display = 'none';
+                hint.style.display = '';
+                hint.style.background = 'rgba(16,185,129,.12)';
+                hint.style.border = '1px solid rgba(16,185,129,.3)';
+                hint.innerHTML = '<span style="color:var(--v-primary-light)">✓ 自有模型免费</span>，点击开通即可使用';
+                payBtn.style.display = '';
+                payBtnInner.textContent = '免费开通';
             }
         }
         async function buyCustomModel() {
@@ -2143,6 +2140,32 @@
                 }
             } catch (_) { msg('billingMsg', '购买失败，请检查后端服务是否运行', false); }
             finally { setBusy($('customModelBuyBtn'), false); }
+        }
+        async function buyCustomModelFromModel() {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) return msg('modelPanelMsg', '请先登录', false);
+            if (!_cmConfig || !_cmConfig.enabled) return msg('modelPanelMsg', '自有模型功能已关闭，暂无法开通', false);
+            const price = Number(_cmConfig.price || 0);
+            if (price > 0 && !payMethodsList.length) return msg('modelPanelMsg', '暂无可用支付方式，请联系管理员配置', false);
+            const btn = $('customModelPayBtnInner');
+            setBusy(btn, true, '处理中...');
+            try {
+                if (price <= 0) {
+                    const res = await post('/api/payment/purchase', { plan_type: 'custom_model' }, token);
+                    if (res.code === 200) { fillProfile(res.profile); msg('modelPanelMsg', res.msg || '开通成功', true); renderCustomModelBuy(); }
+                    else msg('modelPanelMsg', res.msg || '开通失败', false);
+                } else {
+                    const payWin = window.open('', '_blank');
+                    const res = await post('/api/payment/purchase', { plan_type: 'custom_model', pay_method: currentPayMethod }, token);
+                    if (res.code === 200) {
+                        if (res.paying) {
+                            if (res.pay_url) { if (payWin) payWin.location.href = res.pay_url; else window.open(res.pay_url, '_blank'); showPayQr(res.order_no, null, res.pay_url); msg('modelPanelMsg', res.msg || '订单已创建，请完成付款', true); }
+                            else if (res.qr_code) { if (payWin) payWin.close(); showPayQr(res.order_no, res.qr_code, null); msg('modelPanelMsg', res.msg || '订单已创建，请扫码付款', true); }
+                        } else { if (payWin) payWin.close(); fillProfile(res.profile); msg('modelPanelMsg', res.msg || '开通成功', true); renderCustomModelBuy(); }
+                    } else { if (payWin) payWin.close(); msg('modelPanelMsg', res.msg || '购买失败', false); }
+                }
+            } catch (_) { msg('modelPanelMsg', '购买失败，请检查后端服务是否运行', false); }
+            finally { setBusy(btn, false); }
         }
         let payMethodsList = [];
         let currentPayMethod = 'wechat';
@@ -2471,6 +2494,12 @@
             const isCustom = $('ucModelCustom').checked;
             $('customModelBox').classList.toggle('hidden', !isCustom);
             $('backendModelTip').classList.toggle('active', !isCustom);
+            if (!isCustom) {
+                $('customModelHint').style.display = 'none';
+                $('customModelPayBtn').style.display = 'none';
+            } else {
+                renderCustomModelBuy();
+            }
         }
         function fillCloudForms(settings) {
             const mode = settings.modelMode || settings.model || 'auto';
@@ -2817,7 +2846,7 @@ await loadPlans();
                 }
                 const price = Number(_cmConfig.price || 0);
                 if (price > 0 && !(_profile && _profile.custom_model_active)) {
-                    msg('modelPanelMsg', '自有模型需付费开通后方可使用，请先到套餐购买页开通', false);
+                    msg('modelPanelMsg', '自有模型需付费开通后方可使用，请先点击上方"立即开通"按钮', false);
                     return;
                 }
             }

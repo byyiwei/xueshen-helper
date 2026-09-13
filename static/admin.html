@@ -536,7 +536,7 @@ body{
       .date-quick{background:transparent;color:var(--text2);border:1px solid var(--border);border-radius:8px;padding:6px 14px;font-size:12px;cursor:pointer;transition:all .2s;white-space:nowrap}
       .date-quick:hover{border-color:var(--accent);color:var(--accent);background:rgba(59,130,246,.06)}
       .date-quick.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-      .revenue-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+      .revenue-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
       .revenue-card{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center}
       .revenue-label{font-size:12px;color:var(--text3);margin-bottom:6px}
       .revenue-value{font-size:26px;font-weight:800;letter-spacing:.5px}
@@ -1119,6 +1119,11 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                 <div class="revenue-label">题数收入</div>
                 <div class="revenue-value">¥{{dashboard.revenue?.points_revenue?.toFixed(2)||'0.00'}}</div>
                 <div class="revenue-sub">{{dashboard.revenue?.points_orders||0}} 笔</div>
+              </div>
+              <div class="revenue-card">
+                <div class="revenue-label">自有模型</div>
+                <div class="revenue-value">¥{{dashboard.revenue?.custom_model_revenue?.toFixed(2)||'0.00'}}</div>
+                <div class="revenue-sub">{{dashboard.revenue?.custom_model_orders||0}} 笔</div>
               </div>
             </div>
             <div class="chart-title" style="margin-top:18px"><h4 style="font-size:14px;color:var(--text2)">收入趋势</h4><span>每日收入（元）</span></div>
@@ -3441,6 +3446,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                 <label style="font-size:11px;margin-bottom:4px">套餐名称</label>
                 <select v-model="paymentOrdersFilter.plan_name" class="form-control" style="padding:6px 10px;font-size:13px">
                   <option value="">全部</option>
+                  <option value="__custom_model__">自有模型</option>
                   <option v-for="p in paymentPlans" :key="p.id" :value="p.name">{{p.name}}</option>
                 </select>
               </div>
@@ -3498,8 +3504,8 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     <td style="padding:10px 12px;font-family:monospace;font-size:12px">{{row.channel_order_no||'-'}}</td>
                     <td style="padding:10px 12px">{{row.username}}</td>
                     <td style="padding:10px 12px">{{row.plan_name||'-'}}</td>
-                    <td style="padding:10px 12px">{{row.business_type||'-'}}</td>
-                    <td style="padding:10px 12px">{{row.plan_type||'-'}}</td>
+                    <td style="padding:10px 12px">{{row.business_type==='custom_model_monthly'?'自有模型(按月)':row.business_type==='custom_model_lifetime'?'自有模型(永久)':row.business_type||'-'}}</td>
+                    <td style="padding:10px 12px">{{row.plan_type==='monthly'?'包月':row.plan_type==='points'?'题数':row.plan_type==='custom_model'?'自有模型':row.plan_type||'-'}}</td>
                     <td style="padding:10px 12px;font-weight:600;color:var(--success)">¥{{Number(row.price||0).toFixed(2)}}</td>
                     <td style="padding:10px 12px">{{row.points>0?row.points+'点':''}}{{row.days>0?(row.points>0?'/':'')+row.days+'天':''}}{{!row.points&&!row.days?'-':''}}</td>
                     <td style="padding:10px 12px">{{row.pay_method==='alipay'?'支付宝':row.pay_method==='wechat'?'微信支付':row.pay_method==='card'?cardPayLabel:row.pay_method||'-'}}
@@ -3855,9 +3861,10 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     <div style="font-size:22px;font-weight:700;color:var(--success);margin-top:2px">¥{{dailyReportPreview.stats.revenue_total}}</div>
                   </div>
                   <div style="padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:8px">
-                    <div style="font-size:12px;color:var(--text3)">月度会员 / 积分套餐</div>
+                    <div style="font-size:12px;color:var(--text3)">月度会员 / 积分套餐 / 自有模型</div>
                     <div style="font-size:14px;color:var(--text);margin-top:2px">{{dailyReportPreview.stats.monthly_count}} 笔 · ¥{{dailyReportPreview.stats.monthly_revenue}}</div>
                     <div style="font-size:14px;color:var(--text2)">{{dailyReportPreview.stats.points_count}} 笔 · ¥{{dailyReportPreview.stats.points_revenue}}</div>
+                    <div style="font-size:14px;color:var(--text2)">{{dailyReportPreview.stats.custom_model_count||0}} 笔 · ¥{{dailyReportPreview.stats.custom_model_revenue||0}}</div>
                   </div>
                 </div>
               </div>
@@ -3971,7 +3978,7 @@ createApp({
     const templateForm=ref({scene:'',subject:'',body_text:'',body_html:'',body_text_plain:'',content_type:'text',is_resend:false});
     const editingTemplateId=ref(null);
     const TEMPLATE_SCENES={user_register:'用户注册验证码',user_reset:'用户密码重置验证码',admin_reset:'管理员密码重置验证码',referral_withdrawal:'推广提现通知',feedback_reply:'问题反馈回复',daily_report:'每日运营数据日报',feedback_new:'新问题反馈通知',refund_approved:'退款申请通过',refund_rejected:'退款申请拒绝',refund_request:'新退款申请通知'};
-    const SCENE_VARS={user_register:['username','code','subject','from_addr'],user_reset:['username','code','subject','from_addr'],admin_reset:['username','code','subject','from_addr'],referral_withdrawal:['username','amount','status','reason','subject','from_addr'],feedback_reply:['username','title','reply_text','subject','from_addr'],daily_report:['date','reg_count','order_count','revenue_total','monthly_count','monthly_revenue','points_count','points_revenue','subject','from_addr'],feedback_new:['username','category','title','content','subject','from_addr'],refund_approved:['username','order_no','plan_name','price','reason','note','subject','from_addr'],refund_rejected:['username','order_no','plan_name','price','reason','note','subject','from_addr'],refund_request:['username','order_no','plan_name','price','reason','subject','from_addr']};
+    const SCENE_VARS={user_register:['username','code','subject','from_addr'],user_reset:['username','code','subject','from_addr'],admin_reset:['username','code','subject','from_addr'],referral_withdrawal:['username','amount','status','reason','subject','from_addr'],feedback_reply:['username','title','reply_text','subject','from_addr'],daily_report:['date','reg_count','order_count','revenue_total','monthly_count','monthly_revenue','points_count','points_revenue','custom_model_count','custom_model_revenue','subject','from_addr'],feedback_new:['username','category','title','content','subject','from_addr'],refund_approved:['username','order_no','plan_name','price','reason','note','subject','from_addr'],refund_rejected:['username','order_no','plan_name','price','reason','note','subject','from_addr'],refund_request:['username','order_no','plan_name','price','reason','subject','from_addr']};
     const SCENE_DEFAULTS={
       user_register:{
         subject:'学神助手 - 注册验证码',
