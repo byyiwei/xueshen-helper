@@ -291,6 +291,7 @@ body{
 .model-row{
   display:flex;align-items:center;gap:8px;
   margin-bottom:8px;
+  flex-wrap:wrap;
 }
 .model-row input{
   padding:8px 12px;background:var(--bg4);border:1px solid var(--border);
@@ -312,6 +313,11 @@ body{
   flex:none;
 }
 .btn-test:hover{background:rgba(124,58,237,.1)}
+.btn-quota-clear{
+  border:none;background:transparent;color:var(--text3);cursor:pointer;
+  font-size:10px;line-height:1;padding:0;
+}
+.btn-quota-clear:hover{color:var(--danger)}
 .btn-test:disabled{opacity:.5;cursor:not-allowed}
 .quota-badge{
   font-size:11px;font-weight:600;padding:2px 7px;border-radius:10px;white-space:nowrap;line-height:1.6;
@@ -1260,21 +1266,21 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                 <div class="form-group"><label>Base URL</label><input v-model="entry.info.base_url" placeholder="https://api.xxx.com/v1"></div>
               </div>
               <div class="models-title">模型列表 <span style="font-size:12px;color:var(--text3);font-weight:400">权重越高被调用概率越大（默认100），每日/总额Token限额为0表示不限制，总额超过后自动停用不再调用</span></div>
-              <div style="display:flex;gap:8px;padding:0 4px 6px;font-size:11px;color:var(--text3);font-weight:600;letter-spacing:.3px;align-items:center">
-                <div style="flex:1">模型ID</div>
-                <div style="flex:1">显示名称</div>
-                <div style="width:70px;flex:none;text-align:center">调用占比</div>
+              <div style="display:flex;gap:8px;padding:0 4px 6px;font-size:11px;color:var(--text3);font-weight:600;letter-spacing:.3px;align-items:center;flex-wrap:wrap">
+                <div style="flex:1 1 170px;min-width:0">模型ID</div>
+                <div style="flex:1 1 170px;min-width:0">显示名称</div>
+                <div style="width:64px;flex:none;text-align:center">调用占比</div>
                 <div style="width:80px;flex:none;text-align:center">每日Token限额</div>
                 <div style="width:80px;flex:none;text-align:center">总额Token限额</div>
-                <div style="width:64px;flex:none;text-align:center">支持图片</div>
+                <div style="width:52px;flex:none;text-align:center">支持图片</div>
                 <div style="width:96px;flex:none;text-align:center">额度状态</div>
                 <div style="width:72px;flex:none;text-align:center">操作</div>
               </div>
               <template v-for="(m,idx) in entry.info.models" :key="idx"><div class="model-row" v-if="modelRowVisible(entry,m)">
-                <input v-model="m.value" placeholder="如: deepseek-chat" style="flex:1;min-width:0;font-size:12px">
-                <input v-model="m.label" placeholder="如: DeepSeek V3" style="flex:1;min-width:0;font-size:12px">
-                <div style="width:70px;flex:none;display:flex;align-items:center;justify-content:center">
-                  <input v-model.number="m.weight" type="number" min="0" max="100" placeholder="100" title="调用权重(0-100)" style="width:60px;text-align:center;padding:8px 2px">
+                <input v-model="m.value" placeholder="如: deepseek-chat" style="flex:1 1 170px;min-width:0;font-size:12px">
+                <input v-model="m.label" placeholder="如: DeepSeek V3" style="flex:1 1 170px;min-width:0;font-size:12px">
+                <div style="width:64px;flex:none;display:flex;align-items:center;justify-content:center">
+                  <input v-model.number="m.weight" type="number" min="0" max="100" placeholder="100" title="调用权重(0-100)" style="width:56px;text-align:center;padding:8px 2px">
                 </div>
                 <div style="width:80px;flex:none;display:flex;align-items:center;justify-content:center">
                   <input v-model.number="m.daily_token_limit" type="number" min="0" placeholder="0" title="每日Token限额(0=不限)" style="width:70px;text-align:center;padding:8px 2px">
@@ -1282,14 +1288,15 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                 <div style="width:80px;flex:none;display:flex;align-items:center;justify-content:center">
                   <input v-model.number="m.total_token_limit" type="number" min="0" placeholder="0" title="总额Token限额(0=不限)，超过则自动停用" style="width:70px;text-align:center;padding:8px 2px">
                 </div>
-                <div style="width:64px;flex:none;display:flex;align-items:center;justify-content:center">
+                <div style="width:52px;flex:none;display:flex;align-items:center;justify-content:center">
                   <input type="checkbox" v-model="m.vision" title="该模型支持图片输入(多模态)" style="width:auto;flex:none">
                 </div>
-                <div style="width:96px;flex:none;display:flex;align-items:center;justify-content:center">
+                <div style="width:96px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px">
                   <span v-if="modelTotalExhausted(m)" class="quota-badge exhausted" title="总额Token已用完，已自动停用">已用完</span>
                   <span v-else-if="modelDailyExhausted(m)" class="quota-badge daily" title="今日Token已用完，今日不再调用">今日已满</span>
                   <span v-else-if="!m.daily_token_limit && !m.total_token_limit" class="quota-badge none" title="未设置限额">不限</span>
                   <span v-else class="quota-badge ok" :title="modelQuotaTitle(m)">可用 {{modelQuotaLeft(m)}}</span>
+                  <button type="button" class="btn-quota-clear" title="清空该模型的每日/总额Token用量，恢复可调用" @click="clearModelQuota(m)">清空额度</button>
                 </div>
                 <button class="btn-test" :disabled="testingModel===(entry.key+'-'+idx)" :title="'调试 '+(m.value||'模型')" @click="testModel(entry.info,m,entry.key+'-'+idx)">{{testingModel===(entry.key+'-'+idx)?'…':'⚡'}}</button>
                 <button class="btn-del" @click="removeModel(entry.key,idx)">×</button>
@@ -5263,6 +5270,17 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       if(tlim>0)parts.push('总额已用 '+modelTotalUsed(m)+' / '+tlim);
       return parts.join('，')||'未设置限额';
     }
+    async function clearModelQuota(m){
+      if(!m||!m.value)return showMsg('该模型未填写模型ID，无法清空','error');
+      if(!confirm('确认清空模型「'+(m.label||m.value)+'」的额度用量？\n清空后每日/总额Token用量归零，模型立即恢复可调用。'))return;
+      const data=await adminPost('/admin/model-quota/clear',{model:m.value});
+      if(data){
+        modelUsageTotal.value={...modelUsageTotal.value,[m.value]:0};
+        const today=modelUsageToday.value[m.value];
+        modelUsageToday.value={...modelUsageToday.value,[m.value]:{tokens:0,calls:(today&&today.calls)||0}};
+        showMsg(data.msg||'已清空');
+      }
+    }
     const WEIGHT_COLORS=['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#84cc16','#f97316','#6366f1'];
     function weightSegments(entry){
       const models=(entry&&entry.info&&entry.info.models)||[];
@@ -5980,7 +5998,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       savePaymentConfig,savePayApiConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,movePlan,openUserEdit,saveUserAdmin,
       toggleProvider,collapseAllProviders,togglePayApiSection,
        addProvider,removeProvider,addModel,removeModel,
-       modelUsageTotal,modelUsageToday,modelTotalExhausted,modelDailyExhausted,modelQuotaLeft,modelQuotaTitle,weightSegments,
+       modelUsageTotal,modelUsageToday,modelTotalExhausted,modelDailyExhausted,modelQuotaLeft,modelQuotaTitle,clearModelQuota,weightSegments,
        qqBot,qqBotStatus,qqBotLogs,qqBotBotpyAvailable,qqBotSaving,loadQqBot,saveQqBot,
       protocolName,statusText,formatDuration,questionTypeName,shortText,formatWan,formatScriptExtra,isMembershipActive,fmtMemberExpire,pointsColorStyle,memberColorStyle,trendPoints,trendX,trendY,trendMax,stackBarX,stackBarY,stackBarH,modelBarWidth,revTrendPoints,revTrendArea,revTrendX,revStep,revY,revMax,
       loadLogCleanup,saveLogCleanup,runLogCleanupNow,logRetentionDays,logCleanupSaving,logCleanupRunning,logCleanupResult,payTestForm,payTestLoading,payTestResult,runPayTest,payApiWeightTotal,payApiWeightPercent,refreshSandpayParams,onSandpayAdvancedChange,

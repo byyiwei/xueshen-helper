@@ -2439,6 +2439,11 @@ class Database:
         )
         return {r["model_name"]: int(r.get("total_tokens") or 0) for r in rows}
 
+    def clear_model_token_usage(self, model_name):
+        """清空指定模型的 token 用量（每日 + 历史总额归零，模型恢复可调用）"""
+        ph = _ph()
+        self.execute(f"DELETE FROM model_token_usage WHERE model_name = {ph}", (model_name,))
+
     def get_model_token_usage_range(self, start_date, end_date):
         """获取时间范围内的模型 token 消耗汇总"""
         ph = _ph()

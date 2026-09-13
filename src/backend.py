@@ -6589,6 +6589,24 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        elif path == "/admin/model-quota/clear":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                model_name = (data.get("model") or "").strip()
+                if not model_name:
+                    self._send_json(400, {"code": 400, "msg": "缺少模型 ID"})
+                    return
+                db.clear_model_token_usage(model_name)
+                # 关键：同步清掉内存中的 token 用量缓存，否则耗尽判定不会立即恢复
+                MODEL_TOKEN_CACHE.pop(model_name, None)
+                print(f"[模型额度] 已清空模型 {model_name} 的每日/总额 Token 用量", flush=True)
+                self._send_json(200, {"code": 200, "msg": f"已清空模型「{model_name}」的额度用量，已恢复可调用"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         elif path == "/admin/question-bank/retrain":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -6868,18 +6886,23 @@ class Handler(BaseHTTPRequestHandler):
                 model_mode = "custom" if use_custom else "auto"
                 # 自有模型：使用用户自己的接口，不扣题数、不校验包月/题数余额
                 if use_custom:
+                    # 提前标记，保证闸门拦截时日志也能记录模型名与来源（自有模型）
+                    resolved_model = custom_cfg.get("model") or ""
+                    provider_name = "custom"
                     cm_cfg = db.get_custom_model_config()
                     if not cm_cfg.get("enabled"):
-                        self._send_json(403, {"code": 403, "msg": "自有模型功能未开启，请使用自动模型继续答题"})
+                        err = "自有模型功能未开启，请使用自动模型继续答题"
+                        status = "custom_disabled"
+                        self._send_json(403, {"code": 403, "msg": err})
                         return
                     cm_price = float(cm_cfg.get("price") or 0)
                     if cm_price > 0 and not (ent and ent.get("custom_model_active")):
                         cm_period = cm_cfg.get("period") or "permanent"
                         period_text = "按月开通" if cm_period == "monthly" else "永久开通"
-                        self._send_json(402, {"code": 402, "msg": f"自有模型需付费开通后方可使用（¥{cm_price:.2f}，{period_text}），请到用户中心购买", "status": "custom_model_not_paid"})
+                        err = f"自有模型需付费开通后方可使用（¥{cm_price:.2f}，{period_text}），请到用户中心购买"
+                        status = "custom_not_paid"
+                        self._send_json(402, {"code": 402, "msg": err, "status": "custom_model_not_paid"})
                         return
-                    resolved_model = custom_cfg.get("model") or ""
-                    provider_name = "custom"
                 else:
                     if not ent or (not ent.get("active_member") and int(ent.get("points_balance") or 0) <= 0):
                         err = "题数余额不足，请到用户中心购买点数或包月套餐"
@@ -6946,13 +6969,16 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     enabled = get_enabled_providers()
                     if not enabled:
-                        self._send_json(500, {"code": 500, "msg": "没有启用的 AI 提供商，请先配置"})
+                        err = "没有启用的 AI 提供商，请先配置"
+                        status = "no_provider"
+                        self._send_json(500, {"code": 500, "msg": err})
                         return
                     need_vision = is_multimodal_question(question)
                     print(f"[AI请求] mode=auto, question={question[:60]}..., vision={need_vision}", flush=True)
                     answer, err, resolved_model, provider_name = ask_ai_auto(question, need_vision=need_vision, username=user.get("username", "") if user else "", client_ip=self.client_address[0] if self.client_address else "")
                 if not use_custom and not resolved_model:
-                    self._send_json(500, {"code": 500, "msg": "没有启用的 AI 提供商，请先配置"})
+                    err = err or "没有启用的 AI 提供商，请先配置"
+                    self._send_json(500, {"code": 500, "msg": err})
                     return
                 if answer:
                     answer = normalize_ai_answer(question, answer)
