@@ -1,0 +1,30 @@
+{
+  "password": "pbkdf2$100000$REPLACE_WITH_YOUR_SALT$REPLACE_WITH_YOUR_HASH",
+  "email": {
+    "enabled": false,
+    "smtp_host": "",
+    "smtp_port": 587,
+    "smtp_user": "",
+    "smtp_pass": "",
+    "from_addr": ""
+  },
+  "providers": {
+    "deepseek": {
+      "enabled": true,
+      "title": "DeepSeek",
+      "protocol": "openai",
+      "api_key": "",
+      "base_url": "https://api.deepseek.com/v1",
+      "models": [
+        {
+          "value": "deepseek-chat",
+          "label": "DeepSeek-V3 (通用｜推荐)"
+        },
+        {
+          "value": "deepseek-reasoner",
+          "label": "DeepSeek-R1 (思考｜强推理)"
+        }
+      ]
+    }
+  }
+}
