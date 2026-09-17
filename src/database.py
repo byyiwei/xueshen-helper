@@ -3660,8 +3660,15 @@ class Database:
         ph = _ph()
         self.execute(f"UPDATE admin_config SET email_enabled = {ph} WHERE id = 1", (1 if enabled else 0,))
 
-    def cleanup_old_logs(self, days):
-        """删除超过指定天数的日志数据，返回各表删除条数"""
+    def cleanup_old_logs(self, days, batch_size=5000, max_batches=200):
+        """删除超过指定天数的日志数据，返回各表删除条数。
+
+        分批删除：单次 DELETE 大量数据（如 script_event_logs 积压 20 万行/200MB）
+        会超过 MySQL net_read_timeout(30s) 导致 "Lost connection during query"。
+        改为每批删 batch_size 行并循环，保证每批都在超时阈值内完成，
+        同时避免长时间持锁阻塞线上查询。单批失败即停止该表，已删部分保留，
+        下次调用可继续（幂等）。
+        """
         ph = _ph()
         if not days or int(days) <= 0:
             return {}
@@ -3674,13 +3681,24 @@ class Database:
             ("usage_logs", "created_at"),
         ]
         for table, col in tables:
+            deleted = 0
             try:
-                sql = f"DELETE FROM {table} WHERE {col} < DATE_SUB(NOW(), INTERVAL {ph} DAY)"
-                cur = self.execute(sql, (days,))
-                result[table] = cur.rowcount if cur else 0
+                for _ in range(max_batches):
+                    # 用 LIMIT 限制单批删除量，配合索引 idx_created_id 走范围扫描
+                    sql = (f"DELETE FROM {table} WHERE {col} < DATE_SUB(NOW(), INTERVAL {ph} DAY) "
+                           f"LIMIT {int(batch_size)}")
+                    cur = self.execute(sql, (days,))
+                    n = cur.rowcount if cur and cur.rowcount and cur.rowcount > 0 else 0
+                    deleted += n
+                    if n < batch_size:
+                        break  # 已删完，没有更多过期数据
+                    # 每批之间短暂让出，缓解主从延迟与锁竞争
+                    time.sleep(0.05)
+                result[table] = deleted
             except Exception as e:
-                print(f"[日志清理] 清理 {table} 失败: {e}", flush=True)
-                result[table] = -1
+                print(f"[日志清理] 清理 {table} 失败（已删 {deleted} 行）: {e}", flush=True)
+                # 已成功删除的部分仍然算数，便于观察进度；失败标记为负数
+                result[table] = -1 if deleted == 0 else deleted
         return result
 
     def get_log_retention_days(self):
