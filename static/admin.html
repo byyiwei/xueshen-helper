@@ -226,6 +226,21 @@ body{
 
 /* Data table */
 .data-table{width:100%;border-collapse:collapse;font-size:13px}
+/* 可复制单元格：整格点击复制，悬停时按钮浮现在右侧（不占用文字宽度） */
+.copy-cell{position:relative;display:block;cursor:pointer;min-width:0;padding-right:0}
+.copy-cell-text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.copy-cell-btn{
+  position:absolute;right:2px;top:50%;transform:translateY(-50%);
+  padding:1px 6px;border-radius:4px;font-family:system-ui,-apple-system,sans-serif;
+  font-size:10px;line-height:16px;color:var(--text3);background:var(--card);
+  border:1px solid var(--border);opacity:0;pointer-events:none;
+  transition:opacity .12s,color .12s,border-color .12s;
+}
+.copy-cell:hover .copy-cell-btn{opacity:1}
+.copy-cell:hover .copy-cell-text{color:var(--accent2)}
+.copy-cell-btn.done{opacity:1;color:var(--success);border-color:var(--success)}
+/* 悬停时给文字留出按钮位置，避免文字被按钮压住 */
+.copy-cell:hover .copy-cell-text{padding-right:38px}
 .data-table thead th{
   text-align:left;padding:10px 12px;
   color:var(--text2);font-weight:500;font-size:12px;
@@ -3484,7 +3499,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                 <thead>
                   <tr style="text-align:left;color:var(--text3);border-bottom:1px solid var(--border)">
                     <th style="padding:8px 10px;cursor:pointer;white-space:nowrap;width:156px" @click="togglePaymentSort('order_no')">订单号 {{paymentOrdersSort.field==='order_no'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
-                    <th style="padding:8px 10px;white-space:nowrap;width:140px">渠道单号</th>
+                    <th style="padding:8px 10px;white-space:nowrap;width:212px">渠道单号</th>
                     <th style="padding:8px 10px;cursor:pointer;white-space:nowrap;width:100px" @click="togglePaymentSort('username')">用户名 {{paymentOrdersSort.field==='username'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
                     <th style="padding:8px 10px;white-space:nowrap;width:92px">套餐</th>
                     <th style="padding:8px 10px;white-space:nowrap;width:114px">业务类型</th>
@@ -3498,8 +3513,16 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                 </thead>
                 <tbody>
                   <tr v-for="row in paymentOrders" :key="row.id" style="border-bottom:1px solid var(--border)">
-                    <td style="padding:8px 10px;font-family:monospace;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="row.order_no">{{row.order_no}}</td>
-                    <td style="padding:8px 10px;font-family:monospace;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="row.channel_order_no||'-'">{{row.channel_order_no||'-'}}</td>
+                    <td style="padding:8px 10px;font-family:monospace;font-size:11px;overflow:hidden;white-space:nowrap" :title="row.order_no">{{row.order_no}}</td>
+                    <td style="padding:8px 10px;font-family:monospace;font-size:11px;overflow:hidden;white-space:nowrap">
+                      <template v-if="row.channel_order_no">
+                        <span class="copy-cell" :title="'点击复制：'+row.channel_order_no" @click="copyText(row.channel_order_no, $event)">
+                          <span class="copy-cell-text">{{row.channel_order_no}}</span>
+                          <span class="copy-cell-btn" :class="{done:copiedKey===row.channel_order_no}">{{copiedKey===row.channel_order_no?'已复制':'复制'}}</span>
+                        </span>
+                      </template>
+                      <span v-else style="color:var(--text3)">-</span>
+                    </td>
                     <td style="padding:8px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="row.username">{{row.username}}</td>
                     <td style="padding:8px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="row.plan_name||'-'">{{row.plan_name||'-'}}</td>
                     <td style="padding:8px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="paymentBusinessType(row)">{{paymentBusinessType(row)}}</td>
@@ -5771,8 +5794,59 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     }
     function paymentOrdersPrev(){if(paymentOrdersPage.value>1){paymentOrdersPage.value--;loadPaymentOrders();}}
     function paymentOrdersNext(){if(paymentOrdersPage.value<paymentOrdersTotalPages.value){paymentOrdersPage.value++;loadPaymentOrders();}}
-    // ===== 支付明细展示辅助 =====
-    // 支付方式中文映射（原先直接输出 sandpayh5 等英文标识）
+    // 复制文本：优先 Clipboard API，失败降级 execCommand（与用户端实现保持一致）
+    // 注意：HTTP 环境或旧浏览器下 navigator.clipboard 不可用，必须有降级路径
+    const copiedKey=ref('');
+    let copiedTimer=null;
+    async function copyText(text, ev){
+      const val=String(text==null?'':text);
+      if(!val) return false;
+      let ok=false;
+      try{
+        if(navigator.clipboard&&window.isSecureContext){
+          await navigator.clipboard.writeText(val);
+          ok=true;
+        }
+      }catch(_){ ok=false; }
+      if(!ok){
+        // 降级：临时 textarea + execCommand
+        try{
+          const ta=document.createElement('textarea');
+          ta.value=val;
+          ta.setAttribute('readonly','');
+          ta.style.position='fixed';
+          ta.style.top='-1000px';
+          ta.style.opacity='0';
+          document.body.appendChild(ta);
+          ta.select();
+          ta.setSelectionRange(0,val.length);
+          ok=document.execCommand('copy');
+          document.body.removeChild(ta);
+        }catch(_){ ok=false; }
+      }
+      if(ok){
+        copiedKey.value=val;
+        if(copiedTimer) clearTimeout(copiedTimer);
+        copiedTimer=setTimeout(()=>{copiedKey.value='';copiedTimer=null;},1500);
+      }else{
+        // 兜底：选中文本，提示用户手动 Ctrl+C
+        try{
+          const el=(ev&&ev.currentTarget)||null;
+          const sel=window.getSelection();
+          if(el&&sel){
+            const r=document.createRange();
+            r.selectNodeContents(el);
+            sel.removeAllRanges();
+            sel.addRange(r);
+            alert('复制失败，已选中内容，请按 Ctrl+C 手动复制');
+          }else{
+            alert('复制失败，请手动选择复制');
+          }
+        }catch(_){ alert('复制失败，请手动选择复制'); }
+      }
+      return ok;
+    }
+    // ===== 支付明细展示辅助 =====    // 支付方式中文映射（原先直接输出 sandpayh5 等英文标识）
     const PAY_METHOD_LABELS={alipay:'支付宝',wechat:'微信支付',card:'卡密',xianyu:'闲鱼',aloop:'支付宝(轮询)',tloop:'微信(轮询)',sandpayh5:'杉德收银台',sandpay:'杉德河马',zhifufm:'支付FM',epay:'易支付'};
     function paymentMethodLabel(method,payType){
       // pay_method 与 pay_type 内容高度重复（实测 214 笔完全相同），
@@ -6048,7 +6122,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       expandedGroups,isMobile,mobileSidebarOpen,mobileSubmenu,openMobileSubmenu,handleGroupClick,
        paymentOrders,paymentOrdersFilter,paymentOrdersSort,paymentOrdersPage,paymentOrdersPageSize,paymentOrdersTotal,paymentOrdersTotalPages,paymentOrdersSum,
         loadPaymentOrders,togglePaymentSort,paymentOrdersSearch,paymentOrdersPrev,paymentOrdersNext,
-        paymentMethodLabel,paymentStatusLabel,paymentBusinessType,paymentRefundText,paymentRemark,
+        paymentMethodLabel,paymentStatusLabel,paymentBusinessType,paymentRefundText,paymentRemark,copyText,copiedKey,
         rrFilterStatus,rrFilterUsername,rrFilterOrderNo,rrList,rrPage,rrTotalPages,rrTotal,rrQrPreview,
         loadRefundRequests,processRefundRequest,previewQr,
         xianyuEnabled,xianyuUrl,cardPayName,cardPayIcon,ckList,ckPage,ckTotalPages,ckTotal,ckFilterStatus,ckFilterPlanId,ckGeneratePlanId,ckGenerateCount,ckGenerateSaving,
