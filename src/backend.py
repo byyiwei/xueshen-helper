@@ -7165,16 +7165,34 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def _log_cleanup_worker():
-    """后台线程：每天检查并清理过期日志和AI缓存"""
+    """后台线程：真正的定时清理。
+
+    原实现是"启动时跑一次 + sleep(86400)"，问题在于：
+    服务每次重启都会重新计时，只要重启间隔 < 24 小时，
+    sleep 到期的"定时"那一次永远不会发生——实际全靠重启兜底，
+    重启频繁时清理节奏完全失控。
+
+    现改为：每 CHECK_INTERVAL 秒醒一次，用数据库里持久化的
+    log_cleanup_last_at 判断是否已满 24 小时。好处：
+    - 不依赖重启，真正的定时；
+    - 时间戳持久化，重启不会重置计时（重启后若确实超过24h会立即补上）；
+    - 刚重启且未满24h时不会重复清理。
+    """
     import time as _time
+    CHECK_INTERVAL = 60      # 每 60 秒检查一次是否到期
+    INTERVAL_HOURS = 24      # 清理周期
     while True:
         try:
             retention = db.get_log_retention_days()
-            if retention > 0:
+            if retention > 0 and db.is_log_cleanup_due(INTERVAL_HOURS):
                 result = db.cleanup_old_logs(retention)
                 total = sum(v for v in result.values() if v > 0)
+                # 即使本次没删到数据，也要记录时间，避免每分钟重复执行
+                db.set_log_cleanup_last_at()
                 if total > 0:
                     print(f"[日志清理] 保留{retention}天，已清理 {total} 条记录: {result}", flush=True)
+                else:
+                    print(f"[日志清理] 到期检查完成，无过期数据: {result}", flush=True)
             # 清理超过30天未使用的AI缓存
             try:
                 db.cleanup_expired_ai_cache(30)
@@ -7182,13 +7200,13 @@ def _log_cleanup_worker():
                 pass
         except Exception as e:
             print(f"[日志清理] 异常: {e}", flush=True)
-        _time.sleep(86400)  # 24小时
+        _time.sleep(CHECK_INTERVAL)
 
 def _start_log_cleanup_thread():
     import threading
     t = threading.Thread(target=_log_cleanup_worker, daemon=True)
     t.start()
-    print("[日志清理] 定时清理线程已启动", flush=True)
+    print("[日志清理] 定时清理线程已启动（60秒检查一次，满24小时执行）", flush=True)
 
 
 if __name__ == "__main__":

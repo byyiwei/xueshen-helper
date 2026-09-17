@@ -312,6 +312,7 @@ class Database:
         if not col:
             self.execute("ALTER TABLE admin_config ADD COLUMN test_recipient VARCHAR(255)")
         self._add_column_if_missing("admin_config", "log_retention_days", "log_retention_days INT DEFAULT 0")
+        self._add_column_if_missing("admin_config", "log_cleanup_last_at", "log_cleanup_last_at DATETIME NULL COMMENT '上次日志清理时间（用于24小时定时判断，持久化避免重启重置）'")
 
         self._ensure_admin_payment_columns()
 
@@ -3708,6 +3709,43 @@ class Database:
     def set_log_retention_days(self, days):
         ph = _ph()
         self.execute(f"UPDATE admin_config SET log_retention_days = {ph} WHERE id = 1", (int(days),))
+
+    def get_log_cleanup_last_at(self):
+        """上次日志清理时间。返回 datetime 或 None（从未清理过）。"""
+        try:
+            row = self.fetchone("SELECT log_cleanup_last_at FROM admin_config WHERE id = 1")
+            if row:
+                return row.get("log_cleanup_last_at")
+        except Exception:
+            pass
+        return None
+
+    def set_log_cleanup_last_at(self, when=None):
+        """记录本次清理时间，用于下次 24 小时判断。"""
+        try:
+            ph = _ph()
+            self.execute(
+                f"UPDATE admin_config SET log_cleanup_last_at = COALESCE({ph}, NOW()) WHERE id = 1",
+                (when,)
+            )
+        except Exception as e:
+            print(f"[日志清理] 记录清理时间失败: {e}", flush=True)
+
+    def is_log_cleanup_due(self, interval_hours=24):
+        """判断是否到了该清理的时间。
+        从未清理过 -> 需要清理；
+        距上次清理 >= interval_hours -> 需要清理；
+        否则不需要。时间戳持久化在数据库，服务重启不会重置计时。
+        """
+        last = self.get_log_cleanup_last_at()
+        if not last:
+            return True
+        try:
+            if isinstance(last, str):
+                last = datetime.strptime(last[:19], "%Y-%m-%d %H:%M:%S")
+            return (datetime.now() - last).total_seconds() >= interval_hours * 3600
+        except Exception:
+            return True  # 解析失败时宁可清理一次
 
     def get_feedback_auto_close_days(self):
         row = self.fetchone("SELECT feedback_auto_close_days FROM admin_config WHERE id = 1")
