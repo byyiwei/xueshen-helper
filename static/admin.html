@@ -3513,6 +3513,8 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     <td style="padding:10px 12px">
                       <span :style="{color:row.status==='paid'?'var(--success)':row.status==='refunded'?'var(--danger)':row.status==='pending'?'var(--warning)':'var(--text3)'}">{{row.status==='paid'?'已支付':row.status==='refunded'?'已退款':row.status==='pending'?'待支付':row.status==='cancelled'?'已取消':row.status}}</span>
                       <div v-if="row.status==='refunded'" style="font-size:11px;color:var(--text3);margin-top:2px">{{String(row.refunded_at||'').replace('T',' ').substring(0,16)}}</div>
+                      <div v-else-if="row.refund_request_status==='pending'" style="font-size:11px;color:var(--warning);margin-top:2px">退款申请待审核</div>
+                      <div v-else-if="row.refund_request_status==='rejected'" style="font-size:11px;color:var(--text3);margin-top:2px">退款申请已拒绝</div>
                     </td>
                     <td style="padding:10px 12px;color:var(--text3);font-size:12px">{{String(row.created_at||'').replace('T',' ').substring(0,19)}}</td>
                     <td style="padding:10px 12px">

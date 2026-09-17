@@ -4953,6 +4953,39 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        # ========== 用户端退款预览（不提交，仅计算） ==========
+        elif path == "/api/user/refund-preview":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "请先登录"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                order_no = (data.get("order_no") or "").strip()
+                if not order_no:
+                    self._send_json(400, {"code": 400, "msg": "订单号不能为空"})
+                    return
+                order = db.get_order(order_no)
+                if not order:
+                    self._send_json(404, {"code": 404, "msg": "订单不存在"})
+                    return
+                if order.get("username") != user["username"]:
+                    self._send_json(403, {"code": 403, "msg": "无权查看此订单"})
+                    return
+                calc = db.calculate_refund(order)
+                self._send_json(200, {
+                    "code": 200,
+                    "order_no": order_no,
+                    "plan_name": order.get("plan_name") or "",
+                    "price": float(order.get("price") or 0),
+                    "refund_amount": float(calc["amount"]),
+                    "used_amount": round(float(order.get("price") or 0) - float(calc["amount"]), 2),
+                    "lines": calc["lines"],
+                    "summary": calc["summary"],
+                })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         # ========== 用户端申请退款 ==========
         elif path == "/api/user/refund":
             user = self._get_user_from_token()
@@ -5758,6 +5791,12 @@ class Handler(BaseHTTPRequestHandler):
                 admin_cfg = db.get_admin_config() or {}
                 operator = admin_cfg.get("username") or "admin"
                 ok, msg = db.refund_order(order_no, reason=reason, operator=operator)
+                refund_amount = 0.0
+                if ok and isinstance(msg, dict):
+                    refund_amount = float(msg.get("amount") or 0)
+                    msg_text = msg.get("msg") or "退款成功"
+                else:
+                    msg_text = msg if isinstance(msg, str) else "退款成功"
                 if ok:
                     order = db.get_order(order_no)
                     user_row = db.fetchone("SELECT email, username FROM users WHERE username = %s", (order["username"],)) if order else None
@@ -5774,12 +5813,17 @@ class Handler(BaseHTTPRequestHandler):
                                 "order_no": order_no,
                                 "plan_name": plan_name,
                                 "price": price,
+                                "refund_amount": f"{refund_amount:.2f}",
                                 "reason": reason or "管理员退款",
                                 "note": "管理员直接退款",
                                 "subject": f"退款通知 - {order_no}"
                             }
                         }, daemon=True).start()
-                self._send_json(200 if ok else 400, {"code": 200 if ok else 400, "msg": msg})
+                self._send_json(200 if ok else 400, {
+                    "code": 200 if ok else 400,
+                    "msg": msg_text,
+                    "refund_amount": refund_amount,
+                })
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -5795,6 +5839,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not request_id or status not in ("approved", "rejected"):
                     self._send_json(400, {"code": 400, "msg": "参数错误"})
                     return
+                refund_amount = 0.0
                 if status == "approved":
                     row = db.fetchone("SELECT * FROM refund_requests WHERE id = %s", (request_id,))
                     if not row:
@@ -5802,8 +5847,18 @@ class Handler(BaseHTTPRequestHandler):
                         return
                     refund_ok, refund_msg = db.refund_order(row["order_no"], reason=row.get("reason") or "用户申请退款", operator="admin")
                     if not refund_ok:
-                        self._send_json(400, {"code": 400, "msg": refund_msg or "退款失败"})
+                        # 退款失败时必须落库，否则该申请会永久停留在 pending，
+                        # 管理员既无法批准也无法驳回（死锁）。
+                        fail_text = refund_msg if isinstance(refund_msg, str) else "退款失败"
+                        db.process_refund_request(
+                            request_id, "rejected",
+                            f"系统自动驳回：{fail_text}"
+                        )
+                        self._send_json(400, {"code": 400, "msg": fail_text,
+                                              "auto_rejected": True})
                         return
+                    if isinstance(refund_msg, dict):
+                        refund_amount = float(refund_msg.get("amount") or 0)
                 ok, msg = db.process_refund_request(request_id, status, note)
                 # 发送邮件通知
                 if ok:
@@ -5825,6 +5880,7 @@ class Handler(BaseHTTPRequestHandler):
 <tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">订单号</td><td style="padding:8px 12px;border:1px solid #e2e8f0;font-weight:600">{row['order_no']}</td></tr>
 <tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">套餐</td><td style="padding:8px 12px;border:1px solid #e2e8f0">{plan_name}</td></tr>
 <tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">金额</td><td style="padding:8px 12px;border:1px solid #e2e8f0">¥{price}</td></tr>
+<tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">实退金额</td><td style="padding:8px 12px;border:1px solid #e2e8f0;font-weight:600;color:#dc2626">¥{refund_amount:.2f}</td></tr>
 <tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">退款原因</td><td style="padding:8px 12px;border:1px solid #e2e8f0">{refund_reason or '无'}</td></tr>
 <tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">管理员备注</td><td style="padding:8px 12px;border:1px solid #e2e8f0">{note or '无'}</td></tr>
 </table>
@@ -5836,18 +5892,20 @@ class Handler(BaseHTTPRequestHandler):
                             ), kwargs={
                                 "scene": scene,
                                 "body_html": fallback_html,
-                                "body_text": f"退款申请{status_text}\n\n订单号：{row['order_no']}\n套餐：{plan_name}\n金额：¥{price}\n退款原因：{refund_reason or '无'}\n管理员备注：{note or '无'}",
+                                "body_text": f"退款申请{status_text}\n\n订单号：{row['order_no']}\n套餐：{plan_name}\n金额：¥{price}\n实退金额：¥{refund_amount:.2f}\n退款原因：{refund_reason or '无'}\n管理员备注：{note or '无'}",
                                 "variables": {
                                     "username": row["username"],
                                     "order_no": row["order_no"],
                                     "plan_name": plan_name,
                                     "price": price,
+                                    "refund_amount": f"{refund_amount:.2f}",
                                     "reason": refund_reason,
                                     "note": note or "无",
                                     "subject": f"退款申请{status_text} - {row['order_no']}"
                                 }
                             }, daemon=True).start()
-                self._send_json(200 if ok else 400, {"code": 200 if ok else 400, "msg": msg})
+                self._send_json(200 if ok else 400, {"code": 200 if ok else 400, "msg": msg,
+                                                     "refund_amount": refund_amount})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
