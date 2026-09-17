@@ -3858,9 +3858,12 @@ class Database:
 
         admin = self.get_admin_config() or {}
         refund_days = int(admin.get("refund_days_limit") or 7)
+        # 消费记录只展示真正付过钱的订单（paid/refunded）。
+        # 未支付(pending)的下单记录会随时间大量堆积（全站曾达 201 笔），
+        # 若一并展示会把付费记录挤出 LIMIT 5 的窗口，用户看不到自己的真实消费。
         recent_orders_sql = f"""
             SELECT order_no, plan_name, price, status, created_at, paid_at, plan_type, points, days
-            FROM payment_orders WHERE username = {ph}
+            FROM payment_orders WHERE username = {ph} AND status IN ('paid', 'refunded')
             ORDER BY id DESC LIMIT 5
         """
         rows = self.fetchall(recent_orders_sql, (username,))
