@@ -2218,7 +2218,7 @@ class Database:
             f"SELECT * FROM payment_orders WHERE status = 'refunded' ORDER BY refunded_at DESC LIMIT {int(limit)}"
         )
 
-    def list_payment_orders_admin(self, username="", status="", plan_name="", pay_method="", date_from="", date_to="", sort="created_at", order="desc", page=1, page_size=20):
+    def list_payment_orders_admin(self, username="", status="", plan_name="", pay_method="", date_from="", date_to="", order_no="", sort="created_at", order="desc", page=1, page_size=20):
         """管理员支付明细查询，包含闲鱼订单"""
         ph = _ph()
         # 支付订单 WHERE
@@ -2242,6 +2242,11 @@ class Database:
             else:
                 po_where.append(f"po.pay_method = {ph}")
                 po_params.append(pay_method)
+        # 订单号/渠道单号定位：支持从退款申请页跳转过来精确查单
+        if order_no:
+            po_where.append(f"(po.order_no = {ph} OR po.channel_order_no = {ph})")
+            po_params.append(order_no)
+            po_params.append(order_no)
         if date_from:
             po_where.append(f"DATE(po.created_at) >= {ph}")
             po_params.append(date_from)
@@ -2273,6 +2278,9 @@ class Database:
         if pay_method:
             if pay_method != "xianyu":
                 xy_where.append("1=0")
+        # 闲鱼订单无渠道单号，按订单号定位时排除，避免结果混杂
+        if order_no:
+            xy_where.append("1=0")
         if date_from:
             xy_where.append(f"DATE(xo.created_at) >= {ph}")
             xy_params.append(date_from)

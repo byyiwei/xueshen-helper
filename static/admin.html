@@ -239,6 +239,10 @@ body{
 .copy-cell:hover .copy-cell-btn{opacity:1}
 .copy-cell:hover .copy-cell-text{color:var(--accent2)}
 .copy-cell-btn.done{opacity:1;color:var(--success);border-color:var(--success)}
+/* 可点击跳转的文字（退款申请 -> 支付明细） */
+.order-link{cursor:pointer;color:var(--primary);text-decoration:underline;text-underline-offset:2px}
+.order-link:hover{color:var(--accent2)}
+.order-link:active{opacity:.7}
 /* 悬停时给文字留出按钮位置，避免文字被按钮压住 */
 .copy-cell:hover .copy-cell-text{padding-right:38px}
 .data-table thead th{
@@ -2205,7 +2209,8 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
               <h3>用户退款申请列表</h3>
             </div>
             <div class="card-body" style="overflow-x:auto">
-              <table v-if="rrList.length" style="width:100%;border-collapse:collapse;font-size:13px;min-width:800px">
+              <!-- 始终渲染表格，空/出错时由 tbody 内的状态行说明原因（原先 v-if 会让整表消失，看不出接口是否正常） -->
+              <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:800px">
                 <thead>
                   <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
                     <th style="text-align:left;padding:10px 8px">申请时间</th>
@@ -2223,9 +2228,9 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                 <tbody>
                   <tr v-for="r in rrList" :key="r.id" style="border-bottom:1px solid var(--border);color:var(--text)">
                     <td style="padding:10px 8px;color:var(--text3);white-space:nowrap">{{String(r.created_at||'').replace('T',' ').substring(0,16)}}</td>
-                    <td style="padding:10px 8px;color:var(--accent2)">{{r.username}}</td>
-                    <td style="padding:10px 8px;font-family:monospace;font-size:12px">{{r.order_no}}</td>
-                    <td style="padding:10px 8px;font-family:monospace;font-size:12px;color:var(--text2)">{{r.channel_order_no||'-'}}</td>
+                    <td style="padding:10px 8px;color:var(--accent2)"><span class="order-link" :title="'查看 '+r.username+' 的支付明细'" @click="gotoPaymentByUsername(r.username)">{{r.username}}</span></td>
+                    <td style="padding:10px 8px;font-family:monospace;font-size:12px"><span class="order-link" title="在支付明细中查看该订单" @click="gotoPaymentByOrderNo(r.order_no)">{{r.order_no}}</span></td>
+                    <td style="padding:10px 8px;font-family:monospace;font-size:12px"><span v-if="r.channel_order_no" class="order-link" style="color:var(--text2)" title="在支付明细中按渠道单号查看" @click="gotoPaymentByOrderNo(r.channel_order_no)">{{r.channel_order_no}}</span><span v-else style="color:var(--text3)">-</span></td>
                     <td style="padding:10px 8px">{{r.plan_name||'-'}}</td>
                     <td style="padding:10px 8px;color:var(--success)">¥{{Number(r.price||0).toFixed(2)}}</td>
                     <td style="padding:10px 8px;max-width:200px;word-break:break-all;font-size:12px;color:var(--text2)">{{r.reason||'-'}}</td>
@@ -2253,7 +2258,16 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                       <span v-else style="font-size:12px;color:var(--text3)">{{r.admin_note||'-'}}</span>
                     </td>
                   </tr>
-                  <tr v-if="rrList.length===0"><td colspan="10" style="text-align:center;padding:40px 0;color:var(--text3);font-size:13px">暂无退款申请</td></tr>
+                  <tr v-if="rrList.length===0"><td colspan="10" style="text-align:center;padding:32px 20px">
+                    <div v-if="rrLoading" style="color:var(--text3)">正在加载退款申请…</div>
+                    <div v-else-if="rrError">
+                      <div style="color:var(--danger);font-weight:600;margin-bottom:6px">接口调用失败，不是「没有申请」</div>
+                      <div style="color:var(--text2);font-size:12px;margin-bottom:4px">{{rrError}}</div>
+                      <div style="color:var(--text3);font-size:12px">接口：/admin/refund-requests</div>
+                      <button class="btn btn-secondary btn-sm" style="margin-top:10px" @click="loadRefundRequests(1)">重试</button>
+                    </div>
+                    <div v-else style="color:var(--text3);font-size:13px">暂无退款申请</div>
+                  </td></tr>
                 </tbody>
               </table>
               <div v-if="rrTotalPages>1" style="display:flex;justify-content:center;gap:6px;margin-top:16px">
@@ -3495,19 +3509,24 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
           <!-- 表格 -->
           <div class="card">
             <div class="card-body" style="overflow-x:auto">
-              <table class="data-table" style="width:100%;font-size:13px;table-layout:fixed">
+              <table class="data-table" style="width:1280px;min-width:100%;font-size:13px;table-layout:fixed">
+                <colgroup>
+                  <col style="width:156px"><col style="width:212px"><col style="width:100px"><col style="width:92px">
+                  <col style="width:114px"><col style="width:76px"><col style="width:76px"><col style="width:88px">
+                  <col style="width:104px"><col style="width:138px"><col style="width:124px">
+                </colgroup>
                 <thead>
                   <tr style="text-align:left;color:var(--text3);border-bottom:1px solid var(--border)">
-                    <th style="padding:8px 10px;cursor:pointer;white-space:nowrap;width:156px" @click="togglePaymentSort('order_no')">订单号 {{paymentOrdersSort.field==='order_no'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
-                    <th style="padding:8px 10px;white-space:nowrap;width:212px">渠道单号</th>
-                    <th style="padding:8px 10px;cursor:pointer;white-space:nowrap;width:100px" @click="togglePaymentSort('username')">用户名 {{paymentOrdersSort.field==='username'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
-                    <th style="padding:8px 10px;white-space:nowrap;width:92px">套餐</th>
-                    <th style="padding:8px 10px;white-space:nowrap;width:114px">业务类型</th>
-                    <th style="padding:8px 10px;cursor:pointer;white-space:nowrap;width:76px" @click="togglePaymentSort('price')">金额 {{paymentOrdersSort.field==='price'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
-                    <th style="padding:8px 10px;white-space:nowrap;width:76px">点数/天数</th>
-                    <th style="padding:8px 10px;white-space:nowrap;width:88px">支付方式</th>
-                    <th style="padding:8px 10px;cursor:pointer;white-space:nowrap;width:104px" @click="togglePaymentSort('status')">状态 {{paymentOrdersSort.field==='status'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
-                    <th style="padding:8px 10px;cursor:pointer;white-space:nowrap;width:138px" @click="togglePaymentSort('created_at')">创建时间 {{paymentOrdersSort.field==='created_at'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
+                    <th style="padding:8px 10px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('order_no')">订单号 {{paymentOrdersSort.field==='order_no'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
+                    <th style="padding:8px 10px;white-space:nowrap">渠道单号</th>
+                    <th style="padding:8px 10px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('username')">用户名 {{paymentOrdersSort.field==='username'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
+                    <th style="padding:8px 10px;white-space:nowrap">套餐</th>
+                    <th style="padding:8px 10px;white-space:nowrap">业务类型</th>
+                    <th style="padding:8px 10px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('price')">金额 {{paymentOrdersSort.field==='price'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
+                    <th style="padding:8px 10px;white-space:nowrap">点数/天数</th>
+                    <th style="padding:8px 10px;white-space:nowrap">支付方式</th>
+                    <th style="padding:8px 10px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('status')">状态 {{paymentOrdersSort.field==='status'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
+                    <th style="padding:8px 10px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('created_at')">创建时间 {{paymentOrdersSort.field==='created_at'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
                     <th style="padding:8px 10px;white-space:nowrap">备注</th>
                   </tr>
                 </thead>
@@ -3542,7 +3561,34 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     </td>
                   </tr>
                   <tr v-if="paymentOrders.length===0">
-                    <td colspan="11" style="padding:30px;text-align:center;color:var(--text3)">暂无支付记录</td>
+                    <td colspan="11" style="padding:28px 20px;text-align:center">
+                      <!-- 1. 加载中 -->
+                      <div v-if="paymentOrdersLoading" style="color:var(--text3)">正在加载支付明细…</div>
+                      <!-- 2. 接口出错：明确说明是接口问题及原因 -->
+                      <div v-else-if="paymentOrdersError">
+                        <div style="color:var(--danger);font-weight:600;margin-bottom:6px">接口调用失败，不是「没有数据」</div>
+                        <div style="color:var(--text2);font-size:12px;margin-bottom:4px">{{paymentOrdersError}}</div>
+                        <div style="color:var(--text3);font-size:12px">接口：/admin/payment-orders</div>
+                        <button class="btn btn-secondary btn-sm" style="margin-top:10px" @click="loadPaymentOrders()">重试</button>
+                      </div>
+                      <!-- 3. 按订单号/渠道单号查不到：说明查询条件与结果，避免误判接口坏了 -->
+                      <div v-else-if="paymentOrdersFilter.order_no">
+                        <div style="color:var(--text);margin-bottom:6px">未找到匹配的订单</div>
+                        <div style="color:var(--text2);font-size:12px">查询单号：<span style="font-family:monospace">{{paymentOrdersFilter.order_no}}</span></div>
+                        <div style="color:var(--text3);font-size:12px;margin-top:4px">
+                          接口正常返回（共 0 条）。该单号可能不属于支付订单，或订单已被删除。
+                        </div>
+                        <button class="btn btn-secondary btn-sm" style="margin-top:10px" @click="paymentOrdersFilter.order_no='';paymentOrdersSearch()">查看全部支付明细</button>
+                      </div>
+                      <!-- 4. 带筛选条件无结果 -->
+                      <div v-else-if="hasPaymentFilter()">
+                        <div style="color:var(--text);margin-bottom:6px">当前筛选条件下没有记录</div>
+                        <div style="color:var(--text3);font-size:12px">接口正常返回（共 0 条），可尝试放宽筛选条件</div>
+                        <button class="btn btn-secondary btn-sm" style="margin-top:10px" @click="resetPaymentFilter()">重置筛选</button>
+                      </div>
+                      <!-- 5. 确实没有数据 -->
+                      <div v-else style="color:var(--text3)">暂无支付记录</div>
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -5573,7 +5619,11 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     window.addEventListener('resize',()=>{isMobile.value=window.innerWidth<=768;});
     // 支付明细
     const paymentOrders=ref([]);
-    const paymentOrdersFilter=ref({username:'',status:'',plan_name:'',pay_method:'',date_from:'',date_to:''});
+    const paymentOrdersFilter=ref({username:'',status:'',plan_name:'',pay_method:'',date_from:'',date_to:'',order_no:''});
+    // 加载状态与错误信息：避免接口异常时页面只显示空表、让人误以为接口坏了
+    const paymentOrdersLoading=ref(false);
+    const paymentOrdersLoaded=ref(false);
+    const paymentOrdersError=ref('');
     const paymentOrdersSort=ref({field:'created_at',order:'desc'});
     const paymentOrdersPage=ref(1);
     const paymentOrdersPageSize=ref(20);
@@ -5590,6 +5640,9 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     const rrTotalPages=ref(0);
     const rrTotal=ref(0);
     const rrQrPreview=ref('');
+    // 退款申请加载状态：接口异常时明确提示，避免空表被误判为「没有申请」
+    const rrLoading=ref(false);
+    const rrError=ref('');
     // 卡密管理
     const xianyuEnabled=ref(false);
     const xianyuUrl=ref('');
@@ -5738,8 +5791,17 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     }
 
     // ========== 支付明细 ==========
-    async function loadPaymentOrders(){
-      // 加载卡密支付方式名称
+    // 是否设置了筛选条件（用于区分「筛选无结果」与「确实没有数据」）
+    function hasPaymentFilter(){
+      const f=paymentOrdersFilter.value||{};
+      return !!(f.username||f.status||f.plan_name||f.pay_method||f.date_from||f.date_to||f.order_no);
+    }
+    function resetPaymentFilter(){
+      paymentOrdersFilter.value={username:'',status:'',plan_name:'',pay_method:'',date_from:'',date_to:'',order_no:''};
+      paymentOrdersPage.value=1;
+      loadPaymentOrders();
+    }
+    async function loadPaymentOrders(){      // 加载卡密支付方式名称
       try{
         const cr=await fetch('/api/payment/xianyu-config',{headers:{'Authorization':token.value}});
         const cd=await cr.json();
@@ -5754,13 +5816,27 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         pay_method:f.pay_method||'',
         date_from:f.date_from||'',
         date_to:f.date_to||'',
+        order_no:f.order_no||'',
         sort:s.field||'created_at',
         order:s.order||'desc',
         page:String(paymentOrdersPage.value),
         page_size:String(paymentOrdersPageSize.value)
       });
+      paymentOrdersLoading.value=true;
       try{
         const res=await safeFetch('/admin/payment-orders?'+params.toString(),{headers:{'Authorization':token.value}});
+        // 先判 HTTP 状态：401/403/500 等不能当成「没数据」
+        if(!res.ok){
+          const hint=res.status===401||res.status===403
+            ?'登录状态已失效，请重新登录后台'
+            :('接口返回 HTTP '+res.status);
+          paymentOrdersError.value=hint+'（/admin/payment-orders）';
+          paymentOrders.value=[];
+          paymentOrdersTotal.value=0;
+          paymentOrdersTotalPages.value=0;
+          showMsg('支付明细加载失败：'+hint,'error',6000);
+          return;
+        }
         const d=await res.json();
         if(d.code===200){
           const data=d.data||{};
@@ -5768,8 +5844,35 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
           paymentOrdersTotal.value=data.total||0;
           paymentOrdersTotalPages.value=data.total_pages||0;
           paymentOrdersSum.value={sum_amount:data.sum_amount||0,sum_count:data.sum_count||0};
+          paymentOrdersError.value='';
+          paymentOrdersLoaded.value=true;
+          // 若是带单号跳转过来的，明确反馈命中结果
+          const qno=(paymentOrdersFilter.value&&paymentOrdersFilter.value.order_no)||'';
+          if(qno){
+            const n=data.total||0;
+            showMsg(n>0?('已定位到订单（'+n+' 条）'):('未找到单号 '+qno+' 对应的支付订单，接口正常返回 0 条'),
+              n>0?'success':'error', n>0?2500:6000);
+          }
+        }else{
+          // 接口通了但返回业务错误码：也要说清楚，不能静默
+          const msg=d.msg||d.message||('业务错误码 '+d.code);
+          paymentOrdersError.value=msg;
+          paymentOrders.value=[];
+          paymentOrdersTotal.value=0;
+          paymentOrdersTotalPages.value=0;
+          showMsg('支付明细加载失败：'+msg,'error',6000);
         }
-      }catch(_){}
+      }catch(e){
+        // 网络层异常（后端未启动 / 跨域 / 超时）
+        const msg=e&&e.message?e.message:'请求异常';
+        paymentOrdersError.value=msg;
+        paymentOrders.value=[];
+        paymentOrdersTotal.value=0;
+        paymentOrdersTotalPages.value=0;
+        showMsg('支付明细加载失败：'+msg,'error',6000);
+      }finally{
+        paymentOrdersLoading.value=false;
+      }
       // 加载套餐列表用于筛选项
       if(!paymentPlans.value.length){
         try{
@@ -5880,18 +5983,69 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     }
 
     // ========== 退款申请管理 ==========
+    // 从退款申请跳转到支付明细并按订单号/用户名定位
+    function gotoPaymentOrder(opts){
+      const o=opts||{};
+      // 保留其他筛选的重置语义：跳转时只按本次条件查，避免旧条件叠加导致查不到
+      paymentOrdersFilter.value={
+        username:o.username||'',
+        status:'',
+        plan_name:'',
+        pay_method:'',
+        date_from:'',
+        date_to:'',
+        order_no:o.order_no||''
+      };
+      paymentOrdersSort.value={field:'created_at',order:'desc'};
+      paymentOrdersPage.value=1;
+      // 清掉上一次的残留状态，避免旧错误信息误导
+      paymentOrdersError.value='';
+      paymentOrdersLoaded.value=false;
+      page.value='payment-orders';
+      // 明确告知正在按什么条件查询，避免页面短暂空白被误认为接口故障
+      showMsg('正在支付明细中查询：'+(o.order_no?('单号 '+o.order_no):('用户 '+o.username)),'success',2500);
+      loadPaymentOrders();
+    }
+    // 点击退款申请里的用户 -> 支付明细按该用户名筛选
+    function gotoPaymentByUsername(u){
+      if(!u) return;
+      gotoPaymentOrder({username:u});
+    }
+    // 点击订单号或银联单号 -> 支付明细精确匹配该单号
+    function gotoPaymentByOrderNo(no){
+      if(!no) return;
+      gotoPaymentOrder({order_no:no});
+    }
     async function loadRefundRequests(page){
       rrPage.value=page||1;
       const params=new URLSearchParams({status:rrFilterStatus.value,username:rrFilterUsername.value,order_no:rrFilterOrderNo.value,page:String(rrPage.value)});
+      rrLoading.value=true;
       try{
         const res=await safeFetch('/admin/refund-requests?'+params.toString(),{headers:{'Authorization':token.value}});
+        if(!res.ok){
+          const hint=res.status===401||res.status===403?'登录状态已失效，请重新登录后台':('接口返回 HTTP '+res.status);
+          rrError.value=hint; rrList.value=[]; rrTotal.value=0; rrTotalPages.value=1;
+          showMsg('退款申请加载失败：'+hint,'error',6000);
+          return;
+        }
         const d=await res.json();
         if(d.code===200){
           rrList.value=d.rows||[];
           rrTotal.value=d.total||0;
           rrTotalPages.value=Math.ceil(rrTotal.value/20)||1;
+          rrError.value='';
+        }else{
+          const msg=d.msg||d.message||('业务错误码 '+d.code);
+          rrError.value=msg; rrList.value=[]; rrTotal.value=0; rrTotalPages.value=1;
+          showMsg('退款申请加载失败：'+msg,'error',6000);
         }
-      }catch(_){}
+      }catch(e){
+        const msg=e&&e.message?e.message:'请求异常';
+        rrError.value=msg; rrList.value=[]; rrTotal.value=0; rrTotalPages.value=1;
+        showMsg('退款申请加载失败：'+msg,'error',6000);
+      }finally{
+        rrLoading.value=false;
+      }
     }
     async function processRefundRequest(id,status){
       if(!confirm('确定'+((status==='approved')?'批准':'拒绝')+'该退款申请？')) return;
@@ -6122,9 +6276,12 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       expandedGroups,isMobile,mobileSidebarOpen,mobileSubmenu,openMobileSubmenu,handleGroupClick,
        paymentOrders,paymentOrdersFilter,paymentOrdersSort,paymentOrdersPage,paymentOrdersPageSize,paymentOrdersTotal,paymentOrdersTotalPages,paymentOrdersSum,
         loadPaymentOrders,togglePaymentSort,paymentOrdersSearch,paymentOrdersPrev,paymentOrdersNext,
+        paymentOrdersLoading,paymentOrdersLoaded,paymentOrdersError,hasPaymentFilter,resetPaymentFilter,
+        rrLoading,rrError,
         paymentMethodLabel,paymentStatusLabel,paymentBusinessType,paymentRefundText,paymentRemark,copyText,copiedKey,
         rrFilterStatus,rrFilterUsername,rrFilterOrderNo,rrList,rrPage,rrTotalPages,rrTotal,rrQrPreview,
         loadRefundRequests,processRefundRequest,previewQr,
+        gotoPaymentOrder,gotoPaymentByUsername,gotoPaymentByOrderNo,
         xianyuEnabled,xianyuUrl,cardPayName,cardPayIcon,ckList,ckPage,ckTotalPages,ckTotal,ckFilterStatus,ckFilterPlanId,ckGeneratePlanId,ckGenerateCount,ckGenerateSaving,
         loadCardKeys,loadXianyuConfig,saveXianyuConfig,onCardIconUpload,exportCardKeys,generateCardKeys,
        feedbackList,feedbackFilter,feedbackPage,feedbackTotalPages,feedbackTotal,feedbackPendingCount,feedbackDetail,feedbackReplyText,
