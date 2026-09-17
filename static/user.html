@@ -2000,8 +2000,13 @@
                             op = '<span class="tag-request-approved">已通过</span>';
                         } else if (o.refund_request_status === 'rejected') {
                             op = '<span class="tag-request-rejected">已拒绝</span>';
+                        } else if (o.status === 'paid' && !o.can_refund && !o.no_refund_left) {
+                            op = '<span style="font-size:12px;color:var(--v-muted)">已过退款期</span>';
                         }
-                        return '<tr><td>' + (o.plan_name || '-') + '</td><td>¥' + (o.price || 0).toFixed(2) + '</td><td class="tag-' + (o.status === 'paid' ? 'paid' : o.status === 'refunded' ? 'refunded' : 'pending') + '">' + (o.status === 'paid' ? '已支付' : o.status === 'refunded' ? '已退款' : o.status || '-') + '</td><td>' + (o.created_at || '-') + '</td><td>' + op + '</td></tr>';
+                        var stMap = { paid: '已支付', refunded: '已退款', pending: '待支付', cancelled: '已取消', failed: '支付失败', expired: '已过期' };
+                        var stText = stMap[o.status] || o.status || '-';
+                        var stClass = (o.status === 'paid' || o.status === 'refunded') ? o.status : 'pending';
+                        return '<tr><td>' + (o.plan_name || '-') + '</td><td>¥' + (o.price || 0).toFixed(2) + '</td><td class="tag-' + stClass + '">' + stText + '</td><td>' + (o.created_at || '-') + '</td><td>' + op + '</td></tr>';
                     }).join('')
                     : '<tr><td colspan="5" style="text-align:center;color:var(--v-muted)">暂无订单</td></tr>';
                 // 图表
