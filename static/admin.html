@@ -1449,7 +1449,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                         <td style="padding:10px 12px">{{row.plan_type||'-'}}</td>
                         <td style="padding:10px 12px;font-weight:600;color:var(--success)">¥{{Number(row.price||0).toFixed(2)}}</td>
                         <td style="padding:10px 12px">{{row.points>0?row.points+'点':''}}{{row.days>0?(row.points>0?'/':'')+row.days+'天':''}}{{!row.points&&!row.days?'-':''}}</td>
-                        <td style="padding:10px 12px">{{row.pay_method==='alipay'?'支付宝':row.pay_method==='wechat'?'微信支付':row.pay_method==='card'?'卡密':row.pay_method==='xianyu'?'闲鱼':row.pay_method||'-'}}</td>
+                        <td style="padding:10px 12px">{{paymentMethodLabel(row.pay_method, row.pay_type)}}</td>
                         <td style="padding:10px 12px"><span :style="{color:row.source==='xianyu'?'var(--warning)':'var(--text)'}">{{row.source==='xianyu'?'闲鱼':'支付'}}</span></td>
                         <td style="padding:10px 12px;color:var(--text3);font-size:12px">{{String(row.created_at||'').replace('T',' ').substring(0,19)}}</td>
                       </tr>
@@ -2997,7 +2997,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                         <td style="padding:10px 12px">{{row.plan_type||'-'}}</td>
                         <td style="padding:10px 12px;font-weight:600;color:var(--success)">¥{{Number(row.price||0).toFixed(2)}}</td>
                         <td style="padding:10px 12px">{{row.points>0?row.points+'点':''}}{{row.days>0?(row.points>0?'/':'')+row.days+'天':''}}{{!row.points&&!row.days?'-':''}}</td>
-                        <td style="padding:10px 12px">{{row.pay_method==='alipay'?'支付宝':row.pay_method==='wechat'?'微信支付':row.pay_method==='card'?'卡密':row.pay_method==='xianyu'?'闲鱼':row.pay_method||'-'}}</td>
+                        <td style="padding:10px 12px">{{paymentMethodLabel(row.pay_method, row.pay_type)}}</td>
                         <td style="padding:10px 12px"><span :style="{color:row.source==='xianyu'?'var(--warning)':'var(--text)'}">{{row.source==='xianyu'?'闲鱼':'支付'}}</span></td>
                         <td style="padding:10px 12px;color:var(--text3);font-size:12px">{{String(row.created_at||'').replace('T',' ').substring(0,19)}}</td>
                       </tr>
@@ -3480,49 +3480,46 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
           <!-- 表格 -->
           <div class="card">
             <div class="card-body" style="overflow-x:auto">
-              <table class="data-table" style="width:100%;font-size:13px">
+              <table class="data-table" style="width:100%;font-size:13px;table-layout:fixed">
                 <thead>
                   <tr style="text-align:left;color:var(--text3);border-bottom:1px solid var(--border)">
-                    <th style="padding:10px 12px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('order_no')">订单号 {{paymentOrdersSort.field==='order_no'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
-                    <th style="padding:10px 12px;white-space:nowrap">银联单号</th>
-                    <th style="padding:10px 12px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('username')">用户名 {{paymentOrdersSort.field==='username'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
-                    <th style="padding:10px 12px;white-space:nowrap">套餐名称</th>
-                    <th style="padding:10px 12px;white-space:nowrap">业务类型</th>
-                    <th style="padding:10px 12px;white-space:nowrap">类型</th>
-                    <th style="padding:10px 12px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('price')">金额 {{paymentOrdersSort.field==='price'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
-                    <th style="padding:10px 12px;white-space:nowrap">点数/天数</th>
-                    <th style="padding:10px 12px;white-space:nowrap">支付方式</th>
-                    <th style="padding:10px 12px;white-space:nowrap">支付类型</th>
-                    <th style="padding:10px 12px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('status')">状态 {{paymentOrdersSort.field==='status'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
-                    <th style="padding:10px 12px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('created_at')">创建时间 {{paymentOrdersSort.field==='created_at'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
-                    <th style="padding:10px 12px;white-space:nowrap">操作</th>
+                    <th style="padding:8px 10px;cursor:pointer;white-space:nowrap;width:150px" @click="togglePaymentSort('order_no')">订单号 {{paymentOrdersSort.field==='order_no'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
+                    <th style="padding:8px 10px;white-space:nowrap;width:120px">渠道单号</th>
+                    <th style="padding:8px 10px;cursor:pointer;white-space:nowrap;width:100px" @click="togglePaymentSort('username')">用户名 {{paymentOrdersSort.field==='username'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
+                    <th style="padding:8px 10px;white-space:nowrap;width:80px">套餐</th>
+                    <th style="padding:8px 10px;white-space:nowrap;width:110px">业务类型</th>
+                    <th style="padding:8px 10px;cursor:pointer;white-space:nowrap;width:70px" @click="togglePaymentSort('price')">金额 {{paymentOrdersSort.field==='price'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
+                    <th style="padding:8px 10px;white-space:nowrap;width:80px">点数/天数</th>
+                    <th style="padding:8px 10px;white-space:nowrap;width:90px">支付方式</th>
+                    <th style="padding:8px 10px;cursor:pointer;white-space:nowrap;width:110px" @click="togglePaymentSort('status')">状态 {{paymentOrdersSort.field==='status'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
+                    <th style="padding:8px 10px;cursor:pointer;white-space:nowrap;width:130px" @click="togglePaymentSort('created_at')">创建时间 {{paymentOrdersSort.field==='created_at'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
+                    <th style="padding:8px 10px;white-space:nowrap">备注</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="row in paymentOrders" :key="row.id" style="border-bottom:1px solid var(--border)">
-                    <td style="padding:10px 12px;font-family:monospace;font-size:12px">{{row.order_no}}</td>
-                    <td style="padding:10px 12px;font-family:monospace;font-size:12px">{{row.channel_order_no||'-'}}</td>
-                    <td style="padding:10px 12px">{{row.username}}</td>
-                    <td style="padding:10px 12px">{{row.plan_name||'-'}}</td>
-                    <td style="padding:10px 12px">{{row.business_type==='custom_model_monthly'?'自有模型(按月)':row.business_type==='custom_model_lifetime'?'自有模型(永久)':row.business_type||'-'}}</td>
-                    <td style="padding:10px 12px">{{row.plan_type==='monthly'?'包月':row.plan_type==='points'?'题数':row.plan_type==='custom_model'?'自有模型':row.plan_type||'-'}}</td>
-                    <td style="padding:10px 12px;font-weight:600;color:var(--success)">¥{{Number(row.price||0).toFixed(2)}}</td>
-                    <td style="padding:10px 12px">{{row.points>0?row.points+'点':''}}{{row.days>0?(row.points>0?'/':'')+row.days+'天':''}}{{!row.points&&!row.days?'-':''}}</td>
-                    <td style="padding:10px 12px">{{row.pay_method==='alipay'?'支付宝':row.pay_method==='wechat'?'微信支付':row.pay_method==='card'?cardPayLabel:row.pay_method||'-'}}
-                    <td style="padding:10px 12px">{{row.pay_type||'-'}}</td>
-                    <td style="padding:10px 12px">
-                      <span :style="{color:row.status==='paid'?'var(--success)':row.status==='refunded'?'var(--danger)':row.status==='pending'?'var(--warning)':'var(--text3)'}">{{row.status==='paid'?'已支付':row.status==='refunded'?'已退款':row.status==='pending'?'待支付':row.status==='cancelled'?'已取消':row.status}}</span>
+                    <td style="padding:8px 10px;font-family:monospace;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="row.order_no">{{row.order_no}}</td>
+                    <td style="padding:8px 10px;font-family:monospace;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="row.channel_order_no||'-'">{{row.channel_order_no||'-'}}</td>
+                    <td style="padding:8px 10px">{{row.username}}</td>
+                    <td style="padding:8px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="row.plan_name||'-'">{{row.plan_name||'-'}}</td>
+                    <td style="padding:8px 10px">{{paymentBusinessType(row)}}</td>
+                    <td style="padding:8px 10px;font-weight:600;color:var(--success)">¥{{Number(row.price||0).toFixed(2)}}</td>
+                    <td style="padding:8px 10px">{{row.points>0?row.points+'点':''}}{{row.days>0?(row.points>0?'/':'')+row.days+'天':''}}{{!row.points&&!row.days?'-':''}}</td>
+                    <td style="padding:8px 10px">{{paymentMethodLabel(row.pay_method, row.pay_type)}}</td>
+                    <td style="padding:8px 10px">
+                      <span :style="{color:row.status==='paid'?'var(--success)':row.status==='refunded'?'var(--danger)':row.status==='pending'?'var(--warning)':'var(--text3)'}">{{paymentStatusLabel(row.status)}}</span>
                       <div v-if="row.status==='refunded'" style="font-size:11px;color:var(--text3);margin-top:2px">{{String(row.refunded_at||'').replace('T',' ').substring(0,16)}}</div>
                       <div v-else-if="row.refund_request_status==='pending'" style="font-size:11px;color:var(--warning);margin-top:2px">退款申请待审核</div>
                       <div v-else-if="row.refund_request_status==='rejected'" style="font-size:11px;color:var(--text3);margin-top:2px">退款申请已拒绝</div>
                     </td>
-                    <td style="padding:10px 12px;color:var(--text3);font-size:12px">{{String(row.created_at||'').replace('T',' ').substring(0,19)}}</td>
-                    <td style="padding:10px 12px">
-                      <span v-if="row.status==='refunded'" style="font-size:12px;color:var(--text3)">{{row.refund_reason||'管理员退款'}}</span>
+                    <td style="padding:8px 10px;color:var(--text3);font-size:12px;white-space:nowrap">{{String(row.created_at||'').replace('T',' ').substring(0,16)}}</td>
+                    <td style="padding:8px 10px" :title="paymentRemark(row)">
+                      <span v-if="row.status==='refunded'" style="font-size:11px;color:var(--danger)">{{paymentRefundText(row)}}</span>
+                      <span v-else style="font-size:11px;color:var(--text3)">-</span>
                     </td>
                   </tr>
                   <tr v-if="paymentOrders.length===0">
-                    <td colspan="13" style="padding:30px;text-align:center;color:var(--text3)">暂无支付记录</td>
+                    <td colspan="11" style="padding:30px;text-align:center;color:var(--text3)">暂无支付记录</td>
                   </tr>
                 </tbody>
               </table>
@@ -5774,6 +5771,39 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     }
     function paymentOrdersPrev(){if(paymentOrdersPage.value>1){paymentOrdersPage.value--;loadPaymentOrders();}}
     function paymentOrdersNext(){if(paymentOrdersPage.value<paymentOrdersTotalPages.value){paymentOrdersPage.value++;loadPaymentOrders();}}
+    // ===== 支付明细展示辅助 =====
+    // 支付方式中文映射（原先直接输出 sandpayh5 等英文标识）
+    const PAY_METHOD_LABELS={alipay:'支付宝',wechat:'微信支付',card:'卡密',xianyu:'闲鱼',aloop:'支付宝(轮询)',tloop:'微信(轮询)',sandpayh5:'杉德收银台',sandpay:'杉德河马',zhifufm:'支付FM',epay:'易支付'};
+    function paymentMethodLabel(method,payType){
+      // pay_method 与 pay_type 内容高度重复（实测 214 笔完全相同），
+      // 仅当两者不一致时才补注支付类型，避免冗余占宽。
+      const m=PAY_METHOD_LABELS[method]||method||'';
+      const t=PAY_METHOD_LABELS[payType]||payType||'';
+      if(!m&&!t) return '-';
+      if(!t||t===m) return m||t;
+      return m?m+' / '+t:t;
+    }
+    function paymentStatusLabel(s){
+      return {paid:'已支付',refunded:'已退款',pending:'待支付',cancelled:'已取消',failed:'支付失败',processing:'处理中',created:'已创建',paying:'支付中'}[s]||s||'-';
+    }
+    // 业务类型与套餐类型合并成一列：优先显示更具体的业务类型
+    function paymentBusinessType(row){
+      const bt=row.business_type||'';
+      if(bt==='custom_model_monthly') return '自有模型(按月)';
+      if(bt==='custom_model_lifetime') return '自有模型(永久)';
+      if(bt) return bt;
+      return {monthly:'包月',points:'题数',custom_model:'自有模型'}[row.plan_type]||'-';
+    }
+    // 历史退款未记录金额时显示「未记录」，而不是误导性的 ¥0.00
+    function paymentRefundText(row){
+      const amt=Number(row.refund_amount||0);
+      if(amt>0) return '实退 ¥'+amt.toFixed(2);
+      return '实退金额未记录';
+    }
+    function paymentRemark(row){
+      if(row.status!=='refunded') return '';
+      return row.refund_reason||'管理员退款';
+    }
 
     // ========== 退款申请管理 ==========
     async function loadRefundRequests(page){
@@ -6018,6 +6048,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       expandedGroups,isMobile,mobileSidebarOpen,mobileSubmenu,openMobileSubmenu,handleGroupClick,
        paymentOrders,paymentOrdersFilter,paymentOrdersSort,paymentOrdersPage,paymentOrdersPageSize,paymentOrdersTotal,paymentOrdersTotalPages,paymentOrdersSum,
         loadPaymentOrders,togglePaymentSort,paymentOrdersSearch,paymentOrdersPrev,paymentOrdersNext,
+        paymentMethodLabel,paymentStatusLabel,paymentBusinessType,paymentRefundText,paymentRemark,
         rrFilterStatus,rrFilterUsername,rrFilterOrderNo,rrList,rrPage,rrTotalPages,rrTotal,rrQrPreview,
         loadRefundRequests,processRefundRequest,previewQr,
         xianyuEnabled,xianyuUrl,cardPayName,cardPayIcon,ckList,ckPage,ckTotalPages,ckTotal,ckFilterStatus,ckFilterPlanId,ckGeneratePlanId,ckGenerateCount,ckGenerateSaving,

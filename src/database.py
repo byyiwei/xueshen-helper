@@ -1969,10 +1969,8 @@ class Database:
             if plan_type == "monthly":
                 self.extend_user_membership(username, days, f"卡密激活：{code}")
             else:
-                self.execute(
-                    f"UPDATE users SET points_balance = points_balance + {ph} WHERE username = {ph}",
-                    (points, username)
-                )
+                # 走统一入口：自动记流水、建批次（原先直接 UPDATE，绕过流水与批次）
+                self.adjust_user_points(username, points, f"卡密激活：{code}", lot_source="card")
             self.execute("COMMIT")
             name = plan.get("name") or ""
             self.execute(
