@@ -65,8 +65,8 @@ def _ph():
 # 题库中的题型存在多种编码：数字(0/1/2...)、英文(single/multiple)、中文(单选题) 等，
 # 统一归一化到语义名称，用于题型分布合并与题库查询筛选。
 QUESTION_TYPE_NAME_TO_VALUES = {
-    "单选题": ["0", "single", "单选题", "单项选择题", "单项选择", "单选", "A1型选择题", "A1型题", "A1型", "X型选择题"],
-    "多选题": ["1", "multiple", "多选题", "多项选择题", "多项选择", "多选", "X型题", "X型"],
+    "单选题": ["0", "single", "单选题", "单项选择题", "单项选择", "单选", "A1型选择题", "A1型题", "A1型"],
+    "多选题": ["1", "multiple", "多选题", "多项选择题", "多项选择", "多选", "X型题", "X型", "X型选择题", "不定项", "不定项选择题"],
     "判断题": ["3", "judge", "判断题", "是非题", "判断"],
     "填空题": ["2", "fill", "填空题", "填空", "思政元素", "完型填空", "完形填空题", "完形填空", "14"],
     "简答题": ["4", "short", "简答题", "简答"],
@@ -248,6 +248,8 @@ class Database:
         self._add_column_if_missing("payment_orders", "refunded_at", "refunded_at TIMESTAMP NULL COMMENT '退款时间'")
         self._add_column_if_missing("payment_orders", "refund_reason", "refund_reason VARCHAR(500) DEFAULT '' COMMENT '退款原因'")
         self._add_column_if_missing("payment_orders", "refunded_by", "refunded_by VARCHAR(50) DEFAULT '' COMMENT '退款操作人'")
+        self._add_column_if_missing("payment_orders", "refund_amount", "refund_amount DECIMAL(10,2) DEFAULT 0 COMMENT '实际退款金额'")
+        self._add_column_if_missing("payment_orders", "refund_detail", "refund_detail TEXT COMMENT '退款计算说明'")
 
         # 用户脚本设置云端记忆
         self.execute("""
@@ -310,6 +312,7 @@ class Database:
         if not col:
             self.execute("ALTER TABLE admin_config ADD COLUMN test_recipient VARCHAR(255)")
         self._add_column_if_missing("admin_config", "log_retention_days", "log_retention_days INT DEFAULT 0")
+        self._add_column_if_missing("admin_config", "log_cleanup_last_at", "log_cleanup_last_at DATETIME NULL COMMENT '上次日志清理时间（用于24小时定时判断，持久化避免重启重置）'")
 
         self._ensure_admin_payment_columns()
 
@@ -667,6 +670,28 @@ class Database:
                 INDEX idx_status (status)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
+        # 退款金额与计算说明（历史表补列）
+        self._add_column_if_missing("refund_requests", "refund_amount", "refund_amount DECIMAL(10,2) DEFAULT 0 COMMENT '应退金额'")
+        self._add_column_if_missing("refund_requests", "refund_detail", "refund_detail TEXT COMMENT '退款计算说明'")
+
+        # ===== 题数批次（用于精确核算单笔订单的剩余题数）=====
+        # 每次充值/发放生成一个批次；答题扣点按 FIFO 消耗批次，
+        # 使每笔订单"还剩多少题"可精确计算，退款不再用用户总余额近似。
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS point_lots (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(50) NOT NULL COMMENT '用户',
+                order_no VARCHAR(64) DEFAULT '' COMMENT '来源订单号（空=非订单来源）',
+                source VARCHAR(20) NOT NULL DEFAULT 'order' COMMENT 'order/register/admin/other',
+                total_points INT NOT NULL DEFAULT 0 COMMENT '批次总题数',
+                used_points INT NOT NULL DEFAULT 0 COMMENT '本批次已消耗题数',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_user (username),
+                INDEX idx_order (order_no)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        # 流水表补订单号便于对账（历史数据留空）
+        self._add_column_if_missing("usage_logs", "order_no", "order_no VARCHAR(64) DEFAULT '' COMMENT '关联订单号'")
 
         # ===== 推广返利 =====
         # 邀请关系表
@@ -1258,7 +1283,7 @@ class Database:
         if gift_type == "points":
             points = int(admin.get("gift_points") or 0)
             if points > 0:
-                self.adjust_user_points(username, points, "注册赠送点数")
+                self.adjust_user_points(username, points, "注册赠送点数", lot_source="register")
         elif gift_type == "monthly":
             days = int(admin.get("gift_days") or 0)
             if days > 0:
@@ -1437,7 +1462,9 @@ class Database:
                     period = "monthly"
                 self.grant_custom_model_access(order["username"], period)
             else:
-                self.adjust_user_points(order["username"], int(order.get("points") or 0), f"购买套餐：{order.get('plan_name','点数套餐')}")
+                self.adjust_user_points(order["username"], int(order.get("points") or 0),
+                                        f"购买套餐：{order.get('plan_name','点数套餐')}",
+                                        order_no=order_no, lot_source="order")
         except Exception as e:
             print(f"[支付到账] 权益发放异常 order={order_no}: {e}", flush=True)
         self.execute(f"UPDATE payment_orders SET status = 'paid' WHERE order_no = {ph}", (order_no,))
@@ -1449,6 +1476,155 @@ class Database:
         except Exception as e:
             print(f"[推广返利] 佣金结算失败 order={order_no}: {e}", flush=True)
         return True, "支付成功，权益已到账"
+
+    # 自有模型"永久"按 1 年（365 天）折算退款
+    CUSTOM_MODEL_LIFETIME_DAYS = 365
+
+    def _user_points_balance(self, username, default=0):
+        """安全获取用户题数余额，查不到时返回 default（不抛异常）。"""
+        if not username:
+            return default
+        try:
+            row = self.get_user_entitlement(username)
+            return int(row.get("points_balance") or 0) if row else default
+        except Exception:
+            return default
+
+    def calculate_refund(self, order, now=None, balance=None):
+        """退款金额与扣减量计算（唯一真源）。
+
+        规则：
+          - monthly（包月/季卡/年卡）：按剩余时间比例退款，退款额 = 价格 × 剩余天数/总天数
+          - custom_model（自有模型）：按 365 天折算剩余时间比例
+          - points（题数包）：按剩余题数比例退款，退款额 = 价格 × 剩余题数/订单题数
+          - 注册赠送点数不参与退款计算（不计入可退金额）
+
+        balance：题数包折算所需的用户当前题数余额。
+          **调用方若已知余额应显式传入**；未传时才按 order['username'] 查库。
+          （dashboard 的行数据不含 username，靠查库会拿到 None→余额判成 0，
+            曾导致刚购买的订单被误判为"已无可退金额"。）
+
+        返回 dict：amount(应退金额) / revoke_days / revoke_points / lines(计算说明) / summary
+        本函数只做计算、不写库，便于退款前预览与退款后展示保持一致。
+        """
+        now = now or datetime.now()
+        price = float(order.get("price") or 0)
+        if price <= 0:
+            return {
+                "amount": 0.0, "revoke_days": 0, "revoke_points": 0,
+                "refundable": False,
+                "lines": ["该订单金额为 0，无可退金额。", "注册赠送的点数不计入退款。"],
+                "summary": "订单金额为 ¥0.00，无可退金额。",
+            }
+
+        plan_type = (order.get("plan_type") or "points").strip()
+        plan_name = order.get("plan_name") or ""
+        paid_at = order.get("paid_at")
+        if isinstance(paid_at, str):
+            try:
+                paid_at = datetime.strptime(paid_at.split(".")[0], "%Y-%m-%d %H:%M:%S")
+            except Exception:
+                paid_at = None
+
+        lines = [f"订单：{plan_name}　实付：¥{price:.2f}"]
+        revoke_days = 0
+        revoke_points = 0
+        amount = price
+
+        if plan_type in ("monthly", "custom_model"):
+            # ===== 按时间比例退款 =====
+            if plan_type == "custom_model":
+                total_days = self.CUSTOM_MODEL_LIFETIME_DAYS
+                basis = f"自有模型按 1 年（{total_days} 天）计"
+            else:
+                total_days = int(order.get("days") or 0)
+                if total_days <= 0:
+                    total_days = 30
+                basis = f"套餐周期 {total_days} 天"
+
+            if not paid_at:
+                lines.append(f"{basis}，但缺少支付时间，无法按时间折算。")
+                lines.append("按全额退款处理。")
+                amount = price
+                revoke_days = total_days
+            else:
+                elapsed = (now - paid_at).total_seconds() / 86400.0
+                elapsed = max(0.0, elapsed)
+                used_days = min(elapsed, float(total_days))
+                remain_days = max(0.0, float(total_days) - used_days)
+                ratio = remain_days / float(total_days)
+                amount = round(price * ratio, 2)
+                # 只撤销尚未使用的时间，已使用部分不退
+                revoke_days = int(remain_days)
+                lines.append(
+                    f"{basis}，已使用 {used_days:.1f} 天，剩余 {remain_days:.1f} 天"
+                )
+                lines.append(
+                    f"退款比例 = 剩余 {remain_days:.1f} ÷ 总 {total_days} = {ratio * 100:.1f}%"
+                )
+                lines.append(f"应退金额 = ¥{price:.2f} × {ratio * 100:.1f}% = ¥{amount:.2f}")
+                if revoke_days > 0:
+                    lines.append(f"同时撤销剩余 {revoke_days} 天权益。")
+
+        else:
+            # ===== 按剩余题数比例退款 =====
+            total_points = int(order.get("points") or 0)
+            if total_points <= 0:
+                lines.append("该题数套餐未配置题数，无法按题数折算。")
+                lines.append("按全额退款处理。")
+                amount = price
+            else:
+                # 优先用批次精确核算该订单的剩余题数（本次改造的核心）
+                remain_from_lot = None
+                try:
+                    remain_from_lot = self.get_order_remaining_points(order.get("order_no"))
+                except Exception as e:
+                    print(f"[退款] 批次查询失败 order={order.get('order_no')}: {e}", flush=True)
+
+                if remain_from_lot is not None:
+                    refundable_points = max(0, min(total_points, remain_from_lot))
+                    used_points = max(0, total_points - refundable_points)
+                    lines.append(f"套餐题数 {total_points} 题，本单剩余 {refundable_points} 题")
+                    lines.append(f"已消耗 {used_points} 题（已消耗部分不予退款）")
+                else:
+                    # 无批次记录（改造前的历史订单）：回退到按用户总余额近似
+                    if balance is not None:
+                        balance = int(balance)
+                    else:
+                        uname = order.get("username")
+                        row = self.get_user_entitlement(uname) if uname else None
+                        balance = int(row.get("points_balance") or 0) if row else 0
+                    refundable_points = max(0, min(total_points, balance))
+                    used_points = max(0, total_points - refundable_points)
+                    lines.append(f"套餐题数 {total_points} 题，当前余额 {balance} 题")
+                    lines.append(f"已消耗 {used_points} 题（已消耗部分不予退款）")
+                    lines.append("（该订单无批次记录，按账户余额近似折算）")
+
+                ratio = refundable_points / float(total_points)
+                amount = round(price * ratio, 2)
+                revoke_points = refundable_points
+                lines.append(
+                    f"退款比例 = 剩余 {refundable_points} ÷ 总 {total_points} = {ratio * 100:.1f}%"
+                )
+                lines.append(f"应退金额 = ¥{price:.2f} × {ratio * 100:.1f}% = ¥{amount:.2f}")
+                if revoke_points > 0:
+                    lines.append(f"同时扣回剩余 {revoke_points} 题。")
+
+        lines.append("注：注册赠送的点数不作为退款金额计算依据。")
+
+        if plan_type in ("monthly", "custom_model"):
+            summary = f"已使用部分不退，按剩余时间折算应退 ¥{amount:.2f}"
+        else:
+            summary = f"已消耗题数不退，按剩余题数折算应退 ¥{amount:.2f}"
+
+        return {
+            "amount": amount,
+            "revoke_days": revoke_days,
+            "revoke_points": revoke_points,
+            "refundable": amount > 0,
+            "lines": lines,
+            "summary": summary,
+        }
 
     def refund_order(self, order_no, reason="", operator="", user_initiated=False):
         """退款订单：撤销权益，标记 refunded 状态"""
@@ -1474,36 +1650,48 @@ class Database:
                 deadline = paid_at + timedelta(days=refund_days)
                 if datetime.now() > deadline:
                     return False, f"该订单已超过 {refund_days} 天退款时效，无法退款"
+        calc = self.calculate_refund(order, balance=self._user_points_balance(order.get("username")))
+        refund_amount = float(calc["amount"])
         if order.get("plan_type") == "monthly":
-            ok = self._revoke_user_membership(order["username"], int(order.get("days") or 30))
+            # 按剩余时间撤销：已使用的天数不退，只收回未使用的部分
+            revoke_days = int(calc.get("revoke_days") or 0)
+            if revoke_days > 0:
+                self._revoke_user_membership(order["username"], revoke_days)
             self.execute(
                 f"INSERT INTO usage_logs (username, delta_points, balance_after, reason) VALUES ({ph}, 0, 0, {ph})",
-                (order["username"], f"退款撤销包月：{order.get('plan_name','')} ({order_no}) 原因：{reason or '管理员退款'}")
+                (order["username"], f"退款撤销包月剩余 {revoke_days} 天：{order.get('plan_name','')} ({order_no}) 退款 ¥{refund_amount:.2f}")
             )
         elif order.get("plan_type") == "custom_model":
+            revoke_days = int(calc.get("revoke_days") or 0)
             self.execute(
                 f"UPDATE users SET custom_model_until = NULL WHERE username = {ph}",
                 (order["username"],)
             )
             self.execute(
                 f"INSERT INTO usage_logs (username, delta_points, balance_after, reason) VALUES ({ph}, 0, 0, {ph})",
-                (order["username"], f"退款撤销自有模型：{order.get('plan_name','')} ({order_no}) 原因：{reason or '管理员退款'}")
+                (order["username"], f"退款撤销自有模型剩余 {revoke_days} 天：{order.get('plan_name','')} ({order_no}) 退款 ¥{refund_amount:.2f}")
             )
         else:
-            points = int(order.get("points") or 0)
-            if points > 0:
-                row = self.get_user_entitlement(order["username"])
-                old_balance = int(row.get("points_balance") or 0) if row else 0
-                new_balance = max(0, old_balance - points)
+            # 题数套餐：只扣回剩余未使用的题数（注册赠送点数保留、不动）
+            revoke_points = int(calc.get("revoke_points") or 0)
+            if revoke_points > 0:
                 self.execute(
                     f"UPDATE users SET points_balance = GREATEST(0, points_balance - {ph}) WHERE username = {ph}",
-                    (points, order["username"])
+                    (revoke_points, order["username"])
                 )
                 row2 = self.get_user_entitlement(order["username"])
                 actual_balance = int(row2.get("points_balance") or 0) if row2 else 0
                 self.execute(
-                    f"INSERT INTO usage_logs (username, delta_points, balance_after, reason) VALUES ({ph}, {ph}, {ph}, {ph})",
-                    (order["username"], -points, actual_balance, f"退款扣回点数：{order.get('plan_name','')} ({order_no}) 原因：{reason or '管理员退款'}")
+                    f"INSERT INTO usage_logs (username, delta_points, balance_after, reason, order_no) "
+                    f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
+                    (order["username"], -revoke_points, actual_balance,
+                     f"退款扣回剩余 {revoke_points} 题：{order.get('plan_name','')} ({order_no}) 退款 ¥{refund_amount:.2f}",
+                     order_no)
+                )
+                # 该订单批次全部标记为已消耗，避免退款后批次仍记着未用、被重复退款
+                self.execute(
+                    f"UPDATE point_lots SET used_points = total_points WHERE order_no = {ph}",
+                    (order_no,)
                 )
         # 撤销佣金
         try:
@@ -1511,10 +1699,14 @@ class Database:
         except Exception as e:
             print(f"[退款] 佣金撤销失败 order={order_no}: {e}", flush=True)
         self.execute(
-            f"UPDATE payment_orders SET status = 'refunded', refunded_at = CURRENT_TIMESTAMP, refund_reason = {ph}, refunded_by = {ph} WHERE order_no = {ph}",
-            (reason or "", operator or "", order_no)
+            f"UPDATE payment_orders SET status = 'refunded', refunded_at = CURRENT_TIMESTAMP, "
+            f"refund_reason = {ph}, refunded_by = {ph}, refund_amount = {ph}, refund_detail = {ph} "
+            f"WHERE order_no = {ph}",
+            (reason or "", operator or "", refund_amount,
+             "\n".join(calc["lines"]), order_no)
         )
-        return True, "退款成功，权益已撤销"
+        return True, {"msg": "退款成功，权益已撤销", "amount": refund_amount,
+                      "detail": calc["lines"], "summary": calc["summary"]}
 
     def get_user_payment_info(self, username):
         ph = _ph()
@@ -1553,9 +1745,27 @@ class Database:
                 return False, "该订单已退款成功"
             if existing["status"] == "rejected":
                 return False, "该订单的退款申请已被拒绝"
+        # 与 refund_order 保持一致的退款时效校验，避免用户提交后管理员无法批准
+        admin = self.get_admin_config() or {}
+        refund_days = int(admin.get("refund_days_limit") or 0)
+        if refund_days > 0:
+            paid_at = order.get("paid_at")
+            if paid_at:
+                if isinstance(paid_at, str):
+                    try:
+                        paid_at = datetime.strptime(paid_at.split(".")[0], "%Y-%m-%d %H:%M:%S")
+                    except Exception:
+                        paid_at = None
+                if paid_at and datetime.now() > paid_at + timedelta(days=refund_days):
+                    return False, f"该订单已超过 {refund_days} 天退款时效，无法申请退款"
+        # 记录申请时的应退金额与计算说明，便于审核与向用户展示
+        calc = self.calculate_refund(order, balance=self._user_points_balance(username))
+        if float(calc["amount"]) <= 0:
+            return False, "该订单已无可退金额（已使用部分不予退款）"
         self.execute(
-            f"INSERT INTO refund_requests (username, order_no, reason) VALUES ({ph}, {ph}, {ph})",
-            (username, order_no, reason)
+            f"INSERT INTO refund_requests (username, order_no, reason, refund_amount, refund_detail) "
+            f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
+            (username, order_no, reason, float(calc["amount"]), "\n".join(calc["lines"]))
         )
         return True, "退款申请已提交，请等待管理员处理"
 
@@ -1760,10 +1970,8 @@ class Database:
             if plan_type == "monthly":
                 self.extend_user_membership(username, days, f"卡密激活：{code}")
             else:
-                self.execute(
-                    f"UPDATE users SET points_balance = points_balance + {ph} WHERE username = {ph}",
-                    (points, username)
-                )
+                # 走统一入口：自动记流水、建批次（原先直接 UPDATE，绕过流水与批次）
+                self.adjust_user_points(username, points, f"卡密激活：{code}", lot_source="card")
             self.execute("COMMIT")
             name = plan.get("name") or ""
             self.execute(
@@ -1827,7 +2035,7 @@ class Database:
             )
         self.execute(f"UPDATE commission_logs SET status = 'refunded' WHERE order_no = {ph}", (order_no,))
 
-    def adjust_user_points(self, username, delta, reason="", question_hash=""):
+    def adjust_user_points(self, username, delta, reason="", question_hash="", order_no="", lot_source="order"):
         ph = _ph()
         delta = int(delta or 0)
         row = self.get_user_entitlement(username)
@@ -1842,14 +2050,78 @@ class Database:
             # 读取扣点后的余额
             row2 = self.get_user_entitlement(username)
             new_balance = int(row2.get("points_balance") or 0) if row2 else 0
+            # 按 FIFO 消耗批次，记录本题实际扣的是哪笔订单的点数
+            try:
+                order_no = self._consume_lots(username, abs(delta)) or order_no
+            except Exception as e:
+                print(f"[批次] 消耗批次失败 user={username}: {e}", flush=True)
         else:
             new_balance = max(0, int(row.get("points_balance") or 0) + delta)
             self.execute(f"UPDATE users SET points_balance = points_balance + {ph} WHERE username = {ph}", (delta, username))
+            # 充值/发放时建立批次（注册赠送来源不计入可退）
+            if delta > 0:
+                try:
+                    self._create_point_lot(username, order_no, lot_source, delta)
+                except Exception as e:
+                    print(f"[批次] 建立批次失败 user={username}: {e}", flush=True)
         self.execute(
-            f"INSERT INTO usage_logs (username, delta_points, balance_after, reason, question_hash) VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
-            (username, delta, new_balance, reason, question_hash)
+            f"INSERT INTO usage_logs (username, delta_points, balance_after, reason, question_hash, order_no) "
+            f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
+            (username, delta, new_balance, reason, question_hash, order_no or "")
         )
         return True, new_balance
+
+    def _create_point_lot(self, username, order_no, source, points):
+        """建立题数批次（充值/发放时调用）"""
+        ph = _ph()
+        points = int(points or 0)
+        if points <= 0:
+            return
+        self.execute(
+            f"INSERT INTO point_lots (username, order_no, source, total_points, used_points) "
+            f"VALUES ({ph}, {ph}, {ph}, {ph}, 0)",
+            (username, order_no or "", source or "other", points)
+        )
+
+    def _consume_lots(self, username, points):
+        """按 FIFO 消耗批次，返回本次实际消耗的批次订单号（无法归属则返回空串）"""
+        ph = _ph()
+        points = int(points or 0)
+        if points <= 0:
+            return ""
+        remain = points
+        last_order_no = ""
+        lots = self.fetchall(
+            f"SELECT id, order_no, total_points, used_points FROM point_lots "
+            f"WHERE username = {ph} AND used_points < total_points ORDER BY id ASC",
+            (username,)
+        ) or []
+        for lot in lots:
+            if remain <= 0:
+                break
+            avail = int(lot["total_points"] or 0) - int(lot["used_points"] or 0)
+            if avail <= 0:
+                continue
+            take = min(avail, remain)
+            self.execute(
+                f"UPDATE point_lots SET used_points = used_points + {ph} WHERE id = {ph}",
+                (take, lot["id"])
+            )
+            remain -= take
+            last_order_no = lot["order_no"] or last_order_no
+        return last_order_no
+
+    def get_order_remaining_points(self, order_no):
+        """某订单批次尚未消耗的题数；无批次记录时返回 None（调用方回退旧口径）"""
+        ph = _ph()
+        row = self.fetchone(
+            f"SELECT COALESCE(SUM(total_points - used_points), 0) AS remain, COUNT(*) AS cnt "
+            f"FROM point_lots WHERE order_no = {ph}",
+            (order_no,)
+        )
+        if not row or int(row.get("cnt") or 0) == 0:
+            return None
+        return max(0, int(row.get("remain") or 0))
 
     def extend_user_membership(self, username, days, reason=""):
         ph = _ph()
@@ -1947,7 +2219,7 @@ class Database:
             f"SELECT * FROM payment_orders WHERE status = 'refunded' ORDER BY refunded_at DESC LIMIT {int(limit)}"
         )
 
-    def list_payment_orders_admin(self, username="", status="", plan_name="", pay_method="", date_from="", date_to="", sort="created_at", order="desc", page=1, page_size=20):
+    def list_payment_orders_admin(self, username="", status="", plan_name="", pay_method="", date_from="", date_to="", order_no="", sort="created_at", order="desc", page=1, page_size=20):
         """管理员支付明细查询，包含闲鱼订单"""
         ph = _ph()
         # 支付订单 WHERE
@@ -1971,6 +2243,11 @@ class Database:
             else:
                 po_where.append(f"po.pay_method = {ph}")
                 po_params.append(pay_method)
+        # 订单号/渠道单号定位：支持从退款申请页跳转过来精确查单
+        if order_no:
+            po_where.append(f"(po.order_no = {ph} OR po.channel_order_no = {ph})")
+            po_params.append(order_no)
+            po_params.append(order_no)
         if date_from:
             po_where.append(f"DATE(po.created_at) >= {ph}")
             po_params.append(date_from)
@@ -2002,6 +2279,9 @@ class Database:
         if pay_method:
             if pay_method != "xianyu":
                 xy_where.append("1=0")
+        # 闲鱼订单无渠道单号，按订单号定位时排除，避免结果混杂
+        if order_no:
+            xy_where.append("1=0")
         if date_from:
             xy_where.append(f"DATE(xo.created_at) >= {ph}")
             xy_params.append(date_from)
@@ -2051,6 +2331,26 @@ class Database:
             ) combined ORDER BY {sort_field} {order_dir} LIMIT {int(page_size)} OFFSET {offset}
         """
         rows = self.fetchall(data_sql, po_params + xy_params) or []
+
+        # 附带退款申请状态：订单仍是 paid 但用户已申请退款时，列表需要能看出来
+        pay_order_nos = [r.get("order_no") for r in rows
+                         if r.get("source") == "payment" and r.get("order_no")]
+        if pay_order_nos:
+            req_ph = ",".join([ph] * len(pay_order_nos))
+            req_rows = self.fetchall(
+                f"SELECT order_no, status FROM refund_requests "
+                f"WHERE order_no IN ({req_ph}) ORDER BY id DESC",
+                pay_order_nos
+            ) or []
+            req_map = {}
+            for rr in req_rows:
+                if rr["order_no"] not in req_map:
+                    req_map[rr["order_no"]] = rr["status"]
+            for r in rows:
+                r["refund_request_status"] = req_map.get(r.get("order_no"), "")
+        else:
+            for r in rows:
+                r.setdefault("refund_request_status", "")
 
         sum_sql = f"""
             SELECT COALESCE(SUM(price),0) AS total_amount, COUNT(*) AS cnt FROM (
@@ -3361,8 +3661,15 @@ class Database:
         ph = _ph()
         self.execute(f"UPDATE admin_config SET email_enabled = {ph} WHERE id = 1", (1 if enabled else 0,))
 
-    def cleanup_old_logs(self, days):
-        """删除超过指定天数的日志数据，返回各表删除条数"""
+    def cleanup_old_logs(self, days, batch_size=5000, max_batches=200):
+        """删除超过指定天数的日志数据，返回各表删除条数。
+
+        分批删除：单次 DELETE 大量数据（如 script_event_logs 积压 20 万行/200MB）
+        会超过 MySQL net_read_timeout(30s) 导致 "Lost connection during query"。
+        改为每批删 batch_size 行并循环，保证每批都在超时阈值内完成，
+        同时避免长时间持锁阻塞线上查询。单批失败即停止该表，已删部分保留，
+        下次调用可继续（幂等）。
+        """
         ph = _ph()
         if not days or int(days) <= 0:
             return {}
@@ -3375,13 +3682,24 @@ class Database:
             ("usage_logs", "created_at"),
         ]
         for table, col in tables:
+            deleted = 0
             try:
-                sql = f"DELETE FROM {table} WHERE {col} < DATE_SUB(NOW(), INTERVAL {ph} DAY)"
-                cur = self.execute(sql, (days,))
-                result[table] = cur.rowcount if cur else 0
+                for _ in range(max_batches):
+                    # 用 LIMIT 限制单批删除量，配合索引 idx_created_id 走范围扫描
+                    sql = (f"DELETE FROM {table} WHERE {col} < DATE_SUB(NOW(), INTERVAL {ph} DAY) "
+                           f"LIMIT {int(batch_size)}")
+                    cur = self.execute(sql, (days,))
+                    n = cur.rowcount if cur and cur.rowcount and cur.rowcount > 0 else 0
+                    deleted += n
+                    if n < batch_size:
+                        break  # 已删完，没有更多过期数据
+                    # 每批之间短暂让出，缓解主从延迟与锁竞争
+                    time.sleep(0.05)
+                result[table] = deleted
             except Exception as e:
-                print(f"[日志清理] 清理 {table} 失败: {e}", flush=True)
-                result[table] = -1
+                print(f"[日志清理] 清理 {table} 失败（已删 {deleted} 行）: {e}", flush=True)
+                # 已成功删除的部分仍然算数，便于观察进度；失败标记为负数
+                result[table] = -1 if deleted == 0 else deleted
         return result
 
     def get_log_retention_days(self):
@@ -3391,6 +3709,43 @@ class Database:
     def set_log_retention_days(self, days):
         ph = _ph()
         self.execute(f"UPDATE admin_config SET log_retention_days = {ph} WHERE id = 1", (int(days),))
+
+    def get_log_cleanup_last_at(self):
+        """上次日志清理时间。返回 datetime 或 None（从未清理过）。"""
+        try:
+            row = self.fetchone("SELECT log_cleanup_last_at FROM admin_config WHERE id = 1")
+            if row:
+                return row.get("log_cleanup_last_at")
+        except Exception:
+            pass
+        return None
+
+    def set_log_cleanup_last_at(self, when=None):
+        """记录本次清理时间，用于下次 24 小时判断。"""
+        try:
+            ph = _ph()
+            self.execute(
+                f"UPDATE admin_config SET log_cleanup_last_at = COALESCE({ph}, NOW()) WHERE id = 1",
+                (when,)
+            )
+        except Exception as e:
+            print(f"[日志清理] 记录清理时间失败: {e}", flush=True)
+
+    def is_log_cleanup_due(self, interval_hours=24):
+        """判断是否到了该清理的时间。
+        从未清理过 -> 需要清理；
+        距上次清理 >= interval_hours -> 需要清理；
+        否则不需要。时间戳持久化在数据库，服务重启不会重置计时。
+        """
+        last = self.get_log_cleanup_last_at()
+        if not last:
+            return True
+        try:
+            if isinstance(last, str):
+                last = datetime.strptime(last[:19], "%Y-%m-%d %H:%M:%S")
+            return (datetime.now() - last).total_seconds() >= interval_hours * 3600
+        except Exception:
+            return True  # 解析失败时宁可清理一次
 
     def get_feedback_auto_close_days(self):
         row = self.fetchone("SELECT feedback_auto_close_days FROM admin_config WHERE id = 1")
@@ -3565,12 +3920,29 @@ class Database:
 
         admin = self.get_admin_config() or {}
         refund_days = int(admin.get("refund_days_limit") or 7)
+        # 消费记录只展示真正付过钱的订单（paid/refunded）。
+        # 未支付(pending)的下单记录会随时间大量堆积（全站曾达 201 笔），
+        # 若一并展示会把付费记录挤出 LIMIT 5 的窗口，用户看不到自己的真实消费。
         recent_orders_sql = f"""
-            SELECT order_no, plan_name, price, status, created_at, paid_at
-            FROM payment_orders WHERE username = {ph}
+            SELECT order_no, plan_name, price, status, created_at, paid_at, plan_type, points, days
+            FROM payment_orders WHERE username = {ph} AND status IN ('paid', 'refunded')
             ORDER BY id DESC LIMIT 5
         """
         rows = self.fetchall(recent_orders_sql, (username,))
+        # 当前题数余额：退款折算用，循环外只查一次
+        cur_balance = self._user_points_balance(username)
+        # 退款申请状态只需查一次（原先写在循环里导致每行重复查库）
+        order_nos = [ri.get('order_no') for ri in (rows or []) if ri.get('order_no')]
+        refund_req_map = {}
+        if order_nos:
+            placeholders = ",".join([ph] * len(order_nos))
+            req_rows = self.fetchall(
+                f"SELECT r.order_no, r.status FROM refund_requests r WHERE r.order_no IN ({placeholders}) ORDER BY r.id DESC",
+                order_nos
+            )
+            for rr in (req_rows or []):
+                if rr['order_no'] not in refund_req_map:
+                    refund_req_map[rr['order_no']] = rr['status']
         recent_orders = []
         for r in (rows or []):
             ca = r.get('created_at')
@@ -3586,26 +3958,35 @@ class Database:
                     deadline = paid_at + timedelta(days=refund_days)
                     if datetime.now() <= deadline:
                         can_refund = True
-            order_nos = [ri.get('order_no') for ri in rows if ri.get('order_no')]
-            refund_req_map = {}
-            if order_nos:
-                placeholders = ",".join([ph] * len(order_nos))
-                req_rows = self.fetchall(
-                    f"SELECT r.order_no, r.status FROM refund_requests r WHERE r.order_no IN ({placeholders}) ORDER BY r.id DESC",
-                    order_nos
-                )
-                for rr in (req_rows or []):
-                    if rr['order_no'] not in refund_req_map:
-                        refund_req_map[rr['order_no']] = rr['status']
             rr_status = refund_req_map.get(r.get('order_no'), '')
+            # 退款预览：可退金额与折算说明（与实际退款同源，保证一致）
+            # 余额在循环外查一次后显式传入：本行数据不含 username，靠函数内部查库会得到 0。
+            refund_preview = {'amount': 0.0, 'lines': [], 'summary': ''}
+            if r.get('status') == 'paid' and not rr_status:
+                try:
+                    calc = self.calculate_refund(r, balance=cur_balance)
+                    refund_preview = {
+                        'amount': float(calc['amount']),
+                        'lines': calc['lines'],
+                        'summary': calc['summary'],
+                    }
+                except Exception:
+                    pass
+            # 可退金额为 0（如题数已全部用完）时不允许提交，避免产生必然被拒的申请
+            no_refund_left = (refund_preview['amount'] <= 0 and not rr_status
+                              and r.get('status') == 'paid')
             recent_orders.append({
                 'order_no': r.get('order_no') or '',
                 'plan_name': r.get('plan_name') or '',
                 'price': float(r.get('price') or 0),
                 'status': r.get('status') or '',
                 'created_at': str(ca) if ca else '',
-                'can_refund': can_refund and not rr_status,
+                'can_refund': can_refund and not rr_status and not no_refund_left,
+                'no_refund_left': no_refund_left,
                 'refund_request_status': rr_status,
+                'refund_amount': refund_preview['amount'],
+                'refund_lines': refund_preview['lines'],
+                'refund_summary': refund_preview['summary'],
             })
 
         result['consumption'] = {

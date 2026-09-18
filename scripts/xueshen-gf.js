@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.3.4
+// @version      5.3.5
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @author       IPYIWEI
@@ -10,6 +10,9 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.3.5 更新内容：
+// @changelog    1. 修复多选题偶发只填一项：后端不再把 A,B 截成首选项，考试/智慧树页按复选框识别多选
+// @changelog    2. 智慧树 iframe 支持 ABD / A,B,D 及 X型/不定项多选填充
 // @changelog    v5.3.4 更新内容：
 // @changelog    1. 修复无扩展名图片URL（超星部分CDN图）无法匹配填充的问题：图片比对改用URL末段哈希，兼容有无扩展名
 // @changelog    2. 图片匹配加固：短哈希仅精确比对防误选，http/https与查询串差异不再影响匹配
@@ -2459,8 +2462,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       if (Array.isArray(parsed)) return parsed.map((x) => String(x).trim()).filter(Boolean);
     } catch (_) {
     }
-    // 处理无分隔符的连续字母序列，如 "ABCD" → ["A","B","C","D"]
-    if (/^[A-Da-d]{2,}$/.test(text)) {
+    // 处理无分隔符的连续字母序列，如 "ABCD"/"ABCDE" → ["A","B","C","D","E"]
+    if (/^[A-Za-z]{2,12}$/.test(text)) {
       return text.toUpperCase().split("").filter(Boolean);
     }
     if (/^[A-Z](?:[\s,，、;；|]+[A-Z])+$/.test(text.toUpperCase())) {
@@ -7513,7 +7516,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       };
       this.questionType = {
         "A1型选择题": "0",
-        "X型选择题": "0",
+        "X型选择题": "1",
         "单选题": "0",
         "单项选择题": "0",
         "单项选择": "0",
@@ -7522,6 +7525,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         "多项选择题": "1",
         "多项选择": "1",
         "X型题": "1",
+        "不定项选择题": "1",
+        "不定项": "1",
         "填空题": "2",
         "判断题": "3",
         "是非题": "3",
@@ -7550,7 +7555,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           type: "0"
         },
         {
-          keywords: ["多项选择", "多选"],
+          keywords: ["多项选择", "多选", "不定项", "X型"],
           type: "1"
         },
         {
@@ -9095,7 +9100,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     constructor(type, iframe) {
       super();
       __publicField(this, "type");
-      __publicField(this, "AI_ALLOW_QUESTION_TYPE", ["单选题", "多选题", "判断题"]);
+      __publicField(this, "AI_ALLOW_QUESTION_TYPE", ["单选题", "多选题", "判断题", "多项选择题", "X型选择题", "X型题", "不定项选择题", "不定项"]);
       __publicField(this, "init", async () => {
         var _that = this;
         this.questions = [];
@@ -9216,14 +9221,17 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         if (!this._window) return;
         const optionsDOM = document.querySelectorAll(".subject_node")[index].querySelectorAll(".node_detail");
         const normalizeOptText = (str) => String(str ?? "").replace(/^[A-Z][.、．]\s*/i, "").replace(/\s+/g, "").replace(/[^\p{L}\p{N}√×]/gu, "").toLowerCase();
-        if (question.type === "单选题" || question.type === "多选题") {
+        if (question.type === "单选题" || question.type === "多选题" || /多选|X型|不定项/.test(question.type || "")) {
           question.answer.answer.forEach((answer) => {
-            // 字母答案映射：A=第1个选项
+            // 字母答案映射：A / ABD / A,B,D → 按选项序号勾选
             const letterText = String(answer || "").trim();
-            const letterIdx = /^[A-Za-z]$/.test(letterText) ? letterText.toUpperCase().charCodeAt(0) - 65 : -1;
+            let letters = [];
+            if (/^[A-Za-z]$/.test(letterText)) letters = [letterText.toUpperCase()];
+            else if (/^[A-Za-z]{2,12}$/.test(letterText)) letters = letterText.toUpperCase().split("");
+            else if (/^[A-Z](?:[\s,，、;；|]+[A-Z])+$/i.test(letterText)) letters = letterText.toUpperCase().split(/[\s,，、;；|]+/).filter(Boolean);
             optionsDOM.forEach((optionDOM, optIdx) => {
-              if (letterIdx >= 0) {
-                if (optIdx === letterIdx) {
+              if (letters.length) {
+                if (letters.includes(String.fromCharCode(65 + optIdx))) {
                   isSelected = true;
                   optionDOM.click();
                 }
@@ -11004,9 +11012,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     };
   };
   const TYPE_TEXT_MAP = [
-    { keywords: ["多选", "多项"], type: "多选题" },
+    { keywords: ["多选", "多项", "X型", "不定项"], type: "多选题" },
     { keywords: ["判断", "是非"], type: "判断题" },
-    { keywords: ["填空"], type: "填空题" },
+    { keywords: ["填空", "完形", "完型"], type: "填空题" },
     { keywords: ["简答"], type: "简答题" },
     { keywords: ["论述"], type: "论述题" },
     { keywords: ["计算"], type: "计算题" },
@@ -11206,7 +11214,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         3: "判断题",
         4: "填空题",
         5: "简答题",
-        14: "判断题"
+        14: "填空题"
       };
       return codeMap[text] || "单选题";
     };
@@ -11367,7 +11375,10 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       const matched = TYPE_TEXT_MAP.find(
         ({ keywords }) => keywords.some((keyword) => rawText.includes(keyword))
       );
-      return (matched == null ? void 0 : matched.type) || "单选题";
+      if (matched == null ? void 0 : matched.type) return matched.type;
+      if (root.querySelector("input[type=checkbox]")) return "多选题";
+      if (root.querySelector("input[type=radio]")) return "单选题";
+      return "单选题";
     };
     const toApiQuestion = (question) => ({
       ...question,
@@ -11611,6 +11622,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           {
             ...domQuestion,
             ...apiQuestion,
+            type: (domQuestion.element && domQuestion.element.querySelector && domQuestion.element.querySelector("input[type=checkbox]"))
+              ? "多选题"
+              : (apiQuestion.type || domQuestion.type),
+            type: (domQuestion.element && domQuestion.element.querySelector && domQuestion.element.querySelector("input[type=checkbox]"))
+              ? "多选题"
+              : (apiQuestion.type || domQuestion.type),
             title: apiQuestion.title || domQuestion.title,
             optionsText: ((_a2 = apiQuestion.optionsText) == null ? void 0 : _a2.length) ? apiQuestion.optionsText : domQuestion.optionsText || [],
             options: Object.keys(apiQuestion.options || {}).length ? apiQuestion.options : domQuestion.options || {},
@@ -13828,13 +13845,24 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             const target = correct && !wrong ? '0' : wrong ? '1' : null;
             return target === null ? null : { judge: target };
         }
-        // 多选题/单选题：提取字母，兼容 "答案：ABC"、"A、文本,B、文本"、"A,B,C"
-        const letters = text.match(/[A-F]/gi) || [];
-        if (letters.length) {
+        if (text.startsWith('[')) {
+            try {
+                const arr = JSON.parse(text);
+                if (Array.isArray(arr) && arr.length) {
+                    const items = arr.map((x) => String(x).trim()).filter(Boolean);
+                    const asLetters = items.filter((x) => /^[A-Z]$/i.test(x)).map((x) => x.toUpperCase());
+                    if (asLetters.length === items.length) return { letters: asLetters };
+                    return { texts: items };
+                }
+            } catch (_) {}
+        }
+        // 多选题/单选题：仅在整段是字母答案时提取，避免把 "DNA"/"Option A is correct" 误拆成字母
+        const letterOnly = text.replace(/^(答案|正确答案|选择?)[是：:.\s]*/i, "").trim();
+        const compact = letterOnly.replace(/[\s,，、;；|+/&和]+/g, "").toUpperCase();
+        if (/^[A-H]{1,8}$/.test(compact)) {
             const unique = [];
-            for (const l of letters) {
-                const u = l.toUpperCase();
-                if (!unique.includes(u)) unique.push(u);
+            for (const l of compact) {
+                if (!unique.includes(l)) unique.push(l);
             }
             return { letters: unique };
         }
@@ -13861,6 +13889,10 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 const qid = qidInput ? qidInput.value : '';
                 const typeEl = qc.querySelector('.divQuestionTitle');
                 const typeName = typeEl ? (typeEl.getAttribute('data-q-type-name') || '') : '';
+                const hasCheckbox = !!qc.querySelector('input[type=checkbox]');
+                const resolvedType = hasCheckbox || /多选|不定项|X型/.test(typeName) ? '多选题' : typeName;
+                const hasCheckbox = !!qc.querySelector('input[type=checkbox]');
+                const resolvedType = hasCheckbox || /多选|不定项|X型/.test(typeName) ? '多选题' : typeName;
                 const opts = [];
                 qc.querySelectorAll('.q_option').forEach(op => {
                     const input = op.querySelector('input[type=radio], input[type=checkbox]');
@@ -13877,7 +13909,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 if (idMatch) {
                     result.push({
                         num: parseInt(idMatch[1], 10),
-                        type: typeName,
+                        type: resolvedType,
                         title,
                         qid,
                         opts,
@@ -13903,7 +13935,26 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             const num = parseInt(numMatch[1], 10);
             const opts = [];
             item.querySelectorAll('a.option').forEach(o => {
-                opts.push({ text: (o.textContent || '').trim(), el: o, letter: (o.getAttribute('data-option-label') || (o.textContent || '').trim()).toUpperCase() });
+                opts.push({
+                    text: (o.textContent || '').trim(),
+                    el: o,
+                    letter: (o.getAttribute('data-option-label') || (o.textContent || '').trim()).toUpperCase(),
+                    checked: /r_on|selected|checked/.test(o.className || '')
+                });
+            });
+            const checkboxEls = item.querySelectorAll('input[type=checkbox], label.exam_checkbox');
+            checkboxEls.forEach(el => {
+                const input = el.tagName === 'INPUT' ? el : el.querySelector('input[type=checkbox]');
+                const label = el.tagName === 'LABEL' ? el : (el.closest('label') || el);
+                const text = (label.textContent || '').replace(/\s+/g, ' ').trim();
+                if (!text || opts.some(o => o.text === text)) return;
+                opts.push({
+                    text,
+                    el: label,
+                    input,
+                    letter: ((label.getAttribute && label.getAttribute('data-option-label')) || (text.match(/^[A-Z]/i) || [''])[0]).toUpperCase(),
+                    checked: !!(input && input.checked)
+                });
             });
             const radioEls = item.querySelectorAll('label.exam_radio');
             const judges = [];
@@ -13915,7 +13966,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             const stemText = stemEl ? (stemEl.textContent || '').replace(/\s+/g, ' ').trim() : '';
             const imgs = item.querySelectorAll('img');
             const imgSrcs = Array.from(imgs).map(img => img.src || img.getAttribute('data-src') || '').filter(Boolean);
-            result.push({ num, opts, judges, stemText, imgSrcs, el: item, mode: 'B', isJudge: judges.length > 0, type: judges.length ? '判断题' : (opts.length ? '单选题' : '') });
+            const headText = ((scoreEl && scoreEl.textContent) || '') + (item.getAttribute('data-q-type-name') || '');
+            const isMulti = checkboxEls.length > 0 || /多选题|多项选择|不定项|X型/.test(headText) || /多选题|多项选择/.test((item.textContent || '').slice(0, 120));
+            result.push({ num, opts, judges, stemText, imgSrcs, el: item, mode: 'B', isJudge: judges.length > 0 && !opts.length, type: judges.length && !opts.length ? '判断题' : (isMulti ? '多选题' : (opts.length ? '单选题' : '')) });
         });
         return result;
     }
@@ -13929,7 +13982,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             .replace(/\s+/g, '').trim();
         const ans = clean(answer).toLowerCase();
         if (!ans) return [];
-        const isSingle = /单选/.test(q.type || '') || (q.opts[0] && q.opts[0].input && q.opts[0].input.type === 'radio');
+        const hasCheckbox = (q.opts || []).some(o => o.input && o.input.type === 'checkbox');
+        const isSingle = !hasCheckbox && !/多选/.test(q.type || '');
         const found = [];
         q.opts.forEach((o, idx) => {
             const optText = clean(o.text || o.textContent || '').toLowerCase();
@@ -13991,6 +14045,13 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         }
         // 选择题（单选/多选）
         let letters = parsed ? (parsed.letters || []) : [];
+        if (!letters.length && parsed && parsed.texts && parsed.texts.length) {
+            parsed.texts.forEach((t) => {
+                matchOptionTextToLetters(q, t).forEach((l) => {
+                    if (!letters.includes(l)) letters.push(l);
+                });
+            });
+        }
         // 答案没含字母时，尝试按选项文本匹配（模型可能直接返回选项内容）
         if (!letters.length) {
             letters = matchOptionTextToLetters(q, answer);
@@ -14010,7 +14071,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 }
             }
         });
-        return clicked >= 0;
+        return clicked > 0;
     }
 
     function formatAnswerForLog(raw) {
@@ -14033,7 +14094,11 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     }
 
     async function answerExamQuestion(q, index) {
-        let payload = { question: q.stemText || q.title, type: q.type || (q.isJudge ? 'judge' : 'single') };
+        const hasCheckbox = (q.opts || []).some(o => o.input && o.input.type === 'checkbox');
+        let payload = { question: q.stemText || q.title, type: q.type || (q.isJudge ? 'judge' : (hasCheckbox ? 'multiple' : 'single')) };
+        if (/多选|不定项|X型/.test(payload.type) || hasCheckbox) payload.type = 'multiple';
+        else if (/单选/.test(payload.type)) payload.type = 'single';
+        else if (/判断/.test(payload.type)) payload.type = 'judge';
         if (q.opts.length) payload.options = q.opts.map(o => o.text);
         // 图片题：下载图片
         const dataURLs = [];
@@ -14187,7 +14252,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         log(`🔍 解析到 ${questions.length} 道题 (${questions[0].mode === 'A' ? '文本结构' : '图片结构'})`);
         for (let i = 0; i < questions.length; i++) {
             const q = questions[i];
-            const answered = q.isJudge ? q.opts.some(o => o.checked) : q.opts.some(o => o.checked);
+            const answered = q.mode === 'B'
+                ? (q.isJudge ? q.judges.some(j => j.el && /r_on|selected|checked/.test(j.el.className || '')) : q.opts.some(o => o.checked || (o.el && /r_on|selected|checked/.test(o.el.className || ''))))
+                : q.opts.some(o => o.checked);
             if (answered) continue;
             const res = await answerExamQuestion(q, i);
             if (!res.ok) {
@@ -14270,20 +14337,37 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             if (!opts.length) continue;
             const already = opts.some(o => o.input && o.input.checked);
             if (already) continue;
+            const hasCheckbox = opts.some(o => o.input && o.input.type === 'checkbox');
             log(`📝 作业第${i + 1}题 调后端...`);
-            const payload = { question: q.text.slice(0, 300), options: opts.map(o => o.text), type: 'single' };
+            const payload = { question: q.text.slice(0, 300), options: opts.map(o => o.text), type: hasCheckbox ? 'multiple' : 'single' };
             const res = await callAnswer(payload, { u: store.account.username || '' });
             if (!res.ok) { log(`❌ 作业第${i + 1}题失败: ${res.msg}`); continue; }
-            const answer = String(res.data.answer || '').trim();
-            const letters = answer.match(/[A-E]/gi) || [];
+            const raw = String(res.data.answer || '').trim();
+            let targets = [];
+            if (raw.startsWith('[')) {
+                try {
+                    const arr = JSON.parse(raw);
+                    if (Array.isArray(arr)) targets = arr.map((x) => String(x).trim()).filter(Boolean);
+                } catch (_) {}
+            }
+            if (!targets.length) {
+                const letters = raw.match(/[A-Z]/gi) || [];
+                letters.forEach((l) => {
+                    const u = l.toUpperCase();
+                    if (!targets.includes(u)) targets.push(u);
+                });
+            }
             let clicked = 0;
             opts.forEach((o, idx) => {
                 const letter = String.fromCharCode(65 + idx);
-                if (letters.some(l => l.toUpperCase() === letter)) {
-                    if (o.input && !o.input.checked) {
-                        o.el.click();
-                        clicked++;
-                    }
+                const optText = (o.text || '').replace(/\s+/g, '');
+                const hit = targets.some((t) => {
+                    const tt = String(t).replace(/\s+/g, '');
+                    return t.toUpperCase() === letter || optText === tt || (tt.length >= 2 && (optText.includes(tt) || tt.includes(optText)));
+                });
+                if (hit && o.input && !o.input.checked) {
+                    o.el.click();
+                    clicked++;
                 }
             });
             log(`${clicked ? '✅' : '⚠️'} 作业第${i + 1}题 已处理 (${res.msg})`);

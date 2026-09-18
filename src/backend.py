@@ -40,7 +40,7 @@ except Exception:
     Message = None
     BOTPY_AVAILABLE = False
 
-from database import db, hash_password, verify_password, is_legacy_password, get_db_config, save_db_config
+from database import db, hash_password, verify_password, is_legacy_password, get_db_config, save_db_config, _normalize_question_type_name
 
 # ==================== 全局配置 ====================
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1708,6 +1708,8 @@ def get_question_bank_match(question):
     mkey = make_matching_key(question)
     candidates = db.get_question_bank_by_matching_key(mkey)
     candidates = [c for c in candidates if c.get("answer")]
+    if _is_multiple_choice_type(current_type):
+        candidates = [c for c in candidates if not _is_truncated_multi_answer(question, c.get("answer", ""))]
     elapsed = (time.time() - _t0) * 1000
     if not candidates:
         print(f"[题库匹配] 未命中 {mkey[:12]} type={current_type} ({elapsed:.1f}ms)", flush=True)
@@ -1784,6 +1786,9 @@ def save_question_bank_answer(question, answer, model_name="", provider_name="")
     if is_pure_image_answer(answer):
         print(f"[题库入库] 纯图片答案跳过，不写入题库 model={model_name}", flush=True)
         return
+    if _is_truncated_multi_answer(question, answer):
+        print(f"[题库入库] 多选答案不完整，跳过入库 model={model_name} answer={str(answer)[:80]}", flush=True)
+        return
     info = parse_question_payload(question)
     qhash = make_question_hash(question, answer)
     mkey = make_matching_key(question)
@@ -1821,6 +1826,49 @@ def extract_options_from_question(question):
     except Exception:
         return []
 
+def _is_multiple_choice_type(qtype):
+    return _normalize_question_type_name(qtype) == "多选题"
+
+def _parse_answer_list(answer):
+    """解析已结构化的多选答案；无法解析则返回 None。"""
+    text = str(answer or "").strip()
+    if text.startswith("[") and text.endswith("]"):
+        try:
+            arr = json.loads(text)
+            if isinstance(arr, list):
+                items = [str(x).strip() for x in arr if str(x).strip()]
+                if items:
+                    return items
+        except Exception:
+            pass
+    return None
+
+def _is_truncated_multi_answer(question, answer):
+    """多选题若只剩单个选项文本/单字母，视为被截断的脏答案，不能复用、不能入库。"""
+    info = parse_question_payload(question)
+    if not _is_multiple_choice_type(info.get("question_type")):
+        return False
+    text = str(answer or "").strip()
+    if not text:
+        return True
+    items = _parse_answer_list(text)
+    if items is not None:
+        return len(items) < 2
+    clean = re.sub(r"[\s、,，&+和]+", "", text).upper()
+    if re.match(r"^[A-Z]{2,}$", clean):
+        return False
+    return True
+
+def _mentioned_options(text, options):
+    """按原文顺序找出答案中出现的选项文本，避免短选项被长选项包含时重复计数。"""
+    found = []
+    for opt in sorted([o for o in options if o], key=len, reverse=True):
+        if opt in text and not any(opt != other and opt in other for other in found):
+            found.append(opt)
+    order = {o: i for i, o in enumerate(options)}
+    found.sort(key=lambda o: order.get(o, 999))
+    return found
+
 def normalize_ai_answer(question, answer):
     """把模型返回清洗成适合脚本匹配的最终答案，避免返回 Thinking Process。"""
     if not answer:
@@ -1850,45 +1898,93 @@ def normalize_ai_answer(question, answer):
         except Exception:
             pass
     options = extract_options_from_question(question)
+    is_multi = _is_multiple_choice_type(parse_question_payload(question).get("question_type"))
 
     if options:
-        # 答案形如 "C<题干/说明混入>"：字母后紧跟非字母（中文/标点/结尾），直接按字母索引取选项文本。
-        # 例："C路由选择协议位于( ) \nC" -> 取第 C 项；纯英文选项文本（如 "CPU..."）因字母后仍是字母不会被误命中。
-        _lead = re.match(r"^\s*([A-Z])\s*(?![A-Za-z])", text, re.I)
-        if _lead:
-            _idx = ord(_lead.group(1).upper()) - ord("A")
-            if 0 <= _idx < len(options):
-                return options[_idx]
-        # 匹配各种 "答案格式": "A" "答案是A" "正确答案是A" "选A" "选择A" "A. xxx" "A：xxx" 等
-        m = re.match(r"^\s*(?:正确答案是?|答案是?|选择?|选|应该选|应该选择?)([A-Z])", text, re.I)
-        if m:
-            idx = ord(m.group(1).upper()) - ord("A")
-            if 0 <= idx < len(options):
-                return options[idx]
-            return m.group(1).upper()
-        # "A" or "A. xxx" or "A：xxx" or "A、xxx"
-        m = re.match(r"^\s*([A-Z])(?:\s*[:：.．、)\）]|[\s]+)(.*)$", text, re.I)
-        if m:
-            idx = ord(m.group(1).upper()) - ord("A")
-            rest = m.group(2).strip()
-            # 守卫：rest 也是纯字母序列（如 "A、B、D" 的 "B、D"），说明是多选，跳到纯字母分支处理
-            rest_clean = re.sub(r"[\s、,，&+]+", "", rest).upper()
-            if not (rest_clean and re.match(r"^[A-Z]+$", rest_clean)):
-                if 0 <= idx < len(options):
-                    return options[idx]
-                if rest:
-                    return rest
-        # 纯字母答案 "AB" "A,B" "A、B" "A和B"（字母范围按实际选项数，支持 E/F 等更多选项）
-        clean = re.sub(r"[\s、,，&+]+", "", text).upper()
-        if re.match(r"^[A-Z]{1,%d}$" % max(len(options), 1), clean) and len(clean) <= len(options):
+        def _letters_to_answer(letter_text):
+            """把纯字母串映射为选项文本；多选返回 JSON 数组字符串。"""
+            clean = re.sub(r"[\s、,，&+和]+", "", str(letter_text or "")).upper()
+            if not re.match(r"^[A-Z]{1,%d}$" % max(len(options), 1), clean):
+                return None
+            if len(clean) > len(options):
+                return None
             result = []
             for c in clean:
                 idx = ord(c) - ord("A")
                 if 0 <= idx < len(options):
                     result.append(options[idx])
-            if result:
-                # 多选返回 JSON 数组字符串（脚本端可可靠解析）；单选保持返回选项文本
-                return json.dumps(result, ensure_ascii=False) if len(result) > 1 else result[0]
+            if not result:
+                return None
+            # 多选返回 JSON 数组字符串（脚本端可可靠解析）；单选保持返回选项文本
+            return json.dumps(result, ensure_ascii=False) if len(result) > 1 else result[0]
+
+        # 必须优先于 _lead：AI 按提示输出 "A,B" 时，旧逻辑会把逗号当成「字母后非字母」
+        # 只取第一个选项，导致多选偶发/批量只填一项，并污染题库。
+        mapped = _letters_to_answer(text)
+        if mapped is not None:
+            return mapped
+        # "答案是A,B" / "选 A、C" 等带前缀的多选/单选
+        _pref = re.match(
+            r"^\s*(?:正确答案是?|答案是?|选择?|选|应该选|应该选择?)(.+)$",
+            text,
+            re.I,
+        )
+        if _pref:
+            mapped = _letters_to_answer(_pref.group(1))
+            if mapped is not None:
+                return mapped
+
+        # 短答案里直接出现多个选项正文（多选）
+        if is_multi and len(text) <= 240:
+            mentioned = _mentioned_options(text, options)
+            if len(mentioned) > 1:
+                return json.dumps(mentioned, ensure_ascii=False)
+
+        # 多选题禁止再走「只取第一个字母」的 _lead / 单字母规则，否则会再次截断。
+        if not is_multi:
+            # 答案形如 "C<题干/说明混入>"：字母后紧跟非字母（中文/标点/结尾），直接按字母索引取选项文本。
+            # 例："C路由选择协议位于( ) \nC" -> 取第 C 项；纯英文选项文本（如 "CPU..."）因字母后仍是字母不会被误命中。
+            _lead = re.match(r"^\s*([A-Z])\s*(?![A-Za-z])", text, re.I)
+            if _lead:
+                _rest = text[_lead.end():]
+                _rest_letters = re.sub(r"[\s、,，&+和]+", "", _rest).upper()
+                if not (_rest_letters and re.match(r"^[A-Z]+$", _rest_letters)):
+                    _idx = ord(_lead.group(1).upper()) - ord("A")
+                    if 0 <= _idx < len(options):
+                        return options[_idx]
+            # 匹配各种 "答案格式": "A" "答案是A" "正确答案是A" "选A" "选择A"
+            m = re.match(r"^\s*(?:正确答案是?|答案是?|选择?|选|应该选|应该选择?)([A-Z])(?![A-Za-z])", text, re.I)
+            if m:
+                idx = ord(m.group(1).upper()) - ord("A")
+                if 0 <= idx < len(options):
+                    return options[idx]
+                return m.group(1).upper()
+            # "A" or "A. xxx" or "A：xxx" or "A、xxx"
+            m = re.match(r"^\s*([A-Z])(?:\s*[:：.．、)\）]|[\s]+)(.*)$", text, re.I)
+            if m:
+                idx = ord(m.group(1).upper()) - ord("A")
+                rest = m.group(2).strip()
+                rest_clean = re.sub(r"[\s、,，&+和]+", "", rest).upper()
+                # 守卫：rest 也是纯字母序列（如 "A、B、D" 的 "B、D"），说明是多选
+                if rest_clean and re.match(r"^[A-Z]+$", rest_clean):
+                    mapped = _letters_to_answer(m.group(1) + rest)
+                    if mapped is not None:
+                        return mapped
+                else:
+                    if 0 <= idx < len(options):
+                        return options[idx]
+                    if rest:
+                        return rest
+        else:
+            # 多选：A、B、D / A. B. C. 等残留格式仍按字母展开
+            m = re.match(r"^\s*([A-Z])(?:\s*[:：.．、)\）]|[\s]+)(.*)$", text, re.I)
+            if m:
+                rest = m.group(2).strip()
+                rest_clean = re.sub(r"[\s、,，&+和]+", "", rest).upper()
+                if rest_clean and re.match(r"^[A-Z]+$", rest_clean):
+                    mapped = _letters_to_answer(m.group(1) + rest)
+                    if mapped is not None:
+                        return mapped
         # 判断题特殊处理
         if any(kw in text[:20].lower() for kw in ["正确", "对", "true", "√", "right"]):
             return "正确"
@@ -1928,11 +2024,14 @@ def normalize_ai_answer(question, answer):
         if letters and not options:
             return "".join(letters)
 
-        # 优先从结论区匹配选项文本，避免匹配到开头列出的所有选项。
+        # 优先从结论区匹配选项文本；多选要收齐全部命中项，避免只返回第一项。
         if options:
-            for opt in options:
-                if opt and opt in tail:
-                    return opt
+            scan = tail[-400:]
+            mentioned = _mentioned_options(scan, options)
+            if len(mentioned) > 1:
+                return json.dumps(mentioned, ensure_ascii=False)
+            if mentioned:
+                return mentioned[0]
 
         # 没有 options 时，尝试从尾部提取《》书名号内容或最后的结论行
         if not options:
@@ -2374,7 +2473,7 @@ def build_ai_messages(question_payload_str, force_text_only=False):
     system_prompt = (
         "你是答题助手，只输出最终答案，禁止输出任何解释、分析、思考过程或中间步骤。\n"
         "规则：\n"
-        "- 选择题：只输出选项字母，多选用逗号分隔（如 A 或 A,B）\n"
+        "- 选择题：只输出选项字母。单选如 A；多选必须输出全部正确字母，用逗号分隔（如 A,B,D）或连写（如 ABD），禁止只输出其中一个\n"
         "- 判断题：只输出 正确 或 错误\n"
         "- 填空题：只输出填空内容\n"
         "- 简答题：输出简洁答案，不超过50字\n"
@@ -4447,6 +4546,7 @@ class Handler(BaseHTTPRequestHandler):
                 pay_method=qs.get("pay_method", [""])[0],
                 date_from=qs.get("date_from", [""])[0],
                 date_to=qs.get("date_to", [""])[0],
+                order_no=qs.get("order_no", [""])[0],
                 sort=qs.get("sort", ["created_at"])[0],
                 order=qs.get("order", ["desc"])[0],
                 page=int(qs.get("page", ["1"])[0] or 1),
@@ -4950,6 +5050,39 @@ class Handler(BaseHTTPRequestHandler):
                 db.update_feedback_status(feedback_id, "processing")
                 threading.Thread(target=_send_feedback_notify, args=(feedback_id, "reply", fb.get("username",""), fb.get("category",""), fb.get("title",""), content), daemon=True).start()
                 self._send_json(200, {"code": 200, "msg": "回复成功"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        # ========== 用户端退款预览（不提交，仅计算） ==========
+        elif path == "/api/user/refund-preview":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "请先登录"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                order_no = (data.get("order_no") or "").strip()
+                if not order_no:
+                    self._send_json(400, {"code": 400, "msg": "订单号不能为空"})
+                    return
+                order = db.get_order(order_no)
+                if not order:
+                    self._send_json(404, {"code": 404, "msg": "订单不存在"})
+                    return
+                if order.get("username") != user["username"]:
+                    self._send_json(403, {"code": 403, "msg": "无权查看此订单"})
+                    return
+                calc = db.calculate_refund(order)
+                self._send_json(200, {
+                    "code": 200,
+                    "order_no": order_no,
+                    "plan_name": order.get("plan_name") or "",
+                    "price": float(order.get("price") or 0),
+                    "refund_amount": float(calc["amount"]),
+                    "used_amount": round(float(order.get("price") or 0) - float(calc["amount"]), 2),
+                    "lines": calc["lines"],
+                    "summary": calc["summary"],
+                })
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -5758,6 +5891,12 @@ class Handler(BaseHTTPRequestHandler):
                 admin_cfg = db.get_admin_config() or {}
                 operator = admin_cfg.get("username") or "admin"
                 ok, msg = db.refund_order(order_no, reason=reason, operator=operator)
+                refund_amount = 0.0
+                if ok and isinstance(msg, dict):
+                    refund_amount = float(msg.get("amount") or 0)
+                    msg_text = msg.get("msg") or "退款成功"
+                else:
+                    msg_text = msg if isinstance(msg, str) else "退款成功"
                 if ok:
                     order = db.get_order(order_no)
                     user_row = db.fetchone("SELECT email, username FROM users WHERE username = %s", (order["username"],)) if order else None
@@ -5774,12 +5913,17 @@ class Handler(BaseHTTPRequestHandler):
                                 "order_no": order_no,
                                 "plan_name": plan_name,
                                 "price": price,
+                                "refund_amount": f"{refund_amount:.2f}",
                                 "reason": reason or "管理员退款",
                                 "note": "管理员直接退款",
                                 "subject": f"退款通知 - {order_no}"
                             }
                         }, daemon=True).start()
-                self._send_json(200 if ok else 400, {"code": 200 if ok else 400, "msg": msg})
+                self._send_json(200 if ok else 400, {
+                    "code": 200 if ok else 400,
+                    "msg": msg_text,
+                    "refund_amount": refund_amount,
+                })
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -5795,6 +5939,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not request_id or status not in ("approved", "rejected"):
                     self._send_json(400, {"code": 400, "msg": "参数错误"})
                     return
+                refund_amount = 0.0
                 if status == "approved":
                     row = db.fetchone("SELECT * FROM refund_requests WHERE id = %s", (request_id,))
                     if not row:
@@ -5802,8 +5947,18 @@ class Handler(BaseHTTPRequestHandler):
                         return
                     refund_ok, refund_msg = db.refund_order(row["order_no"], reason=row.get("reason") or "用户申请退款", operator="admin")
                     if not refund_ok:
-                        self._send_json(400, {"code": 400, "msg": refund_msg or "退款失败"})
+                        # 退款失败时必须落库，否则该申请会永久停留在 pending，
+                        # 管理员既无法批准也无法驳回（死锁）。
+                        fail_text = refund_msg if isinstance(refund_msg, str) else "退款失败"
+                        db.process_refund_request(
+                            request_id, "rejected",
+                            f"系统自动驳回：{fail_text}"
+                        )
+                        self._send_json(400, {"code": 400, "msg": fail_text,
+                                              "auto_rejected": True})
                         return
+                    if isinstance(refund_msg, dict):
+                        refund_amount = float(refund_msg.get("amount") or 0)
                 ok, msg = db.process_refund_request(request_id, status, note)
                 # 发送邮件通知
                 if ok:
@@ -5825,6 +5980,7 @@ class Handler(BaseHTTPRequestHandler):
 <tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">订单号</td><td style="padding:8px 12px;border:1px solid #e2e8f0;font-weight:600">{row['order_no']}</td></tr>
 <tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">套餐</td><td style="padding:8px 12px;border:1px solid #e2e8f0">{plan_name}</td></tr>
 <tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">金额</td><td style="padding:8px 12px;border:1px solid #e2e8f0">¥{price}</td></tr>
+<tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">实退金额</td><td style="padding:8px 12px;border:1px solid #e2e8f0;font-weight:600;color:#dc2626">¥{refund_amount:.2f}</td></tr>
 <tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">退款原因</td><td style="padding:8px 12px;border:1px solid #e2e8f0">{refund_reason or '无'}</td></tr>
 <tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">管理员备注</td><td style="padding:8px 12px;border:1px solid #e2e8f0">{note or '无'}</td></tr>
 </table>
@@ -5836,18 +5992,20 @@ class Handler(BaseHTTPRequestHandler):
                             ), kwargs={
                                 "scene": scene,
                                 "body_html": fallback_html,
-                                "body_text": f"退款申请{status_text}\n\n订单号：{row['order_no']}\n套餐：{plan_name}\n金额：¥{price}\n退款原因：{refund_reason or '无'}\n管理员备注：{note or '无'}",
+                                "body_text": f"退款申请{status_text}\n\n订单号：{row['order_no']}\n套餐：{plan_name}\n金额：¥{price}\n实退金额：¥{refund_amount:.2f}\n退款原因：{refund_reason or '无'}\n管理员备注：{note or '无'}",
                                 "variables": {
                                     "username": row["username"],
                                     "order_no": row["order_no"],
                                     "plan_name": plan_name,
                                     "price": price,
+                                    "refund_amount": f"{refund_amount:.2f}",
                                     "reason": refund_reason,
                                     "note": note or "无",
                                     "subject": f"退款申请{status_text} - {row['order_no']}"
                                 }
                             }, daemon=True).start()
-                self._send_json(200 if ok else 400, {"code": 200 if ok else 400, "msg": msg})
+                self._send_json(200 if ok else 400, {"code": 200 if ok else 400, "msg": msg,
+                                                     "refund_amount": refund_amount})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -6935,44 +7093,52 @@ class Handler(BaseHTTPRequestHandler):
                 })
                 if bank_row and not use_custom:
                     answer = normalize_ai_answer(question, bank_row.get("answer", ""))
-                    if not answer:
+                    if answer and _is_truncated_multi_answer(question, answer):
+                        print(f"[题库命中但多选答案不完整，改走AI] hash={question_hash[:12]} answer={str(answer)[:80]}", flush=True)
+                        bank_row = None
+                    elif not answer:
                         err = "题库答案为空"
                         print(f"[题库命中但答案为空] hash={question_hash[:12]}", flush=True)
                         self._send_json(500, {"code": 500, "msg": err})
                         return
-                    resolved_model = bank_row.get("source_model") or "题库"
-                    provider_name = "question_bank"
-                    status = "success"
-                    ok_quota, quota_msg, ent_after = consume_answer_quota(user["username"], question_hash)
-                    if not ok_quota:
-                        err = quota_msg
-                        self._send_json(402, {"code": 402, "msg": quota_msg})
+                    else:
+                        resolved_model = bank_row.get("source_model") or "题库"
+                        provider_name = "question_bank"
+                        status = "success"
+                        ok_quota, quota_msg, ent_after = consume_answer_quota(user["username"], question_hash)
+                        if not ok_quota:
+                            err = quota_msg
+                            self._send_json(402, {"code": 402, "msg": quota_msg})
+                            return
+                        print(f"[题库命中] hash={question_hash[:12]}, question={question[:60]}...", flush=True)
+                        profile_after = build_user_profile(user["username"])
+                        self._send_json(200, {"code": 200, "msg": quota_msg, "data": {"answer": answer, "model": resolved_model, "mode": "question_bank", "bank": True, "cache": True, "profile": profile_after, "remainCount": 999999 if profile_after and profile_after.get("active_member") else int((profile_after or {}).get("points_balance") or 0)}})
                         return
-                    print(f"[题库命中] hash={question_hash[:12]}, question={question[:60]}...", flush=True)
-                    profile_after = build_user_profile(user["username"])
-                    self._send_json(200, {"code": 200, "msg": quota_msg, "data": {"answer": answer, "model": resolved_model, "mode": "question_bank", "bank": True, "cache": True, "profile": profile_after, "remainCount": 999999 if profile_after and profile_after.get("active_member") else int((profile_after or {}).get("points_balance") or 0)}})
-                    return
                 cache_key = make_ai_cache_key(question, model_mode, model, custom_cfg)
                 cached = get_ai_cache(cache_key)
                 if cached and not use_custom:
                     answer = cached.get("answer", "")
-                    if not answer:
+                    if answer and _is_truncated_multi_answer(question, answer):
+                        print(f"[AI缓存命中但多选答案不完整，改走AI] mode={model_mode} answer={str(answer)[:80]}", flush=True)
+                        cached = None
+                    elif not answer:
                         err = "缓存答案为空"
                         print(f"[AI缓存命中但答案为空] mode={model_mode}", flush=True)
                         self._send_json(500, {"code": 500, "msg": err})
                         return
-                    resolved_model = cached.get("model") or resolved_model or model
-                    provider_name = cached.get("provider") or provider_name
-                    status = "success"
-                    ok_quota, quota_msg, ent_after = consume_answer_quota(user["username"], question_hash)
-                    if not ok_quota:
-                        err = quota_msg
-                        self._send_json(402, {"code": 402, "msg": quota_msg})
+                    else:
+                        resolved_model = cached.get("model") or resolved_model or model
+                        provider_name = cached.get("provider") or provider_name
+                        status = "success"
+                        ok_quota, quota_msg, ent_after = consume_answer_quota(user["username"], question_hash)
+                        if not ok_quota:
+                            err = quota_msg
+                            self._send_json(402, {"code": 402, "msg": quota_msg})
+                            return
+                        print(f"[AI缓存命中] mode={model_mode}, model={resolved_model}, question={question[:60]}...", flush=True)
+                        profile_after = build_user_profile(user["username"])
+                        self._send_json(200, {"code": 200, "msg": quota_msg, "data": {"answer": answer, "model": resolved_model, "mode": model_mode, "cache": True, "profile": profile_after, "remainCount": 999999 if profile_after and profile_after.get("active_member") else int((profile_after or {}).get("points_balance") or 0)}})
                         return
-                    print(f"[AI缓存命中] mode={model_mode}, model={resolved_model}, question={question[:60]}...", flush=True)
-                    profile_after = build_user_profile(user["username"])
-                    self._send_json(200, {"code": 200, "msg": quota_msg, "data": {"answer": answer, "model": resolved_model, "mode": model_mode, "cache": True, "profile": profile_after, "remainCount": 999999 if profile_after and profile_after.get("active_member") else int((profile_after or {}).get("points_balance") or 0)}})
-                    return
                 if use_custom:
                     print(f"[AI请求] mode=custom, model={resolved_model}, question={question[:60]}...", flush=True)
                     answer, err = ask_ai_custom(question, custom_cfg)
@@ -6998,10 +7164,13 @@ class Handler(BaseHTTPRequestHandler):
                         self._send_json(500, {"code": 500, "msg": err})
                         return
                     status = "success"
-                    set_ai_cache(cache_key, answer, resolved_model, provider_name)
-                    # 自有模型产生的答案不写入共享题库，避免影响其它用户
-                    if not use_custom:
-                        save_question_bank_answer(question, answer, resolved_model, provider_name)
+                    if _is_truncated_multi_answer(question, answer):
+                        print(f"[AI答案] 多选不完整，跳过缓存与入库 answer={str(answer)[:80]}", flush=True)
+                    else:
+                        set_ai_cache(cache_key, answer, resolved_model, provider_name)
+                        # 自有模型产生的答案不写入共享题库，避免影响其它用户
+                        if not use_custom:
+                            save_question_bank_answer(question, answer, resolved_model, provider_name)
                     if use_custom:
                         quota_msg = "自有模型已作答，本次未消耗题数"
                     else:
@@ -7106,16 +7275,34 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def _log_cleanup_worker():
-    """后台线程：每天检查并清理过期日志和AI缓存"""
+    """后台线程：真正的定时清理。
+
+    原实现是"启动时跑一次 + sleep(86400)"，问题在于：
+    服务每次重启都会重新计时，只要重启间隔 < 24 小时，
+    sleep 到期的"定时"那一次永远不会发生——实际全靠重启兜底，
+    重启频繁时清理节奏完全失控。
+
+    现改为：每 CHECK_INTERVAL 秒醒一次，用数据库里持久化的
+    log_cleanup_last_at 判断是否已满 24 小时。好处：
+    - 不依赖重启，真正的定时；
+    - 时间戳持久化，重启不会重置计时（重启后若确实超过24h会立即补上）；
+    - 刚重启且未满24h时不会重复清理。
+    """
     import time as _time
+    CHECK_INTERVAL = 60      # 每 60 秒检查一次是否到期
+    INTERVAL_HOURS = 24      # 清理周期
     while True:
         try:
             retention = db.get_log_retention_days()
-            if retention > 0:
+            if retention > 0 and db.is_log_cleanup_due(INTERVAL_HOURS):
                 result = db.cleanup_old_logs(retention)
                 total = sum(v for v in result.values() if v > 0)
+                # 即使本次没删到数据，也要记录时间，避免每分钟重复执行
+                db.set_log_cleanup_last_at()
                 if total > 0:
                     print(f"[日志清理] 保留{retention}天，已清理 {total} 条记录: {result}", flush=True)
+                else:
+                    print(f"[日志清理] 到期检查完成，无过期数据: {result}", flush=True)
             # 清理超过30天未使用的AI缓存
             try:
                 db.cleanup_expired_ai_cache(30)
@@ -7123,13 +7310,13 @@ def _log_cleanup_worker():
                 pass
         except Exception as e:
             print(f"[日志清理] 异常: {e}", flush=True)
-        _time.sleep(86400)  # 24小时
+        _time.sleep(CHECK_INTERVAL)
 
 def _start_log_cleanup_thread():
     import threading
     t = threading.Thread(target=_log_cleanup_worker, daemon=True)
     t.start()
-    print("[日志清理] 定时清理线程已启动", flush=True)
+    print("[日志清理] 定时清理线程已启动（60秒检查一次，满24小时执行）", flush=True)
 
 
 if __name__ == "__main__":
