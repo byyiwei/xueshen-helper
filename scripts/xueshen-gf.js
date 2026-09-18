@@ -13962,8 +13962,6 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 const typeName = typeEl ? (typeEl.getAttribute('data-q-type-name') || '') : '';
                 const hasCheckbox = !!qc.querySelector('input[type=checkbox]');
                 const resolvedType = hasCheckbox || /多选|不定项|X型/.test(typeName) ? '多选题' : typeName;
-                const hasCheckbox = !!qc.querySelector('input[type=checkbox]');
-                const resolvedType = hasCheckbox || /多选|不定项|X型/.test(typeName) ? '多选题' : typeName;
                 const opts = [];
                 qc.querySelectorAll('.q_option').forEach(op => {
                     const input = op.querySelector('input[type=radio], input[type=checkbox]');
