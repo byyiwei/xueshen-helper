@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.3.5
+// @version      5.3.6
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @author       IPYIWEI
@@ -10,6 +10,10 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.3.6 更新内容：
+// @changelog    1. 修复图片题漏传：纯图题干不再被跳过，图片选项会采集并发送给模型
+// @changelog    2. 智慧树 iframe 改为绑定题目 DOM，选项图/题干图都能下载
+// @changelog    3. 超星图片选项按文件名勾选；填不上则跳过题库改走模型
 // @changelog    v5.3.5 更新内容：
 // @changelog    1. 修复多选题偶发只填一项：后端不再把 A,B 截成首选项，考试/智慧树页按复选框识别多选
 // @changelog    2. 智慧树 iframe 支持 ABD / A,B,D 及 X型/不定项多选填充
@@ -2472,6 +2476,42 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     // 文本答案不再按分隔符拆分（选项内容可能包含任何标点），保留完整字符串由 fillChoice 子串匹配
     return [text];
   };
+  const getImgUrlKey = (url) => {
+    const clean = String(url || "").split(/[?#]/)[0].replace(/\/+$/, "");
+    const seg = (clean.split("/").pop() || clean).replace(/\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i, "");
+    return seg.toLowerCase();
+  };
+  const collectImgSrcs = (htmlOrEl) => {
+    const out = [];
+    const push = (u) => {
+      const s = String(u || "").trim();
+      if (s && !out.includes(s)) out.push(s);
+    };
+    if (htmlOrEl && htmlOrEl.querySelectorAll) {
+      htmlOrEl.querySelectorAll("img").forEach((img) => push(img.src || img.getAttribute("data-src") || ""));
+    }
+    const s = typeof htmlOrEl === "string" ? htmlOrEl : "";
+    const re = /<img[^>]+src=["']([^"']+)["']/gi;
+    let m;
+    while ((m = re.exec(s))) push(m[1]);
+    if (s && /https?:\/\//i.test(s) && !/<img/i.test(s)) {
+      (s.match(/https?:\/\/[^\s"'<>]+/gi) || []).forEach((u) => {
+        if (/ananas\.chaoxing\.com|\/origin\/|\.(?:jpg|jpeg|png|gif|webp)(?:$|[?#])/i.test(u)) push(u);
+      });
+    }
+    return out;
+  };
+  const imgSrcsMatch = (aSrcs, bSrcs) => {
+    for (const a of aSrcs || []) {
+      const ak = getImgUrlKey(a);
+      if (!ak) continue;
+      for (const b of bSrcs || []) {
+        const bk = getImgUrlKey(b);
+        if (ak === bk || (ak.length >= 8 && bk.length >= 8 && (ak.includes(bk) || bk.includes(ak)))) return true;
+      }
+    }
+    return false;
+  };
   const buildLocalBackendQuestionPayload = (question) => {
     return JSON.stringify({
       question: question.title || "",
@@ -2526,6 +2566,10 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     });
   };
   const _downloadImg = (url) => new Promise((resolve) => {
+    if (!url || String(url).startsWith("blob:")) {
+      resolve(null);
+      return;
+    }
     GM_xmlhttpRequest({
       url, method: 'GET', responseType: 'arraybuffer', timeout: 15000,
       onload: (res) => {
@@ -2543,34 +2587,35 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       ontimeout: () => resolve(null),
     });
   });
-  const callLocalBackendAnswer = async (question) => {
+  const callLocalBackendAnswer = async (question, extra = {}) => {
     const setting = useSettingStore();
     const token = setting.config.basicConfig.token.value || getLocalBackendToken() || "";
-    // 提取题目中的图片并下载为 base64
+    // 提取题目中的图片并下载为 base64（DOM + 题干/选项 HTML，避免纯图题漏传）
     const images = [];
+    const seenImg = new Set();
+    const pushImgSrc = (src) => {
+      const u = String(src || "").trim();
+      if (!u || u.startsWith("blob:") || seenImg.has(u)) return;
+      seenImg.add(u);
+    };
     const el = question.element;
     if (el && el.querySelectorAll) {
-      const imgEls = el.querySelectorAll('img');
-      for (const img of imgEls) {
-        const src = img.src || img.getAttribute('data-src') || '';
-        if (src) {
-          const dataUrl = await _downloadImg(src);
-          if (dataUrl) images.push(dataUrl);
-        }
-      }
+      el.querySelectorAll("img").forEach((img) => pushImgSrc(img.src || img.getAttribute("data-src") || ""));
     }
-    // 兜底：从 title HTML 中提取 <img> URL（element 不可用时）
-    if (!images.length && question.title) {
-      const titleImgs = [];
-      let m;
+    const htmlBlobs = [question.title, ...(question.optionsText || [])];
+    if (question.options && typeof question.options === "object") {
+      Object.values(question.options).forEach((v) => {
+        if (typeof v === "string") htmlBlobs.push(v);
+      });
+    }
+    htmlBlobs.forEach((html) => {
       const re = /<img[^>]+src=["']([^"']+)["']/gi;
-      while ((m = re.exec(question.title))) {
-        if (m[1] && m[1].startsWith('http')) titleImgs.push(m[1]);
-      }
-      for (const src of titleImgs) {
-        const dataUrl = await _downloadImg(src);
-        if (dataUrl) images.push(dataUrl);
-      }
+      let m;
+      while ((m = re.exec(String(html || "")))) pushImgSrc(m[1]);
+    });
+    for (const src of seenImg) {
+      const dataUrl = await _downloadImg(src);
+      if (dataUrl) images.push(dataUrl);
     }
     const payloadObj = {
       question: question.title || "",
@@ -2583,7 +2628,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     const payload = JSON.stringify(payloadObj);
     const data = "question=" + encodeURIComponent(payload)
       + "&u=" + encodeURIComponent(getCookieValue("_uid") || getCookieValue("UID") || "")
-      + "&model_mode=auto";
+      + "&model_mode=auto"
+      + (extra && extra.skipBank ? "&skip_bank=1" : "");
     await sleep(setting.config.basicConfig.reqIntervalTime.value);
     return new Promise((resolve) => {
       GM_xmlhttpRequest({
@@ -2678,7 +2724,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     });
   };
   const getAIAnswer = async (question) => {
-    return callLocalBackendAnswer(question);
+    return callLocalBackendAnswer(question, { skipBank: true });
   };
   const _hoisted_1$4 = { class: "online-search-wrap" };
   const _hoisted_2$3 = { class: "tips" };
@@ -7787,17 +7833,13 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                   source: "accurate"
                 });
                 const fillSuccess = this.fillQuestion(question);
-                if (!fillSuccess) {
-                  question.answer.code = 0;
-                  if (mode === "questionBank") {
-                    continue;
-                  }
-                } else {
+                if (fillSuccess) {
                   this.correctNum += 1;
                   continue;
                 }
-              }
-              if (mode === "questionBank" || answerData.code !== -1004) {
+                question.answer.code = 0;
+                // 题库答案填不上（常见于图片选项），改走模型
+              } else if (mode === "questionBank" || answerData.code !== -1004) {
                 question.answer = {
                   code: answerData.code,
                   answer: []
@@ -8045,6 +8087,19 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 }
               }
             }
+            if (!isSelected) {
+              const answerImgs = collectImgSrcs(answer).concat(collectImgSrcs(clearAnswer));
+              if (answerImgs.length) {
+                for (const key in question.options) {
+                  const optionEl = question.options[key];
+                  const optionImgs = collectImgSrcs(key).concat(collectImgSrcs(optionEl));
+                  if (imgSrcsMatch(answerImgs, optionImgs)) {
+                    isSelected = this.selectChoiceOption(optionEl);
+                    break;
+                  }
+                }
+              }
+            }
             if (isSelected) filled = true;
           });
         } else if (question.type === "2") {
@@ -8185,11 +8240,17 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     extractOptions(optionElements, optionSelector) {
       const optionsObject = {};
       const optionTexts = [];
-      optionElements.forEach((optionElement) => {
+      optionElements.forEach((optionElement, index) => {
         var _a;
-        const optionTextContent = this.removeHtml(
+        let optionTextContent = this.removeHtml(
           ((_a = optionElement.querySelector(optionSelector)) == null ? void 0 : _a.innerHTML) || ""
         );
+        if (!optionTextContent || !String(optionTextContent).replace(/<img[^>]*>/gi, "").replace(/\s+/g, "")) {
+          const img = optionElement.querySelector && optionElement.querySelector("img");
+          const src = img ? (img.src || img.getAttribute("data-src") || "") : "";
+          if (src) optionTextContent = `<img src="${src}"/>`;
+          else if (!optionTextContent) optionTextContent = `选项${String.fromCharCode(65 + index)}`;
+        }
         optionsObject[optionTextContent] = optionElement;
         optionTexts.push(optionTextContent);
       });
@@ -9135,9 +9196,6 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 if (errorStatus) {
                   question.answer.code = 0;
                   fillFailed = true;
-                  if (mode === "questionBank") {
-                    handled = true;
-                  }
                 } else {
                   this.correctNum += 1;
                   handled = true;
@@ -9243,6 +9301,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               if (answer == optionText || this.removeAllTags(answer) == this.removeAllTags(optionText) || (nAnswer.length >= 2 && nOption && nOption.includes(nAnswer))) {
                 isSelected = true;
                 optionDOM.click();
+              } else if (imgSrcsMatch(collectImgSrcs(answer), collectImgSrcs(optionDOM).concat(collectImgSrcs(optionText)))) {
+                isSelected = true;
+                optionDOM.click();
               }
             });
           });
@@ -9285,8 +9346,11 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             question.questionOptions,
             questionType
           );
+          const subjectNodes = (this._document && this._document.querySelectorAll)
+            ? this._document.querySelectorAll(".subject_node")
+            : [];
           this.questions.push({
-            element: JSON.stringify(questions),
+            element: subjectNodes[this.questions.length] || this._document || null,
             type: questionType,
             title: questionTitle,
             optionsText: optionTexts,
@@ -11396,16 +11460,25 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     const parseQuestions = (profile2) => {
       const roots = Array.from(document.querySelectorAll(profile2.root));
       return roots.map((root) => {
-        const optionEls = queryAllSafe(root, profile2.options).filter(
-          (option) => cleanText(option.textContent)
-        );
-        const optionsText = optionEls.map((option) => cleanText(option.textContent));
+        const optionEls = queryAllSafe(root, profile2.options).filter((option) => {
+          if (cleanText(option.textContent)) return true;
+          return !!(option.querySelector && option.querySelector("img"));
+        });
+        const optionsText = optionEls.map((option, index) => {
+          const t = cleanText(option.textContent);
+          if (t) return t;
+          const img = option.querySelector && option.querySelector("img");
+          const src = img ? (img.src || img.getAttribute("data-src") || "") : "";
+          return src ? `<img src="${src}"/>` : `选项${String.fromCharCode(65 + index)}`;
+        });
         const options = {};
         optionEls.forEach((option, index) => {
           options[optionsText[index]] = htmlOf(option);
         });
         const titleEl = queryOneSafe(root, profile2.title);
         let title = cleanText(htmlOf(titleEl));
+        const titleHasImg = !!(titleEl && titleEl.querySelector && titleEl.querySelector("img"));
+        if (!title && titleHasImg) title = "[图片题]";
         if (!title) {
           const optionTextSet = new Set(optionsText.map((option) => normalize(option)));
           title = queryAllSafe(root, "div, p, span").map((el) => cleanText(el.textContent)).filter((text) => text.length > 4).filter((text) => !optionTextSet.has(normalize(text))).filter(
@@ -11551,9 +11624,6 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           if (fillQuestion(question)) {
             bankFilled = true;
             handled = true;
-          } else if (mode === "questionBank") {
-            question.answer.code = 0;
-            handled = true;
           } else {
             question.answer.code = 0;
           }
@@ -11640,7 +11710,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           }
         ] : [];
       }
-      const pageQuestions = rawQuestions.filter((question) => question.title);
+      const pageQuestions = rawQuestions.filter((question) => question.title || (question.element && question.element.querySelector && question.element.querySelector("img")));
       if (!pageQuestions.length) {
         const rootTexts = Array.from(document.querySelectorAll(profile.root)).map(
           (root) => {
@@ -13497,12 +13567,13 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         if (p.points_balance === null || p.points_balance === undefined) return '';
         return ` · 剩余 ${p.points_balance} 题`;
     }
-    function callAnswer(questionPayload, { u = '' } = {}) {
+    function callAnswer(questionPayload, { u = '', skipBank = false } = {}) {
         return new Promise((resolve) => {
             const token = store.account.scriptKey || store.account.token || '';
             const data = 'question=' + encodeURIComponent(JSON.stringify(questionPayload))
                 + '&u=' + encodeURIComponent(u)
-                + '&model_mode=auto';
+                + '&model_mode=auto'
+                + (skipBank ? '&skip_bank=1' : '');
             GM_xmlhttpRequest({
                 url: CONFIG.backendBase + '/api/v1/cx?v=xs-5.0',
                 method: 'POST',
@@ -13902,7 +13973,10 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                     const optLetter = clickable.getAttribute && (clickable.getAttribute('data-option-label') || '');
                     const inputVal = input ? input.value : '';
                     const checked = input ? !!input.checked : false;
-                    opts.push({ text: labelText, el: clickable, input, value: inputVal, letter: optLetter, checked });
+                    const img = op.querySelector && op.querySelector("img");
+                    const imgSrc = img ? (img.src || img.getAttribute("data-src") || "") : "";
+                    const finalText = labelText || (imgSrc ? `<img src="${imgSrc}"/>` : "");
+                    opts.push({ text: finalText, el: clickable, input, value: inputVal, letter: optLetter, checked });
                 });
                 const imgs = Array.from(qc.querySelectorAll('img'));
                 const imgSrcs = imgs.map(img => img.src || img.getAttribute('data-src') || '').filter(Boolean);
@@ -13981,18 +14055,22 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             .replace(/^选项[:：]\s*/i, '')
             .replace(/\s+/g, '').trim();
         const ans = clean(answer).toLowerCase();
-        if (!ans) return [];
+        const answerImgs = collectImgSrcs(answer);
+        if (!ans && !answerImgs.length) return [];
         const hasCheckbox = (q.opts || []).some(o => o.input && o.input.type === 'checkbox');
         const isSingle = !hasCheckbox && !/多选/.test(q.type || '');
         const found = [];
         q.opts.forEach((o, idx) => {
             const optText = clean(o.text || o.textContent || '').toLowerCase();
-            if (!optText) return;
-            const hit = optText === ans || optText.includes(ans) || (ans.length >= 2 && ans.includes(optText));
-            if (hit) {
-                const letter = o.letter ? o.letter.toUpperCase() : String.fromCharCode(65 + idx);
-                if (!found.includes(letter)) found.push(letter);
+            const letter = o.letter ? o.letter.toUpperCase() : String.fromCharCode(65 + idx);
+            let hit = false;
+            if (ans && optText) {
+              hit = optText === ans || optText.includes(ans) || (ans.length >= 2 && ans.includes(optText));
             }
+            if (!hit && answerImgs.length) {
+              hit = imgSrcsMatch(answerImgs, collectImgSrcs(o.el).concat(collectImgSrcs(o.text)));
+            }
+            if (hit && !found.includes(letter)) found.push(letter);
         });
         return isSingle ? found.slice(0, 1) : found;
     }
@@ -14093,7 +14171,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         return seg.slice(0, 24);
     }
 
-    async function answerExamQuestion(q, index) {
+    async function answerExamQuestion(q, index, extra = {}) {
         const hasCheckbox = (q.opts || []).some(o => o.input && o.input.type === 'checkbox');
         let payload = { question: q.stemText || q.title, type: q.type || (q.isJudge ? 'judge' : (hasCheckbox ? 'multiple' : 'single')) };
         if (/多选|不定项|X型/.test(payload.type) || hasCheckbox) payload.type = 'multiple';
@@ -14109,12 +14187,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         if (dataURLs.length) payload.images = dataURLs;
         if (!q.stemText && !dataURLs.length) return { ok: false, msg: '题目为空' };
         log(`📝 [${q.num}题] 调后端获取答案...`);
-        let res = await callAnswer(payload, { u: store.account.username || '' });
+        let res = await callAnswer(payload, { u: store.account.username || '', skipBank: !!extra.skipBank });
         // 超时/网络失败时自动重试一次（后端冷却机制会让下一次换模型）
         if (!res.ok && /超时|无法连接|未命中|响应解析/.test(res.msg || '')) {
             log(`⚠️ [${q.num}题] ${res.msg}，3秒后自动重试...`);
             await new Promise(r => setTimeout(r, 3000));
-            res = await callAnswer(payload, { u: store.account.username || '' });
+            res = await callAnswer(payload, { u: store.account.username || '', skipBank: !!extra.skipBank });
             if (res.ok) log(`✅ [${q.num}题] 重试成功`);
         }
         if (!res.ok) return res;
@@ -14261,7 +14339,15 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 log(`❌ [${q.num}题] 获取失败: ${res.msg}`);
                 continue;
             }
-            const ok = fillExamAnswer(q, res.answer);
+            let ok = fillExamAnswer(q, res.answer);
+            if (!ok) {
+                log(`⚠️ [${q.num}题] 题库答案未能填写，改走模型`);
+                const res2 = await answerExamQuestion(q, i, { skipBank: true });
+                if (res2.ok) {
+                    res = res2;
+                    ok = fillExamAnswer(q, res.answer);
+                }
+            }
             const ansShow = formatAnswerForLog(res.answer);
             const hit = res.msg && /命中/.test(res.msg) ? ` ${res.msg}` : '';
             log(`${ok ? '✅' : '⚠️'} [${q.num}题] ${ok ? '已填写' : '未能填写'} 答案=${ansShow || '?'}${hit}`);

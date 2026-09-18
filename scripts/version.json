@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "5.3.5",
+    "version": "5.3.6",
     "download_url": "https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js",
-    "changelog": "v5.3.5 修复多选题偶发只填一项：后端不再把 A,B 截成首选项，考试/智慧树页按复选框识别多选"
+    "changelog": "v5.3.6 修复图片题：选项图会发给模型；图片选项按文件名勾选，填不上改走模型"
   },
   "xueshen-gf": {
-    "version": "5.3.5",
+    "version": "5.3.6",
     "download_url": "https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js",
-    "changelog": "v5.3.5 修复多选题偶发只填一项：后端不再把 A,B 截成首选项，考试/智慧树页按复选框识别多选"
+    "changelog": "v5.3.6 修复图片题：选项图会发给模型；图片选项按文件名勾选，填不上改走模型"
   }
 }
