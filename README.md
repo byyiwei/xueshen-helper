@@ -1,5 +1,10 @@
 # 学神助手 - 项目说明
 
+开发仓库在腾讯云 CNB：https://cnb.cool/ipyiwei/XS  
+GitHub 只发布油猴脚本：https://github.com/byyiwei/xueshen-helper
+
+**发版、版本号、服务器更新看这里：** [docs/仓库与发版说明.md](docs/仓库与发版说明.md)
+
 ## 项目结构
 
 ```
