@@ -11,6 +11,7 @@ import json
 import time
 import threading
 from datetime import datetime, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 
 # ==================== 配置 ====================
 
@@ -59,6 +60,19 @@ _apply_db_config_file()
 def _ph():
     """返回当前数据库类型的占位符"""
     return "%s"
+
+
+def _dec(value, default="0"):
+    """把 DECIMAL/None/空串统一转成 Decimal。金额运算禁止走 float。"""
+    try:
+        if value is None or value == "":
+            return Decimal(str(default))
+        return Decimal(str(value))
+    except Exception:
+        return Decimal(str(default))
+
+
+CENT = Decimal("0.01")
 
 
 # ==================== 题型归一化 ====================
@@ -374,6 +388,8 @@ class Database:
 
         self._ensure_order_payment_columns()
         self._ensure_xianyu_tables()
+        self._ensure_distributor_tables()
+        self._ensure_distributor_columns()
 
         # AI 配置表
         self.execute(f"""
@@ -1087,6 +1103,19 @@ class Database:
         self._add_column_if_missing("admin_config", "announce_enabled", "announce_enabled TINYINT DEFAULT 0")
         self._add_column_if_missing("admin_config", "announce_text", "announce_text TEXT")
         self._add_column_if_missing("admin_config", "announce_title", "announce_title VARCHAR(200) DEFAULT ''")
+        # 分销/代理商配置
+        self._add_column_if_missing("admin_config", "distributor_enabled", "distributor_enabled TINYINT DEFAULT 0 COMMENT '分销总开关'")
+        self._add_column_if_missing("admin_config", "distributor_apply_enabled", "distributor_apply_enabled TINYINT DEFAULT 0 COMMENT '是否允许自助申请开通'")
+        self._add_column_if_missing("admin_config", "distributor_generate_enabled", "distributor_generate_enabled TINYINT DEFAULT 1 COMMENT '是否允许生成卡密'")
+        self._add_column_if_missing("admin_config", "distributor_withdraw_enabled", "distributor_withdraw_enabled TINYINT DEFAULT 0 COMMENT '是否允许提现'")
+        self._add_column_if_missing("admin_config", "distributor_base_price_points", "distributor_base_price_points DECIMAL(10,4) DEFAULT 0.0010 COMMENT '官方基准单价 元/题'")
+        self._add_column_if_missing("admin_config", "distributor_base_price_days", "distributor_base_price_days DECIMAL(10,4) DEFAULT 0.5000 COMMENT '官方基准单价 元/包月天'")
+        self._add_column_if_missing("admin_config", "distributor_default_discount", "distributor_default_discount DECIMAL(5,4) DEFAULT 1.0000 COMMENT '新代理商默认折扣率 0.0001-1.0000'")
+        self._add_column_if_missing("admin_config", "distributor_min_recharge", "distributor_min_recharge DECIMAL(10,2) DEFAULT 50.00 COMMENT '最低充值金额'")
+        self._add_column_if_missing("admin_config", "distributor_min_withdraw", "distributor_min_withdraw DECIMAL(10,2) DEFAULT 50.00 COMMENT '最低提现金额'")
+        self._add_column_if_missing("admin_config", "distributor_max_batch", "distributor_max_batch INT DEFAULT 500 COMMENT '单次生成张数上限'")
+        self._add_column_if_missing("admin_config", "distributor_daily_card_max", "distributor_daily_card_max INT DEFAULT 2000 COMMENT '每代理商每日生成张数上限，0=不限'")
+        self._add_column_if_missing("admin_config", "distributor_script_name", "distributor_script_name VARCHAR(100) DEFAULT '学神助手 纯净版' COMMENT '纯净版脚本名称'")
 
     def _ensure_order_payment_columns(self):
         self._add_column_if_missing("payment_orders", "pay_method", "pay_method VARCHAR(20)")
@@ -1243,7 +1272,7 @@ class Database:
     def get_user_entitlement(self, username):
         ph = _ph()
         row = self.fetchone(
-            f"SELECT username, email, is_verified, points_balance, member_until, is_banned, ban_reason, invite_code, commission_balance, custom_model_until FROM users WHERE username = {ph}",
+            f"SELECT username, email, is_verified, points_balance, member_until, is_banned, ban_reason, invite_code, commission_balance, custom_model_until, channel, channel_ref FROM users WHERE username = {ph}",
             (username,)
         )
         if not row:
@@ -1451,6 +1480,11 @@ class Database:
         if not cur or cur.rowcount == 0:
             # 被其他请求抢先处理了
             return True, "订单正在处理中"
+        if order.get("plan_type") == "dist_recharge":
+            # 代理商余额充值单独走：这笔是「钱换余额」，不能像别的分支那样发放失败只
+            # print 一句就标成 paid——那是收了钱不给货。失败退回 pending，钱和货都
+            # 还在原地，管理员补单或用户重新下单都有依据。也不走下面的推广返利。
+            return self._apply_distributor_recharge(order_no)
         try:
             if order.get("plan_type") == "monthly":
                 self.extend_user_membership(order["username"], int(order.get("days") or 30), f"购买套餐：{order.get('plan_name','包月套餐')}")
@@ -1476,6 +1510,31 @@ class Database:
         except Exception as e:
             print(f"[推广返利] 佣金结算失败 order={order_no}: {e}", flush=True)
         return True, "支付成功，权益已到账"
+
+    def _apply_distributor_recharge(self, order_no):
+        """dist_recharge 订单的到账分支：入账成功才标 paid，失败退回 pending。
+
+        调用方（apply_paid_order）已经用条件 UPDATE 把订单抢成 paying，
+        所以这里不需要再考虑并发重复入账。
+        """
+        ph = _ph()
+        order = self.get_order(order_no) or {}
+        try:
+            ok, msg = self.credit_distributor_recharge(order)
+        except Exception as e:
+            ok, msg = False, str(e)
+            print(f"[充值到账] 入账异常 order={order_no}: {e}", flush=True)
+        if not ok:
+            self.execute(
+                f"UPDATE payment_orders SET status = 'pending', paid_at = NULL "
+                f"WHERE order_no = {ph} AND status = 'paying'",
+                (order_no,)
+            )
+            print(f"[充值到账] 失败，订单退回待支付 order={order_no} user={order.get('username')} "
+                  f"金额={order.get('price')} 原因={msg}", flush=True)
+            return False, "余额充值未入账：%s" % msg
+        self.execute(f"UPDATE payment_orders SET status = 'paid' WHERE order_no = {ph}", (order_no,))
+        return True, msg
 
     # 自有模型"永久"按 1 年（365 天）折算退款
     CUSTOM_MODEL_LIFETIME_DAYS = 365
@@ -1626,6 +1685,21 @@ class Database:
             "summary": summary,
         }
 
+    def refund_block_reason(self, order):
+        """两类订单绝不能走自动退款，退了钱东西还在。
+
+        卡密兑换行一分钱没付，却挂着卡密面额 price（pay_method='card' 与 CAR 前缀
+        只在 activate_card_key 一处产生，不会误伤真实订单）。
+        余额充值是「钱换余额」，而 calculate_refund 对 points=0 的套餐按全额退、
+        refund_order 只扣题数 —— 充完值、把余额花在卡密上、再申请退款就是凭空造币。
+        真要退得线下打款 + 后台「余额调整」同步扣回，别的入口一律堵死。
+        """
+        if str(order.get("pay_method") or "") == "card" or str(order.get("order_no") or "").startswith("CAR"):
+            return "卡密兑换记录不支持退款"
+        if str(order.get("plan_type") or "") == "dist_recharge":
+            return "代理商余额充值不支持自助退款，请联系管理员（需线下退款并同步扣回余额）"
+        return ""
+
     def refund_order(self, order_no, reason="", operator="", user_initiated=False):
         """退款订单：撤销权益，标记 refunded 状态"""
         ph = _ph()
@@ -1636,6 +1710,9 @@ class Database:
             return False, "仅已支付订单可退款"
         if order.get("refunded_at"):
             return False, "该订单已退款"
+        blocked = self.refund_block_reason(order)
+        if blocked:
+            return False, blocked
         if user_initiated and order.get("username") != operator:
             return False, "无权操作此订单"
         # 退款时效检查
@@ -1737,6 +1814,9 @@ class Database:
             return False, "仅已支付订单可申请退款"
         if order.get("refunded_at"):
             return False, "该订单已退款"
+        blocked = self.refund_block_reason(order)
+        if blocked:
+            return False, blocked
         existing = self.fetchone(f"SELECT id, status FROM refund_requests WHERE order_no = {ph} ORDER BY id DESC LIMIT 1", (order_no,))
         if existing:
             if existing["status"] == "pending":
@@ -1838,12 +1918,11 @@ class Database:
         plan = self.get_payment_plan(plan_id)
         if not plan:
             return None, "套餐不存在"
-        import secrets, string
-        code = "XS" + "".join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(14))
+        code = self._make_card_codes("XS", 1)[0]
         order_no = f"XY{int(time.time()*1000)}{abs(hash(username)) % 10000:04d}"
         try:
             self.execute(
-                f"INSERT INTO card_keys (code, plan_id, status, created_by) VALUES ({ph}, {ph}, 'unused', {ph})",
+                f"INSERT INTO card_keys (code, plan_id, status, created_by, source) VALUES ({ph}, {ph}, 'unused', {ph}, 'xianyu')",
                 (code, plan_id, f"xianyu:{username}")
             )
         except Exception:
@@ -1902,29 +1981,1305 @@ class Database:
     def get_pending_xianyu_orders(self):
         return self.fetchall("SELECT * FROM xianyu_orders WHERE status = 'pending' ORDER BY id ASC")
 
+    # ==================== 分销/代理商 ====================
+    def _ensure_distributor_tables(self):
+        """代理商账号、卡密模板、余额流水、生成批次、提现单。"""
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS distributors (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(50) NOT NULL UNIQUE COMMENT '代理商登录账号，关联 users.username',
+                name VARCHAR(100) NOT NULL DEFAULT '' COMMENT '代理商名称',
+                contact VARCHAR(100) DEFAULT '' COMMENT '联系方式（QQ/微信/手机）',
+                balance DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT '预存余额（元）',
+                discount_rate DECIMAL(5,4) NOT NULL DEFAULT 1.0000 COMMENT '折扣率 0.0001-1.0000，1=按官方基准价',
+                status VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT 'pending/approved/rejected/suspended',
+                support_note VARCHAR(255) DEFAULT '' COMMENT '展示给终端用户的售后/充值引导文案',
+                shop_url VARCHAR(255) NOT NULL DEFAULT '' COMMENT '纯净版脚本里的购买/续费跳转地址，必须 https',
+                apply_reason VARCHAR(500) DEFAULT '' COMMENT '申请理由',
+                audit_note VARCHAR(500) DEFAULT '' COMMENT '审核备注',
+                audited_by VARCHAR(50) DEFAULT '' COMMENT '审核人',
+                audited_at TIMESTAMP NULL COMMENT '审核时间',
+                reject_reason VARCHAR(255) DEFAULT '' COMMENT '驳回原因',
+                recharge_total DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT '累计充值（元）',
+                spent_total DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT '累计生成扣款（元）',
+                withdraw_total DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT '累计提现成功（元）',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_status (status)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS distributor_templates (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(100) NOT NULL UNIQUE COMMENT '模板名称，如 100题/包月/季度',
+                price_type VARCHAR(20) NOT NULL DEFAULT 'points' COMMENT 'points/monthly',
+                points INT NOT NULL DEFAULT 0 COMMENT '单张题数，price_type=points 时生效',
+                days INT NOT NULL DEFAULT 0 COMMENT '单张包月天数，price_type=monthly 时生效',
+                code_prefix VARCHAR(8) NOT NULL DEFAULT 'FX' COMMENT '卡密前缀，固定2字符（卡密总长锁定16）',
+                enabled TINYINT DEFAULT 1 COMMENT '是否启用',
+                sort_order INT DEFAULT 0 COMMENT '排序',
+                remark VARCHAR(255) DEFAULT '' COMMENT '说明',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_enabled (enabled, sort_order)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS distributor_balance_logs (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                distributor_id INT NOT NULL COMMENT '代理商ID',
+                username VARCHAR(50) NOT NULL COMMENT '代理商账号',
+                type VARCHAR(20) NOT NULL COMMENT 'recharge/generate/withdraw/withdraw_reject/refund/adjust',
+                amount DECIMAL(10,2) NOT NULL COMMENT '变动金额，正=入账，负=出账',
+                balance_after DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT '变动后余额',
+                order_no VARCHAR(64) NOT NULL DEFAULT '' COMMENT '关联支付订单号',
+                batch_no VARCHAR(64) NOT NULL DEFAULT '' COMMENT '关联生成批次号',
+                withdraw_id INT NOT NULL DEFAULT 0 COMMENT '关联提现单ID',
+                operator VARCHAR(50) DEFAULT '' COMMENT '操作人，系统触发为空',
+                remark VARCHAR(255) DEFAULT '' COMMENT '备注',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_dist (distributor_id, id),
+                INDEX idx_type_created (type, created_at),
+                INDEX idx_order_no (order_no),
+                INDEX idx_batch (batch_no)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        # status='pending' 是崩溃标记：扣了钱但卡未落地时，由 reconcile_distributor_batches 收敛
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS distributor_batches (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                batch_no VARCHAR(64) NOT NULL UNIQUE COMMENT '批次号 FXG+毫秒+md5前4位',
+                distributor_id INT NOT NULL COMMENT '代理商ID',
+                username VARCHAR(50) NOT NULL COMMENT '代理商账号',
+                template_id INT NOT NULL COMMENT '模板ID',
+                template_name VARCHAR(100) DEFAULT '' COMMENT '模板名快照',
+                price_type VARCHAR(20) DEFAULT 'points' COMMENT '计价方式快照',
+                points INT NOT NULL DEFAULT 0 COMMENT '单张题数快照',
+                days INT NOT NULL DEFAULT 0 COMMENT '单张天数快照',
+                card_count INT NOT NULL DEFAULT 0 COMMENT '本批张数',
+                base_price DECIMAL(10,4) NOT NULL DEFAULT 0.0000 COMMENT '基准单价快照 元/题或元/天',
+                discount_rate DECIMAL(5,4) NOT NULL DEFAULT 1.0000 COMMENT '折扣率快照',
+                unit_settle DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT '单张结算价（元）',
+                settle_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT '本批总扣款（元）',
+                status VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT 'pending/generated/failed',
+                error_note VARCHAR(255) DEFAULT '' COMMENT '失败/异常原因',
+                created_by VARCHAR(50) DEFAULT '' COMMENT '操作人',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_dist (distributor_id, id),
+                INDEX idx_status_created (status, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        # 独立于推广提现表：reject_withdrawal 会无条件给 users.commission_balance 加钱，
+        # 两拨钱共用一张表时漏改一处分支就是凭空造币，故结构上分开。
+        # uk_open(distributor_id, open_flag) 用「处理完置 NULL」实现数据库级的单笔在途约束。
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS distributor_withdrawals (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                distributor_id INT NOT NULL COMMENT '代理商ID',
+                username VARCHAR(50) NOT NULL COMMENT '代理商账号',
+                amount DECIMAL(10,2) NOT NULL COMMENT '提现金额',
+                pay_method VARCHAR(20) NOT NULL COMMENT 'alipay/wechat',
+                pay_account VARCHAR(255) NOT NULL COMMENT '收款账号',
+                qr_code_path TEXT COMMENT '收款二维码 data-URI',
+                open_flag TINYINT DEFAULT 1 COMMENT '在途占位标记，审核后置 NULL',
+                status VARCHAR(20) DEFAULT 'pending' COMMENT 'pending/approved/rejected',
+                reject_reason VARCHAR(255) DEFAULT '' COMMENT '驳回原因',
+                reviewed_by VARCHAR(50) DEFAULT '' COMMENT '审核人',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                reviewed_at TIMESTAMP NULL DEFAULT NULL,
+                UNIQUE KEY uk_open (distributor_id, open_flag),
+                INDEX idx_dist (distributor_id, id),
+                INDEX idx_status_created (status, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+    def _ensure_distributor_columns(self):
+        """卡密增列：让代理卡在生成瞬间冻结成本与权益，激活时不回查任何价目表。"""
+        self._add_column_if_missing("card_keys", "source", "source VARCHAR(20) NOT NULL DEFAULT 'platform' COMMENT 'platform/xianyu/distributor'")
+        self._add_column_if_missing("card_keys", "distributor_id", "distributor_id INT NOT NULL DEFAULT 0 COMMENT '代理商ID，0=非代理卡'")
+        self._add_column_if_missing("card_keys", "batch_id", "batch_id INT NOT NULL DEFAULT 0 COMMENT '生成批次ID'")
+        self._add_column_if_missing("card_keys", "template_id", "template_id INT NOT NULL DEFAULT 0 COMMENT '代理模板ID'")
+        self._add_column_if_missing("card_keys", "settle_amount", "settle_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT '单张结算成本快照（元）'")
+        self._add_column_if_missing("card_keys", "grant_type", "grant_type VARCHAR(20) NOT NULL DEFAULT '' COMMENT '冻结权益类型 points/monthly'")
+        self._add_column_if_missing("card_keys", "grant_points", "grant_points INT NOT NULL DEFAULT 0 COMMENT '冻结题数'")
+        self._add_column_if_missing("card_keys", "grant_days", "grant_days INT NOT NULL DEFAULT 0 COMMENT '冻结天数'")
+        self._add_column_if_missing("card_keys", "activated_order_no", "activated_order_no VARCHAR(64) NOT NULL DEFAULT '' COMMENT '激活时生成的订单号'")
+        self._ensure_index("card_keys", "idx_distributor_status", "distributor_id", "status")
+        self._ensure_index("card_keys", "idx_batch", "batch_id")
+        self._ensure_index("card_keys", "idx_used_by", "used_by", "source")
+        # 渠道标记只用于选择服务端提示文案，绝不参与权益、额度或计价判定
+        self._add_column_if_missing("users", "channel", "channel VARCHAR(20) NOT NULL DEFAULT 'platform' COMMENT '文案渠道 platform/distributor'")
+        self._add_column_if_missing("users", "channel_ref", "channel_ref VARCHAR(50) DEFAULT '' COMMENT '归属代理商账号'")
+        self._add_column_if_missing("distributors", "shop_url", "shop_url VARCHAR(255) NOT NULL DEFAULT '' COMMENT '纯净版脚本里的购买/续费跳转地址，必须 https'")
+
+    # ---------- 分销配置与计价 ----------
+    DIST_CODE_LEN = 16        # 用户中心硬校验卡密长度 === 16，改长度会让已发卡密全部无法兑换
+    DIST_PREFIX_LEN = 2       # 前缀定长，其余用随机字符补足
+    DIST_BATCH_HARD_CAP = 500  # 单次生成张数硬上限，后台配置只能比它更严
+
+    def _dist_cfg(self):
+        """读取分销开关与基准价，统一成 Decimal/int，避免调用方各自处理 None 和 float。"""
+        cfg = self.get_admin_config() or {}
+        max_batch = int(cfg.get("distributor_max_batch") or 0)
+        return {
+            "enabled": int(cfg.get("distributor_enabled") or 0),
+            "apply_enabled": int(cfg.get("distributor_apply_enabled") or 0),
+            "generate_enabled": int(cfg.get("distributor_generate_enabled") or 0),
+            "withdraw_enabled": int(cfg.get("distributor_withdraw_enabled") or 0),
+            "base_points": _dec(cfg.get("distributor_base_price_points"), "0.0010"),
+            "base_days": _dec(cfg.get("distributor_base_price_days"), "0.5000"),
+            "default_discount": _dec(cfg.get("distributor_default_discount"), "1"),
+            "min_recharge": _dec(cfg.get("distributor_min_recharge"), "50"),
+            "min_withdraw": _dec(cfg.get("distributor_min_withdraw"), "50"),
+            "max_batch": min(max_batch, self.DIST_BATCH_HARD_CAP) if max_batch > 0 else self.DIST_BATCH_HARD_CAP,
+            "daily_card_max": int(cfg.get("distributor_daily_card_max") or 0),
+            "script_name": (cfg.get("distributor_script_name") or "学神助手 纯净版").strip(),
+        }
+
+    def _dist_unit_price(self, base, qty, rate):
+        """单张结算价（元，精确 2 位）。返回 (Decimal | None, 错误原因 | None)。
+
+        金额守恒的唯一来源：qty 是整数、rate 定存 4 位，所以只要 base×rate 本身
+        落在 2 位小数上，任意面额都精确，总扣款 = 单张价 × 张数 完全不需要舍入，
+        「10 张 100 题」与「1 张 1000 题」因此必然等价。
+        只把最终结果四舍五入到分是拦不住的：0.001×100×0.3333=0.03333→0.03，
+        十张合计 0.30，而单算一张 1000 题是 0.33 —— 必须靠下面的精确性断言拒绝。
+        """
+        base, rate, qty = _dec(base), _dec(rate), int(qty or 0)
+        if base <= 0 or qty <= 0:
+            return None, "基准单价与模板面额都必须大于 0"
+        if rate <= 0 or rate > 1:
+            return None, "折扣率必须大于 0 且不超过 1（1 表示按官方基准价）"
+        raw = base * Decimal(qty) * rate
+        per_card = raw.quantize(CENT, rounding=ROUND_HALF_UP)
+        if per_card != raw:
+            return None, "折扣率与基准单价组合后无法精确到分，请调整折扣率或模板面额"
+        if per_card < CENT:
+            return None, "单张成本低于 0.01 元，请增大题数或天数"
+        return per_card, None
+
+    def _dist_tpl_price(self, tpl, discount_rate, cfg=None):
+        """模板 × 折扣率 → (单张价, 基准单价, 面额, 错误原因)。"""
+        cfg = cfg or self._dist_cfg()
+        monthly = (tpl.get("price_type") or "points") == "monthly"
+        base = cfg["base_days"] if monthly else cfg["base_points"]
+        qty = int(tpl.get("days") or 0) if monthly else int(tpl.get("points") or 0)
+        per_card, err = self._dist_unit_price(base, qty, discount_rate)
+        return per_card, base, qty, err
+
+    def validate_distributor_pricing(self, templates=None, distributors=None):
+        """改折扣 / 改基准单价 / 改模板之前的 dry-run。
+
+        计价参数一改，既有模板可能突然无法精确到分；不拦就会让代理商在活动途中
+        突然生成不了卡密且查不出原因。返回 None 表示通过，否则为指名模板的中文原因。
+        templates / distributors 传 None 表示「全部启用模板 / 全部已过审代理商」。
+        """
+        ph = _ph()
+        cfg = self._dist_cfg()
+        if templates is None:
+            templates = self.fetchall("SELECT * FROM distributor_templates WHERE enabled = 1") or []
+        if distributors is None:
+            distributors = list(self.fetchall(
+                "SELECT id, username, discount_rate FROM distributors WHERE status = 'approved'"
+            ) or [])
+            # 默认折扣也要自检：新建的每个代理商都从它起步，自检不过就是渠道一开即瘫
+            distributors.append({"id": 0, "username": "默认折扣", "discount_rate": cfg["default_discount"]})
+        for dist in distributors:
+            rate = _dec(dist.get("discount_rate"), "1")
+            for tpl in templates:
+                _per_card, _base, _qty, err = self._dist_tpl_price(tpl, rate, cfg)
+                if err:
+                    return f"模板「{tpl.get('name')}」在 {dist.get('username') or '默认折扣'} 的折扣下无法生成：{err}"
+        return None
+
+    # ---------- 分销配置 ----------
+    DIST_CFG_SPEC = (
+        ("enabled", "distributor_enabled", "flag"),
+        ("apply_enabled", "distributor_apply_enabled", "flag"),
+        ("generate_enabled", "distributor_generate_enabled", "flag"),
+        ("withdraw_enabled", "distributor_withdraw_enabled", "flag"),
+        ("base_price_points", "distributor_base_price_points", "dec4"),
+        ("base_price_days", "distributor_base_price_days", "dec4"),
+        ("default_discount", "distributor_default_discount", "dec4"),
+        ("min_recharge", "distributor_min_recharge", "money"),
+        ("min_withdraw", "distributor_min_withdraw", "money"),
+        ("max_batch", "distributor_max_batch", "int"),
+        ("daily_card_max", "distributor_daily_card_max", "int"),
+        ("script_name", "distributor_script_name", "text"),
+    )
+
+    def _dist_cfg_cast(self, kind, value):
+        if kind == "flag":
+            return 1 if str(value if value is not None else "").strip().lower() in ("1", "true", "on", "yes") else 0
+        if kind in ("dec4", "money"):
+            d = _dec(value)
+            if d < 0:
+                raise ValueError("不能为负数")
+            return str(d.quantize(Decimal("0.0001") if kind == "dec4" else CENT, rounding=ROUND_HALF_UP))
+        if kind == "int":
+            return max(0, int(float(value or 0)))
+        return str(value or "").strip()[:100]
+
+    def save_distributor_config(self, data=None, operator=""):
+        """写分销配置。基准单价或默认折扣一改，既有模板可能突然无法精确到分，
+        所以先落库、再对全部启用模板 dry-run，不通过就整体回滚成旧值——
+        绝不能让代理商在活动途中突然生成不了卡密。
+        """
+        ph = _ph()
+        data = data or {}
+        old = self.get_admin_config() or {}
+        sets, params, rollback = [], [], []
+        for key, col, kind in self.DIST_CFG_SPEC:
+            if key not in data:
+                continue
+            try:
+                val = self._dist_cfg_cast(kind, data.get(key))
+            except Exception:
+                return False, f"{col} 取值格式错误"
+            if col == "distributor_max_batch":
+                val = min(int(val), self.DIST_BATCH_HARD_CAP) if int(val) > 0 else self.DIST_BATCH_HARD_CAP
+            if col == "distributor_default_discount" and not (Decimal("0") < Decimal(val) <= 1):
+                return False, "默认折扣率必须大于 0 且不超过 1（0.5 表示五折）"
+            sets.append(f"{col} = {ph}")
+            params.append(val)
+            prev = old.get(col)
+            rollback.append((col, "" if (kind == "text" and prev is None) else (prev if prev is not None else 0)))
+        if not sets:
+            return False, "没有需要修改的内容"
+        self.execute(f"UPDATE admin_config SET {', '.join(sets)} WHERE id = 1", tuple(params))
+        err = self.validate_distributor_pricing()
+        if err:
+            rb_sets = [f"{c} = {ph}" for c, _ in rollback]
+            rb_params = [v for _, v in rollback]
+            self.execute(f"UPDATE admin_config SET {', '.join(rb_sets)} WHERE id = 1", tuple(rb_params))
+            return False, f"配置已回滚：{err}"
+        return True, "配置已保存"
+
+    def distributor_stats(self):
+        """后台概览：各状态代理商数、余额合计、卡密消化率、待对账批次。"""
+        row = self.fetchone(
+            "SELECT "
+            "SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) pending_cnt, "
+            "SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) approved_cnt, "
+            "SUM(CASE WHEN status = 'suspended' THEN 1 ELSE 0 END) suspended_cnt, "
+            "COALESCE(SUM(balance), 0) balance_total, "
+            "COALESCE(SUM(spent_total), 0) spent_total "
+            "FROM distributors"
+        ) or {}
+        cards = self.fetchone(
+            "SELECT SUM(CASE WHEN status = 'unused' THEN 1 ELSE 0 END) unused_cnt, "
+            "SUM(CASE WHEN status = 'used' THEN 1 ELSE 0 END) used_cnt "
+            "FROM card_keys WHERE source = 'distributor'"
+        ) or {}
+        pending_batch = int((self.fetchone(
+            "SELECT COUNT(*) cnt FROM distributor_batches WHERE status = 'pending'"
+        ) or {}).get("cnt") or 0)
+        # 「需人工核对」是钱和卡对不上的批次，必须置顶告警而不是埋在列表里
+        inconsistent_batch = int((self.fetchone(
+            "SELECT COUNT(*) cnt FROM distributor_batches WHERE status = 'inconsistent'"
+        ) or {}).get("cnt") or 0)
+        # 待审核提现也放概览：钱在代理商申请那一刻就离开余额了，压着不审就是欠账
+        wd = self.distributor_withdrawal_summary()
+        return {
+            "pending": int(row.get("pending_cnt") or 0),
+            "approved": int(row.get("approved_cnt") or 0),
+            "suspended": int(row.get("suspended_cnt") or 0),
+            "balance_total": str(_dec(row.get("balance_total"))),
+            "spent_total": str(_dec(row.get("spent_total"))),
+            "card_unused": int(cards.get("unused_cnt") or 0),
+            "card_used": int(cards.get("used_cnt") or 0),
+            "batch_pending": pending_batch,
+            "batch_inconsistent": inconsistent_batch,
+            "wd_pending": wd["pending_count"],
+            "wd_pending_amount": str(wd["pending_amount"]),
+        }
+
+    # ---------- 分销账号 ----------
+    def get_distributor(self, distributor_id):
+        ph = _ph()
+        return self.fetchone(f"SELECT * FROM distributors WHERE id = {ph}", (int(distributor_id or 0),))
+
+    def get_distributor_by_username(self, username):
+        ph = _ph()
+        return self.fetchone(f"SELECT * FROM distributors WHERE username = {ph}", (username,))
+
+    def apply_distributor(self, username, name, contact="", reason=""):
+        """自助申请 / 驳回后重新提交。approved、suspended 不走这条路径。"""
+        ph = _ph()
+        cfg = self._dist_cfg()
+        if not cfg["enabled"]:
+            return False, "分销渠道尚未开放"
+        if not cfg["apply_enabled"]:
+            return False, "当前不允许自助申请，请联系管理员开通"
+        name = (name or "").strip()
+        if len(name) < 2:
+            return False, "请填写代理商名称（至少 2 个字）"
+        if not self.get_user_by_username(username):
+            return False, "账号不存在，请先注册"
+        contact = (contact or "").strip()[:100]
+        reason = (reason or "").strip()[:500]
+        exist = self.get_distributor_by_username(username)
+        if exist:
+            if exist["status"] == "approved":
+                return False, "该账号已是代理商，无需重复申请"
+            if exist["status"] == "suspended":
+                return False, "账号已被停用，请联系管理员"
+            cur = self.execute(
+                f"UPDATE distributors SET name = {ph}, contact = {ph}, apply_reason = {ph}, "
+                f"status = 'pending', reject_reason = '' WHERE username = {ph} AND status IN ({ph}, {ph})",
+                (name, contact, reason, username, "pending", "rejected")
+            )
+            if not cur or cur.rowcount == 0:
+                return False, "申请状态已变化，请刷新后重试"
+            return True, "已重新提交申请，等待审核"
+        try:
+            self.execute(
+                f"INSERT INTO distributors (username, name, contact, discount_rate, apply_reason) "
+                f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
+                (username, name, contact, str(cfg["default_discount"]), reason)
+            )
+        except Exception:
+            return False, "申请提交失败，请稍后重试"
+        return True, "申请已提交，等待审核"
+
+    def admin_add_distributor(self, username, name="", contact="", discount_rate=None,
+                              initial_balance=0, operator=""):
+        """后台直接开通代理商。
+
+        没有自助申请入口时这是唯一的建档路径。已存在记录时只把 pending/rejected 转成
+        approved，不覆盖 approved/suspended 的现状——管理员顺手改个折扣不该把停用账号解禁。
+        """
+        ph = _ph()
+        username = str(username or "").strip()
+        if not username:
+            return False, "请填写代理商账号"
+        if not self.get_user_by_username(username):
+            return False, "该账号不存在，请先让用户注册"
+        name = str(name or "").strip()[:100] or username
+        contact = str(contact or "").strip()[:100]
+        cfg = self._dist_cfg()
+        rate = cfg["default_discount"] if discount_rate in (None, "") else _dec(discount_rate)
+        rate = rate.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        if not (Decimal("0") < rate <= 1):
+            return False, "折扣率必须大于 0 且不超过 1（0.5 表示五折）"
+        err = self.validate_distributor_pricing(distributors=[{"id": 0, "username": username, "discount_rate": rate}])
+        if err:
+            return False, f"未创建：{err}"
+
+        exist = self.get_distributor_by_username(username)
+        if exist:
+            if exist["status"] == "suspended":
+                return False, "该账号已被停用，请先在列表里恢复状态"
+            self.execute(
+                f"UPDATE distributors SET name = {ph}, contact = {ph}, discount_rate = {ph}, "
+                f"status = 'approved', reject_reason = '', audited_by = {ph}, audited_at = CURRENT_TIMESTAMP "
+                f"WHERE id = {ph} AND status IN ({ph}, {ph})",
+                (name, contact, str(rate), operator, int(exist["id"]), "pending", "rejected")
+            )
+            dist_id = int(exist["id"])
+        else:
+            cur = self.execute(
+                f"INSERT INTO distributors (username, name, contact, discount_rate, status, apply_reason, audited_by, audited_at) "
+                f"VALUES ({ph}, {ph}, {ph}, {ph}, 'approved', {ph}, {ph}, CURRENT_TIMESTAMP)",
+                (username, name, contact, str(rate), "后台直接开通", operator)
+            )
+            dist_id = int(getattr(cur, "lastrowid", 0) or 0)
+            if not dist_id:
+                return False, "创建失败，请重试"
+
+        amount = _dec(initial_balance).quantize(CENT, rounding=ROUND_HALF_UP)
+        if amount > 0:
+            ok, msg = self.adjust_distributor_balance(dist_id, amount, operator=operator, remark="开通时预存")
+            if not ok:
+                return False, f"代理商已开通，但预存失败：{msg}"
+            return True, f"已开通代理商 {username}，预存 {amount} 元"
+        return True, f"已开通代理商 {username}"
+
+    def list_distributors(self, status="", keyword="", page=1, page_size=20):
+        ph = _ph()
+        where, params = [], []
+        if status:
+            where.append(f"status = {ph}")
+            params.append(status)
+        if keyword:
+            where.append(f"(username LIKE {ph} OR name LIKE {ph} OR contact LIKE {ph})")
+            kw = f"%{keyword}%"
+            params += [kw, kw, kw]
+        where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+        total = int((self.fetchone(f"SELECT COUNT(*) cnt FROM distributors {where_sql}", params) or {}).get("cnt") or 0)
+        page_size = max(1, min(int(page_size or 20), 200))
+        offset = (max(1, int(page or 1)) - 1) * page_size
+        rows = self.fetchall(
+            f"SELECT * FROM distributors {where_sql} "
+            f"ORDER BY (status = 'pending') DESC, id DESC LIMIT {ph} OFFSET {ph}",
+            params + [page_size, offset]
+        ) or []
+        return {"total": total, "rows": rows}
+
+    def audit_distributor(self, distributor_id, approve, note="", operator="", reject_reason=""):
+        """审核申请。`AND status='pending'` 保证两个管理员只有一个能生效。"""
+        ph = _ph()
+        distributor_id = int(distributor_id or 0)
+        note = (note or "").strip()[:500]
+        if not self.get_distributor(distributor_id):
+            return False, "申请不存在"
+        if approve:
+            cur = self.execute(
+                f"UPDATE distributors SET status = 'approved', audit_note = {ph}, reject_reason = '', "
+                f"audited_by = {ph}, audited_at = CURRENT_TIMESTAMP WHERE id = {ph} AND status = 'pending'",
+                (note, operator, distributor_id)
+            )
+            if not cur or cur.rowcount == 0:
+                return False, "该申请已被处理"
+            return True, "已通过审核，代理商可登录门户"
+        reason = (reject_reason or note).strip()[:255]
+        if not reason:
+            return False, "驳回必须填写原因"
+        cur = self.execute(
+            f"UPDATE distributors SET status = 'rejected', audit_note = {ph}, reject_reason = {ph}, "
+            f"audited_by = {ph}, audited_at = CURRENT_TIMESTAMP WHERE id = {ph} AND status = 'pending'",
+            (note, reason, operator, distributor_id)
+        )
+        if not cur or cur.rowcount == 0:
+            return False, "该申请已被处理"
+        return True, "已驳回"
+
+    def update_distributor(self, distributor_id, fields=None, operator=""):
+        """后台编辑代理商资料。折扣改动会先对全部启用模板做 dry-run。"""
+        ph = _ph()
+        fields = fields or {}
+        dist = self.get_distributor(distributor_id)
+        if not dist:
+            return False, "代理商不存在"
+        sets, params = [], []
+        # shop_url 的 https 校验在后台接口里做（规则归 build_distributor 所有），
+        # 这里不重复一份：两处正则迟早会漂移，而漏判的代价是把非法串注入进脚本。
+        for key, col, limit in (("name", "name", 100), ("contact", "contact", 100),
+                                ("support_note", "support_note", 255), ("audit_note", "audit_note", 500),
+                                ("shop_url", "shop_url", 255)):
+            if key in fields:
+                sets.append(f"{col} = {ph}")
+                params.append(str(fields.get(key) or "").strip()[:limit])
+        if fields.get("discount_rate") not in (None, ""):
+            rate = _dec(fields["discount_rate"]).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+            if rate <= 0 or rate > 1:
+                return False, "折扣率必须大于 0 且不超过 1（0.5 表示五折）"
+            err = self.validate_distributor_pricing(distributors=[dict(dist, discount_rate=rate)])
+            if err:
+                return False, f"折扣已保留原值：{err}"
+            sets.append(f"discount_rate = {ph}")
+            params.append(str(rate))
+        if not sets:
+            return False, "没有需要修改的内容"
+        params.append(int(dist["id"]))
+        self.execute(f"UPDATE distributors SET {', '.join(sets)} WHERE id = {ph}", tuple(params))
+        return True, "已保存"
+
+    def set_distributor_status(self, distributor_id, status, operator=""):
+        ph = _ph()
+        if status not in ("pending", "approved", "rejected", "suspended"):
+            return False, "状态不合法"
+        dist = self.get_distributor(distributor_id)
+        if not dist:
+            return False, "代理商不存在"
+        if dist["status"] == status:
+            return True, "状态未变化"
+        self.execute(
+            f"UPDATE distributors SET status = {ph}, audited_by = {ph}, audited_at = CURRENT_TIMESTAMP WHERE id = {ph}",
+            (status, operator, int(dist["id"]))
+        )
+        return True, "状态已更新"
+
+    # ---------- 余额流水 ----------
+    def distributor_add_log(self, distributor_id, username, log_type, amount, balance_after,
+                            order_no="", batch_no="", withdraw_id=0, operator="", remark=""):
+        """记一笔余额流水。流水只做审计，不做幂等依据（幂等靠 apply_paid_order 的抢占）。"""
+        ph = _ph()
+        try:
+            self.execute(
+                f"""INSERT INTO distributor_balance_logs
+                    (distributor_id, username, type, amount, balance_after, order_no, batch_no, withdraw_id, operator, remark)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+                (int(distributor_id), username or "", log_type, str(_dec(amount)), str(_dec(balance_after)),
+                 order_no or "", batch_no or "", int(withdraw_id or 0), operator or "", str(remark or "")[:255])
+            )
+            return True
+        except Exception as e:
+            print(f"[分销流水] 写入失败 dist={distributor_id} type={log_type} amount={amount}: {e}", flush=True)
+            return False
+
+    def distributor_has_log(self, distributor_id, log_type, order_no="", batch_no=""):
+        ph = _ph()
+        if order_no:
+            return bool(self.fetchone(
+                f"SELECT id FROM distributor_balance_logs WHERE distributor_id = {ph} AND type = {ph} AND order_no = {ph} LIMIT 1",
+                (int(distributor_id), log_type, order_no)))
+        if batch_no:
+            return bool(self.fetchone(
+                f"SELECT id FROM distributor_balance_logs WHERE distributor_id = {ph} AND type = {ph} AND batch_no = {ph} LIMIT 1",
+                (int(distributor_id), log_type, batch_no)))
+        return False
+
+    def list_distributor_logs(self, distributor_id, page=1, page_size=20):
+        ph = _ph()
+        distributor_id = int(distributor_id or 0)
+        total = int((self.fetchone(
+            f"SELECT COUNT(*) cnt FROM distributor_balance_logs WHERE distributor_id = {ph}", (distributor_id,)) or {}).get("cnt") or 0)
+        page_size = max(1, min(int(page_size or 20), 200))
+        offset = (max(1, int(page or 1)) - 1) * page_size
+        rows = self.fetchall(
+            f"SELECT * FROM distributor_balance_logs WHERE distributor_id = {ph} ORDER BY id DESC LIMIT {ph} OFFSET {ph}",
+            (distributor_id, page_size, offset)
+        ) or []
+        return {"total": total, "rows": rows}
+
+    def adjust_distributor_balance(self, distributor_id, amount, operator="", remark=""):
+        """管理员手工增减余额。正数入账；出账走余额守卫，绝不允许扣成负数。"""
+        ph = _ph()
+        try:
+            amount = _dec(amount).quantize(CENT, rounding=ROUND_HALF_UP)
+        except Exception:
+            return False, "金额格式错误"
+        if amount == 0:
+            return False, "调整金额不能为 0"
+        dist = self.get_distributor(distributor_id)
+        if not dist:
+            return False, "代理商不存在"
+        if amount > 0:
+            cur = self.execute(
+                f"UPDATE distributors SET balance = balance + {ph} WHERE id = {ph}", (str(amount), int(dist["id"])))
+        else:
+            cur = self.execute(
+                f"UPDATE distributors SET balance = balance + {ph} WHERE id = {ph} AND balance >= {ph}",
+                (str(amount), int(dist["id"]), str(-amount))
+            )
+        if not cur or cur.rowcount == 0:
+            return False, "余额不足"
+        after = _dec((self.get_distributor(int(dist["id"])) or {}).get("balance"))
+        self.distributor_add_log(int(dist["id"]), dist.get("username", ""), "adjust", amount, after,
+                                 operator=operator, remark=remark or "管理员手工调整")
+        return True, f"已调整 {amount} 元，当前余额 {after} 元"
+
+    # ---------- 充值与提现 ----------
+    RECHARGE_MAX = Decimal("20000")  # 单笔上限：挡手滑，也挡拿门户当免费收银台过账
+
+    def distributor_recharge_plan(self, username, amount):
+        """校验充值金额，返回一张内存合成套餐给既有下单通道。
+
+        金额是代理商自己填的，不能做成 payment_plans 行——那张表 /api/payment/plans
+        公开可见、任何登录用户都能拿 plan_id 买。照自有模型的做法造 plan：
+        id=0、points/days 全 0，只有 price 有意义，而 price 就是稍后要入账的金额。
+        """
+        cfg = self._dist_cfg()
+        try:
+            amt = _dec(amount).quantize(CENT, rounding=ROUND_HALF_UP)
+        except Exception:
+            return False, "充值金额格式错误", None
+        floor = _dec(cfg.get("min_recharge"), "50").quantize(CENT)
+        if amt < floor:
+            return False, "单次最低充值 %s 元" % floor, None
+        if amt > self.RECHARGE_MAX:
+            return False, "单次最多充值 %s 元" % self.RECHARGE_MAX.quantize(CENT), None
+        dist = self.get_distributor_by_username(username)
+        if not dist or str(dist.get("status")) != "approved":
+            return False, "账号未通过审核或已被停用", None
+        plan = {
+            "id": 0, "name": "代理商余额充值", "plan_type": "dist_recharge",
+            "price": float(amt), "points": 0, "days": 0, "enabled": True,
+        }
+        return True, "", plan
+
+    def credit_distributor_recharge(self, order):
+        """把一笔已核验的充值订单变成代理商余额。只在 apply_paid_order 抢占之后调用。"""
+        ph = _ph()
+        username = order.get("username") or ""
+        dist = self.get_distributor_by_username(username)
+        if not dist:
+            return False, "代理商档案不存在"
+        status = str(dist.get("status"))
+        if status != "approved":
+            return False, "代理商状态为 %s" % status
+        amount = _dec(order.get("price"))
+        if amount <= 0:
+            return False, "订单金额异常"
+        did = int(dist["id"])
+        order_no = order.get("order_no") or ""
+        if self.distributor_has_log(did, "recharge", order_no=order_no):
+            return True, "该订单已入账"
+        cur = self.execute(
+            f"UPDATE distributors SET balance = balance + {ph}, recharge_total = recharge_total + {ph} "
+            f"WHERE id = {ph}",
+            (str(amount), str(amount), did)
+        )
+        if not cur or cur.rowcount == 0:
+            return False, "余额入账失败"
+        after = _dec((self.get_distributor(did) or {}).get("balance"))
+        self.distributor_add_log(did, username, "recharge", amount, after, order_no=order_no,
+                                 remark="自助充值，当前余额 %s 元" % after)
+        return True, "已充值 %s 元" % amount
+
+    def create_distributor_withdrawal(self, distributor_id, username, amount,
+                                      pay_method, pay_account, qr_code=""):
+        """提现：申请时就把钱划出余额，审核通过只是确认线下已打款。
+
+        先扣款、后插单：插单撞 uk_open(distributor_id, open_flag) 说明已有一单在途，
+        原路退回即可。反过来（先插单再扣款）在扣款失败时会留下一张挂着在途标记的
+        空单，把后面所有提现都堵死。
+        """
+        ph = _ph()
+        try:
+            amt = _dec(amount).quantize(CENT, rounding=ROUND_HALF_UP)
+        except Exception:
+            return False, "提现金额格式错误", 0
+        cfg = self._dist_cfg()
+        if not cfg["withdraw_enabled"]:
+            return False, "提现功能当前未开放，请联系管理员", 0
+        floor = _dec(cfg.get("min_withdraw"), "50").quantize(CENT)
+        if amt < floor:
+            return False, "单次最低提现 %s 元" % floor, 0
+        did = int(distributor_id or 0)
+        dist = self.get_distributor(did)
+        if not dist or str(dist.get("status")) != "approved":
+            return False, "账号未通过审核或已被停用", 0
+        cur = self.execute(
+            f"UPDATE distributors SET balance = balance - {ph} WHERE id = {ph} AND status = 'approved' AND balance >= {ph}",
+            (str(amt), did, str(amt))
+        )
+        if not cur or cur.rowcount == 0:
+            return False, "余额不足（可提现余额 %s 元）" % _dec(dist.get("balance")).quantize(CENT), 0
+        try:
+            ins = self.execute(
+                f"INSERT INTO distributor_withdrawals "
+                f"(distributor_id, username, amount, pay_method, pay_account, qr_code_path, open_flag, status) "
+                f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 1, 'pending')",
+                (did, username or "", str(amt), pay_method, pay_account, qr_code or "")
+            )
+        except pymysql.IntegrityError:
+            back = self.execute(f"UPDATE distributors SET balance = balance + {ph} WHERE id = {ph}", (str(amt), did))
+            if not back or back.rowcount == 0:
+                print(f"[提现][ERROR] 在途冲突退款失败 dist={did} amount={amt}，需人工补回余额", flush=True)
+            return False, "已有待审核提现，请等待处理", 0
+        wid = int(getattr(ins, "lastrowid", 0) or 0)
+        after = _dec((self.get_distributor(did) or {}).get("balance"))
+        self.distributor_add_log(did, username or "", "withdraw", -amt, after, withdraw_id=wid,
+                                 operator=username or "", remark="提现 %s 元至 %s" % (amt, pay_method))
+        return True, "提现申请已提交，等待审核", wid
+
+    def get_distributor_withdrawal(self, wid):
+        ph = _ph()
+        return self.fetchone(f"SELECT * FROM distributor_withdrawals WHERE id = {ph}", (int(wid or 0),))
+
+    def list_distributor_withdrawals(self, distributor_id=0, status="", page=1, page_size=20):
+        ph = _ph()
+        where, params = [], []
+        if int(distributor_id or 0):
+            where.append(f"w.distributor_id = {ph}")
+            params.append(int(distributor_id))
+        if status in ("pending", "approved", "rejected"):
+            where.append(f"w.status = {ph}")
+            params.append(status)
+        clause = ("WHERE " + " AND ".join(where)) if where else ""
+        total = int((self.fetchone(
+            f"SELECT COUNT(*) cnt FROM distributor_withdrawals w {clause}", tuple(params)) or {}).get("cnt") or 0)
+        page_size = max(1, min(int(page_size or 20), 200))
+        offset = (max(1, int(page or 1)) - 1) * page_size
+        rows = self.fetchall(
+            f"SELECT w.*, d.name AS dist_name FROM distributor_withdrawals w "
+            f"LEFT JOIN distributors d ON d.username = w.username "
+            f"{clause} ORDER BY w.id DESC LIMIT {ph} OFFSET {ph}",
+            tuple(params) + (page_size, offset)
+        ) or []
+        return {"total": total, "rows": rows}
+
+    def distributor_withdrawal_summary(self):
+        row = self.fetchone(
+            "SELECT COUNT(*) total, "
+            "COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) pending_amount, "
+            "COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) pending_count, "
+            "COALESCE(SUM(CASE WHEN status = 'approved' THEN amount ELSE 0 END), 0) approved_amount "
+            "FROM distributor_withdrawals", ())
+        return {
+            "total": int((row or {}).get("total") or 0),
+            "pending_amount": _dec((row or {}).get("pending_amount")).quantize(CENT),
+            "pending_count": int((row or {}).get("pending_count") or 0),
+            "approved_amount": _dec((row or {}).get("approved_amount")).quantize(CENT),
+        }
+
+    def approve_distributor_withdrawal(self, wid, operator=""):
+        """确认已打款。钱在申请时就离开余额了，这里只关单 + 累加「累计提现」。"""
+        ph = _ph()
+        row = self.get_distributor_withdrawal(wid)
+        if not row:
+            return False, "提现单不存在"
+        cur = self.execute(
+            f"UPDATE distributor_withdrawals SET status = 'approved', open_flag = NULL, reviewed_by = {ph}, "
+            f"reviewed_at = CURRENT_TIMESTAMP WHERE id = {ph} AND status = 'pending'",
+            (str(operator or "")[:50], int(wid))
+        )
+        if not cur or cur.rowcount == 0:
+            return False, "该提现单已被处理"
+        amount = _dec(row.get("amount")).quantize(CENT)
+        acc = self.execute(f"UPDATE distributors SET withdraw_total = withdraw_total + {ph} WHERE id = {ph}",
+                           (str(amount), int(row.get("distributor_id") or 0)))
+        if not acc or acc.rowcount == 0:
+            print(f"[提现] 关单成功但累计提现未累加 wid={wid} dist={row.get('distributor_id')} "
+                  f"amount={amount}，需人工核对", flush=True)
+        return True, "已通过，请线下打款 %s 元" % amount
+
+    def reject_distributor_withdrawal(self, wid, reason="", operator=""):
+        ph = _ph()
+        row = self.get_distributor_withdrawal(wid)
+        if not row:
+            return False, "提现单不存在"
+        # 抢占只认这条 UPDATE 的 rowcount：先读后改会让两个管理员各退一次钱
+        cur = self.execute(
+            f"UPDATE distributor_withdrawals SET status = 'rejected', open_flag = NULL, reject_reason = {ph}, "
+            f"reviewed_by = {ph}, reviewed_at = CURRENT_TIMESTAMP WHERE id = {ph} AND status = 'pending'",
+            (str(reason or "")[:255], str(operator or "")[:50], int(wid))
+        )
+        if not cur or cur.rowcount == 0:
+            return False, "该提现单已被处理"
+        amount = _dec(row.get("amount")).quantize(CENT)
+        did = int(row.get("distributor_id") or 0)
+        back = self.execute(f"UPDATE distributors SET balance = balance + {ph} WHERE id = {ph}", (str(amount), did))
+        if not back or back.rowcount == 0:
+            # 单子已判 rejected 但钱没退回余额，只有人工补；静默返回 True 会把漏洞藏起来
+            print(f"[提现][ERROR] 驳回退款失败 withdrawal={wid} dist={did} "
+                  f"amount={amount}，需人工补回余额", flush=True)
+            return True, "已驳回，但退款未入账，请人工补回余额"
+        after = _dec((self.get_distributor(did) or {}).get("balance"))
+        self.distributor_add_log(did, row.get("username") or "", "withdraw_reject", amount, after,
+                                 withdraw_id=int(wid), operator=operator or "",
+                                 remark=str(reason or "")[:255] or "提现驳回退回")
+        return True, "已驳回，%s 元已退回余额" % amount
+
+    # ---------- 卡密模板 ----------
+    def list_distributor_templates(self, only_enabled=False, discount_rate=None):
+        """模板列表；给了折扣率就顺带算出单张结算价，门户与后台直接展示。"""
+        rows = self.fetchall(
+            "SELECT * FROM distributor_templates" + (" WHERE enabled = 1" if only_enabled else "") +
+            " ORDER BY sort_order ASC, id ASC"
+        ) or []
+        cfg = self._dist_cfg()
+        if discount_rate is None:
+            discount_rate = cfg["default_discount"]
+        out = []
+        for tpl in rows:
+            per_card, base, qty, err = self._dist_tpl_price(tpl, discount_rate, cfg)
+            item = dict(tpl)
+            item["base_price"] = str(base)
+            item["quantity"] = qty
+            item["unit_settle"] = str(per_card) if per_card else ""
+            item["price_error"] = err or ""
+            out.append(item)
+        return out
+
+    def get_distributor_template(self, template_id):
+        ph = _ph()
+        return self.fetchone(f"SELECT * FROM distributor_templates WHERE id = {ph}", (int(template_id or 0),))
+
+    def save_distributor_template(self, data=None, operator=""):
+        """新增/修改模板：面额自洽校验 + 计价 dry-run，两个管理员改不动坏配置。"""
+        ph = _ph()
+        data = data or {}
+        template_id = int(data.get("id") or 0)
+        name = str(data.get("name") or "").strip()
+        price_type = str(data.get("price_type") or "points").strip()
+        points = int(data.get("points") or 0)
+        days = int(data.get("days") or 0)
+        prefix = str(data.get("code_prefix") or "FX").strip().upper()
+        if len(name) < 2:
+            return False, "模板名称至少 2 个字"
+        if price_type not in ("points", "monthly"):
+            return False, "计价方式只能是题数或包月"
+        if price_type == "points":
+            if points <= 0:
+                return False, "题数模板必须填写题数"
+            if days:
+                return False, "题数模板不能同时填写天数"
+        else:
+            if days <= 0:
+                return False, "包月模板必须填写天数"
+            if points:
+                return False, "包月模板不能同时填空题数"
+        if len(prefix) != self.DIST_PREFIX_LEN or not prefix.isalnum():
+            return False, f"卡密前缀必须是 {self.DIST_PREFIX_LEN} 位字母或数字（卡密总长固定 {self.DIST_CODE_LEN}）"
+        err = self.validate_distributor_pricing(
+            templates=[{"name": name, "price_type": price_type, "points": points, "days": days}])
+        if err:
+            return False, err
+        enabled = 0 if str(data.get("enabled", 1)).strip().lower() in ("0", "", "false", "none") else 1
+        if self.fetchone(f"SELECT id FROM distributor_templates WHERE name = {ph} AND id <> {ph}", (name, template_id)):
+            return False, "已存在同名模板"
+        sort_order = int(data.get("sort_order") or 0)
+        remark = str(data.get("remark") or "").strip()[:255]
+        try:
+            if template_id:
+                self.execute(
+                    f"UPDATE distributor_templates SET name = {ph}, price_type = {ph}, points = {ph}, days = {ph}, "
+                    f"code_prefix = {ph}, enabled = {ph}, sort_order = {ph}, remark = {ph} WHERE id = {ph}",
+                    (name, price_type, points, days, prefix, enabled, sort_order, remark, template_id)
+                )
+            else:
+                self.execute(
+                    f"""INSERT INTO distributor_templates
+                        (name, price_type, points, days, code_prefix, enabled, sort_order, remark)
+                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+                    (name, price_type, points, days, prefix, enabled, sort_order, remark)
+                )
+        except Exception as e:
+            return False, f"保存失败：{e}"
+        return True, "模板已保存"
+
+    def toggle_distributor_template(self, template_id, enabled):
+        ph = _ph()
+        if not self.get_distributor_template(template_id):
+            return False, "模板不存在"
+        self.execute(
+            f"UPDATE distributor_templates SET enabled = {ph} WHERE id = {ph}",
+            (1 if enabled else 0, int(template_id or 0))
+        )
+        return True, "已启用" if enabled else "已停用"
+
+    def delete_distributor_template(self, template_id):
+        """已发卡模板只能停用：删掉会让历史批次失去参照。"""
+        ph = _ph()
+        template_id = int(template_id or 0)
+        used = int((self.fetchone(
+            f"SELECT COUNT(*) cnt FROM card_keys WHERE template_id = {ph}", (template_id,)) or {}).get("cnt") or 0)
+        if used:
+            return False, f"该模板已生成 {used} 张卡密，只能停用不能删除"
+        self.execute(f"DELETE FROM distributor_templates WHERE id = {ph}", (template_id,))
+        return True, "已删除"
+
+    # ---------- 生成与对账 ----------
+    def _make_card_codes(self, prefix, count):
+        """生成 count 个互不重复卡密：定长前缀 + 随机字符补齐到 DIST_CODE_LEN。"""
+        import secrets
+        import string
+        prefix = (prefix or "XS").strip().upper()[:self.DIST_CODE_LEN - 1]
+        rand_len = self.DIST_CODE_LEN - len(prefix)
+        alphabet = string.ascii_uppercase + string.digits
+        codes, seen = [], set()
+        while len(codes) < count:
+            code = prefix + "".join(secrets.choice(alphabet) for _ in range(rand_len))
+            if code in seen:
+                continue
+            seen.add(code)
+            codes.append(code)
+        return codes
+
+    def _dist_batch_no(self):
+        """批次号。刻意不用内置 hash()：str 的 hash 每进程随机化，编号事后无法复原。"""
+        import secrets
+        return f"FXG{int(time.time() * 1000)}{secrets.token_hex(2)}"
+
+    def distributor_today_card_count(self, distributor_id):
+        ph = _ph()
+        row = self.fetchone(
+            f"SELECT COALESCE(SUM(card_count), 0) cnt FROM distributor_batches "
+            f"WHERE distributor_id = {ph} AND status <> 'failed' AND created_at >= CURDATE()",
+            (int(distributor_id),)
+        )
+        return int((row or {}).get("cnt") or 0)
+
+    def distributor_price_quote(self, distributor_id, template_id, count, cfg=None):
+        """报价（只读，不动钱）。返回 (ok, msg, data)。"""
+        ph = _ph()
+        cfg = cfg or self._dist_cfg()
+        try:
+            count = int(count)
+        except Exception:
+            return False, "张数必须是整数", None
+        dist = self.get_distributor(distributor_id)
+        if not dist:
+            return False, "代理商不存在", None
+        tpl = self.get_distributor_template(template_id)
+        if not tpl:
+            return False, "模板不存在", None
+        if not int(tpl.get("enabled") or 0):
+            return False, "该模板已停用，不能生成卡密", None
+        if count < 1:
+            return False, "至少生成 1 张", None
+        if count > cfg["max_batch"]:
+            return False, f"单次最多生成 {cfg['max_batch']} 张", None
+        per_card, base, qty, err = self._dist_tpl_price(tpl, _dec(dist.get("discount_rate"), "1"), cfg)
+        if err:
+            return False, err, None
+        settle = per_card * count
+        balance = _dec(dist.get("balance"))
+        return True, None, {
+            "distributor_id": int(dist["id"]),
+            "username": dist.get("username") or "",
+            "status": dist.get("status") or "",
+            "discount_rate": str(_dec(dist.get("discount_rate"), "1")),
+            "template_id": int(tpl["id"]),
+            "template_name": tpl.get("name") or "",
+            "price_type": tpl.get("price_type") or "points",
+            "quantity": qty,
+            "base_price": str(base),
+            "unit_settle": str(per_card),
+            "count": count,
+            "settle_amount": str(settle),
+            "balance": str(balance),
+            "balance_after": str(balance - settle),
+            "enough": balance >= settle,
+        }
+
+    def _dist_insert_cards(self, codes, batch_id, distributor_id, tpl, unit_settle, created_by):
+        """一条多行 INSERT 落全部卡密。
+
+        单条语句在 InnoDB 里天然原子：撞 UNIQUE 就整条失败、零行残留，
+        不会像逐张插入那样中途 abort 留下半批。
+        """
+        ph = _ph()
+        monthly = (tpl.get("price_type") or "points") == "monthly"
+        row = f"({', '.join([ph] * 12)})"
+        params = []
+        for code in codes:
+            params += [
+                code, 0, "unused", created_by[:50], "distributor",
+                int(distributor_id), int(batch_id), int(tpl.get("id") or 0), str(unit_settle),
+                "monthly" if monthly else "points",
+                0 if monthly else int(tpl.get("points") or 0),
+                int(tpl.get("days") or 0) if monthly else 0,
+            ]
+        self.execute(
+            "INSERT INTO card_keys (code, plan_id, status, created_by, source, distributor_id, batch_id, "
+            "template_id, settle_amount, grant_type, grant_points, grant_days) VALUES " +
+            ", ".join([row] * len(codes)),
+            tuple(params)
+        )
+
+    def _dist_refund(self, distributor_id, amount, batch_id, batch_no, operator, reason):
+        """生成失败时把已扣的钱退回。
+
+        先用批次行的 pending→failed 抢占作为「谁负责退钱」的唯一裁决，
+        输的一方直接返回，避免与对账器各退一次。
+        """
+        ph = _ph()
+        amount = _dec(amount)
+        cur = self.execute(
+            f"UPDATE distributor_batches SET status = 'failed', error_note = {ph} WHERE id = {ph} AND status = 'pending'",
+            (str(reason)[:255], int(batch_id))
+        )
+        if not cur or cur.rowcount == 0:
+            print(f"[分销退款] 批次 {batch_no} 已被他方处理，跳过退款", flush=True)
+            return False
+        self.execute(
+            f"UPDATE distributors SET balance = balance + {ph}, spent_total = GREATEST(0, spent_total - {ph}) WHERE id = {ph}",
+            (str(amount), str(amount), int(distributor_id))
+        )
+        dist = self.get_distributor(distributor_id) or {}
+        # 扣款和退款都要留在流水里。只记退款那一条，「流水合计 vs 余额」会永久差一笔，
+        # 对账告警于是每次都空响，管理员学会忽略它就真出事。
+        now_balance = _dec(dist.get("balance"))
+        if not self.distributor_has_log(int(distributor_id), "generate", batch_no=batch_no):
+            self.distributor_add_log(int(distributor_id), dist.get("username", ""), "generate", -amount,
+                                     now_balance - amount, batch_no=batch_no, operator=operator,
+                                     remark="补记本批扣款（生成未成功）")
+        self.distributor_add_log(int(distributor_id), dist.get("username", ""), "refund", amount,
+                                 now_balance, batch_no=batch_no, operator=operator, remark=reason)
+        return True
+
+    def distributor_generate_cards(self, distributor_id, template_id, count, operator=""):
+        """批量生成卡密并扣款。返回 (ok, msg, data)。
+
+        顺序固定：报价校验 → pending 意图行 → 条件扣款 → 单条多行 INSERT → 批次收敛。
+        Database.execute() 每次调用都新建并关闭连接，BEGIN/COMMIT 跨调用彻底无效，
+        所以「单条条件 UPDATE + rowcount」是全系统唯一可信的串行点。
+        """
+        import pymysql
+        ph = _ph()
+        cfg = self._dist_cfg()
+        if not cfg["enabled"] or not cfg["generate_enabled"]:
+            return False, "分销渠道未开放生成卡密", None
+        ok, msg, quote = self.distributor_price_quote(distributor_id, template_id, count, cfg)
+        if not ok:
+            return False, msg, None
+        if quote["status"] != "approved":
+            return False, "账号未通过审核或已被停用", None
+        if not quote["enough"]:
+            return False, f"余额不足：本批需 {quote['settle_amount']} 元，当前余额 {quote['balance']} 元", None
+        distributor_id = quote["distributor_id"]
+        settle = _dec(quote["settle_amount"])
+        per_card = _dec(quote["unit_settle"])
+        tpl = self.get_distributor_template(template_id)
+        prefix = str(tpl.get("code_prefix") or "").strip().upper()
+        if len(prefix) != self.DIST_PREFIX_LEN:
+            return False, "模板卡密前缀非法，请联系管理员修正", None
+        if cfg["daily_card_max"] > 0:
+            today = self.distributor_today_card_count(distributor_id)
+            if today + int(count) > cfg["daily_card_max"]:
+                return False, f"今日已生成 {today} 张，再生成 {count} 张将超出每日上限 {cfg['daily_card_max']} 张", None
+
+        batch_no = self._dist_batch_no()
+        cur = self.execute(
+            f"""INSERT INTO distributor_batches
+                (batch_no, distributor_id, username, template_id, template_name, price_type, points, days,
+                 card_count, base_price, discount_rate, unit_settle, settle_amount, status, created_by)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'pending', {ph})""",
+            (batch_no, distributor_id, quote["username"], int(tpl["id"]), quote["template_name"],
+             quote["price_type"], int(tpl.get("points") or 0), int(tpl.get("days") or 0), int(count),
+             quote["base_price"], quote["discount_rate"], str(per_card), str(settle), operator)
+        )
+        batch_id = int(getattr(cur, "lastrowid", 0) or 0)
+        if not batch_id:
+            return False, "批次登记失败，未扣款", None
+
+        # 唯一原子扣款：余额不足、账号被停用、并发抢扣，全部由这一条语句挡下
+        cur = self.execute(
+            f"UPDATE distributors SET balance = balance - {ph}, spent_total = spent_total + {ph} "
+            f"WHERE id = {ph} AND status = 'approved' AND balance >= {ph}",
+            (str(settle), str(settle), distributor_id, str(settle))
+        )
+        if not cur or cur.rowcount == 0:
+            self.execute(
+                f"UPDATE distributor_batches SET status = 'failed', error_note = '扣款未生效（余额不足或状态变化）' "
+                f"WHERE id = {ph} AND status = 'pending'", (batch_id,)
+            )
+            return False, "余额不足或账号状态已变化，本批未扣款", None
+        balance_after = _dec((self.get_distributor(distributor_id) or {}).get("balance"))
+
+        created_by = f"fx:{quote['username']}"
+        codes = []
+        for _attempt in range(3):
+            codes = self._make_card_codes(prefix, int(count))
+            try:
+                self._dist_insert_cards(codes, batch_id, distributor_id, tpl, per_card, created_by)
+                break
+            except pymysql.IntegrityError:
+                continue
+            except Exception as e:
+                refunded = self._dist_refund(distributor_id, settle, batch_id, batch_no, operator, f"生成失败：{str(e)[:120]}")
+                return False, ("生成失败，已退回余额" if refunded else "生成失败，退款已由对账接管，请稍后核对余额"), None
+        else:
+            refunded = self._dist_refund(distributor_id, settle, batch_id, batch_no, operator, "卡密重复，生成失败")
+            return False, ("卡密撞号导致生成失败，已退回余额，请重试" if refunded else "卡密撞号导致生成失败，退款已由对账接管，请稍后核对余额"), None
+
+        cur = self.execute(
+            f"UPDATE distributor_batches SET status = 'generated' WHERE id = {ph} AND status = 'pending'", (batch_id,)
+        )
+        if not cur or cur.rowcount == 0:
+            # 卡已在库、钱已扣，是一致状态；对账器按「卡数满额」把批次补成 generated，
+            # 此处绝不能退款，否则就是白送卡密。只大声报错。
+            print(f"[分销生成] 批次 {batch_no} 状态被对账器改写，请人工核对（卡已生成 {count} 张）", flush=True)
+        self.distributor_add_log(distributor_id, quote["username"], "generate", -settle, balance_after,
+                                 batch_no=batch_no, operator=operator,
+                                 remark=f"{quote['template_name']}×{count}")
+        return True, f"已生成 {count} 张，扣款 {settle} 元", {
+            "batch_no": batch_no,
+            "batch_id": batch_id,
+            "codes": codes,
+            "count": int(count),
+            "unit_settle": str(per_card),
+            "settle_amount": str(settle),
+            "balance_after": str(balance_after),
+        }
+
+    def reconcile_distributor_batches(self, stale_minutes=5):
+        """收敛崩溃残留的 pending 批次。判定依据只有「批次下真实卡数」。
+
+        由后台线程定时调用，不在启动时跑；退款同样靠 pending→failed 的 rowcount 抢占，
+        所以重复调用不会重复退钱。
+        """
+        ph = _ph()
+        rows = self.fetchall(
+            f"SELECT * FROM distributor_batches WHERE status = 'pending' "
+            f"AND created_at < (NOW() - INTERVAL {ph} MINUTE) ORDER BY id ASC",
+            (max(1, int(stale_minutes or 5)),)
+        ) or []
+        out = {"repaired": [], "refunded": [], "inconsistent": [], "backfilled": []}
+        for batch in rows:
+            batch_id = int(batch["id"])
+            want = int(batch.get("card_count") or 0)
+            have = int((self.fetchone(
+                f"SELECT COUNT(*) cnt FROM card_keys WHERE batch_id = {ph}", (batch_id,)) or {}).get("cnt") or 0)
+            if want > 0 and have >= want:
+                # 钱已扣、卡已全：只是没来得及翻状态，补齐即可
+                cur = self.execute(
+                    f"UPDATE distributor_batches SET status = 'generated', error_note = {ph} "
+                    f"WHERE id = {ph} AND status = 'pending'", ("对账补齐", batch_id))
+                if cur and cur.rowcount:
+                    out["repaired"].append(batch["batch_no"])
+                    if not self.distributor_has_log(batch["distributor_id"], "generate", batch_no=batch["batch_no"]):
+                        dist = self.get_distributor(batch["distributor_id"]) or {}
+                        self.distributor_add_log(int(batch["distributor_id"]), dist.get("username", ""), "generate",
+                                                 -_dec(batch.get("settle_amount")), _dec(dist.get("balance")),
+                                                 batch_no=batch["batch_no"], operator="reconcile", remark="对账补记")
+                continue
+            if have == 0:
+                # 抢占与退款都由 _dist_refund 的 pending→failed rowcount 单点裁决；
+                # 这里先抢一次会让它抢不到自己，钱就静默留在已扣状态。
+                if self._dist_refund(int(batch["distributor_id"]), _dec(batch.get("settle_amount")),
+                                     batch_id, batch["batch_no"], "reconcile", "对账退回：无卡密"):
+                    out["refunded"].append(batch["batch_no"])
+                continue
+            out["inconsistent"].append(batch["batch_no"])
+            self.execute(
+                f"UPDATE distributor_batches SET error_note = {ph} WHERE id = {ph} AND status = 'pending'",
+                (f"数据不一致：应有 {want} 张，实有 {have} 张", batch_id)
+            )
+            print(f"[分销对账] 不一致批次 {batch['batch_no']}：期望 {want} 张，实际 {have} 张，需人工处理", flush=True)
+
+        # 另一类残留：批次已经 generated、钱也扣了，但崩在第 5 步之前，流水没落下。
+        # 不补记的话「流水合计 vs 余额」会一直对不上，而这个缺口只能靠对账器收。
+        orphans = self.fetchall(
+            f"SELECT b.* FROM distributor_batches b "
+            f"LEFT JOIN distributor_balance_logs l ON l.distributor_id = b.distributor_id "
+            f"AND l.type = 'generate' AND l.batch_no = b.batch_no "
+            f"WHERE b.status = 'generated' AND l.id IS NULL "
+            f"AND b.created_at > (NOW() - INTERVAL 7 DAY) ORDER BY b.id ASC LIMIT 200"
+        ) or []
+        for batch in orphans:
+            dist = self.get_distributor(int(batch["distributor_id"])) or {}
+            self.distributor_add_log(int(batch["distributor_id"]), dist.get("username", ""), "generate",
+                                     -_dec(batch.get("settle_amount")), _dec(dist.get("balance")),
+                                     batch_no=batch["batch_no"], operator="reconcile", remark="对账补记扣款")
+            out["backfilled"].append(batch["batch_no"])
+        if out["backfilled"]:
+            print(f"[分销对账] 补记缺失扣款流水：{out['backfilled']}", flush=True)
+        return out
+
+    # ---------- 查询与概览 ----------
+    def list_distributor_batches(self, distributor_id=0, page=1, page_size=20):
+        ph = _ph()
+        where, params = [], []
+        if distributor_id:
+            where.append(f"distributor_id = {ph}")
+            params.append(int(distributor_id))
+        where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+        total = int((self.fetchone(
+            f"SELECT COUNT(*) cnt FROM distributor_batches {where_sql}", params) or {}).get("cnt") or 0)
+        page_size = max(1, min(int(page_size or 20), 200))
+        offset = (max(1, int(page or 1)) - 1) * page_size
+        rows = self.fetchall(
+            f"SELECT * FROM distributor_batches {where_sql} ORDER BY id DESC LIMIT {ph} OFFSET {ph}",
+            params + [page_size, offset]
+        ) or []
+        return {"total": total, "rows": rows}
+
+    def list_distributor_cards(self, distributor_id=0, status="", batch_no="", page=1, page_size=20):
+        ph = _ph()
+        where = [f"c.source = {ph}"]
+        params = ["distributor"]
+        if distributor_id:
+            where.append(f"c.distributor_id = {ph}")
+            params.append(int(distributor_id))
+        if status:
+            where.append(f"c.status = {ph}")
+            params.append(status)
+        if batch_no:
+            where.append(f"c.batch_id = (SELECT id FROM distributor_batches WHERE batch_no = {ph})")
+            params.append(batch_no)
+        where_sql = "WHERE " + " AND ".join(where)
+        total = int((self.fetchone(f"SELECT COUNT(*) cnt FROM card_keys c {where_sql}", params) or {}).get("cnt") or 0)
+        page_size = max(1, min(int(page_size or 20), 500))
+        offset = (max(1, int(page or 1)) - 1) * page_size
+        rows = self.fetchall(
+            f"SELECT c.*, b.batch_no, b.template_name FROM card_keys c "
+            f"LEFT JOIN distributor_batches b ON c.batch_id = b.id {where_sql} "
+            f"ORDER BY c.id DESC LIMIT {ph} OFFSET {ph}",
+            params + [page_size, offset]
+        ) or []
+        return {"total": total, "rows": rows}
+
+    def distributor_summary(self, distributor_id):
+        """门户概览：余额、累计、未用卡密数、当日已生成、流水对账差额。"""
+        ph = _ph()
+        distributor_id = int(distributor_id or 0)
+        dist = self.get_distributor(distributor_id)
+        if not dist:
+            return None
+        stat = self.fetchone(
+            f"SELECT "
+            f"SUM(CASE WHEN status = 'unused' THEN 1 ELSE 0 END) unused_cnt, "
+            f"SUM(CASE WHEN status = 'used' THEN 1 ELSE 0 END) used_cnt, "
+            f"SUM(CASE WHEN status = 'unused' THEN grant_points ELSE 0 END) unused_points, "
+            f"SUM(CASE WHEN status = 'unused' THEN grant_days ELSE 0 END) unused_days "
+            f"FROM card_keys WHERE distributor_id = {ph} AND source = 'distributor'",
+            (distributor_id,)
+        ) or {}
+        ledger = _dec((self.fetchone(
+            f"SELECT COALESCE(SUM(amount), 0) s FROM distributor_balance_logs WHERE distributor_id = {ph}",
+            (distributor_id,)) or {}).get("s"))
+        balance = _dec(dist.get("balance"))
+        return {
+            "distributor": dist,
+            "balance": str(balance),
+            "unused_count": int(stat.get("unused_cnt") or 0),
+            "used_count": int(stat.get("used_cnt") or 0),
+            "unused_points": int(stat.get("unused_points") or 0),
+            "unused_days": int(stat.get("unused_days") or 0),
+            "today_cards": self.distributor_today_card_count(distributor_id),
+            "ledger_sum": str(ledger),
+            # 流水合计与余额对不上说明有旁路改钱，必须让后台看见
+            "ledger_drift": str(balance - ledger),
+        }
+
+    # 门户只回这些列。distributors / card_keys 都是 SELECT * 读的，
+    # 将来加内部字段（成本口径、风控备注）不会被顺手带给代理商。
+    # 故意不含 id：前端拿不到代理商 ID，也就没有「把 id 传回来」这条越权路径。
+    DIST_PORTAL_FIELDS = ("username", "name", "contact", "balance", "discount_rate", "status",
+                          "support_note", "shop_url", "apply_reason", "audit_note", "reject_reason",
+                          "recharge_total", "spent_total", "withdraw_total", "created_at")
+
+    def distributor_portal_me(self, username):
+        """门户 /api/distributor/me：白名单列 + 概览。pending/rejected 也要能渲染，所以不抛错。"""
+        dist = self.get_distributor_by_username((username or "").strip())
+        if not dist:
+            return None
+        me = {k: dist.get(k) for k in self.DIST_PORTAL_FIELDS}
+        for money in ("balance", "recharge_total", "spent_total", "withdraw_total"):
+            me[money] = str(_dec(me.get(money)))
+        # 只给推导出来的渠道码，不给 id 本身：门户拿不到主键，就没有「把 id 传回来」这条路
+        me["script_code"] = self.distributor_script_code(dist)
+        return {"distributor": me, "summary": self.distributor_summary(int(dist["id"] or 0))}
+
+    @staticmethod
+    def distributor_script_code(dist):
+        """纯净版水印里的渠道码。构建和门户展示共用这一处推导，免得两边数字对不上。"""
+        return "D%d" % int((dist or {}).get("id") or 0)
+
+    def distributor_portal_cfg(self):
+        """门户可见的配置子集。基准单价不在其中：它只能从模板报价间接推出，
+        单列一份等于多一个「以后不该暴露的东西」的出口。"""
+        cfg = self._dist_cfg()
+        return {
+            "enabled": bool(cfg["enabled"]),
+            "apply_enabled": bool(cfg["apply_enabled"]),
+            "generate_enabled": bool(cfg["generate_enabled"]),
+            "withdraw_enabled": bool(cfg["withdraw_enabled"]),
+            "max_batch": cfg["max_batch"],
+            "daily_card_max": cfg["daily_card_max"],
+            "min_recharge": str(cfg["min_recharge"]),
+            "min_withdraw": str(cfg["min_withdraw"]),
+            "script_name": cfg["script_name"],
+        }
+
     # ========== 卡密系统 ==========
     def generate_card_keys(self, plan_id, count=1, creator=""):
         ph = _ph()
         plan = self.get_payment_plan(plan_id)
         if not plan:
             return False, "套餐不存在"
-        codes = []
-        import secrets, string
-        for _ in range(count):
-            code = "XS" + "".join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(14))
-            codes.append(code)
+        count = max(1, min(int(count or 1), 1000))
+        codes = self._make_card_codes("XS", count)
         import pymysql
+        # 单条多行 INSERT：逐张插入时中途撞号会留下半批已生成的卡。
+        # 占位符个数必须和列数一致，少一个会让整条 INSERT 参数错位。
+        row = f"({ph}, {ph}, {ph}, {ph})"
         try:
-            for code in codes:
-                self.execute(
-                    f"INSERT INTO card_keys (code, plan_id, created_by) VALUES ({ph}, {ph}, {ph})",
-                    (code, plan_id, creator)
-                )
+            self.execute(
+                "INSERT INTO card_keys (code, plan_id, created_by, source) VALUES " + ", ".join([row] * count),
+                tuple(v for code in codes for v in (code, plan_id, creator, "platform"))
+            )
         except pymysql.IntegrityError:
             return False, "卡密生成失败（重复）"
-        return True, f"已生成 {len(codes)} 张卡密"
+        return True, f"已生成 {count} 张卡密"
 
-    def list_card_keys(self, status="", plan_id=0, page=1, page_size=20):
+    def list_card_keys(self, status="", plan_id=0, page=1, page_size=20, source=""):
         ph = _ph()
         where = []
         params = []
@@ -1934,68 +3289,143 @@ class Database:
         if plan_id:
             where.append(f"c.plan_id = {ph}")
             params.append(plan_id)
+        if source:
+            where.append(f"c.source = {ph}")
+            params.append(source)
         where_sql = ("WHERE " + " AND ".join(where)) if where else ""
         total = self.fetchone(f"SELECT COUNT(*) cnt FROM card_keys c {where_sql}", params)["cnt"]
         offset = (page - 1) * page_size
+        # 分销卡 plan_id=0，只 join payment_plans 会显示成空套餐名，必须同时取批次/代理商名
         rows = self.fetchall(
-            f"SELECT c.*, p.name plan_name, p.price, p.plan_type FROM card_keys c "
-            f"LEFT JOIN payment_plans p ON c.plan_id = p.id {where_sql} ORDER BY c.id DESC LIMIT {ph} OFFSET {ph}",
+            f"SELECT c.*, p.name plan_name, p.price, p.plan_type, b.template_name, b.batch_no, du.name distributor_name "
+            f"FROM card_keys c "
+            f"LEFT JOIN payment_plans p ON c.plan_id = p.id "
+            f"LEFT JOIN distributor_batches b ON c.batch_id = b.id "
+            f"LEFT JOIN distributors du ON c.distributor_id = du.id {where_sql} "
+            f"ORDER BY c.id DESC LIMIT {ph} OFFSET {ph}",
             params + [page_size, offset]
         )
         return {"total": total, "rows": rows or []}
 
     def activate_card_key(self, code, username):
+        """卡密激活。权益只读卡密行上的快照，绝不回查任何价目表。
+
+        Database.execute() 每次调用独立开关连接，跨调用的 BEGIN/COMMIT 是彻底无效的 no-op，
+        因此并发串行只靠「status='unused' 的 CAS + rowcount」，失败后用显式补偿回退。
+        """
         ph = _ph()
         row = self.fetchone(f"SELECT * FROM card_keys WHERE code = {ph}", (code,))
         if not row:
             return False, "卡密不存在"
         if row["status"] != "unused":
             return False, "卡密已被使用"
-        plan_id = row["plan_id"]
-        plan = self.get_payment_plan(plan_id)
-        if not plan:
-            return False, "关联套餐不存在"
-        plan_type = plan.get("type") or "points"
-        points = int(plan.get("points") or 0)
-        days = int(plan.get("days") or 30)
-        self.execute("BEGIN")
-        try:
-            cur = self.execute(
-                f"UPDATE card_keys SET status = 'used', used_by = {ph}, used_at = CURRENT_TIMESTAMP WHERE id = {ph} AND status = 'unused'",
-                (username, row["id"])
-            )
-            if cur.rowcount == 0:
-                self.execute("ROLLBACK")
-                return False, "卡密已被使用"
-            if plan_type == "monthly":
-                self.extend_user_membership(username, days, f"卡密激活：{code}")
-            else:
-                # 走统一入口：自动记流水、建批次（原先直接 UPDATE，绕过流水与批次）
-                self.adjust_user_points(username, points, f"卡密激活：{code}", lot_source="card")
-            self.execute("COMMIT")
+
+        source = row.get("source") or "platform"
+        is_fx = source == "distributor"
+        plan_id = int(row.get("plan_id") or 0)
+
+        if is_fx:
+            me = self.get_distributor_by_username(username)
+            if me and int(me.get("id") or 0) == int(row.get("distributor_id") or 0):
+                return False, "不能兑换自己生成的卡密"
+            batch = self.fetchone(
+                f"SELECT template_name FROM distributor_batches WHERE id = {ph}",
+                (int(row.get("batch_id") or 0),)
+            ) or {}
+            name = batch.get("template_name") or "卡密"
+            plan_type = row.get("grant_type") or "points"
+            points = int(row.get("grant_points") or 0)
+            days = int(row.get("grant_days") or 0)
+            # 代理卡的成交价是代理商与平台的私事，不进入面向终端用户的订单金额，
+            # 也顺带让漏判的退款算成 ¥0。
+            price = 0.00
+        else:
+            plan = self.get_payment_plan(plan_id)
+            if not plan:
+                return False, "关联套餐不存在"
             name = plan.get("name") or ""
+            # 列名是 plan_type；原先读 plan.get("type") 恒为 None，包月卡一直掉进题数分支发 0 题
+            plan_type = plan.get("plan_type") or "points"
+            points = int(plan.get("points") or 0)
+            days = int(plan.get("days") or 30)
+            price = float(plan.get("price") or 0)
+
+        # 订单号带毫秒才可能被 calculate_refund 精确归属；hash() 按进程随机化，故用 md5 前 4 位。
+        # 历史 CAR 行的毫秒已丢失无法回填，那批继续走近似退款，不为它加启动迁移。
+        order_no = f"CAR{int(time.time() * 1000)}{hashlib.md5(str(code).encode('utf-8')).hexdigest()[:4].upper()}"
+
+        cur = self.execute(
+            f"UPDATE card_keys SET status = 'used', used_by = {ph}, used_at = CURRENT_TIMESTAMP, "
+            f"activated_order_no = {ph} WHERE id = {ph} AND status = 'unused'",
+            (username, order_no, row["id"])
+        )
+        if not cur or cur.rowcount == 0:
+            return False, "卡密已被使用"
+
+        # 先落订单行：权益发放抛异常时才有对象可标 cancelled
+        try:
             self.execute(
-                f"INSERT INTO usage_logs (username, delta_points, balance_after, reason) VALUES ({ph}, 0, 0, {ph})",
-                (username, f"卡密激活：{name} ({code})")
+                f"""INSERT IGNORE INTO payment_orders (order_no, username, plan_id, plan_name, plan_type, price, points, days, status, pay_method, paid_at)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'paid', 'card', CURRENT_TIMESTAMP)""",
+                (order_no, username, plan_id, name, plan_type, price, points, days)
             )
-            # 写入支付订单记录，便于用户端消费记录展示
-            try:
-                order_no = f"CAR{int(time.time()*1000)}{abs(hash(code)) % 10000:04d}"
+        except Exception as e:
+            self._revert_card_activation(row["id"], username, order_no)
+            return False, f"激活失败，卡密未消耗：{str(e)[:80]}"
+
+        try:
+            if plan_type == "monthly":
+                ok, msg = self.extend_user_membership(username, days, f"卡密激活：{name}")
+                if not ok:
+                    raise RuntimeError(msg)
+                # extend_user_membership 不写流水，包月这分支自己补一行
                 self.execute(
-                    f"""INSERT IGNORE INTO payment_orders (order_no, username, plan_id, plan_name, plan_type, price, points, days, status, pay_method, paid_at)
-                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'paid', 'card', CURRENT_TIMESTAMP)""",
-                    (order_no, username, plan_id, name, plan_type, float(plan.get("price") or 0), points, days)
+                    f"INSERT INTO usage_logs (username, delta_points, balance_after, reason, question_hash, order_no) "
+                    f"VALUES ({ph}, 0, 0, {ph}, {ph}, {ph})",
+                    (username, f"卡密激活：{name}", "", order_no)
                 )
-            except Exception:
-                pass
-            today = datetime.now().strftime("%Y-%m-%d")
+            else:
+                # 走统一入口：自动记流水、建批次，并把 order_no 传给 point_lots 以便按批次追溯
+                ok, msg = self.adjust_user_points(
+                    username, points, f"卡密激活：{name}", order_no=order_no, lot_source="card"
+                )
+                if not ok:
+                    raise RuntimeError(msg)
+        except Exception as e:
+            self._revert_card_activation(row["id"], username, order_no)
+            return False, f"激活失败，卡密未消耗：{str(e)[:80]}"
+
+        if is_fx:
+            dist = self.get_distributor(int(row.get("distributor_id") or 0)) or {}
+            dist_username = dist.get("username") or ""
+            # 渠道标记只用于选服务端提示文案，不参与权益/额度/计价；单向粘住，不覆盖人工纠正过的值
+            self.execute(
+                f"UPDATE users SET channel = 'distributor', channel_ref = {ph} "
+                f"WHERE username = {ph} AND channel = 'platform'",
+                (dist_username, username)
+            )
+
+        if price > 0 and not is_fx:
             admin = self.get_admin_config() or {}
             if int(admin.get("referral_enabled") or 0):
-                self._settle_first_order_commission(username, f"card_{code}", float(plan.get("price") or 0))
-            return True, f"卡密激活成功，已获得「{name}」"
-        except Exception as e:
-            self.execute("ROLLBACK")
-            return False, f"激活失败：{str(e)}"
+                self._settle_first_order_commission(username, f"card_{code}", price)
+        return True, f"卡密激活成功，已获得「{name}」"
+
+    def _revert_card_activation(self, card_id, username, order_no):
+        """权益发放失败后的补偿：把卡放回未使用、合成订单作废。
+
+        两条语句各自带条件守门，重放安全，不依赖事务。
+        """
+        ph = _ph()
+        self.execute(
+            f"UPDATE card_keys SET status = 'unused', used_by = '', used_at = NULL, activated_order_no = '' "
+            f"WHERE id = {ph} AND status = 'used' AND used_by = {ph}",
+            (card_id, username)
+        )
+        self.execute(
+            f"UPDATE payment_orders SET status = 'cancelled' WHERE order_no = {ph} AND status = 'paid'",
+            (order_no,)
+        )
 
     def _revoke_user_membership(self, username, days):
         """撤销用户包月天数（从 member_until 向前减少）"""
@@ -4123,12 +5553,24 @@ class Database:
 
     def reject_withdrawal(self, wid, reason):
         ph = _ph()
-        row = self.fetchone(f"SELECT username, amount FROM withdrawals WHERE id={ph} AND status='pending'", (wid,))
+        row = self.fetchone(f"SELECT username, amount FROM withdrawals WHERE id={ph}", (wid,))
         if not row:
             return False
-        self.execute(f"UPDATE withdrawals SET status='rejected', reject_reason={ph}, reviewed_at=CURRENT_TIMESTAMP WHERE id={ph}", (reason, wid))
-        # 退还余额
-        self.execute(f"UPDATE users SET commission_balance = commission_balance + {ph} WHERE username = {ph}", (row["amount"], row["username"]))
+        # 抢占只认这条 UPDATE 的 rowcount：先读后改会让两个管理员各退一次钱
+        cur = self.execute(
+            f"UPDATE withdrawals SET status='rejected', reject_reason={ph}, reviewed_at=CURRENT_TIMESTAMP "
+            f"WHERE id={ph} AND status='pending'", (reason, wid)
+        )
+        if not cur or cur.rowcount == 0:
+            return False
+        back = self.execute(
+            f"UPDATE users SET commission_balance = commission_balance + {ph} WHERE username = {ph}",
+            (row["amount"], row["username"])
+        )
+        if not back or back.rowcount == 0:
+            # 单子已判 rejected 但钱没退回佣金余额，只有人工补；静默返回 True 会把漏洞藏起来
+            print(f"[提现][ERROR] 驳回退款失败 withdrawal={wid} user={row['username']} "
+                  f"amount={row['amount']}，需人工补回佣金余额", flush=True)
         return True
 
     def referral_stats(self):

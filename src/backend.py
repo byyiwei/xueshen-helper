@@ -23,9 +23,10 @@ import base64
 import secrets
 import traceback
 import asyncio
+import importlib.util
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from difflib import SequenceMatcher
-from urllib.parse import parse_qs, urlparse, urlencode
+from urllib.parse import parse_qs, urlparse, urlencode, quote
 from urllib.request import urlopen
 from email.mime.text import MIMEText
 from email.utils import formataddr
@@ -46,10 +47,34 @@ from database import db, hash_password, verify_password, is_legacy_password, get
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ADMIN_HTML_FILE = os.path.join(BASE_DIR, "static", "admin.html")
 USER_HTML_FILE = os.path.join(BASE_DIR, "static", "user.html")
+DIST_HTML_FILE = os.path.join(BASE_DIR, "static", "distributor.html")
 USER_SCRIPT_FILE = os.path.join(BASE_DIR, "scripts", "xueshen.js")
 XUESHEN_GF_FILE = os.path.join(BASE_DIR, "scripts", "xueshen-gf.js")
 XUESHEN_SC_FILE = os.path.join(BASE_DIR, "scripts", "xueshen-sc.js")
 INTRO_HTML_FILE = os.path.join(BASE_DIR, "intro", "index.html")
+
+# 纯净版只按这张白名单构建：?file= 参数永远是字典键，不拼路径
+DIST_SCRIPT_FILES = {"xueshen-sc": XUESHEN_SC_FILE, "xueshen-gf": XUESHEN_GF_FILE}
+
+
+def _load_fx_builder():
+    """按文件加载 scripts/build_distributor.py（该目录不是包）。
+
+    加载失败只让 /api/distributor/script 报 503，不能让整站起不来：
+    漏传这一个文件就该是下载功能不可用，而不是把答题主链路一起打挂。
+    """
+    path = os.path.join(BASE_DIR, "scripts", "build_distributor.py")
+    try:
+        spec = importlib.util.spec_from_file_location("fx_build_distributor", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    except Exception:
+        print(f"[纯净版] 构建器加载失败 {path}: {traceback.format_exc()}", flush=True)
+        return None
+
+
+fx_build = _load_fx_builder()
 
 
 USER_SESSION_FILE = os.path.join(BASE_DIR, "config", "user_session.json")
@@ -176,6 +201,12 @@ def build_user_profile(username):
         "commission_balance": float(ent.get("commission_balance") or 0)
     }
 
+def is_distributor_channel(ent):
+    """该账号是否由代理商卡密激活。只用来选提示文案，不参与权益/额度/计价判定，
+    所以渠道标错了也不影响钱，最差是文案指向错的服务方。
+    """
+    return bool(ent) and str(ent.get("channel") or "platform") == "distributor"
+
 def consume_answer_quota(username, question_hash=""):
     ent = db.get_user_entitlement(username)
     if not ent:
@@ -185,6 +216,8 @@ def consume_answer_quota(username, question_hash=""):
     if ent.get("active_member"):
         return True, "包月权益生效，本题不扣点", ent
     if int(ent.get("points_balance") or 0) <= 0:
+        if is_distributor_channel(ent):
+            return False, "题数余额不足，请联系您的服务方获取卡密后在脚本内兑换", ent
         return False, "题数余额不足，请到用户中心购买点数或包月套餐", ent
     ok, balance = db.adjust_user_points(username, -1, "答题扣点", question_hash)
     ent["points_balance"] = balance if ok else int(ent.get("points_balance") or 0)
@@ -486,7 +519,75 @@ def _plan_business_type(plan):
         if period in ("custom_model_monthly", "custom_model_lifetime"):
             return period
         return "custom_model"
+    if pt == "dist_recharge":
+        return "代理商余额充值"
     return "点数充值"
+
+def _amount_to_cent(value, fen=False):
+    """把金额换成分（int）。fen=True 表示来的本来就是分（杉德 12 位补零）。解析不了返回 None。"""
+    try:
+        text = str(value).strip()
+        if not text:
+            return None
+        return int(text) if fen else int(round(float(text) * 100))
+    except Exception:
+        return None
+
+def _recharge_notify_amount_ok(order, cb_amount, fen=False):
+    """代理商余额充值是「钱换余额」，回调实付金额必须等于下单金额。
+
+    各网关金额字段名和单位都不一样（支付宝 total_amount 元、支付FM amount 元、
+    易支付 money 元、杉德 totalAmount 分），统一给老套餐加校验会牵连既有通道，
+    所以只对新类型关死。字段缺失时放行并大声告警：宁可放行也不能把已付的订单
+    卡在 pending，那是「用户付了钱、系统不给货」的另一种事故。
+    """
+    if (order or {}).get("plan_type") != "dist_recharge":
+        return True
+    got = _amount_to_cent(cb_amount, fen=fen)
+    if got is None:
+        print(f"[充值回调] 网关未回传金额，跳过校验 order={order.get('order_no')} "
+              f"订单价={order.get('price')}", flush=True)
+        return True
+    want = _amount_to_cent(order.get("price"))
+    if want is None or got != want:
+        print(f"[充值回调] 金额不符，拒绝入账 order={order.get('order_no')} "
+              f"回调={cb_amount} 订单={order.get('price')}", flush=True)
+        return False
+    return True
+
+def _pick_pay_channel(admin, pay_method):
+    """按权重挑一个可用支付通道，返回 (pay_channel, pay_type)；无可用通道返回 (None, None)。
+
+    普通购买和代理商余额充值共用这一份清单，免得两处通道判断各自漂移。
+    """
+    available = []  # [(channel, pay_type, weight), ...]
+    if pay_method == "wechat":
+        if admin.get("wechat_enabled") and admin.get("wechat_app_id") and admin.get("wechat_mch_id"):
+            available.append(("wechat", "wechat", int(admin.get("wechat_weight") or 100)))
+        if admin.get("zhifufm_enabled") and admin.get("zhifufm_api_url") and admin.get("zhifufm_merchant_num") and admin.get("zhifufm_secret"):
+            available.append(("zhifufm", "sandpayh5", int(admin.get("zhifufm_weight") or 100)))
+        if admin.get("sandpay_enabled") and admin.get("sandpay_mid") and admin.get("sandpay_api_url"):
+            available.append(("sandpay", "wxpay", int(admin.get("sandpay_weight") or 100)))
+        if admin.get("epay_enabled") and admin.get("epay_api_url") and admin.get("epay_pid") and admin.get("epay_key"):
+            available.append(("epay", "wxpay", int(admin.get("epay_weight") or 100)))
+    elif pay_method == "alipay":
+        if admin.get("alipay_enabled") and admin.get("alipay_app_id") and admin.get("alipay_private_key"):
+            available.append(("alipay", "alipay", int(admin.get("alipay_weight") or 100)))
+        if admin.get("zhifufm_enabled") and admin.get("zhifufm_api_url") and admin.get("zhifufm_merchant_num") and admin.get("zhifufm_secret"):
+            available.append(("zhifufm", "sandpayh5", int(admin.get("zhifufm_weight") or 100)))
+        if admin.get("sandpay_enabled") and admin.get("sandpay_mid") and admin.get("sandpay_api_url"):
+            available.append(("sandpay", "alipay", int(admin.get("sandpay_weight") or 100)))
+        if admin.get("epay_enabled") and admin.get("epay_api_url") and admin.get("epay_pid") and admin.get("epay_key"):
+            available.append(("epay", "alipay", int(admin.get("epay_weight") or 100)))
+    if not available:
+        return None, None
+    # 按权重随机选择通道（权重为0则不参与）
+    weighted = [(ch, pt) for ch, pt, w in available if w > 0]
+    if not weighted:
+        # 所有权重都为0，降级为等概率
+        weighted = [(ch, pt) for ch, pt, _ in available]
+    weights = [w for _, _, w in available if w > 0] or [1] * len(weighted)
+    return random.choices(weighted, weights=weights, k=1)[0]
 
 def create_alipay_precreate_order(username, plan, skip_enabled_check=False):
     business_type = _plan_business_type(plan)
@@ -511,6 +612,8 @@ def query_and_apply_alipay_order(order_no):
     res = alipay_api_call("alipay.trade.query", {"out_trade_no": order_no})
     trade_status = res.get("trade_status") or ""
     if trade_status in ("TRADE_SUCCESS", "TRADE_FINISHED"):
+        if not _recharge_notify_amount_ok(order, res.get("total_amount", "")):
+            return False, "充值金额与订单不符，未入账", order
         ok, msg = db.apply_paid_order(order_no)
         return ok, msg, db.get_order(order_no)
     if trade_status in ("WAIT_BUYER_PAY", ""):
@@ -1710,6 +1813,7 @@ def get_question_bank_match(question):
     candidates = [c for c in candidates if c.get("answer")]
     if _is_multiple_choice_type(current_type):
         candidates = [c for c in candidates if not _is_truncated_multi_answer(question, c.get("answer", ""))]
+    candidates = [c for c in candidates if not _is_garbage_bank_answer(c.get("answer", ""), question)]
     elapsed = (time.time() - _t0) * 1000
     if not candidates:
         print(f"[题库匹配] 未命中 {mkey[:12]} type={current_type} ({elapsed:.1f}ms)", flush=True)
@@ -1760,20 +1864,97 @@ def get_bank_match_all(question):
         print(f"[首页搜题] 命中 {len(rows)} 条 {mkey[:12]} ({elapsed:.1f}ms)", flush=True)
     return rows, mkey, elapsed
 
+def _collect_html_image_urls(info):
+    """从题干/选项 HTML 里抽出 http(s) 图片地址，供 images 数组为空时补发给多模态模型。"""
+    blobs = [info.get("question_text") or ""]
+    blobs.extend(info.get("options") or [])
+    urls = []
+    seen = set()
+    for blob in blobs:
+        for raw in _IMG_SRC_RE.findall(str(blob or "")):
+            u = str(raw or "").strip()
+            if not u or u.startswith("data:") or u.startswith("blob:"):
+                continue
+            key = _canonical_img_url(u)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            urls.append(u)
+    return urls
+
+
+def _answer_items(answer):
+    items = _parse_answer_list(answer)
+    if items is not None:
+        return items
+    text = str(answer or "").strip()
+    return [text] if text else []
+
+
+def _is_image_option_answer(answer, question=None):
+    """选项本身是图片时，答案也会是 <img>，这是有效内容。"""
+    items = _answer_items(answer)
+    if not items or not all(is_pure_image_answer(x) for x in items):
+        return False
+    if question is None:
+        return _parse_answer_list(answer) is not None
+    options = extract_options_from_question(question)
+    if not options:
+        return _parse_answer_list(answer) is not None
+    opt_set = {str(o).strip() for o in options if str(o).strip()}
+    return all(it in opt_set for it in items)
+
+
+def _is_garbage_bank_answer(answer, question=None):
+    """题库不应复用的垃圾答案：空、纯图、看图失败提示、大段思考过程。"""
+    text = str(answer or "").strip()
+    if not text:
+        return True
+    low = text.lower()
+    markers = (
+        "thinking process", "analyze the request", "无法识别图片", "图片无法加载",
+        "[图片无法加载]", "无法看到图片", "cannot see the image", "i can't see",
+        "i cannot see", "as an ai", "作为ai", "作为一名ai", "无法作答",
+        "<|tool_call", "tool_calls_section", "看不清图片", "图片看不清",
+        "图片加载失败", "我无法看到图片", "我无法识别图片",
+    )
+    if any(m in low or m in text for m in markers):
+        return True
+    if len(text) > 400 and not (text.startswith("[") and text.endswith("]")):
+        if re.search(r"therefore|分析过程|解题步骤|思考过程|final answer", text, re.I):
+            return True
+    if is_pure_image_answer(text) or (
+        _parse_answer_list(text) is not None and all(is_pure_image_answer(x) for x in _answer_items(text))
+    ):
+        return True
+    return False
+
+
 def is_pure_image_answer(answer):
-    """判断答案是否为纯图片（没有有效文字内容）
-    
-    纯图片答案对用户没有意义，不应该写入题库。
+    """判断答案是否为纯图片（没有有效文字内容）。
+
+    必须先确认答案里真的有图片，否则单字母/对错等短答案会被误伤。
     """
     if not answer:
         return False
     ans = str(answer).strip()
     if not ans:
         return False
-    # 去掉所有 <img ... /> 标签
-    text_only = re.sub(r'<img[^>]*>', '', ans, flags=re.I)
-    # 去掉空白和标点
-    text_only = re.sub(r'[\s\u3000\r\n\t，。！？、；：,.!?;:\-—_【】\[\]（）()\"\'“”‘’《》]', '', text_only)
+    has_img_tag = bool(re.search(r"<img\b", ans, flags=re.I))
+    has_data_image = bool(re.search(r"data:image/", ans, flags=re.I))
+    is_bare_img_url = bool(re.fullmatch(
+        r"https?://\S+\.(?:png|jpe?g|gif|webp|bmp|svg)(?:\?\S*)?",
+        ans, flags=re.I,
+    ))
+    if not (has_img_tag or has_data_image or is_bare_img_url):
+        return False
+    text_only = re.sub(r"<img[^>]*>", "", ans, flags=re.I)
+    text_only = re.sub(r"data:image/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+", "", text_only, flags=re.I)
+    text_only = re.sub(
+        r"https?://[^\s<>\"']+\.(?:png|jpe?g|gif|webp|bmp|svg)(?:\?[^\s<>\"']*)?",
+        "", text_only, flags=re.I,
+    )
+    text_only = re.sub(r"[\s\u3000\r\n\t，。！？、；：,.!?;:\-—_【】\[\]（）()\"'“”‘’《》]", "", text_only)
     return len(text_only.strip()) < 2
 
 def save_question_bank_answer(question, answer, model_name="", provider_name=""):
@@ -1782,9 +1963,8 @@ def save_question_bank_answer(question, answer, model_name="", provider_name="")
     if is_test_question_for_bank(question):
         print("[题库入库] 测试题已跳过，不写入题库", flush=True)
         return
-    # 质量校验：纯图片答案不入库（用户看不到有效答案）
-    if is_pure_image_answer(answer):
-        print(f"[题库入库] 纯图片答案跳过，不写入题库 model={model_name}", flush=True)
+    if _is_garbage_bank_answer(answer, question):
+        print(f"[题库入库] 垃圾答案跳过，不写入题库 model={model_name} answer={str(answer)[:80]}", flush=True)
         return
     if _is_truncated_multi_answer(question, answer):
         print(f"[题库入库] 多选答案不完整，跳过入库 model={model_name} answer={str(answer)[:80]}", flush=True)
@@ -1859,6 +2039,79 @@ def _is_truncated_multi_answer(question, answer):
         return False
     return True
 
+def _img_file_keys(html_or_url):
+    """抽出图片 URL 的末段文件名（去扩展名），用于同一张图的多种 CDN 形态比对。"""
+    text = str(html_or_url or "")
+    urls = _IMG_SRC_RE.findall(text)
+    if not urls:
+        s = text.strip()
+        if re.match(r"https?://", s, re.I):
+            urls = [s]
+    keys = []
+    for u in urls:
+        c = _canonical_img_url(u)
+        if not c:
+            continue
+        keys.append(c.split("/")[-1])
+    return [k for k in keys if k]
+
+
+def _img_keys_match(a_keys, b_keys):
+    for a in a_keys or []:
+        for b in b_keys or []:
+            if a == b or (len(a) >= 8 and len(b) >= 8 and (a in b or b in a)):
+                return True
+    return False
+
+
+def _map_image_answer_to_letters(question, answer):
+    """把 <img src> / 图片 URL 答案映射成 A / A,B，方便脚本按选项序号勾选。"""
+    options = extract_options_from_question(question)
+    if not options:
+        return None
+    items = _answer_items(answer)
+    if not items:
+        return None
+    if not all(is_pure_image_answer(x) or _IMG_SRC_RE.search(str(x or "")) or re.match(r"https?://", str(x or "").strip(), re.I) for x in items):
+        return None
+    letters = []
+    for item in items:
+        ikeys = _img_file_keys(item)
+        if not ikeys:
+            return None
+        found = None
+        for i, opt in enumerate(options):
+            if _img_keys_match(ikeys, _img_file_keys(opt)):
+                found = chr(65 + i)
+                break
+        if not found:
+            return None
+        if found not in letters:
+            letters.append(found)
+    if not letters:
+        return None
+    return ",".join(letters) if len(letters) > 1 else letters[0]
+
+
+def _letters_to_option_answer(letter_text, options):
+    """把纯字母串映射为选项文本；选项本身是图时保留字母，避免脚本对不上 src。"""
+    clean = re.sub(r"[\s、,，&+和]+", "", str(letter_text or "")).upper()
+    if not re.match(r"^[A-Z]{1,%d}$" % max(len(options), 1), clean):
+        return None
+    if len(clean) > len(options):
+        return None
+    result = []
+    for c in clean:
+        idx = ord(c) - ord("A")
+        if 0 <= idx < len(options):
+            result.append(options[idx])
+    if not result:
+        return None
+    if all(is_pure_image_answer(x) or "<img" in str(x).lower() for x in result):
+        return ",".join(list(clean)) if len(clean) > 1 else clean
+    return json.dumps(result, ensure_ascii=False) if len(result) > 1 else result[0]
+
+
 def _mentioned_options(text, options):
     """按原文顺序找出答案中出现的选项文本，避免短选项被长选项包含时重复计数。"""
     found = []
@@ -1889,6 +2142,9 @@ def normalize_ai_answer(question, answer):
         _dm = re.match(r"^(.+)\1$", text)
         if _dm:
             text = _dm.group(1).strip()
+    mapped_img = _map_image_answer_to_letters(question, text)
+    if mapped_img:
+        return mapped_img
     # 已是清洗后的 JSON 数组（多选干净格式），直接返回，避免二次处理破坏
     if text.startswith("[") and text.endswith("]"):
         try:
@@ -1902,21 +2158,7 @@ def normalize_ai_answer(question, answer):
 
     if options:
         def _letters_to_answer(letter_text):
-            """把纯字母串映射为选项文本；多选返回 JSON 数组字符串。"""
-            clean = re.sub(r"[\s、,，&+和]+", "", str(letter_text or "")).upper()
-            if not re.match(r"^[A-Z]{1,%d}$" % max(len(options), 1), clean):
-                return None
-            if len(clean) > len(options):
-                return None
-            result = []
-            for c in clean:
-                idx = ord(c) - ord("A")
-                if 0 <= idx < len(options):
-                    result.append(options[idx])
-            if not result:
-                return None
-            # 多选返回 JSON 数组字符串（脚本端可可靠解析）；单选保持返回选项文本
-            return json.dumps(result, ensure_ascii=False) if len(result) > 1 else result[0]
+            return _letters_to_option_answer(letter_text, options)
 
         # 必须优先于 _lead：AI 按提示输出 "A,B" 时，旧逻辑会把逗号当成「字母后非字母」
         # 只取第一个选项，导致多选偶发/批量只填一项，并污染题库。
@@ -2469,7 +2711,18 @@ def _download_image_to_base64(url, timeout=15):
 def build_ai_messages(question_payload_str, force_text_only=False):
     """构造 AI 请求消息。若题目含图片，则使用多模态消息格式(content 数组)"""
     info = parse_question_payload(question_payload_str)
-    images = [] if force_text_only else (info.get("images") or [])
+    raw_images = [] if force_text_only else [str(x).strip() for x in (info.get("images") or []) if str(x).strip()]
+    if force_text_only:
+        images = []
+    elif any(x.startswith("data:") for x in raw_images):
+        # 客户端已上传 base64，不再重复下载 HTML 里的同源图
+        images = raw_images
+    else:
+        images = list(raw_images)
+        for u in _collect_html_image_urls(info):
+            if u not in images:
+                images.append(u)
+        images = images[:8]
     system_prompt = (
         "你是答题助手，只输出最终答案，禁止输出任何解释、分析、思考过程或中间步骤。\n"
         "规则：\n"
@@ -3703,6 +3956,470 @@ class Handler(BaseHTTPRequestHandler):
         auth = self.headers.get("Authorization", "")
         return verify_admin_session(auth)
 
+    def _admin_guard(self):
+        if self._check_admin():
+            return True
+        self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+        return False
+
+    def _distributor_user(self, require_approved=True):
+        """代理商门户的唯一守卫：登录 → 总开关 → 有申请 → 状态。
+
+        返回 (user, dist)；任何一道不过都已就地回复，调用方拿到 (None, None) 直接 return。
+        身份只认会话里的 username，绝不接受请求参数里的 distributor_id ——
+        否则改一个数字就能生成/翻看别人的卡。
+        """
+        user = self._get_user_from_token()
+        if not user:
+            self._send_json(401, {"code": 401, "msg": "未登录或登录已过期"})
+            return None, None
+        cfg = db.get_admin_config() or {}
+        if not int(cfg.get("distributor_enabled") or 0):
+            self._send_json(403, {"code": 403, "msg": "分销渠道尚未开放"})
+            return None, None
+        dist = db.get_distributor_by_username(user["username"])
+        if not dist:
+            self._send_json(403, {"code": 403, "msg": "你还不是代理商，请先提交申请"})
+            return None, None
+        if require_approved and str(dist.get("status")) != "approved":
+            self._send_json(403, {"code": 403, "msg": "账号未通过审核或已被停用"})
+            return None, None
+        return user, dist
+
+    def _distributor_rate_limited(self, path, limit, window):
+        ok, retry = check_api_rate(self._client_ip(), path, limit, window)
+        if ok:
+            return 0
+        self._send_json(429, {"code": 429, "msg": f"操作过于频繁，请 {retry} 秒后再试"},
+                        {"Retry-After": str(retry)})
+        return retry
+
+    # ==================== 代理商分销：后台接口 ====================
+    def _distributor_admin_get(self, path, qs):
+        def arg(key, default=""):
+            return str(qs.get(key, [default])[0] or "").strip()
+
+        def paged():
+            page = max(1, int(arg("page", "1") or 1))
+            size = max(1, min(int(arg("page_size", "20") or 20), 200))
+            return page, size
+
+        if path == "/admin/distributor/config":
+            a = db.get_admin_config() or {}
+            cfg = db._dist_cfg()
+            ok_tpls = [t for t in db.list_distributor_templates() if not t.get("price_error")]
+            self._send_json(200, {"code": 200, "config": {
+                "enabled": bool(a.get("distributor_enabled")),
+                "apply_enabled": bool(a.get("distributor_apply_enabled")),
+                "generate_enabled": bool(a.get("distributor_generate_enabled")),
+                "withdraw_enabled": bool(a.get("distributor_withdraw_enabled")),
+                "base_price_points": float(a.get("distributor_base_price_points") or 0),
+                "base_price_days": float(a.get("distributor_base_price_days") or 0),
+                "default_discount": float(a.get("distributor_default_discount") or 1),
+                "min_recharge": float(a.get("distributor_min_recharge") or 0),
+                "min_withdraw": float(a.get("distributor_min_withdraw") or 0),
+                "max_batch": int(cfg["max_batch"]),
+                "daily_card_max": int(a.get("distributor_daily_card_max") or 0),
+                "script_name": a.get("distributor_script_name") or "",
+            }, "stats": db.distributor_stats(),
+                "usable_templates": len(ok_tpls),
+                "hard_cap": db.DIST_BATCH_HARD_CAP})
+
+        elif path == "/admin/distributor/list":
+            page, size = paged()
+            status = arg("status")
+            if status not in ("", "pending", "approved", "rejected", "suspended"):
+                status = ""
+            data = db.list_distributors(status, arg("keyword"), page, size)
+            self._send_json(200, {"code": 200, "data": data, "stats": db.distributor_stats()})
+
+        elif path == "/admin/distributor/detail":
+            did = int(arg("id", "0") or 0)
+            summary = db.distributor_summary(did)
+            if not summary:
+                self._send_json(404, {"code": 404, "msg": "代理商不存在"})
+                return
+            page, size = paged()
+            dist = summary["distributor"]
+            self._send_json(200, {"code": 200, "summary": summary,
+                                  "templates": db.list_distributor_templates(
+                                      discount_rate=dist.get("discount_rate")),
+                                  "logs": db.list_distributor_logs(did, page, size)})
+
+        elif path == "/admin/distributor/templates":
+            self._send_json(200, {"code": 200, "templates": db.list_distributor_templates(),
+                                  "stats": db.distributor_stats()})
+
+        elif path == "/admin/distributor/batches":
+            page, size = paged()
+            self._send_json(200, {"code": 200,
+                                  "data": db.list_distributor_batches(int(arg("id", "0") or 0), page, size)})
+
+        elif path == "/admin/distributor/cards":
+            page, size = paged()
+            status = arg("status")
+            if status not in ("", "unused", "used"):
+                status = ""
+            self._send_json(200, {"code": 200, "data": db.list_distributor_cards(
+                int(arg("id", "0") or 0), status, arg("batch_no"), page, size)})
+
+        elif path == "/admin/distributor/price-preview":
+            ok, msg, quote = db.distributor_price_quote(
+                int(arg("id", "0") or 0), int(arg("template_id", "0") or 0), arg("count", "1") or 1)
+            if not ok:
+                self._send_json(400, {"code": 400, "msg": msg})
+                return
+            self._send_json(200, {"code": 200, "quote": quote})
+
+        elif path == "/admin/distributor/withdrawals":
+            st = arg("status")
+            if st not in ("", "pending", "approved", "rejected"):
+                st = ""
+            page, size = paged()
+            self._send_json(200, {"code": 200, "data": db.list_distributor_withdrawals(
+                int(arg("distributor_id", "0") or 0), st, page, size),
+                "summary": db.distributor_withdrawal_summary()})
+
+        else:
+            self._send_json(404, {"code": 404, "msg": "not found"})
+
+    def _distributor_admin_post(self, path, body):
+        data = json.loads(body or "{}")
+        operator = "admin"
+
+        def _ok(msg, **extra):
+            payload = {"code": 200, "msg": msg}
+            payload.update(extra)
+            self._send_json(200, payload)
+
+        def _fail(msg, code=400):
+            self._send_json(code, {"code": code, "msg": msg})
+
+        if path == "/admin/distributor/config/save":
+            ok, msg = db.save_distributor_config(data, operator=operator)
+            _ok(msg) if ok else _fail(msg)
+
+        elif path == "/admin/distributor/add":
+            ok, msg = db.admin_add_distributor(
+                data.get("username"), data.get("name"), data.get("contact"),
+                data.get("discount_rate"), data.get("initial_balance"), operator)
+            _ok(msg) if ok else _fail(msg)
+
+        elif path == "/admin/distributor/audit":
+            ok, msg = db.audit_distributor(
+                data.get("id"), bool(data.get("approve")), data.get("note", ""),
+                operator, data.get("reject_reason", ""))
+            _ok(msg) if ok else _fail(msg)
+
+        elif path == "/admin/distributor/update":
+            if "shop_url" in data:
+                try:
+                    data["shop_url"] = fx_build.shop_url(data.get("shop_url"))
+                except fx_build.BuildError as e:
+                    _fail(str(e))
+                    return
+            ok, msg = db.update_distributor(data.get("id"), data, operator=operator)
+            _ok(msg) if ok else _fail(msg)
+
+        elif path == "/admin/distributor/status":
+            ok, msg = db.set_distributor_status(data.get("id"), str(data.get("status") or ""), operator)
+            _ok(msg) if ok else _fail(msg)
+
+        elif path == "/admin/distributor/balance/adjust":
+            ok, msg = db.adjust_distributor_balance(
+                data.get("id"), data.get("amount"), operator, data.get("remark", ""))
+            _ok(msg) if ok else _fail(msg)
+
+        elif path == "/admin/distributor/withdrawal/approve":
+            ok, msg = db.approve_distributor_withdrawal(data.get("id"), operator)
+            _ok(msg) if ok else _fail(msg)
+
+        elif path == "/admin/distributor/withdrawal/reject":
+            ok, msg = db.reject_distributor_withdrawal(data.get("id"), data.get("reason", ""), operator)
+            _ok(msg) if ok else _fail(msg)
+
+        elif path == "/admin/distributor/template/save":
+            ok, msg = db.save_distributor_template(data, operator=operator)
+            _ok(msg) if ok else _fail(msg)
+
+        elif path == "/admin/distributor/template/toggle":
+            ok, msg = db.toggle_distributor_template(data.get("id"), bool(data.get("enabled")))
+            _ok(msg) if ok else _fail(msg)
+
+        elif path == "/admin/distributor/template/delete":
+            ok, msg = db.delete_distributor_template(data.get("id"))
+            _ok(msg) if ok else _fail(msg)
+
+        elif path == "/admin/distributor/generate":
+            limit_ok, retry = check_api_rate(self._client_ip(), "/admin/distributor/generate", 20, 60)
+            if not limit_ok:
+                self._send_json(429, {"code": 429, "msg": f"操作过于频繁，请 {retry} 秒后再试"},
+                                {"Retry-After": str(retry)})
+                return
+            ok, msg, res = db.distributor_generate_cards(
+                data.get("distributor_id"), data.get("template_id"), data.get("count"), operator)
+            if ok:
+                _ok(msg, result=res)
+            else:
+                _fail(msg)
+
+        elif path == "/admin/distributor/reconcile":
+            limit_ok, retry = check_api_rate(self._client_ip(), "/admin/distributor/reconcile", 6, 60)
+            if not limit_ok:
+                self._send_json(429, {"code": 429, "msg": f"操作过于频繁，请 {retry} 秒后再试"},
+                                {"Retry-After": str(retry)})
+                return
+            res = db.reconcile_distributor_batches(int(data.get("stale_minutes") or 0) or 5)
+            _ok("对账完成", result=res)
+
+        else:
+            _fail("not found", 404)
+
+    # ==================== 代理商分销：门户接口（用户态 Bearer） ====================
+    def _distributor_portal_get(self, path, qs):
+        def arg(key, default=""):
+            return str(qs.get(key, [default])[0] or "").strip()
+
+        def num(key, default=0, lo=0, hi=1000000):
+            try:
+                return max(lo, min(int(float(arg(key, str(default)) or default)), hi))
+            except Exception:
+                return default
+
+        # me 不走 _distributor_user：未申请 / 审核中 / 被驳回都得能渲染出页面
+        if path == "/api/distributor/me":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "未登录或登录已过期"})
+                return
+            self._send_json(200, {"code": 200, "cfg": db.distributor_portal_cfg(),
+                                  "me": db.distributor_portal_me(user["username"])})
+            return
+
+        user, dist = self._distributor_user()
+        if not dist:
+            return
+        did = int(dist.get("id") or 0)
+
+        if path == "/api/distributor/templates":
+            self._send_json(200, {"code": 200, "templates": db.list_distributor_templates(
+                only_enabled=True, discount_rate=dist.get("discount_rate"))})
+
+        elif path == "/api/distributor/price-preview":
+            ok, msg, quote = db.distributor_price_quote(did, num("template_id"), arg("count", "1") or 1)
+            if not ok:
+                self._send_json(400, {"code": 400, "msg": msg})
+                return
+            self._send_json(200, {"code": 200, "quote": quote})
+
+        elif path == "/api/distributor/batches":
+            self._send_json(200, {"code": 200, "data": db.list_distributor_batches(
+                did, num("page", 1, 1), num("page_size", 20, 1, 200))})
+
+        elif path == "/api/distributor/cards":
+            status = arg("status")
+            if status not in ("", "unused", "used"):
+                status = ""
+            # page_size 上限 500 = 单批最大张数，让「导出本批 CSV」一次取完，不必前端翻页
+            self._send_json(200, {"code": 200, "data": db.list_distributor_cards(
+                did, status, arg("batch_no"), num("page", 1, 1), num("page_size", 20, 1, 500))})
+
+        elif path == "/api/distributor/logs":
+            self._send_json(200, {"code": 200, "data": db.list_distributor_logs(
+                did, num("page", 1, 1), num("page_size", 20, 1, 200))})
+
+        elif path == "/api/distributor/withdrawals":
+            st = arg("status")
+            self._send_json(200, {"code": 200, "data": db.list_distributor_withdrawals(
+                did, st, num("page", 1, 1), num("page_size", 20, 1, 100))})
+
+        elif path == "/api/distributor/script":
+            self._distributor_script_download(user, dist, arg("file"))
+
+        else:
+            self._send_json(404, {"code": 404, "msg": "not found"})
+
+    def _distributor_script_download(self, user, dist, file_key):
+        """按需内存构建渠道纯净版并回传。
+
+        绝不落盘：磁盘上有一份 scripts/dist/xxx.js，就等于多一个可被遍历、
+        可被 curl 下来的公开文件，还得再配一条 nginx 规则去堵它。
+        """
+        def fail(code, msg):
+            self._send_json(code, {"code": code, "msg": msg})
+
+        if file_key not in DIST_SCRIPT_FILES:
+            fail(400, "file 只能是：" + "、".join(DIST_SCRIPT_FILES))
+            return
+        if fx_build is None:
+            fail(503, "纯净版构建器未就绪，请联系管理员")
+            return
+        # 一次下载 = 一次整脚本构建（gf 1.3 MB，几十毫秒），按账号限流兜住刷接口
+        limit_ok, retry = check_api_rate(self._client_ip(),
+                                         "/api/distributor/script:" + user["username"], 10, 3600)
+        if not limit_ok:
+            self._send_json(429, {"code": 429, "msg": f"下载过于频繁，请 {retry} 秒后再试"},
+                            {"Retry-After": str(retry)})
+            return
+
+        script_name = (db.distributor_portal_cfg() or {}).get("script_name") or ""
+        channel = {
+            "name": dist.get("name") or user["username"],
+            "code": db.distributor_script_code(dist),
+            "shop": dist.get("shop_url") or "",
+            "display_name": script_name,
+        }
+        src = DIST_SCRIPT_FILES[file_key]
+        try:
+            content = fx_build.build_file(src, channel)
+        except fx_build.BuildError as e:
+            fail(422, "纯净版构建失败：%s" % e)
+            return
+        except OSError as e:
+            fail(503, "主脚本读取失败：%s" % e)
+            return
+
+        body = content.encode("utf-8")
+        ascii_name = "%s.%s.js" % (file_key, channel["code"])
+        nice_name = "%s-%s-%s.js" % (script_name or "纯净版", channel["name"], file_key)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/javascript; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        # 中文名走 RFC 5987；safe="" 是必须的：quote 默认放过 "/"，那会变成路径
+        self.send_header("Content-Disposition",
+                         'attachment; filename="%s"; filename*=UTF-8\'\'%s'
+                         % (ascii_name, quote(nice_name, safe="")))
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(body)
+
+        try:
+            db.insert_script_event_logs(
+                [{"event_type": "distributor_script", "level": "info",
+                  "message": "下载纯净版 %s（%s，%d 字节）" % (file_key, channel["code"], len(body)),
+                  "page_url": "/distributor",
+                  "extra": {"file": file_key, "code": channel["code"],
+                            "shop": channel["shop"], "bytes": len(body)}}],
+                username=user["username"], client_ip=self._client_ip(),
+                user_agent=self.headers.get("User-Agent", ""))
+        except Exception as e:
+            print(f"[纯净版] 下载审计写入失败 {user['username']}: {e}", flush=True)
+
+    def _distributor_portal_post(self, path, body):
+        data = json.loads(body or "{}")
+
+        def _ok(msg, **extra):
+            payload = {"code": 200, "msg": msg}
+            payload.update(extra)
+            self._send_json(200, payload)
+
+        def _fail(msg, code=400):
+            self._send_json(code, {"code": code, "msg": msg})
+
+        if path == "/api/distributor/apply":
+            user = self._get_user_from_token()
+            if not user:
+                _fail("未登录或登录已过期", 401)
+                return
+            # 限流键带上账号：同一出口 IP 后面往往不止一个申请人，纯 IP 桶会互相拖累
+            if self._distributor_rate_limited("/api/distributor/apply:" + user["username"], 3, 3600):
+                return
+            ok, msg = db.apply_distributor(user["username"], data.get("name"),
+                                           data.get("contact"), data.get("reason"))
+            if not ok:
+                _fail(msg)
+                return
+            _ok(msg, me=db.distributor_portal_me(user["username"]))
+
+        elif path == "/api/distributor/generate":
+            user, dist = self._distributor_user()
+            if not dist:
+                return
+            if self._distributor_rate_limited("/api/distributor/generate:" + user["username"], 20, 60):
+                return
+            # distributor_id 取自会话，请求体里就算传了也不看
+            ok, msg, res = db.distributor_generate_cards(
+                int(dist.get("id") or 0), data.get("template_id"), data.get("count"), user["username"])
+            if ok:
+                _ok(msg, result=res)
+            else:
+                _fail(msg)
+
+        elif path == "/api/distributor/recharge":
+            user, dist = self._distributor_user()
+            if not dist:
+                return
+            if self._distributor_rate_limited("/api/distributor/recharge:" + user["username"], 10, 600):
+                return
+            # 金额由代理商自己填，只在服务端定上下限；入账金额取自订单行，客户端改不了
+            ok, msg, plan = db.distributor_recharge_plan(user["username"], data.get("amount"))
+            if not ok:
+                _fail(msg)
+                return
+            pay_method = (data.get("pay_method") or "alipay").strip()
+            if pay_method not in ("alipay", "wechat"):
+                _fail("支付方式只能是 alipay 或 wechat")
+                return
+            pay_channel, pay_type = _pick_pay_channel(db.get_admin_config() or {}, pay_method)
+            if not pay_channel or pay_channel == "wechat":
+                # wechat 官方通道在通用下单口里就没有实现（没有 create_wechat_order），
+                # 落到充值口会变成「下了单没人付」，这里直接当作不可用
+                _fail("该支付方式暂无可用通道，请换一种或联系管理员")
+                return
+            try:
+                if pay_channel == "alipay":
+                    order_no, qr_code = create_alipay_precreate_order(user["username"], plan)
+                    _ok("订单已创建，请扫码付款", paying=True, order_no=order_no,
+                        qr_code=qr_code, pay_channel=pay_channel, amount=plan["price"])
+                    return
+                if pay_channel == "zhifufm":
+                    order_no, pay_url = create_zhifufm_order(user["username"], plan, pay_type=pay_type)
+                elif pay_channel == "sandpay":
+                    order_no, pay_url = create_sandpay_order(user["username"], plan, pay_type=pay_type)
+                else:
+                    order_no, pay_url = create_epay_order(user["username"], plan, pay_type=pay_type)
+                _ok("订单已创建，请跳转付款", paying=True, order_no=order_no,
+                    pay_url=pay_url, pay_channel=pay_channel, amount=plan["price"])
+            except Exception as e:
+                # 网关报错原文常带内部地址/商户号，只回给日志
+                print(f"[代理商充值] 下单失败 user={user['username']} channel={pay_channel}: {e}", flush=True)
+                _fail("支付通道暂不可用，请稍后再试或联系管理员")
+
+        elif path == "/api/distributor/withdraw":
+            user, dist = self._distributor_user()
+            if not dist:
+                return
+            if self._distributor_rate_limited("/api/distributor/withdraw:" + user["username"], 5, 600):
+                return
+            pay_method = (data.get("pay_method") or "").strip()
+            if pay_method not in ("alipay", "wechat"):
+                _fail("收款方式只能是 alipay 或 wechat")
+                return
+            account = str(data.get("pay_account") or "").strip()
+            if not account:
+                _fail("请填写收款账号")
+                return
+            if len(account) > 255:
+                _fail("收款账号过长")
+                return
+            qr = str(data.get("qr_code") or "")
+            if qr and (not qr.startswith("data:image/") or len(qr) > 1024 * 1024):
+                _fail("收款二维码需为 data:image 开头且不超过 1MB")
+                return
+            ok, msg, wid = db.create_distributor_withdrawal(
+                int(dist.get("id") or 0), user["username"], data.get("amount"),
+                pay_method, account, qr)
+            if not ok:
+                _fail(msg)
+                return
+            _ok(msg, withdrawal=db.get_distributor_withdrawal(wid), me=db.distributor_portal_me(user["username"]))
+
+        else:
+            _fail("not found", 404)
+
     def do_GET(self):
         global PROVIDERS
         parsed = urlparse(self.path)
@@ -3714,6 +4431,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_file(200, USER_HTML_FILE, "text/html; charset=utf-8")
         elif path == "/admin" or path == "/admin/":
             self._send_file(200, ADMIN_HTML_FILE, "text/html; charset=utf-8")
+        elif path == "/distributor" or path == "/distributor/":
+            self._send_file(200, DIST_HTML_FILE, "text/html; charset=utf-8")
         elif path == "/invite":
             # 推广邀请链接跳转到注册页，携带邀请码
             qs = parse_qs(parsed.query)
@@ -4013,8 +4732,17 @@ class Handler(BaseHTTPRequestHandler):
                     order_no = params.get("orderNo", "")
                     order = db.get_order(order_no)
                     if order and order.get("status") != "paid":
+                        if not _recharge_notify_amount_ok(order, params.get("amount", "")):
+                            self._send_text(200, "fail")
+                            return
                         db.update_order_payment(order_no, channel_order_no=params.get("channelOrderNo", ""))
-                        db.apply_paid_order(order_no)
+                        ok_apply = db.apply_paid_order(order_no)[0]
+                        if not ok_apply and order.get("plan_type") == "dist_recharge":
+                            # 老套餐维持原样（回 success，网关不再重推）；充值单没入账成功
+                            # 就回 fail，让它按自己的策略重推——apply_paid_order 已把单子
+                            # 退回 pending，重推一次就能补上，不必人工。
+                            self._send_text(200, "fail")
+                            return
                     else:
                         db.update_order_payment(order_no, channel_order_no=params.get("channelOrderNo", ""))
                     self._send_text(200, "success")
@@ -4065,7 +4793,17 @@ class Handler(BaseHTTPRequestHandler):
                     if resp_code == "000000" and order_status in ("paid", "success"):
                         order = db.get_order(order_no)
                         if order and order.get("status") != "paid":
-                            db.apply_paid_order(order_no)
+                            # 杉德回传金额是分，字段名各家文档不统一，取到哪个算哪个；
+                            # 全取不到时 _recharge_notify_amount_ok 会放行并告警
+                            cb_amount = (body_obj.get("totalAmount") or body_obj.get("tradeAmount")
+                                         or body_obj.get("amount") or "")
+                            if not _recharge_notify_amount_ok(order, cb_amount, fen=True):
+                                self._send_text(200, "fail")
+                                return
+                            ok_apply = db.apply_paid_order(order_no)[0]
+                            if not ok_apply and order.get("plan_type") == "dist_recharge":
+                                self._send_text(200, "fail")
+                                return
                         self._send_text(200, "success")
                     else:
                         self._send_text(200, "fail")
@@ -4083,9 +4821,15 @@ class Handler(BaseHTTPRequestHandler):
                     trade_no = params.get("trade_no", "")
                     order = db.get_order(order_no)
                     if order and order.get("status") != "paid":
+                        if not _recharge_notify_amount_ok(order, params.get("money", "")):
+                            self._send_text(200, "fail")
+                            return
                         if trade_no:
                             db.update_order_payment(order_no, trade_no=trade_no)
-                        db.apply_paid_order(order_no)
+                        ok_apply = db.apply_paid_order(order_no)[0]
+                        if not ok_apply and order.get("plan_type") == "dist_recharge":
+                            self._send_text(200, "fail")
+                            return
                     self._send_text(200, "success")
                 else:
                     self._send_text(200, "fail")
@@ -4704,6 +5448,22 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        # ==================== 代理商分销管理（GET） ====================
+        elif path.startswith("/admin/distributor/"):
+            if not self._admin_guard():
+                return
+            try:
+                self._distributor_admin_get(path, parse_qs(parsed.query))
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        # ==================== 代理商门户（GET，用户态 Bearer） ====================
+        elif path.startswith("/api/distributor/"):
+            try:
+                self._distributor_portal_get(path, parse_qs(parsed.query))
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         else:
             self._send_json(404, {"code": 404, "msg": "not found"})
 
@@ -5072,6 +5832,11 @@ class Handler(BaseHTTPRequestHandler):
                 if order.get("username") != user["username"]:
                     self._send_json(403, {"code": 403, "msg": "无权查看此订单"})
                     return
+                blocked = db.refund_block_reason(order)
+                if blocked:
+                    # 预览也得挡：否则前端算出「可退全额」、点提交才被拒，像是系统出错
+                    self._send_json(400, {"code": 400, "msg": blocked})
+                    return
                 calc = db.calculate_refund(order)
                 self._send_json(200, {
                     "code": 200,
@@ -5253,36 +6018,10 @@ class Handler(BaseHTTPRequestHandler):
                 pay_method = (data.get("pay_method") or "wechat").strip()
                 # 前端只传 pay_method=wechat/alipay，后端根据权重随机选择通道
                 admin = db.get_admin_config() or {}
-                # 收集该支付方式的所有可用通道及权重
-                available = []  # [(channel, pay_type, weight), ...]
-                if pay_method == "wechat":
-                    if admin.get("wechat_enabled") and admin.get("wechat_app_id") and admin.get("wechat_mch_id"):
-                        available.append(("wechat", "wechat", int(admin.get("wechat_weight") or 100)))
-                    if admin.get("zhifufm_enabled") and admin.get("zhifufm_api_url") and admin.get("zhifufm_merchant_num") and admin.get("zhifufm_secret"):
-                        available.append(("zhifufm", "sandpayh5", int(admin.get("zhifufm_weight") or 100)))
-                    if admin.get("sandpay_enabled") and admin.get("sandpay_mid") and admin.get("sandpay_api_url"):
-                        available.append(("sandpay", "wxpay", int(admin.get("sandpay_weight") or 100)))
-                    if admin.get("epay_enabled") and admin.get("epay_api_url") and admin.get("epay_pid") and admin.get("epay_key"):
-                        available.append(("epay", "wxpay", int(admin.get("epay_weight") or 100)))
-                elif pay_method == "alipay":
-                    if admin.get("alipay_enabled") and admin.get("alipay_app_id") and admin.get("alipay_private_key"):
-                        available.append(("alipay", "alipay", int(admin.get("alipay_weight") or 100)))
-                    if admin.get("zhifufm_enabled") and admin.get("zhifufm_api_url") and admin.get("zhifufm_merchant_num") and admin.get("zhifufm_secret"):
-                        available.append(("zhifufm", "sandpayh5", int(admin.get("zhifufm_weight") or 100)))
-                    if admin.get("sandpay_enabled") and admin.get("sandpay_mid") and admin.get("sandpay_api_url"):
-                        available.append(("sandpay", "alipay", int(admin.get("sandpay_weight") or 100)))
-                    if admin.get("epay_enabled") and admin.get("epay_api_url") and admin.get("epay_pid") and admin.get("epay_key"):
-                        available.append(("epay", "alipay", int(admin.get("epay_weight") or 100)))
-                if not available:
+                pay_channel, pay_type = _pick_pay_channel(admin, pay_method)
+                if not pay_channel:
                     self._send_json(400, {"code": 400, "msg": "该支付方式暂无可用通道，请联系管理员配置"})
                     return
-                # 按权重随机选择通道（权重为0则不参与）
-                weighted = [(ch, pt) for ch, pt, w in available if w > 0]
-                if not weighted:
-                    # 所有权重都为0，降级为等概率
-                    weighted = [(ch, pt) for ch, pt, _ in available]
-                weights = [w for _, _, w in available if w > 0] or [1] * len(weighted)
-                pay_channel, pay_type = random.choices(weighted, weights=weights, k=1)[0]
                 # 根据通道创建订单
                 if pay_channel == "alipay":
                     order_no, qr_code = create_alipay_precreate_order(user["username"], plan)
@@ -6079,6 +6818,12 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/api/user/card-key/activate":
+            # 安全：此端点原先完全没有限流，卡码空间虽大但「不存在 / 已被使用」两条文案
+            # 构成存在性 oracle，可被离线枚举。
+            ok_rate, retry_rate = check_api_rate(self._client_ip(), "/api/user/card-key/activate", 10, 60)
+            if not ok_rate:
+                self._send_json(429, {"code": 429, "msg": f"操作过于频繁，请 {retry_rate} 秒后再试"}, {"Retry-After": str(retry_rate)})
+                return
             user = self._get_user_from_token()
             if not user:
                 self._send_json(401, {"code": 401, "msg": "请先登录"})
@@ -6091,11 +6836,12 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(400, {"code": 400, "msg": "请输入卡密"})
                     return
                 if plan_id:
-                    card = db.fetchone("SELECT plan_id FROM card_keys WHERE code = %s", (code,))
+                    card = db.fetchone("SELECT plan_id, source FROM card_keys WHERE code = %s", (code,))
                     if not card:
                         self._send_json(400, {"code": 400, "msg": "卡密不存在"})
                         return
-                    if int(card["plan_id"]) != plan_id:
+                    # 非平台卡的 plan_id 恒为 0，校验它们只会报出误导性的「套餐不匹配」
+                    if (card.get("source") or "platform") == "platform" and int(card["plan_id"]) != plan_id:
                         self._send_json(400, {"code": 400, "msg": "卡密与所选套餐不匹配"})
                         return
                 ok, msg = db.activate_card_key(code, user["username"])
@@ -6836,10 +7582,9 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 record_model_token_usage(model_name, tokens)
                 answer = normalize_ai_answer(payload, answer)
-                # 质量校验：纯图片答案不入库
-                if is_pure_image_answer(answer):
-                    print(f"[题库重训练] 纯图片答案跳过，不更新 model={model_name}", flush=True)
-                    self._send_json(500, {"code": 500, "msg": "模型返回纯图片答案，质量不达标，已跳过入库"})
+                if _is_garbage_bank_answer(answer, payload):
+                    print(f"[题库重训练] 垃圾答案跳过，不更新 model={model_name} answer={str(answer)[:80]}", flush=True)
+                    self._send_json(500, {"code": 500, "msg": "模型返回答案质量不达标，已跳过入库"})
                     return
                 # 指纹含答案，答案变化 → 新指纹；这里原地更新原记录，而不是新插一条
                 new_hash = make_question_hash(payload, answer)
@@ -7022,6 +7767,7 @@ class Handler(BaseHTTPRequestHandler):
                 question = params.get("question", [""])[0]
                 model = params.get("model", [""])[0]
                 req_model_mode = params.get("model_mode", ["auto"])[0] or "auto"
+                skip_bank = str(params.get("skip_bank", ["0"])[0] or "0").strip().lower() in ("1", "true", "yes")
                 custom_cfg = {}
                 quota_msg = ""
                 if not question:
@@ -7067,13 +7813,19 @@ class Handler(BaseHTTPRequestHandler):
                     if cm_price > 0 and not (ent and ent.get("custom_model_active")):
                         cm_period = cm_cfg.get("period") or "permanent"
                         period_text = "按月开通" if cm_period == "monthly" else "永久开通"
-                        err = f"自有模型需付费开通后方可使用（¥{cm_price:.2f}，{period_text}），请到用户中心购买"
+                        if is_distributor_channel(ent):
+                            err = f"自有模型需付费开通后方可使用（¥{cm_price:.2f}，{period_text}），请联系您的服务方开通"
+                        else:
+                            err = f"自有模型需付费开通后方可使用（¥{cm_price:.2f}，{period_text}），请到用户中心购买"
                         status = "custom_not_paid"
                         self._send_json(402, {"code": 402, "msg": err, "status": "custom_model_not_paid"})
                         return
                 else:
                     if not ent or (not ent.get("active_member") and int(ent.get("points_balance") or 0) <= 0):
-                        err = "题数余额不足，请到用户中心购买点数或包月套餐"
+                        if is_distributor_channel(ent):
+                            err = "题数余额不足，请联系您的服务方获取卡密后在脚本内兑换"
+                        else:
+                            err = "题数余额不足，请到用户中心购买点数或包月套餐"
                         status = "insufficient_quota"
                         self._send_json(402, {"code": 402, "msg": err})
                         return
@@ -7091,10 +7843,10 @@ class Handler(BaseHTTPRequestHandler):
                     "duration_ms": int(bank_duration or 0),
                     "client_ip": self.client_address[0] if self.client_address else ""
                 })
-                if bank_row and not use_custom:
+                if bank_row and not use_custom and not skip_bank:
                     answer = normalize_ai_answer(question, bank_row.get("answer", ""))
-                    if answer and _is_truncated_multi_answer(question, answer):
-                        print(f"[题库命中但多选答案不完整，改走AI] hash={question_hash[:12]} answer={str(answer)[:80]}", flush=True)
+                    if answer and (_is_truncated_multi_answer(question, answer) or _is_garbage_bank_answer(answer, question)):
+                        print(f"[题库命中但答案不可用，改走AI] hash={question_hash[:12]} answer={str(answer)[:80]}", flush=True)
                         bank_row = None
                     elif not answer:
                         err = "题库答案为空"
@@ -7116,10 +7868,10 @@ class Handler(BaseHTTPRequestHandler):
                         return
                 cache_key = make_ai_cache_key(question, model_mode, model, custom_cfg)
                 cached = get_ai_cache(cache_key)
-                if cached and not use_custom:
+                if cached and not use_custom and not skip_bank:
                     answer = cached.get("answer", "")
-                    if answer and _is_truncated_multi_answer(question, answer):
-                        print(f"[AI缓存命中但多选答案不完整，改走AI] mode={model_mode} answer={str(answer)[:80]}", flush=True)
+                    if answer and (_is_truncated_multi_answer(question, answer) or _is_garbage_bank_answer(answer, question)):
+                        print(f"[AI缓存命中但答案不可用，改走AI] mode={model_mode} answer={str(answer)[:80]}", flush=True)
                         cached = None
                     elif not answer:
                         err = "缓存答案为空"
@@ -7164,8 +7916,8 @@ class Handler(BaseHTTPRequestHandler):
                         self._send_json(500, {"code": 500, "msg": err})
                         return
                     status = "success"
-                    if _is_truncated_multi_answer(question, answer):
-                        print(f"[AI答案] 多选不完整，跳过缓存与入库 answer={str(answer)[:80]}", flush=True)
+                    if _is_truncated_multi_answer(question, answer) or _is_garbage_bank_answer(answer, question):
+                        print(f"[AI答案] 质量不合格，跳过缓存与入库 answer={str(answer)[:80]}", flush=True)
                     else:
                         set_ai_cache(cache_key, answer, resolved_model, provider_name)
                         # 自有模型产生的答案不写入共享题库，避免影响其它用户
@@ -7270,6 +8022,22 @@ class Handler(BaseHTTPRequestHandler):
                 if duration_ms > 5000:
                     print(f"[Agent] 决策耗时 {duration_ms}ms", flush=True)
 
+        # ==================== 代理商分销管理（POST） ====================
+        elif path.startswith("/admin/distributor/"):
+            if not self._admin_guard():
+                return
+            try:
+                self._distributor_admin_post(path, body)
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        # ==================== 代理商门户（POST，用户态 Bearer） ====================
+        elif path.startswith("/api/distributor/"):
+            try:
+                self._distributor_portal_post(path, body)
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         else:
             self._send_json(404, {"code": 404, "msg": "not found"})
 
@@ -7319,6 +8087,31 @@ def _start_log_cleanup_thread():
     print("[日志清理] 定时清理线程已启动（60秒检查一次，满24小时执行）", flush=True)
 
 
+def _distributor_reconcile_worker():
+    """后台线程：收敛生成途中崩溃残留的 pending 批次（钱已扣、卡未落库）。
+
+    先睡 60 秒再跑第一轮：留出在途请求落定的余量，之后每小时一次。
+    """
+    import time as _time
+    while True:
+        _time.sleep(60)
+        try:
+            res = db.reconcile_distributor_batches(5)
+            if any(res.get(k) for k in ("repaired", "refunded", "inconsistent", "backfilled")):
+                print(f"[分销对账] 补齐={res['repaired']} 退款={res['refunded']} "
+                      f"补记流水={res['backfilled']} 需人工={res['inconsistent']}", flush=True)
+        except Exception as e:
+            print(f"[分销对账] 异常: {e}", flush=True)
+        _time.sleep(3600)
+
+
+def _start_distributor_reconcile_thread():
+    import threading
+    t = threading.Thread(target=_distributor_reconcile_worker, daemon=True)
+    t.start()
+    print("[分销对账] 已启动（60秒后首轮，之后每小时）", flush=True)
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("  学神助手 - 自建后端已启动")
@@ -7337,6 +8130,7 @@ if __name__ == "__main__":
         print(f"  ✓ 已有 {enabled_count} 个提供商就绪")
     print("=" * 60)
     _start_log_cleanup_thread()
+    _start_distributor_reconcile_thread()
     _start_daily_report_thread()
     _start_commission_settle_thread()
     _start_qq_bot_thread()

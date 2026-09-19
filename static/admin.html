@@ -909,6 +909,31 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
           </div>
         </div>
 
+        <!-- 代理商分销组 -->
+        <div class="menu-group" :class="{expanded:expandedGroups.distributor}">
+          <div class="menu-group-header dock-item" :class="{active:['distributor','distributor-templates','distributor-batches','distributor-withdrawals','distributor-config'].includes(page)}" @click="expandedGroups.distributor=!expandedGroups.distributor">
+            <span class="icon">⚑</span>代理商分销
+            <span class="arrow">▶</span>
+          </div>
+          <div class="menu-group-items">
+            <div class="menu-item" :class="{active:page==='distributor'}" @click="page='distributor';loadFxList(1)">
+              <span class="icon">◉</span>代理商<span v-if="fxStats.pending" :style="{marginLeft:'auto',minWidth:'18px',padding:'0 5px',height:'18px',lineHeight:'18px',textAlign:'center',borderRadius:'9px',background:'var(--warning)',color:'#fff',fontSize:'11px',fontWeight:'600'}">{{fxStats.pending}}</span>
+            </div>
+            <div class="menu-item" :class="{active:page==='distributor-templates'}" @click="page='distributor-templates';loadFxOptions();loadFxTemplates()">
+              <span class="icon">▤</span>卡密模板
+            </div>
+            <div class="menu-item" :class="{active:page==='distributor-batches'}" @click="page='distributor-batches';loadFxOptions();loadFxBatches(1)">
+              <span class="icon">≣</span>批次与卡密
+            </div>
+            <div class="menu-item" :class="{active:page==='distributor-withdrawals'}" @click="page='distributor-withdrawals';loadFxOptions();loadFxWds(1)">
+              <span class="icon">¥</span>提现审核<span v-if="fxStats.wd_pending" :style="{marginLeft:'auto',minWidth:'18px',padding:'0 5px',height:'18px',lineHeight:'18px',textAlign:'center',borderRadius:'9px',background:'var(--warning)',color:'#fff',fontSize:'11px',fontWeight:'600'}">{{fxStats.wd_pending}}</span>
+            </div>
+            <div class="menu-item" :class="{active:page==='distributor-config'}" @click="page='distributor-config';loadFxConfig()">
+              <span class="icon">⚙</span>分销配置
+            </div>
+          </div>
+        </div>
+
         <!-- 日志监控组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.logs}">
           <div class="menu-group-header dock-item" :class="{active:['script-logs','log-cleanup','daily-report'].includes(page)}" @click="expandedGroups.logs=!expandedGroups.logs">
@@ -2355,6 +2380,639 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
               <div v-if="ckTotalPages>1" style="display:flex;justify-content:center;gap:6px;margin-top:16px">
                 <button v-for="p in ckTotalPages" :key="p" :class="['btn','btn-sm',p===ckPage?'btn-primary':'btn-secondary']" @click="loadCardKeys(p)">{{p}}</button>
               </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- 代理商分销：代理商列表 -->
+      <template v-if="page==='distributor'">
+        <header class="main-header">
+          <h2>代理商</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index&lt;breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div v-if="fxStats.batch_inconsistent" style="display:flex;gap:12px;align-items:center;padding:12px 14px;margin-bottom:14px;background:rgba(239,68,68,.08);border:1px solid var(--danger,#ef4444);border-radius:10px;font-size:13px;color:var(--text)">
+            <b style="color:var(--danger,#ef4444)">⚠ {{fxStats.batch_inconsistent}} 个批次钱卡对不上，需人工核对</b>
+            <span style="color:var(--text3)">对账器已停止自动处理这些批次，请先核对再改配置。</span>
+            <button class="btn btn-secondary btn-sm" style="margin-left:auto" @click="fxGotoBatches({id:0})">去处理</button>
+          </div>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;padding:10px 14px;margin-bottom:14px;background:var(--bg4);border:1px solid var(--border);border-radius:10px;font-size:13px;color:var(--text3)">
+            <span>待审核 <b :style="{color:fxStats.pending?'var(--warning)':'var(--text)'}">{{fxStats.pending||0}}</b></span>
+            <span>已开通 <b style="color:var(--text)">{{fxStats.approved||0}}</b></span>
+            <span>已停用 <b style="color:var(--text)">{{fxStats.suspended||0}}</b></span>
+            <span style="width:1px;height:15px;background:var(--border)"></span>
+            <span>余额合计 <b style="color:var(--text)">{{fxMoney(fxStats.balance_total)}}</b></span>
+            <span>累计生成 <b style="color:var(--text)">{{fxMoney(fxStats.spent_total)}}</b></span>
+            <span style="width:1px;height:15px;background:var(--border)"></span>
+            <span>分销卡密 未用 <b style="color:var(--text)">{{fxStats.card_unused||0}}</b> · 已用 <b style="color:var(--text)">{{fxStats.card_used||0}}</b></span>
+            <span v-if="fxStats.batch_pending" style="color:var(--warning)">待对账批次 {{fxStats.batch_pending}}</span>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <h3>代理商列表</h3>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <select v-model="fxFilter.status" @change="loadFxList(1)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg4);color:var(--text)">
+                  <option value="">全部状态</option>
+                  <option value="pending">待审核</option>
+                  <option value="approved">已开通</option>
+                  <option value="rejected">已驳回</option>
+                  <option value="suspended">已停用</option>
+                </select>
+                <input v-model="fxFilter.keyword" @keyup.enter="loadFxList(1)" placeholder="账号 / 名称 / 联系方式" style="width:170px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg4);color:var(--text)">
+                <button class="btn btn-secondary btn-sm" @click="loadFxList(1)">搜索</button>
+                <button class="btn btn-primary" @click="openFxAdd">开通代理商</button>
+              </div>
+            </div>
+            <div class="card-body" style="overflow-x:auto">
+              <table v-if="fxList.length" style="width:100%;border-collapse:collapse;font-size:13px;min-width:900px">
+                <thead>
+                  <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
+                    <th style="text-align:left;padding:10px 8px">账号</th>
+                    <th style="text-align:left;padding:10px 8px">名称</th>
+                    <th style="text-align:right;padding:10px 8px">折扣</th>
+                    <th style="text-align:right;padding:10px 8px">余额</th>
+                    <th style="text-align:right;padding:10px 8px">累计生成</th>
+                    <th style="text-align:left;padding:10px 8px">状态</th>
+                    <th style="text-align:left;padding:10px 8px">联系</th>
+                    <th style="text-align:left;padding:10px 8px">开通时间</th>
+                    <th style="text-align:right;padding:10px 8px">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="r in fxList" :key="r.id" style="border-bottom:1px solid var(--border);color:var(--text)">
+                    <td style="padding:10px 8px;font-weight:600">{{r.username}}</td>
+                    <td style="padding:10px 8px">{{r.name||'-'}}</td>
+                    <td style="padding:10px 8px;text-align:right;font-family:monospace">{{fxDiscountPct(r.discount_rate)}}</td>
+                    <td style="padding:10px 8px;text-align:right;font-family:monospace;color:var(--success)">{{fxMoney(r.balance)}}</td>
+                    <td style="padding:10px 8px;text-align:right;font-family:monospace;color:var(--text3)">{{fxMoney(r.spent_total)}}</td>
+                    <td style="padding:10px 8px"><span :style="{color:fxStatusColor(r.status)}">{{fxStatusText(r.status)}}</span></td>
+                    <td style="padding:10px 8px;color:var(--text3);font-size:12px">{{r.contact||'-'}}</td>
+                    <td style="padding:10px 8px;color:var(--text3);font-size:12px">{{fxTimeShort(r.created_at)}}</td>
+                    <td style="padding:10px 8px;text-align:right;white-space:nowrap">
+                      <template v-if="r.status==='pending'">
+                        <button class="btn btn-primary btn-sm" @click="fxAudit(r,true)">通过</button>
+                        <button class="btn btn-secondary btn-sm" @click="fxAudit(r,false)">驳回</button>
+                      </template>
+                      <button class="btn btn-secondary btn-sm" @click="openFxDetail(r)">详情</button>
+                      <button class="btn btn-secondary btn-sm" @click="openFxBalance(r)">注资</button>
+                      <button class="btn btn-secondary btn-sm" @click="openFxEdit(r)">编辑</button>
+                      <button v-if="r.status==='approved'" class="btn btn-secondary btn-sm" @click="fxSetStatus(r,'suspended')">停用</button>
+                      <button v-else-if="r.status==='suspended'" class="btn btn-secondary btn-sm" @click="fxSetStatus(r,'approved')">恢复</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-else style="text-align:center;padding:40px 0;color:var(--text3);font-size:13px">还没有代理商。点右上角「开通代理商」用已有账号建档，再配折扣和注资。</div>
+              <div v-if="fxTotalPages>1" style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:16px">
+                <button class="btn btn-secondary btn-sm" :disabled="fxPage&lt;=1" @click="fxPrevPage">上一页</button>
+                <span style="font-size:12px;color:var(--text3)">{{fxPage}} / {{fxTotalPages}} · 共 {{fxTotal}} 条</span>
+                <button class="btn btn-secondary btn-sm" :disabled="fxPage>=fxTotalPages" @click="fxNextPage">下一页</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 开通代理商 -->
+          <div v-if="fxAddShow" class="modal-overlay" @click.self="fxAddShow=false">
+            <div class="modal-card" style="max-width:520px">
+              <div class="modal-header"><h3>开通代理商</h3><button class="btn-close" @click="fxAddShow=false">×</button></div>
+              <div class="modal-body">
+                <div class="form-group"><label>平台账号（须已注册）</label><input v-model="fxAddForm.username" placeholder="users.username"></div>
+                <div class="form-row">
+                  <div class="form-group"><label>代理商名称</label><input v-model="fxAddForm.name" placeholder="留空则用账号名"></div>
+                  <div class="form-group"><label>联系方式</label><input v-model="fxAddForm.contact" placeholder="QQ / 微信 / 手机"></div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group"><label>折扣率（0.5 = 五折）</label><input type="number" step="0.0001" min="0.0001" max="1" v-model.number="fxAddForm.discount_rate"></div>
+                  <div class="form-group"><label>预存金额（元）</label><input type="number" step="0.01" min="0" v-model.number="fxAddForm.initial_balance"></div>
+                </div>
+                <small style="color:var(--text3)">折扣与预存都会先按当前基准价试算，算不出整分价格的配置会被拒绝。</small>
+              </div>
+              <div class="modal-footer">
+                <button class="btn btn-secondary" @click="fxAddShow=false">取消</button>
+                <button class="btn btn-primary" :disabled="fxAddSaving" @click="saveFxAdd">{{fxAddSaving?'提交中...':'确认开通'}}</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 编辑代理商 -->
+          <div v-if="fxEditShow" class="modal-overlay" @click.self="fxEditShow=false">
+            <div class="modal-card" style="max-width:520px">
+              <div class="modal-header"><h3>编辑代理商 · {{fxEditForm.username}}</h3><button class="btn-close" @click="fxEditShow=false">×</button></div>
+              <div class="modal-body">
+                <div class="form-row">
+                  <div class="form-group"><label>名称</label><input v-model="fxEditForm.name"></div>
+                  <div class="form-group"><label>联系方式</label><input v-model="fxEditForm.contact"></div>
+                </div>
+                <div class="form-group"><label>折扣率（0.5 = 五折）</label><input type="number" step="0.0001" min="0.0001" max="1" v-model.number="fxEditForm.discount_rate"></div>
+                <div class="form-group"><label>售后文案（展示给终端用户）</label><input v-model="fxEditForm.support_note" placeholder="如：卡密有问题请联系 QQ 123456"></div>
+                <div class="form-group"><label>店铺链接（纯净版脚本的购买/续费跳转）</label><input v-model="fxEditForm.shop_url" placeholder="https:// 开头，留空则脚本仍跳官方页面"></div>
+                <div class="form-group"><label>审核备注</label><input v-model="fxEditForm.audit_note"></div>
+                <small style="color:var(--text3)">改折扣前会对全部启用模板试算；若导致某模板无法精确到分，折扣保持原值并报错。</small>
+              </div>
+              <div class="modal-footer">
+                <button class="btn btn-secondary" @click="fxEditShow=false">取消</button>
+                <button class="btn btn-primary" :disabled="fxEditSaving" @click="saveFxEdit">{{fxEditSaving?'保存中...':'保存'}}</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 注资 / 扣减余额 -->
+          <div v-if="fxBalShow" class="modal-overlay" @click.self="fxBalShow=false">
+            <div class="modal-card" style="max-width:460px">
+              <div class="modal-header"><h3>调整余额 · {{fxBalForm.username}}</h3><button class="btn-close" @click="fxBalShow=false">×</button></div>
+              <div class="modal-body">
+                <div class="form-group"><label>当前余额</label><div style="font-size:20px;font-weight:600;color:var(--success);font-family:monospace">{{fxMoney(fxBalForm.balance)}}</div></div>
+                <div class="form-group"><label>调整金额（正数入账，负数扣减）</label><input type="number" step="0.01" v-model.number="fxBalForm.amount" placeholder="如 500 或 -50"></div>
+                <div class="form-group"><label>备注</label><input v-model="fxBalForm.remark" placeholder="如：线下微信转账"></div>
+                <small style="color:var(--text3)">调整会写入余额流水，扣减不允许把余额打成负数。</small>
+              </div>
+              <div class="modal-footer">
+                <button class="btn btn-secondary" @click="fxBalShow=false">取消</button>
+                <button class="btn btn-primary" :disabled="fxBalSaving" @click="saveFxBalance">{{fxBalSaving?'提交中...':'确认调整'}}</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 代理商详情 -->
+          <div v-if="fxDetailShow" class="modal-overlay" @click.self="fxDetailShow=false">
+            <div class="modal-card" style="max-width:880px">
+              <div class="modal-header">
+                <h3>代理商详情</h3><button class="btn-close" @click="fxDetailShow=false">×</button>
+              </div>
+              <div class="modal-body" style="max-height:70vh;overflow:auto">
+                <div v-if="!fxDetail" style="padding:24px;text-align:center;color:var(--text3)">加载中...</div>
+                <template v-else>
+                  <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--text3);margin-bottom:14px">
+                    <span>{{fxDetail.summary.distributor.username}} · {{fxDetail.summary.distributor.name||'-'}}</span>
+                    <span :style="{color:fxStatusColor(fxDetail.summary.distributor.status)}">{{fxStatusText(fxDetail.summary.distributor.status)}}</span>
+                    <span>折扣 {{fxDiscountPct(fxDetail.summary.distributor.discount_rate)}}</span>
+                  </div>
+                  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px">
+                    <div style="padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px"><div style="font-size:11px;color:var(--text3)">余额</div><div style="font-size:17px;font-weight:600;font-family:monospace;color:var(--success)">{{fxMoney(fxDetail.summary.balance)}}</div></div>
+                    <div style="padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px"><div style="font-size:11px;color:var(--text3)">未用卡密</div><div style="font-size:17px;font-weight:600;font-family:monospace">{{fxDetail.summary.unused_count}}</div></div>
+                    <div style="padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px"><div style="font-size:11px;color:var(--text3)">已用卡密</div><div style="font-size:17px;font-weight:600;font-family:monospace">{{fxDetail.summary.used_count}}</div></div>
+                    <div style="padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px"><div style="font-size:11px;color:var(--text3)">未用权益</div><div style="font-size:13px;font-weight:600;font-family:monospace;padding-top:3px">{{fxDetail.summary.unused_points}} 题 / {{fxDetail.summary.unused_days}} 天</div></div>
+                    <div style="padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px"><div style="font-size:11px;color:var(--text3)">今日已生成</div><div style="font-size:17px;font-weight:600;font-family:monospace">{{fxDetail.summary.today_cards}}</div></div>
+                    <div :style="{padding:'10px 12px',border:'1px solid var(--border)',borderRadius:'8px',background:fxDriftBad(fxDetail.summary.ledger_drift)?'rgba(239,68,68,.1)':'var(--bg)'}"><div style="font-size:11px;color:var(--text3)">流水对账差额</div><div :style="{fontSize:'17px',fontWeight:'600',fontFamily:'monospace',color:fxDriftBad(fxDetail.summary.ledger_drift)?'#ef4444':'var(--text3)'}">{{fxMoney(fxDetail.summary.ledger_drift)}}</div></div>
+                  </div>
+                  <div style="font-size:13px;font-weight:600;margin-bottom:8px">该折扣下的可售模板</div>
+                  <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:18px">
+                    <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2)"><th style="text-align:left;padding:6px 8px">模板</th><th style="text-align:left;padding:6px 8px">权益</th><th style="text-align:right;padding:6px 8px">基准价</th><th style="text-align:right;padding:6px 8px">单张结算</th></tr></thead>
+                    <tbody>
+                      <tr v-for="t in fxDetail.templates" :key="t.id" style="border-bottom:1px solid var(--border)">
+                        <td style="padding:6px 8px">{{t.name}}</td>
+                        <td style="padding:6px 8px;color:var(--text3)">{{fxGrantText(t)}}</td>
+                        <td style="padding:6px 8px;text-align:right;font-family:monospace">{{fxMoney(t.base_price)}}</td>
+                        <td style="padding:6px 8px;text-align:right;font-family:monospace">
+                          <span v-if="t.price_error" style="color:#ef4444">{{t.price_error}}</span>
+                          <span v-else>{{fxMoney(t.unit_settle)}}</span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div style="font-size:13px;font-weight:600;margin-bottom:8px">余额流水</div>
+                  <table v-if="(fxDetail.logs.rows||[]).length" style="width:100%;border-collapse:collapse;font-size:12px">
+                    <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2)"><th style="text-align:left;padding:6px 8px">时间</th><th style="text-align:left;padding:6px 8px">类型</th><th style="text-align:right;padding:6px 8px">金额</th><th style="text-align:right;padding:6px 8px">余额</th><th style="text-align:left;padding:6px 8px">关联</th><th style="text-align:left;padding:6px 8px">备注</th></tr></thead>
+                    <tbody>
+                      <tr v-for="l in fxDetail.logs.rows" :key="l.id" style="border-bottom:1px solid var(--border)">
+                        <td style="padding:6px 8px;color:var(--text3);white-space:nowrap">{{fxTimeFull(l.created_at)}}</td>
+                        <td style="padding:6px 8px">{{fxLogTypeText(l.type)}}</td>
+                        <td :style="{padding:'6px 8px',textAlign:'right',fontFamily:'monospace',color:Number(l.amount)&lt;0?'var(--text3)':'var(--success)'}">{{Number(l.amount)&lt;0?'':'+'}}{{Number(l.amount).toFixed(2)}}</td>
+                        <td style="padding:6px 8px;text-align:right;font-family:monospace">{{Number(l.balance_after).toFixed(2)}}</td>
+                        <td style="padding:6px 8px;color:var(--text3);font-family:monospace;font-size:11px">{{l.batch_no||l.order_no||'-'}}</td>
+                        <td style="padding:6px 8px;color:var(--text3)">{{l.remark||'-'}}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div v-else style="padding:18px;text-align:center;color:var(--text3);font-size:13px">暂无流水</div>
+                  <div v-if="fxDetailTotalPages>1" style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:12px">
+                    <button class="btn btn-secondary btn-sm" :disabled="fxDetailPage&lt;=1" @click="fxDetailPrev">上一页</button>
+                    <span style="font-size:12px;color:var(--text3)">{{fxDetailPage}} / {{fxDetailTotalPages}} · 共 {{fxDetail.logs.total}} 条</span>
+                    <button class="btn btn-secondary btn-sm" :disabled="fxDetailPage>=fxDetailTotalPages" @click="fxDetailNext">下一页</button>
+                  </div>
+                </template>
+              </div>
+              <div class="modal-footer">
+                <button class="btn btn-secondary" @click="fxDetailShow=false">关闭</button>
+                <button class="btn btn-primary" @click="fxDetailShow=false;fxGotoBatches({id:fxDetailId})">查看批次</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- 代理商分销：卡密模板与生成 -->
+      <template v-if="page==='distributor-templates'">
+        <header class="main-header">
+          <h2>卡密模板</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index&lt;breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="card">
+            <div class="card-header">
+              <h3>生成卡密</h3>
+              <div style="font-size:12px;color:var(--text3)">先报价再扣款：单价 = 基准价 × 折扣，必须能精确到分</div>
+            </div>
+            <div class="card-body">
+              <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+                <div class="form-group" style="margin:0"><label>代理商</label>
+                  <select v-model.number="genDistId" style="min-width:200px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg4);color:var(--text)">
+                    <option :value="0">选择代理商</option>
+                    <option v-for="o in fxOptions" :key="o.id" :value="o.id">{{o.username}}（{{o.name||'-'}}·{{fxDiscountPct(o.discount_rate)}}·余{{fxMoney(o.balance)}}）</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin:0"><label>模板</label>
+                  <select v-model.number="genTplId" style="min-width:180px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg4);color:var(--text)">
+                    <option :value="0">选择模板</option>
+                    <option v-for="t in fxTemplates" :key="t.id" :value="t.id" :disabled="!!t.price_error||!t.enabled">{{t.name}}{{t.enabled?'':'（已停用）'}}</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin:0"><label>张数</label><input v-model.number="genCount" type="number" min="1" :max="fxConfig.max_batch||500" style="width:90px;padding:7px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg4);color:var(--text)"></div>
+                <button class="btn btn-secondary" @click="previewFxQuote">查看报价</button>
+                <button class="btn btn-primary" :disabled="!genQuote||genSaving" @click="generateFxCards">{{genSaving?'生成中...':'确认生成并扣款'}}</button>
+              </div>
+              <div v-if="genQuoteErr" style="margin-top:12px;padding:10px 12px;border-radius:8px;background:rgba(239,68,68,.1);color:#ef4444;font-size:13px">{{genQuoteErr}}</div>
+              <div v-if="genQuote" style="margin-top:12px;padding:12px 14px;border-radius:8px;background:var(--bg);border:1px solid var(--border);font-size:13px">
+                <div style="display:flex;gap:18px;flex-wrap:wrap;color:var(--text3)">
+                  <span>{{genQuote.template_name}} · {{genQuote.quantity}} 权益/张</span>
+                  <span>基准价 <b style="color:var(--text);font-family:monospace">{{fxMoney(genQuote.base_price)}}</b></span>
+                  <span>折扣 <b style="color:var(--text);font-family:monospace">{{fxDiscountPct(genQuote.discount_rate)}}</b></span>
+                  <span>单张结算 <b style="color:var(--text);font-family:monospace">{{fxMoney(genQuote.unit_settle)}}</b></span>
+                  <span>× {{genQuote.count}} 张</span>
+                  <span>本批合计 <b :style="{color:genQuote.enough?'var(--success)':'#ef4444',fontFamily:'monospace',fontSize:'15px'}">{{fxMoney(genQuote.settle_amount)}}</b></span>
+                  <span>余额 {{fxMoney(genQuote.balance)}} → {{fxMoney(genQuote.balance_after)}}</span>
+                </div>
+                <div v-if="!genQuote.enough" style="margin-top:8px;color:#ef4444;font-size:12px">余额不足，请先在「代理商」页注资。</div>
+                <div v-if="genQuote.status!=='approved'" style="margin-top:8px;color:var(--warning);font-size:12px">该账号当前状态为「{{fxStatusText(genQuote.status)}}」，不能生成。</div>
+              </div>
+              <div v-if="genResult" style="margin-top:12px;padding:12px 14px;border-radius:8px;background:rgba(16,185,129,.08);border:1px solid var(--border)">
+                <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:13px;margin-bottom:8px">
+                  <b style="color:var(--success)">批次 {{genResult.batch_no}}</b>
+                  <span style="color:var(--text3)">{{genResult.count}} 张 · 扣款 {{fxMoney(genResult.settle_amount)}} · 余额 {{fxMoney(genResult.balance_after)}}</span>
+                  <button class="btn btn-secondary btn-sm" @click="copyFxResult">复制全部卡密</button>
+                </div>
+                <div style="font-family:monospace;font-size:12px;color:var(--text);word-break:break-all;line-height:1.8">{{(genResult.codes||[]).join('  ')}}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>模板列表</h3>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button class="btn btn-secondary btn-sm" @click="loadFxTemplates">刷新</button>
+                <button class="btn btn-primary" @click="newFxTpl">新建模板</button>
+              </div>
+            </div>
+            <div class="card-body" style="overflow-x:auto">
+              <table v-if="fxTemplates.length" style="width:100%;border-collapse:collapse;font-size:13px;min-width:860px">
+                <thead>
+                  <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
+                    <th style="text-align:left;padding:10px 8px">模板</th>
+                    <th style="text-align:left;padding:10px 8px">权益</th>
+                    <th style="text-align:right;padding:10px 8px">基准价</th>
+                    <th style="text-align:right;padding:10px 8px">默认折扣单价</th>
+                    <th style="text-align:left;padding:10px 8px">前缀</th>
+                    <th style="text-align:left;padding:10px 8px">状态</th>
+                    <th style="text-align:right;padding:10px 8px">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="t in fxTemplates" :key="t.id" style="border-bottom:1px solid var(--border);color:var(--text)">
+                    <td style="padding:10px 8px;font-weight:600">{{t.name}}<span v-if="t.remark" style="color:var(--text3);font-weight:400;font-size:12px"> · {{t.remark}}</span></td>
+                    <td style="padding:10px 8px">{{fxGrantText(t)}}</td>
+                    <td style="padding:10px 8px;text-align:right;font-family:monospace">{{fxMoney(t.base_price)}}</td>
+                    <td style="padding:10px 8px;text-align:right;font-family:monospace">
+                      <span v-if="t.price_error" style="color:#ef4444;font-size:12px">{{t.price_error}}</span>
+                      <span v-else>{{fxMoney(t.unit_settle)}}</span>
+                    </td>
+                    <td style="padding:10px 8px;font-family:monospace">{{t.code_prefix}}</td>
+                    <td style="padding:10px 8px"><span :style="{color:t.enabled?'var(--success)':'var(--text3)'}">{{t.enabled?'启用':'停用'}}</span></td>
+                    <td style="padding:10px 8px;text-align:right;white-space:nowrap">
+                      <button class="btn btn-secondary btn-sm" @click="openFxTplEdit(t)">编辑</button>
+                      <button class="btn btn-secondary btn-sm" @click="toggleFxTpl(t)">{{t.enabled?'停用':'启用'}}</button>
+                      <button v-if="!t.enabled" class="btn btn-secondary btn-sm" @click="deleteFxTpl(t)">删除</button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-else style="text-align:center;padding:40px 0;color:var(--text3);font-size:13px">还没有模板。先建一个「100 题」或「30 天包月」模板。</div>
+            </div>
+          </div>
+
+          <div v-if="fxTplShow" class="modal-overlay" @click.self="fxTplShow=false">
+            <div class="modal-card" style="max-width:560px">
+              <div class="modal-header"><h3>{{fxTplForm.id?'编辑模板':'新建模板'}}</h3><button class="btn-close" @click="fxTplShow=false">×</button></div>
+              <div class="modal-body">
+                <div class="form-row">
+                  <div class="form-group"><label>模板名称</label><input v-model="fxTplForm.name" placeholder="如：100题卡"></div>
+                  <div class="form-group"><label>计价方式</label>
+                    <select v-model="fxTplForm.price_type" @change="fxTplSwitchType" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg4);color:var(--text)">
+                      <option value="points">按题数</option>
+                      <option value="monthly">按包月</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div v-if="fxTplForm.price_type==='points'" class="form-group"><label>题数</label><input type="number" min="1" v-model.number="fxTplForm.points"></div>
+                  <div v-else class="form-group"><label>包月天数</label><input type="number" min="1" v-model.number="fxTplForm.days"></div>
+                  <div class="form-group"><label>卡密前缀（固定 2 位）</label><input v-model="fxTplForm.code_prefix" maxlength="2" placeholder="FX"></div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group"><label>排序</label><input type="number" v-model.number="fxTplForm.sort_order"></div>
+                  <div class="form-group"><label>启用</label><div style="padding-top:6px"><div class="toggle" :class="fxTplForm.enabled?'on':''" @click="fxTplForm.enabled=!fxTplForm.enabled"></div></div></div>
+                </div>
+                <div class="form-group"><label>备注</label><input v-model="fxTplForm.remark" placeholder="内部备注，不影响价格"></div>
+                <small style="color:var(--text3)">题数与天数互斥。保存时按当前基准价与全部代理商折扣试算，任一组合算不出整分价格都会被拒绝。</small>
+              </div>
+              <div class="modal-footer">
+                <button class="btn btn-secondary" @click="fxTplShow=false">取消</button>
+                <button class="btn btn-primary" :disabled="fxTplSaving" @click="saveFxTpl">{{fxTplSaving?'保存中...':'保存'}}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- 代理商分销：批次与卡密 -->
+      <template v-if="page==='distributor-batches'">
+        <header class="main-header">
+          <h2>批次与卡密</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index&lt;breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div style="display:flex;gap:0;margin-bottom:18px;border-bottom:2px solid var(--border)">
+            <button :class="['btn',fxBatchTab==='batch'?'btn-primary':'btn-secondary']" style="border-radius:0" @click="fxBatchTab='batch';loadFxBatches(1)">生成批次</button>
+            <button :class="['btn',fxBatchTab==='cards'?'btn-primary':'btn-secondary']" style="border-radius:0" @click="fxBatchTab='cards';loadFxCards(1)">卡密明细</button>
+          </div>
+
+          <div v-if="fxBatchTab==='batch'" class="card">
+            <div class="card-header">
+              <h3>生成批次</h3>
+              <div style="display:flex;gap:8px;align-items:center">
+                <select v-model.number="fxBatchFilterId" @change="loadFxBatches(1)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg4);color:var(--text)">
+                  <option :value="0">全部代理商</option>
+                  <option v-for="o in fxOptions" :key="o.id" :value="o.id">{{o.username}}（{{o.name||'-'}}）</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" @click="loadFxBatches(1)">刷新</button>
+              </div>
+            </div>
+            <div class="card-body" style="overflow-x:auto">
+              <table v-if="fxBatches.length" style="width:100%;border-collapse:collapse;font-size:13px;min-width:960px">
+                <thead>
+                  <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
+                    <th style="text-align:left;padding:10px 8px">批次号</th>
+                    <th style="text-align:left;padding:10px 8px">代理商</th>
+                    <th style="text-align:left;padding:10px 8px">模板</th>
+                    <th style="text-align:right;padding:10px 8px">张数</th>
+                    <th style="text-align:right;padding:10px 8px">单价</th>
+                    <th style="text-align:right;padding:10px 8px">合计</th>
+                    <th style="text-align:left;padding:10px 8px">状态</th>
+                    <th style="text-align:left;padding:10px 8px">时间</th>
+                    <th style="text-align:right;padding:10px 8px">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="b in fxBatches" :key="b.id" style="border-bottom:1px solid var(--border);color:var(--text)">
+                    <td style="padding:10px 8px;font-family:monospace;font-size:12px">{{b.batch_no}}</td>
+                    <td style="padding:10px 8px">{{b.username}}</td>
+                    <td style="padding:10px 8px">{{b.template_name}}<span style="color:var(--text3);font-size:12px"> · {{fxGrantText(b)}}</span></td>
+                    <td style="padding:10px 8px;text-align:right;font-family:monospace">{{b.card_count}}</td>
+                    <td style="padding:10px 8px;text-align:right;font-family:monospace;color:var(--text3)">{{fxMoney(b.unit_settle)}}</td>
+                    <td style="padding:10px 8px;text-align:right;font-family:monospace">{{fxMoney(b.settle_amount)}}</td>
+                    <td style="padding:10px 8px">
+                      <span :style="{color:fxBatchStatusColor(b.status)}">{{fxBatchStatusText(b.status)}}</span>
+                      <div v-if="b.error_note" style="font-size:11px;color:#ef4444">{{b.error_note}}</div>
+                    </td>
+                    <td style="padding:10px 8px;color:var(--text3);font-size:12px">{{fxTimeShort(b.created_at)}}</td>
+                    <td style="padding:10px 8px;text-align:right;white-space:nowrap"><button class="btn btn-secondary btn-sm" @click="goFxBatchCards(b)">看卡密</button></td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-else style="text-align:center;padding:40px 0;color:var(--text3);font-size:13px">暂无批次</div>
+              <div v-if="fxBatchTotalPages>1" style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:16px">
+                <button class="btn btn-secondary btn-sm" :disabled="fxBatchPage&lt;=1" @click="loadFxBatches(fxBatchPage-1)">上一页</button>
+                <span style="font-size:12px;color:var(--text3)">{{fxBatchPage}} / {{fxBatchTotalPages}} · 共 {{fxBatchTotal}} 条</span>
+                <button class="btn btn-secondary btn-sm" :disabled="fxBatchPage>=fxBatchTotalPages" @click="loadFxBatches(fxBatchPage+1)">下一页</button>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="fxBatchTab==='cards'" class="card">
+            <div class="card-header">
+              <h3>分销卡密</h3>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <select v-model.number="fxCardFilter.id" @change="loadFxCards(1)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg4);color:var(--text)">
+                  <option :value="0">全部代理商</option>
+                  <option v-for="o in fxOptions" :key="o.id" :value="o.id">{{o.username}}</option>
+                </select>
+                <select v-model="fxCardFilter.status" @change="loadFxCards(1)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg4);color:var(--text)">
+                  <option value="">全部状态</option>
+                  <option value="unused">未使用</option>
+                  <option value="used">已使用</option>
+                </select>
+                <input v-model="fxCardFilter.batch_no" @keyup.enter="loadFxCards(1)" placeholder="批次号" style="width:150px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg4);color:var(--text)">
+                <button class="btn btn-secondary btn-sm" @click="loadFxCards(1)">搜索</button>
+                <button class="btn btn-secondary btn-sm" @click="fxCardFilter={id:0,status:'',batch_no:''};loadFxCards(1)">重置</button>
+                <button class="btn btn-secondary btn-sm" @click="exportFxCards">导出 CSV</button>
+              </div>
+            </div>
+            <div class="card-body" style="overflow-x:auto">
+              <table v-if="fxCards.length" style="width:100%;border-collapse:collapse;font-size:13px;min-width:900px">
+                <thead>
+                  <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
+                    <th style="text-align:left;padding:10px 8px">卡密</th>
+                    <th style="text-align:left;padding:10px 8px">模板</th>
+                    <th style="text-align:left;padding:10px 8px">权益</th>
+                    <th style="text-align:right;padding:10px 8px">结算价</th>
+                    <th style="text-align:left;padding:10px 8px">状态</th>
+                    <th style="text-align:left;padding:10px 8px">使用者</th>
+                    <th style="text-align:left;padding:10px 8px">生成时间</th>
+                    <th style="text-align:left;padding:10px 8px">使用时间</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="c in fxCards" :key="c.id" style="border-bottom:1px solid var(--border);color:var(--text)">
+                    <td style="padding:10px 8px;font-family:monospace;font-size:12px"><span class="copy-cell" :title="'点击复制：'+c.code" @click="copyText(c.code, $event)"><span class="copy-cell-text">{{c.code}}</span><span class="copy-cell-btn" :class="{done:copiedKey===c.code}">{{copiedKey===c.code?'已复制':'复制'}}</span></span></td>
+                    <td style="padding:10px 8px">{{c.template_name||'-'}}<div v-if="c.batch_no" style="font-size:11px;color:var(--text3);font-family:monospace">{{c.batch_no}}</div></td>
+                    <td style="padding:10px 8px">{{fxGrantText(c)}}</td>
+                    <td style="padding:10px 8px;text-align:right;font-family:monospace">{{fxMoney(c.settle_amount)}}</td>
+                    <td style="padding:10px 8px"><span :style="{color:c.status==='unused'?'var(--warning)':'var(--text3)'}">{{c.status==='unused'?'未使用':'已使用'}}</span></td>
+                    <td style="padding:10px 8px;color:var(--accent2)">{{c.used_by||'-'}}</td>
+                    <td style="padding:10px 8px;color:var(--text3);font-size:12px">{{fxTimeShort(c.created_at)}}</td>
+                    <td style="padding:10px 8px;color:var(--text3);font-size:12px">{{c.used_at?fxTimeShort(c.used_at):'-'}}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-else style="text-align:center;padding:40px 0;color:var(--text3);font-size:13px">暂无卡密</div>
+              <div v-if="fxCardTotalPages>1" style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:16px">
+                <button class="btn btn-secondary btn-sm" :disabled="fxCardPage&lt;=1" @click="loadFxCards(fxCardPage-1)">上一页</button>
+                <span style="font-size:12px;color:var(--text3)">{{fxCardPage}} / {{fxCardTotalPages}} · 共 {{fxCardTotal}} 条</span>
+                <button class="btn btn-secondary btn-sm" :disabled="fxCardPage>=fxCardTotalPages" @click="loadFxCards(fxCardPage+1)">下一页</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- 代理商分销：配置 -->
+      <template v-if="page==='distributor-config'">
+        <header class="main-header">
+          <h2>分销配置</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index&lt;breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="card">
+            <div class="card-header">
+              <h3>开关</h3>
+              <div style="font-size:12px;color:var(--text3)">当前 {{fxConfig.enabled?'渠道已开启':'渠道已关闭'}} · 可用模板 {{fxCfgMeta.usable_templates}} 个</div>
+            </div>
+            <div class="card-body">
+              <div style="display:flex;gap:26px;flex-wrap:wrap">
+                <div style="display:flex;align-items:center;gap:10px"><div class="toggle" :class="fxConfig.enabled?'on':''" @click="fxConfig.enabled=!fxConfig.enabled"></div><span style="font-size:13px">分销总开关</span></div>
+                <div style="display:flex;align-items:center;gap:10px"><div class="toggle" :class="fxConfig.apply_enabled?'on':''" @click="fxConfig.apply_enabled=!fxConfig.apply_enabled"></div><span style="font-size:13px">允许自助申请</span></div>
+                <div style="display:flex;align-items:center;gap:10px"><div class="toggle" :class="fxConfig.generate_enabled?'on':''" @click="fxConfig.generate_enabled=!fxConfig.generate_enabled"></div><span style="font-size:13px">允许生成卡密</span></div>
+                <div style="display:flex;align-items:center;gap:10px"><div class="toggle" :class="fxConfig.withdraw_enabled?'on':''" @click="fxConfig.withdraw_enabled=!fxConfig.withdraw_enabled"></div><span style="font-size:13px">允许余额提现</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>计价与限额</h3></div>
+            <div class="card-body">
+              <div class="form-row">
+                <div class="form-group"><label>基准单价 · 每题（元）</label><input type="number" step="0.0001" min="0" v-model.number="fxConfig.base_price_points"><small style="color:var(--text3)">卡密面额 × 该单价 = 基准价</small></div>
+                <div class="form-group"><label>基准单价 · 每天（元）</label><input type="number" step="0.0001" min="0" v-model.number="fxConfig.base_price_days"></div>
+                <div class="form-group"><label>默认折扣率</label><input type="number" step="0.0001" min="0.0001" max="1" v-model.number="fxConfig.default_discount"><small style="color:var(--text3)">新建代理商的初始折扣，1 = 不打折</small></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>单次生成上限（张）</label><input type="number" min="0" v-model.number="fxConfig.max_batch"><small style="color:var(--text3)">0 或留空按硬上限 {{fxCfgMeta.hard_cap}} 处理</small></div>
+                <div class="form-group"><label>每代理商每日上限（张）</label><input type="number" min="0" v-model.number="fxConfig.daily_card_max"><small style="color:var(--text3)">0 = 不限制</small></div>
+                <div class="form-group"><label>最低充值（元）</label><input type="number" step="0.01" min="0" v-model.number="fxConfig.min_recharge"></div>
+                <div class="form-group"><label>最低提现（元）</label><input type="number" step="0.01" min="0" v-model.number="fxConfig.min_withdraw"></div>
+              </div>
+              <div class="form-group" style="max-width:420px"><label>纯净版脚本名</label><input v-model="fxConfig.script_name" placeholder="如 xueshen-fx（留空不下发纯净版）"></div>
+              <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+                <button class="btn btn-primary" :disabled="fxCfgSaving" @click="saveFxConfig">{{fxCfgSaving?'保存中...':'保存配置'}}</button>
+                <button class="btn btn-secondary" @click="loadFxConfig">放弃修改并重载</button>
+              </div>
+              <small style="color:var(--text3);display:block;margin-top:10px">基准价或默认折扣一改，若导致任何启用模板在某代理商折扣下无法精确到分，本次保存会整体回滚为原值并把原因报出来。</small>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <h3>批次对账</h3>
+              <button class="btn btn-secondary btn-sm" :disabled="fxReconciling" @click="runFxReconcile">{{fxReconciling?'对账中...':'立即对账'}}</button>
+            </div>
+            <div class="card-body">
+              <div style="font-size:13px;color:var(--text3);margin-bottom:10px">服务端每小时自动收敛一次残留批次；下面是手动触发，用于刚改完配置时立刻核对。待处理批次：<b :style="{color:fxStats.batch_pending?'var(--warning)':'var(--text)'}">{{fxStats.batch_pending||0}}</b></div>
+              <div v-if="fxReconcileResult" style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px">
+                <span>补完成 <b>{{(fxReconcileResult.repaired||[]).length}}</b></span>
+                <span>退款 <b>{{(fxReconcileResult.refunded||[]).length}}</b></span>
+                <span :style="{color:(fxReconcileResult.inconsistent||[]).length?'#ef4444':'var(--text)'}">需人工核对 <b>{{(fxReconcileResult.inconsistent||[]).length}}</b></span>
+                <span>补记流水 <b>{{(fxReconcileResult.backfilled||[]).length}}</b></span>
+              </div>
+              <div v-for="(list,k) in fxReconcileResult||{}" :key="k" style="margin-top:8px;font-size:12px;font-family:monospace;color:var(--text3)">{{k}}：{{(list||[]).join(' , ')||'—'}}</div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- 代理商提现审核 -->
+      <template v-if="page==='distributor-withdrawals'">
+        <header class="main-header">
+          <h2>提现审核</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index&lt;breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="card">
+            <div class="card-header">
+              <div class="filter-tab-group">
+                <button :class="['filter-tab',fxWdFilter.status===''?'active':'']" @click="fxWdFilter.status='';loadFxWds(1)">全部</button>
+                <button :class="['filter-tab',fxWdFilter.status==='pending'?'active':'']" @click="fxWdFilter.status='pending';loadFxWds(1)">待审核</button>
+                <button :class="['filter-tab',fxWdFilter.status==='approved'?'active':'']" @click="fxWdFilter.status='approved';loadFxWds(1)">已打款</button>
+                <button :class="['filter-tab',fxWdFilter.status==='rejected'?'active':'']" @click="fxWdFilter.status='rejected';loadFxWds(1)">已驳回</button>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <select v-model.number="fxWdFilter.id" @change="loadFxWds(1)" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg4);color:var(--text)">
+                  <option :value="0">全部代理商</option>
+                  <option v-for="o in fxOptions" :key="o.id" :value="o.id">{{o.username}}（{{o.name||'-'}}）</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" @click="loadFxOptions();loadFxWds()">刷新</button>
+              </div>
+            </div>
+            <div style="display:flex;gap:16px;padding:12px 20px;background:var(--bg);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center">
+              <div style="font-size:13px;color:var(--text3)">待审核：<b :style="{color:fxWdSummary.pending_count?'var(--warning)':'var(--text)',fontSize:'15px'}">¥{{Number(fxWdSummary.pending_amount||0).toFixed(2)}}</b> <span style="font-size:12px">({{fxWdSummary.pending_count||0}} 笔)</span></div>
+              <div style="width:1px;height:20px;background:var(--border)"></div>
+              <div style="font-size:13px;color:var(--text3)">累计已打款：<b style="color:var(--success);font-size:15px">¥{{Number(fxWdSummary.approved_amount||0).toFixed(2)}}</b></div>
+              <div style="width:1px;height:20px;background:var(--border)"></div>
+              <div style="font-size:13px;color:var(--text3)">总笔数：<b style="color:var(--text);font-size:15px">{{fxWdSummary.total||0}}</b></div>
+            </div>
+            <div class="card-body" style="overflow-x:auto">
+              <table v-if="fxWds.length" style="width:100%;border-collapse:collapse;font-size:13px;min-width:1020px">
+                <thead>
+                  <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
+                    <th style="text-align:left;padding:10px 8px">申请时间</th>
+                    <th style="text-align:left;padding:10px 8px">代理商</th>
+                    <th style="text-align:right;padding:10px 8px">金额</th>
+                    <th style="text-align:left;padding:10px 8px">收款信息</th>
+                    <th style="text-align:left;padding:10px 8px">状态</th>
+                    <th style="text-align:left;padding:10px 8px">审核</th>
+                    <th style="text-align:right;padding:10px 8px">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="w in fxWds" :key="w.id" style="border-bottom:1px solid var(--border)">
+                    <td style="padding:10px 8px;color:var(--text3);font-size:12px;white-space:nowrap">{{fxTimeShort(w.created_at)}}</td>
+                    <td style="padding:10px 8px">{{w.username}}<div style="font-size:12px;color:var(--text3)">{{w.dist_name||'-'}}</div></td>
+                    <td style="padding:10px 8px;text-align:right;font-family:monospace;font-weight:600">{{fxMoney(w.amount)}}</td>
+                    <td style="padding:10px 8px">
+                      <div>{{w.pay_method==='alipay'?'支付宝':'微信'}} · <span style="font-size:12px">{{w.pay_account}}</span></div>
+                      <button v-if="w.qr_code_path" class="btn btn-secondary btn-sm" style="margin-top:4px" @click="fxWdQr=w.qr_code_path">看二维码</button>
+                    </td>
+                    <td style="padding:10px 8px">
+                      <span :style="{color:fxWdStatusColor(w.status)}">{{fxWdStatusText(w.status)}}</span>
+                      <div v-if="w.reject_reason" style="font-size:12px;color:var(--danger,#ef4444);max-width:220px">{{w.reject_reason}}</div>
+                    </td>
+                    <td style="padding:10px 8px;font-size:12px;color:var(--text3)">
+                      <div v-if="w.reviewed_by">{{w.reviewed_by}}</div>
+                      <div v-if="w.reviewed_at">{{fxTimeShort(w.reviewed_at)}}</div>
+                      <div v-if="!w.reviewed_by&&w.status==='pending'" style="color:var(--warning)">钱已从余额划走</div>
+                    </td>
+                    <td style="padding:10px 8px;text-align:right;white-space:nowrap">
+                      <template v-if="w.status==='pending'">
+                        <button class="btn btn-success btn-sm" @click="fxWdApprove(w)">已打款，通过</button>
+                        <button class="btn btn-danger btn-sm" style="margin-left:6px" @click="fxWdReject(w)">驳回退款</button>
+                      </template>
+                      <span v-else style="color:var(--text3);font-size:12px">已处理</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-else style="text-align:center;padding:40px 0;color:var(--text3);font-size:13px">暂无提现申请</div>
+              <div v-if="fxWdTotalPages>1" style="display:flex;justify-content:center;align-items:center;gap:8px;margin-top:16px">
+                <button class="btn btn-secondary btn-sm" :disabled="fxWdPage&lt;=1" @click="loadFxWds(fxWdPage-1)">上一页</button>
+                <span style="font-size:12px;color:var(--text3)">{{fxWdPage}} / {{fxWdTotalPages}} · 共 {{fxWdTotal}} 条</span>
+                <button class="btn btn-secondary btn-sm" :disabled="fxWdPage>=fxWdTotalPages" @click="loadFxWds(fxWdPage+1)">下一页</button>
+              </div>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--text3);margin-top:12px;line-height:1.7">
+            代理商提交提现的瞬间，金额就已经从它的余额里划走了，所以：<br>
+            「已打款，通过」= 你已经线下把钱转给它了，这里只关单并累加「累计提现」，不会再动余额；<br>
+            「驳回退款」= 把钱退回它的余额，退回会记一笔 <b>withdraw_reject</b> 流水。<br>
+            余额充值单不支持自助退款，退款请走线下 + 「余额调整」同步扣回。
+          </div>
+          <div v-if="fxWdQr" class="modal-overlay" @click.self="fxWdQr=''">
+            <div class="modal" style="text-align:center">
+              <h3>收款二维码</h3>
+              <img :src="fxWdQr" style="max-width:280px;border-radius:10px;margin:12px 0">
+              <div><button class="btn btn-secondary" @click="fxWdQr=''">关闭</button></div>
             </div>
           </div>
         </div>
@@ -3998,6 +4656,11 @@ createApp({
       'refund-requests':[{label:'支付财务',group:'payment'},{label:'退款申请'}],
       'xianyu':[{label:'卡密管理',group:'card'},{label:'商品配置'}],
       'card-keys':[{label:'卡密管理',group:'card'},{label:'卡密管理'}],
+      'distributor':[{label:'代理商分销',group:'distributor'},{label:'代理商'}],
+      'distributor-templates':[{label:'代理商分销',group:'distributor'},{label:'卡密模板'}],
+      'distributor-batches':[{label:'代理商分销',group:'distributor'},{label:'批次与卡密'}],
+      'distributor-withdrawals':[{label:'代理商分销',group:'distributor'},{label:'提现审核'}],
+      'distributor-config':[{label:'代理商分销',group:'distributor'},{label:'分销配置'}],
       'script-logs':[{label:'日志监控',group:'logs'},{label:'脚本日志'}],
       'ai-logs':[{label:'模型服务',group:'models'},{label:'模型日志'}],
       'bank-logs':[{label:'题库中心',group:'questions'},{label:'题库日志'}],
@@ -4011,7 +4674,7 @@ createApp({
       'daily-report':[{label:'日志监控',group:'logs'},{label:'每日数据邮件'}],
       'profile':[{label:'个人中心'}]
     };
-    const GROUP_FIRST_PAGE={users:'user-mgmt',questions:'question-bank',models:'ai-config',referral:'referral',payment:'payment-orders',card:'xianyu',logs:'script-logs',config:'qq-bot',bank:'bank-logs'};
+    const GROUP_FIRST_PAGE={users:'user-mgmt',questions:'question-bank',models:'ai-config',referral:'referral',payment:'payment-orders',card:'xianyu',distributor:'distributor',logs:'script-logs',config:'qq-bot',bank:'bank-logs'};
     const breadcrumbItems=computed(()=>BREADCRUMB_MAP[page.value]||[]);
     function navigateBreadcrumb(item,index){
       if(index===breadcrumbItems.value.length-1)return;
@@ -4360,6 +5023,12 @@ createApp({
     async function loadAll(){
       await loadDashboard();
       await loadAdminAccount();
+      // 侧栏「待审核代理商」角标：静默失败，不影响主流程
+      try{
+        const dr=await safeFetch('/admin/distributor/config',{headers:{'Authorization':token.value}});
+        const dd=await dr.json();
+        if(dd.code===200)fxStats.value=dd.stats||{};
+      }catch(_){}
     }
     async function loadDashboard(){
       if(!token.value)return;
@@ -5592,7 +6261,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
 
     // ========== 推广返利 ==========
     const referralTab=ref('config');
-    const expandedGroups=ref({users:false,questions:false,models:false,referral:false,payment:false,card:false,logs:false,config:false});
+    const expandedGroups=ref({users:false,questions:false,models:false,referral:false,payment:false,card:false,distributor:false,logs:false,config:false});
     const isMobile=ref(window.innerWidth<=768);
     const mobileSidebarOpen=ref(false);
     const mobileSubmenu=ref(null);
@@ -5600,6 +6269,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       referral:{title:'推广运营',icon:'★',items:[{page:'referral',label:'返利配置',icon:'⚙',load:loadReferralConfig},{page:'referral-withdrawals',label:'提现审核',icon:'¥',load:loadReferralWithdrawals},{page:'feedback',label:'问题反馈',icon:'✎',load:()=>{loadFeedbackList();loadFeedbackAutoClose();loadFeedbackNotify();}},{page:'announce',label:'公告通知',icon:'◎',load:loadAnnounceConfig}]},
       payment:{title:'支付财务',icon:'□',items:[{page:'payment-orders',label:'支付明细',icon:'▤',load:loadPaymentOrders},{page:'payment',label:'套餐配置',icon:'◈',load:loadPaymentConfig},{page:'pay-api',label:'支付接口',icon:'⌁',load:loadPayApiConfig},{page:'pay-test',label:'支付测试',icon:'◎',load:()=>{}},{page:'refund-requests',label:'退款申请',icon:'↩',load:loadRefundRequests}]},
       card:{title:'卡密管理',icon:'⚷',items:[{page:'xianyu',label:'商品配置',icon:'●',load:loadXianyuConfig},{page:'card-keys',label:'卡密管理',icon:'⚷',load:loadCardKeys}]},
+      distributor:{title:'代理商分销',icon:'⚑',items:[{page:'distributor',label:'代理商',icon:'◉',load:loadFxList},{page:'distributor-templates',label:'卡密模板',icon:'▤',load:()=>{loadFxOptions();loadFxTemplates();}},{page:'distributor-batches',label:'批次与卡密',icon:'≣',load:()=>{loadFxOptions();loadFxBatches(1);}},{page:'distributor-withdrawals',label:'提现审核',icon:'¥',load:()=>{loadFxOptions();loadFxWds(1);}},{page:'distributor-config',label:'分销配置',icon:'⚙',load:loadFxConfig}]},
       logs:{title:'日志监控',icon:'☰',items:[{page:'script-logs',label:'脚本日志',icon:'⌘',load:loadScriptLogs},{page:'log-cleanup',label:'日志清理',icon:'∅',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'⊙',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
       models:{title:'模型服务',icon:'◈',items:[{page:'ai-config',label:'模型配置',icon:'◈',load:loadConfig},{page:'ai-logs',label:'模型日志',icon:'≡',load:loadAiLogs}]},
       config:{title:'系统配置',icon:'◇',items:[{page:'qq-bot',label:'QQ频道机器人',icon:'🤖',load:loadQqBot},{page:'email-config',label:'邮箱配置',icon:'✉',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'db-config',label:'系统设置',icon:'⛁',load:loadDbConfig}]}
@@ -6244,6 +6914,399 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     function feedbackPrev(){if(feedbackPage.value>1){feedbackPage.value--;loadFeedbackList();}}
     function feedbackNext(){if(feedbackPage.value<feedbackTotalPages.value){feedbackPage.value++;loadFeedbackList();}}
 
+    // ========== 代理商分销 ==========
+    const FX_PAGE_SIZE=20;
+    async function fxGet(endpoint,params){
+      const qs=new URLSearchParams(params||{}).toString();
+      const res=await safeFetch('/admin/distributor/'+endpoint+(qs?'?'+qs:''),{headers:{'Authorization':token.value}});
+      return await res.json();
+    }
+
+    // ----- 配置 -----
+    const fxStats=ref({});
+    const fxCfgMeta=ref({usable_templates:0,hard_cap:0});
+    const fxConfig=ref({enabled:false,apply_enabled:false,generate_enabled:false,withdraw_enabled:false,
+      base_price_points:0,base_price_days:0,default_discount:1,min_recharge:0,min_withdraw:0,
+      max_batch:0,daily_card_max:0,script_name:''});
+    const fxCfgSaving=ref(false);
+    const fxReconciling=ref(false);
+    const fxReconcileResult=ref(null);
+
+    async function loadFxConfig(){
+      try{
+        const d=await fxGet('config');
+        if(d.code!==200)return showMsg(d.msg||'读取分销配置失败','error');
+        Object.assign(fxConfig.value,d.config||{});
+        fxStats.value=d.stats||{};
+        fxCfgMeta.value={usable_templates:d.usable_templates||0,hard_cap:d.hard_cap||0};
+      }catch(e){showMsg(e.message||'网络错误','error');}
+    }
+    async function saveFxConfig(){
+      if(fxCfgSaving.value)return;
+      fxCfgSaving.value=true;
+      try{
+        const d=await adminPost('/admin/distributor/config/save',Object.assign({},fxConfig.value));
+        if(d){showMsg(d.msg||'配置已保存','success');await loadFxConfig();}
+      }catch(e){showMsg(e.message||'网络错误','error');}
+      finally{fxCfgSaving.value=false;}
+    }
+    async function runFxReconcile(){
+      if(fxReconciling.value)return;
+      fxReconciling.value=true;
+      try{
+        const d=await adminPost('/admin/distributor/reconcile',{stale_minutes:5});
+        if(d){
+          fxReconcileResult.value=d.result||{};
+          const r=d.result||{};
+          const n=['repaired','refunded','inconsistent','backfilled'].reduce((a,k)=>a+((r[k]||[]).length),0);
+          showMsg(n?'对账完成，处理了 '+n+' 项':'对账完成，无异常',n?'success':'success');
+          await loadFxConfig();
+        }
+      }catch(e){showMsg(e.message||'网络错误','error');}
+      finally{fxReconciling.value=false;}
+    }
+
+    // ----- 代理商列表 -----
+    const fxList=ref([]);
+    const fxFilter=ref({status:'',keyword:''});
+    const fxPage=ref(1);
+    const fxTotal=ref(0);
+    const fxTotalPages=ref(1);
+    const fxOptions=ref([]);
+
+    async function loadFxOptions(){
+      try{
+        const d=await fxGet('list',{page:1,page_size:200});
+        fxOptions.value=((d.data||{}).rows||[]).map(r=>({id:r.id,username:r.username,name:r.name,
+          status:r.status,discount_rate:r.discount_rate,balance:r.balance}));
+      }catch(_){}
+    }
+    async function loadFxList(p){
+      if(p)fxPage.value=p;
+      try{
+        const d=await fxGet('list',{status:fxFilter.value.status,keyword:fxFilter.value.keyword,
+          page:fxPage.value,page_size:FX_PAGE_SIZE});
+        if(d.code!==200)return showMsg(d.msg||'读取代理商失败','error');
+        fxList.value=(d.data||{}).rows||[];
+        fxTotal.value=(d.data||{}).total||0;
+        fxTotalPages.value=Math.max(1,Math.ceil(fxTotal.value/FX_PAGE_SIZE));
+        if(d.stats)fxStats.value=d.stats;
+      }catch(e){showMsg(e.message||'网络错误','error');}
+    }
+    function fxPrevPage(){if(fxPage.value>1)loadFxList(fxPage.value-1);}
+    function fxNextPage(){if(fxPage.value<fxTotalPages.value)loadFxList(fxPage.value+1);}
+
+    const fxAddShow=ref(false);
+    const fxAddSaving=ref(false);
+    const fxAddForm=ref({username:'',name:'',contact:'',discount_rate:1,initial_balance:0});
+    function openFxAdd(){
+      fxAddForm.value={username:'',name:'',contact:'',discount_rate:Number(fxConfig.value.default_discount||1),initial_balance:0};
+      fxAddSaving.value=false;fxAddShow.value=true;
+    }
+    async function saveFxAdd(){
+      const f=fxAddForm.value;
+      if(!String(f.username||'').trim())return showMsg('请填写代理商账号','error');
+      if(fxAddSaving.value)return;
+      fxAddSaving.value=true;
+      try{
+        const d=await adminPost('/admin/distributor/add',{username:String(f.username).trim(),name:f.name,
+          contact:f.contact,discount_rate:f.discount_rate,initial_balance:f.initial_balance});
+        if(d){fxAddShow.value=false;showMsg(d.msg||'已开通','success');await Promise.all([loadFxList(1),loadFxOptions()]);}
+      }catch(e){showMsg(e.message||'网络错误','error');}
+      finally{fxAddSaving.value=false;}
+    }
+
+    const fxEditShow=ref(false);
+    const fxEditSaving=ref(false);
+    const fxEditForm=ref({});
+    function openFxEdit(r){
+      fxEditForm.value={id:r.id,username:r.username,name:r.name||'',contact:r.contact||'',
+        discount_rate:Number(r.discount_rate||1),support_note:r.support_note||'',shop_url:r.shop_url||'',audit_note:r.audit_note||''};
+      fxEditShow.value=true;
+    }
+    async function saveFxEdit(){
+      if(fxEditSaving.value)return;
+      fxEditSaving.value=true;
+      try{
+        const f=fxEditForm.value;
+        const d=await adminPost('/admin/distributor/update',{id:f.id,username:f.username,name:f.name,
+          contact:f.contact,discount_rate:f.discount_rate,support_note:f.support_note,shop_url:f.shop_url,audit_note:f.audit_note});
+        if(d){fxEditShow.value=false;showMsg(d.msg||'已保存','success');await Promise.all([loadFxList(),loadFxOptions()]);}
+      }catch(e){showMsg(e.message||'网络错误','error');}
+      finally{fxEditSaving.value=false;}
+    }
+
+    async function fxAudit(r,approve){
+      if(approve){
+        if(!confirm(`确认通过「${r.username}」的代理商申请？`))return;
+      }else{
+        const reason=prompt('请输入驳回原因（必填）：','')||'';
+        if(!reason.trim())return showMsg('驳回必须填写原因','error');
+        const d=await adminPost('/admin/distributor/audit',{id:r.id,approve:false,reject_reason:reason.trim(),note:reason.trim()});
+        if(d){showMsg(d.msg||'已驳回','success');await Promise.all([loadFxList(),loadFxOptions()]);}
+        return;
+      }
+      const d=await adminPost('/admin/distributor/audit',{id:r.id,approve:true});
+      if(d){showMsg(d.msg||'已通过','success');await Promise.all([loadFxList(),loadFxOptions()]);}
+    }
+    async function fxSetStatus(r,status){
+      if(!confirm(`确认将「${r.username}」状态改为「${fxStatusText(status)}」？`))return;
+      const d=await adminPost('/admin/distributor/status',{id:r.id,status});
+      if(d){showMsg(d.msg||'状态已更新','success');await Promise.all([loadFxList(),loadFxOptions()]);}
+    }
+
+    const fxBalShow=ref(false);
+    const fxBalSaving=ref(false);
+    const fxBalForm=ref({id:0,username:'',balance:'0.00',amount:0,remark:''});
+    function openFxBalance(r){
+      fxBalForm.value={id:r.id,username:r.username,balance:String(r.balance||'0.00'),amount:0,remark:''};
+      fxBalShow.value=true;
+    }
+    async function saveFxBalance(){
+      const f=fxBalForm.value;
+      if(!Number(f.amount))return showMsg('调整金额不能为 0','error');
+      if(fxBalSaving.value)return;
+      fxBalSaving.value=true;
+      try{
+        const d=await adminPost('/admin/distributor/balance/adjust',{id:f.id,amount:f.amount,remark:f.remark});
+        if(d){fxBalShow.value=false;showMsg(d.msg||'已调整','success');await Promise.all([loadFxList(),loadFxOptions()]);}
+      }catch(e){showMsg(e.message||'网络错误','error');}
+      finally{fxBalSaving.value=false;}
+    }
+
+    const fxDetailShow=ref(false);
+    const fxDetail=ref(null);
+    const fxDetailId=ref(0);
+    const fxDetailPage=ref(1);
+    const fxDetailTotalPages=ref(1);
+    async function openFxDetail(r,page){
+      fxDetailId.value=r.id;
+      fxDetailPage.value=page||1;
+      fxDetail.value=null;
+      fxDetailShow.value=true;
+      await loadFxDetail();
+    }
+    async function loadFxDetail(){
+      try{
+        const d=await fxGet('detail',{id:fxDetailId.value,page:fxDetailPage.value,page_size:FX_PAGE_SIZE});
+        if(d.code!==200)return showMsg(d.msg||'读取失败','error');
+        fxDetail.value=d;
+        fxDetailTotalPages.value=Math.max(1,Math.ceil((((d.logs||{}).total)||0)/FX_PAGE_SIZE));
+      }catch(e){showMsg(e.message||'网络错误','error');}
+    }
+    function fxDetailPrev(){if(fxDetailPage.value>1){fxDetailPage.value--;loadFxDetail();}}
+    function fxDetailNext(){if(fxDetailPage.value<fxDetailTotalPages.value){fxDetailPage.value++;loadFxDetail();}}
+
+    // ----- 卡密模板 -----
+    const fxTemplates=ref([]);
+    const fxTplShow=ref(false);
+    const fxTplSaving=ref(false);
+    const fxTplForm=ref({});
+    function newFxTpl(){
+      fxTplForm.value={id:0,name:'',price_type:'points',points:100,days:0,code_prefix:'FX',enabled:true,sort_order:0,remark:''};
+      fxTplShow.value=true;
+    }
+    function openFxTplEdit(t){
+      fxTplForm.value={id:t.id,name:t.name,price_type:t.price_type||'points',points:Number(t.points||0),
+        days:Number(t.days||0),code_prefix:t.code_prefix||'FX',enabled:!!t.enabled,
+        sort_order:Number(t.sort_order||0),remark:t.remark||''};
+      fxTplShow.value=true;
+    }
+    function fxTplSwitchType(){
+      if(fxTplForm.value.price_type==='monthly'){fxTplForm.value.points=0;if(!fxTplForm.value.days)fxTplForm.value.days=30;}
+      else{fxTplForm.value.days=0;if(!fxTplForm.value.points)fxTplForm.value.points=100;}
+    }
+    async function loadFxTemplates(){
+      try{
+        const d=await fxGet('templates');
+        if(d.code!==200)return showMsg(d.msg||'读取模板失败','error');
+        fxTemplates.value=d.templates||[];
+        if(d.stats)fxStats.value=d.stats;
+      }catch(e){showMsg(e.message||'网络错误','error');}
+    }
+    async function saveFxTpl(){
+      const f=fxTplForm.value;
+      if(String(f.name||'').trim().length<2)return showMsg('模板名称至少 2 个字','error');
+      if(fxTplSaving.value)return;
+      fxTplSaving.value=true;
+      try{
+        const d=await adminPost('/admin/distributor/template/save',Object.assign({},f,{name:String(f.name).trim()}));
+        if(d){fxTplShow.value=false;showMsg(d.msg||'模板已保存','success');await loadFxTemplates();}
+      }catch(e){showMsg(e.message||'网络错误','error');}
+      finally{fxTplSaving.value=false;}
+    }
+    async function toggleFxTpl(t){
+      const d=await adminPost('/admin/distributor/template/toggle',{id:t.id,enabled:!t.enabled});
+      if(d){showMsg(d.msg||'已更新','success');await loadFxTemplates();}
+    }
+    async function deleteFxTpl(t){
+      if(!confirm(`确认删除模板「${t.name}」？`))return;
+      const d=await adminPost('/admin/distributor/template/delete',{id:t.id});
+      if(d){showMsg(d.msg||'已删除','success');await loadFxTemplates();}
+    }
+
+    // ----- 生成卡密 -----
+    const genDistId=ref(0);
+    const genTplId=ref(0);
+    const genCount=ref(10);
+    const genQuote=ref(null);
+    const genQuoteErr=ref('');
+    const genSaving=ref(false);
+    const genResult=ref(null);
+    watch([genDistId,genTplId,genCount],()=>{genQuote.value=null;genQuoteErr.value='';genResult.value=null;});
+    async function previewFxQuote(){
+      if(!genDistId.value)return showMsg('请选择代理商','error');
+      if(!genTplId.value)return showMsg('请选择模板','error');
+      genResult.value=null;genQuoteErr.value='';
+      try{
+        const d=await fxGet('price-preview',{id:genDistId.value,template_id:genTplId.value,count:genCount.value||1});
+        if(d.code!==200){genQuoteErr.value=d.msg||'报价失败';genQuote.value=null;return;}
+        genQuote.value=d.quote||null;
+      }catch(e){genQuoteErr.value=e.message||'网络错误';}
+    }
+    async function generateFxCards(){
+      if(!genQuote.value)return showMsg('请先点击「查看报价」','error');
+      const q=genQuote.value;
+      if(!q.enough)return showMsg('余额不足，无法生成','error');
+      if(!confirm(`确认给「${q.username}」生成 ${q.count} 张「${q.template_name}」，扣款 ${q.settle_amount} 元？`))return;
+      genSaving.value=true;
+      try{
+        const d=await adminPost('/admin/distributor/generate',{distributor_id:q.distributor_id,
+          template_id:q.template_id,count:q.count});
+        if(d){
+          genResult.value=d.result||null;genQuote.value=null;
+          showMsg(d.msg||'已生成','success',5000);
+          await Promise.all([loadFxOptions(),loadFxBatches(1)]);
+        }
+      }catch(e){showMsg(e.message||'网络错误','error');}
+      finally{genSaving.value=false;}
+    }
+    // 故意不把事件传给 copyText：它的失败兜底会选中按钮自身文字（「复制全部卡密」），反而误导
+    async function copyFxResult(){
+      const codes=(genResult.value||{}).codes||[];
+      if(!codes.length)return showMsg('没有可复制的卡密','error');
+      const ok=await copyText(codes.join('\n'));
+      if(ok)showMsg('已复制 '+codes.length+' 条卡密','success');
+    }
+
+    // ----- 批次与卡密 -----
+    const fxBatchTab=ref('batch');
+    const fxBatchFilterId=ref(0);
+    const fxBatches=ref([]);
+    const fxBatchPage=ref(1);
+    const fxBatchTotal=ref(0);
+    const fxBatchTotalPages=ref(1);
+    async function loadFxBatches(p){
+      if(p)fxBatchPage.value=p;
+      try{
+        const d=await fxGet('batches',{id:fxBatchFilterId.value||0,page:fxBatchPage.value,page_size:FX_PAGE_SIZE});
+        if(d.code!==200)return showMsg(d.msg||'读取批次失败','error');
+        fxBatches.value=(d.data||{}).rows||[];
+        fxBatchTotal.value=(d.data||{}).total||0;
+        fxBatchTotalPages.value=Math.max(1,Math.ceil(fxBatchTotal.value/FX_PAGE_SIZE));
+      }catch(e){showMsg(e.message||'网络错误','error');}
+    }
+
+    const fxCardFilter=ref({id:0,status:'',batch_no:''});
+    const fxCards=ref([]);
+    const fxCardPage=ref(1);
+    const fxCardTotal=ref(0);
+    const fxCardTotalPages=ref(1);
+    async function loadFxCards(p){
+      if(p)fxCardPage.value=p;
+      try{
+        const d=await fxGet('cards',{id:fxCardFilter.value.id||0,status:fxCardFilter.value.status,
+          batch_no:fxCardFilter.value.batch_no,page:fxCardPage.value,page_size:FX_PAGE_SIZE});
+        if(d.code!==200)return showMsg(d.msg||'读取卡密失败','error');
+        fxCards.value=(d.data||{}).rows||[];
+        fxCardTotal.value=(d.data||{}).total||0;
+        fxCardTotalPages.value=Math.max(1,Math.ceil(fxCardTotal.value/FX_PAGE_SIZE));
+      }catch(e){showMsg(e.message||'网络错误','error');}
+    }
+    function goFxBatchCards(b){
+      fxBatchTab.value='cards';
+      fxCardFilter.value={id:b.distributor_id,status:'',batch_no:b.batch_no};
+      loadFxCards(1);
+    }
+    function exportFxCards(){
+      const rows=fxCards.value;
+      if(!rows.length)return showMsg('没有数据可导出','error');
+      // 模板名可含逗号，用户名由外部注册——既要转义分隔符，也要挡 =+-@ 开头的公式注入
+      const cell=v=>{
+        let s=String(v==null?'':v);
+        if(/^[=+\-@\t\r]/.test(s))s="'"+s;
+        return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;
+      };
+      let csv='卡密,批次号,模板,结算价,权益,状态,使用者,生成时间,使用时间\n';
+      rows.forEach(r=>{
+        const grant=r.grant_type==='monthly'?(r.grant_days+'天'):((r.grant_points||0)+'题');
+        csv+=[r.code,r.batch_no||'',r.template_name||'',Number(r.settle_amount||0).toFixed(2),grant,
+          r.status==='unused'?'未使用':'已使用',r.used_by||'',fxTimeFull(r.created_at),fxTimeFull(r.used_at)||'']
+          .map(cell).join(',')+'\n';
+      });
+      const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8;'});
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);
+      a.download='分销卡密_'+new Date().toISOString().substring(0,10)+'.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    // ----- 提现审核 -----
+    const fxWdFilter=ref({status:'',id:0});
+    const fxWds=ref([]);
+    const fxWdPage=ref(1);
+    const fxWdTotal=ref(0);
+    const fxWdTotalPages=ref(1);
+    const fxWdSummary=ref({});
+    const fxWdQr=ref('');
+    async function loadFxWds(p){
+      if(p)fxWdPage.value=p;
+      try{
+        const d=await fxGet('withdrawals',{distributor_id:fxWdFilter.value.id||0,status:fxWdFilter.value.status,
+          page:fxWdPage.value,page_size:FX_PAGE_SIZE});
+        if(d.code!==200)return showMsg(d.msg||'读取提现申请失败','error');
+        fxWds.value=(d.data||{}).rows||[];
+        fxWdTotal.value=(d.data||{}).total||0;
+        fxWdTotalPages.value=Math.max(1,Math.ceil(fxWdTotal.value/FX_PAGE_SIZE));
+        fxWdSummary.value=d.summary||{};
+      }catch(e){showMsg(e.message||'网络错误','error');}
+    }
+    async function fxWdApprove(w){
+      // 钱在申请时就已经离开余额了，「通过」只是确认线下款已付，不能再扣一次
+      if(!confirm(`确认已向「${w.username}」线下打款 ¥${Number(w.amount||0).toFixed(2)}？\n通过只关单，不会再动余额。`))return;
+      const d=await adminPost('/admin/distributor/withdrawal/approve',{id:w.id});
+      if(d){showMsg(d.msg||'已标记为已打款','success');await Promise.all([loadFxWds(),loadFxConfig()]);}
+    }
+    async function fxWdReject(w){
+      const reason=(prompt('驳回原因（必填，会展示给代理商）：','')||'').trim();
+      if(!reason)return showMsg('驳回必须填写原因','error');
+      const d=await adminPost('/admin/distributor/withdrawal/reject',{id:w.id,reason});
+      if(d){showMsg(d.msg||'已驳回','success');await Promise.all([loadFxWds(),loadFxConfig()]);}
+    }
+    const fxWdStatusText=v=>({pending:'待审核',approved:'已打款',rejected:'已驳回'}[v]||v||'-');
+    const fxWdStatusColor=v=>({pending:'var(--warning)',approved:'var(--success)',rejected:'var(--text3)'}[v]||'var(--text2)');
+
+    const fxStatusText=v=>({pending:'待审核',approved:'已开通',rejected:'已驳回',suspended:'已停用'}[v]||v||'-');
+    const fxStatusColor=v=>({pending:'var(--warning)',approved:'var(--success)',rejected:'var(--danger,#ef4444)',suspended:'var(--text3)'}[v]||'var(--text2)');
+    const fxLogTypeText=v=>({recharge:'充值',generate:'生成扣款',refund:'退款',withdraw:'提现',withdraw_reject:'提现退回',adjust:'人工调整'}[v]||v||'-');
+    const fxBatchStatusText=v=>({pending:'处理中',generated:'已生成',failed:'已失败',inconsistent:'需人工核对'}[v]||v||'-');
+    const fxBatchStatusColor=v=>({pending:'var(--warning)',generated:'var(--success)',failed:'var(--text3)',inconsistent:'var(--danger,#ef4444)'}[v]||'var(--text2)');
+    const fxGrantText=r=>r.price_type==='monthly'||r.grant_type==='monthly'?(Number(r.days||r.grant_days||0)+' 天'):(Number(r.points||r.grant_points||0)+' 题');
+    const fxMoney=v=>'¥'+Number(v||0).toFixed(2);
+    const fxTimeShort=v=>String(v||'').replace('T',' ').substring(0,16);
+    const fxTimeFull=v=>String(v||'').replace('T',' ').substring(0,19);
+    const fxDiscountPct=v=>(Number(v||1)*100).toFixed(0)+'%';
+    const fxDriftBad=v=>Math.abs(Number(v||0))>0.004;
+    // 从列表行跳转到「批次」页并自动筛出该代理商
+    function fxGotoBatches(r){
+      fxBatchFilterId.value=r.id;
+      fxBatchTab.value='batch';
+      expandedGroups.value.distributor=true;
+      page.value='distributor-batches';
+      loadFxOptions();loadFxBatches(1);
+    }
+
     if(token.value){page.value='dashboard';loadAll();}
     else {page.value='login';initAdminSlider();}
     loading.value=false;
@@ -6284,6 +7347,18 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         gotoPaymentOrder,gotoPaymentByUsername,gotoPaymentByOrderNo,
         xianyuEnabled,xianyuUrl,cardPayName,cardPayIcon,ckList,ckPage,ckTotalPages,ckTotal,ckFilterStatus,ckFilterPlanId,ckGeneratePlanId,ckGenerateCount,ckGenerateSaving,
         loadCardKeys,loadXianyuConfig,saveXianyuConfig,onCardIconUpload,exportCardKeys,generateCardKeys,
+      fxStats,fxCfgMeta,fxConfig,fxCfgSaving,fxReconciling,fxReconcileResult,loadFxConfig,saveFxConfig,runFxReconcile,
+      fxList,fxFilter,fxPage,fxTotal,fxTotalPages,fxOptions,loadFxList,loadFxOptions,fxPrevPage,fxNextPage,
+      fxAddShow,fxAddSaving,fxAddForm,openFxAdd,saveFxAdd,
+      fxEditShow,fxEditSaving,fxEditForm,openFxEdit,saveFxEdit,fxAudit,fxSetStatus,
+      fxBalShow,fxBalSaving,fxBalForm,openFxBalance,saveFxBalance,
+      fxDetailShow,fxDetail,fxDetailId,fxDetailPage,fxDetailTotalPages,openFxDetail,loadFxDetail,fxDetailPrev,fxDetailNext,
+      fxTemplates,fxTplShow,fxTplSaving,fxTplForm,newFxTpl,openFxTplEdit,fxTplSwitchType,loadFxTemplates,saveFxTpl,toggleFxTpl,deleteFxTpl,
+      genDistId,genTplId,genCount,genQuote,genQuoteErr,genSaving,genResult,previewFxQuote,generateFxCards,copyFxResult,
+      fxBatchTab,fxBatchFilterId,fxBatches,fxBatchPage,fxBatchTotal,fxBatchTotalPages,loadFxBatches,
+      fxCardFilter,fxCards,fxCardPage,fxCardTotal,fxCardTotalPages,loadFxCards,goFxBatchCards,exportFxCards,
+      fxWdFilter,fxWds,fxWdPage,fxWdTotal,fxWdTotalPages,fxWdSummary,fxWdQr,loadFxWds,fxWdApprove,fxWdReject,fxWdStatusText,fxWdStatusColor,
+      fxStatusText,fxStatusColor,fxLogTypeText,fxBatchStatusText,fxBatchStatusColor,fxGrantText,fxMoney,fxTimeShort,fxTimeFull,fxDiscountPct,fxDriftBad,fxGotoBatches,
        feedbackList,feedbackFilter,feedbackPage,feedbackTotalPages,feedbackTotal,feedbackPendingCount,feedbackDetail,feedbackReplyText,
         loadFeedbackList,feedbackSearch,viewFeedbackDetail,replyFeedback,updateFeedbackStatus,feedbackPrev,feedbackNext,
     feedbackAutoCloseDays,loadFeedbackAutoClose,saveFeedbackAutoClose,cardPayLabel,
