@@ -462,6 +462,17 @@
                         </tr>
                     </tbody>
                 </table></div>
+                <div class="card-bd" style="border-top:1px solid var(--c-border-2)">
+                    <div class="bar" style="padding:0;border:0">
+                        <span class="lbl">店铺链接</span>
+                        <input id="shopUrl" type="text" maxlength="255" autocomplete="off"
+                               placeholder="https:// 开头；留空则脚本不露出购买入口，客户只能凭卡密激活"
+                               oninput="setMsg('shopMsg','')">
+                        <div class="spacer"></div>
+                        <button class="primary" id="shopBtn" onclick="saveShopUrl()">保存店铺链接</button>
+                    </div>
+                    <div class="msg" id="shopMsg"></div>
+                </div>
                 <div class="card-bd"><div class="msg" id="scriptMsg"></div></div>
             </div>
             <div class="card">
@@ -1197,12 +1208,15 @@
             var code = dist.script_code || '—';
             var shop = String(dist.shop_url || '').trim();
             $('scriptSub').textContent = '水印：' + name + ' · 渠道码 ' + code;
+            if (document.activeElement !== $('shopUrl')) $('shopUrl').value = shop;
             var notes = [
                 ['info', '文件头部写入了你的渠道名与渠道码 <b>' + esc(name) + ' / ' + esc(code) +
                     '</b>，构建时已移除官方推广位（推广返利、QQ 频道）与官方自动更新检查。'],
                 shop ? ['ok', '脚本里的「购买 / 续费 / 价格」入口跳你的店铺：<b>' + esc(shop) + '</b>']
-                    : ['warn', '管理员还没给你的账号填「店铺链接」，脚本里的「购买 / 续费 / 价格」入口暂时仍指向官方页面。'],
-                ['info', '终端用户拿到卡密后在用户中心激活：' + esc(location.origin) + '/user?section=billing ，输入 16 位卡密即可，不需要在你的地址上装任何东西。'],
+                    : ['warn', '还没填「店铺链接」：脚本里不会出现任何购买入口（也不会把客户送去官方页面下单），' +
+                        '客户只能凭你发放的卡密激活。填上地址并重新下载即可开通。'],
+                ['info', '终端用户拿到卡密后，直接在脚本的「账号」面板输入 16 位卡密点「激活卡密」；' +
+                    '也可以到用户中心 ' + esc(location.origin) + '/user?section=billing 激活，不需要在你的地址上装任何东西。'],
                 ['warn', '纯净版没有更新通道：官方脚本改版后不会自动推给已安装的用户。要更新就回这里重新下载，再发给客户。'],
                 ['info', '两份只差依赖装载方式（sc 走外链、gf 全内联），挑一份发出去即可。']
             ];
@@ -1210,6 +1224,29 @@
                 return '<div class="note ' + n[0] + '">' + n[1] + '</div>';
             }).join('');
             setMsg('scriptMsg', '');
+        }
+        async function saveShopUrl() {
+            var v = String($('shopUrl').value || '').trim();
+            // 与 build_distributor.shop_url 同一套规则，先在本地挡掉明显不合法的，省一次往返；
+            // 判定仍以服务端为准——链接会被拼进脚本的 JS 字符串字面量。
+            if (v.length > 255) return setMsg('shopMsg', '链接过长（上限 255 字符）', 'err');
+            if (/\s/.test(v)) return setMsg('shopMsg', '链接中间不能有空格', 'err');
+            if (/["'<>\\]/.test(v)) return setMsg('shopMsg', '链接不能包含引号、尖括号或反斜杠', 'err');
+            if (v && !/^https:\/\//i.test(v)) return setMsg('shopMsg', '必须以 https:// 开头', 'err');
+            var saved = String(((ME && ME.distributor) || {}).shop_url || '').trim();
+            if (!v && saved && !window.confirm(
+                '清空后，客户在脚本里点「购买 / 续费 / 价格」将不再有跳转，只能凭你发放的卡密激活。确定清空？')) return;
+            setBusy('shopBtn', true, '保存中…');
+            try {
+                var res = await apiPost('/api/distributor/shop-url', { shop_url: v });
+                if (res.code === 200) {
+                    ME = res.me || ME;
+                    renderScript();
+                    setMsg('shopMsg', res.msg || '已保存', 'ok');
+                } else setMsg('shopMsg', res.msg || '保存失败', 'err');
+            } catch (e) {
+                setMsg('shopMsg', '网络请求失败：' + e.message, 'err');
+            } finally { setBusy('shopBtn', false); }
         }
         async function downloadScript(key, btnId) {
             setBusy(btnId, true, '构建中…');

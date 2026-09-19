@@ -2632,7 +2632,7 @@ class Database:
         if not dist:
             return False, "代理商不存在"
         sets, params = [], []
-        # shop_url 的 https 校验在后台接口里做（规则归 build_distributor 所有），
+        # shop_url 的 https 校验在调用方做（后台编辑与门户自助都走 build_distributor.shop_url），
         # 这里不重复一份：两处正则迟早会漂移，而漏判的代价是把非法串注入进脚本。
         for key, col, limit in (("name", "name", 100), ("contact", "contact", 100),
                                 ("support_note", "support_note", 255), ("audit_note", "audit_note", 500),

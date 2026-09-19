@@ -2510,7 +2510,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                 </div>
                 <div class="form-group"><label>折扣率（0.5 = 五折）</label><input type="number" step="0.0001" min="0.0001" max="1" v-model.number="fxEditForm.discount_rate"></div>
                 <div class="form-group"><label>售后文案（展示给终端用户）</label><input v-model="fxEditForm.support_note" placeholder="如：卡密有问题请联系 QQ 123456"></div>
-                <div class="form-group"><label>店铺链接（纯净版脚本的购买/续费跳转）</label><input v-model="fxEditForm.shop_url" placeholder="https:// 开头，留空则脚本仍跳官方页面"></div>
+                <div class="form-group"><label>店铺链接（纯净版脚本的购买/续费跳转）</label><input v-model="fxEditForm.shop_url" placeholder="https:// 开头；留空则脚本不露出购买入口，客户只能凭卡密激活"></div>
                 <div class="form-group"><label>审核备注</label><input v-model="fxEditForm.audit_note"></div>
                 <small style="color:var(--text3)">改折扣前会对全部启用模板试算；若导致某模板无法精确到分，折扣保持原值并报错。</small>
               </div>

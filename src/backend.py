@@ -4440,6 +4440,35 @@ class Handler(BaseHTTPRequestHandler):
                 return
             _ok(msg, withdrawal=db.get_distributor_withdrawal(wid), me=db.distributor_portal_me(user["username"]))
 
+        elif path == "/api/distributor/shop-url":
+            user, dist = self._distributor_user()
+            if not dist:
+                return
+            if self._distributor_rate_limited("/api/distributor/shop-url:" + user["username"], 10, 600):
+                return
+            if fx_build is None:
+                _fail("链接校验组件未就绪，请稍后再试或联系管理员", 503)
+                return
+            raw = data.get("shop_url")
+            if isinstance(raw, dict) or isinstance(raw, list):
+                _fail("店铺链接格式不对")
+                return
+            # 规则只有 build_distributor.shop_url 一处：链接最终要进 JS 字符串字面量，
+            # 门户这里放开自助填写，就必须走同一个校验，不能各写一份正则。
+            try:
+                url = fx_build.shop_url(raw)
+            except fx_build.BuildError as e:
+                _fail(str(e))
+                return
+            ok, msg = db.update_distributor(int(dist.get("id") or 0), {"shop_url": url},
+                                            operator=user["username"])
+            if not ok:
+                _fail(msg)
+                return
+            _ok("已保存：重新下载的纯净版，购买/续费入口即跳该地址" if url
+                else "已清空：纯净版不再出现购买入口，终端用户只能凭卡密激活",
+                shop_url=url, me=db.distributor_portal_me(user["username"]))
+
         else:
             _fail("not found", 404)
 
