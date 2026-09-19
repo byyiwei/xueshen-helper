@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.3.6
+// @version      5.3.7
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @author       IPYIWEI
@@ -10,6 +10,10 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.3.7 更新内容：
+// @changelog    1. 渠道专属版加固：代理商未配置店铺链接时，脚本不再露出官方购买入口，续费只走渠道发放的卡密激活
+// @changelog    2. 代理商门户可自助填写店铺链接，保存后重新下载的脚本即跳该地址
+// @changelog    3. 官方版功能与行为无变化
 // @changelog    v5.3.6 更新内容：
 // @changelog    1. 修复图片题漏传：纯图题干不再被跳过，图片选项会采集并发送给模型
 // @changelog    2. 智慧树 iframe 改为绑定题目 DOM，选项图/题干图都能下载
@@ -1441,6 +1445,17 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     };
   };
   const LOCAL_USER_CENTER_URL = "https://xs.openget.cn/user?section=account";
+  // >>> FX-INJECT:dist-channel
+  // __DIST.shop stays empty in the official build, so every FX-CH site below
+  // falls back to the official URL. build_distributor.py replaces this block.
+  var __DIST = { shop: "", name: "", code: "" };
+  // <<< FX-INJECT:dist-channel
+  // 渠道版没配店铺链接时，续费类入口不许回落到官方购买页：那等于渠道自己把
+  // 客户送回官网下单。此时链接整体置空，只留下面板里的卡密激活。
+  // 官方版 __DIST.code 恒为空串，__noShop 永远是 false，行为零变化。
+  const __noShop = !!(__DIST.code && !__DIST.shop);  // FX-CH:no-shop-guard
+  const __noShopTip = "该渠道未开通在线购买，续费请向渠道索取卡密，在「账号」面板输入卡密激活";
+  const __billHref = __DIST.shop || (__noShop ? "" : "https://xs.openget.cn/user?section=billing");  // FX-CH:no-shop-billing
   const localBackendJson = (url, data, token) => {
     return new Promise((resolve) => {
       GM_xmlhttpRequest({
@@ -1886,6 +1901,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             ]),
             vue.createTextVNode(vue.toDisplayString(announce.value.text), 1)
           ])) : vue.createCommentVNode("", true),
+          // >>> FX-STRIP:promo
           vue.createElementVNode("div", { class: "home-section", style: {"margin-top":"8px"} }, [
             vue.createElementVNode("div", { class: "section-title" }, "推广返利"),
             vue.createElementVNode("a", {
@@ -1894,6 +1910,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               target: "_blank"
             }, "💰 去推广赚钱")
           ]),
+          // <<< FX-STRIP:promo
+          // >>> FX-STRIP:qq-channel
           vue.createElementVNode("div", { class: "home-section", style: {"margin-top":"8px"} }, [
             vue.createElementVNode("div", { class: "section-title" }, "QQ频道"),
             vue.createElementVNode("a", {
@@ -1906,6 +1924,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               vue.createElementVNode("span", { style: { "display": "block", "font-size": "11px", "font-weight": "400", "opacity": ".9", "margin-top": "2px" } }, "频道号 pd22434767 · 点击立即加入")
             ])
           ]),
+          // <<< FX-STRIP:qq-channel
           vue.createElementVNode("div", {
             class: "home-section collapsible-section",
             style: {"margin-top":"8px"}
@@ -1926,6 +1945,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             style: { "margin": "0 8px 10px", "padding": "10px 12px", "background": "var(--t-surface)", "border": "1px solid var(--t-border)", "border-radius": "6px" }
           }, [
             vue.createElementVNode("ul", null, [
+              // >>> FX-STRIP:scriptcat-update
               vue.unref(scriptInfo).version !== vue.unref(latestVersion) ? (vue.openBlock(), vue.createElementBlock("li", _hoisted_3$5, _cache[0] || (_cache[0] = [
                 vue.createTextVNode("检测到脚本非最新版本，"),
                 vue.createElementVNode("a", {
@@ -1933,6 +1953,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                   target: "_blank"
                 }, "点我更新", -1)
               ]))) : vue.createCommentVNode("", true),
+              // <<< FX-STRIP:scriptcat-update
               _cache[1] || (_cache[1] = vue.createElementVNode("li", null, "请手动进入视频、作业、考试页面，脚本会自动运行。", -1)),
               _cache[2] || (_cache[2] = vue.createElementVNode("li", null, [
                 vue.createTextVNode("如脚本无法正常运行，请使用 "),
@@ -2286,10 +2307,11 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 section.showRemainCount ? (vue.openBlock(), vue.createElementBlock("div", _hoisted_6$3, [
                   vue.createElementVNode("div", { style: { "color": "var(--t-text2)" } }, vue.toDisplayString(remainDisplay.value.label), 1),
                   vue.createElementVNode("a", {
-                    href: "https://xs.openget.cn/user?section=billing",
+                    href: __billHref || void 0,  // FX-CH:remain-billing
+                    title: __billHref ? void 0 : __noShopTip,
                     target: "_blank",
                     style: { "color": remainDisplay.value.isMember ? "var(--t-primary)" : "var(--t-text)", "text-decoration": "none" }
-                  }, vue.toDisplayString(remainDisplay.value.value), 1)
+                  }, vue.toDisplayString(remainDisplay.value.value + (__billHref ? "" : "（需卡密激活）")), 1)
                 ])) : vue.createCommentVNode("", true),
                 (vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(section.configs, (config2) => {
                   return vue.openBlock(), vue.createElementBlock("div", { key: config2 }, [
@@ -3300,7 +3322,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     return {
       code: 1,
       data: {
-        shopLink: "https://xs.openget.cn/user?section=account",
+        shopLink: __DIST.shop || "https://xs.openget.cn/user?section=account",  // FX-CH:basic-info-shop
         version: scriptInfo.version,
         chatWebUrl: "已接入 AI 智能答题云服务"
       }
@@ -11695,9 +11717,6 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             type: (domQuestion.element && domQuestion.element.querySelector && domQuestion.element.querySelector("input[type=checkbox]"))
               ? "多选题"
               : (apiQuestion.type || domQuestion.type),
-            type: (domQuestion.element && domQuestion.element.querySelector && domQuestion.element.querySelector("input[type=checkbox]"))
-              ? "多选题"
-              : (apiQuestion.type || domQuestion.type),
             title: apiQuestion.title || domQuestion.title,
             optionsText: ((_a2 = apiQuestion.optionsText) == null ? void 0 : _a2.length) ? apiQuestion.optionsText : domQuestion.optionsText || [],
             options: Object.keys(apiQuestion.options || {}).length ? apiQuestion.options : domQuestion.options || {},
@@ -12710,8 +12729,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         const token = (remembered && remembered.token) || "";
         const user = (remembered && remembered.user) || "";
         const userStr = typeof user === "string" ? user : JSON.stringify(user);
-        const baseUrl = "https://xs.openget.cn/user?section=billing";
-        const url = token
+        const baseUrl = __billHref;  // FX-CH:pricing-base-url
+        if (!baseUrl) {
+          cardMsg.value = "提示：" + __noShopTip;
+          return;
+        }
+        const url = token && !__DIST.shop  // FX-CH:pricing-login-param
           ? `${baseUrl}&token=${encodeURIComponent(token)}&user=${encodeURIComponent(userStr)}`
           : baseUrl;
         window.open(url, "_blank");
@@ -12788,6 +12811,45 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         setRememberedLogin({ remember: rememberLogin.value, username: loginUser.value.trim() });
         isAutoLoggedIn.value = false;
         loginMsg.value = "已清除脚本页登录记忆";
+      };
+      const cardCode = vue.ref("");
+      const cardBusy = vue.ref(false);
+      const cardMsg = vue.ref("");
+      const activateCardKey = async () => {
+        const code = cardCode.value.trim().toUpperCase();
+        if (code.length !== 16) {
+          cardMsg.value = "请输入 16 位卡密";
+          return;
+        }
+        const token = getLocalBackendToken() || getRememberedLogin().token || "";
+        if (!token) {
+          cardMsg.value = "请先登录";
+          return;
+        }
+        cardBusy.value = true;
+        cardMsg.value = "正在激活...";
+        try {
+          const res = await localBackendJson("https://xs.openget.cn/api/user/card-key/activate", { code }, token);
+          if (res.code === 200) {
+            cardCode.value = "";
+            cardMsg.value = res.msg || "卡密激活成功，权益已到账";
+            if (res.profile) {
+              setting.userInfo.remainCount = getProfileRemainingCount(res.profile);
+              setting.userInfo.activeMember = !!res.profile.active_member;
+              setting.userInfo.memberUntil = res.profile.member_until || "";
+              setting.userInfo.pointsBalance = Number(res.profile.points_balance || 0);
+              persistSettingState(setting);
+            }
+          } else if (res.code === 401) {
+            cardMsg.value = "登录状态已失效，请重新登录";
+          } else {
+            cardMsg.value = res.msg || "激活失败，请稍后再试";
+          }
+        } catch (_) {
+          cardMsg.value = "激活失败，请检查网络";
+        } finally {
+          cardBusy.value = false;
+        }
       };
       vue.onMounted(autoLoginByRememberedToken);
       const isShow = vue.ref(true);
@@ -13186,7 +13248,30 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                   key: 2,
                   style: { "color": loginMsg.value.includes("成功") ? "var(--t-success)" : "var(--t-danger)" }
                 }, vue.toDisplayString(loginMsg.value), 1)) : vue.createCommentVNode("", true)
-              ])
+              ]),
+              __DIST.code ? (vue.openBlock(), vue.createElementBlock("div", {  // FX-CH:card-key-activate
+                key: 3,
+                style: { "display": "flex", "gap": "6px", "align-items": "center", "flex-wrap": "wrap" }
+              }, [
+                vue.createElementVNode("span", { style: { "font-size": "12px", "color": "var(--t-text3)", "font-weight": "600", "flex": "none" } }, "🎫"),
+                vue.createElementVNode("input", {
+                  value: cardCode.value,
+                  onInput: ($event) => cardCode.value = $event.target.value,
+                  onKeydown: vue.withKeys(activateCardKey, ["enter"]),
+                  maxlength: "16",
+                  placeholder: "卡密（16 位）",
+                  style: { "flex": "1", "min-width": "0", "height": "28px", "padding": "0 8px", "border": "1px solid var(--t-border2)", "border-radius": "4px", "background": "var(--t-surface)", "color": "var(--t-text)", "font-size": "12px", "letter-spacing": "1px", "text-transform": "uppercase" }
+                }, null, 40, ["value"]),
+                vue.createElementVNode("button", {
+                  onClick: activateCardKey,
+                  disabled: cardBusy.value,
+                  style: { "height": "28px", "padding": "0 12px", "border": "none", "border-radius": "4px", "background": "var(--t-primary)", "color": "#fff", "cursor": "pointer", "font-size": "12px", "font-weight": "500", "flex": "none" }
+                }, vue.toDisplayString(cardBusy.value ? "激活中..." : "激活卡密"), 9, ["disabled"]),
+                cardMsg.value ? (vue.openBlock(), vue.createElementBlock("span", {
+                  key: 0,
+                  style: { "color": cardBusy.value || cardMsg.value.indexOf("提示：") === 0 ? "var(--t-text3)" : (cardMsg.value.includes("成功") || cardMsg.value.includes("已到账") ? "var(--t-success)" : "var(--t-danger)"), "flex": "1 1 100%", "font-size": "11px" }
+                }, vue.toDisplayString(cardMsg.value), 5)) : vue.createCommentVNode("", true)
+              ])) : vue.createCommentVNode("", true)
             ])) : vue.createCommentVNode("", true),
             vue.createVNode(_sfc_main$2, {
               class: vue.normalizeClass(`box-content ${isMini.value ? "mini" : ""}`),
@@ -13316,6 +13401,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         app.use(pinia$1);
         app.use(Antd);
         app.mount(appDiv);
+        // >>> FX-STRIP:auto-update
         // === 自动检测更新 + 顶部提示条 ===
         (function() {
           var _showUpdateBar = function(remote) {
@@ -13374,6 +13460,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             onerror: function() {}
           });
         })();
+        // <<< FX-STRIP:auto-update
       }
     }, 100);
   }
