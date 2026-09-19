@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.3.6
+// @version      5.3.7
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @author       IPYIWEI
@@ -10,6 +10,10 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.3.7 更新内容：
+// @changelog    1. 渠道专属版加固：代理商未配置店铺链接时，脚本不再露出官方购买入口，续费只走渠道发放的卡密激活
+// @changelog    2. 代理商门户可自助填写店铺链接，保存后重新下载的脚本即跳该地址
+// @changelog    3. 官方版功能与行为无变化
 // @changelog    v5.3.6 更新内容：
 // @changelog    1. 修复图片题漏传：纯图题干不再被跳过，图片选项会采集并发送给模型
 // @changelog    2. 智慧树 iframe 改为绑定题目 DOM，选项图/题干图都能下载

@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "5.3.6",
+    "version": "5.3.7",
     "download_url": "https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js",
-    "changelog": "v5.3.6 修复图片题：选项图会发给模型；图片选项按文件名勾选，填不上改走模型"
+    "changelog": "v5.3.7 渠道专属版加固：未配置店铺链接时不露出官方购买入口，续费只走卡密激活；门户可自助填店铺链接。官方版行为无变化"
   },
   "xueshen-gf": {
-    "version": "5.3.6",
+    "version": "5.3.7",
     "download_url": "https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js",
-    "changelog": "v5.3.6 修复图片题：选项图会发给模型；图片选项按文件名勾选，填不上改走模型"
+    "changelog": "v5.3.7 渠道专属版加固：未配置店铺链接时不露出官方购买入口，续费只走卡密激活；门户可自助填店铺链接。官方版行为无变化"
   }
 }
