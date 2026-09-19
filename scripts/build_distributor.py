@@ -40,7 +40,7 @@ FORBIDDEN = (
 REQUIRED = {
     "strip": {"promo", "qq-channel", "scriptcat-update", "auto-update"},
     "inject": {"dist-channel"},
-    "ch": {"basic-info-shop", "remain-billing", "pricing-base-url", "pricing-login-param"},
+    "ch": {"basic-info-shop", "remain-billing", "pricing-base-url", "pricing-login-param", "card-key-activate"},
 }
 
 

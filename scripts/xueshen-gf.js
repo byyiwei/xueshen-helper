@@ -12797,6 +12797,45 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         isAutoLoggedIn.value = false;
         loginMsg.value = "已清除脚本页登录记忆";
       };
+      const cardCode = vue.ref("");
+      const cardBusy = vue.ref(false);
+      const cardMsg = vue.ref("");
+      const activateCardKey = async () => {
+        const code = cardCode.value.trim().toUpperCase();
+        if (code.length !== 16) {
+          cardMsg.value = "请输入 16 位卡密";
+          return;
+        }
+        const token = getLocalBackendToken() || getRememberedLogin().token || "";
+        if (!token) {
+          cardMsg.value = "请先登录";
+          return;
+        }
+        cardBusy.value = true;
+        cardMsg.value = "正在激活...";
+        try {
+          const res = await localBackendJson("https://xs.openget.cn/api/user/card-key/activate", { code }, token);
+          if (res.code === 200) {
+            cardCode.value = "";
+            cardMsg.value = res.msg || "卡密激活成功，权益已到账";
+            if (res.profile) {
+              setting.userInfo.remainCount = getProfileRemainingCount(res.profile);
+              setting.userInfo.activeMember = !!res.profile.active_member;
+              setting.userInfo.memberUntil = res.profile.member_until || "";
+              setting.userInfo.pointsBalance = Number(res.profile.points_balance || 0);
+              persistSettingState(setting);
+            }
+          } else if (res.code === 401) {
+            cardMsg.value = "登录状态已失效，请重新登录";
+          } else {
+            cardMsg.value = res.msg || "激活失败，请稍后再试";
+          }
+        } catch (_) {
+          cardMsg.value = "激活失败，请检查网络";
+        } finally {
+          cardBusy.value = false;
+        }
+      };
       vue.onMounted(autoLoginByRememberedToken);
       const isShow = vue.ref(true);
       const messageStore = useMessageStore();
@@ -13194,7 +13233,30 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                   key: 2,
                   style: { "color": loginMsg.value.includes("成功") ? "var(--t-success)" : "var(--t-danger)" }
                 }, vue.toDisplayString(loginMsg.value), 1)) : vue.createCommentVNode("", true)
-              ])
+              ]),
+              __DIST.code ? (vue.openBlock(), vue.createElementBlock("div", {  // FX-CH:card-key-activate
+                key: 3,
+                style: { "display": "flex", "gap": "6px", "align-items": "center", "flex-wrap": "wrap" }
+              }, [
+                vue.createElementVNode("span", { style: { "font-size": "12px", "color": "var(--t-text3)", "font-weight": "600", "flex": "none" } }, "🎫"),
+                vue.createElementVNode("input", {
+                  value: cardCode.value,
+                  onInput: ($event) => cardCode.value = $event.target.value,
+                  onKeydown: vue.withKeys(activateCardKey, ["enter"]),
+                  maxlength: "16",
+                  placeholder: "卡密（16 位）",
+                  style: { "flex": "1", "min-width": "0", "height": "28px", "padding": "0 8px", "border": "1px solid var(--t-border2)", "border-radius": "4px", "background": "var(--t-surface)", "color": "var(--t-text)", "font-size": "12px", "letter-spacing": "1px", "text-transform": "uppercase" }
+                }, null, 40, ["value"]),
+                vue.createElementVNode("button", {
+                  onClick: activateCardKey,
+                  disabled: cardBusy.value,
+                  style: { "height": "28px", "padding": "0 12px", "border": "none", "border-radius": "4px", "background": "var(--t-primary)", "color": "#fff", "cursor": "pointer", "font-size": "12px", "font-weight": "500", "flex": "none" }
+                }, vue.toDisplayString(cardBusy.value ? "激活中..." : "激活卡密"), 9, ["disabled"]),
+                cardMsg.value ? (vue.openBlock(), vue.createElementBlock("span", {
+                  key: 0,
+                  style: { "color": cardBusy.value ? "var(--t-text3)" : (cardMsg.value.includes("成功") || cardMsg.value.includes("已到账") ? "var(--t-success)" : "var(--t-danger)"), "flex": "1 1 100%", "font-size": "11px" }
+                }, vue.toDisplayString(cardMsg.value), 5)) : vue.createCommentVNode("", true)
+              ])) : vue.createCommentVNode("", true)
             ])) : vue.createCommentVNode("", true),
             vue.createVNode(_sfc_main$2, {
               class: vue.normalizeClass(`box-content ${isMini.value ? "mini" : ""}`),
