@@ -1446,6 +1446,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
   // falls back to the official URL. build_distributor.py replaces this block.
   var __DIST = { shop: "", name: "", code: "" };
   // <<< FX-INJECT:dist-channel
+  // 渠道版没配店铺链接时，续费类入口不许回落到官方购买页：那等于渠道自己把
+  // 客户送回官网下单。此时链接整体置空，只留下面板里的卡密激活。
+  // 官方版 __DIST.code 恒为空串，__noShop 永远是 false，行为零变化。
+  const __noShop = !!(__DIST.code && !__DIST.shop);  // FX-CH:no-shop-guard
+  const __noShopTip = "该渠道未开通在线购买，续费请向渠道索取卡密，在「账号」面板输入卡密激活";
+  const __billHref = __DIST.shop || (__noShop ? "" : "https://xs.openget.cn/user?section=billing");  // FX-CH:no-shop-billing
   const localBackendJson = (url, data, token) => {
     return new Promise((resolve) => {
       GM_xmlhttpRequest({
@@ -2297,10 +2303,11 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 section.showRemainCount ? (vue.openBlock(), vue.createElementBlock("div", _hoisted_6$3, [
                   vue.createElementVNode("div", { style: { "color": "var(--t-text2)" } }, vue.toDisplayString(remainDisplay.value.label), 1),
                   vue.createElementVNode("a", {
-                    href: __DIST.shop || "https://xs.openget.cn/user?section=billing",  // FX-CH:remain-billing
+                    href: __billHref || void 0,  // FX-CH:remain-billing
+                    title: __billHref ? void 0 : __noShopTip,
                     target: "_blank",
                     style: { "color": remainDisplay.value.isMember ? "var(--t-primary)" : "var(--t-text)", "text-decoration": "none" }
-                  }, vue.toDisplayString(remainDisplay.value.value), 1)
+                  }, vue.toDisplayString(remainDisplay.value.value + (__billHref ? "" : "（需卡密激活）")), 1)
                 ])) : vue.createCommentVNode("", true),
                 (vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(section.configs, (config2) => {
                   return vue.openBlock(), vue.createElementBlock("div", { key: config2 }, [
@@ -12718,7 +12725,11 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         const token = (remembered && remembered.token) || "";
         const user = (remembered && remembered.user) || "";
         const userStr = typeof user === "string" ? user : JSON.stringify(user);
-        const baseUrl = __DIST.shop || "https://xs.openget.cn/user?section=billing";  // FX-CH:pricing-base-url
+        const baseUrl = __billHref;  // FX-CH:pricing-base-url
+        if (!baseUrl) {
+          cardMsg.value = "提示：" + __noShopTip;
+          return;
+        }
         const url = token && !__DIST.shop  // FX-CH:pricing-login-param
           ? `${baseUrl}&token=${encodeURIComponent(token)}&user=${encodeURIComponent(userStr)}`
           : baseUrl;
@@ -13254,7 +13265,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 }, vue.toDisplayString(cardBusy.value ? "激活中..." : "激活卡密"), 9, ["disabled"]),
                 cardMsg.value ? (vue.openBlock(), vue.createElementBlock("span", {
                   key: 0,
-                  style: { "color": cardBusy.value ? "var(--t-text3)" : (cardMsg.value.includes("成功") || cardMsg.value.includes("已到账") ? "var(--t-success)" : "var(--t-danger)"), "flex": "1 1 100%", "font-size": "11px" }
+                  style: { "color": cardBusy.value || cardMsg.value.indexOf("提示：") === 0 ? "var(--t-text3)" : (cardMsg.value.includes("成功") || cardMsg.value.includes("已到账") ? "var(--t-success)" : "var(--t-danger)"), "flex": "1 1 100%", "font-size": "11px" }
                 }, vue.toDisplayString(cardMsg.value), 5)) : vue.createCommentVNode("", true)
               ])) : vue.createCommentVNode("", true)
             ])) : vue.createCommentVNode("", true),

@@ -40,7 +40,8 @@ FORBIDDEN = (
 REQUIRED = {
     "strip": {"promo", "qq-channel", "scriptcat-update", "auto-update"},
     "inject": {"dist-channel"},
-    "ch": {"basic-info-shop", "remain-billing", "pricing-base-url", "pricing-login-param", "card-key-activate"},
+    "ch": {"basic-info-shop", "remain-billing", "pricing-base-url", "pricing-login-param",
+           "card-key-activate", "no-shop-guard", "no-shop-billing"},
 }
 
 
@@ -188,7 +189,8 @@ def build(text, channel, bom=False):
                      "// 本副本由学神助手授权「%s」（渠道码 %s）分发，请勿转存或公开。" % (name, code),
                      "// 已移除官方更新检查与官方推广入口；%s" % (
                          "购买/续费链接指向该渠道自备地址。" if shop
-                         else "脚本内链接仍指向官方页面，续费请找该渠道取卡密。"))
+                         else "该渠道未提供购买地址，脚本内的续费与价格入口已停用，"
+                              "终端用户只能凭该渠道发放的卡密激活。"))
             for off, mark in enumerate(marks):
                 out.insert(k + 1 + off, mark)
                 synth.add(mark)
