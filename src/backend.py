@@ -98,6 +98,9 @@ ANSWER_TIME_BUDGET = 300
 MAX_MODEL_BUDGET = 60
 DASHBOARD_CACHE = {"time": 0, "data": None}
 DASHBOARD_CACHE_SECONDS = 5
+# 官网直营营收口径：代理商充值（plan_type='dist_recharge'）是压在平台的预存款、属于负债，
+# 不能算进直营收入；分销那套钱单独在「代理商分销 · 收入统计」里按流水出。
+DIRECT_SALES_WHERE = "status='paid' AND COALESCE(plan_type,'') <> 'dist_recharge'"
 REVOKED_USER_TOKENS = set()
 USER_LOGOUT_AFTER = {}
 CURRENT_USER_SESSION = {}
@@ -1425,7 +1428,7 @@ def get_daily_report_stats(stat_date):
             row = cursor.fetchone() or {}
             reg_count = int(row.get("c") or 0)
             cursor.execute(
-                """
+                f"""
                 SELECT
                     COUNT(*) AS order_count,
                     COALESCE(SUM(price), 0) AS total_revenue,
@@ -1436,7 +1439,7 @@ def get_daily_report_stats(stat_date):
                     SUM(CASE WHEN plan_type='custom_model' THEN 1 ELSE 0 END) AS custom_model_count,
                     SUM(CASE WHEN plan_type='custom_model' THEN price ELSE 0 END) AS custom_model_revenue
                 FROM payment_orders
-                WHERE status='paid' AND DATE(created_at) = %s
+                WHERE {DIRECT_SALES_WHERE} AND DATE(created_at) = %s
                 """,
                 (stat_date,),
             )
@@ -3634,7 +3637,7 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
         ORDER BY total DESC
         LIMIT 8
     """
-    revenue_sql = """
+    revenue_sql = f"""
         SELECT
             COUNT(*) AS order_count,
             COALESCE(SUM(price), 0) AS total_revenue,
@@ -3645,14 +3648,14 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
             SUM(CASE WHEN plan_type='custom_model' THEN 1 ELSE 0 END) AS custom_model_count,
             SUM(CASE WHEN plan_type='custom_model' THEN price ELSE 0 END) AS custom_model_revenue
         FROM payment_orders
-        WHERE status='paid' AND created_at >= %s AND created_at < %s
+        WHERE {DIRECT_SALES_WHERE} AND created_at >= %s AND created_at < %s
     """
-    revenue_trend_sql = """
+    revenue_trend_sql = f"""
         SELECT DATE(created_at) AS day,
                COUNT(*) AS orders,
                COALESCE(SUM(price), 0) AS revenue
         FROM payment_orders
-        WHERE status='paid' AND created_at >= %s AND created_at < %s
+        WHERE {DIRECT_SALES_WHERE} AND created_at >= %s AND created_at < %s
         GROUP BY DATE(created_at)
         ORDER BY day ASC
     """
@@ -4079,6 +4082,26 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, {"code": 200, "data": db.list_distributor_withdrawals(
                 int(arg("distributor_id", "0") or 0), st, page, size),
                 "summary": db.distributor_withdrawal_summary()})
+
+        elif path == "/admin/distributor/revenue":
+            from datetime import datetime as _dt, timedelta as _td
+            today = _dt.now().strftime("%Y-%m-%d")
+
+            def _day(name, fallback):
+                raw = arg(name, "") or ""
+                try:
+                    return _dt.strptime(raw, "%Y-%m-%d").strftime("%Y-%m-%d")
+                except Exception:
+                    return fallback
+
+            sd = _day("start", (_dt.now() - _td(days=29)).strftime("%Y-%m-%d"))
+            ed = _day("end", today)
+            if sd > ed:
+                sd, ed = ed, sd
+            ed_next = (_dt.strptime(ed, "%Y-%m-%d") + _td(days=1)).strftime("%Y-%m-%d")
+            self._send_json(200, {"code": 200, "range": {"start": sd, "end": ed},
+                                  "stats": db.distributor_revenue_stats(sd, ed_next),
+                                  "overview": db.distributor_stats()})
 
         else:
             self._send_json(404, {"code": 404, "msg": "not found"})

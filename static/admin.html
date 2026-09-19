@@ -911,7 +911,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
 
         <!-- 代理商分销组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.distributor}">
-          <div class="menu-group-header dock-item" :class="{active:['distributor','distributor-templates','distributor-batches','distributor-withdrawals','distributor-config'].includes(page)}" @click="expandedGroups.distributor=!expandedGroups.distributor">
+          <div class="menu-group-header dock-item" :class="{active:['distributor','distributor-templates','distributor-batches','distributor-withdrawals','distributor-revenue','distributor-config'].includes(page)}" @click="expandedGroups.distributor=!expandedGroups.distributor">
             <span class="icon">⚑</span>代理商分销
             <span class="arrow">▶</span>
           </div>
@@ -927,6 +927,9 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
             </div>
             <div class="menu-item" :class="{active:page==='distributor-withdrawals'}" @click="page='distributor-withdrawals';loadFxOptions();loadFxWds(1)">
               <span class="icon">¥</span>提现审核<span v-if="fxStats.wd_pending" :style="{marginLeft:'auto',minWidth:'18px',padding:'0 5px',height:'18px',lineHeight:'18px',textAlign:'center',borderRadius:'9px',background:'var(--warning)',color:'#fff',fontSize:'11px',fontWeight:'600'}">{{fxStats.wd_pending}}</span>
+            </div>
+            <div class="menu-item" :class="{active:page==='distributor-revenue'}" @click="page='distributor-revenue';loadFxRevenue()">
+              <span class="icon">↗</span>收入统计
             </div>
             <div class="menu-item" :class="{active:page==='distributor-config'}" @click="page='distributor-config';loadFxConfig()">
               <span class="icon">⚙</span>分销配置
@@ -1147,7 +1150,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
             <div v-if="!(dashboard.token_usage||[]).length" style="color:var(--text3);font-size:13px;padding:20px;text-align:center">暂无Token消耗数据</div>
           </div>
           <div class="chart-card" style="margin-top:18px">
-            <div class="chart-title"><h3>收入概况</h3><span>所选时间范围内已支付订单</span></div>
+            <div class="chart-title"><h3>收入概况</h3><span>所选时间范围内已支付订单 · 不含代理商充值</span></div>
             <div class="revenue-grid">
               <div class="revenue-card" style="cursor:pointer" title="点击查看支付明细" @click="goToPaymentDetails()">
                 <div class="revenue-label">总收入 <span style="font-size:11px;color:var(--text3)">› 支付明细</span></div>
@@ -3018,6 +3021,124 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
         </div>
       </template>
 
+      <!-- 代理商分销：收入统计 -->
+      <template v-if="page==='distributor-revenue'">
+        <header class="main-header">
+          <h2>收入统计</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index&lt;breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="dash-toolbar">
+            <div class="date-range">
+              <div class="date-field">
+                <span class="date-label">开始</span>
+                <input type="date" v-model="fxRevStart" class="date-input" @change="loadFxRevenue()">
+              </div>
+              <span class="date-sep">—</span>
+              <div class="date-field">
+                <span class="date-label">结束</span>
+                <input type="date" v-model="fxRevEnd" class="date-input" @change="loadFxRevenue()">
+              </div>
+              <div class="date-quicks">
+                <button class="date-quick" :class="{active:fxRevQuick('today')}" @click="setFxRevRange('today')">今天</button>
+                <button class="date-quick" :class="{active:fxRevQuick('7')}" @click="setFxRevRange('7')">近7天</button>
+                <button class="date-quick" :class="{active:fxRevQuick('30')}" @click="setFxRevRange('30')">近30天</button>
+                <button class="date-quick" :class="{active:fxRevQuick('90')}" @click="setFxRevRange('90')">近90天</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="metric-grid">
+            <div class="metric-card"><div class="metric-label">分销收入（区间）</div><div class="metric-value" style="color:var(--accent2)">{{fxRevMoney(fxRev.period?.summary?.net_income)}}</div><div class="metric-sub">生成扣款 − 回补冲正</div></div>
+            <div class="metric-card"><div class="metric-label">生成扣款</div><div class="metric-value">{{fxRevMoney(fxRev.period?.summary?.consume)}}</div><div class="metric-sub">{{(fxRev.period?.by_type?.generate||{}).count||0}} 笔 · 从代理余额划走</div></div>
+            <div class="metric-card"><div class="metric-label">充值到账</div><div class="metric-value" style="color:var(--success)">{{fxRevMoney(fxRev.period?.summary?.recharge)}}</div><div class="metric-sub">{{(fxRev.period?.by_type?.recharge||{}).count||0}} 笔 · 现金流入</div></div>
+            <div class="metric-card"><div class="metric-label">提现支出</div><div class="metric-value" style="color:var(--warning)">{{fxRevMoney(fxRev.period?.summary?.withdraw_paid)}}</div><div class="metric-sub">已净额扣掉驳回回补</div></div>
+            <div class="metric-card"><div class="metric-label">净现金</div><div class="metric-value">{{fxRevMoney(fxRev.period?.summary?.net_cash)}}</div><div class="metric-sub">充值 − 提现</div></div>
+            <div class="metric-card"><div class="metric-label">待消耗余额</div><div class="metric-value" style="color:var(--text2)">{{fxRevMoney(fxRev.stock?.balance)}}</div><div class="metric-sub">全量在册，平台欠代理的额度</div></div>
+          </div>
+
+          <div class="card" style="margin-bottom:18px">
+            <div class="card-body" style="padding:14px 18px;font-size:12px;color:var(--text3);line-height:1.9">
+              <div>区间 {{fxRevRangeLabel()}} · 回补冲正 {{fxRevMoney(fxRev.period?.summary?.give_back)}}（退款回补 + 人工调整净额） · 余额净增 {{fxRevMoney(fxRev.period?.summary?.balance_delta)}}</div>
+              <div>存量核对：全量流水净合计 <b style="color:var(--text2)">{{fxRevMoney(fxRev.drift?.ledger)}}</b> 应当等于在册余额合计 {{fxRevMoney(fxRev.drift?.balance)}}，差 <b :style="{color:(fxRev.drift?.count||0)?'var(--warning)':'var(--success)'}">{{fxRevMoney(fxRev.drift?.gap)}}</b>。<span v-if="fxRev.drift?.count">{{fxRev.drift.count}} 个代理商的余额与自己的流水对不上（{{fxRevDriftText()}}），也就是有余额变动没落进流水、或流水缺了行。</span><span v-else>逐户都对得上。</span></div>
+              <div>全量累计：充值 {{fxRevMoney(fxRev.all_time?.summary?.recharge)}} · 生成扣款 {{fxRevMoney(fxRev.all_time?.summary?.consume)}} · 提现 {{fxRevMoney(fxRev.all_time?.summary?.withdraw_paid)}} · 待审提现 {{fxRev.overview?.wd_pending||0}} 笔 {{fxRevMoney(fxRev.overview?.wd_pending_amount)}}</div>
+              <div>区间卡密：生成 {{(fxRev.cards||{}).generated||0}} 张，其中已激活 {{(fxRev.cards||{}).activated||0}} 张 · 出货批次 {{(fxRev.batches||{}).count||0}} 批 / {{(fxRev.batches||{}).cards||0}} 张 / 结算 {{fxRevMoney((fxRev.batches||{}).settle)}}</div>
+            </div>
+          </div>
+
+          <div class="chart-card" style="margin-bottom:18px">
+            <div class="chart-title"><h3>分销资金趋势</h3><span>每日充值 / 生成扣款 / 提现（元）</span></div>
+            <div style="display:flex;gap:16px;margin-bottom:8px;font-size:12px;flex-wrap:wrap">
+              <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:#10b981;border-radius:2px"></span>充值到账</span>
+              <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:var(--accent2,#60a5fa);border-radius:2px"></span>生成扣款</span>
+              <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;background:var(--warning,#f59e0b);border-radius:2px"></span>提现支出</span>
+            </div>
+            <svg class="line-chart" viewBox="0 0 700 200" preserveAspectRatio="xMidYMid meet" style="width:100%;height:200px">
+              <g style="stroke:var(--chart-grid)" stroke-width="1">
+                <line x1="40" y1="30" x2="680" y2="30"></line>
+                <line x1="40" y1="70" x2="680" y2="70"></line>
+                <line x1="40" y1="110" x2="680" y2="110"></line>
+                <line x1="40" y1="150" x2="680" y2="150"></line>
+                <line x1="40" y1="170" x2="680" y2="170"></line>
+              </g>
+              <g fill="#6b7280" font-size="10" text-anchor="end">
+                <text x="34" y="33">¥{{fxRevMax().toFixed(0)}}</text>
+                <text x="34" y="113">¥{{(fxRevMax()/2).toFixed(0)}}</text>
+                <text x="34" y="173">0</text>
+              </g>
+              <g v-for="(r,i) in (fxRev.trend||[])" :key="r.day">
+                <rect :x="fxRevBarX(i)" :y="fxRevY(r.recharge)" :width="fxRevBarW()" :height="170-fxRevY(r.recharge)" fill="#10b981" rx="1" opacity="0.85"></rect>
+                <rect :x="fxRevBarX(i)+fxRevBarW()+1" :y="fxRevY(r.consume)" :width="fxRevBarW()" :height="170-fxRevY(r.consume)" fill="#60a5fa" rx="1" opacity="0.85"></rect>
+                <rect :x="fxRevBarX(i)+2*(fxRevBarW()+1)" :y="fxRevY(r.withdraw)" :width="fxRevBarW()" :height="170-fxRevY(r.withdraw)" fill="#f59e0b" rx="1" opacity="0.85"></rect>
+                <text v-if="i%fxRevTick()===0" :x="fxRevBarX(i)+1.5*fxRevBarW()" y="188" fill="#6b7280" font-size="10" text-anchor="middle">{{r.label}}</text>
+              </g>
+              <text v-if="!(fxRev.trend||[]).length || !(fxRev.trend||[]).some(r=>r.recharge>0||r.consume>0||r.withdraw>0)" x="350" y="100" fill="var(--text3)" font-size="13" text-anchor="middle">该区间没有分销资金流水</text>
+            </svg>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><div style="font-size:14px;font-weight:600">按代理商</div><span style="font-size:12px;color:var(--text3)">区间消耗优先，最多 100 行</span></div>
+            <div class="card-body" style="overflow-x:auto">
+              <table v-if="(fxRev.rows||[]).length" style="width:100%;border-collapse:collapse;font-size:13px;min-width:960px">
+                <thead><tr style="text-align:left;color:var(--text3);font-size:12px">
+                  <th style="padding:8px 10px">代理商</th>
+                  <th style="padding:8px 10px">状态</th>
+                  <th style="padding:8px 10px;text-align:right">折扣</th>
+                  <th style="padding:8px 10px;text-align:right">区间消耗</th>
+                  <th style="padding:8px 10px;text-align:right">区间余额净增</th>
+                  <th style="padding:8px 10px;text-align:right">累计充值</th>
+                  <th style="padding:8px 10px;text-align:right">累计消耗</th>
+                  <th style="padding:8px 10px;text-align:right">累计提现</th>
+                  <th style="padding:8px 10px;text-align:right">当前余额</th>
+                </tr></thead>
+                <tbody>
+                  <tr v-for="r in (fxRev.rows||[])" :key="r.id" style="border-top:1px solid var(--border)">
+                    <td style="padding:8px 10px"><a href="javascript:void(0)" style="color:var(--accent2);text-decoration:none" @click="fxRevGoto(r)">{{r.name||r.username}}</a><div style="font-size:11px;color:var(--text3)">{{r.username}}</div></td>
+                    <td style="padding:8px 10px"><span :style="{color:fxStatusColor(r.status)}">{{fxStatusText(r.status)}}</span></td>
+                    <td style="padding:8px 10px;text-align:right">{{fxDiscountPct(r.discount_rate)}}</td>
+                    <td style="padding:8px 10px;text-align:right;font-weight:600">{{fxMoney(r.period_consume)}}</td>
+                    <td style="padding:8px 10px;text-align:right" :style="{color:r.period_delta<0?'var(--text3)':'var(--text2)'}">{{r.period_delta<0?'-':'+'}}{{fxMoney(Math.abs(r.period_delta||0))}}</td>
+                    <td style="padding:8px 10px;text-align:right;color:var(--text3)">{{fxMoney(r.recharge_total)}}</td>
+                    <td style="padding:8px 10px;text-align:right;color:var(--text3)">{{fxMoney(r.spent_total)}}</td>
+                    <td style="padding:8px 10px;text-align:right;color:var(--text3)">{{fxMoney(r.withdraw_total)}}</td>
+                    <td style="padding:8px 10px;text-align:right">{{fxMoney(r.balance)}}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div v-else style="text-align:center;padding:40px 0;color:var(--text3);font-size:13px">还没有代理商档案</div>
+            </div>
+          </div>
+
+          <div style="font-size:12px;color:var(--text3);margin-top:12px;line-height:1.7">
+            这一页只统计代理商预存款的钱，和首页「收入概况」是两套口径，数字对不上是应该的：<br>
+            首页按 <b>payment_orders</b> 的已支付订单算官网直营，且已剔除代理商充值单；<br>
+            本页按 <b>distributor_balance_logs</b> 流水算分销：<b>充值</b>是代理压在这里的预存款（平台负债，不是收入），<b>生成卡密时的扣款</b>才是平台赚到的钱，<b>回补</b>（生成失败退款、人工调整）从收入里冲掉；<br>
+            代理商自己卖给终端用户多少钱与我们无关，终端用户激活代理卡时落的订单金额恒为 ¥0，所以不会重复计一遍收入。
+          </div>
+        </div>
+      </template>
+
       <!-- Card Config Page -->
       <template v-if="page==='xianyu'">
         <header class="main-header">
@@ -4660,6 +4781,7 @@ createApp({
       'distributor-templates':[{label:'代理商分销',group:'distributor'},{label:'卡密模板'}],
       'distributor-batches':[{label:'代理商分销',group:'distributor'},{label:'批次与卡密'}],
       'distributor-withdrawals':[{label:'代理商分销',group:'distributor'},{label:'提现审核'}],
+      'distributor-revenue':[{label:'代理商分销',group:'distributor'},{label:'收入统计'}],
       'distributor-config':[{label:'代理商分销',group:'distributor'},{label:'分销配置'}],
       'script-logs':[{label:'日志监控',group:'logs'},{label:'脚本日志'}],
       'ai-logs':[{label:'模型服务',group:'models'},{label:'模型日志'}],
@@ -6269,7 +6391,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       referral:{title:'推广运营',icon:'★',items:[{page:'referral',label:'返利配置',icon:'⚙',load:loadReferralConfig},{page:'referral-withdrawals',label:'提现审核',icon:'¥',load:loadReferralWithdrawals},{page:'feedback',label:'问题反馈',icon:'✎',load:()=>{loadFeedbackList();loadFeedbackAutoClose();loadFeedbackNotify();}},{page:'announce',label:'公告通知',icon:'◎',load:loadAnnounceConfig}]},
       payment:{title:'支付财务',icon:'□',items:[{page:'payment-orders',label:'支付明细',icon:'▤',load:loadPaymentOrders},{page:'payment',label:'套餐配置',icon:'◈',load:loadPaymentConfig},{page:'pay-api',label:'支付接口',icon:'⌁',load:loadPayApiConfig},{page:'pay-test',label:'支付测试',icon:'◎',load:()=>{}},{page:'refund-requests',label:'退款申请',icon:'↩',load:loadRefundRequests}]},
       card:{title:'卡密管理',icon:'⚷',items:[{page:'xianyu',label:'商品配置',icon:'●',load:loadXianyuConfig},{page:'card-keys',label:'卡密管理',icon:'⚷',load:loadCardKeys}]},
-      distributor:{title:'代理商分销',icon:'⚑',items:[{page:'distributor',label:'代理商',icon:'◉',load:loadFxList},{page:'distributor-templates',label:'卡密模板',icon:'▤',load:()=>{loadFxOptions();loadFxTemplates();}},{page:'distributor-batches',label:'批次与卡密',icon:'≣',load:()=>{loadFxOptions();loadFxBatches(1);}},{page:'distributor-withdrawals',label:'提现审核',icon:'¥',load:()=>{loadFxOptions();loadFxWds(1);}},{page:'distributor-config',label:'分销配置',icon:'⚙',load:loadFxConfig}]},
+      distributor:{title:'代理商分销',icon:'⚑',items:[{page:'distributor',label:'代理商',icon:'◉',load:loadFxList},{page:'distributor-templates',label:'卡密模板',icon:'▤',load:()=>{loadFxOptions();loadFxTemplates();}},{page:'distributor-batches',label:'批次与卡密',icon:'≣',load:()=>{loadFxOptions();loadFxBatches(1);}},{page:'distributor-withdrawals',label:'提现审核',icon:'¥',load:()=>{loadFxOptions();loadFxWds(1);}},{page:'distributor-revenue',label:'收入统计',icon:'↗',load:loadFxRevenue},{page:'distributor-config',label:'分销配置',icon:'⚙',load:loadFxConfig}]},
       logs:{title:'日志监控',icon:'☰',items:[{page:'script-logs',label:'脚本日志',icon:'⌘',load:loadScriptLogs},{page:'log-cleanup',label:'日志清理',icon:'∅',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'⊙',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
       models:{title:'模型服务',icon:'◈',items:[{page:'ai-config',label:'模型配置',icon:'◈',load:loadConfig},{page:'ai-logs',label:'模型日志',icon:'≡',load:loadAiLogs}]},
       config:{title:'系统配置',icon:'◇',items:[{page:'qq-bot',label:'QQ频道机器人',icon:'🤖',load:loadQqBot},{page:'email-config',label:'邮箱配置',icon:'✉',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'db-config',label:'系统设置',icon:'⛁',load:loadDbConfig}]}
@@ -7307,6 +7429,52 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       loadFxOptions();loadFxBatches(1);
     }
 
+    // ----- 收入统计（只读 distributor_balance_logs，与首页 payment_orders 两套口径） -----
+    const fxRev=ref({period:{summary:{}},all_time:{summary:{}},trend:[],rows:[],cards:{},batches:{},stock:{},overview:{}});
+    const fxRevStart=ref(fmtLocalDate(new Date(Date.now()-29*86400000)));
+    const fxRevEnd=ref(fmtLocalDate(new Date()));
+    // n 天含今天，所以往前 n-1 天，与服务端默认的 start=今天-29 对齐
+    function fxRevBounds(k){
+      const now=new Date();
+      if(k==='today'){const s=fmtLocalDate(now);return[s,s];}
+      return[fmtLocalDate(new Date(now.getTime()-((Number(k)||30)-1)*86400000)),fmtLocalDate(now)];
+    }
+    function setFxRevRange(k){const b=fxRevBounds(k);fxRevStart.value=b[0];fxRevEnd.value=b[1];loadFxRevenue();}
+    function fxRevQuick(k){const b=fxRevBounds(k);return fxRevStart.value===b[0]&&fxRevEnd.value===b[1];}
+    function fxRevRangeLabel(){return `${fxRevStart.value} 至 ${fxRevEnd.value}`;}
+    async function loadFxRevenue(){
+      if(!token.value)return;
+      try{
+        const d=await fxGet('revenue',{start:fxRevStart.value,end:fxRevEnd.value});
+        if(d.code!==200)return showMsg(d.msg||'读取分销收入统计失败','error');
+        fxRev.value=Object.assign({period:{summary:{}},all_time:{summary:{}}},d.stats||{},{overview:d.overview||{}});
+        if(d.range){fxRevStart.value=d.range.start;fxRevEnd.value=d.range.end;}
+      }catch(e){showMsg(e.message||'网络错误','error');}
+    }
+    const fxRevMoney=v=>{const n=Number(v||0);return (n<0?'-¥':'¥')+Math.abs(n).toFixed(2);};
+    function fxRevDriftText(){
+      return(fxRev.value.drift?.top||[]).slice(0,5).map(d=>`${d.username} ${fxRevMoney(d.drift)}`).join('、');
+    }
+    function fxRevDays(){return(fxRev.value.trend||[]).length||1;}
+    // 驳回回补会让某天的提现净额变负，负高度画不出矩形，柱状图一律只取正值
+    function fxRevPos(v){return Math.max(0,Number(v||0));}
+    function fxRevMax(){
+      let m=0;
+      (fxRev.value.trend||[]).forEach(r=>{m=Math.max(m,fxRevPos(r.recharge),fxRevPos(r.consume),fxRevPos(r.withdraw));});
+      return m>0?Math.ceil(m*1.15):100;
+    }
+    function fxRevY(v){return 170-(Math.min(fxRevPos(v),fxRevMax())/fxRevMax())*140;}
+    function fxRevStep(){return 640/fxRevDays();}
+    function fxRevBarW(){return Math.max(1.5,Math.min(9,fxRevStep()*0.24));}
+    function fxRevBarX(i){return 40+i*fxRevStep()+Math.max(0,(fxRevStep()-3*fxRevBarW()-2)/2);}
+    function fxRevTick(){return Math.max(1,Math.ceil(fxRevDays()/12));}
+    function fxRevGoto(r){
+      fxFilter.value.keyword=r.username||'';
+      expandedGroups.value.distributor=true;
+      page.value='distributor';
+      loadFxList(1);
+    }
+
     if(token.value){page.value='dashboard';loadAll();}
     else {page.value='login';initAdminSlider();}
     loading.value=false;
@@ -7359,6 +7527,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       fxCardFilter,fxCards,fxCardPage,fxCardTotal,fxCardTotalPages,loadFxCards,goFxBatchCards,exportFxCards,
       fxWdFilter,fxWds,fxWdPage,fxWdTotal,fxWdTotalPages,fxWdSummary,fxWdQr,loadFxWds,fxWdApprove,fxWdReject,fxWdStatusText,fxWdStatusColor,
       fxStatusText,fxStatusColor,fxLogTypeText,fxBatchStatusText,fxBatchStatusColor,fxGrantText,fxMoney,fxTimeShort,fxTimeFull,fxDiscountPct,fxDriftBad,fxGotoBatches,
+      fxRev,fxRevStart,fxRevEnd,loadFxRevenue,setFxRevRange,fxRevQuick,fxRevRangeLabel,fxRevMoney,fxRevDriftText,fxRevMax,fxRevY,fxRevBarX,fxRevBarW,fxRevTick,fxRevGoto,
        feedbackList,feedbackFilter,feedbackPage,feedbackTotalPages,feedbackTotal,feedbackPendingCount,feedbackDetail,feedbackReplyText,
         loadFeedbackList,feedbackSearch,viewFeedbackDetail,replyFeedback,updateFeedbackStatus,feedbackPrev,feedbackNext,
     feedbackAutoCloseDays,loadFeedbackAutoClose,saveFeedbackAutoClose,cardPayLabel,

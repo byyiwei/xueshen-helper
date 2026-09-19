@@ -2295,6 +2295,185 @@ class Database:
             "wd_pending_amount": str(wd["pending_amount"]),
         }
 
+    # ---------- 分销收入统计 ----------
+    def distributor_revenue_stats(self, start_date, end_date_exclusive):
+        """分销收入统计。只读 distributor_balance_logs，不碰官网直营的 payment_orders。
+
+        分成两套口径是必须的：充值是代理压在平台的预存款（我们欠他的额度），
+        生成卡密时扣掉的钱才是真收入。混在一个数里会把负债当营收。
+        """
+        ph = _ph()
+
+        def signed(rows):
+            out = {}
+            for r in rows or []:
+                out[str(r.get("type") or "")] = {
+                    "count": int(r.get("cnt") or 0),
+                    "amount": float(_dec(r.get("amt")).quantize(CENT, rounding=ROUND_HALF_UP)),
+                }
+            return out
+
+        def load(where, params):
+            return signed(self.fetchall(
+                f"SELECT type, COUNT(*) cnt, COALESCE(SUM(amount),0) amt FROM distributor_balance_logs "
+                f"{where} GROUP BY type", params))
+
+        period = load(f"WHERE created_at >= {ph} AND created_at < {ph}", (start_date, end_date_exclusive))
+        totals = load("", ())
+
+        def val(src, kind):
+            return float((src.get(kind) or {}).get("amount") or 0)
+
+        def stat(src, kind):
+            return {
+                "count": int((src.get(kind) or {}).get("count") or 0),
+                "amount": round(abs(val(src, kind)), 2),
+            }
+
+        def build(src):
+            recharge = val(src, "recharge")
+            consume = -val(src, "generate")
+            paid_out = -val(src, "withdraw") - val(src, "withdraw_reject")
+            back = val(src, "refund") + val(src, "adjust")
+            delta = sum(val(src, t) for t in
+                        ("recharge", "generate", "withdraw", "withdraw_reject", "refund", "adjust"))
+            # 取负会把 0 变成 -0.0，JSON 出去就是 "-0.0"，前端显示成 -¥0.00
+            money = lambda v: round(v, 2) or 0.0  # noqa: E731
+            return {
+                "recharge": money(recharge),
+                "consume": money(consume),
+                "withdraw_paid": money(paid_out),
+                "give_back": money(back),
+                "balance_delta": money(delta),
+                "net_income": money(consume - back),
+                "net_cash": money(recharge - paid_out),
+            }
+
+        # 按日拆三条线：充值进、消耗掉、提现出（提现净额含驳回回补）
+        trend_rows = self.fetchall(
+            f"SELECT DATE(created_at) d, type, COALESCE(SUM(amount),0) amt FROM distributor_balance_logs "
+            f"WHERE created_at >= {ph} AND created_at < {ph} GROUP BY DATE(created_at), type",
+            (start_date, end_date_exclusive)) or []
+        by_day = {}
+        for r in trend_rows:
+            day = str(r.get("d") or "")[:10]
+            t = by_day.setdefault(day, {"recharge": 0.0, "consume": 0.0, "withdraw": 0.0})
+            typ = str(r.get("type") or "")
+            amt = float(_dec(r.get("amt")))
+            if typ == "recharge":
+                t["recharge"] += amt
+            elif typ == "generate":
+                t["consume"] += -amt
+            elif typ in ("withdraw", "withdraw_reject"):
+                t["withdraw"] += -amt
+
+        from datetime import datetime as _dt, timedelta as _td
+        trend = []
+        try:
+            cur = _dt.strptime(start_date, "%Y-%m-%d")
+            last = _dt.strptime(end_date_exclusive, "%Y-%m-%d") - _td(days=1)
+            while cur <= last:
+                day = cur.strftime("%Y-%m-%d")
+                t = by_day.get(day, {})
+                trend.append({
+                    "day": day, "label": day[5:],
+                    "recharge": round(float(t.get("recharge") or 0), 2),
+                    "consume": round(float(t.get("consume") or 0), 2),
+                    "withdraw": round(float(t.get("withdraw") or 0), 2),
+                })
+                cur += _td(days=1)
+        except Exception:
+            trend = [{"day": d, "label": d[5:], "recharge": round(v["recharge"], 2),
+                      "consume": round(v["consume"], 2), "withdraw": round(v["withdraw"], 2)}
+                     for d, v in sorted(by_day.items())]
+
+        # 排行：区间消耗和全量档位放在一张表里看，代理数量级很小，直接 LEFT JOIN 聚合
+        rows = self.fetchall(
+            f"""SELECT d.id, d.username, d.name, d.status, d.discount_rate,
+                       d.balance, d.recharge_total, d.spent_total, d.withdraw_total,
+                       COALESCE(SUM(CASE WHEN l.type='generate' AND l.created_at >= {ph} AND l.created_at < {ph}
+                                         THEN -l.amount ELSE 0 END), 0) period_consume,
+                       COALESCE(SUM(CASE WHEN l.created_at >= {ph} AND l.created_at < {ph}
+                                         THEN l.amount ELSE 0 END), 0) period_delta
+                FROM distributors d
+                LEFT JOIN distributor_balance_logs l ON l.distributor_id = d.id
+                GROUP BY d.id, d.username, d.name, d.status, d.discount_rate,
+                         d.balance, d.recharge_total, d.spent_total, d.withdraw_total
+                ORDER BY period_consume DESC, d.spent_total DESC
+                LIMIT 100""",
+            (start_date, end_date_exclusive, start_date, end_date_exclusive)) or []
+        cards = self.fetchone(
+            f"SELECT COUNT(*) total, SUM(status='used') used FROM card_keys "
+            f"WHERE source='distributor' AND created_at >= {ph} AND created_at < {ph}",
+            (start_date, end_date_exclusive)) or {}
+        batches = self.fetchone(
+            f"SELECT COUNT(*) cnt, COALESCE(SUM(card_count),0) cards, COALESCE(SUM(settle_amount),0) settle "
+            f"FROM distributor_batches WHERE status='generated' AND created_at >= {ph} AND created_at < {ph}",
+            (start_date, end_date_exclusive)) or {}
+        dist_totals = self.fetchone(
+            "SELECT COUNT(*) n, COALESCE(SUM(balance),0) balance, COALESCE(SUM(recharge_total),0) recharge, "
+            "COALESCE(SUM(spent_total),0) spent, COALESCE(SUM(withdraw_total),0) withdraw "
+            "FROM distributors", ()) or {}
+        # 真核对：余额应当恒等于该代理全部流水之和。不等就是绕过流水改了余额（或直接动了库），
+        # 上面那套区间口径里 recharge−withdraw−Δbalance 与 net_income 是恒等式，查不出问题。
+        drift_rows = self.fetchall(
+            f"SELECT d.id, d.username, d.balance, "
+            f"COALESCE(l.s, 0) ledger FROM distributors d "
+            f"LEFT JOIN (SELECT distributor_id, SUM(amount) s FROM distributor_balance_logs "
+            f"            GROUP BY distributor_id) l ON l.distributor_id = d.id", ()) or []
+        drift_list = []
+        drift_balance = Decimal("0")
+        drift_ledger = Decimal("0")
+        for r in drift_rows:
+            bal, led = _dec(r.get("balance")), _dec(r.get("ledger"))
+            drift_balance += bal
+            drift_ledger += led
+            gap = bal - led
+            if abs(gap) > Decimal("0.004"):
+                drift_list.append({
+                    "id": int(r.get("id") or 0),
+                    "username": r.get("username") or "",
+                    "balance": round(float(bal), 2),
+                    "ledger": round(float(led), 2),
+                    "drift": round(float(gap), 2),
+                })
+        drift_list.sort(key=lambda x: abs(x["drift"]), reverse=True)
+        drift = {
+            "balance": round(float(drift_balance), 2),
+            "ledger": round(float(drift_ledger), 2),
+            "gap": round(float(drift_balance - drift_ledger), 2),
+            "count": len(drift_list),
+            "top": drift_list[:20],
+        }
+
+        return {
+            "period": {"summary": build(period), "by_type": {
+                k: stat(period, k) for k in ("recharge", "generate", "withdraw",
+                                             "withdraw_reject", "refund", "adjust")}},
+            "all_time": {"summary": build(totals), "by_type": {
+                k: stat(totals, k) for k in ("recharge", "generate", "withdraw",
+                                             "withdraw_reject", "refund", "adjust")}},
+            "trend": trend,
+            "rows": [{"id": int(r.get("id") or 0), "username": r.get("username") or "",
+                      "name": r.get("name") or "", "status": r.get("status") or "",
+                      "discount_rate": float(_dec(r.get("discount_rate"), "1")),
+                      "balance": round(float(_dec(r.get("balance"))), 2),
+                      "recharge_total": round(float(_dec(r.get("recharge_total"))), 2),
+                      "spent_total": round(float(_dec(r.get("spent_total"))), 2),
+                      "withdraw_total": round(float(_dec(r.get("withdraw_total"))), 2),
+                      "period_consume": round(float(_dec(r.get("period_consume"))), 2),
+                      "period_delta": round(float(_dec(r.get("period_delta"))), 2)} for r in rows],
+            "cards": {"generated": int(cards.get("total") or 0), "activated": int(cards.get("used") or 0)},
+            "batches": {"count": int(batches.get("cnt") or 0), "cards": int(batches.get("cards") or 0),
+                        "settle": round(float(_dec(batches.get("settle"))), 2)},
+            "stock": {"distributors": int(dist_totals.get("n") or 0),
+                      "balance": round(float(_dec(dist_totals.get("balance"))), 2),
+                      "recharge": round(float(_dec(dist_totals.get("recharge"))), 2),
+                      "spent": round(float(_dec(dist_totals.get("spent"))), 2),
+                      "withdraw": round(float(_dec(dist_totals.get("withdraw"))), 2)},
+            "drift": drift,
+        }
+
     # ---------- 分销账号 ----------
     def get_distributor(self, distributor_id):
         ph = _ph()
