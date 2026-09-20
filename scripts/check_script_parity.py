@@ -78,6 +78,44 @@ def node_check(path):
         raise SystemExit("node --check 失败：%s\n%s" % (path, r.stderr.decode("utf-8", "replace")[:800]))
 
 
+def check_versions(texts):
+    """版本号五处必须同一个号：两份 @version、两份 @changelog 首条、version.json 两条目、
+    docs/script-intro.md 最新一节。漏了 @changelog 或简介日志不会有人报错，所以在这里拦。"""
+    import json
+    import re
+
+    got = {}
+    for fn in MASTERS:
+        ver = re.search(r"^//\s*@version\s+(\S+)", texts[fn], re.M)
+        got["%s @version" % fn] = ver.group(1) if ver else "（缺 @version）"
+        log = re.search(r"^//\s*@changelog\s+v(\d[\w.]*)", texts[fn], re.M)
+        got["%s @changelog" % fn] = log.group(1) if log else "（缺 @changelog）"
+
+    try:
+        with open(os.path.join(HERE, "version.json"), encoding="utf-8") as f:
+            data = json.load(f)
+        for key in sorted(data):
+            got["version.json:%s" % key] = str(data[key].get("version"))
+    except (OSError, ValueError) as e:
+        got["version.json"] = "（读不到：%s）" % e
+
+    intro = os.path.join(HERE, os.pardir, "docs", "script-intro.md")
+    try:
+        with open(intro, "rb") as f:
+            body = f.read().decode("utf-8-sig")
+        top = re.search(r"^###\s+v(\d[\w.]*)", body, re.M)      # 日志倒序，第一节就是最新
+        got["script-intro.md"] = top.group(1) if top else "（没有 ### vX.Y.Z 一节）"
+    except OSError as e:
+        got["script-intro.md"] = "（读不到：%s）" % e
+
+    nums = set(got.values())
+    if len(nums) != 1:
+        detail = "\n".join("  %-28s %s" % (k, v) for k, v in sorted(got.items()))
+        raise SystemExit("FAIL 版本号没对齐（%d 个不同的号）：\n%s" % (len(nums), detail))
+    print("OK   版本号 %s 已在 %d 处对齐（@version / @changelog / version.json / script-intro.md）"
+          % (nums.pop(), len(got)))
+
+
 def main():
     texts, boms = {}, {}
     for fn in MASTERS:
@@ -130,6 +168,8 @@ def main():
         if "__DIST = { shop: \"\", name: \"\", code: \"\" };" not in texts[fn]:
             raise SystemExit("FAIL %s 官方版主脚本的 __DIST 必须是全空串（保证行为零变化）" % fn)
     print("OK   官方版主脚本 __DIST 为空，哨兵不改变现有行为")
+
+    check_versions(texts)
 
     for f in os.listdir(outdir):
         os.remove(os.path.join(outdir, f))
