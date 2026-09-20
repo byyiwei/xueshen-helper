@@ -116,6 +116,37 @@ def check_versions(texts):
           % (nums.pop(), len(got)))
 
 
+def check_isolation_gates(texts, channel):
+    """门禁自检：故意造一处没挂 FX-CH 的官方收银台链接，构建必须炸；
+    代理商把「店铺链接」填成官网也必须被拒。炸不了就等于门禁形同虚设。"""
+    import re
+    src = texts[MASTERS[0]]
+    m = re.search(r"^[ \t]*const __noShop = ", src, re.M)
+    if not m:
+        raise SystemExit("FAIL 自检锚点丢了：主脚本里没有 const __noShop 那一行")
+    probe = src[:m.start()] + '  const __leak = "https://xs.openget.cn/user?section=billing";\n' + src[m.start():]
+    try:
+        bd.build(probe, channel, bom=False)
+    except bd.BuildError as e:
+        if "FX-CH" not in str(e):
+            raise SystemExit("FAIL 官方入口自检被别的原因拦下，门禁没验证到：%s" % e)
+    else:
+        raise SystemExit("FAIL 门禁失效：没挂 FX-CH 的官方收银台链接照样构建得出来")
+
+    for bad in ("https://xs.openget.cn/user?section=billing", "https://openget.cn/buy"):
+        try:
+            bd.shop_url(bad)
+        except bd.BuildError:
+            pass
+        else:
+            raise SystemExit("FAIL 店铺链接允许填官网：%s" % bad)
+    try:
+        bd.shop_url("https://xs.openget.cn.evil.example/buy")
+    except bd.BuildError as e:
+        raise SystemExit("FAIL 官网域名判定误伤了别的站：%s" % e)
+    print("OK   隔离门禁有效：官方收银台未挂哨兵即构建失败，店铺链接不许填官网")
+
+
 def main():
     texts, boms = {}, {}
     for fn in MASTERS:
@@ -170,6 +201,7 @@ def main():
     print("OK   官方版主脚本 __DIST 为空，哨兵不改变现有行为")
 
     check_versions(texts)
+    check_isolation_gates(texts, channel)
 
     for f in os.listdir(outdir):
         os.remove(os.path.join(outdir, f))

@@ -657,6 +657,14 @@
         .billing-hero .hero-urgency { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 6px 14px; border-radius: 999px; background: rgba(255, 255, 255, .18); border: 1px solid rgba(255, 255, 255, .3); font-size: 12px; font-weight: 700; position: relative; z-index: 1; }
         .billing-hero .hero-urgency .pulse { width: 8px; height: 8px; border-radius: 50%; background: #fde047; animation: pulse-glow 1.5s ease-in-out infinite; }
         .ck-activate-section { padding:14px; border-radius:var(--v-radius-sm); border:1px dashed var(--primary); background:rgba(16,185,129,.06); margin-top:16px }
+        /* 渠道归属账号（由代理商卡密激活）不在官网下单：只收起售卖入口，
+           剩余题数、到期时间、卡密激活这些还在用的信息一格都不动 */
+        body.channel-mode .buy-only { display: none !important; }
+        .channel-buy-tip { display: none; align-items: flex-start; gap: 8px; padding: 12px 14px;
+            border: 1px solid var(--v-border); border-radius: var(--v-radius-sm);
+            background: rgba(148, 163, 184, .07); font-size: 13px; line-height: 1.7; color: var(--v-text-2) }
+        .channel-buy-tip .cbt-emoji { font-size: 15px; line-height: 1.6 }
+        body.channel-mode .channel-buy-tip { display: flex; }
         .ck-input-row { display:flex; align-items:center; gap:8px }
         .btn.primary-outline { background:transparent; border:1px solid var(--primary); color:var(--primary); padding:8px 18px; border-radius:8px; font-weight:600; cursor:pointer; transition:all .2s; font-size:13.5px }
         .btn.primary-outline:hover { background:var(--primary); color:#fff }
@@ -1502,10 +1510,10 @@
                 <section class="user-section" id="section-billing">
                     <div class="user-card">
                         <div class="billing-hero">
-                            <h3><span class="hero-emoji">🚀</span>开通套餐，畅享无限答题</h3>
-                            <p>AI 智能答题 + 海量题库，作业考试一键搞定。包月有效期内不限题数，题数额度永久保留不扣减。</p>
-                            <div class="hero-urgency"><span class="pulse"></span>限时优惠 · 包月畅答低至日均不到 1 元</div>
-                            <div class="plan-benefits">
+                            <h3 class="buy-only"><span class="hero-emoji">🚀</span>开通套餐，畅享无限答题</h3>
+                            <p class="buy-only">AI 智能答题 + 海量题库，作业考试一键搞定。包月有效期内不限题数，题数额度永久保留不扣减。</p>
+                            <div class="hero-urgency buy-only"><span class="pulse"></span>限时优惠 · 包月畅答低至日均不到 1 元</div>
+                            <div class="plan-benefits buy-only">
                                 <span class="benefit"><span class="bi">✓</span>不限题数</span>
                                 <span class="benefit"><span class="bi">✓</span>AI 智能答题</span>
                                 <span class="benefit"><span class="bi">✓</span>海量题库</span>
@@ -1517,8 +1525,8 @@
                                 <div class="bs" id="billingMemberBox"><span>包月到期时间</span><b id="billingMemberUntil">未开通</b></div>
                             </div>
                         </div>
-                        <div id="payMethods" class="pay-methods"></div>
-                        <div id="customModelBuy" style="display:none;margin-bottom:14px;padding:16px;border:1px solid rgba(6,182,212,.35);border-radius:var(--v-radius-sm);background:linear-gradient(135deg,rgba(6,182,212,.1),rgba(8,47,73,.15))">
+                        <div id="payMethods" class="pay-methods buy-only"></div>
+                        <div id="customModelBuy" class="buy-only" style="display:none;margin-bottom:14px;padding:16px;border:1px solid rgba(6,182,212,.35);border-radius:var(--v-radius-sm);background:linear-gradient(135deg,rgba(6,182,212,.1),rgba(8,47,73,.15))">
                             <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
                                 <div>
                                     <div style="font-weight:700;font-size:14px;color:var(--v-text);display:flex;align-items:center;gap:6px"><span style="font-size:16px">🔑</span> 自有模型</div>
@@ -1527,19 +1535,23 @@
                                 <button class="primary" id="customModelBuyBtn" style="width:auto;padding:10px 22px;margin-top:0;font-size:13px" onclick="buyCustomModel()">立即开通</button>
                             </div>
                         </div>
-                        <div class="plan-tabs" id="planTabs">
+                        <div class="plan-tabs buy-only" id="planTabs">
                             <button class="plan-tab active" data-filter="all">全部</button>
                             <button class="plan-tab" data-filter="monthly">包月套餐</button>
                             <button class="plan-tab" data-filter="points">题数套餐</button>
                         </div>
-                        <div id="planGrid" class="plan-grid"></div>
+                        <div id="planGrid" class="plan-grid buy-only"></div>
+                        <div class="channel-buy-tip" id="channelBuyTip">
+                            <span class="cbt-emoji">🎫</span>
+                            <span>本账号由渠道发卡提供服务，题数与包月由渠道发放。续费请激活渠道给你的卡密：</span>
+                        </div>
                         <div id="ckSection" class="ck-activate-section" style="margin-top:16px">
                             <div class="ck-input-row">
                                 <input id="ckInput" class="form-control" placeholder="已有卡密？输入 16 位卡密直接激活" style="flex:1;min-width:180px" maxlength="16">
                                 <button class="btn primary-outline" id="ckActivateBtn">激活卡密</button>
                             </div>
                         </div>
-                        <div id="qrPanel" class="qr-panel">
+                        <div id="qrPanel" class="qr-panel buy-only">
                             <div class="qr-title" id="payQrTitle">请扫码完成付款</div>
                             <img id="payQrImg" alt="支付二维码">
                             <div class="qr-actions" id="payQrActions"></div>
@@ -1566,7 +1578,7 @@
                             </label>
                         </div>
                         <div id="customModelHint" style="display:none;padding:10px 14px;border-radius:var(--v-radius-sm);margin-bottom:12px;font-size:12.5px;line-height:1.7"></div>
-                        <div id="customModelPayBtn" style="display:none;margin-bottom:12px;text-align:right">
+                        <div id="customModelPayBtn" class="buy-only" style="display:none;margin-bottom:12px;text-align:right">
                             <button class="primary" id="customModelPayBtnInner" style="width:auto;padding:8px 20px;font-size:13px" onclick="buyCustomModelFromModel()">立即开通</button>
                         </div>
                         <div class="backend-model-tip" id="backendModelTip">
@@ -2068,6 +2080,7 @@
             $('billingMemberUntil').textContent = until;
             if (profile.email) $('accountEmail').textContent = profile.email;
             _profile = profile;
+            document.body.classList.toggle('channel-mode', profile.channel === 'distributor');
             renderCustomModelBuy();
         }
         let _profile = null;
@@ -2287,6 +2300,7 @@
             document.querySelectorAll('[data-buy-plan]').forEach(btn => btn.onclick = () => buyPlan(btn.dataset.buyPlan, btn, Number(btn.dataset.planPrice || 0)));
         }
         async function loadPlans() {
+            if (_profile && _profile.channel === 'distributor') { _allPlans = []; renderPlans(); return; }
             try {
                 await loadPaymentMethods();
                 const res = await fetch('/api/payment/plans');

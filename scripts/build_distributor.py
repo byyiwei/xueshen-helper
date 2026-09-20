@@ -20,6 +20,7 @@ import json
 import os
 import re
 import sys
+from urllib.parse import urlsplit
 
 STRIP_RE = re.compile(r"^(\s*)//\s*>>>\s*FX-STRIP:([A-Za-z0-9_-]+)\s*$")
 INJECT_RE = re.compile(r"^(\s*)//\s*>>>\s*FX-INJECT:([A-Za-z0-9_-]+)\s*$")
@@ -43,6 +44,9 @@ REQUIRED = {
     "ch": {"basic-info-shop", "remain-billing", "pricing-base-url", "pricing-login-param",
            "card-key-activate", "no-shop-guard", "no-shop-billing"},
 }
+# 官方收银台地址在渠道版里只有一个合法出处：挂了 FX-CH 的那行，由渠道常量决定去留。
+# 以后再加官方下单入口却忘了挂哨兵，构建直接失败，而不是把官网地址原样发给渠道的下家。
+OFFICIAL_CHECKOUT_RE = re.compile(r"openget\.cn/user\?section=billing")
 
 
 class BuildError(Exception):
@@ -70,6 +74,7 @@ def shop_url(value):
     首尾空白是粘贴带进来的，去掉；中间空白直接拒绝——悄悄删掉一个空格
     会把链接指向另一个地址。禁 <>"' 反斜杠和控制字符：链接最终落在 JS
     字符串字面量里，而 U+2028/2029 在 JS 源码里等于换行。
+    官网域名一并拒绝：店铺链接填成 xs.openget.cn 等于渠道把下家送回官方下单。
     """
     url = str(value or "").strip()
     if not url:
@@ -80,6 +85,9 @@ def shop_url(value):
         raise BuildError("渠道链接过长（上限 %d 字符）" % _SHOP_MAX)
     if not url.lower().startswith("https://"):
         raise BuildError("渠道链接必须以 https:// 开头")
+    host = (urlsplit(url).hostname or "").lower()
+    if host == "openget.cn" or host.endswith(".openget.cn"):
+        raise BuildError("渠道链接不能填官网地址（%s），续费请指向渠道自己的店铺" % host)
     if re.search(r"[\"'<>\\]", url) or any(ord(c) < 0x20 or c in "\u2028\u2029" for c in url):
         raise BuildError("渠道链接不能包含引号、尖括号、反斜杠或控制字符")
     return url
@@ -195,6 +203,12 @@ def build(text, channel, bom=False):
                 out.insert(k + 1 + off, mark)
                 synth.add(mark)
             break
+
+    leak = [(n, ln.strip()[:110]) for n, ln in enumerate(out, 1)
+            if OFFICIAL_CHECKOUT_RE.search(ln) and "FX-CH:" not in ln]
+    if leak:
+        raise BuildError("纯净版有 %d 处官方收银台入口没挂 FX-CH 哨兵：%s"
+                         % (len(leak), "; ".join("第%d行 %s" % pair for pair in leak[:3])))
 
     result = "\n".join(out)
     if bom:

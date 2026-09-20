@@ -100,7 +100,11 @@ DASHBOARD_CACHE = {"time": 0, "data": None}
 DASHBOARD_CACHE_SECONDS = 5
 # 官网直营营收口径：代理商充值（plan_type='dist_recharge'）是压在平台的预存款、属于负债，
 # 不能算进直营收入；分销那套钱单独在「代理商分销 · 收入统计」里按流水出。
-DIRECT_SALES_WHERE = "status='paid' AND COALESCE(plan_type,'') <> 'dist_recharge'"
+# 卡密激活也往 payment_orders 写一行，代理卡那行 price 恒为 0（是核销不是销售），
+# 计进订单数会让直营单量虚高；官方/闲鱼卡密写的是套餐原价，仍算直营。
+# COALESCE 是必需的：pay_method 为 NULL 时 "NOT (... )" 整体是 NULL，会把正常订单筛掉。
+DIRECT_SALES_WHERE = ("status='paid' AND COALESCE(plan_type,'') <> 'dist_recharge' "
+                      "AND (COALESCE(pay_method,'') <> 'card' OR COALESCE(price, 0) > 0)")
 REVOKED_USER_TOKENS = set()
 USER_LOGOUT_AFTER = {}
 CURRENT_USER_SESSION = {}
@@ -201,14 +205,19 @@ def build_user_profile(username):
         "custom_model_active": bool(ent.get("custom_model_active")),
         "is_banned": bool(ent.get("is_banned")),
         "ban_reason": ent.get("ban_reason") or "",
+        "channel": ent.get("channel") or "platform",
         "commission_balance": float(ent.get("commission_balance") or 0)
     }
 
 def is_distributor_channel(ent):
-    """该账号是否由代理商卡密激活。只用来选提示文案，不参与权益/额度/计价判定，
-    所以渠道标错了也不影响钱，最差是文案指向错的服务方。
+    """该账号是否由代理商卡密激活。原来只用来选提示文案，现在也是官网下单的拦截依据：
+    渠道卖出去的续费钱归渠道，官网不再对这一类账号开收银台。标错的代价是少一单直营，
+    不会多收钱，也不会动权益。
     """
     return bool(ent) and str(ent.get("channel") or "platform") == "distributor"
+
+# 渠道账号在官网被拦下时的说法：说清去哪儿续费，不评价用户，也不承诺做不到的事
+DIST_CHANNEL_CHECKOUT_MSG = "本账号由渠道发卡提供服务，套餐购买不对其开放。续费请用渠道发放的卡密：在脚本「账号」面板输入 16 位卡密激活，或在官网「套餐购买」页下方激活。"
 
 def consume_answer_quota(username, question_hash=""):
     ent = db.get_user_entitlement(username)
@@ -6033,6 +6042,9 @@ class Handler(BaseHTTPRequestHandler):
                 if ent and ent.get("is_banned"):
                     self._send_json(403, {"code": 403, "msg": "账号已被封禁，无法购买"})
                     return
+                if is_distributor_channel(ent):
+                    self._send_json(403, {"code": 403, "msg": DIST_CHANNEL_CHECKOUT_MSG})
+                    return
                 data = json.loads(body or "{}")
                 # —— 自有模型权限购买（不走 payment_plans，使用 admin_config 的开关与定价）——
                 if data.get("plan_type") == "custom_model":
@@ -6834,6 +6846,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(401, {"code": 401, "msg": "请先登录"})
                 return
             try:
+                if is_distributor_channel(db.get_user_entitlement(user["username"])):
+                    self._send_json(403, {"code": 403, "msg": DIST_CHANNEL_CHECKOUT_MSG})
+                    return
                 data = json.loads(body or "{}")
                 plan_id = int(data.get("plan_id") or 0)
                 order, err = db.create_xianyu_order(user["username"], plan_id)
