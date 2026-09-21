@@ -62,6 +62,20 @@ def _ph():
     return "%s"
 
 
+def _model_expire_date(value):
+    """模型到期日期只认 YYYY-MM-DD：留空写 NULL（永久有效）。
+    写成别的直接报错，不悄悄当空处理——静默丢掉日期等于把「到期停用」这句话撤销了。
+    """
+    text = str(value or "").strip()[:10]
+    if not text:
+        return None
+    try:
+        datetime.strptime(text, "%Y-%m-%d")
+    except ValueError:
+        raise ValueError("模型到期日期格式不对：%s（应填 2026-12-31 这种 YYYY-MM-DD，留空表示永久有效）" % value)
+    return text
+
+
 def _dec(value, default="0"):
     """把 DECIMAL/None/空串统一转成 Decimal。金额运算禁止走 float。"""
     try:
@@ -429,7 +443,7 @@ class Database:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
         # 兼容旧表：添加列（如果不存在）
-        for col, ddl in [("weight", "weight INT DEFAULT 100"), ("daily_token_limit", "daily_token_limit INT DEFAULT 0"), ("total_token_limit", "total_token_limit INT DEFAULT 0"), ("vision", "vision TINYINT DEFAULT 0")]:
+        for col, ddl in [("weight", "weight INT DEFAULT 100"), ("daily_token_limit", "daily_token_limit INT DEFAULT 0"), ("total_token_limit", "total_token_limit INT DEFAULT 0"), ("vision", "vision TINYINT DEFAULT 0"), ("expire_date", "expire_date DATE NULL")]:
             try:
                 self.execute(f"ALTER TABLE ai_models ADD COLUMN {ddl}")
             except Exception:
@@ -1397,17 +1411,19 @@ class Database:
         ph = _ph()
         order_no = f"ORD{int(time.time()*1000)}{abs(hash(username)) % 10000:04d}"
         business_type = (plan.get("business_type") or "")[:50]
+        # 建单只能落 pending：apply_paid_order 见 paid 会直接早退「订单已到账」，
+        # 于是 ¥0 套餐/自有模型白拿一个已支付订单，权益一分没发，还永久卡住「限领一次」
         self.execute(
             f"""INSERT INTO payment_orders (order_no, username, plan_id, plan_name, plan_type, price, points, days, status, paid_at, business_type)
-                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'paid', CURRENT_TIMESTAMP, {ph})""",
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'pending', NULL, {ph})""",
             (
                 order_no, username, int(plan.get("id") or 0), plan.get("name", ""),
                 plan.get("plan_type", ""), float(plan.get("price") or 0),
                 int(plan.get("points") or 0), int(plan.get("days") or 0), business_type
             )
         )
-        self.apply_paid_order(order_no)
-        return order_no
+        ok, msg = self.apply_paid_order(order_no)
+        return order_no, ok, msg
 
     def create_pending_order(self, username, plan, pay_method="alipay", pay_channel="", trade_no="", qr_code="", pay_url="", order_no=None, bank_order_no="", pay_type="", business_type=""):
         ph = _ph()
@@ -1484,25 +1500,47 @@ class Database:
             # 代理商余额充值单独走：这笔是「钱换余额」，不能像别的分支那样发放失败只
             # print 一句就标成 paid——那是收了钱不给货。失败退回 pending，钱和货都
             # 还在原地，管理员补单或用户重新下单都有依据。也不走下面的推广返利。
-            return self._apply_distributor_recharge(order_no)
+            ok_recharge, msg_recharge = self._apply_distributor_recharge(order_no)
+            if not ok_recharge:
+                return False, msg_recharge
+            price = float(order.get("price") or 0)
+            if price > 0:
+                try:
+                    self._settle_first_order_commission(order["username"], order_no, price)
+                except Exception as e:
+                    print(f"[推广返利] 佣金结算失败 order={order_no}: {e}", flush=True)
+            return True, msg_recharge
+        # 三个发放函数「用户不存在」时是 return (False, msg) 不是 raise，只抓异常会漏掉
+        # 这条正常路径；统一收口成 ok 三态，没发出货就不许标 paid。
+        ok, msg = False, "未知套餐类型"
         try:
             if order.get("plan_type") == "monthly":
-                self.extend_user_membership(order["username"], int(order.get("days") or 30), f"购买套餐：{order.get('plan_name','包月套餐')}")
+                ok, msg = self.extend_user_membership(order["username"], int(order.get("days") or 30), f"购买套餐：{order.get('plan_name','包月套餐')}")
             elif order.get("plan_type") == "custom_model":
                 # 自有模型权限：business_type 编码 period => custom_model_monthly / custom_model_lifetime
                 period = "permanent"
                 bt = order.get("business_type") or ""
                 if "monthly" in bt:
                     period = "monthly"
-                self.grant_custom_model_access(order["username"], period)
-            else:
-                self.adjust_user_points(order["username"], int(order.get("points") or 0),
-                                        f"购买套餐：{order.get('plan_name','点数套餐')}",
-                                        order_no=order_no, lot_source="order")
+                ok, msg = self.grant_custom_model_access(order["username"], period)
+            elif order.get("plan_type") == "points":
+                ok, msg = self.adjust_user_points(order["username"], int(order.get("points") or 0),
+                                                  f"购买套餐：{order.get('plan_name','点数套餐')}",
+                                                  order_no=order_no, lot_source="order")
         except Exception as e:
+            ok, msg = False, str(e)
             print(f"[支付到账] 权益发放异常 order={order_no}: {e}", flush=True)
+        if not ok:
+            self.execute(
+                f"UPDATE payment_orders SET status = 'pending', paid_at = NULL "
+                f"WHERE order_no = {ph} AND status = 'paying'",
+                (order_no,)
+            )
+            print(f"[支付到账] 未发放，订单退回待支付 order={order_no} user={order.get('username')} "
+                  f"类型={order.get('plan_type')} 原因={msg}", flush=True)
+            return False, "权益未发放：%s" % msg
         self.execute(f"UPDATE payment_orders SET status = 'paid' WHERE order_no = {ph}", (order_no,))
-        # 推广返利：首单佣金结算（仅付费订单 price>0 触发）
+        # 推广返利：首单佣金结算（仅付费订单 price>0 触发）。返利失败不影响已发放的权益
         try:
             price = float(order.get("price") or 0)
             if price > 0:
@@ -1914,6 +1952,11 @@ class Database:
         """)
 
     def create_xianyu_order(self, username, plan_id):
+        """闲鱼单建单：当场铸一张 source='xianyu' 的未使用卡密并回给下单人。
+
+        这条链上没有任何付款凭据，所以「谁调用谁白拿」：面向买家的建单/自确认两个口已下线。
+        要重新接回界面，必须先有服务端能核验的到账凭据，不能由下单人自己确认已付款。
+        """
         ph = _ph()
         plan = self.get_payment_plan(plan_id)
         if not plan:
@@ -4251,7 +4294,9 @@ class Database:
                     "weight": int(m.get("weight", 100) or 100),
                     "daily_token_limit": int(m.get("daily_token_limit", 0) or 0),
                     "total_token_limit": int(m.get("total_token_limit", 0) or 0),
-                    "vision": bool(m.get("vision"))
+                    "vision": bool(m.get("vision")),
+                    # MySQL 给的是 date 对象，JSON 备份里给的是字符串，统一成 'YYYY-MM-DD' 或空串
+                    "expire_date": str(m.get("expire_date") or "")[:10]
                 })
             providers = {}
             for p in provider_rows:
@@ -4277,6 +4322,11 @@ class Database:
 
     def save_providers(self, data):
         ph = _ph()
+        # 先把到期日期整体校验一遍再动表：这个函数是「全删再全插」，
+        # 中途抛错会留下一份被删了一半的模型配置，比保存失败严重得多。
+        for provider_key, info in (data or {}).items():
+            for model in info.get("models", []) or []:
+                _model_expire_date(model.get("expire_date"))
         # 写入结构化 AI 表
         self.execute("DELETE FROM ai_models")
         self.execute("DELETE FROM ai_providers")
@@ -4299,8 +4349,8 @@ class Database:
                     continue
                 self.execute(
                     f"""INSERT INTO ai_models
-                        (provider_key, model_value, model_label, weight, daily_token_limit, total_token_limit, vision, sort_order)
-                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+                        (provider_key, model_value, model_label, weight, daily_token_limit, total_token_limit, vision, expire_date, sort_order)
+                        VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
                     (
                         provider_key,
                         model.get("value", ""),
@@ -4309,6 +4359,7 @@ class Database:
                         int(model.get("daily_token_limit", 0) or 0),
                         int(model.get("total_token_limit", 0) or 0),
                         1 if (model.get("vision") is True or model.get("vision") == 1 or str(model.get("vision")).lower() in ("1", "true", "yes", "on")) else 0,
+                        _model_expire_date(model.get("expire_date")),
                         idx
                     )
                 )

@@ -117,6 +117,9 @@ LOGIN_MAX_FAILURES = 5
 LOGIN_LOCK_SECONDS = 900
 SLIDER_CAPTCHAS = {}
 SLIDER_CAPTCHA_TTL = 300
+# /api/slider-captcha/start 匿名可调，原先只有 verify/consume 才清条目，
+# 只 start 不滑的循环会让字典无上限长下去，直到吃光进程内存。
+SLIDER_CAPTCHA_MAX = 2000
 SLIDER_TOLERANCE = 20
 
 # 异步日志队列：高并发时请求先返回，日志由后台线程写库
@@ -378,13 +381,23 @@ def clear_login_failures(scope, client_ip, username):
     LOGIN_ATTEMPTS.pop(login_rate_key(scope, client_ip, username), None)
 
 def create_slider_captcha(scope, client_ip):
+    now = time.time()
+    for cid, item in list(SLIDER_CAPTCHAS.items()):
+        if float(item.get("expires") or 0) < now:
+            SLIDER_CAPTCHAS.pop(cid, None)
+    if len(SLIDER_CAPTCHAS) >= SLIDER_CAPTCHA_MAX:
+        # 洪水期内 TTL 还没到，只能先丢最早进来的：宁可少数人重滑一次，也不能整个进程陪葬。
+        # 所有条目共用一个 TTL，所以插入顺序就是过期顺序，不必排序（排序会被洪水放大成我们的 CPU）
+        overflow = len(SLIDER_CAPTCHAS) - SLIDER_CAPTCHA_MAX + 1
+        for cid in list(SLIDER_CAPTCHAS)[:overflow]:
+            SLIDER_CAPTCHAS.pop(cid, None)
     captcha_id = secrets.token_urlsafe(18)
     target = secrets.randbelow(146) + 72
     SLIDER_CAPTCHAS[captcha_id] = {
         "scope": scope,
         "client_ip": client_ip or "",
         "target": target,
-        "expires": time.time() + SLIDER_CAPTCHA_TTL,
+        "expires": now + SLIDER_CAPTCHA_TTL,
         "verified": False
     }
     return {"id": captcha_id, "target_hint": target, "min": 0, "max": 260, "expires_in": SLIDER_CAPTCHA_TTL}
@@ -999,6 +1012,16 @@ def save_providers(providers):
             json.dump(providers, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
+
+def save_providers_config(providers):
+    """落库成功才把新配置换进内存。
+
+    反过来写（先 PROVIDERS = 新值 再落库）会留下一种最难查的状态：日期填错被拒后，
+    内存里跑的是那份没存进去的配置，界面显示的也是它，只有重启才会回到库里真正的那份。
+    """
+    save_providers(providers)
+    global PROVIDERS
+    PROVIDERS = providers
 
 PROVIDERS = load_providers()
 
@@ -2431,14 +2454,72 @@ def do_openai_compatible_chat(messages, model, api_key, base_url, time_budget=No
             return None, f"API 异常: {str(e)}", 0
     return None, "API 请求失败：所有重试均被拒绝，请检查模型名称和接口配置", 0
 
-def do_claude_chat(messages, model, api_key, base_url):
+def _flatten_text(content):
+    """把 OpenAI 风格的 content 数组拍平成纯文本；传字符串时原样返回"""
+    if not isinstance(content, list):
+        return content
+    return "\n".join(str(p.get("text", "")) for p in content if isinstance(p, dict) and p.get("type") == "text")
+
+def _parse_data_url(url):
+    """'data:image/png;base64,xxx' → ('image/png', 'xxx')；不是内联 base64 图就返回 None。
+    Claude / Gemini 的 REST 接口只收内联字节，普通 http 图片链接在这里只能是 None
+    （build_ai_messages 已经把远程图下载成 data URL 了）。
+    """
+    text = str(url or "")
+    if not text.startswith("data:"):
+        return None
+    head, _, body = text[5:].partition(",")
+    if "base64" not in head.lower() or not body:
+        return None
+    return (head.split(";", 1)[0].strip() or "application/octet-stream"), body
+
+def _claude_content(content):
+    """OpenAI 的 content 数组 → Anthropic 的 content blocks。纯文本走调用方原分支，请求体一字不变"""
+    blocks = []
+    for part in content:
+        if not isinstance(part, dict):
+            continue
+        if part.get("type") == "image_url":
+            parsed = _parse_data_url((part.get("image_url") or {}).get("url"))
+            if parsed:
+                blocks.append({"type": "image", "source": {"type": "base64", "media_type": parsed[0], "data": parsed[1]}})
+            else:
+                blocks.append({"type": "text", "text": "[图片无法加载]"})
+        elif part.get("type") == "text":
+            blocks.append({"type": "text", "text": str(part.get("text", ""))})
+    return blocks
+
+def _gemini_parts(content):
+    """OpenAI 的 content 数组 → Gemini 的 parts（图片用 inlineData）"""
+    parts = []
+    for part in content:
+        if not isinstance(part, dict):
+            continue
+        if part.get("type") == "image_url":
+            parsed = _parse_data_url((part.get("image_url") or {}).get("url"))
+            if parsed:
+                parts.append({"inlineData": {"mimeType": parsed[0], "data": parsed[1]}})
+            else:
+                parts.append({"text": "[图片无法加载]"})
+        elif part.get("type") == "text":
+            parts.append({"text": str(part.get("text", ""))})
+    return parts
+
+def _has_multimodal(messages):
+    return any(isinstance(m.get("content"), list) for m in messages)
+
+def do_claude_chat(messages, model, api_key, base_url, timeout=60):
     system = ""
     claude_messages = []
     for m in messages:
         if m["role"] == "system":
-            system = m["content"]
+            system = _flatten_text(m["content"])
         else:
-            claude_messages.append({"role": m["role"], "content": m["content"]})
+            content = m["content"]
+            claude_messages.append({
+                "role": m["role"],
+                "content": _claude_content(content) if isinstance(content, list) else content
+            })
     data = json.dumps({"model": model, "max_tokens": 2048, "system": system, "messages": claude_messages}).encode("utf-8")
     req = urllib.request.Request(
         f"{base_url.rstrip('/')}/messages",
@@ -2447,11 +2528,16 @@ def do_claude_chat(messages, model, api_key, base_url):
         method="POST"
     )
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             result = json.loads(resp.read().decode("utf-8"))
             usage = result.get("usage") or {}
             total_tokens = int(usage.get("input_tokens", 0)) + int(usage.get("output_tokens", 0))
-            return result["content"][0]["text"].strip(), None, total_tokens
+            text = "".join(b.get("text", "") for b in (result.get("content") or [])
+                           if isinstance(b, dict) and b.get("type") == "text").strip()
+            if not text:
+                # 带图请求更容易只回一个非文本块（或干脆被拒答）。回一句说得清的，比抛 KeyError 强
+                return None, "Claude 未返回文本内容（stop_reason=%s）" % (result.get("stop_reason") or "未知"), total_tokens
+            return text, None, total_tokens
     except urllib.error.HTTPError as e:
         body = e.read().decode('utf-8')
         if e.code == 429:
@@ -2467,22 +2553,48 @@ def do_claude_chat(messages, model, api_key, base_url):
     except Exception as e:
         return None, f"Claude 异常: {str(e)}", 0
 
-def do_gemini_chat(messages, model, api_key, base_url):
-    prompt = ""
-    for m in messages:
-        prefix = "用户" if m["role"] == "user" else "系统"
-        prompt += f"{prefix}: {m['content']}\n"
-    data = json.dumps({"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.3, "maxOutputTokens": 2048}}).encode("utf-8")
+def do_gemini_chat(messages, model, api_key, base_url, timeout=60):
+    if _has_multimodal(messages):
+        # 带图时必须按 contents/parts 的结构发。老那套「把所有角色拼成一段文本」会把图整张丢掉，
+        # 模型只会对着题目文字硬答——比报错更糟，因为看起来是成功的。
+        system_text = ""
+        contents = []
+        for m in messages:
+            if m["role"] == "system":
+                system_text = _flatten_text(m["content"])
+                continue
+            parts = _gemini_parts(m["content"]) if isinstance(m["content"], list) else [{"text": m["content"]}]
+            if parts:
+                contents.append({"role": "model" if m["role"] == "assistant" else "user", "parts": parts})
+        body = {"contents": contents, "generationConfig": {"temperature": 0.3, "maxOutputTokens": 2048}}
+        if system_text:
+            body["systemInstruction"] = {"parts": [{"text": str(system_text)}]}
+    else:
+        prompt = ""
+        for m in messages:
+            prefix = "用户" if m["role"] == "user" else "系统"
+            prompt += f"{prefix}: {m['content']}\n"
+        body = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.3, "maxOutputTokens": 2048}}
+    data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(
         f"{base_url.rstrip('/')}/models/{model}:generateContent?key={api_key}",
         data=data, headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"}, method="POST"
     )
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             result = json.loads(resp.read().decode("utf-8"))
             usage = result.get("usageMetadata") or {}
             total_tokens = int(usage.get("totalTokenCount", 0) or 0)
-            return result["candidates"][0]["content"]["parts"][0]["text"].strip(), None, total_tokens
+            cand = (result.get("candidates") or [{}])[0] or {}
+            parts = ((cand.get("content") or {}).get("parts")) or []
+            text = "".join(p.get("text", "") for p in parts
+                           if isinstance(p, dict) and p.get("text")).strip()
+            if not text:
+                # 图片更容易撞内容安全：被拦时没有 candidates，说清原因比抛 KeyError 强
+                reason = ((result.get("promptFeedback") or {}).get("blockReason")
+                          or cand.get("finishReason") or "未知")
+                return None, "Gemini 未返回文本内容（%s）" % reason, total_tokens
+            return text, None, total_tokens
     except urllib.error.HTTPError as e:
         body = e.read().decode('utf-8')
         if e.code == 429:
@@ -2511,6 +2623,7 @@ def get_enabled_model_candidates(need_vision=False, prefer_non_vision=True):
     - need_vision=True: 只返回支持图片(vision)的模型（图片题）
     - need_vision=False: 优先返回非 vision 模型（纯文本题，控制成本）；
       若一个非 vision 模型都没有，则回退到 vision 模型
+    - 过了「到期日期」的模型不进候选，不管额度有没有用完
     """
     def _collect(only_vision):
         result = []
@@ -2519,6 +2632,8 @@ def get_enabled_model_candidates(need_vision=False, prefer_non_vision=True):
                 continue
             for m in pinfo.get("models", []):
                 if not m.get("value"):
+                    continue
+                if is_model_expired(m):
                     continue
                 is_vision = m.get("vision") is True or m.get("vision") == 1 or str(m.get("vision")).lower() in ("1", "true", "yes", "on")
                 if only_vision and (not is_vision or m.get("value") in MODEL_NON_VISION):
@@ -2589,9 +2704,18 @@ def build_models_html():
     for name, info in PROVIDERS.items():
         if info.get("enabled") and info.get("api_key") and info.get("base_url") and info.get("models"):
             for m in info["models"]:
-                if m.get("value") and m.get("label"):
+                if m.get("value") and m.get("label") and not is_model_expired(m):
                     options.append(f'<option value="{m["value"]}">{m["label"]}</option>')
     return "".join(options) if options else '<option value="">请先配置 AI 提供商</option>'
+
+def get_model_entry(model_name):
+    """按模型ID取配置项（不看提供商是否启用），只为给出准确的停用原因"""
+    low = (model_name or "").lower()
+    for pinfo in PROVIDERS.values():
+        for m in pinfo.get("models", []):
+            if str(m.get("value", "")).lower() == low:
+                return m
+    return None
 
 def find_provider_by_model(model_name):
     model_lower = model_name.lower() if model_name else ""
@@ -2600,6 +2724,8 @@ def find_provider_by_model(model_name):
             continue
         for m in pinfo.get("models", []):
             if m.get("value", "").lower() == model_lower:
+                if is_model_expired(m):
+                    return None, None
                 return pname, pinfo
     return None, None
 
@@ -2831,6 +2957,19 @@ def get_model_daily_limit(model_name):
                 return int(m.get("daily_token_limit") or 0)
     return 0
 
+def is_model_expired(model):
+    """模型是否已过到期日期：到期日当天仍可调用，次日零点起不再调用；留空为永久有效。
+    日期脏了（不是 YYYY-MM-DD）一律当没填，不拦——一个填错的日期不该把整条模型线掐断。
+    """
+    raw = str((model or {}).get("expire_date") or "").strip()[:10]
+    if not raw:
+        return False
+    try:
+        expire = datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError:
+        return False
+    return expire < datetime.now().date()
+
 def get_model_total_limit(model_name):
     """从 providers 配置中获取模型的总额 token 限额"""
     for pname, pinfo in PROVIDERS.items():
@@ -2956,11 +3095,12 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
             final_model = model_name
             break
         elif err:
-            if err.startswith("__429__:"):
-                parts = err.split(":", 2)
-                cooldown_sec = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else MODEL_429_DEFAULT_SECONDS
+            cooldown_sec, _429_detail = upstream_429_wait(err)
+            if cooldown_sec is not None:
                 MODEL_429_COOLDOWN[model_name] = time.time() + cooldown_sec
                 print(f"[自动模型] 模型 {model_name} 触发429限流，冷却 {cooldown_sec}s", flush=True)
+                # 这条会拼进给用户的 err_msg，绝不能放哨兵原文
+                errors.append(f"{model_name}: 上游限流（429），已冷却 {cooldown_sec}s")
             else:
                 error_logs.append({
                     "provider_key": provider_name or "",
@@ -2980,7 +3120,7 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
                 if "not support image" in err.lower() or "does not support image" in err.lower():
                     MODEL_NON_VISION.add(model_name)
                     print(f"[自动模型] 模型 {model_name} 不支持图片，已标记为非视觉模型", flush=True)
-            errors.append(f"{model_name}: {err}")
+                errors.append(f"{model_name}: {err}")
             # 超时类错误：上游慢/网络抖动，切换下一个模型前退避等待，避免连续打击同一网络
             if "timed out" in err.lower() or "timeout" in err.lower():
                 time.sleep(min(3, max(deadline - time.time(), 0)))
@@ -3095,6 +3235,9 @@ def ask_ai(question, model_name):
         models = [m.get('value') for m in pinfo.get('models', [])]
         print(f"[DEBUG]   {pname}: enabled={pinfo.get('enabled')}, has_key={bool(pinfo.get('api_key'))}, models={models}", flush=True)
     if not provider_name:
+        entry = get_model_entry(model_name)
+        if is_model_expired(entry):
+            return None, f"模型 '{model_name}' 已于 {entry.get('expire_date')} 到期停用，请选择其他模型或联系管理员续期。"
         return None, f"模型 '{model_name}' 不可用。该模型对应的提供商未配置 API Key 或已被禁用。请在管理后台检查配置，或选择其他模型。"
     answer, err, tokens = call_provider_chat(question, model_name, provider_info)
     if answer:
@@ -3104,7 +3247,7 @@ def ask_ai(question, model_name):
 
 # ==================== AI Agent 决策系统 ====================
 
-def call_provider_chat_with_messages(messages, model_name, provider_info):
+def call_provider_chat_with_messages(messages, model_name, provider_info, timeout=None):
     """使用自定义消息列表调用 LLM（不含硬编码 system prompt）"""
     api_key = provider_info.get("api_key", "")
     base_url = provider_info.get("base_url", "")
@@ -3112,12 +3255,104 @@ def call_provider_chat_with_messages(messages, model_name, provider_info):
     if protocol == "openai":
         return do_openai_compatible_chat(messages, model_name, api_key, base_url)
     elif protocol == "claude":
-        return do_claude_chat(messages, model_name, api_key, base_url)
+        return do_claude_chat(messages, model_name, api_key, base_url, timeout=timeout or 60)
     elif protocol == "gemini":
-        return do_gemini_chat(messages, model_name, api_key, base_url)
+        return do_gemini_chat(messages, model_name, api_key, base_url, timeout=timeout or 60)
     else:
         return None, f"不支持的协议: {protocol}", 0
 
+
+# 后台「⚡ 测试」勾选「支持图片」时用的识图自检：现场拼一张纯色 PNG，随机挑一种颜色，
+# 问模型看到什么色，再按颜色词判分。随机是为了让瞎猜蒙不中；
+# 纯色 PNG 用 zlib 手搓（纯色所以压完只有一两百字节），不为一发调试请求引第三方库。
+VISION_TEST_COLORS = [
+    ((220, 38, 38), "红", ("红", "red")),
+    ((22, 163, 74), "绿", ("绿", "green")),
+    ((37, 99, 235), "蓝", ("蓝", "blue")),
+    ((234, 179, 8), "黄", ("黄", "yellow", "gold")),
+    ((147, 51, 234), "紫", ("紫", "purple", "violet")),
+]
+
+def solid_color_png_b64(rgb, size=256):
+    """生成一张纯色 PNG 的 base64（无调色板，8bit RGB）
+
+    边长取 256：Anthropic 的视觉文档说低于 200px 的图解析结果不可靠，
+    一张 64px 的小图会被它读成随机颜色，测试就成了我们自己的锅。
+    """
+    import struct
+    import zlib
+
+    def _chunk(tag, payload):
+        body = tag + payload
+        return struct.pack(">I", len(payload)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
+
+    # 每行一个 filter 字节(0=None) + size 个 RGB 三元组
+    raw = (b"\x00" + bytes(rgb) * size) * size
+    png = (b"\x89PNG\r\n\x1a\n"
+           + _chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0))
+           + _chunk(b"IDAT", zlib.compress(raw, 9))
+           + _chunk(b"IEND", b""))
+    return base64.b64encode(png).decode("ascii")
+
+def vision_test_request():
+    """返回 (messages, 期望颜色名, 命中关键词)；每次调用换一种颜色"""
+    rgb, name, keys = random.choice(VISION_TEST_COLORS)
+    messages = [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "这张图整体是什么颜色？只回答一个颜色词，不要解释。"},
+            {"type": "image_url", "image_url": {"url": "data:image/png;base64," + solid_color_png_b64(rgb)}},
+        ]
+    }]
+    return messages, name, keys
+
+def vision_answer_ok(reply, color_keys):
+    return any(k in str(reply or "").lower() for k in color_keys)
+
+def upstream_429_wait(err):
+    """解 '内部哨兵 __429__:<秒>:<上游 body>'，返回 (秒, 那句人话)；不是 429 返回 (None, "")。
+    四个上游适配器都按这个前缀抛限流，调用方不能把原文直接显示出去。"""
+    if not str(err or "").startswith("__429__:"):
+        return None, ""
+    parts = str(err).split(":", 2)
+    wait = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else MODEL_429_DEFAULT_SECONDS
+    body = (parts[2] if len(parts) > 2 else "").strip()
+    detail = body
+    if body.startswith("{"):
+        try:
+            data = json.loads(body)
+            inner = data.get("error")
+            if isinstance(inner, dict):
+                detail = str(inner.get("message") or inner.get("code") or "")
+            else:
+                detail = str(data.get("message") or data.get("msg") or inner or "")
+        except Exception:
+            pass
+    return wait, re.sub(r"\s+", " ", detail).strip()[:160]
+
+def grade_model_test(answer, err, elapsed_ms, tokens, want_vision, color_name="", color_keys=()):
+    """把一次「⚡ 测试」的结果整理成接口返回体。识图按颜色词命中判分，颜色每发随机，瞎猜蒙不中。"""
+    if answer:
+        reply = str(answer)[:200]
+        base = {"code": 200, "reply": reply, "elapsed_ms": elapsed_ms, "tokens": tokens}
+        if want_vision and not vision_answer_ok(reply, color_keys):
+            base.update({"success": False,
+                         "msg": f"没认出图片颜色：测试图是{color_name}色，模型回复「{reply[:40]}」（{elapsed_ms}ms）。"
+                                f"要么它不接收图片，要么识别不对。"})
+        else:
+            base.update({"success": True,
+                         "msg": ("识图正常" if want_vision else "连接成功") + f"（{elapsed_ms}ms，消耗 {tokens} tokens）"})
+        return base
+    err_lower = (err or "").lower()
+    wait, detail = upstream_429_wait(err)
+    if wait is not None:
+        err = f"上游限流（HTTP 429），请约 {wait} 秒后再点测试" + (f"：{detail}" if detail else "")
+    elif "timed out" in err_lower or "timeout" in err_lower or "read operation" in err_lower:
+        err = "响应超时（%ds），请检查 Base URL 是否正确或模型是否可用" % (45 if want_vision else 30)
+    elif want_vision and ("image" in err_lower or "multimodal" in err_lower) and (
+            "support" in err_lower or "invalid" in err_lower):
+        err = "上游拒收图片，该模型不支持识图：" + (err or "")[:200]
+    return {"code": 200, "success": False, "msg": err or "测试失败，模型未返回内容", "elapsed_ms": elapsed_ms}
 
 def call_llm_lightweight(messages, model, provider_info, timeout=15):
     """轻量级 LLM 调用，用于简单任务如文本润色，不做降级重试，超时短"""
@@ -3197,7 +3432,7 @@ def call_llm_lightweight(messages, model, provider_info, timeout=15):
         except Exception as e:
             return None, str(e), 0
     else:
-        return call_provider_chat_with_messages(messages, model, provider_info)
+        return call_provider_chat_with_messages(messages, model, provider_info, timeout=timeout)
 
 
 def call_agent_llm(messages):
@@ -3241,9 +3476,8 @@ def call_agent_llm(messages):
             record_model_token_usage(model_name, tokens)
             return answer, None, model_name, provider_name
         if err:
-            if err.startswith("__429__:"):
-                parts = err.split(":", 2)
-                cooldown_sec = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else MODEL_429_DEFAULT_SECONDS
+            cooldown_sec, _ = upstream_429_wait(err)
+            if cooldown_sec is not None:
                 MODEL_429_COOLDOWN[model_name] = time.time() + cooldown_sec
                 print(f"[Agent] 模型 {model_name} 触发429限流，冷却 {cooldown_sec}s", flush=True)
                 errors.append(f"{model_name}: 429限流(冷却{cooldown_sec}s)")
@@ -4600,25 +4834,14 @@ class Handler(BaseHTTPRequestHandler):
                 "text": a.get("announce_text") or ""
             }})
         elif path == "/api/auth/current-session":
-            session = load_current_user_session()
-            token = session.get("token")
-            session_user = session.get("user") or {}
-            payload = jwt_decode(token) if token else None
-            if not token or not payload or not payload.get("uid"):
-                clear_current_user_session()
-                self._send_json(403, {"code": 403, "msg": "请先登录后使用"})
-                return
-            if token in REVOKED_USER_TOKENS:
-                clear_current_user_session()
-                self._send_json(401, {"code": 401, "msg": "登录已退出，请重新登录"})
-                return
-            user = db.get_user_by_username(payload["uid"])
-            if not user:
-                clear_current_user_session()
-                self._send_json(401, {"code": 401, "msg": "用户不存在或登录已失效"})
+            # 只能回调用方自己带来的 Token；读进程内全局会把最后一个登录者的凭据发给任意匿名请求
+            auth = self.headers.get("Authorization", "")
+            token = auth[7:] if auth.startswith("Bearer ") else ""
+            user = self._get_user_from_token()
+            if not token or not user:
+                self._send_json(401, {"code": 401, "msg": "未登录或 Token 已过期"})
                 return
             if user.get("is_banned"):
-                clear_current_user_session()
                 self._send_json(403, {"code": 403, "msg": "账号已被封禁：" + (user.get("ban_reason") or "请联系管理员")})
                 return
             real_user = {
@@ -4626,8 +4849,6 @@ class Handler(BaseHTTPRequestHandler):
                 "email": user["email"],
                 "is_verified": bool(user.get("is_verified"))
             }
-            if session_user != real_user:
-                set_current_user_session(token, real_user)
             self._send_json(200, {"code": 200, "token": token, "user": real_user, "profile": build_user_profile(user["username"])})
         elif path == "/api/user/settings":
             user = self._get_user_from_token()
@@ -6059,7 +6280,10 @@ class Handler(BaseHTTPRequestHandler):
                         "enabled": True, "business_type": "custom_model_" + ("monthly" if cm_cfg.get("period") == "monthly" else "lifetime")
                     }
                     if cm_price <= 0:
-                        order_no = db.create_paid_order_and_apply(user["username"], plan)
+                        order_no, ok, msg = db.create_paid_order_and_apply(user["username"], plan)
+                        if not ok:
+                            self._send_json(500, {"code": 500, "msg": "自有模型暂未开通成功，可重试或联系管理员", "order_no": order_no})
+                            return
                         self._send_json(200, {"code": 200, "msg": "自有模型已开通", "order_no": order_no, "profile": build_user_profile(user["username"])})
                         return
                 else:
@@ -6076,7 +6300,10 @@ class Handler(BaseHTTPRequestHandler):
                         if existing:
                             self._send_json(400, {"code": 400, "msg": "该免费套餐已领取过，不可重复领取"})
                             return
-                        order_no = db.create_paid_order_and_apply(user["username"], plan)
+                        order_no, ok, msg = db.create_paid_order_and_apply(user["username"], plan)
+                        if not ok:
+                            self._send_json(500, {"code": 500, "msg": "该套餐暂未到账成功，可重试或联系管理员", "order_no": order_no})
+                            return
                         self._send_json(200, {"code": 200, "msg": "免费套餐已到账", "order_no": order_no, "profile": build_user_profile(user["username"])})
                         return
                 pay_method = (data.get("pay_method") or "wechat").strip()
@@ -6274,8 +6501,7 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(body)
                 print(f"[保存AI配置] 收到数据: {json.dumps(data, ensure_ascii=False)[:500]}")
                 if "providers" in data:
-                    PROVIDERS = data["providers"]
-                    save_providers(PROVIDERS)
+                    save_providers_config(data["providers"])
                     print(f"[保存AI配置] 已持久化到数据库")
                 self._send_json(200, {"code": 200, "msg": "保存成功"})
             except Exception as e:
@@ -6355,7 +6581,8 @@ class Handler(BaseHTTPRequestHandler):
                 if key in PROVIDERS:
                     self._send_json(400, {"code": 400, "msg": "该提供商标识已存在"})
                     return
-                PROVIDERS[key] = {
+                new_providers = dict(PROVIDERS)
+                new_providers[key] = {
                     "enabled": bool(data.get("enabled", True)),
                     "title": data.get("title") or key,
                     "protocol": data.get("protocol") or "openai",
@@ -6363,7 +6590,7 @@ class Handler(BaseHTTPRequestHandler):
                     "base_url": data.get("base_url") or "",
                     "models": data.get("models") or []
                 }
-                save_providers(PROVIDERS)
+                save_providers_config(new_providers)
                 print(f"[添加AI提供商] {key} 已写入数据库")
                 self._send_json(200, {"code": 200, "msg": "添加成功", "config": {"providers": PROVIDERS}})
             except Exception as e:
@@ -6383,8 +6610,9 @@ class Handler(BaseHTTPRequestHandler):
                 if key not in PROVIDERS:
                     self._send_json(404, {"code": 404, "msg": "提供商不存在"})
                     return
-                del PROVIDERS[key]
-                save_providers(PROVIDERS)
+                new_providers = dict(PROVIDERS)
+                new_providers.pop(key)
+                save_providers_config(new_providers)
                 print(f"[删除AI提供商] {key} 已从数据库删除")
                 self._send_json(200, {"code": 200, "msg": "删除成功", "config": {"providers": PROVIDERS}})
             except Exception as e:
@@ -6409,21 +6637,20 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(200, {"code": 200, "success": False, "msg": "请填写要测试的模型ID"})
                     return
                 provider_info = {"protocol": protocol, "base_url": base_url, "api_key": api_key}
-                test_messages = [{"role": "user", "content": "请回复两个字：你好"}]
-                print(f"[模型调试] protocol={protocol}, model={model}, base_url={base_url}", flush=True)
+                want_vision = bool(data.get("vision"))
+                if want_vision:
+                    test_messages, color_name, color_keys = vision_test_request()
+                else:
+                    test_messages = [{"role": "user", "content": "请回复两个字：你好"}]
+                    color_name, color_keys = "", ()
+                print(f"[模型调试] protocol={protocol}, model={model}, base_url={base_url}, vision={want_vision}", flush=True)
                 t0 = time.time()
-                answer, err, tokens = call_llm_lightweight(test_messages, model, provider_info, timeout=30)
+                answer, err, tokens = call_llm_lightweight(test_messages, model, provider_info,
+                                                           timeout=45 if want_vision else 30)
                 elapsed_ms = int((time.time() - t0) * 1000)
                 print(f"[模型调试] 耗时={elapsed_ms}ms, ok={bool(answer)}, err={err}, tokens={tokens}", flush=True)
-                if answer:
-                    self._send_json(200, {"code": 200, "success": True,
-                                          "msg": f"连接成功（{elapsed_ms}ms，消耗 {tokens} tokens）",
-                                          "reply": str(answer)[:200], "elapsed_ms": elapsed_ms, "tokens": tokens})
-                else:
-                    _err_lower = (err or "").lower()
-                    if "timed out" in _err_lower or "timeout" in _err_lower or "read operation" in _err_lower:
-                        err = "响应超时（30s），请检查 Base URL 是否正确或模型是否可用"
-                    self._send_json(200, {"code": 200, "success": False, "msg": err or "测试失败，模型未返回内容", "elapsed_ms": elapsed_ms})
+                self._send_json(200, grade_model_test(answer, err, elapsed_ms, tokens, want_vision,
+                                                      color_name, color_keys))
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -6442,9 +6669,12 @@ class Handler(BaseHTTPRequestHandler):
                 if idx < 0 or idx >= len(models):
                     self._send_json(400, {"code": 400, "msg": "模型索引无效"})
                     return
-                removed = models.pop(idx)
-                PROVIDERS[key]["models"] = models
-                save_providers(PROVIDERS)
+                removed = models[idx]
+                new_providers = dict(PROVIDERS)
+                entry = dict(PROVIDERS[key])
+                entry["models"] = [m for i, m in enumerate(models) if i != idx]
+                new_providers[key] = entry
+                save_providers_config(new_providers)
                 print(f"[删除AI模型] {key}/{removed.get('value', '')} 已从数据库删除")
                 self._send_json(200, {"code": 200, "msg": "删除成功", "config": {"providers": PROVIDERS}})
             except Exception as e:
@@ -6838,50 +7068,6 @@ class Handler(BaseHTTPRequestHandler):
                 db.execute("UPDATE admin_config SET xianyu_enabled = %s, xianyu_url = %s, card_pay_name = %s, card_pay_icon = %s WHERE id = 1",
                     (1 if data.get("enabled") else 0, data.get("url") or "", data.get("card_pay_name") or "", data.get("card_pay_icon") or ""))
                 self._send_json(200, {"code": 200, "msg": "保存成功"})
-            except Exception as e:
-                self._send_json(500, {"code": 500, "msg": str(e)})
-        elif path == "/api/payment/xianyu-create-order":
-            user = self._get_user_from_token()
-            if not user:
-                self._send_json(401, {"code": 401, "msg": "请先登录"})
-                return
-            try:
-                if is_distributor_channel(db.get_user_entitlement(user["username"])):
-                    self._send_json(403, {"code": 403, "msg": DIST_CHANNEL_CHECKOUT_MSG})
-                    return
-                data = json.loads(body or "{}")
-                plan_id = int(data.get("plan_id") or 0)
-                order, err = db.create_xianyu_order(user["username"], plan_id)
-                if err:
-                    self._send_json(400, {"code": 400, "msg": err})
-                    return
-                self._send_json(200, {"code": 200, "order": order})
-            except Exception as e:
-                self._send_json(500, {"code": 500, "msg": str(e)})
-        elif path == "/api/user/xianyu-confirm":
-            user = self._get_user_from_token()
-            if not user:
-                self._send_json(401, {"code": 401, "msg": "请先登录"})
-                return
-            try:
-                data = json.loads(body or "{}")
-                order_no = data.get("order_no") or ""
-                order = db.get_xianyu_order(order_no)
-                if not order:
-                    self._send_json(400, {"code": 400, "msg": "订单不存在"})
-                    return
-                if order["username"] != user["username"]:
-                    self._send_json(403, {"code": 403, "msg": "无权操作"})
-                    return
-                if order["status"] != "pending":
-                    self._send_json(400, {"code": 400, "msg": "订单已处理"})
-                    return
-                ok, msg = db.activate_xianyu_order(order["id"])
-                if ok:
-                    profile = build_user_profile(user["username"])
-                    self._send_json(200, {"code": 200, "msg": msg, "profile": profile})
-                else:
-                    self._send_json(400, {"code": 400, "msg": msg})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/api/user/card-key/activate":
@@ -7286,7 +7472,11 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     print(f"[AI优化] 全部模型失败: err={err}", flush=True)
                     _err_lower = (err or "").lower()
-                    if "timed out" in _err_lower or "timeout" in _err_lower or "read operation" in _err_lower:
+                    _429_wait, _429_detail = upstream_429_wait(err)
+                    if _429_wait is not None:
+                        self._send_json(500, {"code": 500, "msg": "AI 被上游限流（429），请约 %d 秒后重试" % _429_wait
+                                                        + (f"：{_429_detail}" if _429_detail else "")})
+                    elif "timed out" in _err_lower or "timeout" in _err_lower or "read operation" in _err_lower:
                         self._send_json(500, {"code": 500, "msg": "AI 响应超时，请稍后重试或手动编辑回复内容"})
                     else:
                         self._send_json(500, {"code": 500, "msg": err or "AI 优化失败"})
@@ -7370,7 +7560,11 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(200, {"code": 200, "text": answer.strip()})
                 else:
                     _err_lower = (err or "").lower()
-                    if "timed out" in _err_lower or "timeout" in _err_lower or "read operation" in _err_lower:
+                    _429_wait, _429_detail = upstream_429_wait(err)
+                    if _429_wait is not None:
+                        self._send_json(500, {"code": 500, "msg": "AI 被上游限流（429），请约 %d 秒后重试" % _429_wait
+                                                        + (f"：{_429_detail}" if _429_detail else "")})
+                    elif "timed out" in _err_lower or "timeout" in _err_lower or "read operation" in _err_lower:
                         self._send_json(500, {"code": 500, "msg": "AI 响应超时，请稍后重试或手动编辑公告内容"})
                     else:
                         self._send_json(500, {"code": 500, "msg": err or "AI 优化失败"})
@@ -7630,6 +7824,10 @@ class Handler(BaseHTTPRequestHandler):
                 # 调用指定模型
                 provider_name, provider_info = find_provider_by_model(model_name)
                 if not provider_info:
+                    _entry = get_model_entry(model_name)
+                    if is_model_expired(_entry):
+                        self._send_json(400, {"code": 400, "msg": f"模型 '{model_name}' 已于 {_entry.get('expire_date')} 到期停用"})
+                        return
                     self._send_json(400, {"code": 400, "msg": f"模型 '{model_name}' 不可用，请检查配置"})
                     return
                 # 图片题 + 所选模型不支持图片 → 直接走纯文本，避免 400

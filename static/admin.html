@@ -345,6 +345,7 @@ body{
 .quota-badge.daily{background:rgba(245,158,11,.12);color:#f59e0b;border:1px solid rgba(245,158,11,.3)}
 .quota-badge.ok{background:rgba(34,197,94,.1);color:#16a34a;border:1px solid rgba(34,197,94,.25)}
 .quota-badge.none{background:var(--bg4);color:var(--text3);border:1px solid var(--border)}
+.quota-badge.expired{background:rgba(148,163,184,.14);color:var(--text3);border:1px solid rgba(148,163,184,.35)}
 .weight-chart{margin:14px 4px 4px;padding:12px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:12px}
 .weight-chart-title{font-size:12px;color:var(--text3);font-weight:600;margin-bottom:10px}
 .weight-chart-body{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
@@ -1317,7 +1318,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                 <div class="form-group"><label>API Key</label><input type="password" v-model="entry.info.api_key" placeholder="sk-xxxxxxxx"></div>
                 <div class="form-group"><label>Base URL</label><input v-model="entry.info.base_url" placeholder="https://api.xxx.com/v1"></div>
               </div>
-              <div class="models-title">模型列表 <span style="font-size:12px;color:var(--text3);font-weight:400">权重越高被调用概率越大（默认100），每日/总额Token限额为0表示不限制，总额超过后自动停用不再调用</span></div>
+              <div class="models-title">模型列表 <span style="font-size:12px;color:var(--text3);font-weight:400">权重越高被调用概率越大（默认100），每日/总额Token限额为0表示不限制，总额超过后自动停用不再调用；到期日期留空为永久有效，填了则到期日当天照常调用、次日起不管额度剩多少都不再调用</span></div>
               <div style="display:flex;gap:8px;padding:0 4px 6px;font-size:11px;color:var(--text3);font-weight:600;letter-spacing:.3px;align-items:center;flex-wrap:wrap">
                 <div style="flex:1 1 170px;min-width:0">模型ID</div>
                 <div style="flex:1 1 170px;min-width:0">显示名称</div>
@@ -1325,6 +1326,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                 <div style="width:80px;flex:none;text-align:center">每日Token限额</div>
                 <div style="width:80px;flex:none;text-align:center">总额Token限额</div>
                 <div style="width:52px;flex:none;text-align:center">支持图片</div>
+                <div style="width:132px;flex:none;text-align:center">到期日期</div>
                 <div style="width:96px;flex:none;text-align:center">额度状态</div>
                 <div style="width:72px;flex:none;text-align:center">操作</div>
               </div>
@@ -1341,16 +1343,20 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                   <input v-model.number="m.total_token_limit" type="number" min="0" placeholder="0" title="总额Token限额(0=不限)，超过则自动停用" style="width:70px;text-align:center;padding:8px 2px">
                 </div>
                 <div style="width:52px;flex:none;display:flex;align-items:center;justify-content:center">
-                  <input type="checkbox" v-model="m.vision" title="该模型支持图片输入(多模态)" style="width:auto;flex:none">
+                  <input type="checkbox" v-model="m.vision" title="该模型支持图片输入(多模态)；勾选后点“⚡”会实测能不能识图" style="width:auto;flex:none">
+                </div>
+                <div style="width:132px;flex:none;display:flex;align-items:center;justify-content:center">
+                  <input type="date" v-model="m.expire_date" title="到期日期：当天仍可调用，次日起不再调用；留空为永久有效" style="width:126px;text-align:center;padding:8px 2px">
                 </div>
                 <div style="width:96px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px">
-                  <span v-if="modelTotalExhausted(m)" class="quota-badge exhausted" title="总额Token已用完，已自动停用">已用完</span>
+                  <span v-if="modelExpired(m)" class="quota-badge expired" :title="'已于 '+m.expire_date+' 到期，不再调用（额度不算用完，只是日期到了）'">已过期</span>
+                  <span v-else-if="modelTotalExhausted(m)" class="quota-badge exhausted" title="总额Token已用完，已自动停用">已用完</span>
                   <span v-else-if="modelDailyExhausted(m)" class="quota-badge daily" title="今日Token已用完，今日不再调用">今日已满</span>
                   <span v-else-if="!m.daily_token_limit && !m.total_token_limit" class="quota-badge none" title="未设置限额">不限</span>
                   <span v-else class="quota-badge ok" :title="modelQuotaTitle(m)">可用 {{modelQuotaLeft(m)}}</span>
                   <button type="button" class="btn-quota-clear" title="清空该模型的每日/总额Token用量，恢复可调用" @click="clearModelQuota(m)">清空额度</button>
                 </div>
-                <button class="btn-test" :disabled="testingModel===(entry.key+'-'+idx)" :title="'调试 '+(m.value||'模型')" @click="testModel(entry.info,m,entry.key+'-'+idx)">{{testingModel===(entry.key+'-'+idx)?'…':'⚡'}}</button>
+                <button class="btn-test" :disabled="testingModel===(entry.key+'-'+idx)" :title="(m.vision?'实测能否识图（发一张纯色小图）：':'文本连通性：')+(m.value||'模型')" @click="testModel(entry.info,m,entry.key+'-'+idx)">{{testingModel===(entry.key+'-'+idx)?'…':'⚡'}}</button>
                 <button class="btn-del" @click="removeModel(entry.key,idx)">×</button>
               </div>
               <div v-if="modelRowVisible(entry,m) && modelTestResults[entry.key+'-'+idx]" class="model-test-result" :class="modelTestResults[entry.key+'-'+idx].status" v-html="modelTestResults[entry.key+'-'+idx].text"></div>
@@ -5989,6 +5995,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         if(!pinfo.enabled)continue;
         if(!pinfo.api_key)continue;
         for(const m of(pinfo.models||[])){
+          if(modelExpired(m))continue;
           const isVision=!!m.vision;
           if(needVision&&!isVision)continue;
           models.push({value:m.value,label:m.label||m.value,provider:pk,vision:isVision});
@@ -6120,6 +6127,9 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     }
     function modelTotalUsed(m){return Number(modelUsageTotal.value[m.value]||0);}
     function modelDailyUsed(m){return Number(modelUsageToday.value[m.value]||0);}
+    function modelTodayStr(){const n=new Date();return String(n.getFullYear())+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');}
+    // 与后端 is_model_expired 同口径：到期日当天仍算可用，次日起才停用；脏日期一律不拦
+    function modelExpired(m){const d=String((m&&m.expire_date)||'').slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return false;return d<modelTodayStr();}
     function modelTotalExhausted(m){const lim=Number(m.total_token_limit||0);return lim>0&&modelTotalUsed(m)>=lim;}
     function modelDailyExhausted(m){const lim=Number(m.daily_token_limit||0);return lim>0&&modelDailyUsed(m)>=lim;}
     function modelQuotaLeft(m){
@@ -6168,7 +6178,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     function addModel(key){
       const oldProviders={...(config.value.providers||{})};
       const info={...(oldProviders[key]||{})};
-      info.models=[...(info.models||[]),{value:'',label:'',weight:100,daily_token_limit:0,total_token_limit:0,vision:false}];
+      info.models=[...(info.models||[]),{value:'',label:'',weight:100,daily_token_limit:0,total_token_limit:0,vision:false,expire_date:''}];
       oldProviders[key]=info;
       setProviders(oldProviders);
     }
@@ -6195,17 +6205,20 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       }
     }
     function protocolName(p){const map={openai:'OpenAI 兼容',claude:'Claude',gemini:'Gemini'};return map[p]||p;}
+    // 测试结果用 v-html 渲染，而 msg/reply 里会带上游返回的原文，必须先转义
+    function escHtml(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
     async function testModel(info,m,tag){
       const model=(m.value||'').trim();
       if(!model){modelTestResults[tag]={status:'fail',text:'✗ 请先填写模型ID'};return;}
       if(!info.base_url||!info.api_key){modelTestResults[tag]={status:'fail',text:'✗ 请先填写 Base URL 和 API Key'};return;}
+      const vision=!!m.vision;
       testingModel.value=tag;
-      modelTestResults[tag]={status:'loading',text:'⏳ 调试中，请稍候…'};
+      modelTestResults[tag]={status:'loading',text:vision?'⏳ 识图测试中（发一张纯色小图问颜色），最长约 45 秒…':'⏳ 调试中，请稍候…'};
       try{
-        const res=await fetch('/admin/provider/test',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({protocol:info.protocol,base_url:info.base_url,api_key:info.api_key,model})});
+        const res=await fetch('/admin/provider/test',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({protocol:info.protocol,base_url:info.base_url,api_key:info.api_key,model,vision})});
         const d=await res.json();
-        if(d.success){modelTestResults[tag]={status:'ok',text:'✓ '+d.msg+(d.reply?('<br>回复：'+d.reply):'')};}
-        else{modelTestResults[tag]={status:'fail',text:'✗ '+(d.msg||'调试失败')};}
+        if(d.success){modelTestResults[tag]={status:'ok',text:'✓ '+escHtml(d.msg)+(d.reply?('<br>回复：'+escHtml(d.reply)):'')};}
+        else{modelTestResults[tag]={status:'fail',text:'✗ '+escHtml(d.msg||'调试失败')+(d.reply?('<br>回复：'+escHtml(d.reply)):'')};}
       }catch(e){modelTestResults[tag]={status:'fail',text:'✗ 调试失败：网络错误'};}
       finally{testingModel.value='';}
     }
@@ -6218,8 +6231,8 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       try{
         const res=await fetch('/admin/provider/test',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({protocol:newProvider.protocol,base_url:newProvider.base_url,api_key:newProvider.api_key,model})});
         const d=await res.json();
-        if(d.success){newProviderTestResult.value={status:'ok',text:'✓ '+d.msg+(d.reply?('<br>回复：'+d.reply):'')};}
-        else{newProviderTestResult.value={status:'fail',text:'✗ '+(d.msg||'调试失败')};}
+        if(d.success){newProviderTestResult.value={status:'ok',text:'✓ '+escHtml(d.msg)+(d.reply?('<br>回复：'+escHtml(d.reply)):'')};}
+        else{newProviderTestResult.value={status:'fail',text:'✗ '+escHtml(d.msg||'调试失败')+(d.reply?('<br>回复：'+escHtml(d.reply)):'')};}
       }catch(e){newProviderTestResult.value={status:'fail',text:'✗ 调试失败：网络错误'};}
       finally{testingNewProvider.value=false;}
     }
@@ -7496,7 +7509,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       savePaymentConfig,savePayApiConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,movePlan,openUserEdit,saveUserAdmin,
       toggleProvider,collapseAllProviders,togglePayApiSection,
        addProvider,removeProvider,addModel,removeModel,
-       modelUsageTotal,modelUsageToday,modelTotalExhausted,modelDailyExhausted,modelQuotaLeft,modelQuotaTitle,clearModelQuota,weightSegments,
+       modelUsageTotal,modelUsageToday,modelExpired,modelTotalExhausted,modelDailyExhausted,modelQuotaLeft,modelQuotaTitle,clearModelQuota,weightSegments,
        qqBot,qqBotStatus,qqBotLogs,qqBotBotpyAvailable,qqBotSaving,loadQqBot,saveQqBot,
       protocolName,statusText,formatDuration,questionTypeName,shortText,formatWan,formatScriptExtra,isMembershipActive,fmtMemberExpire,pointsColorStyle,memberColorStyle,trendPoints,trendX,trendY,trendMax,stackBarX,stackBarY,stackBarH,modelBarWidth,revTrendPoints,revTrendArea,revTrendX,revStep,revY,revMax,
       loadLogCleanup,saveLogCleanup,runLogCleanupNow,logRetentionDays,logCleanupSaving,logCleanupRunning,logCleanupResult,payTestForm,payTestLoading,payTestResult,runPayTest,payApiWeightTotal,payApiWeightPercent,refreshSandpayParams,onSandpayAdvancedChange,
