@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "5.3.8",
+    "version": "5.3.9",
     "download_url": "https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js",
-    "changelog": "v5.3.8 填充不再谎报：点击后回读选中态，没点上就记「没填上」；填空题按每个空分别填写；答案解析加固（列表形式的答案能拆开，英文单词不会被误当成选项字母）；每答完一卷回传一条答题小结，便于定位哪类题卡住"
+    "changelog": "v5.3.9 答题小结不再写入余额不足；拿到答案但点不上不再被欠费盖掉；超星选项匹配/点击加固"
   },
   "xueshen-gf": {
-    "version": "5.3.8",
+    "version": "5.3.9",
     "download_url": "https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js",
-    "changelog": "v5.3.8 填充不再谎报：点击后回读选中态，没点上就记「没填上」；填空题按每个空分别填写；答案解析加固（列表形式的答案能拆开，英文单词不会被误当成选项字母）；每答完一卷回传一条答题小结，便于定位哪类题卡住"
+    "changelog": "v5.3.9 答题小结不再写入余额不足；拿到答案但点不上不再被欠费盖掉；超星选项匹配/点击加固"
   }
 }
