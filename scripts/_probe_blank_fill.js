@@ -63,6 +63,9 @@ function runFill(type, backendAnswer, blankCount, editorThrows = false) {
     buildAnswerGroups: (a) => [a]
   };
   vm.createContext(sandbox);
+  // 这两个 helper 用文件里的原文，不重写等价逻辑
+  sandbox.resolveBlankAnswers = vm.runInContext("(" + slicePublicField("resolveBlankAnswers") + ")", sandbox);
+  sandbox.resolveJudgeAnswer = vm.runInContext("(" + slicePublicField("resolveJudgeAnswer") + ")", sandbox);
   const fill = vm.runInContext("(" + slicePublicField("fillQuestion") + ")", sandbox);
   let err = "", filled;
   try {
@@ -81,7 +84,7 @@ const byAnswer = (val) => cases.find((c) => c.backend_answer === val);
 const TABLE = [
   ["北京，上海", 2, ["北京", "上海"]],
   ["北京,上海", 2, ["北京", "上海"]],
-  ["['北京', '上海']", 2, ["北京", "上海"]],
+  ['["北京", "上海"]', 2, ["北京", "上海"]],
   ["H2O。", 1, ["H2O"]],
   ["apple", 1, ["apple"]],
   ["超文本传输协议", 1, ["超文本传输协议"]],

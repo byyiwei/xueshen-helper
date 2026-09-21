@@ -1,11 +1,15 @@
 // 从 scripts/xueshen-gf.js 里切出「原文」的 normalizeLocalBackendAnswers 直接求值，
 // 不重写等价逻辑：这样跑的就是线上脚本的那一份。
-//   node scripts/_probe_answer_client.js
+//   node scripts/_probe_answer_client.js      ← 当前工作区
+//   node scripts/_probe_answer_client.js --pre ← git HEAD（修复前，预期变红）
 const fs = require("fs");
 const path = require("path");
+const cp = require("child_process");
 
-const file = path.join(__dirname, "xueshen-gf.js");
-const src = fs.readFileSync(file, "utf8");
+const PRE = process.argv.includes("--pre");
+const src = PRE
+  ? cp.execSync("git show HEAD:scripts/xueshen-gf.js", { cwd: path.join(__dirname, ".."), maxBuffer: 64 * 1024 * 1024 }).toString("utf8")
+  : fs.readFileSync(path.join(__dirname, "xueshen-gf.js"), "utf8");
 
 function sliceFn(name) {
   const start = src.indexOf(`const ${name} = (`);
@@ -36,6 +40,12 @@ const cases = [
   ["简答 英文单词 Yes", "Yes", ["Yes"]],
   ["选项正文含顿号", "甲、乙", ["甲、乙"]],
   ["选项正文带标点", "（1）坚持党的领导", ["（1）坚持党的领导"]],
+  ["填空 化学式带句号", "H2O。", ["H2O"]],
+  ["简答 SWOT 式长句", "S 优势、W 劣势、O 机会、T 威胁，四要素缺一不可", ["S 优势、W 劣势、O 机会、T 威胁，四要素缺一不可"]],
+  ["选项式 单个说明", "A 正确", ["A"]],
+  ["选项式 多个说明", "A、C 正确", ["A", "C"]],
+  ["Python 字面量列表", "['北京', '上海']", ["北京", "上海"]],
+  ["JSON 数组文本", '["北京", "上海"]', ["北京", "上海"]],
 ];
 
 let red = 0;

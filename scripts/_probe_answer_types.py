@@ -18,6 +18,26 @@ if hasattr(sys.stdout, "reconfigure"):
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
+# --pre：把 src 下的 .py 复制到临时目录，用 HEAD 版 backend.py 覆盖，
+#        这样同一条断言可以同时对「修复前」跑一遍，证明它不是白给的绿。
+if "--pre" in sys.argv:
+    import glob
+    import shutil
+    import subprocess
+    import tempfile
+
+    _tmp = os.path.join(tempfile.gettempdir(), "xs_probe_pre_src")
+    shutil.rmtree(_tmp, ignore_errors=True)
+    os.makedirs(_tmp)
+    for _p in glob.glob(os.path.join(ROOT, "src", "*.py")):
+        shutil.copy2(_p, _tmp)
+    _raw = subprocess.run(["git", "show", "HEAD:src/backend.py"], cwd=ROOT, capture_output=True).stdout
+    if not _raw:
+        raise SystemExit("git show HEAD:src/backend.py 取不到内容")
+    with open(os.path.join(_tmp, "backend.py"), "wb") as _f:
+        _f.write(_raw)
+    sys.path.insert(0, _tmp)
+
 # database.py 末尾有模块级 db = Database()，__init__ 会立刻建表 → 必须先吞掉 pymysql
 fake = types.ModuleType("pymysql")
 fake.err = types.ModuleType("pymysql.err")
@@ -66,6 +86,10 @@ sys.modules["pymysql.cursors"] = fake.cursors
 
 import backend  # noqa: E402
 
+# 离线：远程图一律走假下载器，判的是 build_ai_messages 的并图与标注策略，不是网络
+backend._download_image_to_base64 = lambda url: "data:image/png;base64,DL_" + str(abs(hash(str(url))) % 997)
+print("backend 来源：", "HEAD（修复前，预期出现红条）" if "--pre" in sys.argv else backend.__file__)
+
 
 def q(text, qtype, options=None, images=None):
     payload = {"question": text, "type": qtype}
@@ -100,9 +124,9 @@ for ai_reply in ["A,B,D", "ABD", "A、B、D", "正确答案是 B、C", "选项 A
     print(f"  AI={ai_reply!r:24} → {got!r}")
 
 print("\n  -- 单选被当成多选展开？（type=0，模型多给了字母）")
-check("单选题 AI 回 'ABD' 应只取首项或原样，不该展开成 3 项",
+check("单选题 AI 回 'ABD' 应折叠成首项，不该展开成 3 项",
       backend.normalize_ai_answer(q("以下正确的是？", "0", MULTI4), "ABD"),
-      "ABD", "multi-expand-on-single")
+      "甲", "multi-expand-on-single")
 
 print("\n  -- 英文选项文本被误当字母序列")
 opts_en = ["apple", "banana", "cat", "dog", "egg"]
@@ -110,6 +134,21 @@ got = backend.normalize_ai_answer(q("哪个是猫？", "0", opts_en), "cat")
 check("单选题答案 'cat' 应原样返回 'cat'", got, "cat", "english-word-as-letters")
 got2 = backend.normalize_ai_answer(q("哪个是猫？", "0", opts_en), "bad")
 check("单选题答案 'bad' 应原样返回 'bad'", got2, "bad", "english-word-as-letters")
+
+print("\n  -- 题库指纹：字母范围与判断极性（指纹不同 = 同一答案存成两条题库记录）")
+check("5 选项以上：'A,B,E' 归一为 'A,B,E'", backend.normalize_answer_for_hash("A,B,E"), "A,B,E", "hash-letter-range")
+check("5 选项以上：单选 'E' 归一为 'E'", backend.normalize_answer_for_hash("E"), "E", "hash-letter-range")
+check("5 选项以上：'ABCE' 与 'A,B,C,E' 归一结果一致",
+      backend.normalize_answer_for_hash("ABCE"), backend.normalize_answer_for_hash("A,B,C,E"), "hash-letter-range")
+check("判断题 '不对' 归一为 '错误'", backend.normalize_answer_for_hash("不对"), "错误", "hash-judge-polarity")
+check("判断题 '该说法错误' 归一为 '错误'", backend.normalize_answer_for_hash("该说法错误"), "错误", "hash-judge-polarity")
+check("填空答案「对称轴是图形的性质」不该被当成判断题",
+      backend.normalize_answer_for_hash("对称轴是图形的性质"), "对称轴是图形的性质", "hash-judge-polarity")
+
+print("\n  -- 模型/旧题库把列表写成 Python 字面量：脚本侧 JSON.parse 不认单引号")
+check("填空题答案 \"['北京', '上海']\" 要转成 JSON 数组文本",
+      backend.normalize_ai_answer(q("填空：____、____。", "2"), "['北京', '上海']"),
+      '["北京", "上海"]', "python-repr-list")
 
 print("\n  -- 截断的多选答案能不能入库/复用")
 for a in ["A", "甲", "A,B", '["甲","乙"]', "ABCD"]:
@@ -150,9 +189,11 @@ if isinstance(content, list):
         if part.get("type") == "text":
             print("  text 部分 =", repr(part["text"]))
         else:
-            print("  image 部分 = dataURL 前缀", part["image_url"]["url"][:30], "是否标明对应选项:",
-                  any(f"选项{chr(65+i)}" in str(p.get("text", "")) or f"{chr(65+i)}=" in str(p.get("text", ""))
-                      for p in content if p.get("type") == "text" for i in [0]))
+            print("  image 部分 = dataURL 前缀", part["image_url"]["url"][:30])
+    labeled = [p["text"] for p in content if p.get("type") == "text" and "＝选项" in str(p.get("text", ""))]
+    check("URL 选项图应带「第N张图＝选项X」标注", bool(labeled), True, "anonymous-image-parts")
+    if labeled:
+        print("  标注 =", labeled)
 print("  模型回 'A,B' →", backend.normalize_ai_answer(img_q, "A,B"))
 print("  模型回图片HTML →", backend.normalize_ai_answer(
     img_q, '<img src="https://ananas.chaoxing.com/image/bbb222.png">'))

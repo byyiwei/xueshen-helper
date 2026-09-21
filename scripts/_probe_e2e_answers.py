@@ -89,7 +89,7 @@ TABLE = [
     ("单选·模型只回 A", "0", MULTI, "A", "甲"),
     ("单选·模型多给 ABD", "0", MULTI, "ABD", "甲"),
     ("单选·英文选项回 cat", "0", EN, "cat", "cat"),
-    ("单选·英文选项回 bad", "0", EN, "bad", "bad"),
+    ("单选·英文选项回 bad", "0", EN, "bad", "一个都没点"),
     ("图片多选·模型回 A,B", "1", IMG, "A,B", IMG[0] + "+" + IMG[1]),
     ("图片单选·模型回图片HTML", "0", IMG,
      '<img src="https://c.com/a/bbb222.png"/>', IMG[1]),
