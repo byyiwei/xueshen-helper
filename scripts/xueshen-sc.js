@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.3.7
+// @version      5.3.8
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @author       IPYIWEI
@@ -10,6 +10,11 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.3.8 更新内容：
+// @changelog    1. 填充不再谎报：点击后回读选中态，没点上就记「没填上」，不会看着填了其实还是空的
+// @changelog    2. 填空题按每个空分别填写，多余的答案不再挤进第一个空
+// @changelog    3. 答案解析加固：列表形式的答案能拆开，英文单词不会被误当成选项字母
+// @changelog    4. 每答完一卷回传一条小结（共几题、填上几题、哪几题没填上），后台按题型和平台定位卡点
 // @changelog    v5.3.7 更新内容：
 // @changelog    1. 渠道专属版加固：代理商未配置店铺链接时，脚本不再露出官方购买入口，续费只走渠道发放的卡密激活
 // @changelog    2. 代理商门户可自助填写店铺链接，保存后重新下载的脚本即跳该地址
@@ -1626,6 +1631,90 @@
     if (scriptLogFlushTimer) clearTimeout(scriptLogFlushTimer);
     scriptLogFlushTimer = setTimeout(flushScriptLogs, 1200);
   };
+  // 一场答题一条小结。不进 scriptLogQueue：那条队列有 200 条上限、还等 1200ms debounce，
+  // 交卷后页面马上跳走，小结会被普通日志挤掉。这里单独直发。
+  const enqueueScriptEvent = (extra, opts = {}) => {
+    const token = getScriptLogToken();
+    if (!token) return Promise.resolve(false);
+    const item = {
+      event_type: opts.eventType || "answer_summary",
+      level: "info",
+      message: String(opts.message || "").slice(0, 4000),
+      page_url: location.href,
+      extra: Object.assign({
+        time: getDateTime(),
+        script_version: getScriptInfo().version
+      }, extra || {}),
+      timestamp: Date.now()
+    };
+    return localBackendJson("https://xs.openget.cn/api/script-logs", { logs: [item] }, token).then(
+      (res) => Boolean(res && res.code === 200)
+    );
+  };
+  // 「一卷一报」：本场共几题、几题真填上了、答案分别来自题库/缓存/模型、哪几题没填上。
+  // 只统计「点上了没有」——平台交卷后不回吐分数，score 恒为 null，别当成判对率。
+  const ANSWER_SUMMARY_LIMIT = 40;
+  const buildAnswerSummary = async (platform, questions) => {
+    const list = Array.isArray(questions) ? questions : [];
+    let filled = 0;
+    const src = { bank: 0, cache: 0, ai: 0, unknown: 0 };
+    const unanswered = [];
+    for (const question of list) {
+      const ans = question && question.answer || {};
+      // code 1=题库直答、2=模型答，两者都代表填充后回读确认过；填不上时上面已改成 0
+      if (ans.code === 1 || ans.code === 2) {
+        filled += 1;
+        if (ans.src === "bank" || ans.src === "cache" || ans.src === "ai") src[ans.src] += 1;
+        else src.unknown += 1;
+        continue;
+      }
+      // code -1 = 该题型脚本还不支持：压根没去点，但它确实没填上。
+      // 留在卡点清单里，后台才拼得平「没填上」的数；否则填充率掉了一块却查不到原因。
+      // 指纹要逐题 await 一次 sha256：一场 200 题全卡住的整卷，不设上限就是答完再排 200 次哈希，
+      // 而后台只吃前 40 条，到量就停——total/filled 另有算法，不受这里影响。
+      if (unanswered.length >= ANSWER_SUMMARY_LIMIT) continue;
+      unanswered.push({
+        type: String(question && question.type || "").slice(0, 20),
+        // code 是排查用的原始状态：0=拿到了但点不上，-1004=题库没答案，其它=后端报错码
+        code: Number(ans.code) || 0,
+        // -1004 既可能是「题库没收录」也可能是「额度用尽/超时」，只有 msg 分得开
+        reason: String(ans.msg || "").slice(0, 80),
+        // 题干前 60 字：后台看到「这道题卡了 37 次」得能认出是哪道题，纯 hash 没人查得动
+        title: String(question && question.title || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 60),
+        // 客户端指纹，仅用于「同一道题反复点不上」的归类；与后端 bank_call_logs.question_hash
+        // 不是同一算法，不能拿来 join
+        hash: await sha256Text(createAnswerRecordCacheKey(question)).catch(() => "")
+      });
+    }
+    let threshold = 0;
+    try {
+      threshold = Number(useSettingStore().config.basicConfig.accuracy.value) || 0;
+    } catch (_) {
+    }
+    return {
+      platform: String(platform || "unknown").slice(0, 20),
+      total: list.length,
+      filled,
+      unfilled: list.length - filled,
+      src,
+      unanswered,
+      accuracy: Number((filled / Math.max(list.length, 1) * 100).toFixed(1)),
+      threshold,
+      score: null
+    };
+  };
+  // 不 await：答题刚结束就可能自动交卷，为一行日志把交卷卡住不值当。
+  const reportAnswerSummary = (platform, questions) => {
+    return buildAnswerSummary(platform, questions).then((summary) => {
+      if (!summary.total) return false;
+      return enqueueScriptEvent(summary, {
+        message: `[答题小结] ${summary.platform} 共${summary.total}题 填上${summary.filled}题`
+      });
+    }).catch((error) => {
+      console.warn("answer summary report failed", error);
+      return false;
+    });
+  };
   const formatDateTime = (dt) => {
     dt.getFullYear();
     dt.getMonth() + 1;
@@ -2480,14 +2569,35 @@
     if (Array.isArray(answer)) return answer.map((x) => String(x).trim()).filter(Boolean);
     const text = String(answer || "").replace(/。$/, "").trim();
     if (!text) return [];
+    // 题库/模型偶尔给出 Python 字面量 "['北京', '上海']"，JSON.parse 不认单引号，先按字面量拆
+    if (/^\[\s*'/.test(text) && /'\s*\]$/.test(text)) {
+      const items = [];
+      const re = /'((?:[^'\\]|\\.)*)'/g;
+      let quoted;
+      while ((quoted = re.exec(text))) {
+        const item = quoted[1].replace(/\\(.)/g, "$1").trim();
+        if (item) items.push(item);
+      }
+      if (items.length) return items;
+    }
     try {
       const parsed = JSON.parse(text);
       if (Array.isArray(parsed)) return parsed.map((x) => String(x).trim()).filter(Boolean);
     } catch (_) {
     }
     // 处理无分隔符的连续字母序列，如 "ABCD"/"ABCDE" → ["A","B","C","D","E"]
-    if (/^[A-Za-z]{2,12}$/.test(text)) {
-      return text.toUpperCase().split("").filter(Boolean);
+    // 只拆「全大写 + 严格递增」：小写词（apple）与乱序大写词（HTTP、DNA）都是填空/简答内容，
+    // 拆成字母会点错选项；多选答案按字母序给，乱序说明它是一个词。
+    if (/^[A-Z]{2,10}$/.test(text) && [...text].every((c, i) => i === 0 || c > text[i - 1])) {
+      return text.split("").filter(Boolean);
+    }
+    // "A 正确" / "A、C 正确"：开头是选项字母、后面紧跟中文说明时按字母取，别整句丢给匹配。
+    // 限定「短 + 中文收尾」：H2O（跟数字）与 SWOT 式简答长句都不是选项字母。
+    const headLetters = (text.match(/^[A-Z](?:[\s、,，]?\s*[A-Z])*(?=[^A-Za-z]|$)/) || [""])[0];
+    const headSeq = headLetters.replace(/[\s、,，]+/g, "").split("").filter(Boolean);
+    const headTail = text.slice(headLetters.length);
+    if (headSeq.length && text.length <= 12 && /^[\s、,，(（:：.。-]*[\u4e00-\u9fff]/.test(headTail)) {
+      return headSeq;
     }
     if (/^[A-Z](?:[\s,，、;；|]+[A-Z])+$/.test(text.toUpperCase())) {
       return text.toUpperCase().split(/[\s,，、;；|]+/).filter(Boolean);
@@ -2668,6 +2778,7 @@
                 code: 1,
                 data: {
                   answer: normalizeLocalBackendAnswers(obj.data.answer),
+                  src: obj.data.bank ? "bank" : obj.data.cache ? "cache" : "ai",
                   remainCount: obj.data.remainCount !== void 0 ? formatLocalRemainCount(obj.data.remainCount) : getProfileRemainingCount(obj.data.profile)
                 },
                 msg: obj.msg || (obj.data.bank ? "题库命中" : obj.data.cache ? "缓存命中" : "本地后端返回")
@@ -7841,7 +7952,8 @@
               if (answerData.code === 1) {
                 question.answer = {
                   code: 1,
-                  answer: answerData.data.answer
+                  answer: answerData.data.answer,
+                  src: answerData.data.src
                 };
                 this.setting.userInfo.remainCount = formatLocalRemainCount(answerData.data.remainCount);
                 saveAnswerRecord({
@@ -7859,7 +7971,8 @@
               } else if (mode === "questionBank" || answerData.code !== -1004) {
                 question.answer = {
                   code: answerData.code,
-                  answer: []
+                  answer: [],
+                  msg: answerData.msg
                 };
                 continue;
               }
@@ -7869,7 +7982,8 @@
               if (answerData.code === 1) {
                 question.answer = {
                   code: 2,
-                  answer: answerData.data.answer
+                  answer: answerData.data.answer,
+                  src: answerData.data.src || "ai"
                 };
                 this.setting.userInfo.remainCount = formatLocalRemainCount(answerData.data.remainCount);
                 saveAnswerRecord({
@@ -7886,7 +8000,8 @@
               } else {
                 question.answer = {
                   code: answerData.code,
-                  answer: []
+                  answer: [],
+                  msg: answerData.msg
                 };
               }
             } else {
@@ -7905,6 +8020,7 @@
         setTimeout(() => {
           _that.setting.tabIndex = "1";
         }, 2e3);
+        reportAnswerSummary("cx-" + this.type, this.questions);
         if (this.questions.length === 0) return Promise.resolve("0");
         return Promise.resolve(
           (this.correctNum / this.questions.length * 100).toFixed(1)
@@ -7955,12 +8071,38 @@
         if (typeFromCode) return typeFromCode;
         return this.resolveQuestionType(questionTypeText);
       });
+      __publicField(this, "getChoiceOptionInputs", (optionContainer) => {
+        var _a;
+        const inputs = (_a = optionContainer.querySelectorAll) == null ? void 0 : _a.call(optionContainer, 'input[type="radio"], input[type="checkbox"]');
+        return inputs ? [...inputs] : [];
+      });
+      // 超星自己的脚本用 jQuery attr('checked','checked') 写选中态，回读也只认属性；
+      // 浏览器在点击后不保证属性与 property 双向同步，所以两者任一为真即视为已选（与 ocsjs 口径一致）。
+      __publicField(this, "isChoiceInputChecked", (input) => {
+        var _a;
+        if (input.checked === true) return true;
+        return Boolean(((_a = input.getAttribute) == null ? void 0 : _a.call(input, "checked")) != null);
+      });
+      __publicField(this, "getChoiceOptionSig", (optionContainer) => {
+        var _a;
+        const inputs = this.getChoiceOptionInputs(optionContainer);
+        return [
+          String(optionContainer.className || ""),
+          ((_a = optionContainer.getAttribute) == null ? void 0 : _a.call(optionContainer, "aria-checked")) || "",
+          inputs.map((input) => this.isChoiceInputChecked(input) ? 1 : 0).join("")
+        ].join("|");
+      });
       __publicField(this, "isChoiceOptionSelected", (optionElement) => {
+        var _a;
         const optionContainer = this.getChoiceOptionContainer(optionElement);
         if (!optionContainer) return false;
-        if (["zj", "zy"].includes(this.type)) {
-          return optionContainer.getAttribute("aria-checked") === "true";
-        }
+        // 原生 radio/checkbox 的 checked（property 或属性）与 aria-checked 是通用信号，先读它们：
+        // 认不出已选会导致对已选项目再点一次，反而把它取消掉
+        const inputs = this.getChoiceOptionInputs(optionContainer);
+        if (inputs.some((input) => this.isChoiceInputChecked(input))) return true;
+        if (optionContainer.getAttribute("aria-checked") === "true") return true;
+        const tokens = String(optionContainer.className || "").toLowerCase().split(/\s+/);
+        if (tokens.some((t) => t === "is-checked" || t === "ischecked" || t === "checked")) return true;
         if (["ks"].includes(this.type)) {
           return Boolean(
             optionContainer.querySelector(".check_answer, .check_answer_dx")
@@ -7969,11 +8111,22 @@
         return false;
       });
       __publicField(this, "selectChoiceOption", (optionElement) => {
+        var _a;
         const optionContainer = this.getChoiceOptionContainer(optionElement);
         if (!optionContainer) return false;
         if (this.isChoiceOptionSelected(optionContainer)) return true;
-        optionContainer == null ? void 0 : optionContainer.click();
-        return true;
+        const before = this.getChoiceOptionSig(optionContainer);
+        try {
+          optionContainer == null ? void 0 : optionContainer.click();
+        } catch (_) {
+        }
+        if (this.isChoiceOptionSelected(optionContainer)) return true;
+        if (this.getChoiceOptionSig(optionContainer) !== before) return true;
+        try {
+          (_a = optionContainer.dispatchEvent) == null ? void 0 : _a.call(optionContainer, new this._window.MouseEvent("click", { bubbles: true }));
+        } catch (_) {
+        }
+        return this.isChoiceOptionSelected(optionContainer) || this.getChoiceOptionSig(optionContainer) !== before;
       });
       __publicField(this, "splitAnswer", (answer = "") => {
         const normalizedAnswer = String(answer || "").trim();
@@ -8000,6 +8153,27 @@
         return [...root.querySelectorAll(selector)].find(
           (element) => element.getAttribute(attrName) === attrValue
         );
+      });
+      __publicField(this, "resolveBlankAnswers", (answers = [], blankCount = 1) => {
+        const list = (Array.isArray(answers) ? answers : [answers]).map((a) => String(a == null ? "" : a).trim()).filter(Boolean);
+        if (list.length >= blankCount) return list.slice(0, blankCount);
+        const flat = [];
+        list.forEach((a) => {
+          a.split(/[,，、;；|]+/).forEach((piece) => {
+            const trimmed = piece.trim();
+            if (trimmed) flat.push(trimmed);
+          });
+        });
+        return flat.slice(0, blankCount);
+      });
+      __publicField(this, "resolveJudgeAnswer", (rawAnswer) => {
+        const text = String(rawAnswer == null ? "" : rawAnswer).replace(/\s+/g, "");
+        if (!text) return "";
+        const neg = /(错误|不对|非|否|误|错|×|✗|(^|[,，、;；(（【])(wrong|false|no|n|f)([,，、;；)）】]|$))/i;
+        const pos = /(正确|对|是|√|✓|(^|[,，、;；(（【])(true|right|yes|t|y|ri)([,，、;；)）】]|$))/i;
+        if (neg.test(text)) return "false";
+        if (pos.test(text)) return "true";
+        return "";
       });
       __publicField(this, "fillLineQuestion", (question) => {
         const answerGroups = this.buildAnswerGroups(question.answer.answer);
@@ -8079,7 +8253,7 @@
             let isSelected = false;
             // 字母答案映射：A=第1个选项（兼容数组项 ["A","B","D"] 与紧凑串 "ABD"）
             const letterText = String(clearAnswer).trim();
-            const isCompactLetters = /^[A-Za-z]{2,10}$/.test(letterText) && !optionKeys.some((k) => this.clearMark(k) === this.clearMark(letterText));
+            const isCompactLetters = /^[A-Z]{2,10}$/.test(letterText) && [...letterText].every((c, i) => i === 0 || c > letterText[i - 1]) && !optionKeys.some((k) => this.clearMark(k) === this.clearMark(letterText));
             const lettersToMap = /^[A-Za-z]$/.test(letterText) ? [letterText.toUpperCase()] : isCompactLetters ? letterText.toUpperCase().split("") : [];
             for (const c of lettersToMap) {
               const idx = c.charCodeAt(0) - 65;
@@ -8122,25 +8296,35 @@
         } else if (question.type === "2") {
           const textareaElements = question.element.querySelectorAll("textarea");
           if (textareaElements.length === 0) return false;
+          const blankAnswers = this.resolveBlankAnswers(
+            question.answer.answer,
+            textareaElements.length
+          );
+          let blankFilled = 0;
           textareaElements.forEach((textareaElement, index) => {
+            const blankAnswer = blankAnswers[index];
+            if (!blankAnswer) return;
             try {
               const ueditor = this._window.UE.getEditor(textareaElement.name);
-              ueditor.setContent(question.answer.answer[index]);
-              filled = true;
+              ueditor.setContent(blankAnswer);
+              blankFilled += 1;
             } catch (e) {
-              textareaElement.value = "";
+              try {
+                textareaElement.value = blankAnswer;
+                blankFilled += 1;
+              } catch (_) {
+              }
             }
           });
+          filled = blankFilled > 0 && blankFilled === textareaElements.length;
         } else if (question.type === "3") {
-          let answer = "true";
-          if (question.answer.answer[0].match(
-            /(^|,)(正确|是|对|√|T|ri|right|true)(,|$)/
-          )) {
-            answer = "true";
-          } else if (question.answer.answer[0].match(
-            /(^|,)(错误|否|错|×|F|wr|wrong|false)(,|$)/
-          )) {
-            answer = "false";
+          const answer = this.resolveJudgeAnswer(question.answer.answer[0]);
+          if (!answer) {
+            this.log.insertLog(
+              `判断题答案无法判定对错，本题不填：${question.answer.answer[0] || "空"}`,
+              "warning"
+            );
+            return false;
           }
           const trueOrFalse = {
             true: "对",
@@ -8164,9 +8348,19 @@
         } else if (question.type === "4" || question.type === "5" || question.type === "6") {
           const textareaElement = question.element.querySelector("textarea");
           if (!textareaElement) return false;
-          const ueditor = this._window.UE.getEditor(textareaElement.name);
-          ueditor.setContent(question.answer.answer[0]);
-          filled = true;
+          const longAnswer = this.resolveBlankAnswers(question.answer.answer, 1)[0] || "";
+          if (!longAnswer) return false;
+          try {
+            const ueditor = this._window.UE.getEditor(textareaElement.name);
+            ueditor.setContent(longAnswer);
+            filled = true;
+          } catch (e) {
+            try {
+              textareaElement.value = longAnswer;
+              filled = true;
+            } catch (_) {
+            }
+          }
         } else if (question.type === "11") {
           filled = this.fillLineQuestion(question);
         } else if (question.type === "14") {
@@ -9201,7 +9395,8 @@
               if (answerData.code === 1) {
                 question.answer = {
                   code: 1,
-                  answer: answerData.data.answer
+                  answer: answerData.data.answer,
+                  src: answerData.data.src
                 };
                 this.setting.userInfo.remainCount = formatLocalRemainCount(answerData.data.remainCount);
                 saveAnswerRecord({
@@ -9220,7 +9415,8 @@
               } else if (mode === "questionBank" || answerData.code !== -1004) {
                 question.answer = {
                   code: answerData.code,
-                  answer: []
+                  answer: [],
+                  msg: answerData.msg
                 };
                 handled = true;
               }
@@ -9235,7 +9431,8 @@
                 if (aiAnswerData.code === 1) {
                   question.answer = {
                     code: 2,
-                    answer: aiAnswerData.data.answer
+                    answer: aiAnswerData.data.answer,
+                    src: aiAnswerData.data.src || "ai"
                   };
                   this.setting.userInfo.remainCount = formatLocalRemainCount(aiAnswerData.data.remainCount);
                   saveAnswerRecord({
@@ -9253,7 +9450,8 @@
                 } else {
                   question.answer = {
                     code: aiAnswerData.code,
-                    answer: []
+                    answer: [],
+                    msg: aiAnswerData.msg
                   };
                 }
               } else {
@@ -9281,6 +9479,7 @@
         setTimeout(() => {
           _that.setting.tabIndex = "1";
         }, 2e3);
+        reportAnswerSummary("zhs-web", this.questions);
         return Promise.resolve(
           (this.correctNum / this.questions.length * 100).toFixed(1)
         );
@@ -11524,13 +11723,61 @@
         question.element.querySelectorAll("input, textarea, .fillAnswer input, .fillAnswer textarea")
       );
       if (!inputs.length) return false;
+      let values = (answers || []).map((a) => String(a == null ? "" : a).trim()).filter(Boolean);
+      if (values.length < inputs.length) {
+        const flat = [];
+        values.forEach((v) => v.split(/[,，、;；|]+/).forEach((p) => {
+          if (p.trim()) flat.push(p.trim());
+        }));
+        if (flat.length > values.length) values = flat;
+      }
+      let filledCount = 0;
       inputs.forEach((input, index) => {
-        const value = answers[index] || answers[0] || "";
+        const value = values[index];
+        if (!value) return;
         input.value = value;
         input.dispatchEvent(new Event("input", { bubbles: true }));
         input.dispatchEvent(new Event("change", { bubbles: true }));
+        if (input.value === value) filledCount += 1;
       });
-      return true;
+      return filledCount > 0 && filledCount === inputs.length;
+    };
+    const isInputChecked = (i) => i.checked === true || (i.getAttribute && i.getAttribute("checked")) != null;
+    const choiceOptionSelected = (el) => {
+      var _b;
+      if (!el) return false;
+      const inputs = el.querySelectorAll ? [...el.querySelectorAll('input[type="radio"], input[type="checkbox"]')] : [];
+      if (inputs.some((i) => isInputChecked(i))) return true;
+      if (((_b = el.getAttribute) == null ? void 0 : _b.call(el, "aria-checked")) === "true") return true;
+      const tokens = String(el.className || "").toLowerCase().split(/\s+/);
+      return tokens.some((t) => t === "is-checked" || t === "ischecked" || t === "checked");
+    };
+    const choiceOptionSig = (el) => {
+      var _b;
+      const inputs = el.querySelectorAll ? [...el.querySelectorAll('input[type="radio"], input[type="checkbox"]')] : [];
+      return [
+        String(el.className || ""),
+        ((_b = el.getAttribute) == null ? void 0 : _b.call(el, "aria-checked")) || "",
+        inputs.map((i) => isInputChecked(i) ? 1 : 0).join("")
+      ].join("|");
+    };
+    // 点一次后回读状态：认得出已选就算成功，认不出但状态确实变了也算成功；
+    // 两连发（click + dispatchEvent）在切换语义的选项上会自己把自己取消掉。
+    const clickChoiceOption = (el) => {
+      var _a2;
+      if (!el) return false;
+      if (choiceOptionSelected(el)) return true;
+      const before = choiceOptionSig(el);
+      try {
+        el.click();
+      } catch (_) {
+      }
+      if (choiceOptionSelected(el) || choiceOptionSig(el) !== before) return true;
+      try {
+        (_a2 = el.dispatchEvent) == null ? void 0 : _a2.call(el, new MouseEvent("click", { bubbles: true }));
+      } catch (_) {
+      }
+      return choiceOptionSelected(el) || choiceOptionSig(el) !== before;
     };
     const fillChoice = (question, answers) => {
       var _a2;
@@ -11561,28 +11808,24 @@
         const t = String(a || "").trim();
         if (/^[A-Za-z]$/.test(t)) {
           if (!letterAnswers.includes(t.toUpperCase())) letterAnswers.push(t.toUpperCase());
-        } else if (/^[A-Za-z]{2,10}$/.test(t)) {
+        } else if (/^[A-Z]{2,10}$/.test(t) && [...t].every((c, i) => i === 0 || c > t[i - 1])) {
           const isOptionText = optionEls.some(op => normalize(op.textContent) === normalize(t));
           if (!isOptionText) t.toUpperCase().split("").forEach(c => { if (!letterAnswers.includes(c)) letterAnswers.push(c); });
         }
       });
-      const maxLetterIdx = letterAnswers.length ? Math.max(...letterAnswers.map(c => c.charCodeAt(0) - 65)) : -1;
-      const letterMappingOk = letterAnswers.length > 0 && maxLetterIdx < optionEls.length;
+      // 逐字母映射：越界的那个字母匹配不到选项自然跳过，不再一票否决整组字母答案
+      const letterMappingOk = letterAnswers.length > 0;
       optionEls.forEach((option, idx) => {
         const optionText = normalize(option.textContent);
         const isLetterMatched = letterMappingOk && letterAnswers.includes(String.fromCharCode(65 + idx));
         const isJudgementMatched = question.type === "判断题" && (/^(正确|是|对|√|t|true|right)$/i.test(judgementAnswer) && /^(正确|是|对|√|t|true|right)$/i.test(optionText) || /^(错误|否|错|×|f|false|wrong)$/i.test(judgementAnswer) && /^(错误|否|错|×|f|false|wrong)$/i.test(optionText));
         // 精确匹配 / 字母索引匹配
         if (isLetterMatched || normalizedAnswers.includes(optionText) || isJudgementMatched) {
-          selected = true;
-          option.click();
-          option.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+          if (clickChoiceOption(option)) selected = true;
         }
         // 子串匹配兜底：答案可能含任何标点无法拆分，用选项文本在答案中查找包含关系
         else if (optionText && optionText.length >= 2 && rawAnswers.some(raw => normalize(raw).includes(optionText))) {
-          selected = true;
-          option.click();
-          option.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+          if (clickChoiceOption(option)) selected = true;
         }
         // 图片匹配：按 URL 最后一段（去查询串/扩展名）比对，兼容超星无扩展名 CDN 图
         else if (answerImgs.length > 0) {
@@ -11607,9 +11850,7 @@
             }
           }
           if (matched) {
-            selected = true;
-            option.click();
-            option.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            if (clickChoiceOption(option)) selected = true;
           }
         }
       });
@@ -11631,7 +11872,7 @@
       if (mode !== "ai") {
         const answerData = await getAccurateAnswer(apiQuestion);
         if (answerData.code === 1) {
-          question.answer = { code: 1, answer: answerData.data.answer };
+          question.answer = { code: 1, answer: answerData.data.answer, src: answerData.data.src };
           setting.userInfo.remainCount = formatLocalRemainCount(answerData.data.remainCount);
           saveAnswerRecord({
             question: apiQuestion,
@@ -11646,7 +11887,7 @@
           }
         } else if (mode === "questionBank" || answerData.code !== -1004) {
           // 错误情况：不将 msg 设为 answer，避免将"包月权益生效"等提示当作答案显示
-          question.answer = { code: answerData.code, answer: [] };
+          question.answer = { code: answerData.code, answer: [], msg: answerData.msg };
           handled = true;
         }
       }
@@ -11654,7 +11895,7 @@
         if (isChoiceType(question.type)) {
           const aiAnswerData = await getAIAnswer(apiQuestion);
           if (aiAnswerData.code === 1) {
-            question.answer = { code: 2, answer: aiAnswerData.data.answer };
+            question.answer = { code: 2, answer: aiAnswerData.data.answer, src: aiAnswerData.data.src || "ai" };
             setting.userInfo.remainCount = formatLocalRemainCount(aiAnswerData.data.remainCount);
             saveAnswerRecord({
               question: apiQuestion,
@@ -11663,7 +11904,7 @@
             });
           } else {
             // 错误情况：不将 msg 设为 answer，避免将错误提示当作答案显示
-            question.answer = { code: aiAnswerData.code, answer: [] };
+            question.answer = { code: aiAnswerData.code, answer: [], msg: aiAnswerData.msg };
           }
         } else {
           question.answer = { code: -1, answer: ["该题型不支持AI答题"] };
@@ -11780,6 +12021,7 @@
     }
     questionStore.currentQuestionIndex = questions.length;
     questionStore.accuracy = (correctNum / questions.length * 100).toFixed(1);
+    reportAnswerSummary("zhs-h5", questions);
     log.insertLog(
       `答题完毕,正确率为${questionStore.accuracy}%,详情请前往<span class='module'>答题</span>模块查看..`
     );
@@ -14275,7 +14517,77 @@
             if (res.ok) log(`✅ [${q.num}题] 重试成功`);
         }
         if (!res.ok) return res;
-        return { ok: true, answer: res.data.answer, model: res.data.model, msg: res.msg || '' };
+        return {
+            ok: true,
+            answer: res.data.answer,
+            model: res.data.model,
+            msg: res.msg || '',
+            src: res.data.bank ? 'bank' : res.data.cache ? 'cache' : 'ai'
+        };
+    }
+
+    /* ---- 一卷一报：本场答题小结 ----
+       这里读不到主脚本的 pinia / 日志队列，所以自带一份，走同一个 /api/script-logs。
+       字段口径与主脚本的 buildAnswerSummary 保持一致，后台按这两个拼一起统计。 */
+    async function reportAnswerSummary(rows) {
+        try {
+            const list = rows || [];
+            if (!list.length) return false;
+            const token = store.account.scriptKey || store.account.token;
+            if (!token) return false;
+            let filled = 0;
+            const src = { bank: 0, cache: 0, ai: 0, unknown: 0 };
+            const unanswered = [];
+            for (const row of list) {
+                if (row.ok) {
+                    filled += 1;
+                    if (row.src === 'bank' || row.src === 'cache' || row.src === 'ai') src[row.src] += 1;
+                    else src.unknown += 1;
+                    continue;
+                }
+                // 指纹逐题 await 一次 sha256，而后台只吃前 40 条：到量就停，
+                // 别让一场全卡住的整卷在答完之后再排几百次哈希。total/filled 另算，不受影响。
+                if (unanswered.length >= 40) continue;
+                unanswered.push({
+                    type: String(row.type || '').slice(0, 20),
+                    hash: await sha256Text(JSON.stringify({ title: row.title || '', type: row.type || '' })).catch(() => ''),
+                    code: Number(row.code) || 0,
+                    reason: String(row.reason || '').slice(0, 80),
+                    title: String(row.title || '').replace(/\s+/g, ' ').trim().slice(0, 60)
+                });
+            }
+            const version = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '';
+            const res = await backendRequest('/api/script-logs', {
+                method: 'POST',
+                token,
+                data: {
+                    logs: [{
+                        event_type: 'answer_summary',
+                        level: 'info',
+                        message: `[答题小结] olearn 共${list.length}题 填上${filled}题`.slice(0, 4000),
+                        page_url: location.href,
+                        extra: {
+                            platform: 'olearn',
+                            time: new Date().toTimeString().slice(0, 8),
+                            script_version: version,
+                            total: list.length,
+                            filled,
+                            unfilled: list.length - filled,
+                            src,
+                            unanswered: unanswered.slice(0, 40),
+                            accuracy: Math.round(filled / list.length * 1000) / 10,
+                            threshold: 0,
+                            // 平台交卷后不回吐分数，判对率采不到；留 null，后台也不显示分数
+                            score: null
+                        },
+                        timestamp: Date.now()
+                    }]
+                }
+            });
+            return !!(res && res.code === 200);
+        } catch (e) {
+            return false;
+        }
     }
 
     /* ---- 整页图片试卷模式 ----
@@ -14345,15 +14657,17 @@
         }
         if (!items.length) {
             log('⚠️ 图片已找到但题目选项未渲染');
+            reportAnswerSummary(pages.map((s, i) => ({ ok: false, type: '整页图片', title: '第' + (i + 1) + '张', reason: '选项未渲染' })));
             return false;
         }
         const byNum = {};
         items.forEach(q => { byNum[q.num] = q; });
         let filledCount = 0;
+        const summaryRows = [];
         for (let p = 0; p < pages.length; p++) {
             log(`🖼️ [第${p + 1}/${pages.length}张图] 下载并识别...`);
             const dataUrl = await downloadImageAsDataURL(pages[p]);
-            if (!dataUrl) { log(`❌ 第${p + 1}张图下载失败`); continue; }
+            if (!dataUrl) { log(`❌ 第${p + 1}张图下载失败`); summaryRows.push({ ok: false, type: '整页图片', title: '第' + (p + 1) + '张', reason: '图片下载失败' }); continue; }
             const payload = {
                 question: '请识别这张试卷图片中的全部题目（题干、选项），并按题号逐题给出答案。只输出 JSON 数组，格式：[{"num":1,"answer":"A"},{"num":2,"answer":"B,C"},...]。判断题用"正确"或"错误"。不要输出其他任何内容。',
                 images: [dataUrl],
@@ -14362,9 +14676,9 @@
                 refer: location.href,
             };
             const res = await callAnswer(payload, { u: store.account.username || '' });
-            if (!res.ok) { log(`❌ 第${p + 1}张图识别失败: ${res.msg}`); continue; }
+            if (!res.ok) { log(`❌ 第${p + 1}张图识别失败: ${res.msg}`); summaryRows.push({ ok: false, type: '整页图片', title: '第' + (p + 1) + '张', reason: res.msg }); continue; }
             const answers = parseImagePageAnswers(res.data.answer);
-            if (!answers) { log(`⚠️ 第${p + 1}张图返回无法解析: ${String(res.data.answer).slice(0, 120)}`); continue; }
+            if (!answers) { log(`⚠️ 第${p + 1}张图返回无法解析: ${String(res.data.answer).slice(0, 120)}`); summaryRows.push({ ok: false, type: '整页图片', title: '第' + (p + 1) + '张', reason: '模型返回无法解析' }); continue; }
             const nums = Object.keys(answers).map(Number);
             log(`✅ 第${p + 1}张图识别出 ${nums.length} 题答案 (${res.msg})`);
             for (const num of nums) {
@@ -14372,11 +14686,13 @@
                 if (!q) { log(`⚠️ 题${num}未在页面中找到选项，跳过`); continue; }
                 const ok = fillExamAnswer(q, answers[num]);
                 if (ok) filledCount++;
+                summaryRows.push({ ok, src: 'ai', type: q.type, title: q.stemText || q.title });
                 log(`${ok ? '✅' : '⚠️'} [${num}题] ${ok ? '已填写' : '未能填写'} 答案=${formatAnswerForLog(answers[num]) || answers[num]}`);
                 await new Promise(r => setTimeout(r, 800));
             }
             await new Promise(r => setTimeout(r, 1500));
         }
+        reportAnswerSummary(summaryRows);
         log(`🏁 整页图片答题完成，共填写 ${filledCount} 题`);
         return filledCount > 0;
     }
@@ -14407,15 +14723,17 @@
             return;
         }
         log(`🔍 解析到 ${questions.length} 道题 (${questions[0].mode === 'A' ? '文本结构' : '图片结构'})`);
+        const summaryRows = [];
         for (let i = 0; i < questions.length; i++) {
             const q = questions[i];
             const answered = q.mode === 'B'
                 ? (q.isJudge ? q.judges.some(j => j.el && /r_on|selected|checked/.test(j.el.className || '')) : q.opts.some(o => o.checked || (o.el && /r_on|selected|checked/.test(o.el.className || ''))))
                 : q.opts.some(o => o.checked);
             if (answered) continue;
-            const res = await answerExamQuestion(q, i);
+            let res = await answerExamQuestion(q, i);
             if (!res.ok) {
                 log(`❌ [${q.num}题] 获取失败: ${res.msg}`);
+                summaryRows.push({ ok: false, type: q.type, title: q.stemText || q.title, reason: res.msg });
                 continue;
             }
             let ok = fillExamAnswer(q, res.answer);
@@ -14427,11 +14745,13 @@
                     ok = fillExamAnswer(q, res.answer);
                 }
             }
+            summaryRows.push({ ok, src: res.src, type: q.type, title: q.stemText || q.title });
             const ansShow = formatAnswerForLog(res.answer);
             const hit = res.msg && /命中/.test(res.msg) ? ` ${res.msg}` : '';
             log(`${ok ? '✅' : '⚠️'} [${q.num}题] ${ok ? '已填写' : '未能填写'} 答案=${ansShow || '?'}${hit}`);
             await new Promise(r => setTimeout(r, 1500));
         }
+        reportAnswerSummary(summaryRows);
         state.examStarted = false;
         log('🏁 考试自动答题完成');
         if (store.tasks.examAutoSubmit) {
