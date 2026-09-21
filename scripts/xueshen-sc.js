@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.3.7
+// @version      5.3.8
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @author       IPYIWEI
@@ -10,6 +10,11 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.3.8 更新内容：
+// @changelog    1. 填充不再谎报：点击后回读选中态，没点上就记「没填上」，不会看着填了其实还是空的
+// @changelog    2. 填空题按每个空分别填写，多余的答案不再挤进第一个空
+// @changelog    3. 答案解析加固：列表形式的答案能拆开，英文单词不会被误当成选项字母
+// @changelog    4. 每答完一卷回传一条小结（共几题、填上几题、哪几题没填上），后台按题型和平台定位卡点
 // @changelog    v5.3.7 更新内容：
 // @changelog    1. 渠道专属版加固：代理商未配置店铺链接时，脚本不再露出官方购买入口，续费只走渠道发放的卡密激活
 // @changelog    2. 代理商门户可自助填写店铺链接，保存后重新下载的脚本即跳该地址
