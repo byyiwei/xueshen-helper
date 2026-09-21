@@ -817,7 +817,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
 
         <!-- 题库中心组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.questions}">
-          <div class="menu-group-header dock-item" :class="{active:['question-bank','bank-analysis','bank-logs'].includes(page)}" @click="expandedGroups.questions=!expandedGroups.questions">
+          <div class="menu-group-header dock-item" :class="{active:['question-bank','bank-analysis','answer-stats','bank-logs'].includes(page)}" @click="expandedGroups.questions=!expandedGroups.questions">
             <span class="icon">▤</span>题库中心
             <span class="arrow">▶</span>
           </div>
@@ -827,6 +827,9 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
             </div>
             <div class="menu-item" :class="{active:page==='bank-analysis'}" @click="page='bank-analysis';loadBankAnalysis()">
               <span class="icon">▦</span>题库分析
+            </div>
+            <div class="menu-item" :class="{active:page==='answer-stats'}" @click="page='answer-stats';loadAnswerStats()">
+              <span class="icon">◐</span>答题统计
             </div>
             <div class="menu-item" :class="{active:page==='bank-logs'}" @click="page='bank-logs';loadBankLogs()">
               <span class="icon">◎</span>题库日志
@@ -943,16 +946,13 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
 
         <!-- 日志监控组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.logs}">
-          <div class="menu-group-header dock-item" :class="{active:['script-logs','answer-stats','log-cleanup','daily-report'].includes(page)}" @click="expandedGroups.logs=!expandedGroups.logs">
+          <div class="menu-group-header dock-item" :class="{active:['script-logs','log-cleanup','daily-report'].includes(page)}" @click="expandedGroups.logs=!expandedGroups.logs">
             <span class="icon">☰</span>日志监控
             <span class="arrow">▶</span>
           </div>
           <div class="menu-group-items">
             <div class="menu-item" :class="{active:page==='script-logs'}" @click="page='script-logs';loadScriptLogs()">
               <span class="icon">⌘</span>脚本日志
-            </div>
-            <div class="menu-item" :class="{active:page==='answer-stats'}" @click="page='answer-stats';loadAnswerStats()">
-              <span class="icon">◐</span>答题统计
             </div>
             <div class="menu-item" :class="{active:page==='log-cleanup'}" @click="page='log-cleanup';loadLogCleanup()">
               <span class="icon">∅</span>日志清理
@@ -4982,7 +4982,7 @@ createApp({
       'distributor-revenue':[{label:'代理商分销',group:'distributor'},{label:'收入统计'}],
       'distributor-config':[{label:'代理商分销',group:'distributor'},{label:'分销配置'}],
       'script-logs':[{label:'日志监控',group:'logs'},{label:'脚本日志'}],
-      'answer-stats':[{label:'日志监控',group:'logs'},{label:'答题统计'}],
+      'answer-stats':[{label:'题库中心',group:'questions'},{label:'答题统计'}],
       'ai-logs':[{label:'模型服务',group:'models'},{label:'模型日志'}],
       'bank-logs':[{label:'题库中心',group:'questions'},{label:'题库日志'}],
       'bank-analysis':[{label:'题库分析'}],
@@ -6647,7 +6647,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       payment:{title:'支付财务',icon:'□',items:[{page:'payment-orders',label:'支付明细',icon:'▤',load:loadPaymentOrders},{page:'payment',label:'套餐配置',icon:'◈',load:loadPaymentConfig},{page:'pay-api',label:'支付接口',icon:'⌁',load:loadPayApiConfig},{page:'pay-test',label:'支付测试',icon:'◎',load:()=>{}},{page:'refund-requests',label:'退款申请',icon:'↩',load:loadRefundRequests}]},
       card:{title:'卡密管理',icon:'⚷',items:[{page:'xianyu',label:'商品配置',icon:'●',load:loadXianyuConfig},{page:'card-keys',label:'卡密管理',icon:'⚷',load:loadCardKeys}]},
       distributor:{title:'代理商分销',icon:'⚑',items:[{page:'distributor',label:'代理商',icon:'◉',load:loadFxList},{page:'distributor-templates',label:'卡密模板',icon:'▤',load:()=>{loadFxOptions();loadFxTemplates();}},{page:'distributor-batches',label:'批次与卡密',icon:'≣',load:()=>{loadFxOptions();loadFxBatches(1);}},{page:'distributor-withdrawals',label:'提现审核',icon:'¥',load:()=>{loadFxOptions();loadFxWds(1);}},{page:'distributor-revenue',label:'收入统计',icon:'↗',load:loadFxRevenue},{page:'distributor-config',label:'分销配置',icon:'⚙',load:loadFxConfig}]},
-      logs:{title:'日志监控',icon:'☰',items:[{page:'script-logs',label:'脚本日志',icon:'⌘',load:loadScriptLogs},{page:'answer-stats',label:'答题统计',icon:'◐',load:loadAnswerStats},{page:'log-cleanup',label:'日志清理',icon:'∅',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'⊙',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
+      logs:{title:'日志监控',icon:'☰',items:[{page:'script-logs',label:'脚本日志',icon:'⌘',load:loadScriptLogs},{page:'log-cleanup',label:'日志清理',icon:'∅',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'⊙',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
       models:{title:'模型服务',icon:'◈',items:[{page:'ai-config',label:'模型配置',icon:'◈',load:loadConfig},{page:'ai-logs',label:'模型日志',icon:'≡',load:loadAiLogs}]},
       config:{title:'系统配置',icon:'◇',items:[{page:'qq-bot',label:'QQ频道机器人',icon:'🤖',load:loadQqBot},{page:'email-config',label:'邮箱配置',icon:'✉',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'db-config',label:'系统设置',icon:'⛁',load:loadDbConfig}]}
     };
