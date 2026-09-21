@@ -6,6 +6,7 @@ MySQL 数据库
 管理后台: https://xs.openget.cn/admin
 """
 import json
+import ast
 
 import os
 import tempfile
@@ -164,6 +165,71 @@ def enqueue_bank_log(item):
         BANK_LOG_QUEUE.put_nowait(item)
     except queue.Full:
         print("[题库日志队列] 队列已满，丢弃一条日志", flush=True)
+
+# 「一卷一报」小结：脚本每场答题结束发一条 event_type=answer_summary，
+# 明细走 script_event_logs.extra_json。这里是入库前的钳制——统计口径要经得起有人乱发。
+ANSWER_SUMMARY_TYPE_LIMIT = 40
+
+def sanitize_answer_summary(item):
+    """把一条答题小结钳成可统计的形状；返回 None 表示这条不要（别拿脏数据算成功率）。"""
+    try:
+        extra = item.get("extra")
+        if isinstance(extra, str):
+            extra = json.loads(extra)
+        if not isinstance(extra, dict):
+            return None
+
+        def _n(key, hi=100000):
+            try:
+                return max(0, min(int(extra.get(key) or 0), hi))
+            except (TypeError, ValueError):
+                return 0
+
+        total = _n("total")
+        filled = _n("filled")
+        if total <= 0 or filled > total:
+            return None
+        src_raw = extra.get("src") if isinstance(extra.get("src"), dict) else {}
+        src = {}
+        for key in ("bank", "cache", "ai", "unknown"):
+            try:
+                src[key] = max(0, min(int(src_raw.get(key) or 0), total))
+            except (TypeError, ValueError):
+                src[key] = 0
+        unanswered_raw = extra.get("unanswered")
+        unanswered = []
+        if isinstance(unanswered_raw, list):
+            for row in unanswered_raw[:ANSWER_SUMMARY_TYPE_LIMIT]:
+                if not isinstance(row, dict):
+                    continue
+                try:
+                    code = int(row.get("code") or 0)
+                except (TypeError, ValueError):
+                    code = 0
+                unanswered.append({
+                    "type": str(row.get("type", ""))[:20],
+                    "hash": str(row.get("hash", ""))[:64],
+                    # code/reason 是「为什么点不上」的原始线索，排查提升正确率全靠它
+                    "code": code,
+                    "reason": str(row.get("reason", ""))[:80],
+                    "title": str(row.get("title", ""))[:60]
+                })
+        extra["total"] = total
+        extra["filled"] = filled
+        extra["unfilled"] = total - filled
+        extra["src"] = src
+        extra["unanswered"] = unanswered
+        extra["platform"] = str(extra.get("platform", ""))[:20]
+        try:
+            extra["threshold"] = max(0, min(float(extra.get("threshold") or 0), 100))
+        except (TypeError, ValueError):
+            extra["threshold"] = 0
+        item["extra"] = extra
+        item["message"] = (f"[答题小结] {extra['platform']} 共{total}题 填上{filled}题 "
+                           f"题库{src['bank']} 缓存{src['cache']} AI{src['ai']} 未知{src['unknown']}")[:4000]
+        return item
+    except Exception:
+        return None
 
 def set_system_keep_awake(enabled=True):
     """Windows 系统级防休眠/防息屏。开启后只要后端进程运行，系统会尽量保持唤醒。"""
@@ -1788,23 +1854,40 @@ def make_match_stem(question):
     return hashlib.sha256(json.dumps(normalized, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
 
 
+def _judge_polarity(text, max_len=12):
+    """判断题极性：整句就是一个判词才认（旧的子串式判定会把「对称轴…」判成「正确」，
+    也把「不对」判成「正确」）。认不出返回 None，交给上层保留原文。"""
+    core = re.sub(r"[\s，。！？；：,.!?;:、（）()\"'“”‘’]+", "", str(text or ""))
+    if not core or len(core) > max_len:
+        return None
+    low = core.lower()
+    if low in {"错误", "不对", "错", "误", "否", "非", "×", "✗", "false", "wrong", "no", "f"}:
+        return "错误"
+    if low in {"正确", "对", "是", "√", "✓", "true", "right", "yes", "t", "y"}:
+        return "正确"
+    if core.endswith(("错误", "不对", "是错", "错", "误")):
+        return "错误"
+    if core.endswith(("正确", "是对", "是的")) or "是对的" in core:
+        return "正确"
+    return None
+
+
 def normalize_answer_for_hash(answer):
     """把答案归一化为稳定字符串，用于指纹（选项字母排序/判断题/轻量归一化）。"""
     if not answer:
         return ""
     text = _canonicalize_img_urls_in_text(str(answer).strip())
-    m = re.match(r"^\s*(?:正确答案是?|答案是?|选择?|选|应该选|应该选择?)\s*([A-Da-d])", text, re.I)
+    m = re.match(r"^\s*(?:正确答案是?|答案是?|选择?|选|应该选|应该选择?)\s*([A-Z])(?![A-Za-z])", text)
     if m:
         return m.group(1).upper()
-    clean = re.sub(r"[\s、,，&+与和]+", "", text)
-    if re.fullmatch(r"[A-Da-d]+", clean):
-        uniq = sorted(set(c.upper() for c in clean))
+    # 字母序列答案：只认「大写字母 + 可选分隔符」，5 个选项以上的 E/F/G 同样收进来。
+    # 原先写死 [A-Da-d]，第 5 个选项的答案落到最后的兜底分支，同一逻辑答案产生两条指纹。
+    if re.fullmatch(r"[A-Z](?:[\s、,，&+与和/|]*[A-Z]){0,11}", text):
+        uniq = sorted(set(re.findall(r"[A-Z]", text)))
         return ",".join(uniq)
-    low = text[:30].lower()
-    if any(k in low for k in ["正确", "对", "true", "√", "right"]):
-        return "正确"
-    if any(k in low for k in ["错误", "不对", "错", "false", "×", "✗", "wrong"]):
-        return "错误"
+    polarity = _judge_polarity(text, max_len=10)
+    if polarity:
+        return polarity
     t = re.sub(r"\s+", "", text)
     t = re.sub(r"[，。！？；：,.!?;:\-—_【】\[\]（）()\"'“”‘’]", "", t)
     return t.lower()
@@ -2069,7 +2152,7 @@ def _is_truncated_multi_answer(question, answer):
     items = _parse_answer_list(text)
     if items is not None:
         return len(items) < 2
-    clean = re.sub(r"[\s、,，&+和]+", "", text).upper()
+    clean = re.sub(r"[\s、,，&+与和/|]+", "", text).upper()
     if re.match(r"^[A-Z]{2,}$", clean):
         return False
     return True
@@ -2130,16 +2213,15 @@ def _map_image_answer_to_letters(question, answer):
 
 def _letters_to_option_answer(letter_text, options):
     """把纯字母串映射为选项文本；选项本身是图时保留字母，避免脚本对不上 src。"""
-    clean = re.sub(r"[\s、,，&+和]+", "", str(letter_text or "")).upper()
+    clean = re.sub(r"[\s、,，&+与和/|]+", "", str(letter_text or "")).upper()
     if not re.match(r"^[A-Z]{1,%d}$" % max(len(options), 1), clean):
         return None
     if len(clean) > len(options):
         return None
-    result = []
-    for c in clean:
-        idx = ord(c) - ord("A")
-        if 0 <= idx < len(options):
-            result.append(options[idx])
+    # 每个字母都必须落在选项范围内：越界字母若被静默丢掉，多选会变成单选且看不出来
+    if any(ord(c) - ord("A") >= len(options) for c in clean):
+        return None
+    result = [options[ord(c) - ord("A")] for c in clean]
     if not result:
         return None
     if all(is_pure_image_answer(x) or "<img" in str(x).lower() for x in result):
@@ -2187,12 +2269,27 @@ def normalize_ai_answer(question, answer):
             if isinstance(_arr, list) and _arr and all(isinstance(x, str) for x in _arr):
                 return text
         except Exception:
-            pass
+            # 模型/旧题库把列表写成 Python 字面量 ['北京', '上海']：脚本侧 JSON.parse 认不了单引号，
+            # 会连引号一起塞进填空框，这里统一转成 JSON 数组文本
+            try:
+                _arr = ast.literal_eval(text)
+                if isinstance(_arr, (list, tuple)) and _arr and all(isinstance(x, str) for x in _arr):
+                    return json.dumps([str(x).strip() for x in _arr], ensure_ascii=False)
+            except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
+                pass
     options = extract_options_from_question(question)
     is_multi = _is_multiple_choice_type(parse_question_payload(question).get("question_type"))
 
     if options:
         def _letters_to_answer(letter_text):
+            raw = str(letter_text or "").strip()
+            compact = re.sub(r"[\s、,，&+与和/|]+", "", raw).upper()
+            if re.fullmatch(r"[A-Za-z]{2,}", compact or "") and raw != raw.upper() and not re.search(r"[,，、;；|]", raw):
+                # "bad"/"apple" 这种连写小写词是答案正文，不是字母序列；"a,b" 带分隔符的才算字母
+                return None
+            if not is_multi and re.fullmatch(r"[A-Z]{2,}", compact or "") and not re.search(r"[,，、;；|]", raw):
+                # 单选题收到连写多字母（"ABD"）：模型在复述候选，展开成 3 个选项必然点错，取首字母
+                letter_text = compact[0]
             return _letters_to_option_answer(letter_text, options)
 
         # 必须优先于 _lead：AI 按提示输出 "A,B" 时，旧逻辑会把逗号当成「字母后非字母」
@@ -2200,9 +2297,22 @@ def normalize_ai_answer(question, answer):
         mapped = _letters_to_answer(text)
         if mapped is not None:
             return mapped
-        # "答案是A,B" / "选 A、C" 等带前缀的多选/单选
+        # "A,C 正确" / "ABD（说明）"：开头就是字母序列、后面跟解释，先把字母抠出来
+        _head = re.match(r"^([A-Z](?:\s*[,，、]\s*[A-Z]){1,8}|[A-Z]{2,8})(?=[^A-Za-z]|$)", text)
+        if _head:
+            mapped = _letters_to_answer(_head.group(1))
+            if mapped is not None:
+                return mapped
+        # "选项 A 和 C 正确"：字母被中文夹住，逐个抽出独立大写字母再映射
+        if is_multi and len(text) <= 40:
+            _standalone = re.findall(r"(?<![A-Za-z])([A-Z])(?![A-Za-z])", text)
+            if len(_standalone) > 1:
+                mapped = _letters_to_answer(",".join(_standalone))
+                if mapped is not None:
+                    return mapped
+        # "答案是A,B" / "选 A、C" / "应选 A 与 C" 等带前缀的多选/单选
         _pref = re.match(
-            r"^\s*(?:正确答案是?|答案是?|选择?|选|应该选|应该选择?)(.+)$",
+            r"^\s*(?:正确答案是?|答案是?|选择?|应选|应该选择?|应该选|你认为应该选|答案应该选)([\s\S]+)$",
             text,
             re.I,
         )
@@ -2224,7 +2334,7 @@ def normalize_ai_answer(question, answer):
             _lead = re.match(r"^\s*([A-Z])\s*(?![A-Za-z])", text, re.I)
             if _lead:
                 _rest = text[_lead.end():]
-                _rest_letters = re.sub(r"[\s、,，&+和]+", "", _rest).upper()
+                _rest_letters = re.sub(r"[\s、,，&+与和/|]+", "", _rest).upper()
                 if not (_rest_letters and re.match(r"^[A-Z]+$", _rest_letters)):
                     _idx = ord(_lead.group(1).upper()) - ord("A")
                     if 0 <= _idx < len(options):
@@ -2241,7 +2351,7 @@ def normalize_ai_answer(question, answer):
             if m:
                 idx = ord(m.group(1).upper()) - ord("A")
                 rest = m.group(2).strip()
-                rest_clean = re.sub(r"[\s、,，&+和]+", "", rest).upper()
+                rest_clean = re.sub(r"[\s、,，&+与和/|]+", "", rest).upper()
                 # 守卫：rest 也是纯字母序列（如 "A、B、D" 的 "B、D"），说明是多选
                 if rest_clean and re.match(r"^[A-Z]+$", rest_clean):
                     mapped = _letters_to_answer(m.group(1) + rest)
@@ -2257,16 +2367,15 @@ def normalize_ai_answer(question, answer):
             m = re.match(r"^\s*([A-Z])(?:\s*[:：.．、)\）]|[\s]+)(.*)$", text, re.I)
             if m:
                 rest = m.group(2).strip()
-                rest_clean = re.sub(r"[\s、,，&+和]+", "", rest).upper()
+                rest_clean = re.sub(r"[\s、,，&+与和/|]+", "", rest).upper()
                 if rest_clean and re.match(r"^[A-Z]+$", rest_clean):
                     mapped = _letters_to_answer(m.group(1) + rest)
                     if mapped is not None:
                         return mapped
-        # 判断题特殊处理
-        if any(kw in text[:20].lower() for kw in ["正确", "对", "true", "√", "right"]):
-            return "正确"
-        if any(kw in text[:20].lower() for kw in ["错误", "不对", "错", "false", "×", "✗", "wrong"]):
-            return "错误"
+        # 判断题特殊处理：先判否定再判肯定，认不出就不改（旧顺序会把「不对」判成「正确」）
+        polarity = _judge_polarity(text)
+        if polarity:
+            return polarity
 
     # 日日新有时会把最终答案藏在 reasoning/Thinking Process 里，这里从尾部结论区提取。
     if re.search(r"Thinking Process|Analyze the Request|Final Answer|Construct Output|Therefore|最逻辑|最可能|Final Output|Final decision|Decoded question|最终答案", text, re.I):
@@ -2852,10 +2961,9 @@ def build_ai_messages(question_payload_str, force_text_only=False):
     raw_images = [] if force_text_only else [str(x).strip() for x in (info.get("images") or []) if str(x).strip()]
     if force_text_only:
         images = []
-    elif any(x.startswith("data:") for x in raw_images):
-        # 客户端已上传 base64，不再重复下载 HTML 里的同源图
-        images = raw_images
     else:
+        # 客户端可能已上传 base64，也可能只传了部分图：题干/选项里的 URL 一律并入，
+        # 宁可重复一张也不能整段图被丢掉（丢了选项图模型就只能猜）
         images = list(raw_images)
         for u in _collect_html_image_urls(info):
             if u not in images:
@@ -2869,6 +2977,7 @@ def build_ai_messages(question_payload_str, force_text_only=False):
         "- 填空题：只输出填空内容\n"
         "- 简答题：输出简洁答案，不超过50字\n"
         "- 图片题：请识别图片中的题目，依据图片内容作答\n"
+        "- 图片前若标注「第N张图＝选项X」，表示该图就是选项X的内容，作答时按选项字母输出\n"
         "- 不要输出题目、不要重复选项内容、不要输出分析过程"
     )
     if not images:
@@ -2908,8 +3017,19 @@ def build_ai_messages(question_payload_str, force_text_only=False):
     if text_parts and text_parts[0].strip():
         user_content.append({"type": "text", "text": text_parts[0]})
     failed_imgs = 0
+    # 图片选项此前是「匿名图块」发给模型：模型不知道第几张对应哪个选项，只能瞎猜。
+    # 选项 HTML 里保留了原图 URL，用它给每张图标上所属选项。
+    option_img_labels = {}
+    for _i, _opt in enumerate(options or []):
+        for _u in re.findall(r"<img[^>]+src=[\"']([^\"']+)[\"']", str(_opt or ""), re.I):
+            option_img_labels.setdefault(_u.strip(), chr(65 + _i))
+    img_no = 0
     for img in images:
         if img.startswith("data:"):
+            img_no += 1
+            _lab = option_img_labels.get(img)
+            if _lab:
+                user_content.append({"type": "text", "text": f"第{img_no}张图＝选项{_lab}"})
             user_content.append({"type": "image_url", "image_url": {"url": img}})
         else:
             # 下载远程图片转 base64，防止 AI 提供商无法访问需登录态的图片 URL
@@ -2918,6 +3038,10 @@ def build_ai_messages(question_payload_str, force_text_only=False):
                 failed_imgs += 1
                 print(f"[build_ai_messages] 跳过无法下载的图片: {img}", flush=True)
             else:
+                img_no += 1
+                _lab = option_img_labels.get(img)
+                if _lab:
+                    user_content.append({"type": "text", "text": f"第{img_no}张图＝选项{_lab}"})
                 user_content.append({"type": "image_url", "image_url": {"url": img_data}})
     if failed_imgs and not user_content:
         # 所有图片都失败且无文本，退回纯文本模式
@@ -3981,6 +4105,235 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
     DASHBOARD_CACHE["time"] = now_ts
     DASHBOARD_CACHE["key"] = cache_key
     DASHBOARD_CACHE["data"] = data
+    return data
+
+
+# 答题小结的展示口径：脚本上报的是超星题型码，智慧树直接报中文题型名，未知原样显示
+ANSWER_TYPE_NAMES = {
+    "0": "单选题", "1": "多选题", "2": "填空题", "3": "判断题", "4": "简答题",
+    "5": "名词解释", "6": "论述题", "7": "计算题", "11": "连线题", "14": "完形填空", "15": "阅读理解"
+}
+ANSWER_PLATFORM_NAMES = {
+    "cx-zj": "超星章节测验", "cx-zy": "超星作业", "cx-ks": "超星考试",
+    "zhs-web": "智慧树考试页", "zhs-h5": "智慧树整卷", "olearn": "景德镇o-learn",
+    "unknown": "未标注平台"
+}
+# 脚本上报的题级状态码：0 是「答案在手却点不上」（脚本侧填充问题），-1 是该题型脚本还没实现，
+# 其余是取不到答案的报错码。-1004 一个码混了「题库没收录」和「额度用尽/超时」，
+# 所以只能再按 reason 拆一层，不然这两种原因在报表里会互相背锅。
+ANSWER_CODE_NAMES = {
+    0: "答案拿到了但没点上去",
+    -1: "该题型脚本还不支持",
+    -1004: "没取到答案",
+    10003: "请求失败（未登录/超时/响应解析）",
+    429: "被限流"
+}
+ANSWER_STATS_CACHE = {"key": "", "time": 0, "data": None}
+
+
+def _answer_pct(part, whole):
+    return round((int(part) / max(int(whole), 1)) * 100, 1)
+
+
+def get_admin_answer_stats(start_date=None, end_date=None):
+    """「一卷一报」小结的聚合：填充成功率、题库/缓存/AI 占比、点不上的题型、按平台与渠道分组。
+
+    明细在 script_event_logs.extra_json，MySQL 5.7 没有 JSON_TABLE，所以在 Python 里算。
+    注意口径：这里统计的是「脚本把答案点上了没有」，不是「答案对不对」——
+    交卷后平台不给分数，判对率目前采不到，别当正确率用。
+    """
+    from datetime import datetime as _dt, timedelta as _td
+    today = _dt.now().strftime("%Y-%m-%d")
+    sd = start_date or today
+    ed = end_date or today
+    cache_key = sd + "_" + ed
+    now_ts = time.time()
+    if (ANSWER_STATS_CACHE.get("data") and ANSWER_STATS_CACHE.get("key") == cache_key
+            and now_ts - ANSWER_STATS_CACHE.get("time", 0) < DASHBOARD_CACHE_SECONDS):
+        return ANSWER_STATS_CACHE["data"]
+
+    rows = db.list_answer_summaries(date_from=sd + " 00:00:00", date_to=ed + " 23:59:59")
+    totals = {"sessions": 0, "questions": 0, "filled": 0, "bank": 0, "cache": 0, "ai": 0, "unknown": 0}
+    by_day, by_platform, by_channel, blocked, blocked_codes, blocked_hashes = {}, {}, {}, {}, {}, {}
+    recent = []
+    for row in rows or []:
+        extra = row.get("extra_json")
+        if isinstance(extra, str):
+            try:
+                extra = json.loads(extra or "{}")
+            except Exception:
+                continue
+        if not isinstance(extra, dict):
+            continue
+        try:
+            total = int(extra.get("total") or 0)
+            filled = int(extra.get("filled") or 0)
+        except (TypeError, ValueError):
+            continue
+        if total <= 0 or filled > total:
+            continue
+        src = extra.get("src") if isinstance(extra.get("src"), dict) else {}
+        try:
+            part = {k: max(0, int(src.get(k) or 0)) for k in ("bank", "cache", "ai", "unknown")}
+        except (TypeError, ValueError):
+            part = {"bank": 0, "cache": 0, "ai": 0, "unknown": 0}
+        platform = str(extra.get("platform") or "unknown")[:20]
+        day = str(row.get("created_at") or "")[:10]
+        if row.get("channel") == "distributor":
+            channel = "代理商 " + (str(row.get("channel_ref") or "")[:40] or "未知")
+        else:
+            channel = "官方直营"
+
+        totals["sessions"] += 1
+        totals["questions"] += total
+        totals["filled"] += filled
+        for k, v in part.items():
+            totals[k] += v
+        for bucket in (by_day.setdefault(day, {"sessions": 0, "questions": 0, "filled": 0}),
+                       by_platform.setdefault(platform, {"sessions": 0, "questions": 0, "filled": 0,
+                                                         "bank": 0, "cache": 0, "ai": 0, "unknown": 0, "threshold": []}),
+                       by_channel.setdefault(channel, {"sessions": 0, "questions": 0, "filled": 0})):
+            bucket["sessions"] += 1
+            bucket["questions"] += total
+            bucket["filled"] += filled
+        by_platform[platform]["bank"] += part["bank"]
+        by_platform[platform]["cache"] += part["cache"]
+        by_platform[platform]["ai"] += part["ai"]
+        by_platform[platform]["unknown"] += part["unknown"]
+        try:
+            thr = float(extra.get("threshold") or 0)
+            if thr > 0:
+                by_platform[platform]["threshold"].append(thr)
+        except (TypeError, ValueError):
+            pass
+        unfilled_names = []
+        for entry in (extra.get("unanswered") or []):
+            if not isinstance(entry, dict):
+                continue
+            qtype = str(entry.get("type") or "")[:20]
+            try:
+                code = int(entry.get("code") or 0)
+            except (TypeError, ValueError):
+                code = 0
+            reason = str(entry.get("reason") or "").strip()
+            qhash = str(entry.get("hash") or "")[:64]
+            blocked[qtype] = blocked.get(qtype, 0) + 1
+            unfilled_names.append(ANSWER_TYPE_NAMES.get(qtype, qtype or "未知"))
+            bucket = blocked_codes.setdefault(code, {"count": 0, "reasons": {}})
+            bucket["count"] += 1
+            if reason:
+                bucket["reasons"][reason] = bucket["reasons"].get(reason, 0) + 1
+            # 同一道题（同一指纹）反复点不上＝最值得先修的一条，改一处受益一整批
+            if qhash:
+                seen = blocked_hashes.setdefault(
+                    qhash, {"count": 0, "type": qtype, "code": code,
+                            "reason": reason, "title": str(entry.get("title") or "")[:60]})
+                seen["count"] += 1
+                if not seen["reason"] and reason:
+                    seen["reason"] = reason
+                if not seen["title"]:
+                    seen["title"] = str(entry.get("title") or "")[:60]
+        if len(recent) < 20:
+            recent.append({
+                "time": str(row.get("created_at") or "")[:19],
+                "username": row.get("username") or "",
+                "platform": platform,
+                "platform_name": ANSWER_PLATFORM_NAMES.get(platform, platform),
+                "total": total,
+                "filled": filled,
+                "fill_rate": _answer_pct(filled, total),
+                "threshold": extra.get("threshold"),
+                "unfilled_types": unfilled_names[:10],
+                "script_version": str(extra.get("script_version") or "")[:20]
+            })
+
+    trend = []
+    try:
+        cursor_day = _dt.strptime(sd, "%Y-%m-%d")
+        last_day = _dt.strptime(ed, "%Y-%m-%d")
+    except Exception:
+        cursor_day = last_day = None
+    if cursor_day and last_day:
+        guard = 0
+        while cursor_day <= last_day and guard < 366:
+            key = cursor_day.strftime("%Y-%m-%d")
+            d = by_day.get(key, {"sessions": 0, "questions": 0, "filled": 0})
+            trend.append({"day": key, "sessions": d["sessions"], "questions": d["questions"],
+                          "filled": d["filled"], "fill_rate": _answer_pct(d["filled"], d["questions"])})
+            cursor_day += _td(days=1)
+            guard += 1
+
+    platforms = []
+    # 表头说「填充率最低就先修哪套」，排序就得真的把最低顶到第一行；
+    # 同为 0% 时题量大的排前面，一堆单子比单题更容易看出是页面问题还是偶然。
+    for name, p in sorted(by_platform.items(),
+                          key=lambda kv: (_answer_pct(kv[1]["filled"], kv[1]["questions"]), -kv[1]["questions"])):
+        platforms.append({
+            "platform": name,
+            "platform_name": ANSWER_PLATFORM_NAMES.get(name, name),
+            "sessions": p["sessions"],
+            "questions": p["questions"],
+            "filled": p["filled"],
+            "fill_rate": _answer_pct(p["filled"], p["questions"]),
+            "bank_rate": _answer_pct(p["bank"], p["questions"]),
+            "cache_rate": _answer_pct(p["cache"], p["questions"]),
+            "ai_rate": _answer_pct(p["ai"], p["questions"]),
+            "threshold": round(sum(p["threshold"]) / len(p["threshold"]), 1) if p["threshold"] else 0
+        })
+
+    channels = [{"channel": name, "sessions": c["sessions"], "questions": c["questions"],
+                 "filled": c["filled"], "fill_rate": _answer_pct(c["filled"], c["questions"])}
+                for name, c in sorted(by_channel.items(), key=lambda kv: -kv[1]["questions"])]
+
+    block_types = [{"type": t, "name": ANSWER_TYPE_NAMES.get(t, t or "未知"), "count": n}
+                   for t, n in sorted(blocked.items(), key=lambda kv: -kv[1])][:12]
+    block_codes = []
+    for code, b in sorted(blocked_codes.items(), key=lambda kv: -kv[1]["count"])[:10]:
+        reasons = b["reasons"]
+        block_codes.append({
+            "code": code,
+            "name": ANSWER_CODE_NAMES.get(code, "状态码 " + str(code)),
+            "count": b["count"],
+            "reason": max(reasons.items(), key=lambda kv: kv[1])[0] if reasons else ""
+        })
+    block_hashes = [{
+        "hash": h,
+        "count": v["count"],
+        "type": v["type"],
+        "type_name": ANSWER_TYPE_NAMES.get(v["type"], v["type"] or "未知"),
+        "code": v["code"],
+        "code_name": ANSWER_CODE_NAMES.get(v["code"], "状态码 " + str(v["code"])),
+        "reason": v["reason"],
+        "title": v["title"]
+    } for h, v in sorted(blocked_hashes.items(), key=lambda kv: -kv[1]["count"])[:10]]
+
+    data = {
+        "cards": {
+            "sessions": totals["sessions"],
+            "questions": totals["questions"],
+            "filled": totals["filled"],
+            "unfilled": totals["questions"] - totals["filled"],
+            "fill_rate": _answer_pct(totals["filled"], totals["questions"]),
+            "bank": totals["bank"],
+            "cache": totals["cache"],
+            "ai": totals["ai"],
+            "unknown": totals["unknown"],
+            "bank_rate": _answer_pct(totals["bank"], totals["questions"]),
+            "cache_rate": _answer_pct(totals["cache"], totals["questions"]),
+            "ai_rate": _answer_pct(totals["ai"], totals["questions"])
+        },
+        "trend": trend,
+        "platforms": platforms,
+        "channels": channels,
+        "block_types": block_types,
+        "block_codes": block_codes,
+        "block_hashes": block_hashes,
+        "recent": recent,
+        "score_note": "此页统计的是「脚本把答案点上了没有」，不是「答案对不对」；平台交卷后不回吐分数，判对率目前采不到。"
+    }
+    ANSWER_STATS_CACHE["time"] = now_ts
+    ANSWER_STATS_CACHE["key"] = cache_key
+    ANSWER_STATS_CACHE["data"] = data
     return data
 
 
@@ -5368,6 +5721,17 @@ class Handler(BaseHTTPRequestHandler):
                     limit = 200
                 logs = db.get_script_event_logs(limit=limit, page=1, username=user.get("username", ""), level=level, keyword=keyword)
                 self._send_json(200, {"code": 200, "logs": logs})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/answer-stats":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                start = qs.get("start", [""])[0]
+                end = qs.get("end", [""])[0]
+                self._send_json(200, {"code": 200, "data": get_admin_answer_stats(start or None, end or None)})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/script-logs":
@@ -6766,8 +7130,20 @@ class Handler(BaseHTTPRequestHandler):
                 items = data.get("logs") or []
                 if not isinstance(items, list):
                     items = []
-                saved = db.insert_script_event_logs(items, username=user.get("username", ""), client_ip=self._client_ip(), user_agent=self.headers.get("User-Agent", ""))
-                self._send_json(200, {"code": 200, "saved": saved})
+                kept, dropped = [], 0
+                for entry in items:
+                    if not isinstance(entry, dict):
+                        dropped += 1
+                        continue
+                    if entry.get("event_type") == "answer_summary":
+                        clean = sanitize_answer_summary(entry)
+                        if clean is None:
+                            dropped += 1
+                            continue
+                        entry = clean
+                    kept.append(entry)
+                saved = db.insert_script_event_logs(kept, username=user.get("username", ""), client_ip=self._client_ip(), user_agent=self.headers.get("User-Agent", ""))
+                self._send_json(200, {"code": 200, "saved": saved, "dropped": dropped})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -8181,7 +8557,8 @@ class Handler(BaseHTTPRequestHandler):
                         self._send_json(500, {"code": 500, "msg": err})
                         return
                     status = "success"
-                    if _is_truncated_multi_answer(question, answer) or _is_garbage_bank_answer(answer, question):
+                    bad_answer = _is_truncated_multi_answer(question, answer) or _is_garbage_bank_answer(answer, question)
+                    if bad_answer:
                         print(f"[AI答案] 质量不合格，跳过缓存与入库 answer={str(answer)[:80]}", flush=True)
                     else:
                         set_ai_cache(cache_key, answer, resolved_model, provider_name)
@@ -8190,6 +8567,9 @@ class Handler(BaseHTTPRequestHandler):
                             save_question_bank_answer(question, answer, resolved_model, provider_name)
                     if use_custom:
                         quota_msg = "自有模型已作答，本次未消耗题数"
+                    elif bad_answer:
+                        # 自己判定不可用的答案不扣题数：同一题重试不该二次付费
+                        quota_msg = "答案质量未达标，本次未消耗题数"
                     else:
                         ok_quota, quota_msg, ent_after = consume_answer_quota(user["username"], question_hash)
                         if not ok_quota:

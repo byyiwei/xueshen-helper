@@ -536,6 +536,8 @@ body{
 .dashboard-hero p{position:relative;color:var(--text2);font-size:13px}
 @keyframes dashSweep{50%,100%{transform:translateX(120%)}}
 .metric-grid{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:14px;margin-bottom:18px}
+.metric-grid-4{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:14px;margin-bottom:18px}
+.note-bar{background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.18);border-radius:12px;padding:10px 14px;font-size:12px;line-height:1.7;color:var(--text2);margin-bottom:18px}
 .metric-card{position:relative;overflow:hidden;background:linear-gradient(180deg,rgba(26,35,50,.92),rgba(15,23,36,.92));border:1px solid rgba(96,165,250,.12);border-radius:16px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.18)}
 .metric-card::before{content:'';position:absolute;right:-28px;top:-28px;width:72px;height:72px;border-radius:50%;background:rgba(96,165,250,.1)}
 .metric-label{font-size:12px;color:var(--text2);margin-bottom:8px}
@@ -621,6 +623,7 @@ body{
   .card-header{align-items:flex-start;flex-direction:column}
   .provider-actions{width:100%;justify-content:flex-start}
   .metric-grid,.dash-grid{grid-template-columns:1fr}
+  .metric-grid-4{grid-template-columns:repeat(2,minmax(0,1fr))}
   .analysis-cols{grid-template-columns:1fr !important}
   .main-body{padding:16px}
   .data-table{font-size:12px}
@@ -940,13 +943,16 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
 
         <!-- 日志监控组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.logs}">
-          <div class="menu-group-header dock-item" :class="{active:['script-logs','log-cleanup','daily-report'].includes(page)}" @click="expandedGroups.logs=!expandedGroups.logs">
+          <div class="menu-group-header dock-item" :class="{active:['script-logs','answer-stats','log-cleanup','daily-report'].includes(page)}" @click="expandedGroups.logs=!expandedGroups.logs">
             <span class="icon">☰</span>日志监控
             <span class="arrow">▶</span>
           </div>
           <div class="menu-group-items">
             <div class="menu-item" :class="{active:page==='script-logs'}" @click="page='script-logs';loadScriptLogs()">
               <span class="icon">⌘</span>脚本日志
+            </div>
+            <div class="menu-item" :class="{active:page==='answer-stats'}" @click="page='answer-stats';loadAnswerStats()">
+              <span class="icon">◐</span>答题统计
             </div>
             <div class="menu-item" :class="{active:page==='log-cleanup'}" @click="page='log-cleanup';loadLogCleanup()">
               <span class="icon">∅</span>日志清理
@@ -3474,6 +3480,192 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
         </div>
       </template>
 
+      <!-- 答题统计（脚本一卷一报） -->
+      <template v-if="page==='answer-stats'">
+        <header class="main-header">
+          <h2>答题统计</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index<breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+
+          <div class="date-range" style="margin-bottom:18px">
+            <span style="font-size:13px;color:var(--text2);font-weight:600">统计区间</span>
+            <input class="date-input" type="date" v-model="answerStatsFilter.date_from">
+            <span style="color:var(--text3)">至</span>
+            <input class="date-input" type="date" v-model="answerStatsFilter.date_to">
+            <button class="btn btn-primary btn-sm" @click="loadAnswerStats()">查询</button>
+            <button class="btn btn-secondary btn-sm" @click="setAnswerStatRange(7)">近7天</button>
+            <button class="btn btn-secondary btn-sm" @click="setAnswerStatRange(30)">近30天</button>
+          </div>
+
+          <div v-if="answerStatsLoading" style="text-align:center;color:var(--text3);padding:40px 0;font-size:13px">正在加载答题小结...</div>
+          <template v-else-if="answerStats">
+            <div class="note-bar">{{answerStats.score_note}}</div>
+
+            <div class="metric-grid-4">
+              <div class="metric-card"><div class="metric-label">答题场次</div><div class="metric-value">{{answerStats.cards.sessions}}</div><div class="metric-sub">区间内上报的小结条数</div></div>
+              <div class="metric-card"><div class="metric-label">题目数</div><div class="metric-value">{{answerStats.cards.questions}}</div><div class="metric-sub">按场次累计</div></div>
+              <div class="metric-card"><div class="metric-label">填上</div><div class="metric-value" style="color:var(--success,#10b981)">{{answerStats.cards.filled}}</div><div class="metric-sub">点完回读确认过的题</div></div>
+              <div class="metric-card"><div class="metric-label">没填上</div><div class="metric-value" style="color:var(--danger)">{{answerStats.cards.unfilled}}</div><div class="metric-sub">需要排查的部分</div></div>
+              <div class="metric-card"><div class="metric-label">填充率</div><div class="metric-value" style="color:var(--accent2)">{{answerStats.cards.fill_rate}}%</div><div class="metric-sub">填上 / 题目数</div></div>
+              <div class="metric-card"><div class="metric-label">题库命中</div><div class="metric-value">{{answerStats.cards.bank_rate}}%</div><div class="metric-sub">{{answerStats.cards.bank}} 题，不耗模型额度</div></div>
+              <div class="metric-card"><div class="metric-label">缓存命中</div><div class="metric-value">{{answerStats.cards.cache_rate}}%</div><div class="metric-sub">{{answerStats.cards.cache}} 题</div></div>
+              <div class="metric-card"><div class="metric-label">模型作答</div><div class="metric-value">{{answerStats.cards.ai_rate}}%</div><div class="metric-sub">{{answerStats.cards.ai}} 题{{answerStats.cards.unknown?'，另有 '+answerStats.cards.unknown+' 题来源未上报':''}}</div></div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><h3>填充率趋势</h3><span>按天</span></div>
+              <div class="card-body">
+                <svg viewBox="0 0 700 240" preserveAspectRatio="xMidYMid meet" style="width:100%;height:240px">
+                  <g style="stroke:var(--chart-grid)" stroke-width="1">
+                    <line x1="40" y1="35" x2="680" y2="35"></line>
+                    <line x1="40" y1="120" x2="680" y2="120"></line>
+                    <line x1="40" y1="205" x2="680" y2="205"></line>
+                  </g>
+                  <g fill="#6b7280" font-size="10" text-anchor="end">
+                    <text x="34" y="38">100%</text>
+                    <text x="34" y="123">50%</text>
+                    <text x="34" y="208">0%</text>
+                  </g>
+                  <template v-if="ansTrendRows().length>1">
+                    <polyline :points="ansTrendPoints('fill_rate')" fill="none" style="stroke:var(--accent2)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                  </template>
+                  <g v-for="r in ansTrendRows()" :key="r.day">
+                    <circle :cx="ansTrendX(r.i)" :cy="ansTrendY(r.fill_rate)" r="3.5" style="fill:var(--accent2)"></circle>
+                    <text v-if="ansTrendRows().length<=14" :x="ansTrendX(r.i)" :y="ansTrendY(r.fill_rate)-10" :fill="'var(--accent2)'" font-size="10" text-anchor="middle" font-weight="700">{{r.fill_rate}}%</text>
+                    <text v-if="ansTrendRows().length<=14 || r.i%3===0" :x="ansTrendX(r.i)" y="225" fill="#6b7280" font-size="10" text-anchor="middle">{{r.day.slice(5)}}</text>
+                  </g>
+                  <text v-if="!ansTrendRows().length" x="350" y="120" fill="var(--text3)" font-size="13" text-anchor="middle">区间内没有答题小结</text>
+                </svg>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><h3>按平台</h3><span>哪套页面的填充率最低就先修哪套</span></div>
+              <div class="card-body" style="overflow-x:auto">
+                <table class="data-table" style="width:100%;border-collapse:collapse;font-size:13px;min-width:760px">
+                  <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left"><th style="padding:8px">平台</th><th style="padding:8px">场次</th><th style="padding:8px">题目</th><th style="padding:8px">填上</th><th style="padding:8px">填充率</th><th style="padding:8px">题库</th><th style="padding:8px">缓存</th><th style="padding:8px">模型</th><th style="padding:8px">平均阈值</th></tr></thead>
+                  <tbody>
+                    <tr v-for="p in answerStats.platforms" :key="p.platform" style="border-bottom:1px solid var(--border)">
+                      <td style="padding:8px;font-weight:600">{{p.platform_name}}</td>
+                      <td style="padding:8px;color:var(--text2)">{{p.sessions}}</td>
+                      <td style="padding:8px">{{p.questions}}</td>
+                      <td style="padding:8px">{{p.filled}}</td>
+                      <td style="padding:8px">
+                        <div style="display:flex;align-items:center;gap:8px">
+                          <div style="flex:1;max-width:160px;height:8px;background:var(--bg3);border-radius:6px;overflow:hidden"><div :style="{width:p.fill_rate+'%',height:'100%',background:p.fill_rate>=80?'#10b981':(p.fill_rate>=50?'#f59e0b':'#ef4444'),borderRadius:'6px'}"></div></div>
+                          <span :style="{color:p.fill_rate>=80?'#10b981':(p.fill_rate>=50?'#f59e0b':'#ef4444'),fontWeight:'700'}">{{p.fill_rate}}%</span>
+                        </div>
+                      </td>
+                      <td style="padding:8px;color:var(--text2)">{{p.bank_rate}}%</td>
+                      <td style="padding:8px;color:var(--text2)">{{p.cache_rate}}%</td>
+                      <td style="padding:8px;color:var(--text2)">{{p.ai_rate}}%</td>
+                      <td style="padding:8px;color:var(--text3)">{{p.threshold?p.threshold+'%':'-'}}</td>
+                    </tr>
+                    <tr v-if="!answerStats.platforms.length"><td colspan="9" style="padding:24px;text-align:center;color:var(--text3)">区间内没有数据</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px" class="analysis-cols">
+              <div class="card">
+                <div class="card-header"><h3>按渠道</h3></div>
+                <div class="card-body" style="overflow-x:auto">
+                  <table class="data-table" style="width:100%;border-collapse:collapse;font-size:13px;min-width:360px">
+                    <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left"><th style="padding:8px">渠道</th><th style="padding:8px">场次</th><th style="padding:8px">题目</th><th style="padding:8px">填充率</th></tr></thead>
+                    <tbody>
+                      <tr v-for="c in answerStats.channels" :key="c.channel" style="border-bottom:1px solid var(--border)">
+                        <td style="padding:8px">{{c.channel}}</td>
+                        <td style="padding:8px;color:var(--text2)">{{c.sessions}}</td>
+                        <td style="padding:8px;color:var(--text2)">{{c.questions}}</td>
+                        <td style="padding:8px;font-weight:700;color:var(--accent2)">{{c.fill_rate}}%</td>
+                      </tr>
+                      <tr v-if="!answerStats.channels.length"><td colspan="4" style="padding:24px;text-align:center;color:var(--text3)">区间内没有数据</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-header"><h3>卡点原因</h3><span>按状态码</span></div>
+                <div class="card-body" style="overflow-x:auto">
+                  <table class="data-table" style="width:100%;border-collapse:collapse;font-size:13px;min-width:360px">
+                    <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left"><th style="padding:8px">原因</th><th style="padding:8px">次数</th><th style="padding:8px">脚本报文样例</th></tr></thead>
+                    <tbody>
+                      <tr v-for="b in answerStats.block_codes" :key="b.code" style="border-bottom:1px solid var(--border)">
+                        <td style="padding:8px;white-space:nowrap"><span style="color:var(--danger);font-weight:600">{{b.name}}</span><div style="color:var(--text3);font-size:11px">code {{b.code}}</div></td>
+                        <td style="padding:8px;font-weight:700">{{b.count}}</td>
+                        <td style="padding:8px;color:var(--text2);word-break:break-word">{{b.reason||'-'}}</td>
+                      </tr>
+                      <tr v-if="!answerStats.block_codes.length"><td colspan="3" style="padding:24px;text-align:center;color:var(--text3)">区间内没有卡点，全填上了</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><h3>反复点不上的题目</h3><span>同一指纹出现次数，改一处受益一整批</span></div>
+              <div class="card-body" style="overflow-x:auto">
+                <table class="data-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:640px">
+                  <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left"><th style="padding:8px">#</th><th style="padding:8px">题干片段</th><th style="padding:8px">题型</th><th style="padding:8px">次数</th><th style="padding:8px">卡在哪一步</th><th style="padding:8px">指纹</th></tr></thead>
+                  <tbody>
+                    <tr v-for="(b,idx) in answerStats.block_hashes" :key="b.hash" style="border-bottom:1px solid var(--border)">
+                      <td style="padding:8px;color:var(--text3)">{{idx+1}}</td>
+                      <td style="padding:8px;max-width:320px;word-break:break-word;color:var(--text2)" :title="b.title">{{b.title||'（题干为空，多为图片题）'}}</td>
+                      <td style="padding:8px;color:var(--accent2);white-space:nowrap">{{b.type_name}}</td>
+                      <td style="padding:8px;font-weight:700;color:var(--danger)">{{b.count}}</td>
+                      <td style="padding:8px;color:var(--text2)">{{b.code_name}}{{b.reason?'：'+b.reason:''}}</td>
+                      <td style="padding:8px;color:var(--text3);font-size:11px">{{b.hash.slice(0,8)}}</td>
+                    </tr>
+                    <tr v-if="!answerStats.block_hashes.length"><td colspan="6" style="padding:24px;text-align:center;color:var(--text3)">区间内没有重复卡点</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><h3>最近小结</h3><span>最新 20 条</span></div>
+              <div class="card-body" style="overflow-x:auto">
+                <table class="data-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:820px">
+                  <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left"><th style="padding:8px">时间</th><th style="padding:8px">用户</th><th style="padding:8px">平台</th><th style="padding:8px">题目/填上</th><th style="padding:8px">填充率</th><th style="padding:8px">阈值</th><th style="padding:8px">没填上的题型</th><th style="padding:8px">脚本版</th></tr></thead>
+                  <tbody>
+                    <tr v-for="(r,idx) in answerStats.recent" :key="r.time+idx" style="border-bottom:1px solid var(--border)">
+                      <td style="padding:8px;color:var(--text3);white-space:nowrap">{{r.time}}</td>
+                      <td style="padding:8px">{{r.username||'-'}}</td>
+                      <td style="padding:8px;color:var(--text2);white-space:nowrap">{{r.platform_name}}</td>
+                      <td style="padding:8px">{{r.filled}} / {{r.total}}</td>
+                      <td style="padding:8px;font-weight:700" :style="{color:r.fill_rate>=80?'#10b981':(r.fill_rate>=50?'#f59e0b':'#ef4444')}">{{r.fill_rate}}%</td>
+                      <td style="padding:8px;color:var(--text3)">{{r.threshold?r.threshold+'%':'-'}}</td>
+                      <td style="padding:8px;color:var(--text2)">
+                        <span v-if="!r.unfilled_types.length" style="color:var(--text3)">-</span>
+                        <span v-for="(t,ti) in r.unfilled_types" :key="ti" style="display:inline-block;margin:2px 4px 2px 0;padding:1px 6px;border-radius:6px;background:rgba(239,68,68,.12);color:#ef4444;font-size:11px">{{t}}</span>
+                      </td>
+                      <td style="padding:8px;color:var(--text3)">{{r.script_version||'-'}}</td>
+                    </tr>
+                    <tr v-if="!answerStats.recent.length"><td colspan="8" style="padding:24px;text-align:center;color:var(--text3)">区间内没有上报过答题小结</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><h3>卡住的题型分布</h3></div>
+              <div class="card-body">
+                <div v-if="!answerStats.block_types.length" style="color:var(--text3);font-size:13px">区间内没有卡点记录</div>
+                <div v-for="t in answerStats.block_types" :key="t.type" style="display:flex;align-items:center;gap:10px;padding:5px 0;font-size:13px">
+                  <span style="width:92px;color:var(--text2)">{{t.name}}</span>
+                  <div style="flex:1;max-width:320px;height:8px;background:var(--bg3);border-radius:6px;overflow:hidden"><div :style="{width:(t.count/(answerStats.block_types[0].count||1)*100)+'%',height:'100%',background:'var(--accent2)',borderRadius:'6px'}"></div></div>
+                  <span style="color:var(--text3)">{{t.count}} 次</span>
+                </div>
+              </div>
+            </div>
+          </template>
+          <div v-else style="text-align:center;color:var(--text3);padding:40px 0;font-size:13px">还没有取到数据，先点「查询」</div>
+        </div>
+      </template>
+
       <!-- Question Bank Page -->
       <template v-if="page==='question-bank'">
         <header class="main-header">
@@ -4790,6 +4982,7 @@ createApp({
       'distributor-revenue':[{label:'代理商分销',group:'distributor'},{label:'收入统计'}],
       'distributor-config':[{label:'代理商分销',group:'distributor'},{label:'分销配置'}],
       'script-logs':[{label:'日志监控',group:'logs'},{label:'脚本日志'}],
+      'answer-stats':[{label:'日志监控',group:'logs'},{label:'答题统计'}],
       'ai-logs':[{label:'模型服务',group:'models'},{label:'模型日志'}],
       'bank-logs':[{label:'题库中心',group:'questions'},{label:'题库日志'}],
       'bank-analysis':[{label:'题库分析'}],
@@ -4953,6 +5146,9 @@ createApp({
     const bankAnalysis=ref(null);
     const bankAnalysisLoading=ref(false);
     const bankAnalysisFilter=reactive({new_from:'',new_to:''});
+    const answerStats=ref(null);
+    const answerStatsLoading=ref(false);
+    const answerStatsFilter=reactive({date_from:'',date_to:''});
     const userAnalysis=ref(null);
     const userAnalysisLoading=ref(false);
     const userAnalysisFilter=reactive({date_from:'',date_to:''});
@@ -5343,6 +5539,52 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       bankAnalysisFilter.new_from=fmtLocalDate(from);
       bankAnalysisFilter.new_to=fmtLocalDate(to);
       loadBankAnalysis();
+    }
+    async function loadAnswerStats(){
+      if(!token.value)return;
+      if(!answerStatsFilter.date_from||!answerStatsFilter.date_to){
+        const to=new Date(),from=new Date();
+        from.setDate(from.getDate()-6);
+        answerStatsFilter.date_from=fmtLocalDate(from);
+        answerStatsFilter.date_to=fmtLocalDate(to);
+      }
+      answerStatsLoading.value=true;
+      try{
+        const qs=new URLSearchParams();
+        if(answerStatsFilter.date_from)qs.set('start',answerStatsFilter.date_from);
+        if(answerStatsFilter.date_to)qs.set('end',answerStatsFilter.date_to);
+        const res=await safeFetch('/admin/answer-stats?'+qs.toString(),{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){answerStats.value=data.data||null;}
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'获取答题统计失败','error');
+      }catch(e){showMsg('获取答题统计失败: '+(e.message||e),'error',6000);}
+      finally{answerStatsLoading.value=false;}
+    }
+    function setAnswerStatRange(days){
+      const to=new Date();
+      const from=new Date();
+      from.setDate(from.getDate()-days+1);
+      answerStatsFilter.date_from=fmtLocalDate(from);
+      answerStatsFilter.date_to=fmtLocalDate(to);
+      loadAnswerStats();
+    }
+    // 折线只画有答题的那几天，横坐标仍按区间天数排，空白天留缺口而不是把曲线压扁
+    function ansTrendRows(){
+      const all=(answerStats.value&&answerStats.value.trend)||[];
+      return all.map((r,i)=>Object.assign({},r,{i:i})).filter(r=>Number(r.questions)>0);
+    }
+    function ansTrendX(i){
+      const all=(answerStats.value&&answerStats.value.trend)||[];
+      if(all.length<=1)return 360;
+      return 40+i*(620/Math.max(1,all.length-1));
+    }
+    function ansTrendY(v){
+      const n=Math.min(100,Math.max(0,Number(v||0)));
+      return 205-(n/100)*170;
+    }
+    function ansTrendPoints(key){
+      return ansTrendRows().map(r=>ansTrendX(r.i).toFixed(1)+','+ansTrendY(r[key]).toFixed(1)).join(' ');
     }
     async function loadUserAnalysis(){
       if(!token.value)return;
@@ -6405,7 +6647,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       payment:{title:'支付财务',icon:'□',items:[{page:'payment-orders',label:'支付明细',icon:'▤',load:loadPaymentOrders},{page:'payment',label:'套餐配置',icon:'◈',load:loadPaymentConfig},{page:'pay-api',label:'支付接口',icon:'⌁',load:loadPayApiConfig},{page:'pay-test',label:'支付测试',icon:'◎',load:()=>{}},{page:'refund-requests',label:'退款申请',icon:'↩',load:loadRefundRequests}]},
       card:{title:'卡密管理',icon:'⚷',items:[{page:'xianyu',label:'商品配置',icon:'●',load:loadXianyuConfig},{page:'card-keys',label:'卡密管理',icon:'⚷',load:loadCardKeys}]},
       distributor:{title:'代理商分销',icon:'⚑',items:[{page:'distributor',label:'代理商',icon:'◉',load:loadFxList},{page:'distributor-templates',label:'卡密模板',icon:'▤',load:()=>{loadFxOptions();loadFxTemplates();}},{page:'distributor-batches',label:'批次与卡密',icon:'≣',load:()=>{loadFxOptions();loadFxBatches(1);}},{page:'distributor-withdrawals',label:'提现审核',icon:'¥',load:()=>{loadFxOptions();loadFxWds(1);}},{page:'distributor-revenue',label:'收入统计',icon:'↗',load:loadFxRevenue},{page:'distributor-config',label:'分销配置',icon:'⚙',load:loadFxConfig}]},
-      logs:{title:'日志监控',icon:'☰',items:[{page:'script-logs',label:'脚本日志',icon:'⌘',load:loadScriptLogs},{page:'log-cleanup',label:'日志清理',icon:'∅',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'⊙',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
+      logs:{title:'日志监控',icon:'☰',items:[{page:'script-logs',label:'脚本日志',icon:'⌘',load:loadScriptLogs},{page:'answer-stats',label:'答题统计',icon:'◐',load:loadAnswerStats},{page:'log-cleanup',label:'日志清理',icon:'∅',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'⊙',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
       models:{title:'模型服务',icon:'◈',items:[{page:'ai-config',label:'模型配置',icon:'◈',load:loadConfig},{page:'ai-logs',label:'模型日志',icon:'≡',load:loadAiLogs}]},
       config:{title:'系统配置',icon:'◇',items:[{page:'qq-bot',label:'QQ频道机器人',icon:'🤖',load:loadQqBot},{page:'email-config',label:'邮箱配置',icon:'✉',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'db-config',label:'系统设置',icon:'⛁',load:loadDbConfig}]}
     };
@@ -7501,6 +7743,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,
       bankLogs,bankLogLoading,bankLogFilter,bankLogTotal,expandedBankLogs,
       bankAnalysis,bankAnalysisLoading,bankAnalysisFilter,loadBankAnalysis,setBankAnalysisRange,
+      answerStats,answerStatsLoading,answerStatsFilter,loadAnswerStats,setAnswerStatRange,ansTrendRows,ansTrendX,ansTrendY,ansTrendPoints,
       userAnalysis,userAnalysisLoading,userAnalysisFilter,loadUserAnalysis,setUserAnalysisRange,pct,
       oldUserRechargeExpanded,oldUserRechargeDetails,oldUserRechargePage,oldUserRechargeTotal,oldUserRechargeTotalPages,oldUserRechargeSum,oldUserRechargeLoading,toggleOldUserRecharge,loadOldUserRechargeDetails,
       questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,deleteQuestionBankItem,bankTypeOptions,bankModelOptions,loadBankModels,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,

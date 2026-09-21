@@ -4268,6 +4268,32 @@ class Database:
         row = self.fetchone(sql, tuple(params))
         return int(row.get("total", 0) if row else 0)
 
+    def list_answer_summaries(self, date_from="", date_to="", username="", limit=3000):
+        """取「一卷一报」的答题小结原始行（event_type=answer_summary）。
+
+        明细在 extra_json 里，MySQL 5.7 没有 JSON_TABLE，所以这里只限量取原文，
+        聚合放到 backend 的 Python 里做；limit 是防止有人刷接口时把后台拖死。
+        """
+        ph = _ph()
+        limit = min(max(int(limit or 3000), 1), 5000)
+        where = [f"s.event_type = {ph}"]
+        params = ["answer_summary"]
+        if username:
+            where.append(f"s.username = {ph}")
+            params.append(username)
+        if date_from:
+            where.append(f"s.created_at >= {ph}")
+            params.append(date_from)
+        if date_to:
+            where.append(f"s.created_at <= {ph}")
+            params.append(date_to)
+        sql = ("SELECT s.username, s.page_url, s.extra_json, s.created_at, u.channel, u.channel_ref "
+               "FROM script_event_logs s LEFT JOIN users u ON u.username = s.username")
+        sql += " WHERE " + " AND ".join(where)
+        sql += f" ORDER BY s.created_at DESC, s.id DESC LIMIT {ph}"
+        params.append(limit)
+        return self.fetchall(sql, tuple(params))
+
     def update_admin_email(self, cfg):
         ph = _ph()
         self.execute(
