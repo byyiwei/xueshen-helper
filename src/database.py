@@ -3963,6 +3963,7 @@ class Database:
                        po.price, po.points, po.days, po.status, po.pay_method, po.pay_channel,
                         po.trade_no, po.qr_code, po.pay_url, po.created_at, po.paid_at,
                         po.refunded_at, po.refund_reason, po.refunded_by,
+                        po.refund_amount, po.refund_detail,
                         po.bank_order_no, po.pay_type, po.business_type,
                         po.channel_order_no,
                         'payment' as source
@@ -3976,6 +3977,7 @@ class Database:
                         '' as trade_no, '' as qr_code, xo.card_code as pay_url,
                         xo.created_at, xo.paid_at,
                         NULL as refunded_at, '' as refund_reason, '' as refunded_by,
+                        0 as refund_amount, '' as refund_detail,
                         '' as bank_order_no, '' as pay_type, '' as business_type,
                         '' as channel_order_no,
                         'xianyu' as source
