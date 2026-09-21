@@ -1,7 +1,7 @@
 ﻿// ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.3.8
+// @version      5.3.9
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @author       IPYIWEI
@@ -10,6 +10,10 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.3.9 更新内容：
+// @changelog    1. 答题小结不再写入「余额不足」：欠费不是答题卡点，不进填充率/卡点榜
+// @changelog    2. 拿到答案但点不上时，不再被后续余额不足盖掉真实原因
+// @changelog    3. 超星选项匹配与点击加固：兼容字母前缀差异，并尝试点 input/字母链
 // @changelog    v5.3.8 更新内容：
 // @changelog    1. 填充不再谎报：点击后回读选中态，没点上就记「没填上」，不会看着填了其实还是空的
 // @changelog    2. 填空题按每个空分别填写，多余的答案不再挤进第一个空
@@ -1654,9 +1658,12 @@
   // 「一卷一报」：本场共几题、几题真填上了、答案分别来自题库/缓存/模型、哪几题没填上。
   // 只统计「点上了没有」——平台交卷后不回吐分数，score 恒为 null，别当成判对率。
   const ANSWER_SUMMARY_LIMIT = 40;
+  // 余额不足不是答题能力问题，进统计只会把填充率/卡点榜刷脏，直接丢掉。
+  const isQuotaFailReason = (msg) => /余额不足|题数不足|点数不足|insufficient.?quota|请到用户中心购买|请联系您的服务方/i.test(String(msg || ""));
   const buildAnswerSummary = async (platform, questions) => {
     const list = Array.isArray(questions) ? questions : [];
     let filled = 0;
+    let skippedQuota = 0;
     const src = { bank: 0, cache: 0, ai: 0, unknown: 0 };
     const unanswered = [];
     for (const question of list) {
@@ -1666,6 +1673,11 @@
         filled += 1;
         if (ans.src === "bank" || ans.src === "cache" || ans.src === "ai") src[ans.src] += 1;
         else src.unknown += 1;
+        continue;
+      }
+      // 余额不足：整题不进 total / unanswered
+      if (isQuotaFailReason(ans.msg) || Number(ans.code) === 402) {
+        skippedQuota += 1;
         continue;
       }
       // code -1 = 该题型脚本还不支持：压根没去点，但它确实没填上。
@@ -1678,7 +1690,7 @@
         // code 是排查用的原始状态：0=拿到了但点不上，-1004=题库没答案，其它=后端报错码
         code: Number(ans.code) || 0,
         // -1004 既可能是「题库没收录」也可能是「额度用尽/超时」，只有 msg 分得开
-        reason: String(ans.msg || "").slice(0, 80),
+        reason: String(ans.msg || (Number(ans.code) === 0 ? "答案拿到了但没点上去" : "")).slice(0, 80),
         // 题干前 60 字：后台看到「这道题卡了 37 次」得能认出是哪道题，纯 hash 没人查得动
         title: String(question && question.title || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 60),
         // 客户端指纹，仅用于「同一道题反复点不上」的归类；与后端 bank_call_logs.question_hash
@@ -1686,6 +1698,7 @@
         hash: await sha256Text(createAnswerRecordCacheKey(question)).catch(() => "")
       });
     }
+    const total = list.length - skippedQuota;
     let threshold = 0;
     try {
       threshold = Number(useSettingStore().config.basicConfig.accuracy.value) || 0;
@@ -1693,12 +1706,12 @@
     }
     return {
       platform: String(platform || "unknown").slice(0, 20),
-      total: list.length,
+      total,
       filled,
-      unfilled: list.length - filled,
+      unfilled: Math.max(0, total - filled),
       src,
       unanswered,
-      accuracy: Number((filled / Math.max(list.length, 1) * 100).toFixed(1)),
+      accuracy: Number((filled / Math.max(total, 1) * 100).toFixed(1)),
       threshold,
       score: null
     };
@@ -1706,6 +1719,7 @@
   // 不 await：答题刚结束就可能自动交卷，为一行日志把交卷卡住不值当。
   const reportAnswerSummary = (platform, questions) => {
     return buildAnswerSummary(platform, questions).then((summary) => {
+      // 整场都是余额不足时 total=0，不写库
       if (!summary.total) return false;
       return enqueueScriptEvent(summary, {
         message: `[答题小结] ${summary.platform} 共${summary.total}题 填上${summary.filled}题`
@@ -7967,6 +7981,7 @@
                   continue;
                 }
                 question.answer.code = 0;
+                question.answer.msg = "答案拿到了但没点上去";
                 // 题库答案填不上（常见于图片选项），改走模型
               } else if (mode === "questionBank" || answerData.code !== -1004) {
                 question.answer = {
@@ -7994,17 +8009,21 @@
                 const fillSuccess = this.fillQuestion(question);
                 if (!fillSuccess) {
                   question.answer.code = 0;
+                  question.answer.msg = "答案拿到了但没点上去";
                   continue;
                 }
                 this.correctNum += 1;
-              } else {
+              } else if (!(question.answer && question.answer.code === 0 && Array.isArray(question.answer.answer) && question.answer.answer.length)) {
+                // 前面已经「拿到答案但点不上」时，别被后续余额不足盖掉，否则统计会把填充问题算成欠费
                 question.answer = {
                   code: answerData.code,
                   answer: [],
                   msg: answerData.msg
                 };
+              } else if (!question.answer.msg) {
+                question.answer.msg = "答案拿到了但没点上去";
               }
-            } else {
+            } else if (!(question.answer && question.answer.code === 0 && Array.isArray(question.answer.answer) && question.answer.answer.length)) {
               question.answer = {
                 code: -1,
                 answer: ["该题型不支持AI答题"]
@@ -8116,17 +8135,44 @@
         if (!optionContainer) return false;
         if (this.isChoiceOptionSelected(optionContainer)) return true;
         const before = this.getChoiceOptionSig(optionContainer);
-        try {
-          optionContainer == null ? void 0 : optionContainer.click();
-        } catch (_) {
+        const tryClick = (el) => {
+          if (!el) return;
+          try {
+            el.click();
+          } catch (_) {
+          }
+        };
+        // 超星章节/作业常把事件绑在字母链或 input 上，只点外层 li 可能没反应
+        tryClick(optionContainer);
+        if (this.isChoiceOptionSelected(optionContainer) || this.getChoiceOptionSig(optionContainer) !== before) return true;
+        const inputs = this.getChoiceOptionInputs(optionContainer);
+        for (const input of inputs) {
+          tryClick(input);
+          if (this.isChoiceOptionSelected(optionContainer) || this.getChoiceOptionSig(optionContainer) !== before) return true;
         }
-        if (this.isChoiceOptionSelected(optionContainer)) return true;
-        if (this.getChoiceOptionSig(optionContainer) !== before) return true;
+        tryClick(optionContainer.querySelector && optionContainer.querySelector(".fl.before, a.before, label, .answer_p, span"));
+        if (this.isChoiceOptionSelected(optionContainer) || this.getChoiceOptionSig(optionContainer) !== before) return true;
         try {
           (_a = optionContainer.dispatchEvent) == null ? void 0 : _a.call(optionContainer, new this._window.MouseEvent("click", { bubbles: true }));
         } catch (_) {
         }
         return this.isChoiceOptionSelected(optionContainer) || this.getChoiceOptionSig(optionContainer) !== before;
+      });
+      __publicField(this, "optionTextMatches", (optionKey, answerText) => {
+        const rawOpt = String(optionKey || "").trim();
+        const rawAns = String(answerText || "").trim();
+        if (!rawOpt || !rawAns) return false;
+        if (rawOpt === rawAns) return true;
+        const stripLead = (s) => String(s || "").replace(/^[A-Za-z][.、．)）:\s]*/, "").trim();
+        const a = this.clearMark(rawAns);
+        const b = this.clearMark(rawOpt);
+        const a2 = this.clearMark(stripLead(rawAns));
+        const b2 = this.clearMark(stripLead(rawOpt));
+        if (a && b && a === b) return true;
+        if (a2 && b2 && a2 === b2) return true;
+        // 选项/答案一侧带了多余说明时，用包含关系兜底（要求足够长，防短串误撞）
+        if (a2 && b2 && a2.length >= 4 && b2.length >= 4 && (a2.includes(b2) || b2.includes(a2))) return true;
+        return false;
       });
       __publicField(this, "splitAnswer", (answer = "") => {
         const normalizedAnswer = String(answer || "").trim();
@@ -8271,8 +8317,7 @@
             }
             if (!isSelected) {
               for (const key in question.options) {
-                const clearKey = this.clearMark(key);
-                if (clearKey === this.clearMark(clearAnswer)) {
+                if (this.optionTextMatches(key, clearAnswer) || this.optionTextMatches(key, answer)) {
                   isSelected = this.selectChoiceOption(question.options[key]);
                   break;
                 }
@@ -9407,6 +9452,7 @@
                 const errorStatus = !this.fillQuestion(question, index);
                 if (errorStatus) {
                   question.answer.code = 0;
+                  question.answer.msg = "答案拿到了但没点上去";
                   fillFailed = true;
                 } else {
                   this.correctNum += 1;
@@ -9443,18 +9489,21 @@
                   const errorStatus = !this.fillQuestion(question, index);
                   if (errorStatus) {
                     question.answer.code = 0;
+                    question.answer.msg = "答案拿到了但没点上去";
                     fillFailed = true;
                   } else {
                     this.correctNum += 1;
                   }
-                } else {
+                } else if (!(question.answer && question.answer.code === 0 && Array.isArray(question.answer.answer) && question.answer.answer.length)) {
                   question.answer = {
                     code: aiAnswerData.code,
                     answer: [],
                     msg: aiAnswerData.msg
                   };
+                } else if (!question.answer.msg) {
+                  question.answer.msg = "答案拿到了但没点上去";
                 }
-              } else {
+              } else if (!(question.answer && question.answer.code === 0 && Array.isArray(question.answer.answer) && question.answer.answer.length)) {
                 question.answer = {
                   code: -1,
                   answer: ["该题型不支持AI答题"]
@@ -11884,6 +11933,7 @@
             handled = true;
           } else {
             question.answer.code = 0;
+            question.answer.msg = "答案拿到了但没点上去";
           }
         } else if (mode === "questionBank" || answerData.code !== -1004) {
           // 错误情况：不将 msg 设为 answer，避免将"包月权益生效"等提示当作答案显示
@@ -11902,9 +11952,11 @@
               answer: aiAnswerData.data.answer,
               source: "ai"
             });
-          } else {
+          } else if (!(question.answer && question.answer.code === 0 && Array.isArray(question.answer.answer) && question.answer.answer.length)) {
             // 错误情况：不将 msg 设为 answer，避免将错误提示当作答案显示
             question.answer = { code: aiAnswerData.code, answer: [], msg: aiAnswerData.msg };
+          } else if (!question.answer.msg) {
+            question.answer.msg = "答案拿到了但没点上去";
           }
         } else {
           question.answer = { code: -1, answer: ["该题型不支持AI答题"] };
@@ -14536,13 +14588,19 @@
             const token = store.account.scriptKey || store.account.token;
             if (!token) return false;
             let filled = 0;
+            let skippedQuota = 0;
             const src = { bank: 0, cache: 0, ai: 0, unknown: 0 };
             const unanswered = [];
+            const isQuota = (msg) => /余额不足|题数不足|点数不足|insufficient.?quota|请到用户中心购买|请联系您的服务方/i.test(String(msg || ''));
             for (const row of list) {
                 if (row.ok) {
                     filled += 1;
                     if (row.src === 'bank' || row.src === 'cache' || row.src === 'ai') src[row.src] += 1;
                     else src.unknown += 1;
+                    continue;
+                }
+                if (isQuota(row.reason) || Number(row.code) === 402) {
+                    skippedQuota += 1;
                     continue;
                 }
                 // 指纹逐题 await 一次 sha256，而后台只吃前 40 条：到量就停，
@@ -14552,10 +14610,12 @@
                     type: String(row.type || '').slice(0, 20),
                     hash: await sha256Text(JSON.stringify({ title: row.title || '', type: row.type || '' })).catch(() => ''),
                     code: Number(row.code) || 0,
-                    reason: String(row.reason || '').slice(0, 80),
+                    reason: String(row.reason || (Number(row.code) === 0 ? '答案拿到了但没点上去' : '')).slice(0, 80),
                     title: String(row.title || '').replace(/\s+/g, ' ').trim().slice(0, 60)
                 });
             }
+            const total = list.length - skippedQuota;
+            if (!total) return false;
             const version = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '';
             const res = await backendRequest('/api/script-logs', {
                 method: 'POST',
@@ -14564,18 +14624,18 @@
                     logs: [{
                         event_type: 'answer_summary',
                         level: 'info',
-                        message: `[答题小结] olearn 共${list.length}题 填上${filled}题`.slice(0, 4000),
+                        message: `[答题小结] olearn 共${total}题 填上${filled}题`.slice(0, 4000),
                         page_url: location.href,
                         extra: {
                             platform: 'olearn',
                             time: new Date().toTimeString().slice(0, 8),
                             script_version: version,
-                            total: list.length,
+                            total,
                             filled,
-                            unfilled: list.length - filled,
+                            unfilled: Math.max(0, total - filled),
                             src,
                             unanswered: unanswered.slice(0, 40),
-                            accuracy: Math.round(filled / list.length * 1000) / 10,
+                            accuracy: Math.round(filled / Math.max(total, 1) * 1000) / 10,
                             threshold: 0,
                             // 平台交卷后不回吐分数，判对率采不到；留 null，后台也不显示分数
                             score: null

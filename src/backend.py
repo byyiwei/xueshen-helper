@@ -185,35 +185,57 @@ def sanitize_answer_summary(item):
             except (TypeError, ValueError):
                 return 0
 
+        def _is_quota_reason(reason, code=0):
+            text = str(reason or "")
+            if code == 402:
+                return True
+            return bool(re.search(
+                r"余额不足|题数不足|点数不足|insufficient.?quota|请到用户中心购买|请联系您的服务方",
+                text, re.I,
+            ))
+
         total = _n("total")
         filled = _n("filled")
-        if total <= 0 or filled > total:
+        if filled > total:
             return None
         src_raw = extra.get("src") if isinstance(extra.get("src"), dict) else {}
         src = {}
         for key in ("bank", "cache", "ai", "unknown"):
             try:
-                src[key] = max(0, min(int(src_raw.get(key) or 0), total))
+                src[key] = max(0, min(int(src_raw.get(key) or 0), total if total else 100000))
             except (TypeError, ValueError):
                 src[key] = 0
         unanswered_raw = extra.get("unanswered")
         unanswered = []
+        quota_dropped = 0
         if isinstance(unanswered_raw, list):
-            for row in unanswered_raw[:ANSWER_SUMMARY_TYPE_LIMIT]:
+            for row in unanswered_raw[:ANSWER_SUMMARY_TYPE_LIMIT * 2]:
                 if not isinstance(row, dict):
                     continue
                 try:
                     code = int(row.get("code") or 0)
                 except (TypeError, ValueError):
                     code = 0
+                reason = str(row.get("reason", ""))[:80]
+                if _is_quota_reason(reason, code):
+                    quota_dropped += 1
+                    continue
+                if len(unanswered) >= ANSWER_SUMMARY_TYPE_LIMIT:
+                    continue
                 unanswered.append({
                     "type": str(row.get("type", ""))[:20],
                     "hash": str(row.get("hash", ""))[:64],
-                    # code/reason 是「为什么点不上」的原始线索，排查提升正确率全靠它
                     "code": code,
-                    "reason": str(row.get("reason", ""))[:80],
+                    "reason": reason or ("答案拿到了但没点上去" if code == 0 else ""),
                     "title": str(row.get("title", ""))[:60]
                 })
+        # 客户端若仍把余额不足算进 total，这里按丢掉的条数回拨，避免填充率被欠费刷低
+        if quota_dropped and total >= quota_dropped:
+            total = total - quota_dropped
+        if total <= 0:
+            return None
+        if filled > total:
+            filled = total
         extra["total"] = total
         extra["filled"] = filled
         extra["unfilled"] = total - filled
@@ -4216,6 +4238,12 @@ def get_admin_answer_stats(start_date=None, end_date=None):
             except (TypeError, ValueError):
                 code = 0
             reason = str(entry.get("reason") or "").strip()
+            # 历史脏数据：余额不足不应再进卡点榜
+            if code == 402 or re.search(
+                r"余额不足|题数不足|点数不足|insufficient.?quota|请到用户中心购买|请联系您的服务方",
+                reason, re.I,
+            ):
+                continue
             qhash = str(entry.get("hash") or "")[:64]
             blocked[qtype] = blocked.get(qtype, 0) + 1
             unfilled_names.append(ANSWER_TYPE_NAMES.get(qtype, qtype or "未知"))
