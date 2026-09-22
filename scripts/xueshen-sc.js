@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.3.11
+// @version      5.3.12
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @author       IPYIWEI
@@ -10,6 +10,9 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.3.12 (2026-09-22)
+// @changelog    1. 视频播完后若任务点未标记完成，立即刷新页面确认，避免干等卡住切章
+// @changelog    2. 同一任务只自动刷新一次，刷新后复查完成态再继续切章
 // @changelog    v5.3.11 (2026-09-22)
 // @changelog    1. 修复切章入口及完成状态检测，执行前复核各自动操作开关
 // @changelog    2. 定时刷新按开关控制，一键关闭包含定时刷新
@@ -9114,6 +9117,27 @@
         const userRate = setting.config.basicConfig.videoPlayrate.value;
         const isRateDisabled = mediaType === "video" && isVideoPlaybackRateDisabled(iframeDocument);
         const finalRate = isRateDisabled ? 1 : userRate;
+        const MEDIA_CONFIRM_RELOAD_KEY = "xs-cx-media-confirm-reload";
+        const mediaJobKey = (() => {
+          try {
+            const chapter = (document.querySelector("#curChapterId") || {}).value || "";
+            const jobId = (taskContainer && (taskContainer.id || taskContainer.getAttribute("data") || "")) || "";
+            const src = (iframe && iframe.src) || "";
+            return `${location.pathname}|${chapter}|${jobId}|${src}`.slice(0, 240);
+          } catch (_) {
+            return `${mediaType}|${Date.now()}`;
+          }
+        })();
+        const isJobFinished = () => !!(taskContainer && taskContainer.classList.contains("ans-job-finished"));
+        const waitForJobFinished = async (timeoutMs, stepMs = 500) => {
+          let waited = 0;
+          while (waited < timeoutMs) {
+            if (isJobFinished()) return true;
+            await sleep(stepMs);
+            waited += stepMs;
+          }
+          return isJobFinished();
+        };
         log.insertLog(`发现一个${mediaType},正在播放${mediaType}..`);
         let isExecuted = false;
         let isSpeedRestored = false;
@@ -9131,6 +9155,24 @@
           const mediaElement = iframeDocument.documentElement.querySelector(mediaType);
           if (mediaElement && !isExecuted) {
             isExecuted = true;
+            // 播完后刷新回来：超星常要刷新才把 ans-job-finished 画出来
+            let afterConfirmReload = false;
+            try {
+              if (sessionStorage.getItem(MEDIA_CONFIRM_RELOAD_KEY) === mediaJobKey) {
+                afterConfirmReload = true;
+                sessionStorage.removeItem(MEDIA_CONFIRM_RELOAD_KEY);
+              }
+            } catch (_) {}
+            if (afterConfirmReload && taskContainer) {
+              log.insertLog(`${mediaType}刷新后复查任务点完成状态…`);
+              if (await waitForJobFinished(4000)) {
+                log.insertLog(`${mediaType}刷新后任务点已确认完成`);
+                clearInterval(intervalId);
+                resolve();
+                return;
+              }
+              log.insertLog(`${mediaType}刷新后仍未标记完成，将重新播放`, "warning");
+            }
             await waitForCxFaceRecognition({
               log,
               setting,
@@ -9197,9 +9239,40 @@
               cleanup();
               resolve();
             };
+            const reloadToConfirmProgress = () => {
+              try {
+                if (sessionStorage.getItem(MEDIA_CONFIRM_RELOAD_KEY) === mediaJobKey) return false;
+                sessionStorage.setItem(MEDIA_CONFIRM_RELOAD_KEY, mediaJobKey);
+              } catch (_) {}
+              log.insertLog(`${mediaType}页面未刷出完成状态，即将刷新以确认任务点`, "warning");
+              cleanup();
+              isResolved = true;
+              setTimeout(() => {
+                try { location.reload(); } catch (_) { window.location.reload(); }
+              }, 400);
+              return true;
+            };
             mediaElement.addEventListener("ended", async () => {
+              if (isResolved || hasPlaybackEnded) return;
               hasPlaybackEnded = true;
-              log.insertLog(`${mediaType}已播放完成，等待平台确认学习进度；确认后按切章开关执行`);
+              if (!taskContainer) {
+                log.insertLog(`${mediaType}已播放完成`);
+                finishTask();
+                return;
+              }
+              if (isJobFinished()) {
+                log.insertLog(`${mediaType}任务点已完成，停止播放`);
+                try { mediaElement.pause(); } catch (_) {}
+                finishTask();
+                return;
+              }
+              // 超星常需刷新才刷出完成态，播完立刻刷新，不再干等
+              log.insertLog(`${mediaType}已播放完成，立即刷新确认任务点`);
+              if (!reloadToConfirmProgress()) {
+                log.insertLog(`${mediaType}已刷新过仍未确认，继续后续流程以免卡住切章`, "warning");
+                try { mediaElement.pause(); } catch (_) {}
+                finishTask();
+              }
             });
             if (taskContainer) {
               observer = new MutationObserver(() => {
