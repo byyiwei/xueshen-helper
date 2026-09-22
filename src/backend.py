@@ -94,7 +94,7 @@ MODEL_429_DEFAULT_SECONDS = 60  # 默认冷却60秒
 # 运行时标记不支图片的模型（API返回400 "does not support image"），避免后续图片题继续选它
 MODEL_NON_VISION = set()
 # 自动答题整体时间预算（秒）：含多模型切换，需小于前端请求超时与 nginx proxy_read_timeout
-ANSWER_TIME_BUDGET = 300
+ANSWER_TIME_BUDGET = 180
 # 单个模型最多耗时（秒）：防止某个慢/挂掉的模型独占预算，让其他提供商兜底模型有机会被尝试
 MAX_MODEL_BUDGET = 60
 DASHBOARD_CACHE = {"time": 0, "data": None}
@@ -1801,17 +1801,23 @@ def parse_question_payload(question):
                 result["images"] = [str(x).strip() for x in images if str(x).strip()]
             elif images:
                 result["images"] = [str(images).strip()]
+            sources = data.get("image_sources")
+            if isinstance(sources, list) and len(sources) == len(result["images"]):
+                result["image_sources"] = [str(x).strip() for x in sources]
     except Exception:
         pass
     # 兜底：从 question_text 中提取 <img> URL，防止客户端未传 images 字段
     q_text = result.get("question_text", "")
     if q_text:
         text_imgs = re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', q_text)
-        existing = set(result["images"])
+        existing = set(result["images"]) | set(result.get("image_sources", []))
         for url in text_imgs:
             url = url.strip()
             if url and url not in existing:
                 result["images"].append(url)
+                if "image_sources" in result:
+                    result["image_sources"].append(url)
+                existing.add(url)
     return result
 
 _IMG_SRC_RE = re.compile(r'<img[^>]+src=["\']([^"\']+)["\']', re.I)
@@ -2937,7 +2943,7 @@ def is_pure_image_question(question_payload_str):
     text_only = re.sub(r'[\s\u3000\r\n\t，。！？、；：,.!?;:\-—_【】\[\]（）()\"\'“”‘’《》]', '', text_only)
     return len(text_only.strip()) < 5
 
-def _download_image_to_base64(url, timeout=15):
+def _download_image_to_base64(url, timeout=15, deadline=None):
     """下载远程图片并转为 base64 data URL，供多模态模型使用。失败时返回 None。"""
     # 已经是 base64 data URL，直接返回
     if url.startswith("data:"):
@@ -2951,6 +2957,10 @@ def _download_image_to_base64(url, timeout=15):
         {"User-Agent": "Mozilla/5.0"},
     ]
     for hdrs in header_sets:
+        if deadline is not None:
+            timeout = min(timeout, max(0, deadline - time.time()))
+            if timeout <= 0:
+                return None
         try:
             req = urllib.request.Request(url, headers={k: v for k, v in hdrs.items() if v})
             with urlopen(req, timeout=timeout) as resp:
@@ -2977,7 +2987,7 @@ def _download_image_to_base64(url, timeout=15):
     print(f"[图片下载最终失败] {url}", flush=True)
     return None
 
-def build_ai_messages(question_payload_str, force_text_only=False):
+def build_ai_messages(question_payload_str, force_text_only=False, deadline=None):
     """构造 AI 请求消息。若题目含图片，则使用多模态消息格式(content 数组)"""
     info = parse_question_payload(question_payload_str)
     raw_images = [] if force_text_only else [str(x).strip() for x in (info.get("images") or []) if str(x).strip()]
@@ -2986,11 +2996,14 @@ def build_ai_messages(question_payload_str, force_text_only=False):
     else:
         # 客户端可能已上传 base64，也可能只传了部分图：题干/选项里的 URL 一律并入，
         # 宁可重复一张也不能整段图被丢掉（丢了选项图模型就只能猜）
-        images = list(raw_images)
+        sources = info.get("image_sources") or []
+        uploaded = dict(zip(sources, raw_images)) if isinstance(sources, list) and len(sources) == len(raw_images) else {}
+        images = list(dict.fromkeys(raw_images))
         for u in _collect_html_image_urls(info):
-            if u not in images:
+            if u not in uploaded and u not in images:
                 images.append(u)
-        images = images[:8]
+        if len(images) > 16:
+            raise ValueError("题目图片超过16张，请拆分后重试；未截断图片作答")
     system_prompt = (
         "你是答题助手，只输出最终答案，禁止输出任何解释、分析、思考过程或中间步骤。\n"
         "规则：\n"
@@ -3044,7 +3057,11 @@ def build_ai_messages(question_payload_str, force_text_only=False):
     option_img_labels = {}
     for _i, _opt in enumerate(options or []):
         for _u in re.findall(r"<img[^>]+src=[\"']([^\"']+)[\"']", str(_opt or ""), re.I):
-            option_img_labels.setdefault(_u.strip(), chr(65 + _i))
+            source = _u.strip()
+            label = chr(65 + _i)
+            for key in (source, uploaded.get(source, source)):
+                previous = option_img_labels.get(key)
+                option_img_labels[key] = previous + "、" + label if previous and label not in previous.split("、") else (previous or label)
     img_no = 0
     for img in images:
         if img.startswith("data:"):
@@ -3055,7 +3072,7 @@ def build_ai_messages(question_payload_str, force_text_only=False):
             user_content.append({"type": "image_url", "image_url": {"url": img}})
         else:
             # 下载远程图片转 base64，防止 AI 提供商无法访问需登录态的图片 URL
-            img_data = _download_image_to_base64(img)
+            img_data = _download_image_to_base64(img, deadline=deadline)
             if img_data is None:
                 failed_imgs += 1
                 print(f"[build_ai_messages] 跳过无法下载的图片: {img}", flush=True)
@@ -3065,30 +3082,26 @@ def build_ai_messages(question_payload_str, force_text_only=False):
                 if _lab:
                     user_content.append({"type": "text", "text": f"第{img_no}张图＝选项{_lab}"})
                 user_content.append({"type": "image_url", "image_url": {"url": img_data}})
-    if failed_imgs and not user_content:
-        # 所有图片都失败且无文本，退回纯文本模式
-        user_content.append({"type": "text", "text": text_parts[0] if text_parts else "[图片无法加载]"})
-    if failed_imgs and user_content:
-        note = f"（注：{failed_imgs}张图片无法下载，请仅根据可见内容作答）"
-        user_content.insert(0, {"type": "text", "text": note})
+    if failed_imgs:
+        raise ValueError(f"{failed_imgs}张题目图片无法下载，未发送不完整题目给模型，请刷新后重试")
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_content}
     ]
     return messages
 
-def call_provider_chat(question, model_name, provider_info, time_budget=None, force_text_only=False):
+def call_provider_chat(question, model_name, provider_info, time_budget=None, force_text_only=False, prepared_messages=None):
     # 将题目JSON格式化为消息（含多模态图片支持）
-    messages = build_ai_messages(question, force_text_only=force_text_only)
+    messages = prepared_messages if prepared_messages is not None else build_ai_messages(question, force_text_only=force_text_only)
     api_key = provider_info.get("api_key", "")
     base_url = provider_info.get("base_url", "")
     protocol = provider_info.get("protocol", "openai")
     if protocol == "openai":
         return do_openai_compatible_chat(messages, model_name, api_key, base_url, time_budget=time_budget)
     elif protocol == "claude":
-        return do_claude_chat(messages, model_name, api_key, base_url)
+        return do_claude_chat(messages, model_name, api_key, base_url, timeout=time_budget or 60)
     elif protocol == "gemini":
-        return do_gemini_chat(messages, model_name, api_key, base_url)
+        return do_gemini_chat(messages, model_name, api_key, base_url, timeout=time_budget or 60)
     else:
         return None, f"不支持的协议: {protocol}", 0
 
@@ -3222,6 +3235,11 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
     final_model = ""
     deadline = time.time() + ANSWER_TIME_BUDGET
 
+    # 每道题仅准备一次图片，避免切换模型时重新下载全部图片。
+    try:
+        prepared_messages = build_ai_messages(question, deadline=min(deadline, time.time() + 45))
+    except Exception as exc:
+        return None, str(exc), "", ""
     for provider_name, provider_info, model_name, weight in ordered:
         print(f"[自动模型] 尝试 provider={provider_name}, model={model_name}, weight={weight}", flush=True)
         attempt_start = time.time()
@@ -3230,7 +3248,7 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
             print(f"[自动模型] 整体时间预算({ANSWER_TIME_BUDGET}s)即将耗尽，跳过剩余模型", flush=True)
             break
         try:
-            answer, err, tokens = call_provider_chat(question, model_name, provider_info, time_budget=min(MAX_MODEL_BUDGET, remaining))
+            answer, err, tokens = call_provider_chat(question, model_name, provider_info, time_budget=min(MAX_MODEL_BUDGET, remaining), prepared_messages=prepared_messages)
         except Exception as e:
             err = str(e)
             answer = None
@@ -3291,57 +3309,11 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
         })
         return answer, None, final_model, provider_name
 
-    # 图片题所有视觉模型都失败：判断是否降级到纯文本模式
-    if need_vision:
-        pure_image = is_pure_image_question(question)
-        if pure_image:
-            print("[自动模型] 纯图片题，视觉模型全部失败，不降级到纯文本模型（模型看不到题目内容）", flush=True)
-        else:
-            text_candidates = get_enabled_model_candidates(need_vision=False, prefer_non_vision=True)
-            if text_candidates:
-                active_txt = [item for item in text_candidates if item[2] not in MODEL_NON_VISION]
-                if active_txt:
-                    ordered_txt = provider_round_robin_rest(weighted_pick(active_txt))
-                    print(f"[自动模型] 视觉模型全部失败，回退纯文本模式尝试 {len(ordered_txt)} 个模型", flush=True)
-                    for pname_txt, pinfo_txt, mname_txt, w_txt in ordered_txt:
-                        remaining = max(deadline - time.time(), 0)
-                        if remaining <= 5:
-                            break
-                        try:
-                            answer, err, tokens = call_provider_chat(question, mname_txt, pinfo_txt,
-                                                                      time_budget=min(MAX_MODEL_BUDGET, remaining),
-                                                                      force_text_only=True)
-                        except Exception as e:
-                            err = str(e)
-                            answer = None
-                        if answer:
-                            record_model_token_usage(mname_txt, tokens)
-                            final_model = mname_txt
-                            provider_name = pname_txt
-                            break
-                        elif err:
-                            errors.append(f"{mname_txt}(纯文本): {err}")
-                    if final_model:
-                        for item in error_logs:
-                            item["final_model"] = final_model
-                        enqueue_ai_log({
-                            "provider_key": provider_name or "",
-                            "username": username,
-                            "model": final_model,
-                            "question": question,
-                            "answer": answer,
-                            "status": "success",
-                            "error": "",
-                            "duration_ms": 0,
-                            "client_ip": client_ip,
-                            "final_model": final_model
-                        })
-                        return answer, None, final_model, provider_name
-
+    # 含图题必须由视觉模型作答，禁止去掉图片后用纯文本猜答案。
     # 所有模型都失败
     last = ordered[-1] if ordered else (None, None, "", "")
-    if need_vision and is_pure_image_question(question):
-        err_msg = "本题为纯图片题，所有支持图片的模型均失败（超时/不可用），未降级到纯文本模型；" + "；".join(errors[-5:])
+    if need_vision:
+        err_msg = "本题包含图片，所有支持图片的模型均失败（超时/不可用），未降级到纯文本模型；" + "；".join(errors[-5:])
     else:
         err_msg = "自动模型全部尝试失败；" + "；".join(errors[-5:])
     return None, err_msg, last[2], last[0]
@@ -3359,16 +3331,15 @@ def ask_ai_custom(question, custom_cfg):
         return None, "自有模型未配置 API Key"
     if not provider_info["base_url"]:
         return None, "自有模型未配置 Base URL"
-    # 已知不支持图片的自有模型直接走纯文本，避免每次图片题都先白调一次 400
-    force_text = model_name in MODEL_NON_VISION
-    answer, err, _tokens = call_provider_chat(question, model_name, provider_info, force_text_only=force_text)
+    if is_multimodal_question(question) and model_name in MODEL_NON_VISION:
+        return None, "自有模型不支持图片，请改用支持图片的模型"
+    try:
+        answer, err, _tokens = call_provider_chat(question, model_name, provider_info)
+    except Exception as exc:
+        return None, str(exc)
     if not answer and err and ("not support image" in err.lower() or "does not support image" in err.lower()):
-        # 自有模型不支持图片：降级为纯文本模式重试（剥离图片，仅发送题面/选项文字）
         MODEL_NON_VISION.add(model_name)
-        print(f"[自有模型] {model_name} 不支持图片，降级纯文本模式重试", flush=True)
-        answer, err, _tokens = call_provider_chat(question, model_name, provider_info, force_text_only=True)
-        if not answer and err:
-            err = f"{err}（提示：自有模型 {model_name} 不支持图片，已自动降级纯文本作答；图片题建议换用支持图片的多模态模型）"
+        err = "自有模型不支持图片，请改用支持图片的模型"
     return answer, err
 
 def ask_ai(question, model_name):
@@ -4147,6 +4118,8 @@ ANSWER_CODE_NAMES = {
     0: "答案拿到了但没点上去",
     -1: "该题型脚本还不支持",
     -1004: "没取到答案",
+    -1005: "图片下载失败",
+    -1006: "请求限流（重试后仍失败）",
     10003: "请求失败（未登录/超时/响应解析）",
     429: "被限流"
 }
@@ -4168,6 +4141,15 @@ def get_admin_answer_stats(start_date=None, end_date=None):
     today = _dt.now().strftime("%Y-%m-%d")
     sd = start_date or today
     ed = end_date or today
+    try:
+        start_day = _dt.strptime(sd, "%Y-%m-%d")
+        end_day = _dt.strptime(ed, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        raise ValueError("日期格式应为 YYYY-MM-DD")
+    if start_day > end_day:
+        raise ValueError("开始日期不能晚于结束日期")
+    if (end_day - start_day).days > 366:
+        raise ValueError("单次查询日期范围不能超过367天")
     cache_key = sd + "_" + ed
     now_ts = time.time()
     if (ANSWER_STATS_CACHE.get("data") and ANSWER_STATS_CACHE.get("key") == cache_key
@@ -5760,6 +5742,8 @@ class Handler(BaseHTTPRequestHandler):
                 start = qs.get("start", [""])[0]
                 end = qs.get("end", [""])[0]
                 self._send_json(200, {"code": 200, "data": get_admin_answer_stats(start or None, end or None)})
+            except ValueError as e:
+                self._send_json(400, {"code": 400, "msg": str(e)})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/script-logs":

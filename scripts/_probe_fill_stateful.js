@@ -171,6 +171,7 @@ function cxFill(question, rows) {
   grab("isChoiceOptionSelected");
   grab("getChoiceOptionSig", null); // 修复前没有这个函数
   grab("selectChoiceOption");
+  grab("optionTextMatches");
   sandbox.resolveBlankAnswers = () => [];
   sandbox.resolveJudgeAnswer = () => "";
   const fill = vm.runInContext("(" + slicePublicField("fillQuestion") + ")", sandbox);
@@ -208,6 +209,19 @@ for (const mode of ["aria", "input", "attr", "marker", "class"]) {
   cxFill({ type: "0", answer: { answer: ["B"] } }, rows);
   check("A4 对照：单选只点 1 个", rows.filter((r) => r.__selected).length === 1 && rows[1].__clicks === 1,
     `点击数=${rows.map((r) => r.__clicks).join(",")} 勾选=${stateOf(rows)}`);
+}
+
+// Regression: partial multi-select must never count as a completed question.
+{
+  const rows = ["A", "B", "C", "D"].map(l => makeOption(l, l === "C" ? "none" : "aria"));
+  check("多选只点上A、C失败不能报成功", cxFill({type:"1", answer:{answer:["A", "C"]}}, rows) === false);
+}
+{
+  const rows = ["A", "B", "C", "D"].map(l => makeOption(l, "aria"));
+  rows[1].click();
+  check("纠正答案清理旧B并选中AC", cxFill({type:"1", answer:{answer:["C,A"]}}, rows) === true && stateOf(rows) === "AC");
+  check("越界答案不算填充成功", cxFill({type:"1", answer:{answer:["A", "E"]}}, rows) === false);
+  check("单选收到多项不能报成功", cxFill({type:"0", answer:{answer:["A", "C"]}}, rows) === false);
 }
 
 console.log("\n═══ B. 智慧树 smartAnswerLogic：真·fillChoice ═══");

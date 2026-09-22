@@ -3495,6 +3495,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
             <span style="color:var(--text3)">至</span>
             <input class="date-input" type="date" v-model="answerStatsFilter.date_to">
             <button class="btn btn-primary btn-sm" @click="loadAnswerStats()">查询</button>
+            <button class="btn btn-secondary btn-sm" @click="setAnswerStatRange(1)">今天</button>
             <button class="btn btn-secondary btn-sm" @click="setAnswerStatRange(7)">近7天</button>
             <button class="btn btn-secondary btn-sm" @click="setAnswerStatRange(30)">近30天</button>
           </div>
@@ -5544,10 +5545,10 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       if(!token.value)return;
       if(!answerStatsFilter.date_from||!answerStatsFilter.date_to){
         const to=new Date(),from=new Date();
-        from.setDate(from.getDate()-6);
         answerStatsFilter.date_from=fmtLocalDate(from);
         answerStatsFilter.date_to=fmtLocalDate(to);
       }
+      if(answerStatsFilter.date_from>answerStatsFilter.date_to){showMsg("开始日期不能晚于结束日期","error");return;}
       answerStatsLoading.value=true;
       try{
         const qs=new URLSearchParams();
