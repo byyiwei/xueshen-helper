@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.3.10
+// @version      5.3.11
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @author       IPYIWEI
@@ -10,6 +10,10 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.3.11 (2026-09-22)
+// @changelog    1. 修复切章入口及完成状态检测，执行前复核各自动操作开关
+// @changelog    2. 定时刷新按开关控制，一键关闭包含定时刷新
+// @changelog    3. 接通自定义编辑框开关，保留原生划词选区；开关值原样保留
 // @changelog    v5.3.10 更新内容：
 // @changelog    1. 倍速改用播放器真实速度，支持重复修改，播放器重置后自动恢复
 // @changelog    2. 修复播放启动失败后无法重试，增加页面恢复、断网恢复后的播放检查
@@ -1924,10 +1928,10 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               tips: "手动答题时，建议关闭，学习时，建议开启"
             },
             autoRefresh: {
-              text: "空闲时定时刷新",
-              value: false,
+              text: "定时刷新（防卡死）",
+              value: true,
               type: "switch",
-              tips: "默认关闭；开启后每30分钟仅在前台且没有播放、答题任务时刷新，避免丢失进度"
+              tips: "开启后每30分钟检查：前台空闲或视频持续30分钟无进展时刷新；正常播放、答题、后台时不刷新；关闭立即停止定时器"
             }
           },
           examConfig: {
@@ -1964,6 +1968,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             if (vpConfig.max === undefined) vpConfig.max = 16;
             if (vpConfig.step === undefined) vpConfig.step = 0.5;
             if (vpConfig.precision === undefined) vpConfig.precision = 1;
+          }
+          for (const [section, entries] of Object.entries(defaultSetting.config)) {
+            for (const [key, entry] of Object.entries(entries)) {
+              const savedValue = merged.config[section][key].value;
+              merged.config[section][key] = { ...entry, value: savedValue };
+            }
           }
           merged.version = scriptInfo.version;
           return merged;
@@ -2352,25 +2362,18 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           deep: true
         }
       );
-      vue.watch(
-        () => setting.config.basicConfig.autoRefresh,
-        (newVal) => {
-          emit("autoRefreshPage");
-        },
-        {
-          deep: true
-        }
-      );
+
       const formatter = (value) => {
         return `${value}%`;
       };
       const closeAllAuto = () => {
-        const hasAnyEnabled = setting.config.basicConfig.autoSubmit.value || setting.config.basicConfig.autoChangeChapter.value || setting.config.basicConfig.autoAnswer.value || setting.config.examConfig.autoSubmit.value;
+        const hasAnyEnabled = setting.config.basicConfig.autoSubmit.value || setting.config.basicConfig.autoChangeChapter.value || setting.config.basicConfig.autoAnswer.value || setting.config.examConfig.autoSubmit.value || setting.config.basicConfig.autoRefresh.value;
         const newState = !hasAnyEnabled;
         setting.config.basicConfig.autoSubmit.value = newState;
         setting.config.basicConfig.autoChangeChapter.value = newState;
         setting.config.basicConfig.autoAnswer.value = newState;
         setting.config.examConfig.autoSubmit.value = newState;
+        setting.config.basicConfig.autoRefresh.value = newState;
       };
       return (_ctx, _cache) => {
         const _component_a_slider = vue.resolveComponent("a-slider");
@@ -3498,15 +3501,58 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       msg: profile ? "本地后端已同步题数" : "密钥无效或已过期，请到用户中心重新生成脚本密钥"
     };
   };
+  const cxEditorDocuments = new WeakSet();
+  let activeCxEditor = null, cxEditorWatcherInstalled = false;
+  const installCxCustomEditor = (doc, setting) => {
+    if (!doc || cxEditorDocuments.has(doc)) return;
+    cxEditorDocuments.add(doc);
+    if (!cxEditorWatcherInstalled) {
+      cxEditorWatcherInstalled = true;
+      vue.watch(() => setting.config.cxConfig.showCustomEditor.value, enabled => {
+        if (!enabled && activeCxEditor) { activeCxEditor.remove(); activeCxEditor = null; }
+      });
+    }
+    doc.addEventListener("focusin", event => {
+      if (!setting.config.cxConfig.showCustomEditor.value) return;
+      const target = event.target;
+      if (!target || !target.matches || !target.matches('textarea, [contenteditable="true"]') || target.disabled || target.readOnly) return;
+      if (target.closest('[data-xs-custom-editor], #abc-helper-app')) return;
+      const hostDoc = getTopDocument() || doc;
+      if (activeCxEditor) activeCxEditor.remove();
+      const panel = hostDoc.createElement("div");
+      panel.setAttribute("data-xs-custom-editor", "true");
+      panel.setAttribute("role", "dialog");
+      panel.setAttribute("aria-label", "自定义答案编辑框");
+      panel.style.cssText = "position:fixed;right:24px;bottom:24px;width:360px;max-width:85vw;padding:16px;background:#fff;color:#111;border:1px solid #aaa;border-radius:8px;z-index:2147483647;box-shadow:0 4px 24px #0003";
+      const label = hostDoc.createElement("div"); label.textContent = "编辑答案（应用后写回原输入框，不提交）";
+      const editor = hostDoc.createElement("textarea");
+      editor.value = target.tagName === "TEXTAREA" ? target.value : (target.innerText || target.textContent || "");
+      editor.style.cssText = "box-sizing:border-box;width:100%;height:140px;margin:12px 0;color:#111;background:#fff";
+      const apply = hostDoc.createElement("button"); apply.textContent = "应用";
+      const close = hostDoc.createElement("button"); close.textContent = "取消";
+      apply.type = close.type = "button";
+      const dismiss = () => { panel.remove(); if (activeCxEditor === panel) activeCxEditor = null; };
+      apply.onclick = () => {
+        if (!setting.config.cxConfig.showCustomEditor.value || !target.isConnected) { dismiss(); return; }
+        if (target.tagName === "TEXTAREA") target.value = editor.value;
+        else target.textContent = editor.value;
+        const EventType = target.ownerDocument.defaultView.Event;
+        target.dispatchEvent(new EventType("input", {bubbles:true}));
+        target.dispatchEvent(new EventType("change", {bubbles:true}));
+        dismiss();
+      };
+      close.onclick = dismiss;
+      panel.append(label, editor, apply, close); hostDoc.body.appendChild(panel);
+      activeCxEditor = panel; editor.focus();
+    });
+    const installFrame = frame => { try { if (frame.contentDocument) installCxCustomEditor(frame.contentDocument, setting); } catch (_) {} };
+    doc.querySelectorAll("iframe").forEach(installFrame);
+    doc.addEventListener("load", event => { if (event.target && event.target.tagName === "IFRAME") installFrame(event.target); }, true);
+  };
   const selectTextSearchLogic = async (iframeDocument, iframeWindow) => {
     const questionStore = useQuestionStore();
     const setting = useSettingStore();
-    _unsafeWindow.document.getSelection = function() {
-      return {
-        removeAllRanges: function() {
-        }
-      };
-    };
+    if (/chaoxing\.com$/.test(location.hostname)) installCxCustomEditor(iframeDocument, setting);
     _unsafeWindow.document.onselectstart = true;
     _unsafeWindow.document.oncontextmenu = true;
     _unsafeWindow.document.oncut = true;
@@ -7990,9 +8036,11 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           const { answerMode } = this.setting.config.basicConfig;
           const mode = answerMode.value;
           for (const [index, question] of this.questions.entries()) {
+            if (!this.setting.config.basicConfig.autoAnswer.value) break;
             this.questionStore.currentQuestionIndex = index;
             if (mode !== "ai") {
               const answerData = await getAccurateAnswer(question);
+              if (!this.setting.config.basicConfig.autoAnswer.value) break;
               if (answerData.code === 1) {
                 question.answer = {
                   code: 1,
@@ -8009,6 +8057,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 if (["0", "1"].includes(question.type)) {
                   for (let attempt = 0; attempt < 3; attempt++) {
                     await sleep(0.2);
+                    if (!this.setting.config.basicConfig.autoAnswer.value) break;
                     fillSuccess = this.fillQuestion(question);
                     if (fillSuccess) break;
                   }
@@ -8031,6 +8080,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             }
             if (this.AI_ALLOW_QUESTION_TYPE.includes(question.type)) {
               const answerData = await getAIAnswer(question);
+              if (!this.setting.config.basicConfig.autoAnswer.value) break;
               if (answerData.code === 1) {
                 question.answer = {
                   code: 2,
@@ -8047,6 +8097,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 if (["0", "1"].includes(question.type)) {
                   for (let attempt = 0; attempt < 3; attempt++) {
                     await sleep(0.2);
+                    if (!this.setting.config.basicConfig.autoAnswer.value) break;
                     fillSuccess = this.fillQuestion(question);
                     if (fillSuccess) break;
                   }
@@ -8657,17 +8708,28 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     applyOnDoc(document);
     collectFrames(document, 0);
   };
+  const refreshMediaSamples = new WeakMap();
   const canRefreshStudyPage = (doc, seen = new Set()) => {
     if (!doc || doc.hidden || doc.visibilityState === "hidden" || seen.has(doc)) return false;
     seen.add(doc);
-    // 媒体即使暂停/已播完也可能正在等待进度确认，不自动刷新。
-    if (doc.querySelector("video, audio, .TiMu, .questionLi, .ans-job:not(.ans-job-finished), textarea, [contenteditable='true']")) return false;
-    for (const frame of doc.querySelectorAll("iframe")) {
-      try {
-        if (!frame.contentDocument || !canRefreshStudyPage(frame.contentDocument, seen)) return false;
-      } catch (_) { return false; }
+    if (doc.querySelector(".TiMu, .questionLi, textarea, [contenteditable='true']")) return false;
+    let allowed = true;
+    const media = [...doc.querySelectorAll("video, audio")];
+    for (const el of media) {
+      const now = Date.now(), position = Number(el.currentTime), source = el.currentSrc || el.src;
+      const previous = refreshMediaSamples.get(el);
+      if (!Number.isFinite(position) || !previous || previous.position !== position || previous.source !== source) {
+        refreshMediaSamples.set(el, {position, source, since: now});
+        allowed = false;
+      } else if (now - previous.since < 1800000) allowed = false;
     }
-    return true;
+    const frames = [...doc.querySelectorAll("iframe")];
+    if (!media.length && !frames.length && doc.querySelector(".ans-job:not(.ans-job-finished)")) return false;
+    for (const frame of frames) {
+      try { if (!frame.contentDocument || !canRefreshStudyPage(frame.contentDocument, seen)) allowed = false; }
+      catch (_) { allowed = false; }
+    }
+    return allowed;
   };
   const watchMediaRecovery = (media, { recover, checkComplete, onError, documents = [] }) => {
     let stopped = false, running = false;
@@ -8875,25 +8937,25 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         "#RightCon > div.radiusBG > div > div.ceyan_name>h3"
       )) == null ? void 0 : _a.innerText) || "未知测验";
       log.insertLog(`发现测验：${workName}，正在解析..`);
-      return new Promise(async (resolve) => {
-        if (!iframeDocument) return resolve();
+      {
+        if (!iframeDocument) return;
         if (iframeDocument.documentElement.innerText.includes("已完成") || iframeDocument.documentElement.innerText.includes("待批阅")) {
           log.insertLog("测验已经完成，跳转中..");
-          return resolve();
+          return;
         }
         decrypt(iframeDocument);
         if (!setting.config.basicConfig.autoAnswer.value) {
           log.insertLog(
             `自动答题已关闭，请前往<span class='module'>设置</span>模块中更改`
           );
-          return resolve();
+          return;
         }
         questionStore.accuracy = -1;
         const accuracy = await new QuestionHandler$1("zj", iframe).init();
         questionStore.accuracy = accuracy;
         iframeWindow.alert = () => {
         };
-        if (setting.config.basicConfig.autoSubmit.value) {
+        if (setting.config.basicConfig.autoSubmit.value && setting.config.basicConfig.autoAnswer.value) {
           log.insertLog("自动提交已开启，提交中...");
           if (accuracy < Number(setting.config.basicConfig.accuracy.value)) {
             log.insertLog(
@@ -8908,6 +8970,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             );
             await iframeWindow.btnBlueSubmit();
             await sleep(setting.config.basicConfig.reqIntervalTime.value / 2);
+            if (!setting.config.basicConfig.autoSubmit.value || !setting.config.basicConfig.autoAnswer.value) return;
             await iframeWindow.submitCheckTimes();
             hideCxWorkConfirmPopup();
             log.insertLog("提交成功");
@@ -8920,8 +8983,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           );
           await iframeWindow.noSubmit();
         }
-        return resolve();
-      });
+        return;
+      }
     };
     const setupInterceptor = () => {
       let currentUrl = window.location.href;
@@ -8932,51 +8995,51 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         }
       }, 2e3);
     };
-    const changeToNextChapter = async (documentElement) => {
-      var _a, _b;
-      const nextBtn = documentElement.querySelector("#prevNextFocusNext");
-      if (!nextBtn || nextBtn.style.display === "none") {
-        log.insertLog(`已是最后一个章节，无法跳转`);
-        return;
-      }
+    const changeToNextChapter = async (documentElement, isCurrent = () => true) => {
+      const enabled = () => setting.config.basicConfig.autoChangeChapter.value && isCurrent();
+      if (!enabled()) return false;
       await sleep(setting.config.basicConfig.reqIntervalTime.value);
-      try {
-        const topWindow = (unsafeWindow == null ? void 0 : unsafeWindow.top) || window.top;
-        const topDocument = (topWindow == null ? void 0 : topWindow.document) || document;
-        const curCourseId = topDocument.querySelector("#curCourseId");
-        const curChapterId = topDocument.querySelector("#curChapterId");
-        const curClazzId = topDocument.querySelector("#curClazzId");
-        const taskTabs = topDocument.querySelectorAll("#prev_tab .prev_ul li");
-        if (((_a = topWindow == null ? void 0 : topWindow.PCount) == null ? void 0 : _a.next) && (curCourseId == null ? void 0 : curCourseId.value) && (curChapterId == null ? void 0 : curChapterId.value) && (curClazzId == null ? void 0 : curClazzId.value)) {
-          topWindow._preChapterId = curChapterId.value;
-          (_b = topDocument.querySelector(".posCatalog_active")) == null ? void 0 : _b.scrollIntoView({ behavior: "smooth", block: "center" });
-          await sleep(0.2);
-          topWindow.PCount.next(
-            taskTabs.length.toString(),
-            curChapterId.value,
-            curCourseId.value,
-            curClazzId.value,
-            ""
-          );
-          return;
+      if (!enabled()) return false;
+      let topWindow = window, topDocument = document;
+      try { topWindow = (typeof unsafeWindow !== "undefined" ? unsafeWindow.top : window.top) || window; topDocument = topWindow.document || document; } catch (_) { topWindow = window; }
+      const course = topDocument.querySelector("#curCourseId"), chapter = topDocument.querySelector("#curChapterId"), clazz = topDocument.querySelector("#curClazzId");
+      if (topWindow.PCount && typeof topWindow.PCount.next === "function" && course && chapter && clazz) {
+        try {
+          if (!enabled()) return false;
+          topWindow._preChapterId = chapter.value;
+          topWindow.PCount.next(String(topDocument.querySelectorAll("#prev_tab .prev_ul li").length), chapter.value, course.value, clazz.value, "");
+          return true;
+        } catch (error) { console.warn("PCount.next failed", error); }
+      }
+      for (const root of new Set([topDocument, documentElement, document])) {
+        for (const button of root.querySelectorAll(".nextChapter, #prevNextFocusNext")) {
+          if (button.disabled || button.getAttribute("aria-disabled") === "true" || button.style.display === "none") continue;
+          if (!enabled()) return false;
+          button.click(); return true;
         }
-      } catch (error) {
-        console.warn("PCount.next failed, fallback to nextChapter button.", error);
       }
-      const nextChapterBtn = document.querySelector(
-        ".jb_btn.jb_btn_92.fr.fs14.nextChapter"
-      );
-      if (nextChapterBtn) {
-        nextChapterBtn.click();
-      } else {
-        log.insertLog(`未找到下一章节按钮，请尝试手动切换`, "warning", 4);
-      }
+      log.insertLog("未找到可用下一章入口，请检查是否已到最后一章或章节尚未解锁", "warning", 4);
+      return false;
     };
     let currentWatchIframeTaskId = 0;
+    let pendingChapterAdvance = null, advancingChapter = false;
+    const advancePendingChapter = async () => {
+      if (advancingChapter || !pendingChapterAdvance || !setting.config.basicConfig.autoChangeChapter.value) return;
+      const pending = pendingChapterAdvance;
+      advancingChapter = true;
+      try {
+        if (await changeToNextChapter(pending.root, () => pending.id === currentWatchIframeTaskId)) {
+          if (pendingChapterAdvance === pending) pendingChapterAdvance = null;
+        }
+      } finally { advancingChapter = false; }
+    };
+    vue.watch(() => setting.config.basicConfig.autoChangeChapter.value, enabled => { if (enabled) advancePendingChapter(); });
     const watchIframe = (documentElement) => {
       const thisTaskId = ++currentWatchIframeTaskId;
+      pendingChapterAdvance = null;
       IframeUtils.getAllNestedIframes(documentElement).subscribe((allIframes) => {
         rxjs.from(allIframes).pipe(concatMap((iframe) => processIframe(iframe))).subscribe({
+          error: error => log.insertLog("任务处理失败，未切章：" + (error.message || error), "warning"),
           complete: async () => {
             var _a, _b;
             const chapterName = ((_a = documentElement.querySelector(
@@ -8984,9 +9047,10 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             )) == null ? void 0 : _a.innerText) || "未知章节";
             const currentTaskName = ((_b = document.querySelector(".prev_ul > li.active .spanText")) == null ? void 0 : _b.textContent.trim()) || "";
             if (thisTaskId === currentWatchIframeTaskId) {
-              log.insertLog(`任务点 ${chapterName}-${currentTaskName} 已完成，即将跳转`);
+              log.insertLog(`任务点 ${chapterName}-${currentTaskName} 已处理完毕`);
+              pendingChapterAdvance = {root: documentElement, id: thisTaskId};
               if (setting.config.basicConfig.autoChangeChapter.value) {
-                await changeToNextChapter(documentElement);
+                await advancePendingChapter();
               } else {
                 log.insertLog(
                   `自动切换章节未开启，前往<span class='module'>设置</span>模块中更改`,
@@ -9051,6 +9115,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     };
     const processMedia = async (mediaType, iframeDocument, iframe) => {
       return new Promise((resolve) => {
+        const taskContainer = iframe && (iframe.closest(".ans-job") || iframe.parentElement);
         const userRate = setting.config.basicConfig.videoPlayrate.value;
         const isRateDisabled = mediaType === "video" && isVideoPlaybackRateDisabled(iframeDocument);
         const finalRate = isRateDisabled ? 1 : userRate;
@@ -9139,23 +9204,23 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             };
             mediaElement.addEventListener("ended", async () => {
               hasPlaybackEnded = true;
-              log.insertLog(`${mediaType}已播放完成，等待任务点完成`);
+              log.insertLog(`${mediaType}已播放完成，等待平台确认学习进度；确认后按切章开关执行`);
             });
-            if (iframe && iframe.parentElement) {
+            if (taskContainer) {
               observer = new MutationObserver(() => {
-                const parentElement = iframe.parentElement;
+                const parentElement = taskContainer;
                 if (parentElement.classList.contains("ans-job-finished")) {
                   log.insertLog(`${mediaType}任务点已完成，停止播放`);
                   mediaElement.pause();
                   finishTask();
                 }
               });
-              observer.observe(iframe.parentElement, {
+              observer.observe(taskContainer, {
                 attributes: true,
                 attributeFilter: ["class"],
                 subtree: true
               });
-              if (iframe.parentElement.classList.contains("ans-job-finished")) {
+              if (taskContainer.classList.contains("ans-job-finished")) {
                 log.insertLog(`${mediaType}任务点已完成，停止播放`);
                 mediaElement.pause();
                 finishTask();
@@ -9166,7 +9231,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               recover: listener,
               checkComplete: () => {
                 if (isResolved) return true;
-                if (iframe && iframe.parentElement && iframe.parentElement.classList.contains("ans-job-finished")) {
+                if (taskContainer && taskContainer.classList.contains("ans-job-finished")) {
                   finishTask();
                   mediaElement.pause();
                   return true;
@@ -9366,6 +9431,22 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     setInterval(checkTask, 5000);
     setTimeout(checkTask, 1500);
   };
+  const submitCxHomework = async (log, setting, accuracy, pageWindow) => {
+    const enabled = () => setting.config.basicConfig.autoSubmit.value && setting.config.basicConfig.autoAnswer.value;
+    if (!enabled()) return false;
+    const rate = Number(accuracy);
+    if (!Number.isFinite(rate) || rate < Number(setting.config.basicConfig.accuracy.value)) {
+      log.insertLog("未达到自动提交阈值，保留作业答案", "warning"); return false;
+    }
+    if (typeof pageWindow.btnBlueSubmit !== "function" || typeof pageWindow.submitCheckTimes !== "function") {
+      log.insertLog("自动提交已开启，此作业页的提交入口未识别，请手动确认", "warning"); return false;
+    }
+    await pageWindow.btnBlueSubmit();
+    await sleep(setting.config.basicConfig.reqIntervalTime.value / 2);
+    if (!enabled()) return false;
+    await pageWindow.submitCheckTimes();
+    log.insertLog("已执行提交，请以平台显示的结果为准"); return true;
+  };
   const cxHomeworkLogic = async () => {
     const log = useLogStore();
     const questionStore = useQuestionStore();
@@ -9383,6 +9464,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     log.insertLog(
       `答题完毕,正确率为${accuracy}%,详情请前往<span class='module'>答题</span>模块查看..`
     );
+    await submitCxHomework(log, setting, accuracy, typeof unsafeWindow !== "undefined" ? unsafeWindow : window);
   };
   const isPreviewDisabled = () => {
     var _a, _b;
@@ -9427,6 +9509,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     }
     log.insertLog("自动交卷已开启，正在提交试卷");
     await sleep(setting.config.basicConfig.reqIntervalTime.value);
+    if (!setting.config.examConfig.autoSubmit.value || !setting.config.basicConfig.autoAnswer.value) return;
     const submitBtn = getVisibleElement("div.sub-button.fr a.completeBtn");
     if (!submitBtn) {
       log.insertLog("未找到交卷按钮，请手动交卷", "warning", 4);
@@ -9434,7 +9517,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     }
     submitBtn.click();
     const confirmBtn = await waitForSubmitConfirmBtn();
-    if (confirmBtn) {
+    if (confirmBtn && setting.config.examConfig.autoSubmit.value && setting.config.basicConfig.autoAnswer.value) {
       confirmBtn.click();
       log.insertLog("已确认提交试卷");
       return;
@@ -9447,15 +9530,16 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       "warning",
       4
     );
-    while (true) {
+    while (setting.config.basicConfig.autoAnswer.value) {
       await new QuestionHandler$1("ks").init();
+      if (!setting.config.basicConfig.autoAnswer.value) return;
       const nextBtn = getNextQuestionBtn();
       if (!nextBtn) break;
       nextBtn.click();
       log.insertLog("已切换到下一题，继续处理..");
       await sleep(1);
     }
-    await submitCxExam(log, setting);
+    if (setting.config.basicConfig.autoAnswer.value) await submitCxExam(log, setting);
   };
   const enterCxExamPreviewLogic = async () => {
     const log = useLogStore();
@@ -9472,6 +9556,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     }
     log.insertLog("进入考试开始页，正在切换到整卷预览..");
     for (let i = 0; i < 10; i++) {
+      if (!setting.config.basicConfig.autoAnswer.value) return;
       const previewBtn = document.querySelector("div.sub-button a");
       if (previewBtn) {
         previewBtn.click();
@@ -12954,7 +13039,18 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           }
           setting.tabIndex = route.tab;
           if (route.log) log.insertLog(route.log);
-          if (route.logic) route.logic();
+          let routeRunning = false;
+          const runRouteLogic = async () => {
+            if (!route.logic || routeRunning) return;
+            routeRunning = true;
+            try { await route.logic(); }
+            catch (error) { log.insertLog("当前操作失败：" + (error.message || error), "warning"); }
+            finally { routeRunning = false; }
+          };
+          runRouteLogic();
+          if ([cxHomeworkLogic, cxExamLogic, enterCxExamPreviewLogic].includes(route.logic)) {
+            vue.watch(() => setting.config.basicConfig.autoAnswer.value, enabled => { if (enabled) runRouteLogic(); });
+          }
           if (setting.config.searchConfig.searchBySelectedText.value) {
             log.insertLog("划词搜题已开启..");
           }
@@ -13051,13 +13147,16 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         refreshTimer.value = null;
         const timerStatus = setting.config.basicConfig.autoRefresh.value;
         if (timerStatus) {
+          canRefreshStudyPage(document);
           refreshTimer.value = setInterval(() => {
-            if (!canRefreshStudyPage(document)) return;
-            log.insertLog("当前没有进行中的学习任务，执行空闲刷新");
+            if (!setting.config.basicConfig.autoRefresh.value || !canRefreshStudyPage(document)) return;
+            log.insertLog("定时刷新已开启：页面空闲或视频长期无进展，执行恢复刷新");
             window.location.reload();
           }, 18e5);
         }
       };
+      vue.watch(() => setting.config.basicConfig.autoRefresh.value, autoRefreshPage);
+      vue.onUnmounted(() => clearInterval(refreshTimer.value));
       changeNewVersion();
       chooseLogicByUrl();
       emit("customEvent", isShow.value);
