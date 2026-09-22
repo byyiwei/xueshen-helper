@@ -10,8 +10,14 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
-// @changelog    v5.3.10 (2026-09-22)
-// @changelog    完整核验多选填充；图片选项对应；限流与超时修复；真实倍速及后台恢复，避免学习中定时刷新
+// @changelog    v5.3.10 更新内容：
+// @changelog    1. 倍速改用播放器真实速度，支持重复修改，播放器重置后自动恢复
+// @changelog    2. 修复播放启动失败后无法重试，增加页面恢复、断网恢复后的播放检查
+// @changelog    3. 定时刷新默认关闭；已有配置开启时，播放中/答题中也不会刷新页面
+// @changelog    4. 多选逐项核验，漏选不计成功，重试时先清理旧选项
+// @changelog    5. 图片上传保留选项与图片的对应关系，缺图时明确报错
+// @changelog    6. 请求限流自动等待重试，统一前后端超时预算
+// @changelog    7. 答题统计默认当天，支持按历史日期区间查询
 // @changelog    v5.3.9 更新内容：
 // @changelog    1. 答题小结不再写入「余额不足」：欠费不是答题卡点，不进填充率/卡点榜
 // @changelog    2. 拿到答案但点不上时，不再被后续余额不足盖掉真实原因
