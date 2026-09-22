@@ -1,7 +1,7 @@
-﻿// ==UserScript==
+// ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.3.9
+// @version      5.3.10
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @author       IPYIWEI
@@ -10,6 +10,14 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.3.10 更新内容：
+// @changelog    1. 倍速改用播放器真实速度，支持重复修改，播放器重置后自动恢复
+// @changelog    2. 修复播放启动失败后无法重试，增加页面恢复、断网恢复后的播放检查
+// @changelog    3. 定时刷新默认关闭；已有配置开启时，播放中/答题中也不会刷新页面
+// @changelog    4. 多选逐项核验，漏选不计成功，重试时先清理旧选项
+// @changelog    5. 图片上传保留选项与图片的对应关系，缺图时明确报错
+// @changelog    6. 请求限流自动等待重试，统一前后端超时预算
+// @changelog    7. 答题统计默认当天，支持按历史日期区间查询
 // @changelog    v5.3.9 更新内容：
 // @changelog    1. 答题小结不再写入「余额不足」：欠费不是答题卡点，不进填充率/卡点榜
 // @changelog    2. 拿到答案但点不上时，不再被后续余额不足盖掉真实原因
@@ -1913,10 +1921,10 @@
               tips: "手动答题时，建议关闭，学习时，建议开启"
             },
             autoRefresh: {
-              text: "定时刷新（防卡死）",
-              value: true,
+              text: "空闲时定时刷新",
+              value: false,
               type: "switch",
-              tips: "（建议开启）每30分钟刷新页面，防止脚本卡死"
+              tips: "默认关闭；开启后每30分钟仅在前台且没有播放、答题任务时刷新，避免丢失进度"
             }
           },
           examConfig: {
@@ -2631,7 +2639,7 @@
       if (s && !out.includes(s)) out.push(s);
     };
     if (htmlOrEl && htmlOrEl.querySelectorAll) {
-      htmlOrEl.querySelectorAll("img").forEach((img) => push(img.src || img.getAttribute("data-src") || ""));
+      htmlOrEl.querySelectorAll("img").forEach((img) => push(img.getAttribute("data-src") || img.currentSrc || img.src || ""));
     }
     const s = typeof htmlOrEl === "string" ? htmlOrEl : "";
     const re = /<img[^>]+src=["']([^"']+)["']/gi;
@@ -2709,6 +2717,7 @@
     });
   };
   const _downloadImg = (url) => new Promise((resolve) => {
+    if (/^data:image\/[^;]+;base64,/i.test(String(url))) { resolve(url); return; }
     if (!url || String(url).startsWith("blob:")) {
       resolve(null);
       return;
@@ -2717,12 +2726,15 @@
       url, method: 'GET', responseType: 'arraybuffer', timeout: 15000,
       onload: (res) => {
         try {
+          if (res.status < 200 || res.status >= 300) { resolve(null); return; }
           const bytes = new Uint8Array(res.response);
+          if (!bytes.length) { resolve(null); return; }
           let binary = '';
           const chunk = 0x8000;
           for (let i = 0; i < bytes.length; i += chunk)
             binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
           const type = (res.responseHeaders.match(/content-type:\s*([^\s;\r\n]+)/i) || [])[1] || 'image/jpeg';
+          if (!/^image\//i.test(type)) { resolve(null); return; }
           resolve('data:' + type + ';base64,' + btoa(binary));
         } catch (e) { resolve(null); }
       },
@@ -2735,15 +2747,16 @@
     const token = setting.config.basicConfig.token.value || getLocalBackendToken() || "";
     // 提取题目中的图片并下载为 base64（DOM + 题干/选项 HTML，避免纯图题漏传）
     const images = [];
+    const imageSources = [];
     const seenImg = new Set();
     const pushImgSrc = (src) => {
       const u = String(src || "").trim();
-      if (!u || u.startsWith("blob:") || seenImg.has(u)) return;
+      if (!u || seenImg.has(u)) return;
       seenImg.add(u);
     };
     const el = question.element;
     if (el && el.querySelectorAll) {
-      el.querySelectorAll("img").forEach((img) => pushImgSrc(img.src || img.getAttribute("data-src") || ""));
+      el.querySelectorAll("img").forEach((img) => pushImgSrc(img.getAttribute("data-src") || img.currentSrc || img.src || ""));
     }
     const htmlBlobs = [question.title, ...(question.optionsText || [])];
     if (question.options && typeof question.options === "object") {
@@ -2758,7 +2771,9 @@
     });
     for (const src of seenImg) {
       const dataUrl = await _downloadImg(src);
-      if (dataUrl) images.push(dataUrl);
+      if (!dataUrl) return { code: -1005, data: { answer: [] }, msg: "图片下载失败，请刷新题目后重试" };
+      images.push(dataUrl);
+      imageSources.push(src);
     }
     const payloadObj = {
       question: question.title || "",
@@ -2767,14 +2782,14 @@
       platform: "abc-helper",
       refer: question.refer || location.href
     };
-    if (images.length) payloadObj.images = images;
+    if (images.length) { payloadObj.images = images; payloadObj.image_sources = imageSources; }
     const payload = JSON.stringify(payloadObj);
     const data = "question=" + encodeURIComponent(payload)
       + "&u=" + encodeURIComponent(getCookieValue("_uid") || getCookieValue("UID") || "")
       + "&model_mode=auto"
       + (extra && extra.skipBank ? "&skip_bank=1" : "");
     await sleep(setting.config.basicConfig.reqIntervalTime.value);
-    return new Promise((resolve) => {
+    const result = await new Promise((resolve) => {
       GM_xmlhttpRequest({
         url: LOCAL_BACKEND_ANSWER_URL + "?v=xs-5.0",
         method: "POST",
@@ -2801,6 +2816,11 @@
             } else if (response.status === 401 || obj.code === 401) {
               resolve(handleError$1("本地后端未登录或登录态失效，请先登录用户中心"));
             } else {
+              if (response.status === 429 || obj.code === 429 || /请求过于频繁/.test(obj.msg || "")) {
+                const seconds = Number(((obj.msg || "").match(/(\d+)\s*秒/) || [])[1] || 6);
+                resolve({ code: -1006, msg: obj.msg || "请求限流", retryAfter: Math.min(60, Math.max(1, seconds)) });
+                return;
+              }
               const is200NoAnswer = obj.code === 200 && !(obj.data && obj.data.answer);
               resolve({ code: -1004, data: { answer: [], remainCount: 0 }, msg: is200NoAnswer ? "未找到答案" : (obj.msg || "本地题库未命中") });
             }
@@ -2812,6 +2832,11 @@
         ontimeout: () => resolve(handleError$1("本地后端请求超时，请检查后端模型配置或稍后重试"))
       });
     });
+    if (result.code === -1006 && (extra.retryCount || 0) < 2) {
+      await sleep(result.retryAfter + 1);
+      return callLocalBackendAnswer(question, { ...extra, retryCount: (extra.retryCount || 0) + 1 });
+    }
+    return result;
   };
   const saveAnswerRecord = ({ question, answer, source = "accurate" }) => {
     const setting = useSettingStore();
@@ -7975,7 +8000,14 @@
                   answer: answerData.data.answer,
                   source: "accurate"
                 });
-                const fillSuccess = this.fillQuestion(question);
+                let fillSuccess = this.fillQuestion(question);
+                if (["0", "1"].includes(question.type)) {
+                  for (let attempt = 0; attempt < 3; attempt++) {
+                    await sleep(0.2);
+                    fillSuccess = this.fillQuestion(question);
+                    if (fillSuccess) break;
+                  }
+                }
                 if (fillSuccess) {
                   this.correctNum += 1;
                   continue;
@@ -8006,7 +8038,14 @@
                   answer: answerData.data.answer,
                   source: "ai"
                 });
-                const fillSuccess = this.fillQuestion(question);
+                let fillSuccess = this.fillQuestion(question);
+                if (["0", "1"].includes(question.type)) {
+                  for (let attempt = 0; attempt < 3; attempt++) {
+                    await sleep(0.2);
+                    fillSuccess = this.fillQuestion(question);
+                    if (fillSuccess) break;
+                  }
+                }
                 if (!fillSuccess) {
                   question.answer.code = 0;
                   question.answer.msg = "答案拿到了但没点上去";
@@ -8087,6 +8126,8 @@
         const typeFromCode = this.getCxQuestionTypeFromCode(
           Number.parseInt((typeInput == null ? void 0 : typeInput.value) || "", 10)
         );
+        if ((!typeFromCode || ["0", "1"].includes(typeFromCode)) &&
+            (element.querySelector('input[type="checkbox"], [role="checkbox"]') || /多选|多项选择|不定项|X型/i.test(questionTypeText))) return "1";
         if (typeFromCode) return typeFromCode;
         return this.resolveQuestionType(questionTypeText);
       });
@@ -8134,7 +8175,6 @@
         const optionContainer = this.getChoiceOptionContainer(optionElement);
         if (!optionContainer) return false;
         if (this.isChoiceOptionSelected(optionContainer)) return true;
-        const before = this.getChoiceOptionSig(optionContainer);
         const tryClick = (el) => {
           if (!el) return;
           try {
@@ -8144,19 +8184,19 @@
         };
         // 超星章节/作业常把事件绑在字母链或 input 上，只点外层 li 可能没反应
         tryClick(optionContainer);
-        if (this.isChoiceOptionSelected(optionContainer) || this.getChoiceOptionSig(optionContainer) !== before) return true;
+        if (this.isChoiceOptionSelected(optionContainer)) return true;
         const inputs = this.getChoiceOptionInputs(optionContainer);
         for (const input of inputs) {
           tryClick(input);
-          if (this.isChoiceOptionSelected(optionContainer) || this.getChoiceOptionSig(optionContainer) !== before) return true;
+          if (this.isChoiceOptionSelected(optionContainer)) return true;
         }
         tryClick(optionContainer.querySelector && optionContainer.querySelector(".fl.before, a.before, label, .answer_p, span"));
-        if (this.isChoiceOptionSelected(optionContainer) || this.getChoiceOptionSig(optionContainer) !== before) return true;
+        if (this.isChoiceOptionSelected(optionContainer)) return true;
         try {
           (_a = optionContainer.dispatchEvent) == null ? void 0 : _a.call(optionContainer, new this._window.MouseEvent("click", { bubbles: true }));
         } catch (_) {
         }
-        return this.isChoiceOptionSelected(optionContainer) || this.getChoiceOptionSig(optionContainer) !== before;
+        return this.isChoiceOptionSelected(optionContainer);
       });
       __publicField(this, "optionTextMatches", (optionKey, answerText) => {
         const rawOpt = String(optionKey || "").trim();
@@ -8294,50 +8334,46 @@
         let filled = false;
         if (question.type === "0" || question.type === "1") {
           const optionKeys = Object.keys(question.options);
-          question.answer.answer.forEach((answer) => {
-            const clearAnswer = this.removeHtml(answer);
-            let isSelected = false;
-            // 字母答案映射：A=第1个选项（兼容数组项 ["A","B","D"] 与紧凑串 "ABD"）
-            const letterText = String(clearAnswer).trim();
-            const isCompactLetters = /^[A-Z]{2,10}$/.test(letterText) && [...letterText].every((c, i) => i === 0 || c > letterText[i - 1]) && !optionKeys.some((k) => this.clearMark(k) === this.clearMark(letterText));
-            const lettersToMap = /^[A-Za-z]$/.test(letterText) ? [letterText.toUpperCase()] : isCompactLetters ? letterText.toUpperCase().split("") : [];
-            for (const c of lettersToMap) {
-              const idx = c.charCodeAt(0) - 65;
-              if (idx >= 0 && idx < optionKeys.length) {
-                if (this.selectChoiceOption(question.options[optionKeys[idx]])) isSelected = true;
+          const targets = new Set();
+          const answers = question.answer.answer || [];
+          if (!answers.length) return false;
+          for (const answer of answers) {
+            const clearAnswer = this.removeHtml(String(answer));
+            const text = String(clearAnswer).normalize("NFKC").trim();
+            let matches = optionKeys.filter(k => k === clearAnswer);
+            if (!matches.length) {
+              const letters = text.replace(/[\s,，、;；|]+/g, "").toUpperCase();
+              const textMatches = optionKeys.filter(k => this.optionTextMatches(k, clearAnswer) || this.optionTextMatches(k, answer));
+              if (textMatches.length === 1 && letters.length > 1) matches = textMatches;
+              else if (/^[A-Z]+$/.test(letters)) {
+                if ([...letters].some(c => c.charCodeAt(0) - 65 >= optionKeys.length)) return false;
+                matches = [...new Set([...letters].map(c => optionKeys[c.charCodeAt(0) - 65]))];
+              } else {
+                matches = textMatches;
+                if (matches.length > 1) return false;
               }
             }
-            if (!isSelected) {
-              for (const key in question.options) {
-                if (key === clearAnswer) {
-                  isSelected = this.selectChoiceOption(question.options[key]);
-                  break;
-                }
+            if (!matches.length) {
+              const imgs = collectImgSrcs(answer);
+              matches = optionKeys.filter(k => imgSrcsMatch(imgs, collectImgSrcs(k).concat(collectImgSrcs(question.options[k]))));
+              if (matches.length !== 1) return false;
+            }
+            matches.forEach(k => targets.add(k));
+          }
+          if (!targets.size || (question.type === "0" && targets.size !== 1)) return false;
+          // 先清理旧答案，再逐项选择；只有最终选中集合完全一致才算填充成功。
+          for (const key of optionKeys) {
+            if (!targets.has(key) && this.isChoiceOptionSelected(question.options[key])) {
+              const container = this.getChoiceOptionContainer(question.options[key]);
+              try { container.click(); } catch (_) {}
+              if (this.isChoiceOptionSelected(question.options[key])) {
+                const input = this.getChoiceOptionInputs(container).find(i => this.isChoiceInputChecked(i));
+                try { if (input) input.click(); } catch (_) {}
               }
             }
-            if (!isSelected) {
-              for (const key in question.options) {
-                if (this.optionTextMatches(key, clearAnswer) || this.optionTextMatches(key, answer)) {
-                  isSelected = this.selectChoiceOption(question.options[key]);
-                  break;
-                }
-              }
-            }
-            if (!isSelected) {
-              const answerImgs = collectImgSrcs(answer).concat(collectImgSrcs(clearAnswer));
-              if (answerImgs.length) {
-                for (const key in question.options) {
-                  const optionEl = question.options[key];
-                  const optionImgs = collectImgSrcs(key).concat(collectImgSrcs(optionEl));
-                  if (imgSrcsMatch(answerImgs, optionImgs)) {
-                    isSelected = this.selectChoiceOption(optionEl);
-                    break;
-                  }
-                }
-              }
-            }
-            if (isSelected) filled = true;
-          });
+          }
+          for (const key of targets) this.selectChoiceOption(question.options[key]);
+          filled = optionKeys.every(key => this.isChoiceOptionSelected(question.options[key]) === targets.has(key));
         } else if (question.type === "2") {
           const textareaElements = question.element.querySelectorAll("textarea");
           if (textareaElements.length === 0) return false;
@@ -8451,7 +8487,7 @@
               questionTypeText = this.removeHtml(colorShallowElement).slice(1, 4) || "";
             }
             questionTitle = this.removeHtml(
-              titleElement.split(colorShallowElement || "")[1] || ""
+              colorShallowElement ? titleElement.replace(colorShallowElement, "") : titleElement
             );
             optionElements = element.querySelectorAll(".answerBg");
             [optionsObject, optionTexts] = this.extractOptions(
@@ -8503,11 +8539,11 @@
         );
         if (!optionTextContent || !String(optionTextContent).replace(/<img[^>]*>/gi, "").replace(/\s+/g, "")) {
           const img = optionElement.querySelector && optionElement.querySelector("img");
-          const src = img ? (img.src || img.getAttribute("data-src") || "") : "";
+          const src = img ? (img.getAttribute("data-src") || img.currentSrc || img.src || "") : "";
           if (src) optionTextContent = `<img src="${src}"/>`;
           else if (!optionTextContent) optionTextContent = `选项${String.fromCharCode(65 + index)}`;
         }
-        optionsObject[optionTextContent] = optionElement;
+        optionsObject[`${String.fromCharCode(65 + index)}. ${optionTextContent}`] = optionElement;
         optionTexts.push(optionTextContent);
       });
       return [optionsObject, optionTexts];
@@ -8561,51 +8597,45 @@
       }
     }
   }
+  const videoRateStates = new WeakMap();
   const hookVedio = (video, playbackRate = 2) => {
-    const log = useLogStore();
-    function applyHookToVideo(video2) {
-      try {
-        video2.playbackRate = playbackRate;
-      } catch (e) {
-        log.insertLog(`[hook] 设置播放速度失败: ${e.message}`);
+    const rate = Number(playbackRate);
+    if (!video || !Number.isFinite(rate) || rate < 0.5 || rate > 16) return false;
+    let state = videoRateStates.get(video);
+    if (!state) {
+      // 从媒体元素自己的原型链读取原生访问器，兼容 iframe 的独立 window。
+      let proto = Object.getPrototypeOf(video), descriptor;
+      while (proto && !descriptor) {
+        descriptor = Object.getOwnPropertyDescriptor(proto, "playbackRate");
+        proto = Object.getPrototypeOf(proto);
       }
-      try {
-        Object.defineProperty(video2, "playbackRate", {
-          configurable: true,
-          get: () => playbackRate,
-          set: () => {
-          }
-          // 阻止外部修改
-        });
-      } catch (e) {
-        log.insertLog(`[hook] 无法锁定 playbackRate: ${e.message}`);
-      }
+      if (!descriptor || !descriptor.get || !descriptor.set) return false;
+      state = { rate, descriptor };
+      state.apply = () => {
+        try {
+          if (descriptor.get.call(video) !== state.rate) descriptor.set.call(video, state.rate);
+          video.defaultPlaybackRate = state.rate;
+        } catch (e) { useLogStore().insertLog("设置视频倍速失败：" + e.message); }
+      };
+      videoRateStates.set(video, state);
+      ["loadedmetadata", "playing", "ratechange"].forEach(event => video.addEventListener(event, state.apply));
     }
-    applyHookToVideo(video);
+    state.rate = (video.__xsRateRestricted || video.__xsFinishingAtNormalRate) ? 1 : rate;
+    try {
+      Object.defineProperty(video, "playbackRate", {
+        configurable: true,
+        get: () => state.descriptor.get.call(video),
+        set: () => state.apply()
+      });
+    } catch (_) {}
+    state.apply();
+    return state.descriptor.get.call(video) === state.rate;
   };
   const applyVideoRateToPage = (rate) => {
-    if (!rate || isNaN(rate)) return;
+    if (!Number.isFinite(Number(rate)) || Number(rate) < 0.5 || Number(rate) > 16) return;
     const applyOnDoc = (doc) => {
       if (!doc) return;
-      doc.querySelectorAll("video, audio").forEach((el) => {
-        try {
-          delete el.playbackRate;
-        } catch (e) {
-        }
-        try {
-          el.playbackRate = rate;
-        } catch (e) {
-        }
-        try {
-          Object.defineProperty(el, "playbackRate", {
-            configurable: true,
-            get: () => rate,
-            set: () => {
-            }
-          });
-        } catch (e) {
-        }
-      });
+      doc.querySelectorAll("video, audio").forEach(el => hookVedio(el, rate));
     };
     const collectFrames = (doc, depth) => {
       if (depth > 3 || !doc) return;
@@ -8621,6 +8651,48 @@
     };
     applyOnDoc(document);
     collectFrames(document, 0);
+  };
+  const canRefreshStudyPage = (doc, seen = new Set()) => {
+    if (!doc || doc.hidden || doc.visibilityState === "hidden" || seen.has(doc)) return false;
+    seen.add(doc);
+    // 媒体即使暂停/已播完也可能正在等待进度确认，不自动刷新。
+    if (doc.querySelector("video, audio, .TiMu, .questionLi, .ans-job:not(.ans-job-finished), textarea, [contenteditable='true']")) return false;
+    for (const frame of doc.querySelectorAll("iframe")) {
+      try {
+        if (!frame.contentDocument || !canRefreshStudyPage(frame.contentDocument, seen)) return false;
+      } catch (_) { return false; }
+    }
+    return true;
+  };
+  const watchMediaRecovery = (media, { recover, checkComplete, onError, documents = [] }) => {
+    let stopped = false, running = false;
+    const listeners = [];
+    const check = async () => {
+      if (stopped || running) return;
+      running = true;
+      try {
+        if (checkComplete()) return;
+        if (!media.ended && media.paused) await recover();
+      } catch (e) { if (onError) onError(e); }
+      finally { running = false; }
+    };
+    const listen = (target, event) => {
+      if (!target || !target.addEventListener) return;
+      target.addEventListener(event, check);
+      listeners.push([target, event]);
+    };
+    for (const doc of new Set(documents)) {
+      ["visibilitychange", "resume"].forEach(event => listen(doc, event));
+      ["pageshow", "online", "focus"].forEach(event => listen(doc.defaultView, event));
+    }
+    ["pause", "canplay", "ended"].forEach(event => listen(media, event));
+    // 定时器是兜底；页面恢复时直接复核，不能依赖后台定时器准点执行。
+    const timer = setInterval(check, 15000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+      listeners.forEach(([target, event]) => target.removeEventListener(event, check));
+    };
   };
   const FACE_CHECK_INTERVAL_SECONDS = 3;
   const FACE_RECOGNITION_TEXTS = [
@@ -8742,6 +8814,7 @@
       }
     };
     log.insertLog("进入学习页面，脚本开始工作中..");
+    if (document.wasDiscarded) log.insertLog("检测到浏览器回收了后台页面；请将学习网站设为始终保持活动/不休眠，进度以平台记录为准", "warning");
     const setting = useSettingStore();
     const questionStore = useQuestionStore();
     const messageStore = useMessageStore();
@@ -8967,10 +9040,9 @@
       return intervalId;
     };
     const isVideoPlaybackRateDisabled = (iframeDocument) => {
-      const menuItems = iframeDocument.querySelectorAll(
-        ".vjs-playback-rate .vjs-menu-content .vjs-menu-item"
-      );
-      return menuItems.length === 0;
+      const control = iframeDocument.querySelector(".vjs-playback-rate");
+      // 菜单可能尚未渲染，缺菜单不等于平台明确禁止倍速。
+      return !!(control && (control.getAttribute("aria-disabled") === "true" || control.classList.contains("vjs-disabled")));
     };
     const processMedia = async (mediaType, iframeDocument, iframe) => {
       return new Promise((resolve) => {
@@ -8984,12 +9056,12 @@
         let isResolved = false;
         let observer = null;
         let quizHandlerId = null;
+        let stopRecovery = null;
         if (isRateDisabled && userRate > 1) {
           log.insertLog(
             "视频禁止倍速，已临时调整为1倍速，强制倍速回导致任务点无法完成。"
           );
         }
-        log.insertLog(`播放成功，当前视频播放倍速为${finalRate}x.`);
         const intervalId = setInterval(async () => {
           const mediaElement = iframeDocument.documentElement.querySelector(mediaType);
           if (mediaElement && !isExecuted) {
@@ -9000,28 +9072,41 @@
               messageStore,
               extraDocuments: [iframeDocument]
             });
-            await mediaElement.pause();
-            mediaElement.muted = true;
-            await mediaElement.play();
+            try {
+              await mediaElement.pause();
+              mediaElement.muted = true;
+              await mediaElement.play();
+            } catch (e) {
+              isExecuted = false;
+              log.insertLog("视频启动暂未成功，将重试：" + e.message, "warning");
+              return;
+            }
+            mediaElement.__xsRateRestricted = isRateDisabled;
+            mediaElement.__xsFinishingAtNormalRate = false;
             hookVedio(mediaElement, finalRate);
+            log.insertLog(`播放成功，当前实际播放倍速为${mediaElement.playbackRate}x.`);
             if (mediaType === "video") {
               quizHandlerId = setupVideoQuizHandler(iframeDocument);
             }
+            let resuming = false;
             const listener = async () => {
-              if (hasPlaybackEnded || isResolved) return;
+              if (hasPlaybackEnded || isResolved || resuming || mediaElement.ended) return;
+              resuming = true;
+              try {
               await waitForCxFaceRecognition({
                 log,
                 setting,
                 messageStore,
                 extraDocuments: [iframeDocument]
               });
-              await sleep(1);
-              await mediaElement.play();
+              if (hasPlaybackEnded || isResolved || mediaElement.ended) return;
+              if (mediaElement.paused) await mediaElement.play();
+              } finally { resuming = false; }
             };
-            mediaElement.addEventListener("pause", listener);
             const timeUpdateHandler = () => {
               if (!isSpeedRestored && mediaElement.duration - mediaElement.currentTime < 10) {
                 isSpeedRestored = true;
+                mediaElement.__xsFinishingAtNormalRate = true;
                 delete mediaElement.playbackRate;
                 hookVedio(mediaElement, 1);
               }
@@ -9030,7 +9115,7 @@
               mediaElement.addEventListener("timeupdate", timeUpdateHandler);
             }
             const cleanup = () => {
-              mediaElement.removeEventListener("pause", listener);
+              if (stopRecovery) { stopRecovery(); stopRecovery = null; }
               mediaElement.removeEventListener("timeupdate", timeUpdateHandler);
               if (quizHandlerId) {
                 clearInterval(quizHandlerId);
@@ -9071,6 +9156,20 @@
                 finishTask();
               }
             }
+            if (!isResolved) stopRecovery = watchMediaRecovery(mediaElement, {
+              documents: [document, iframeDocument],
+              recover: listener,
+              checkComplete: () => {
+                if (isResolved) return true;
+                if (iframe && iframe.parentElement && iframe.parentElement.classList.contains("ans-job-finished")) {
+                  finishTask();
+                  mediaElement.pause();
+                  return true;
+                }
+                return false;
+              },
+              onError: e => log.insertLog("后台恢复播放失败，将继续重试：" + e.message, "warning")
+            });
             clearInterval(intervalId);
           }
         }, 2500);
@@ -11733,7 +11832,7 @@
           const t = cleanText(option.textContent);
           if (t) return t;
           const img = option.querySelector && option.querySelector("img");
-          const src = img ? (img.src || img.getAttribute("data-src") || "") : "";
+          const src = img ? (img.getAttribute("data-src") || img.currentSrc || img.src || "") : "";
           return src ? `<img src="${src}"/>` : `选项${String.fromCharCode(65 + index)}`;
         });
         const options = {};
@@ -12943,13 +13042,15 @@
         }
       };
       const autoRefreshPage = () => {
+        clearInterval(refreshTimer.value);
+        refreshTimer.value = null;
         const timerStatus = setting.config.basicConfig.autoRefresh.value;
         if (timerStatus) {
           refreshTimer.value = setInterval(() => {
+            if (!canRefreshStudyPage(document)) return;
+            log.insertLog("当前没有进行中的学习任务，执行空闲刷新");
             window.location.reload();
           }, 18e5);
-        } else {
-          clearInterval(refreshTimer.value);
         }
       };
       changeNewVersion();
@@ -14038,7 +14139,7 @@
         speedLockTimer = setInterval(() => {
             if (!video || !state.currentVideo) return;
             try {
-                if (video.__realRate !== store.speed) {
+                if (video.playbackRate !== Number(store.speed)) {
                     video.__realRate = store.speed;
                     video.defaultPlaybackRate = store.speed;
                     try { video.playbackRate = store.speed; } catch (e) {}
@@ -14052,13 +14153,17 @@
 
     function hijackPlaybackRate(video) {
         if (video.__rateHijacked) return;
-        video.__rateHijacked = true;
-        video.__realRate = store.speed;
+        video.__realRate = Number(store.speed);
         try {
-            const desc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'playbackRate');
+            let proto = Object.getPrototypeOf(video), desc;
+            while (proto && !desc) {
+                desc = Object.getOwnPropertyDescriptor(proto, 'playbackRate');
+                proto = Object.getPrototypeOf(proto);
+            }
+            if (!desc || !desc.get || !desc.set) return;
             Object.defineProperty(video, 'playbackRate', {
                 configurable: true,
-                get: function () { return video.__realRate; },
+                get: function () { return desc.get.call(video); },
                 set: function (v) {
                     const numV = Number(v);
                     if (isNaN(numV)) return;
@@ -14072,7 +14177,9 @@
                     video.__realRate = numV;
                 }
             });
+            video.__rateHijacked = true;
         } catch (e) {
+            video.__rateHijacked = false;
             log('⚠️ 倍速锁定遇到小问题，已自动改用备用方式', e);
         }
     }
@@ -14347,7 +14454,7 @@
                     const inputVal = input ? input.value : '';
                     const checked = input ? !!input.checked : false;
                     const img = op.querySelector && op.querySelector("img");
-                    const imgSrc = img ? (img.src || img.getAttribute("data-src") || "") : "";
+                    const imgSrc = img ? (img.getAttribute("data-src") || img.currentSrc || img.src || "") : "";
                     const finalText = labelText || (imgSrc ? `<img src="${imgSrc}"/>` : "");
                     opts.push({ text: finalText, el: clickable, input, value: inputVal, letter: optLetter, checked });
                 });

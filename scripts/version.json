@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "5.3.9",
+    "version": "5.3.10",
     "download_url": "https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js",
-    "changelog": "v5.3.9 答题小结不再写入余额不足；拿到答案但点不上不再被欠费盖掉；超星选项匹配/点击加固"
+    "changelog": "v5.3.10 真实倍速及重置恢复；播放失败可重试；定时刷新默认关闭不再打断；多选逐项核验；图片选项对应；限流自动重试；答题统计支持日期区间"
   },
   "xueshen-gf": {
-    "version": "5.3.9",
+    "version": "5.3.10",
     "download_url": "https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js",
-    "changelog": "v5.3.9 答题小结不再写入余额不足；拿到答案但点不上不再被欠费盖掉；超星选项匹配/点击加固"
+    "changelog": "v5.3.10 真实倍速及重置恢复；播放失败可重试；定时刷新默认关闭不再打断；多选逐项核验；图片选项对应；限流自动重试；答题统计支持日期区间"
   }
 }
