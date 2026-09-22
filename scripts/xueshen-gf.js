@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.3.12
+// @version      5.4.0
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @author       IPYIWEI
@@ -10,6 +10,13 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.4.0 (2026-09-22)
+// @changelog    1. 新增「跳过已完成章节」开关：自动切章按目录完成状态优先跳到未完成章节
+// @changelog    2. 任务点完成统一确认：监听任务上报与完成图标，未确认完成时停止自动跳转并提示手动确认
+// @changelog    3. 视频/音频增加播放看门狗，暂停自动恢复重试；播完等待平台确认，超时刷新只刷一次
+// @changelog    4. 文档(PPT/DOC/PDF)任务点重写：完成入口、幻灯翻页、旧版PPT滚动，完成后确认
+// @changelog    5. 电子书与计时阅读按要求时长保持阅读，多轮确认完成
+// @changelog    6. 任务链逐条容错，同一 iframe 任务不重复处理
 // @changelog    v5.3.12 (2026-09-22)
 // @changelog    1. 视频播完后若任务点未标记完成，立即刷新页面确认，避免干等卡住切章
 // @changelog    2. 同一任务只自动刷新一次，刷新后复查完成态再继续切章
@@ -1924,6 +1931,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               type: "switch",
               tips: "（建议开启）开启后，自动切换章节，手动答题时，建议关闭"
             },
+            skipFinishedChapter: {
+              text: "跳过已完成章节",
+              value: true,
+              type: "switch",
+              tips: "（建议开启）自动切章时优先跳到目录里未完成的章节，减少空跳"
+            },
             autoAnswer: {
               text: "自动答题",
               value: true,
@@ -2370,10 +2383,11 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         return `${value}%`;
       };
       const closeAllAuto = () => {
-        const hasAnyEnabled = setting.config.basicConfig.autoSubmit.value || setting.config.basicConfig.autoChangeChapter.value || setting.config.basicConfig.autoAnswer.value || setting.config.examConfig.autoSubmit.value || setting.config.basicConfig.autoRefresh.value;
+        const hasAnyEnabled = setting.config.basicConfig.autoSubmit.value || setting.config.basicConfig.autoChangeChapter.value || setting.config.basicConfig.skipFinishedChapter.value || setting.config.basicConfig.autoAnswer.value || setting.config.examConfig.autoSubmit.value || setting.config.basicConfig.autoRefresh.value;
         const newState = !hasAnyEnabled;
         setting.config.basicConfig.autoSubmit.value = newState;
         setting.config.basicConfig.autoChangeChapter.value = newState;
+        setting.config.basicConfig.skipFinishedChapter.value = newState;
         setting.config.basicConfig.autoAnswer.value = newState;
         setting.config.examConfig.autoSubmit.value = newState;
         setting.config.basicConfig.autoRefresh.value = newState;
@@ -8875,6 +8889,98 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       activeWaitPromise = null;
     }
   };
+
+
+  const TASK_RESULT = {
+    finished: "finished",
+    unconfirmed: "unconfirmed",
+    skipped: "skipped"
+  };
+  const BOOK_READ_EXTRA_SECONDS = 8;
+  const BOOK_READ_MAX_ROUNDS = 4;
+  const jobContainerOf = (target) => {
+    if (!target) return null;
+    if (target.tagName === "IFRAME") return target.closest(".ans-job") || target.parentElement;
+    return target;
+  };
+
+  const JOB_CONFIRM_TIMEOUT = 8;
+  const PLAYBACK_WATCHDOG_INTERVAL = 5;
+  const PLAY_FAIL_HINT_THRESHOLD = 3;
+  const parseJobReport = (responseText) => {
+    try {
+      const data = JSON.parse(responseText);
+      return (data == null ? void 0 : data.status) === true || (data == null ? void 0 : data.status) === "true";
+    } catch (error) {
+      return String(responseText || "").includes("success");
+    }
+  };
+  const watchJobReport = (iframeWindow) => {
+    var _a;
+    const prototype = (_a = iframeWindow == null ? void 0 : iframeWindow.XMLHttpRequest) == null ? void 0 : _a.prototype;
+    if (!prototype) {
+      return { result: Promise.resolve(false), restore: () => {} };
+    }
+    const originalOpen = prototype.open;
+    const originalSend = prototype.send;
+    let reportSettled = null;
+    const result = new Promise((resolve) => {
+      reportSettled = resolve;
+    });
+    prototype.open = function(method, url2, ...rest) {
+      this.__xsJobRequestUrl = typeof url2 === "string" ? url2 : "";
+      return originalOpen.call(this, method, url2, ...rest);
+    };
+    prototype.send = function(...args) {
+      if (String(this.__xsJobRequestUrl || "").includes("/ananas/job")) {
+        this.addEventListener("load", () => {
+          try { reportSettled(parseJobReport(this.responseText)); } catch (_) { reportSettled(false); }
+        });
+        this.addEventListener("error", () => { try { reportSettled(false); } catch (_) {} });
+      }
+      return originalSend.apply(this, args);
+    };
+    return {
+      result,
+      restore: () => {
+        prototype.open = originalOpen;
+        prototype.send = originalSend;
+      }
+    };
+  };
+  const waitJobIconFinished = async (target, timeoutSec) => {
+    const taskContainer = jobContainerOf(target);
+    if (!taskContainer) return false;
+    const deadline = Date.now() + timeoutSec * 1e3;
+    while (Date.now() < deadline) {
+      if (taskContainer.classList.contains("ans-job-finished")) return true;
+      await sleep(0.5);
+    }
+    return taskContainer.classList.contains("ans-job-finished");
+  };
+  const confirmJobFinished = (target, reportResult, timeoutSec = JOB_CONFIRM_TIMEOUT) => {
+    return new Promise((resolve) => {
+      const taskContainer = jobContainerOf(target);
+      const signals = [reportResult, waitJobIconFinished(taskContainer, timeoutSec)];
+      let pending = signals.length;
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      signals.forEach((signal) => {
+        Promise.resolve(signal).then((confirmed) => {
+          if (confirmed) finish(true);
+          else if (--pending === 0) finish(false);
+        }).catch(() => {
+          if (--pending === 0) finish(false);
+        });
+      });
+      sleep(timeoutSec).then(() => finish(false));
+    });
+  };
+
   const cxChapterLogic = () => {
     const log = useLogStore();
     const init = () => {
@@ -8897,11 +9003,15 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         });
       }, 3e3);
     };
-    const processIframeTask = () => {
+    const processIframeTask = async () => {
+      var _a;
       const documentElement = document.documentElement;
       const iframe = documentElement.querySelector("iframe");
       if (!iframe) {
         console.warn("No iframe found.");
+        return;
+      }
+      if (setting.config.basicConfig.autoChangeChapter.value && ((_a = setting.config.basicConfig.skipFinishedChapter) == null ? void 0 : _a.value) && isCurrentChapterFinishedByCatalog() && await changeToNextUnfinishedChapter()) {
         return;
       }
       watchIframe(documentElement);
@@ -8920,6 +9030,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         }, 500);
       });
     };
+
     const hideCxWorkConfirmPopup = () => {
       var _a, _b, _c;
       try {
@@ -8998,18 +9109,189 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         }
       }, 2e3);
     };
+    const getTopLearningContext = () => {
+      let topWindow = window, topDocument = document;
+      try {
+        topWindow = (typeof unsafeWindow !== "undefined" ? unsafeWindow.top : window.top) || window;
+        topDocument = topWindow.document || document;
+      } catch (_) {
+        topWindow = window;
+        topDocument = document;
+      }
+      return { topWindow, topDocument };
+    };
+    const getChapterIdFromTeacherAjax = (element) => {
+      var _a, _b;
+      return ((_b = (_a = element == null ? void 0 : element.getAttribute("onclick")) == null ? void 0 : _a.match(/\('(.*)','(.*)','(.*)'\)/)) == null ? void 0 : _b[3]) || "";
+    };
+    const getChapterName = (chapterInfo) => {
+      var _a, _b, _c, _d, _e, _f, _g;
+      return ((_d = (_c = (_b = (_a = chapterInfo == null ? void 0 : chapterInfo.element) == null ? void 0 : _a.parentElement) == null ? void 0 : _b.querySelector(".posCatalog_name")) == null ? void 0 : _c.textContent) == null ? void 0 : _d.trim()) || ((_g = (_f = (_e = chapterInfo == null ? void 0 : chapterInfo.element) == null ? void 0 : _e.parentElement) == null ? void 0 : _f.textContent) == null ? void 0 : _g.trim()) || "未知章节";
+    };
+    const parseUnfinishCount = (container) => {
+      const element = container == null ? void 0 : container.querySelector(".jobUnfinishCount");
+      if (!element) return null;
+      const count = Number.parseInt(String(element.value ?? "").trim(), 10);
+      return Number.isFinite(count) ? count : null;
+    };
+    const resolveChapterFinished = (container) => {
+      if (!container) return null;
+      if (container.querySelector(".icon_Completed")) return true;
+      const count = parseUnfinishCount(container);
+      return count === null ? null : count === 0;
+    };
+    const isChapterFinished = (chapter) => chapter.finished === true;
+    const isChapterPending = (chapter) => chapter.finished === false;
+    const isCurrentChapterFinishedByCatalog = () => {
+      const { topDocument } = getTopLearningContext();
+      const activeChapter = topDocument.querySelector(".posCatalog_active");
+      if (!activeChapter) return false;
+      return resolveChapterFinished(activeChapter) === true;
+    };
+    const isInFinalTab = () => {
+      const { topDocument } = getTopLearningContext();
+      const tabs = Array.from(topDocument.querySelectorAll("#prev_tab .prev_ul li"));
+      if (tabs.length === 0) return true;
+      return tabs[tabs.length - 1].classList.contains("active");
+    };
+    const isInFinalChapter = () => {
+      const { topDocument } = getTopLearningContext();
+      const chapterNodes = Array.from(topDocument.querySelectorAll(".posCatalog_select:not(.firstLayer)"));
+      if (chapterNodes.length === 0) return false;
+      return chapterNodes[chapterNodes.length - 1].classList.contains("posCatalog_active");
+    };
+    const hasLockedChapters = () => {
+      const { topDocument } = getTopLearningContext();
+      return topDocument.querySelectorAll(".catalog_points_sa, .catalog_points_er").length > 0;
+    };
+    const chapterEnterCounter = /* @__PURE__ */ new Map();
+    const REPEAT_ENTER_MAX = 3;
+    const isStuckOnSameChapter = () => {
+      var _a;
+      if (!hasLockedChapters()) return false;
+      const { topDocument } = getTopLearningContext();
+      const chapterId = (_a = topDocument.querySelector(".posCatalog_active")) == null ? void 0 : _a.getAttribute("id");
+      if (!chapterId) return false;
+      const count = (chapterEnterCounter.get(chapterId) || 0) + 1;
+      if (count >= REPEAT_ENTER_MAX) {
+        chapterEnterCounter.set(chapterId, 0);
+        return true;
+      }
+      chapterEnterCounter.set(chapterId, count);
+      return false;
+    };
+    const getChapterInfos = (topDocument) => {
+      return Array.from(topDocument.querySelectorAll('[onclick^="getTeacherAjax"]')).map((element) => ({
+        element,
+        chapterId: getChapterIdFromTeacherAjax(element),
+        finished: resolveChapterFinished(element.parentElement)
+      })).filter((chapter) => chapter.chapterId);
+    };
+    const waitForChapterInfos = async (timeout = 10) => {
+      const { topDocument } = getTopLearningContext();
+      const deadline = Date.now() + timeout * 1e3;
+      let lastCount = -1;
+      while (Date.now() < deadline) {
+        const chapters = getChapterInfos(topDocument);
+        if (chapters.length > 0 && chapters.length === lastCount) {
+          return { chapters, stable: true };
+        }
+        lastCount = chapters.length;
+        await sleep(1);
+      }
+      return { chapters: getChapterInfos(topDocument), stable: false };
+    };
+    const findNextUnfinishedChapter = async () => {
+      var _a;
+      const { topDocument } = getTopLearningContext();
+      const { chapters, stable } = await waitForChapterInfos();
+      if (!chapters.length) return { hasCatalog: false, chapter: null, allFinished: false };
+      const currentChapterId = ((_a = topDocument.querySelector("#curChapterId")) == null ? void 0 : _a.value) || "";
+      const currentIndex = chapters.findIndex((chapter) => chapter.chapterId === currentChapterId);
+      const orderedChapters = currentIndex >= 0 ? [...chapters.slice(currentIndex + 1), ...chapters.slice(0, currentIndex)] : chapters;
+      return {
+        hasCatalog: true,
+        chapter: orderedChapters.find(isChapterPending) || null,
+        allFinished: stable && !hasLockedChapters() && chapters.every(isChapterFinished)
+      };
+    };
+    const jumpToChapter = async (chapterInfo) => {
+      var _a, _b, _c;
+      if (!chapterInfo) return false;
+      const { topWindow, topDocument } = getTopLearningContext();
+      const chapterId = chapterInfo.chapterId;
+      const courseId = (_a = topDocument.querySelector("#curCourseId")) == null ? void 0 : _a.value;
+      const classId = (_b = topDocument.querySelector("#curClazzId")) == null ? void 0 : _b.value;
+      log.insertLog(`跳转到未完成章节：${getChapterName(chapterInfo)}`);
+      if ((topWindow == null ? void 0 : topWindow.getTeacherAjax) && courseId && classId && chapterId) {
+        topWindow.getTeacherAjax(courseId, classId, chapterId);
+      } else {
+        chapterInfo.element.click();
+      }
+      await sleep(1);
+      (_c = topDocument.querySelector(".posCatalog_active")) == null ? void 0 : _c.scrollIntoView({ behavior: "smooth", block: "center" });
+      return true;
+    };
+    const changeToNextUnfinishedChapter = async () => {
+      var _a;
+      if (!((_a = setting.config.basicConfig.skipFinishedChapter) == null ? void 0 : _a.value)) return false;
+      const { hasCatalog, chapter, allFinished } = await findNextUnfinishedChapter();
+      if (!hasCatalog) {
+        log.insertLog("未读取到章节任务点数据，已改用普通章节切换", "warning");
+        return false;
+      }
+      if (allFinished) {
+        log.insertLog("全部章节任务点已完成");
+        return true;
+      }
+      if (!chapter) {
+        if (hasLockedChapters()) {
+          log.insertLog("后续章节尚未解锁，按顺序推进中");
+        } else {
+          log.insertLog("部分章节完成状态读取不到，已改用普通章节切换", "warning");
+        }
+        return false;
+      }
+      return jumpToChapter(chapter);
+    };
     const changeToNextChapter = async (documentElement, isCurrent = () => true) => {
       const enabled = () => setting.config.basicConfig.autoChangeChapter.value && isCurrent();
       if (!enabled()) return false;
+      if (isInFinalTab() && isStuckOnSameChapter()) {
+        log.insertLog("已多次重复进入当前章节，可能存在需要手动完成的章节测试，请手动完成后再继续。", "warning", 4);
+        return false;
+      }
+      if (isInFinalTab() && isCurrentChapterFinishedByCatalog() && await changeToNextUnfinishedChapter()) {
+        return true;
+      }
+      if (isInFinalTab() && isInFinalChapter()) {
+        const { hasCatalog, allFinished } = await findNextUnfinishedChapter();
+        if (hasCatalog) {
+          if (allFinished) {
+            log.insertLog("全部章节任务点已完成");
+          } else if (hasLockedChapters()) {
+            log.insertLog("仍有未解锁的章节，请完成当前章节的任务点后继续", "warning", 4);
+          } else {
+            log.insertLog("已到最后一章，但仍有章节未完成，请手动切换到未完成的章节", "warning", 4);
+          }
+          return true;
+        }
+      }
       await sleep(setting.config.basicConfig.reqIntervalTime.value);
       if (!enabled()) return false;
-      let topWindow = window, topDocument = document;
-      try { topWindow = (typeof unsafeWindow !== "undefined" ? unsafeWindow.top : window.top) || window; topDocument = topWindow.document || document; } catch (_) { topWindow = window; }
+      const { topWindow, topDocument } = getTopLearningContext();
       const course = topDocument.querySelector("#curCourseId"), chapter = topDocument.querySelector("#curChapterId"), clazz = topDocument.querySelector("#curClazzId");
       if (topWindow.PCount && typeof topWindow.PCount.next === "function" && course && chapter && clazz) {
         try {
           if (!enabled()) return false;
           topWindow._preChapterId = chapter.value;
+          try {
+            try {
+              const active = topDocument.querySelector(".posCatalog_active");
+              if (active) active.scrollIntoView({ behavior: "smooth", block: "center" });
+            } catch (_) {}
+          } catch (_) {}
+          await sleep(0.2);
           topWindow.PCount.next(String(topDocument.querySelectorAll("#prev_tab .prev_ul li").length), chapter.value, course.value, clazz.value, "");
           return true;
         } catch (error) { console.warn("PCount.next failed", error); }
@@ -9021,6 +9303,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           button.click(); return true;
         }
       }
+      // 普通下一章找不到时，再尝试目录跳未完成章
+      if (await changeToNextUnfinishedChapter()) return true;
       log.insertLog("未找到可用下一章入口，请检查是否已到最后一章或章节尚未解锁", "warning", 4);
       return false;
     };
@@ -9041,61 +9325,151 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       const thisTaskId = ++currentWatchIframeTaskId;
       pendingChapterAdvance = null;
       IframeUtils.getAllNestedIframes(documentElement).subscribe((allIframes) => {
-        rxjs.from(allIframes).pipe(concatMap((iframe) => processIframe(iframe))).subscribe({
-          error: error => log.insertLog("任务处理失败，未切章：" + (error.message || error), "warning"),
+        const taskResults = [];
+        rxjs.from(allIframes).pipe(
+          concatMap((iframe) => processIframe(iframe).catch((error) => {
+            console.warn("[cx] 任务点处理异常。", error);
+            log.insertLog("当前任务点处理异常", "warning");
+            return TASK_RESULT.unconfirmed;
+          }))
+        ).subscribe({
+          next: (result) => taskResults.push(result || TASK_RESULT.skipped),
+          error: (error) => {
+            console.warn("[cx] 任务链异常终止。", error);
+            log.insertLog("任务链处理异常，请尝试刷新页面", "warning", 4);
+          },
           complete: async () => {
             var _a, _b;
             const chapterName = ((_a = documentElement.querySelector(
               ".posCatalog_select.posCatalog_active>.posCatalog_name"
             )) == null ? void 0 : _a.innerText) || "未知章节";
             const currentTaskName = ((_b = document.querySelector(".prev_ul > li.active .spanText")) == null ? void 0 : _b.textContent.trim()) || "";
-            if (thisTaskId === currentWatchIframeTaskId) {
-              log.insertLog(`任务点 ${chapterName}-${currentTaskName} 已处理完毕`);
-              pendingChapterAdvance = {root: documentElement, id: thisTaskId};
-              if (setting.config.basicConfig.autoChangeChapter.value) {
-                await advancePendingChapter();
-              } else {
-                log.insertLog(
-                  `自动切换章节未开启，前往<span class='module'>设置</span>模块中更改`,
-                  "warning",
-                  4
-                );
-              }
+            if (thisTaskId !== currentWatchIframeTaskId) return;
+            if (taskResults.includes(TASK_RESULT.unconfirmed)) {
+              log.insertLog(
+                `任务点 ${chapterName}-${currentTaskName} 未确认完成，已停止自动跳转，请手动确认后继续`,
+                "warning",
+                4
+              );
+              return;
+            }
+            log.insertLog(`任务点 ${chapterName}-${currentTaskName} 已处理完毕`);
+            pendingChapterAdvance = { root: documentElement, id: thisTaskId };
+            if (setting.config.basicConfig.autoChangeChapter.value) {
+              await advancePendingChapter();
+            } else {
+              log.insertLog(
+                `自动切换章节未开启，前往<span class='module'>设置</span>模块中更改`,
+                "warning",
+                4
+              );
             }
           }
         });
       });
     };
-    const processPpt = (iframeWindow) => {
-      return new Promise((resolve) => {
-        const iframe = iframeWindow.document.querySelector("#panView");
-        log.insertLog("发现一个PPT，正在解析...");
-        const startScrolling = async () => {
-          const pptWindow = iframe.contentWindow;
-          const scrollHeight = pptWindow.document.body.scrollHeight;
-          await pptWindow.scrollTo({
-            top: scrollHeight,
-            behavior: "smooth"
-          });
-          log.insertLog("阅读完成");
-          resolve();
-        };
-        const checkReadyState = () => {
-          if (iframe.contentWindow.document.readyState === "complete") {
-            startScrolling();
-          } else {
-            setTimeout(checkReadyState, 100);
-          }
-        };
-        checkReadyState();
+    const logDocumentDiagnostics = (iframeWindow) => {
+      var _a;
+      try {
+        const moduleDocument = iframeWindow.document;
+        console.info("[cx] 文档模块结构未识别", {
+          url: (_a = iframeWindow.location) == null ? void 0 : _a.href,
+          innerIframes: Array.from(moduleDocument.querySelectorAll("iframe")).map((element) => element.src),
+          scrollable: Array.from(moduleDocument.querySelectorAll("*")).filter((element) => element.scrollHeight > element.clientHeight + 5).slice(0, 10).map((element) => `${element.tagName}#${element.id}.${element.className}`)
+        });
+      } catch (error) {
+        console.warn("[cx] 收集文档模块结构失败。", error);
+      }
+    };
+    const readSlides = async (iframeWindow) => {
+      const moduleDocument = iframeWindow.document;
+      moduleDocument.querySelectorAll("audio").forEach((audio) => {
+        audio.muted = true;
+        audio.addEventListener("play", () => { audio.muted = true; });
       });
+      if (typeof iframeWindow.swiperNext !== "function") return false;
+      const slideCount = moduleDocument.querySelectorAll(".swiper-container .swiper-slide").length;
+      for (let index = 0; index < slideCount; index += 1) {
+        iframeWindow.swiperNext();
+        await sleep(1);
+      }
+      return true;
     };
-    const processBook = async (iframeWindow) => {
-      log.insertLog("发现一个电子书，正在解析");
-      unsafeWindow.top.onchangepage(iframeWindow.getFrameAttr("end"));
-      log.insertLog("阅读完成");
-      return Promise.resolve();
+    const runDocumentTask = async (iframeWindow) => {
+      const moduleDocument = iframeWindow.document;
+      const hasFinishEntry = typeof iframeWindow.finishJob === "function";
+      const isImageViewer = Boolean(moduleDocument.querySelector("#img.imglook"));
+      const hasSlides = Boolean(moduleDocument.querySelector(".swiper-container"));
+      const panView = moduleDocument.querySelector("#panView");
+      if (hasFinishEntry && (isImageViewer || !hasSlides)) {
+        iframeWindow.finishJob();
+        return true;
+      }
+      if (hasSlides) return readSlides(iframeWindow);
+      // 兼容旧版 PPT：滚动到底
+      if (panView && panView.contentWindow) {
+        try {
+          const pptWindow = panView.contentWindow;
+          const waitReady = () => new Promise((resolve) => {
+            const tick = () => {
+              if (pptWindow.document && pptWindow.document.readyState === "complete") resolve();
+              else setTimeout(tick, 100);
+            };
+            tick();
+          });
+          await waitReady();
+          pptWindow.scrollTo({ top: pptWindow.document.body.scrollHeight, behavior: "smooth" });
+          await sleep(1);
+          return true;
+        } catch (_) {}
+      }
+      return false;
     };
+    const processDocument = async (iframeWindow, iframe) => {
+      log.insertLog("发现一个文档任务点，正在处理...");
+      const reporter = watchJobReport(iframeWindow);
+      try {
+        const started = await runDocumentTask(iframeWindow);
+        if (!started) {
+          logDocumentDiagnostics(iframeWindow);
+          log.insertLog("该文档任务点缺少可用的完成入口，请手动完成后继续", "warning", 4);
+          return TASK_RESULT.unconfirmed;
+        }
+        const confirmed = await confirmJobFinished(iframe, reporter.result);
+        if (!confirmed) {
+          log.insertLog("文档任务点未确认完成，请手动确认", "warning", 4);
+          return TASK_RESULT.unconfirmed;
+        }
+        log.insertLog("文档任务点已完成");
+        return TASK_RESULT.finished;
+      } finally {
+        reporter.restore();
+      }
+    };
+    const getBookRequiredSeconds = (iframeWindow) => {
+      var _a;
+      const readerSrc = ((_a = iframeWindow.document.querySelector('iframe[name="bookifame"]')) == null ? void 0 : _a.getAttribute("src")) || "";
+      if (!readerSrc.includes("timing")) return 0;
+      try {
+        const timing = new URL(readerSrc, iframeWindow.location.href).searchParams.get("timing");
+        const seconds = Number.parseInt(timing || "0", 10);
+        return Number.isFinite(seconds) && seconds > 0 ? seconds : 0;
+      } catch (error) {
+        console.warn("[cx] 解析阅读时长失败。", error);
+        return 0;
+      }
+    };
+    const keepReading = async (requiredSeconds, iframe, reportResult) => {
+      for (let round = 1; round <= BOOK_READ_MAX_ROUNDS; round += 1) {
+        const confirmed = await confirmJobFinished(iframe, reportResult, requiredSeconds + BOOK_READ_EXTRA_SECONDS);
+        if (confirmed) return true;
+        if (round < BOOK_READ_MAX_ROUNDS) {
+          log.insertLog(`阅读时长尚未达标，继续保持第 ${round + 1} 轮阅读`);
+        }
+      }
+      return false;
+    };
+
     const setupVideoQuizHandler = (iframeDocument) => {
       const intervalId = setInterval(() => {
         const quizContainer = iframeDocument.querySelector(".ans-timelineobjects");
@@ -9119,6 +9493,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     const processMedia = async (mediaType, iframeDocument, iframe) => {
       return new Promise((resolve) => {
         const taskContainer = iframe && (iframe.closest(".ans-job") || iframe.parentElement);
+        const iframeWindow = iframe && iframe.contentWindow;
         const userRate = setting.config.basicConfig.videoPlayrate.value;
         const isRateDisabled = mediaType === "video" && isVideoPlaybackRateDisabled(iframeDocument);
         const finalRate = isRateDisabled ? 1 : userRate;
@@ -9134,23 +9509,18 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           }
         })();
         const isJobFinished = () => !!(taskContainer && taskContainer.classList.contains("ans-job-finished"));
-        const waitForJobFinished = async (timeoutMs, stepMs = 500) => {
-          let waited = 0;
-          while (waited < timeoutMs) {
-            if (isJobFinished()) return true;
-            await sleep(stepMs);
-            waited += stepMs;
-          }
-          return isJobFinished();
-        };
-        log.insertLog(`发现一个${mediaType},正在播放${mediaType}..`);
+        log.insertLog(`发现一个${mediaType}，开始播放，倍速 ${finalRate}x`);
         let isExecuted = false;
         let isSpeedRestored = false;
         let hasPlaybackEnded = false;
         let isResolved = false;
         let observer = null;
         let quizHandlerId = null;
+        let watchdogId = null;
         let stopRecovery = null;
+        let jobWatcher = null;
+        let isResuming = false;
+        let pausedChecks = 0;
         if (isRateDisabled && userRate > 1) {
           log.insertLog(
             "视频禁止倍速，已临时调整为1倍速，强制倍速回导致任务点无法完成。"
@@ -9160,7 +9530,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           const mediaElement = iframeDocument.documentElement.querySelector(mediaType);
           if (mediaElement && !isExecuted) {
             isExecuted = true;
-            // 播完后刷新回来：超星常要刷新才把 ans-job-finished 画出来
+            clearInterval(intervalId);
+            // 播完刷新回来：复查任务点是否已画上完成态
             let afterConfirmReload = false;
             try {
               if (sessionStorage.getItem(MEDIA_CONFIRM_RELOAD_KEY) === mediaJobKey) {
@@ -9170,9 +9541,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             } catch (_) {}
             if (afterConfirmReload && taskContainer) {
               log.insertLog(`${mediaType}刷新后复查任务点完成状态…`);
-              if (await waitForJobFinished(4000)) {
+              if (await waitJobIconFinished(taskContainer, 5)) {
                 log.insertLog(`${mediaType}刷新后任务点已确认完成`);
-                clearInterval(intervalId);
                 resolve();
                 return;
               }
@@ -9184,43 +9554,64 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               messageStore,
               extraDocuments: [iframeDocument]
             });
-            try {
-              await mediaElement.pause();
-              mediaElement.muted = true;
-              await mediaElement.play();
-            } catch (e) {
-              isExecuted = false;
-              log.insertLog("视频启动暂未成功，将重试：" + e.message, "warning");
-              return;
-            }
+            jobWatcher = watchJobReport(iframeWindow);
+            mediaElement.muted = true;
             mediaElement.__xsRateRestricted = isRateDisabled;
             mediaElement.__xsFinishingAtNormalRate = false;
-            hookVedio(mediaElement, finalRate);
-            log.insertLog(`播放成功，当前实际播放倍速为${mediaElement.playbackRate}x.`);
             if (mediaType === "video") {
               quizHandlerId = setupVideoQuizHandler(iframeDocument);
             }
-            let resuming = false;
-            const listener = async () => {
-              if (hasPlaybackEnded || isResolved || resuming || mediaElement.ended) return;
-              resuming = true;
-              try {
-              await waitForCxFaceRecognition({
-                log,
-                setting,
-                messageStore,
-                extraDocuments: [iframeDocument]
-              });
-              if (hasPlaybackEnded || isResolved || mediaElement.ended) return;
-              if (mediaElement.paused) await mediaElement.play();
-              } finally { resuming = false; }
+            const applyPlaybackRate = (rate) => {
+              delete mediaElement.playbackRate;
+              hookVedio(mediaElement, rate);
             };
+            const tryPlay = () => {
+              var _a, _b;
+              mediaElement.muted = true;
+              (_b = (_a = mediaElement.play()) == null ? void 0 : _a.catch) == null ? void 0 : _b.call(_a, (error) => {
+                console.warn("[cx] 起播失败，稍后重试。", error);
+              });
+            };
+            const resumePlayback = async () => {
+              if (hasPlaybackEnded || isResolved || isResuming || mediaElement.ended) return;
+              isResuming = true;
+              try {
+                await waitForCxFaceRecognition({
+                  log,
+                  setting,
+                  messageStore,
+                  extraDocuments: [iframeDocument]
+                });
+                await sleep(1);
+                if (hasPlaybackEnded || isResolved || mediaElement.ended) return;
+                tryPlay();
+              } finally {
+                isResuming = false;
+              }
+            };
+            const playingHandler = () => {
+              pausedChecks = 0;
+              applyPlaybackRate(isSpeedRestored ? 1 : finalRate);
+            };
+            mediaElement.addEventListener("playing", playingHandler);
+            mediaElement.addEventListener("pause", resumePlayback);
+            watchdogId = setInterval(() => {
+              if (!mediaElement.paused || hasPlaybackEnded || isResolved) return;
+              pausedChecks += 1;
+              if (pausedChecks === PLAY_FAIL_HINT_THRESHOLD) {
+                log.insertLog(
+                  `${mediaType}尚未开始播放，可能是资源加载缓慢，仍在重试中`,
+                  "warning",
+                  4
+                );
+              }
+              resumePlayback();
+            }, PLAYBACK_WATCHDOG_INTERVAL * 1e3);
             const timeUpdateHandler = () => {
               if (!isSpeedRestored && mediaElement.duration - mediaElement.currentTime < 10) {
                 isSpeedRestored = true;
                 mediaElement.__xsFinishingAtNormalRate = true;
-                delete mediaElement.playbackRate;
-                hookVedio(mediaElement, 1);
+                applyPlaybackRate(1);
               }
             };
             if (finalRate > 1) {
@@ -9228,33 +9619,43 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             }
             const cleanup = () => {
               if (stopRecovery) { stopRecovery(); stopRecovery = null; }
+              mediaElement.removeEventListener("playing", playingHandler);
+              mediaElement.removeEventListener("pause", resumePlayback);
               mediaElement.removeEventListener("timeupdate", timeUpdateHandler);
               if (quizHandlerId) {
                 clearInterval(quizHandlerId);
                 quizHandlerId = null;
               }
+              if (watchdogId) {
+                clearInterval(watchdogId);
+                watchdogId = null;
+              }
               if (observer) {
                 observer.disconnect();
                 observer = null;
               }
+              if (jobWatcher) {
+                try { jobWatcher.restore(); } catch (_) {}
+                jobWatcher = null;
+              }
             };
-            const finishTask = () => {
+            const finishTask = (result = TASK_RESULT.finished) => {
               if (isResolved) return;
               isResolved = true;
               cleanup();
-              resolve();
+              resolve(result);
             };
             const reloadToConfirmProgress = () => {
               try {
                 if (sessionStorage.getItem(MEDIA_CONFIRM_RELOAD_KEY) === mediaJobKey) return false;
                 sessionStorage.setItem(MEDIA_CONFIRM_RELOAD_KEY, mediaJobKey);
               } catch (_) {}
-              log.insertLog(`${mediaType}页面未刷出完成状态，即将刷新以确认任务点`, "warning");
+              log.insertLog(`${mediaType}进度未刷出完成态，立即刷新确认任务点`, "warning");
               cleanup();
               isResolved = true;
               setTimeout(() => {
                 try { location.reload(); } catch (_) { window.location.reload(); }
-              }, 400);
+              }, 300);
               return true;
             };
             mediaElement.addEventListener("ended", async () => {
@@ -9271,20 +9672,28 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 finishTask();
                 return;
               }
-              // 超星常需刷新才刷出完成态，播完立刻刷新，不再干等
-              log.insertLog(`${mediaType}已播放完成，立即刷新确认任务点`);
-              if (!reloadToConfirmProgress()) {
-                log.insertLog(`${mediaType}已刷新过仍未确认，继续后续流程以免卡住切章`, "warning");
+              log.insertLog(`${mediaType}已播放完成，等待平台确认学习进度…`);
+              const reportPromise = (jobWatcher && jobWatcher.result) || Promise.resolve(false);
+              const confirmed = await confirmJobFinished(taskContainer, reportPromise, JOB_CONFIRM_TIMEOUT);
+              if (isResolved) return;
+              if (confirmed || isJobFinished()) {
+                log.insertLog(`${mediaType}任务点已完成，停止播放`);
                 try { mediaElement.pause(); } catch (_) {}
                 finishTask();
+                return;
+              }
+              // 平台常需刷新才画完成态：确认超时后立刻刷新（只刷一次）
+              if (!reloadToConfirmProgress()) {
+                log.insertLog(`${mediaType}已刷新过仍未确认，停止自动切章以免空跳`, "warning");
+                try { mediaElement.pause(); } catch (_) {}
+                finishTask(TASK_RESULT.unconfirmed);
               }
             });
             if (taskContainer) {
               observer = new MutationObserver(() => {
-                const parentElement = taskContainer;
-                if (parentElement.classList.contains("ans-job-finished")) {
+                if (taskContainer.classList.contains("ans-job-finished")) {
                   log.insertLog(`${mediaType}任务点已完成，停止播放`);
-                  mediaElement.pause();
+                  try { mediaElement.pause(); } catch (_) {}
                   finishTask();
                 }
               });
@@ -9293,64 +9702,99 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 attributeFilter: ["class"],
                 subtree: true
               });
-              if (taskContainer.classList.contains("ans-job-finished")) {
+              if (isJobFinished()) {
                 log.insertLog(`${mediaType}任务点已完成，停止播放`);
-                mediaElement.pause();
+                try { mediaElement.pause(); } catch (_) {}
                 finishTask();
               }
             }
-            if (!isResolved) stopRecovery = watchMediaRecovery(mediaElement, {
-              documents: [document, iframeDocument],
-              recover: listener,
-              checkComplete: () => {
-                if (isResolved) return true;
-                if (taskContainer && taskContainer.classList.contains("ans-job-finished")) {
-                  finishTask();
-                  mediaElement.pause();
-                  return true;
-                }
-                return false;
-              },
-              onError: e => log.insertLog("后台恢复播放失败，将继续重试：" + e.message, "warning")
-            });
-            clearInterval(intervalId);
+            if (!isResolved) {
+              stopRecovery = watchMediaRecovery(mediaElement, {
+                documents: [document, iframeDocument],
+                recover: resumePlayback,
+                checkComplete: () => {
+                  if (isResolved) return true;
+                  if (isJobFinished()) {
+                    try { mediaElement.pause(); } catch (_) {}
+                    finishTask();
+                    return true;
+                  }
+                  return false;
+                },
+                onError: e => log.insertLog("后台恢复播放失败，将继续重试：" + e.message, "warning")
+              });
+              applyPlaybackRate(finalRate);
+              tryPlay();
+              log.insertLog(`播放成功，当前实际播放倍速为${mediaElement.playbackRate || finalRate}x.`);
+            }
           }
         }, 2500);
       });
     };
+
     const processRead = async (iframe, iframeWindow) => {
       try {
-        const triggerFinish = () => {
-          try {
-            if (iframeWindow && typeof iframeWindow.finishJob === "function" && iframeWindow.jobid) {
-              iframeWindow.finishJob(iframeWindow.jobid);
-              return true;
-            }
-          } catch (e) {
+        const reporter = watchJobReport(iframeWindow);
+        try {
+          const triggerFinish = () => {
+            try {
+              if (iframeWindow && typeof iframeWindow.finishJob === "function" && iframeWindow.jobid) {
+                iframeWindow.finishJob(iframeWindow.jobid);
+                return true;
+              }
+            } catch (e) {}
+            return false;
+          };
+          if (!triggerFinish()) {
+            const subFrame = (iframe.contentDocument == null ? void 0 : iframe.contentDocument.querySelector('iframe[src*="readjob"]')) || null;
+            const subWin = (subFrame == null ? void 0 : subFrame.contentWindow) || null;
+            try {
+              if (subWin && subWin.parent && typeof subWin.parent.finishJob === "function" && subWin.data && subWin.data.jobid) {
+                subWin.parent.finishJob(subWin.data.jobid);
+              }
+            } catch (e) {}
           }
-          return false;
-        };
-        if (!triggerFinish()) {
-          const subFrame = (iframe.contentDocument == null ? void 0 : iframe.contentDocument.querySelector('iframe[src*="readjob"]')) || null;
-          const subWin = (subFrame == null ? void 0 : subFrame.contentWindow) || null;
-          try {
-            if (subWin && subWin.parent && typeof subWin.parent.finishJob === "function" && subWin.data && subWin.data.jobid) {
-              subWin.parent.finishJob(subWin.data.jobid);
-            }
-          } catch (e) {
+          if (await confirmJobFinished(iframe, reporter.result, 15)) {
+            log.insertLog("阅读任务点已完成");
+            return TASK_RESULT.finished;
           }
+          log.insertLog("阅读任务完成超时，请手动检查", "warning", 4);
+          return TASK_RESULT.unconfirmed;
+        } finally {
+          reporter.restore();
         }
-        let waited = 0;
-        while (waited < 15000) {
-          const parentEl = iframe.parentElement;
-          if (parentEl && parentEl.className.includes("ans-job-finished")) return Promise.resolve();
-          await sleep(1000);
-          waited += 1000;
-        }
-        log.insertLog("阅读任务完成超时，请手动检查", "warning", 4);
-        return Promise.resolve();
       } catch (e) {
-        return Promise.resolve();
+        return TASK_RESULT.unconfirmed;
+      }
+    };
+    const processBook = async (iframeWindow, iframe) => {
+      const requiredSeconds = getBookRequiredSeconds(iframeWindow);
+      const reporter = watchJobReport(iframeWindow);
+      try {
+        if (requiredSeconds > 0) {
+          log.insertLog(`发现一个计时阅读任务点，需保持约 ${requiredSeconds} 秒，请勿切换页面`);
+          if (await keepReading(requiredSeconds, iframe, reporter.result)) {
+            log.insertLog("计时阅读任务点已完成");
+            return TASK_RESULT.finished;
+          }
+          log.insertLog("计时阅读任务点未确认完成，请手动确认", "warning", 4);
+          return TASK_RESULT.unconfirmed;
+        }
+        log.insertLog("发现一个电子书任务点，正在处理...");
+        const topWindow = (typeof unsafeWindow !== "undefined" ? unsafeWindow.top : window.top) || window.top;
+        if (typeof (topWindow == null ? void 0 : topWindow.onchangepage) !== "function" || typeof iframeWindow.getFrameAttr !== "function") {
+          log.insertLog("该电子书任务点缺少可用的翻页入口，请手动完成后继续", "warning", 4);
+          return TASK_RESULT.unconfirmed;
+        }
+        topWindow.onchangepage(iframeWindow.getFrameAttr("end"));
+        if (await confirmJobFinished(iframe, reporter.result)) {
+          log.insertLog("电子书任务点已完成");
+          return TASK_RESULT.finished;
+        }
+        log.insertLog("电子书任务点未确认完成，请手动确认", "warning", 4);
+        return TASK_RESULT.unconfirmed;
+      } finally {
+        reporter.restore();
       }
     };
     const processLive = async (iframe, iframeWindow) => {
@@ -9359,7 +9803,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           const bodyTxt = (iframeWindow.document.body == null ? void 0 : iframeWindow.document.body.innerText) || "";
           if (bodyTxt.includes("已完成") && /观看|任务/.test(bodyTxt)) {
             log.insertLog("直播任务已完成，自动继续", "success", 4);
-            return Promise.resolve();
+            return TASK_RESULT.finished;
           }
         }
         if (iframeWindow && !iframeWindow.__xsLiveOpened) {
@@ -9371,7 +9815,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               log.insertLog("已自动打开直播回放，观看时长达到90%后将自动完成并跳转", "info", 4);
             } else {
               log.insertLog("当前直播未开播或不可回放", "warning", 4);
-              return Promise.resolve();
+              return TASK_RESULT.finished;
             }
           } catch (e) {
           }
@@ -9391,7 +9835,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           const parentEl = iframe.parentElement;
           if (parentEl && parentEl.className.includes("ans-job-finished")) {
             log.insertLog("直播任务已完成，自动继续", "success", 4);
-            return Promise.resolve();
+            return TASK_RESULT.finished;
           }
           const pct = readLiveProgress();
           if (pct !== null && pct >= 90) {
@@ -9401,57 +9845,72 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             } catch (e) {
               location.reload();
             }
-            return Promise.resolve();
+            return TASK_RESULT.finished;
           }
-          await sleep(30000);
-          waited += 30000;
-          if (waited % 600000 === 0) {
+          await sleep(30);
+          waited += 30;
+          if (waited % 600 === 0) {
             log.insertLog(`直播挂机中，已等待 ${Math.round(waited / 60000)} 分钟（进度${pct === null ? "未知" : pct + "%"}），请保持回放页在前台播放`, "warning", 4);
           }
         }
         log.insertLog("直播任务超时未完成，请手动检查", "warning", 4);
-        return Promise.resolve();
+        return TASK_RESULT.unconfirmed;
       } catch (e) {
-        return Promise.resolve();
+        return TASK_RESULT.unconfirmed;
       }
     };
-    const processIframe = async (iframe) => {
+    const inFlightTasks = /* @__PURE__ */ new WeakMap();
+    const processIframe = (iframe) => {
+      const cached = inFlightTasks.get(iframe);
+      if (cached && cached.src === iframe.src && iframe.isConnected) {
+        return cached.task;
+      }
+      const task = runIframeTask(iframe).finally(() => {
+        var _a;
+        if (((_a = inFlightTasks.get(iframe)) == null ? void 0 : _a.task) === task) {
+          inFlightTasks.delete(iframe);
+        }
+      });
+      inFlightTasks.set(iframe, { src: iframe.src, task });
+      return task;
+    };
+    const runIframeTask = async (iframe) => {
       var _a, _b;
       const iframeSrc = iframe.src;
       const iframeDocument = iframe.contentDocument;
       const iframeWindow = iframe.contentWindow;
-      if (!iframeDocument || !iframeWindow) return Promise.resolve();
-      if (iframeSrc.includes("javascript:")) return Promise.resolve();
+      if (!iframeDocument || !iframeWindow) return TASK_RESULT.skipped;
+      if (iframeSrc.includes("javascript:")) return TASK_RESULT.skipped;
       await waitIframeLoad(iframe);
       const parentClass = ((_a = iframe.parentElement) == null ? void 0 : _a.className) || "";
-      if (parentClass.includes("ans-job-finished")) ;
-      else {
-        if (iframeSrc.includes("modules/read")) {
-          return processRead(iframe, iframeWindow);
+      if (parentClass.includes("ans-job-finished")) return TASK_RESULT.skipped;
+      if (iframeSrc.includes("modules/read")) {
+        return processRead(iframe, iframeWindow);
+      }
+      if (iframeSrc.includes("modules/live")) {
+        return processLive(iframe, iframeWindow);
+      }
+      if (iframeSrc.includes("api/work")) {
+        selectTextSearchLogic(iframeDocument, iframeWindow);
+        await processWork(iframe, iframeDocument, iframeWindow);
+        return TASK_RESULT.finished;
+      }
+      const ansJobIcon = (_b = iframe.parentElement) == null ? void 0 : _b.querySelector(".ans-job-icon");
+      if (ansJobIcon) {
+        if (iframeSrc.includes("video")) {
+          return await processMedia("video", iframeDocument, iframe) || TASK_RESULT.finished;
         }
-        if (iframeSrc.includes("modules/live")) {
-          return processLive(iframe, iframeWindow);
+        if (iframeSrc.includes("audio")) {
+          return await processMedia("audio", iframeDocument, iframe) || TASK_RESULT.finished;
         }
-        if (iframeSrc.includes("api/work")) {
-          selectTextSearchLogic(iframeDocument, iframeWindow);
-          return processWork(iframe, iframeDocument, iframeWindow);
+        if (["ppt", "doc", "pptx", "docx", "pdf"].some((type) => iframeSrc.includes("modules/" + type))) {
+          return processDocument(iframeWindow, iframe);
         }
-        const ansJobIcon = (_b = iframe.parentElement) == null ? void 0 : _b.querySelector(".ans-job-icon");
-        if (ansJobIcon) {
-          if (iframeSrc.includes("video")) {
-            return processMedia("video", iframeDocument, iframe);
-          } else if (iframeSrc.includes("audio")) {
-            return processMedia("audio", iframeDocument, iframe);
-          } else if (["ppt", "doc", "pptx", "docx", "pdf"].some(
-            (type) => iframeSrc.includes("modules/" + type)
-          )) {
-            return processPpt(iframeWindow);
-          } else if (["innerbook"].some((type) => iframeSrc.includes("modules/" + type))) {
-            return processBook(iframeWindow);
-          }
+        if (["innerbook"].some((type) => iframeSrc.includes("modules/" + type))) {
+          return processBook(iframeWindow, iframe);
         }
       }
-      return Promise.resolve();
+      return TASK_RESULT.skipped;
     };
     init();
     setupFaceRecognitionWatcher();
