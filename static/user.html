@@ -1286,8 +1286,13 @@
                     </div>
                     <!-- 推广返利说明 -->
                     <div class="user-card" style="padding:12px 16px;background:var(--t-surface2);border:1px solid var(--t-border)">
-                        <div style="font-size:12px;line-height:1.6;color:var(--t-text2)">
-                            佣金比例 <b id="promoRuleRate" style="color:var(--t-primary)">10%</b> · 结算冷却 <b id="promoRuleDays" style="color:var(--t-primary)">7</b> 天 · 最低提现 <b id="promoRuleMin" style="color:var(--t-primary)">¥10.00</b> · 每位用户仅可被绑定一次，冷却期后可进行提现，提现需管理员审核，审核通过后到账。
+                        <div style="font-size:13px;font-weight:600;margin-bottom:8px">推广返利怎么用</div>
+                        <div style="font-size:12px;line-height:1.9;color:var(--t-text2)">
+                            <div>· 佣金比例 <b id="promoRuleRate" style="color:var(--t-primary)">10%</b> · 结算冷却 <b id="promoRuleDays" style="color:var(--t-primary)">7</b> 天 · 最低提现 <b id="promoRuleMin" style="color:var(--t-primary)">¥10.00</b></div>
+                            <div>· 每位用户仅可被绑定一次；好友首单实付金额按比例计佣，冷却期结束后进入「可提现余额」。</div>
+                            <div>· 余额有三种用法：<b style="color:var(--t-primary)">提现</b>（管理员审核后线下打款）、<b style="color:var(--t-primary)">兑换题数</b>（<b id="promoRulePointsRate">50</b> 题/元，即时到账、不可折现）、<b style="color:var(--t-primary)">下单抵扣</b>（1 元佣金抵 1 元现金，最多抵到订单金额为 0 元）。</div>
+                            <div>· 待结算佣金不能使用；好友订单退款会扣回对应佣金。</div>
+                            <div>· 抵扣的佣金在该订单付清前处于冻结，超过 <b id="promoRuleHold">30</b> 分钟未付款自动退回；用了抵扣的订单需联系管理员核算退款。</div>
                         </div>
                     </div>
                     <!-- 数据统计 -->
@@ -1342,6 +1347,24 @@
                         </div>
                         <div style="margin-top:12px"><button class="primary" style="width:auto;margin:0" id="savePaymentInfoBtn">保存收款信息</button></div>
                         <div id="promoPaymentMsg" class="msg"></div>
+                    </div>
+                    <!-- 兑换题数 -->
+                    <div class="user-card" id="promoExchangeCard">
+                        <h3>兑换题数 <span style="font-size:12px;font-weight:400;color:var(--t-muted)">即时到账，不可折现</span></h3>
+                        <div class="info-list">
+                            <div class="info-item"><span>兑换金额</span><input id="promoExchangeAmount" type="number" step="0.01" min="0" placeholder="最低 ¥0.00" style="flex:1;max-width:160px"></div>
+                            <div class="info-item"><span>可得题数</span><b id="promoExchangePreview" style="color:var(--t-primary)">0 题</b></div>
+                        </div>
+                        <p class="hint">按 <b id="promoExchangeRate">50</b> 题/元折算，凑不成整题的零头留在余额里。当前可兑换 <b id="promoExchangeAvail">¥0.00</b><span id="promoFrozenTip"></span></p>
+                        <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+                            <button class="primary" style="width:auto;margin:0;padding:10px 22px" id="submitExchangeBtn">确认兑换</button>
+                            <button class="secondary" style="width:auto;margin:0;padding:10px 18px" id="exchangeAllBtn">全部兑换</button>
+                        </div>
+                        <div id="promoExchangeMsg" class="msg"></div>
+                        <div style="overflow-x:auto;margin-top:14px"><table class="data-table" style="width:100%;font-size:13px;border-collapse:collapse">
+                            <thead><tr style="text-align:left;color:var(--t-muted)"><th style="padding:6px 10px">时间</th><th style="padding:6px 10px">类型</th><th style="padding:6px 10px">佣金</th><th style="padding:6px 10px">题数</th><th style="padding:6px 10px">状态</th><th style="padding:6px 10px">关联订单</th></tr></thead>
+                            <tbody id="promoRedemptionTbody"><tr><td colspan="6" style="padding:18px;text-align:center;color:var(--t-muted)">暂无记录</td></tr></tbody>
+                        </table></div>
                     </div>
                     <!-- 提现表单 -->
                     <div class="user-card">
@@ -1541,6 +1564,13 @@
                             <button class="plan-tab" data-filter="points">题数套餐</button>
                         </div>
                         <div id="planGrid" class="plan-grid buy-only"></div>
+                        <div id="commissionDeductBox" class="buy-only" style="display:none;margin:0 0 14px;padding:12px 14px;border:1px solid var(--t-border);border-radius:10px;background:var(--t-surface2)">
+                            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px;line-height:1.5">
+                                <input type="checkbox" id="useCommissionDeduct" style="width:18px;height:18px;margin:1px 0 0;flex-shrink:0">
+                                <span>用推广佣金抵扣本单现金，1 元佣金 = 1 元。当前可用 <b id="deductAvail" style="color:var(--t-primary)">¥0.00</b>，最多抵扣到订单金额为 0 元。</span>
+                            </label>
+                            <div id="deductHoldTip" style="font-size:12px;color:var(--t-muted);margin-top:6px;padding-left:28px">抵扣的佣金在本单付清前处于冻结状态，超时未付款会自动退回。</div>
+                        </div>
                         <div class="channel-buy-tip" id="channelBuyTip">
                             <span class="cbt-emoji">🎫</span>
                             <span>本账号由渠道发卡提供服务，题数与包月由渠道发放。续费请激活渠道给你的卡密：</span>
@@ -1942,7 +1972,7 @@
             if (name === 'account') loadScriptKey(false);
             if (name === 'home') loadDashboard();
             if (name === 'consumption') loadDashboard();
-            if (name === 'billing') { loadProfile(); loadPlans(); loadCustomModelConfig(); }
+            if (name === 'billing') { loadProfile(); loadPlans(); loadCustomModelConfig(); loadCommissionState(); }
             if (name === 'promotion') loadPromotion();
             if (name === 'feedback') loadFeedback();
             if (name === 'payment-info') loadPaymentInfo();
@@ -2412,29 +2442,40 @@
                 return;
             }
             if (Number(price || 0) > 0 && !payMethodsList.length) return msg('billingMsg', '暂无可用支付方式，请联系管理员启用支付通道', false);
+            const chk = $('useCommissionDeduct');
+            const wantDeduct = !!(chk && chk.checked && Number(price || 0) > 0);
             const payWin = window.open('', '_blank');
             setBusy(btn, true, '购买中...');
             try {
-                const res = await post('/api/payment/purchase', { plan_id: Number(planId), pay_method: currentPayMethod }, token);
+                const payload = { plan_id: Number(planId), pay_method: currentPayMethod };
+                if (wantDeduct) {
+                    payload.use_commission = true;
+                    payload.commission_request_no = 'DK' + Date.now() + Math.random().toString(36).slice(2, 8);
+                }
+                const res = await post('/api/payment/purchase', payload, token);
+                const used = Number(res.commission_used || 0);
+                const note = used > 0 ? `原价 ¥${Number(price || 0).toFixed(2)}，佣金已抵扣 ¥${used.toFixed(2)}。` : '';
                 if (res.code === 200) {
+                    if (used > 0) loadCommissionState();
                     if (res.paying) {
                         if (res.pay_url) {
                             if (payWin) payWin.location.href = res.pay_url;
                             else window.open(res.pay_url, '_blank', 'noopener,noreferrer');
                             showPayQr(res.order_no, null, res.pay_url);
-                            msg('billingMsg', res.msg || '订单已创建，已为你打开支付页面', true);
+                            msg('billingMsg', note + (res.msg || '订单已创建，已为你打开支付页面'), true);
                         } else if (res.qr_code) {
                             if (payWin) payWin.close();
                             showPayQr(res.order_no, res.qr_code, null);
-                            msg('billingMsg', res.msg || '订单已创建，请扫码付款', true);
+                            msg('billingMsg', note + (res.msg || '订单已创建，请扫码付款'), true);
                         } else {
                             if (payWin) payWin.close();
-                            msg('billingMsg', res.msg || '订单已创建', true);
+                            msg('billingMsg', note + (res.msg || '订单已创建'), true);
                         }
+                        if (used > 0) $('payQrTip').textContent = note + '订单号：' + res.order_no + '，付款完成后系统会自动确认到账。';
                     } else {
                         if (payWin) payWin.close();
                         fillProfile(res.profile);
-                        msg('billingMsg', res.msg || '购买成功，权益已到账', true);
+                        msg('billingMsg', note + (res.msg || '购买成功，权益已到账'), true);
                     }
                 } else {
                     if (payWin) payWin.close();
@@ -2925,16 +2966,19 @@ await loadPlans();
             const token = localStorage.getItem(TOKEN_KEY);
             if (!token) return;
             try {
-                const [profRes, wdRes, piRes] = await Promise.all([
+                const [profRes, wdRes, piRes, rdRes] = await Promise.all([
                     fetch('/api/promotion/profile', { headers: { Authorization: 'Bearer ' + token } }),
                     fetch('/api/promotion/withdrawals', { headers: { Authorization: 'Bearer ' + token } }),
-                    fetch('/api/promotion/payment-info', { headers: { Authorization: 'Bearer ' + token } })
+                    fetch('/api/promotion/payment-info', { headers: { Authorization: 'Bearer ' + token } }),
+                    fetch('/api/promotion/redemptions', { headers: { Authorization: 'Bearer ' + token } })
                 ]);
                 const prof = await profRes.json().catch(() => ({}));
                 const wd = await wdRes.json().catch(() => ({}));
                 const pi = await piRes.json().catch(() => ({}));
+                const rd = await rdRes.json().catch(() => ({}));
                 if (prof.code === 200) {
                     const p = prof.profile;
+                    fillCommissionState(p);
                     $('promoInviteLink').value = p.invite_link;
                     $('promoInviteCode').textContent = p.invite_code;
                     $('promoInvitedCount').textContent = p.invited_count;
@@ -2946,8 +2990,11 @@ await loadPlans();
                     $('promoRuleRate').textContent = ((parseFloat(p.referral_rate) || 0.1) * 100).toFixed(0) + '%';
                     $('promoRuleDays').textContent = parseInt(p.referral_settle_days) || 7;
                     $('promoRuleMin').textContent = '¥' + (parseFloat(p.min_withdraw) || 10).toFixed(2);
+                    $('promoRulePointsRate').textContent = parseInt(p.points_rate) || 50;
+                    $('promoRuleHold').textContent = parseInt(p.hold_minutes) || 30;
                     if (!p.enabled) msg('promoLinkMsg', '推广返利功能暂未开启', false);
                 }
+                if (rd.code === 200) renderRedemptions(rd.redemptions || []);
                 if (pi.code === 200) {
                     const i = pi.info;
                     $('promoAlipayAccount').value = i.alipay_account || '';
@@ -2968,6 +3015,101 @@ await loadPlans();
                 }
             } catch (_) { msg('promoLinkMsg', '加载推广数据失败', false); }
         }
+        // 佣金余额/比率只作展示与预提示；成交金额一律由后端重算
+        let promoCommission = { balance: 0, frozen: 0, points_rate: 50, exchange_enabled: false, deduct_enabled: false, min_withdraw: 10, enabled: false };
+        function fillCommissionState(p) {
+            promoCommission = {
+                balance: Number(p.balance) || 0,
+                frozen: Number(p.frozen) || 0,
+                points_rate: parseInt(p.points_rate) || 50,
+                exchange_enabled: !!p.exchange_enabled,
+                deduct_enabled: !!p.deduct_enabled,
+                min_withdraw: Number(p.min_withdraw) || 0,
+                enabled: !!p.enabled
+            };
+            renderCommissionUi();
+        }
+        function renderCommissionUi() {
+            const c = promoCommission;
+            const card = $('promoExchangeCard');
+            if (card) card.style.display = (c.enabled && c.exchange_enabled) ? '' : 'none';
+            const rateEl = $('promoExchangeRate'); if (rateEl) rateEl.textContent = c.points_rate;
+            const avail = $('promoExchangeAvail'); if (avail) avail.textContent = '¥' + c.balance.toFixed(2);
+            const amtEl = $('promoExchangeAmount'); if (amtEl) amtEl.placeholder = '最低 ¥' + c.min_withdraw.toFixed(2);
+            const frozenTip = $('promoFrozenTip');
+            if (frozenTip) frozenTip.textContent = c.frozen > 0 ? '（另有 ¥' + c.frozen.toFixed(2) + ' 冻结在未付订单里）' : '';
+            const box = $('commissionDeductBox'), chk = $('useCommissionDeduct');
+            if (box && chk) {
+                const show = c.enabled && c.deduct_enabled && c.balance > 0;
+                box.style.display = show ? '' : 'none';
+                if (!show) chk.checked = false;
+                const av = $('deductAvail'); if (av) av.textContent = '¥' + c.balance.toFixed(2);
+            }
+            updateExchangePreview();
+        }
+        function exchangePoints(amount) {
+            const v = Math.round((Number(amount) || 0) * 100);
+            return Math.floor(v * (promoCommission.points_rate || 0) / 100);
+        }
+        function updateExchangePreview() {
+            const el = $('promoExchangePreview');
+            if (el) el.textContent = exchangePoints(($('promoExchangeAmount') || {}).value) + ' 题';
+        }
+        function renderRedemptions(rows) {
+            const tb = $('promoRedemptionTbody');
+            if (!tb) return;
+            if (!rows.length) { tb.innerHTML = '<tr><td colspan="6" style="padding:18px;text-align:center;color:var(--t-muted)">暂无记录</td></tr>'; return; }
+            const kindMap = { exchange: '兑换题数', checkout: '下单抵扣' };
+            const statusMap = { pending: '处理中', done: '已到账', locked: '冻结中', consumed: '已使用', released: '已退回', failed: '未成功' };
+            tb.innerHTML = rows.map(r => {
+                const st = statusMap[r.status] || r.status;
+                const order = r.order_no ? String(r.order_no).slice(-8) : '-';
+                return '<tr><td style="padding:6px 10px">' + String(r.created_at || '').replace('T', ' ').slice(0, 19)
+                    + '</td><td style="padding:6px 10px">' + (kindMap[r.kind] || r.kind)
+                    + '</td><td style="padding:6px 10px">¥' + parseFloat(r.amount || 0).toFixed(2)
+                    + '</td><td style="padding:6px 10px">' + (parseInt(r.points) || 0)
+                    + '</td><td style="padding:6px 10px">' + st
+                    + '</td><td style="padding:6px 10px">' + order + '</td></tr>';
+            }).join('');
+        }
+        async function loadCommissionState() {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) return;
+            try {
+                const res = await fetch('/api/promotion/profile', { headers: { Authorization: 'Bearer ' + token } });
+                const data = await res.json().catch(() => ({}));
+                if (data.code === 200) fillCommissionState(data.profile);
+            } catch (_) { /* 拿不到就不显示抵扣入口 */ }
+        }
+        $('promoExchangeAmount').oninput = updateExchangePreview;
+        $('exchangeAllBtn').onclick = function () {
+            const c = promoCommission;
+            if (c.balance <= 0) return msg('promoExchangeMsg', '没有可兑换的佣金', false);
+            $('promoExchangeAmount').value = c.balance.toFixed(2);
+            updateExchangePreview();
+        };
+        $('submitExchangeBtn').onclick = async function () {
+            const amount = Math.round((parseFloat($('promoExchangeAmount').value) || 0) * 100) / 100;
+            if (amount <= 0) return msg('promoExchangeMsg', '请输入有效兑换金额', false);
+            const points = exchangePoints(amount);
+            if (points < 1) return msg('promoExchangeMsg', '兑换金额不足 1 题，请提高金额', false);
+            if (!confirm('确认用 ¥' + amount.toFixed(2) + ' 佣金兑换 ' + points + ' 题？题数即时到账、不可折现。')) return;
+            const btn = this;
+            setBusy(btn, true, '兑换中...');
+            try {
+                const res = await post('/api/promotion/exchange', {
+                    amount,
+                    request_no: 'EX' + Date.now() + Math.random().toString(36).slice(2, 8)
+                }, localStorage.getItem(TOKEN_KEY));
+                msg('promoExchangeMsg', res.msg || '兑换失败', res.code === 200);
+                if (res.code === 200) {
+                    $('promoExchangeAmount').value = '';
+                    if (typeof fillProfile === 'function') fillProfile(res.profile);
+                    loadPromotion();
+                }
+            } catch (_) { msg('promoExchangeMsg', '网络错误', false); }
+            setBusy(btn, false);
+        };
         function readFileAsDataURL(file) {
             return new Promise((resolve, reject) => {
                 const r = new FileReader();

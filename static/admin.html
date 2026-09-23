@@ -4136,7 +4136,36 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                   <small style="color:var(--text3)">订单完成后等待N天才结算佣金，防退款套利</small>
                 </div>
               </div>
-              <button class="btn btn-success" :disabled="referralSaving" @click="saveReferralConfig" style="margin-top:16px">{{referralSaving?'保存中...':'保存配置'}}</button>
+              <h3 style="margin:24px 0 16px">佣金兑换题数 / 下单抵扣</h3>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>允许兑换题数</label>
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <label class="switch"><input type="checkbox" v-model="referralConfig.referral_exchange_enabled"><span class="slider"></span></label>
+                    <span style="font-size:13px;color:var(--text3)">{{referralConfig.referral_exchange_enabled?'已开启':'已关闭'}}</span>
+                  </div>
+                  <small style="color:var(--text3)">即时到账、不可折现</small>
+                </div>
+                <div class="form-group">
+                  <label>兑换比率（题/元）</label>
+                  <input type="number" step="1" min="1" max="1000" v-model.number="referralConfig.referral_points_rate" class="form-control" placeholder="50">
+                  <small style="color:var(--danger)">超过题数套餐的现金单价就会出现「兑换比直接买更划算」，请按最贵档口径设置</small>
+                </div>
+                <div class="form-group">
+                  <label>允许下单抵扣</label>
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <label class="switch"><input type="checkbox" v-model="referralConfig.referral_deduct_enabled"><span class="slider"></span></label>
+                    <span style="font-size:13px;color:var(--text3)">{{referralConfig.referral_deduct_enabled?'已开启':'已关闭'}}</span>
+                  </div>
+                  <small style="color:var(--text3)">1 元佣金抵 1 元现金，最多抵到 0 元</small>
+                </div>
+                <div class="form-group">
+                  <label>抵扣冻结时长（分钟）</label>
+                  <input type="number" step="1" min="5" max="1440" v-model.number="referralConfig.referral_hold_minutes" class="form-control" placeholder="30">
+                  <small style="color:var(--text3)">订单超时未付，冻结的佣金自动退回</small>
+                </div>
+              </div>
+              <button class="btn btn-success" :disabled="referralSaving" @click="saveReferralConfig" style="margin-top:16px">{{referralSaving?'保存中...':'保存全部配置'}}</button>
             </div>
           </div>
           <!-- 提现审核 -->
@@ -6723,7 +6752,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     const modelTestResults=reactive({});
     const newProviderTestResult=ref(null);
     const feedbackNotifyEnabled=ref(false);
-    const referralConfig=ref({referral_enabled:false,referral_rate:0.1,referral_min_withdraw:10,referral_settle_days:7});
+    const referralConfig=ref({referral_enabled:false,referral_rate:0.1,referral_min_withdraw:10,referral_settle_days:7,referral_points_rate:50,referral_exchange_enabled:true,referral_deduct_enabled:true,referral_hold_minutes:30});
     const referralSaving=ref(false);
     const referralWithdrawals=ref([]);
     const referralWdFilter=ref('');

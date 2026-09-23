@@ -769,6 +769,30 @@ class Database:
                 INDEX idx_status_created (status, created_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
+        # 佣金核销台账：兑换题数与下单抵扣共用一张表。
+        # request_no 唯一 = 重复提交只会有一次扣款；order_no 唯一 = 一个订单只可能有一条抵扣记录。
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS commission_redemptions (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                username VARCHAR(50) NOT NULL,
+                kind VARCHAR(20) NOT NULL COMMENT 'exchange=兑换题数, checkout=下单抵扣',
+                request_no VARCHAR(64) NOT NULL COMMENT '客户端幂等号',
+                order_no VARCHAR(64) NULL COMMENT '下单抵扣关联订单号，兑换为空',
+                amount DECIMAL(10,2) NOT NULL COMMENT '消耗佣金（元）',
+                points INT NOT NULL DEFAULT 0 COMMENT '兑换所得题数',
+                rate DECIMAL(10,4) NOT NULL DEFAULT 0 COMMENT '成交比率快照（题/元）',
+                status VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT 'pending/locked/done/consumed/released/failed',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uk_request (username, request_no),
+                UNIQUE KEY uk_order (order_no),
+                INDEX idx_user_status (username, status),
+                INDEX idx_status_created (status, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        # 订单价拆成两列记账：price 恒为「现金实付」，退款、收入统计、佣金结算三条口径都只认它。
+        self._add_column_if_missing("payment_orders", "plan_price", "plan_price DECIMAL(10,2) DEFAULT 0 COMMENT '档位原价（抵扣前）'")
+        self._add_column_if_missing("payment_orders", "commission_used", "commission_used DECIMAL(10,2) DEFAULT 0 COMMENT '本单抵扣掉的佣金（元）'")
         # 用户收款信息表（预存，提现时带入）
         self.execute("""
             CREATE TABLE IF NOT EXISTS user_payment_info (
@@ -1106,6 +1130,10 @@ class Database:
         self._add_column_if_missing("admin_config", "referral_rate", "referral_rate DECIMAL(5,4) DEFAULT 0.1000")
         self._add_column_if_missing("admin_config", "referral_min_withdraw", "referral_min_withdraw DECIMAL(10,2) DEFAULT 10.00")
         self._add_column_if_missing("admin_config", "referral_settle_days", "referral_settle_days INT DEFAULT 7")
+        self._add_column_if_missing("admin_config", "referral_points_rate", "referral_points_rate INT DEFAULT 50 COMMENT '佣金兑换题数比率（题/元）'")
+        self._add_column_if_missing("admin_config", "referral_exchange_enabled", "referral_exchange_enabled TINYINT DEFAULT 1 COMMENT '允许佣金直接兑换题数'")
+        self._add_column_if_missing("admin_config", "referral_deduct_enabled", "referral_deduct_enabled TINYINT DEFAULT 1 COMMENT '允许下单时用佣金抵扣现金'")
+        self._add_column_if_missing("admin_config", "referral_hold_minutes", "referral_hold_minutes INT DEFAULT 30 COMMENT '下单抵扣冻结时长（分钟），超时退回'")
         self._add_column_if_missing("admin_config", "feedback_auto_close_days", "feedback_auto_close_days INT DEFAULT 7")
         self._add_column_if_missing("admin_config", "feedback_notify_enabled", "feedback_notify_enabled TINYINT DEFAULT 0")
         self._add_column_if_missing("admin_config", "refund_days_limit", "refund_days_limit INT DEFAULT 7 COMMENT '退款时效（天），0=不允许退款'")
@@ -1407,18 +1435,25 @@ class Database:
         self.execute(f"UPDATE payment_plans SET sort_order = {ph} WHERE id = {ph}", (nxt, int(plans[idx]["id"])))
         self.execute(f"UPDATE payment_plans SET sort_order = {ph} WHERE id = {ph}", (cur, int(plans[swap_idx]["id"])))
 
-    def create_paid_order_and_apply(self, username, plan):
+    def new_order_no(self, username):
+        """订单号只在这里生成：下单抵扣要先把佣金冻结到一个还没落库的订单号上。"""
+        return f"ORD{int(time.time() * 1000)}{abs(hash(username)) % 10000:04d}"
+
+    def create_paid_order_and_apply(self, username, plan, order_no=None):
         ph = _ph()
-        order_no = f"ORD{int(time.time()*1000)}{abs(hash(username)) % 10000:04d}"
+        if not order_no:
+            order_no = self.new_order_no(username)
         business_type = (plan.get("business_type") or "")[:50]
         # 建单只能落 pending：apply_paid_order 见 paid 会直接早退「订单已到账」，
         # 于是 ¥0 套餐/自有模型白拿一个已支付订单，权益一分没发，还永久卡住「限领一次」
         self.execute(
-            f"""INSERT INTO payment_orders (order_no, username, plan_id, plan_name, plan_type, price, points, days, status, paid_at, business_type)
-                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'pending', NULL, {ph})""",
+            f"""INSERT INTO payment_orders (order_no, username, plan_id, plan_name, plan_type, price, plan_price, commission_used, points, days, status, paid_at, business_type)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'pending', NULL, {ph})""",
             (
                 order_no, username, int(plan.get("id") or 0), plan.get("name", ""),
                 plan.get("plan_type", ""), float(plan.get("price") or 0),
+                float(plan.get("plan_price") or plan.get("price") or 0),
+                float(plan.get("commission_used") or 0),
                 int(plan.get("points") or 0), int(plan.get("days") or 0), business_type
             )
         )
@@ -1428,13 +1463,15 @@ class Database:
     def create_pending_order(self, username, plan, pay_method="alipay", pay_channel="", trade_no="", qr_code="", pay_url="", order_no=None, bank_order_no="", pay_type="", business_type=""):
         ph = _ph()
         if not order_no:
-            order_no = f"ORD{int(time.time()*1000)}{abs(hash(username)) % 10000:04d}"
+            order_no = self.new_order_no(username)
         self.execute(
-            f"""INSERT INTO payment_orders (order_no, username, plan_id, plan_name, plan_type, price, points, days, status, pay_method, pay_channel, trade_no, qr_code, pay_url, bank_order_no, pay_type, business_type)
-                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'pending', {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+            f"""INSERT INTO payment_orders (order_no, username, plan_id, plan_name, plan_type, price, plan_price, commission_used, points, days, status, pay_method, pay_channel, trade_no, qr_code, pay_url, bank_order_no, pay_type, business_type)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'pending', {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
             (
                 order_no, username, int(plan.get("id") or 0), plan.get("name", ""),
                 plan.get("plan_type", ""), float(plan.get("price") or 0),
+                float(plan.get("plan_price") or plan.get("price") or 0),
+                float(plan.get("commission_used") or 0),
                 int(plan.get("points") or 0), int(plan.get("days") or 0),
                 pay_method, pay_channel, trade_no, qr_code, pay_url,
                 bank_order_no, pay_type, business_type
@@ -1539,6 +1576,13 @@ class Database:
             print(f"[支付到账] 未发放，订单退回待支付 order={order_no} user={order.get('username')} "
                   f"类型={order.get('plan_type')} 原因={msg}", flush=True)
             return False, "权益未发放：%s" % msg
+        # 佣金抵扣核销：钱已到账才把冻结的抵扣结掉。抢不到说明它已被超时回收、佣金
+        # 退回了余额，而用户付的确实是折后现金——货照发，只大声记日志；把已付款的订单
+        # 卡在待支付是比让出这点折扣更重的事故。
+        if float(order.get("commission_used") or 0) > 0 and not self.consume_commission_hold(order_no):
+            print(f"[下单抵扣][WARN] 冻结已退回但订单已付款，按抵扣价发货 order={order_no} "
+                  f"user={order.get('username')} 抵扣=¥{order.get('commission_used')} "
+                  f"实付现金=¥{order.get('price')}，请核对该用户佣金余额", flush=True)
         self.execute(f"UPDATE payment_orders SET status = 'paid' WHERE order_no = {ph}", (order_no,))
         # 推广返利：首单佣金结算（仅付费订单 price>0 触发）。返利失败不影响已发放的权益
         try:
@@ -1724,7 +1768,7 @@ class Database:
         }
 
     def refund_block_reason(self, order):
-        """两类订单绝不能走自动退款，退了钱东西还在。
+        """三类订单绝不能走自动退款，退了钱东西还在。
 
         卡密兑换行一分钱没付，却挂着卡密面额 price（pay_method='card' 与 CAR 前缀
         只在 activate_card_key 一处产生，不会误伤真实订单）。
@@ -1734,6 +1778,8 @@ class Database:
         """
         if str(order.get("pay_method") or "") == "card" or str(order.get("order_no") or "").startswith("CAR"):
             return "卡密兑换记录不支持退款"
+        if _dec(order.get("commission_used")) > 0:
+            return "该订单用了佣金抵扣，需管理员人工核算（现金按实付退、抵扣掉的佣金另行核减）"
         if str(order.get("plan_type") or "") == "dist_recharge":
             return "代理商余额充值不支持自助退款，请联系管理员（需线下退款并同步扣回余额）"
         return ""
@@ -5724,10 +5770,18 @@ class Database:
         )
         for r in (rows or []):
             amount = float(r.get("commission_amount") or 0)
-            # 原子加余额
-            self.execute(f"UPDATE users SET commission_balance = commission_balance + {ph} WHERE username = {ph}", (amount, inviter_username))
-            # 状态转 paid（带条件防并发重复）
-            self.execute(f"UPDATE commission_logs SET status = 'paid' WHERE id = {ph} AND status = 'pending'", (r["id"],))
+            # 先抢占状态、再入账：反过来时页面惰性结算和后台定时结算会各加一次余额，
+            # 凭空多出可提现的钱（后面的兑换/抵扣就是花这个池子）。
+            cur = self.execute(f"UPDATE commission_logs SET status = 'paid' WHERE id = {ph} AND status = 'pending'", (r["id"],))
+            if not cur or cur.rowcount == 0:
+                continue
+            back = self.execute(
+                f"UPDATE users SET commission_balance = COALESCE(commission_balance, 0) + {ph} WHERE username = {ph}",
+                (amount, inviter_username)
+            )
+            if not back or back.rowcount == 0:
+                print(f"[佣金结算][ERROR] 已标 paid 但未入账 user={inviter_username} "
+                      f"log={r['id']} amount={amount}，需人工补回佣金余额", flush=True)
 
     def settle_all_pending_commissions(self):
         """批量结算所有推广人的待结算佣金，供后台定时任务调用"""
@@ -5830,6 +5884,242 @@ class Database:
             print(f"[提现][ERROR] 驳回退款失败 withdrawal={wid} user={row['username']} "
                   f"amount={row['amount']}，需人工补回佣金余额", flush=True)
         return True
+
+    # ==================== 佣金核销（兑换题数 / 下单抵扣） ====================
+    def referral_redemption_cfg(self, admin=None):
+        """兑换与抵扣的口径只在这里算一次，界面拿到的数字全部来自它。"""
+        admin = admin or self.get_admin_config() or {}
+        try:
+            rate = int(admin.get("referral_points_rate") or 0)
+        except Exception:
+            rate = 0
+        try:
+            hold = int(admin.get("referral_hold_minutes") or 0)
+        except Exception:
+            hold = 0
+        return {
+            "referral_on": int(admin.get("referral_enabled") or 0),
+            "points_rate": rate if rate > 0 else 50,
+            "exchange_on": int(admin.get("referral_exchange_enabled") or 0),
+            "deduct_on": int(admin.get("referral_deduct_enabled") or 0),
+            "hold_minutes": hold if hold >= 5 else 30,
+            "min_amount": _dec(admin.get("referral_min_withdraw"), "10").quantize(CENT),
+        }
+
+    def commission_balance(self, username):
+        ph = _ph()
+        row = self.fetchone(f"SELECT commission_balance FROM users WHERE username = {ph}", (username,))
+        return _dec((row or {}).get("commission_balance")).quantize(CENT)
+
+    def commission_frozen(self, username):
+        """下单抵扣里已划出、还没付也没过期的佣金"""
+        ph = _ph()
+        row = self.fetchone(
+            f"SELECT COALESCE(SUM(amount), 0) s FROM commission_redemptions "
+            f"WHERE username = {ph} AND kind = 'checkout' AND status = 'locked'",
+            (username,)
+        )
+        return _dec((row or {}).get("s")).quantize(CENT)
+
+    def _debit_commission(self, username, amount):
+        """扣佣金：只认这条条件 UPDATE 的 rowcount，余额不足必然返回 0 行。"""
+        ph = _ph()
+        amt = _dec(amount).quantize(CENT)
+        cur = self.execute(
+            f"UPDATE users SET commission_balance = commission_balance - {ph} "
+            f"WHERE username = {ph} AND commission_balance >= {ph}",
+            (str(amt), username, str(amt))
+        )
+        return bool(cur and cur.rowcount > 0)
+
+    def _credit_commission(self, username, amount):
+        ph = _ph()
+        amt = _dec(amount).quantize(CENT)
+        cur = self.execute(
+            f"UPDATE users SET commission_balance = COALESCE(commission_balance, 0) + {ph} WHERE username = {ph}",
+            (str(amt), username)
+        )
+        if not cur or cur.rowcount == 0:
+            print(f"[佣金核销][ERROR] 退回失败 user={username} amount={amt}，需人工补回佣金余额", flush=True)
+            return False
+        return True
+
+    @staticmethod
+    def points_from_commission(amount, rate):
+        """折题数一律向下取整：凑不成整题的零头留在余额里，不四舍五入送人。"""
+        return int(_dec(amount).quantize(CENT) * int(rate or 0))
+
+    def exchange_commission_for_points(self, username, amount, request_no=""):
+        """佣金兑换题数：即时到账、不可退现。
+
+        台账先落 pending 撞 uk_request 就是重复点击，把上一次的真实结果还回去；
+        扣款和加题任一步失败都不留「钱没了题没到」——失败即退回并标 released。
+        """
+        import pymysql
+        ph = _ph()
+        cfg = self.referral_redemption_cfg()
+        if not cfg["referral_on"] or not cfg["exchange_on"]:
+            return False, "佣金兑换题数暂未开放", None
+        try:
+            amt = _dec(amount).quantize(CENT, rounding=ROUND_HALF_UP)
+        except Exception:
+            return False, "兑换金额格式错误", None
+        if amt < cfg["min_amount"]:
+            return False, f"单次最低兑换 {cfg['min_amount']} 元", None
+        if amt > Decimal("10000"):
+            return False, "单次兑换金额过高，请分次操作或联系管理员", None
+        points = self.points_from_commission(amt, cfg["points_rate"])
+        if points < 1:
+            return False, "兑换金额不足 1 题，请提高金额", None
+        req = (request_no or "").strip()[:64] or f"EX{int(time.time() * 1000)}{abs(hash(username)) % 10000:04d}"
+        try:
+            self.execute(
+                f"INSERT INTO commission_redemptions (username, kind, request_no, order_no, amount, points, rate, status) "
+                f"VALUES ({ph}, {ph}, {ph}, NULL, {ph}, {ph}, {ph}, 'pending')",
+                (username, "exchange", req, str(amt), points, cfg["points_rate"])
+            )
+        except pymysql.IntegrityError:
+            row = self.fetchone(
+                f"SELECT * FROM commission_redemptions WHERE username = {ph} AND request_no = {ph}",
+                (username, req)
+            )
+            st = (row or {}).get("status")
+            if st == "done":
+                return True, f"已兑换 {int((row or {}).get('points') or 0)} 题", row
+            if st == "pending":
+                # 上一次点击还在这儿处理，钱可能刚扣题可能没到；只说事实，不替它报成功
+                return True, "兑换处理中，请稍后在兑换记录里确认", row
+            return False, "本次兑换未成功，请重新发起", row
+        if not self._debit_commission(username, amt):
+            self.execute(
+                f"UPDATE commission_redemptions SET status = 'failed' WHERE username = {ph} AND request_no = {ph} AND status = 'pending'",
+                (username, req)
+            )
+            return False, f"可提现佣金不足（当前 ¥{self.commission_balance(username)}）", None
+        ok, msg = self.adjust_user_points(username, points, f"佣金兑换题数 ¥{amt}", lot_source="commission")
+        if not ok:
+            self._credit_commission(username, amt)
+            self.execute(
+                f"UPDATE commission_redemptions SET status = 'released' WHERE username = {ph} AND request_no = {ph} AND status = 'pending'",
+                (username, req)
+            )
+            print(f"[佣金兑换][ERROR] 题数未到账已退款 user={username} amount={amt} points={points} 原因={msg}", flush=True)
+            return False, f"题数未到账，佣金已退回：{msg}", None
+        self.execute(
+            f"UPDATE commission_redemptions SET status = 'done' WHERE username = {ph} AND request_no = {ph} AND status = 'pending'",
+            (username, req)
+        )
+        row = self.fetchone(
+            f"SELECT * FROM commission_redemptions WHERE username = {ph} AND request_no = {ph}",
+            (username, req)
+        )
+        return True, f"兑换成功，{points} 题已到账", row
+
+    def max_commission_deduct(self, username, gross_price, cfg=None):
+        """这一单最多能抵扣多少：只取「余额」和「订单原价」的较小值，永不放大。"""
+        cfg = cfg or self.referral_redemption_cfg()
+        gross = _dec(gross_price).quantize(CENT)
+        if gross <= 0 or not cfg["referral_on"] or not cfg["deduct_on"]:
+            return Decimal("0.00")
+        bal = self.commission_balance(username)
+        return bal if bal < gross else gross
+
+    def commission_deduct_split(self, username, gross_price, cfg=None):
+        """把档位原价拆成「现金 + 佣金抵扣」。两段都由服务端算，相加严格等于原价。"""
+        cfg = cfg or self.referral_redemption_cfg()
+        gross = _dec(gross_price).quantize(CENT)
+        deduct = self.max_commission_deduct(username, gross, cfg)
+        return float(gross), float(deduct), float(gross - deduct)
+
+    def lock_commission_for_order(self, username, order_no, amount, request_no="", cfg=None):
+        """下单抵扣：建单前把佣金划出并冻结在台账上。
+
+        先扣钱后插单（同提现）：反过来会在插单失败时留下一条挂着订单号的空记录，
+        uk_order 让这一单再也无法抵扣。
+        """
+        import pymysql
+        ph = _ph()
+        cfg = cfg or self.referral_redemption_cfg()
+        amt = _dec(amount).quantize(CENT)
+        if amt <= 0:
+            return False, "抵扣金额为 0", None
+        if not self._debit_commission(username, amt):
+            return False, "可提现佣金不足", None
+        req = (request_no or "").strip()[:64] or f"DK{int(time.time() * 1000)}{abs(hash(username)) % 10000:04d}"
+        try:
+            self.execute(
+                f"INSERT INTO commission_redemptions (username, kind, request_no, order_no, amount, points, rate, status) "
+                f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, 0, 1, 'locked')",
+                (username, "checkout", req, order_no, str(amt))
+            )
+        except pymysql.IntegrityError as e:
+            self._credit_commission(username, amt)
+            print(f"[下单抵扣][ERROR] 台账写入失败已退款 order={order_no} user={username} amount={amt}: {e}", flush=True)
+            return False, "该订单已登记佣金抵扣，请勿重复提交", None
+        return True, "抵扣已锁定", self.fetchone(f"SELECT * FROM commission_redemptions WHERE order_no = {ph}", (order_no,))
+
+    def consume_commission_hold(self, order_no):
+        """订单真正付款成功：冻结的抵扣转为已核销。返回 False 表示这条已被回收线程退回。"""
+        ph = _ph()
+        cur = self.execute(
+            f"UPDATE commission_redemptions SET status = 'consumed' WHERE order_no = {ph} AND status = 'locked'",
+            (order_no,)
+        )
+        return bool(cur and cur.rowcount > 0)
+
+    def release_commission_hold(self, order_no, reason=""):
+        """建单失败/超时未付：把冻结的佣金退回余额。抢占失败说明回调已核销。"""
+        ph = _ph()
+        row = self.fetchone(
+            f"SELECT username, amount, status FROM commission_redemptions WHERE order_no = {ph}",
+            (order_no,)
+        )
+        if not row or row.get("status") != "locked":
+            return False
+        cur = self.execute(
+            f"UPDATE commission_redemptions SET status = 'released' WHERE order_no = {ph} AND status = 'locked'",
+            (order_no,)
+        )
+        if not cur or cur.rowcount == 0:
+            return False
+        if not self._credit_commission(row["username"], row["amount"]):
+            return False
+        print(f"[下单抵扣] 已退回冻结佣金 order={order_no} user={row['username']} "
+              f"amount={row['amount']} 原因={reason}", flush=True)
+        return True
+
+    def release_expired_commission_holds(self):
+        """回收超时未付的下单抵扣，避免用户随手下单就把佣金冻死。"""
+        ph = _ph()
+        cfg = self.referral_redemption_cfg()
+        rows = self.fetchall(
+            f"SELECT order_no FROM commission_redemptions "
+            f"WHERE kind = 'checkout' AND status = 'locked' "
+            f"AND created_at < (CURRENT_TIMESTAMP - INTERVAL {int(cfg['hold_minutes'])} MINUTE)"
+        ) or []
+        n = 0
+        for r in rows:
+            order_no = r.get("order_no") or ""
+            if not order_no:
+                continue
+            if self.release_commission_hold(order_no, f"超过 {cfg['hold_minutes']} 分钟未支付"):
+                order = self.get_order(order_no) or {}
+                # 全额抵扣的 0 元单没有网关可等，冻结退回后必须关掉，否则留着一条
+                # 还能被 apply_paid_order 捡起来发货的白单
+                if float(order.get("price") or 0) <= 0 and order.get("status") in ("pending", "created"):
+                    self.execute(
+                        f"UPDATE payment_orders SET status = 'cancelled' WHERE order_no = {ph} AND status IN ({ph}, {ph})",
+                        (order_no, "pending", "created")
+                    )
+                n += 1
+        return n
+
+    def list_commission_redemptions(self, username, limit=50):
+        ph = _ph()
+        return self.fetchall(
+            f"SELECT * FROM commission_redemptions WHERE username = {ph} ORDER BY id DESC LIMIT {int(limit or 50)}",
+            (username,)
+        ) or []
 
     def referral_stats(self):
         """管理员统计：top10 邀请人 + 总佣金 + 提现统计"""

@@ -702,9 +702,9 @@ def _pick_pay_channel(admin, pay_method):
     weights = [w for _, _, w in available if w > 0] or [1] * len(weighted)
     return random.choices(weighted, weights=weights, k=1)[0]
 
-def create_alipay_precreate_order(username, plan, skip_enabled_check=False):
+def create_alipay_precreate_order(username, plan, skip_enabled_check=False, order_no=None):
     business_type = _plan_business_type(plan)
-    order_no = db.create_pending_order(username, plan, pay_method="alipay", pay_channel="alipay", pay_type="alipay_precreate", business_type=business_type)
+    order_no = db.create_pending_order(username, plan, pay_method="alipay", pay_channel="alipay", pay_type="alipay_precreate", business_type=business_type, order_no=order_no)
     subject = f"学神助手-{plan.get('name')}"
     res = alipay_api_call("alipay.trade.precreate", {
         "out_trade_no": order_no,
@@ -734,7 +734,7 @@ def query_and_apply_alipay_order(order_no):
     return False, "订单状态：" + trade_status, order
 
 # ==================== 支付FM ====================
-def create_zhifufm_order(username, plan, pay_type="alipay", skip_enabled_check=False):
+def create_zhifufm_order(username, plan, pay_type="alipay", skip_enabled_check=False, order_no=None):
     admin = db.get_admin_config() or {}
     if not skip_enabled_check and not admin.get("zhifufm_enabled"):
         raise RuntimeError("支付FM未启用")
@@ -746,7 +746,7 @@ def create_zhifufm_order(username, plan, pay_type="alipay", skip_enabled_check=F
     if not api_url or not merchant_num or not secret:
         raise RuntimeError("支付FM配置不完整")
     business_type = _plan_business_type(plan)
-    order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="zhifufm", pay_type="sandpayh5", business_type=business_type)
+    order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="zhifufm", pay_type="sandpayh5", business_type=business_type, order_no=order_no)
     amount = f"{float(plan.get('price') or 0):.2f}"
     # 按支付FM文档：待签名字符串=商户号+商户订单号+支付金额+异步通知地址+接入密钥
     sign_str = merchant_num + order_no + amount + notify_url + secret
@@ -809,7 +809,7 @@ def verify_zhifufm_notify(params):
     return params.get("sign", "") == expected
 
 # ==================== 杉德河马 ====================
-def create_sandpay_order(username, plan, pay_type="alipay", skip_enabled_check=False, product_id=None, custom_head=None, custom_body=None):
+def create_sandpay_order(username, plan, pay_type="alipay", skip_enabled_check=False, product_id=None, custom_head=None, custom_body=None, order_no=None):
     admin = db.get_admin_config() or {}
     if not skip_enabled_check and not admin.get("sandpay_enabled"):
         raise RuntimeError("杉德支付未启用")
@@ -829,7 +829,7 @@ def create_sandpay_order(username, plan, pay_type="alipay", skip_enabled_check=F
         if not existing:
             db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="sandpay", order_no=order_no, pay_type=pay_type, business_type=business_type)
     else:
-        order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="sandpay", pay_type=pay_type, business_type=business_type)
+        order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="sandpay", pay_type=pay_type, business_type=business_type, order_no=order_no)
     amount_yuan = float(plan.get('price') or 0)
     # 杉德金额格式：12位数字，单位分，如 000000000001 = 0.01元
     amount_fen = int(round(amount_yuan * 100))
@@ -973,7 +973,7 @@ def verify_sandpay_notify(params):
         return False
 
 # ==================== 易支付（支付FM兼容模式） ====================
-def create_epay_order(username, plan, pay_type="alipay", skip_enabled_check=False):
+def create_epay_order(username, plan, pay_type="alipay", skip_enabled_check=False, order_no=None):
     admin = db.get_admin_config() or {}
     if not skip_enabled_check and not admin.get("epay_enabled"):
         raise RuntimeError("易支付未启用")
@@ -985,7 +985,7 @@ def create_epay_order(username, plan, pay_type="alipay", skip_enabled_check=Fals
     if not api_url or not pid or not key:
         raise RuntimeError("易支付配置不完整")
     business_type = _plan_business_type(plan)
-    order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="epay", pay_type=pay_type, business_type=business_type)
+    order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="epay", pay_type=pay_type, business_type=business_type, order_no=order_no)
     amount = f"{float(plan.get('price') or 0):.2f}"
     name = f"学神助手-{plan.get('name', '')}"
     # 按照易支付标准签名：参数排序拼接 + 密钥直接追加
@@ -1669,16 +1669,25 @@ def _start_daily_report_thread():
 
 
 def _commission_settle_worker():
-    """后台线程：每小时自动结算所有超过冷却期的待结算佣金"""
+    """后台线程：每分钟回收超时未付的下单抵扣，每小时结算过了冷却期的待结算佣金"""
     import time as _time
+    tick = 0
     while True:
         try:
-            n = db.settle_all_pending_commissions()
-            if n:
-                print(f"[佣金结算] 自动结算 {n} 个推广人的待结算佣金", flush=True)
+            released = db.release_expired_commission_holds()
+            if released:
+                print(f"[下单抵扣] 超时回收 {released} 笔冻结佣金", flush=True)
         except Exception as e:
-            print(f"[佣金结算] 定时结算异常: {e}", flush=True)
-        _time.sleep(3600)
+            print(f"[下单抵扣] 冻结回收异常: {e}", flush=True)
+        if tick % 60 == 0:
+            try:
+                n = db.settle_all_pending_commissions()
+                if n:
+                    print(f"[佣金结算] 自动结算 {n} 个推广人的待结算佣金", flush=True)
+            except Exception as e:
+                print(f"[佣金结算] 定时结算异常: {e}", flush=True)
+        tick = (tick + 1) % 60
+        _time.sleep(60)
 
 
 def _start_commission_settle_thread():
@@ -5146,6 +5155,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             p = db.get_referral_profile(user["username"])
             cfg = db.get_admin_config() or {}
+            rc = db.referral_redemption_cfg(cfg)
             rate_val = float(cfg.get("referral_rate") or 0.1)
             days_val = int(cfg.get("referral_settle_days") or 7)
             min_w_val = float(cfg.get("referral_min_withdraw") or 10)
@@ -5157,11 +5167,22 @@ class Handler(BaseHTTPRequestHandler):
                 "paid_commission": p["paid_commission"],
                 "pending_commission": p["pending_commission"],
                 "balance": p["balance"],
+                "frozen": float(db.commission_frozen(user["username"])),
                 "min_withdraw": min_w_val,
                 "referral_rate": rate_val,
                 "referral_settle_days": days_val,
+                "points_rate": rc["points_rate"],
+                "exchange_enabled": bool(rc["exchange_on"]),
+                "deduct_enabled": bool(rc["deduct_on"]),
+                "hold_minutes": rc["hold_minutes"],
                 "enabled": bool(cfg.get("referral_enabled"))
             }})
+        elif path == "/api/promotion/redemptions":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "未登录"})
+                return
+            self._send_json(200, {"code": 200, "redemptions": db.list_commission_redemptions(user["username"])})
         elif path == "/api/promotion/withdrawals":
             user = self._get_user_from_token()
             if not user:
@@ -5893,11 +5914,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
             a = db.get_admin_config() or {}
+            rc = db.referral_redemption_cfg(a)
             self._send_json(200, {"code": 200, "config": {
                 "referral_enabled": bool(a.get("referral_enabled")),
                 "referral_rate": float(a.get("referral_rate") or 0.1),
                 "referral_min_withdraw": float(a.get("referral_min_withdraw") or 10),
-                "referral_settle_days": int(a.get("referral_settle_days") or 7)
+                "referral_settle_days": int(a.get("referral_settle_days") or 7),
+                "referral_points_rate": rc["points_rate"],
+                "referral_exchange_enabled": bool(rc["exchange_on"]),
+                "referral_deduct_enabled": bool(rc["deduct_on"]),
+                "referral_hold_minutes": rc["hold_minutes"]
             }})
         elif path == "/admin/referral/withdrawals":
             if not self._check_admin():
@@ -6606,6 +6632,24 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        elif path == "/api/promotion/exchange":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "未登录"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                ok, msg, row = db.exchange_commission_for_points(
+                    user["username"], data.get("amount"), (data.get("request_no") or "").strip()
+                )
+                payload = {"code": 200 if ok else 400, "msg": msg}
+                if ok:
+                    payload["points"] = int((row or {}).get("points") or 0)
+                    payload["profile"] = build_user_profile(user["username"])
+                self._send_json(200 if ok else 400, payload)
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         elif path == "/api/promotion/payment-info":
             user = self._get_user_from_token()
             if not user:
@@ -6689,23 +6733,73 @@ class Handler(BaseHTTPRequestHandler):
                 if not pay_channel:
                     self._send_json(400, {"code": 400, "msg": "该支付方式暂无可用通道，请联系管理员配置"})
                     return
+                # —— 佣金抵扣：客户端只说「要不要用」，原价/抵扣/现金三段全由服务端算 ——
+                deduct = 0.0
+                if data.get("use_commission") and (plan.get("plan_type") or "") in ("points", "monthly"):
+                    rc = db.referral_redemption_cfg(admin)
+                    gross, deduct, cash = db.commission_deduct_split(user["username"], plan.get("price") or 0, rc)
+                    if deduct <= 0:
+                        # 开关刚被关掉、或余额已被上一单冻走：按原价走现金。把用户卡在下单口
+                        # 不是防 bug，是造 bug——他只会反复重点购买。
+                        deduct = 0.0
+                    else:
+                        plan = dict(plan)
+                        plan["plan_price"] = gross
+                        plan["commission_used"] = deduct
+                        plan["price"] = cash
+                hold_order_no = ""
+                if deduct > 0:
+                    # 先把佣金划出冻结，再拿这个订单号去建单：反过来会在建单失败时
+                    # 留下一张已打折却没人付的活订单，被迟到的回调按折扣价捡走发货
+                    hold_order_no = db.new_order_no(user["username"])
+                    ok_hold, hold_msg, _ = db.lock_commission_for_order(
+                        user["username"], hold_order_no, deduct,
+                        (data.get("commission_request_no") or "").strip()
+                    )
+                    if not ok_hold:
+                        self._send_json(400, {"code": 400, "msg": hold_msg})
+                        return
+                if float(plan.get("price") or 0) <= 0:
+                    # 全额抵扣：没有网关可等，直接建单发货；没发出去就把佣金退回并关单
+                    order_no, ok, msg = db.create_paid_order_and_apply(user["username"], plan, order_no=hold_order_no)
+                    if not ok:
+                        db.release_commission_hold(hold_order_no, "全额抵扣订单未发放")
+                        db.execute(
+                            "UPDATE payment_orders SET status = 'cancelled' WHERE order_no = %s AND status IN ('pending', 'created')",
+                            (hold_order_no,)
+                        )
+                        print(f"[下单抵扣] 全额抵扣未发放，佣金已退回 order={hold_order_no} "
+                              f"user={user['username']} 抵扣=¥{deduct} 原因={msg}", flush=True)
+                        self._send_json(500, {"code": 500, "msg": "抵扣下单未完成，佣金已退回，请重试", "order_no": order_no})
+                        return
+                    self._send_json(200, {
+                        "code": 200, "msg": f"已用佣金抵扣 ¥{deduct:.2f}，权益已到账",
+                        "order_no": order_no, "commission_used": deduct,
+                        "profile": build_user_profile(user["username"])
+                    })
+                    return
                 # 根据通道创建订单
-                if pay_channel == "alipay":
-                    order_no, qr_code = create_alipay_precreate_order(user["username"], plan)
-                    self._send_json(200, {"code": 200, "msg": "订单已创建，请扫码付款", "paying": True, "pay_channel": "alipay", "order_no": order_no, "qr_code": qr_code})
-                    return
-                if pay_channel == "zhifufm":
-                    order_no, pay_url = create_zhifufm_order(user["username"], plan, pay_type=pay_type)
-                    self._send_json(200, {"code": 200, "msg": "订单已创建，请跳转付款", "paying": True, "pay_channel": "zhifufm", "order_no": order_no, "pay_url": pay_url})
-                    return
-                if pay_channel == "sandpay":
-                    order_no, pay_url = create_sandpay_order(user["username"], plan, pay_type=pay_type)
-                    self._send_json(200, {"code": 200, "msg": "订单已创建，请跳转付款", "paying": True, "pay_channel": "sandpay", "order_no": order_no, "pay_url": pay_url})
-                    return
-                if pay_channel == "epay":
-                    order_no, pay_url = create_epay_order(user["username"], plan, pay_type=pay_type)
-                    self._send_json(200, {"code": 200, "msg": "订单已创建，请跳转付款", "paying": True, "pay_channel": "epay", "order_no": order_no, "pay_url": pay_url})
-                    return
+                try:
+                    if pay_channel == "alipay":
+                        order_no, qr_code = create_alipay_precreate_order(user["username"], plan, order_no=hold_order_no or None)
+                        self._send_json(200, {"code": 200, "msg": "订单已创建，请扫码付款", "paying": True, "pay_channel": "alipay", "order_no": order_no, "qr_code": qr_code, "commission_used": deduct})
+                        return
+                    if pay_channel == "zhifufm":
+                        order_no, pay_url = create_zhifufm_order(user["username"], plan, pay_type=pay_type, order_no=hold_order_no or None)
+                        self._send_json(200, {"code": 200, "msg": "订单已创建，请跳转付款", "paying": True, "pay_channel": "zhifufm", "order_no": order_no, "pay_url": pay_url, "commission_used": deduct})
+                        return
+                    if pay_channel == "sandpay":
+                        order_no, pay_url = create_sandpay_order(user["username"], plan, pay_type=pay_type, order_no=hold_order_no or None)
+                        self._send_json(200, {"code": 200, "msg": "订单已创建，请跳转付款", "paying": True, "pay_channel": "sandpay", "order_no": order_no, "pay_url": pay_url, "commission_used": deduct})
+                        return
+                    if pay_channel == "epay":
+                        order_no, pay_url = create_epay_order(user["username"], plan, pay_type=pay_type, order_no=hold_order_no or None)
+                        self._send_json(200, {"code": 200, "msg": "订单已创建，请跳转付款", "paying": True, "pay_channel": "epay", "order_no": order_no, "pay_url": pay_url, "commission_used": deduct})
+                        return
+                except Exception as e:
+                    if hold_order_no:
+                        db.release_commission_hold(hold_order_no, f"网关下单失败：{e}")
+                    raise
                 self._send_json(400, {"code": 400, "msg": "请选择可用支付方式"})
             except Exception as e:
                 err_str = str(e)
@@ -7659,9 +7753,20 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 min_w = round(float(data.get("referral_min_withdraw") or 10), 2)
                 days = int(data.get("referral_settle_days") or 7)
+                points_rate = int(data.get("referral_points_rate") or 0)
+                if not (1 <= points_rate <= 1000):
+                    self._send_json(400, {"code": 400, "msg": "兑换比率须在 1~1000 题/元之间"})
+                    return
+                hold_min = int(data.get("referral_hold_minutes") or 30)
+                if not (5 <= hold_min <= 1440):
+                    self._send_json(400, {"code": 400, "msg": "抵扣冻结时长须在 5~1440 分钟之间"})
+                    return
+                ex_on = 1 if data.get("referral_exchange_enabled") else 0
+                dk_on = 1 if data.get("referral_deduct_enabled") else 0
                 db.execute(
-                    "UPDATE admin_config SET referral_enabled=%s, referral_rate=%s, referral_min_withdraw=%s, referral_settle_days=%s WHERE id=1",
-                    (enabled, rate, min_w, days)
+                    "UPDATE admin_config SET referral_enabled=%s, referral_rate=%s, referral_min_withdraw=%s, referral_settle_days=%s, "
+                    "referral_points_rate=%s, referral_exchange_enabled=%s, referral_deduct_enabled=%s, referral_hold_minutes=%s WHERE id=1",
+                    (enabled, rate, min_w, days, points_rate, ex_on, dk_on, hold_min)
                 )
                 self._send_json(200, {"code": 200, "msg": "配置已保存"})
             except Exception as e:
