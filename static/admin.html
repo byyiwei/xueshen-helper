@@ -801,7 +801,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
         </div>
         <!-- 用户管理组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.users}">
-          <div class="menu-group-header dock-item" :class="{active:['user-mgmt','user-analysis'].includes(page)}" @click="expandedGroups.users=!expandedGroups.users">
+          <div class="menu-group-header dock-item" :class="{active:['user-mgmt','user-analysis','risk-control'].includes(page)}" @click="expandedGroups.users=!expandedGroups.users">
             <span class="icon">◯</span>用户管理
             <span class="arrow">▶</span>
           </div>
@@ -811,6 +811,9 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
             </div>
             <div class="menu-item" :class="{active:page==='user-analysis'}" @click="page='user-analysis';loadUserAnalysis()">
               <span class="icon">◉</span>用户分析
+            </div>
+            <div class="menu-item" :class="{active:page==='risk-control'}" @click="page='risk-control';loadRiskConfig();scanRisk()">
+              <span class="icon">⚠</span>风控管理
             </div>
           </div>
         </div>
@@ -2319,7 +2322,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     <th style="text-align:left;padding:10px 8px">订单</th>
                     <th style="text-align:left;padding:10px 8px">银联单号</th>
                     <th style="text-align:left;padding:10px 8px">套餐</th>
-                    <th style="text-align:left;padding:10px 8px">金额</th>
+                    <th style="text-align:left;padding:10px 8px">应退/订单</th>
                     <th style="text-align:left;padding:10px 8px">原因</th>
                     <th style="text-align:left;padding:10px 8px">收款信息</th>
                     <th style="text-align:left;padding:10px 8px">状态</th>
@@ -2333,7 +2336,12 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     <td style="padding:10px 8px;font-family:monospace;font-size:12px"><span class="order-link" title="在支付明细中查看该订单" @click="gotoPaymentByOrderNo(r.order_no)">{{r.order_no}}</span></td>
                     <td style="padding:10px 8px;font-family:monospace;font-size:12px"><span v-if="r.channel_order_no" class="order-link" style="color:var(--text2)" title="在支付明细中按渠道单号查看" @click="gotoPaymentByOrderNo(r.channel_order_no)">{{r.channel_order_no}}</span><span v-else style="color:var(--text3)">-</span></td>
                     <td style="padding:10px 8px">{{r.plan_name||'-'}}</td>
-                    <td style="padding:10px 8px;color:var(--success)">¥{{Number(r.price||0).toFixed(2)}}</td>
+                    <td style="padding:10px 8px">
+                      <div v-if="Number(r.refund_amount||0)>0" style="color:var(--success);font-weight:600">应退 ¥{{Number(r.refund_amount).toFixed(2)}}</div>
+                      <div v-else style="color:var(--warning);font-weight:600">应退 ¥{{Number(r.price||0).toFixed(2)}}</div>
+                      <div v-if="Number(r.refund_amount||0)>0" style="font-size:11px;color:var(--text3);margin-top:2px">订单 ¥{{Number(r.price||0).toFixed(2)}}</div>
+                      <div v-else style="font-size:11px;color:var(--text3);margin-top:2px">该申请未记录折算，按订单价显示</div>
+                    </td>
                     <td style="padding:10px 8px;max-width:200px;word-break:break-all;font-size:12px;color:var(--text2)">{{r.reason||'-'}}</td>
                     <td style="padding:10px 8px;font-size:12px;max-width:180px">
                       <div v-if="r.alipay_account||r.wechat_account" style="display:flex;gap:6px;flex-wrap:wrap">
@@ -4124,6 +4132,105 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
         </div>
       </template>
 
+      <!-- 风控管理 -->
+      <template v-if="page==='risk-control'">
+        <div class="card">
+          <div class="card-header"><h3>风控规则（退款行为）</h3></div>
+          <div class="card-body">
+            <div style="display:flex;flex-direction:column;gap:14px">
+              <label style="display:flex;align-items:center;gap:8px;font-size:14px">
+                <input type="checkbox" v-model.number="riskConfig.enabled" :true-value="1" :false-value="0">
+                <span>启用风控判定</span>
+                <span style="color:var(--text3);font-size:12px">（关闭后不再产生风险名单，也不自动封禁）</span>
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;font-size:14px">
+                <input type="checkbox" v-model.number="riskConfig.auto_ban" :true-value="1" :false-value="0">
+                <span>命中即自动封禁</span>
+                <span style="color:var(--warning);font-size:12px">（默认关：只列名单等你一键封。站内人少，开自动封易误伤正常退款用户）</span>
+              </label>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:18px">
+              <div class="form-group">
+                <label>窗口内退款次数（0=关闭）</label>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <span style="font-size:13px;color:var(--text3)">近</span>
+                  <input v-model.number="riskConfig.refund_days" type="number" min="1" max="3650" style="width:80px;padding:8px 10px">
+                  <span style="font-size:13px;color:var(--text3)">天退款 ≥</span>
+                  <input v-model.number="riskConfig.refund_count" type="number" min="0" max="999" style="width:70px;padding:8px 10px">
+                  <span style="font-size:13px;color:var(--text3)">次</span>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>退款率（0=关闭）</label>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                  <span style="font-size:13px;color:var(--text3)">已付 ≥</span>
+                  <input v-model.number="riskConfig.refund_rate_min" type="number" min="1" max="9999" style="width:70px;padding:8px 10px">
+                  <span style="font-size:13px;color:var(--text3)">单且退款率 ≥</span>
+                  <input v-model.number="riskConfig.refund_rate_pct" type="number" min="0" max="100" style="width:70px;padding:8px 10px">
+                  <span style="font-size:13px;color:var(--text3)">%</span>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>短时退款（0=关闭）</label>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                  <span style="font-size:13px;color:var(--text3)">支付后 ≤</span>
+                  <input v-model.number="riskConfig.quick_minutes" type="number" min="0" max="10080" style="width:80px;padding:8px 10px">
+                  <span style="font-size:13px;color:var(--text3)">分钟内退款 ≥</span>
+                  <input v-model.number="riskConfig.quick_count" type="number" min="0" max="999" style="width:70px;padding:8px 10px">
+                  <span style="font-size:13px;color:var(--text3)">次</span>
+                </div>
+              </div>
+            </div>
+            <div class="form-group" style="margin-top:16px">
+              <label>白名单（命中也不处理，逗号或换行分隔）</label>
+              <textarea v-model="riskWhitelistText" rows="2" placeholder="如：vipuser, olduser" style="width:100%;padding:8px 10px;font-size:13px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px"></textarea>
+            </div>
+            <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+              <button class="btn btn-primary" :disabled="riskSaving" @click="saveRiskConfig">{{riskSaving?'保存中…':'保存规则'}}</button>
+              <button class="btn btn-secondary" :disabled="riskScanning" @click="scanRisk">{{riskScanning?'扫描中…':'重新扫描'}}</button>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3>风险用户名单 <span style="color:var(--text3);font-size:13px;font-weight:400">（{{riskUsers.length}} 人）</span></h3>
+          </div>
+          <div class="card-body" style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:760px">
+              <thead>
+                <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
+                  <th style="text-align:left;padding:10px 8px">用户</th>
+                  <th style="text-align:left;padding:10px 8px">命中规则</th>
+                  <th style="text-align:left;padding:10px 8px">退款/已付</th>
+                  <th style="text-align:left;padding:10px 8px">近{{riskConfig.refund_days}}天退款</th>
+                  <th style="text-align:left;padding:10px 8px">短时退款</th>
+                  <th style="text-align:left;padding:10px 8px">状态</th>
+                  <th style="text-align:left;padding:10px 8px">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="u in riskUsers" :key="u.username" style="border-bottom:1px solid var(--border);color:var(--text)">
+                  <td style="padding:10px 8px;color:var(--accent2);white-space:nowrap">{{u.username}}</td>
+                  <td style="padding:10px 8px;font-size:12px;color:var(--text2);max-width:360px">
+                    <div v-for="(h,i) in u.hits" :key="i">· {{h}}</div>
+                  </td>
+                  <td style="padding:10px 8px">{{u.refunded}} / {{u.paid_ever}}</td>
+                  <td style="padding:10px 8px">{{u.refunds_recent}}</td>
+                  <td style="padding:10px 8px">{{u.quick_refunds}}</td>
+                  <td style="padding:10px 8px"><span :style="{color:u.is_banned?'var(--danger)':'var(--warning)',fontWeight:'600'}">{{u.is_banned?'已封禁':'风险'}}</span></td>
+                  <td style="padding:10px 8px;white-space:nowrap">
+                    <button v-if="!u.is_banned" class="btn btn-danger btn-sm" @click="riskBan(u,true)">封禁</button>
+                    <button v-else class="btn btn-success btn-sm" @click="riskBan(u,false)" style="margin-right:4px">解封</button>
+                    <button class="btn btn-secondary btn-sm" @click="riskAddWhitelist(u)">加白名单</button>
+                  </td>
+                </tr>
+                <tr v-if="!riskUsers.length"><td colspan="7" style="text-align:center;padding:28px;color:var(--text3)">{{riskScanning?'正在扫描…':'暂无命中风控规则的用户'}}</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </template>
+
       <!-- Log Cleanup Page -->
       <template v-if="page==='log-cleanup'">
         <div class="card">
@@ -5078,6 +5185,7 @@ createApp({
       'bank-logs':[{label:'题库中心',group:'questions'},{label:'题库日志'}],
       'bank-analysis':[{label:'题库分析'}],
       'user-analysis':[{label:'用户分析'}],
+      'risk-control':[{label:'风控管理'}],
       'log-cleanup':[{label:'日志监控',group:'logs'},{label:'日志清理'}],
       'ai-config':[{label:'模型服务',group:'models'},{label:'模型配置'}],
       'qq-bot':[{label:'系统配置',group:'config'},{label:'QQ频道机器人'}],
@@ -5113,6 +5221,11 @@ createApp({
     const ssoSaving=ref(false);
     const showSsoSecret=ref(false);
     const ssoCallbackUrl=computed(()=>location.origin+'/admin/sso');
+    const riskConfig=ref({enabled:1,refund_days:30,refund_count:2,refund_rate_pct:50,refund_rate_min:2,quick_minutes:120,quick_count:2,auto_ban:0,whitelist:[]});
+    const riskWhitelistText=ref('');
+    const riskUsers=ref([]);
+    const riskScanning=ref(false);
+    const riskSaving=ref(false);
     const emailConfig=ref({enabled:false,test_recipient:''});
     const mailServers=ref([]);
     const showServerForm=ref(false);
@@ -6467,6 +6580,52 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       if(data.code!==200){showMsg(data.msg||'操作失败','error');return null;}
       if(data.config){config.value=data.config;}
       return data;
+    }
+    async function loadRiskConfig(){
+      if(!token.value)return;
+      try{
+        const res=await safeFetch('/admin/risk-config',{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200&&data.config){
+          riskConfig.value={enabled:1,refund_days:30,refund_count:2,refund_rate_pct:50,refund_rate_min:2,quick_minutes:120,quick_count:2,auto_ban:0,whitelist:[],...data.config};
+          riskWhitelistText.value=(data.config.whitelist||[]).join(', ');
+        }
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'获取风控配置失败','error');
+      }catch(e){showMsg('获取风控配置失败: '+(e.message||e),'error',6000);}
+    }
+    async function saveRiskConfig(){
+      if(riskSaving.value)return;
+      riskSaving.value=true;
+      try{
+        const p=riskConfig.value;
+        const payload={enabled:p.enabled,refund_days:p.refund_days,refund_count:p.refund_count,refund_rate_pct:p.refund_rate_pct,refund_rate_min:p.refund_rate_min,quick_minutes:p.quick_minutes,quick_count:p.quick_count,auto_ban:p.auto_ban,whitelist:riskWhitelistText.value};
+        const res=await fetch('/admin/risk-config',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify(payload)});
+        const data=await res.json();
+        if(data.code===200){showMsg(data.msg||'已保存');if(data.config){riskConfig.value={...riskConfig.value,...data.config};riskWhitelistText.value=(data.config.whitelist||[]).join(', ');}await scanRisk();}
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'保存失败','error');
+      }catch(e){showMsg('保存失败: '+(e.message||e),'error');}
+      finally{riskSaving.value=false;}
+    }
+    async function scanRisk(){
+      if(riskScanning.value)return;
+      riskScanning.value=true;
+      try{
+        const data=await adminPost('/admin/risk/scan',{});
+        if(data){riskUsers.value=data.users||[];if(data.banned_now)showMsg('已自动封禁 '+data.banned_now+' 人','success');}
+      }catch(e){showMsg('扫描失败: '+(e.message||e),'error');}
+      finally{riskScanning.value=false;}
+    }
+    async function riskBan(u,doBan){
+      const reason=doBan?('风控封禁：'+u.hits.join('；')):'';
+      if(doBan&&!confirm('确定封禁 '+u.username+' ？\n命中规则：\n'+u.hits.join('\n')))return;
+      const data=await adminPost('/admin/risk/ban',{username:u.username,ban:doBan,reason});
+      if(data){showMsg(data.msg||'已处理');u.is_banned=doBan;u.ban_reason=reason;}
+    }
+    async function riskAddWhitelist(u){
+      const data=await adminPost('/admin/risk/whitelist',{username:u.username,add:true});
+      if(data){showMsg('已加入白名单');riskWhitelistText.value=(data.whitelist||[]).join(', ');riskUsers.value=riskUsers.value.filter(x=>x.username!==u.username);}
     }
     async function addProvider(){
       const key=(newProvider.key||'').trim();
@@ -7869,9 +8028,9 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       answerStats,answerStatsLoading,answerStatsFilter,loadAnswerStats,setAnswerStatRange,ansTrendRows,ansTrendX,ansTrendY,ansTrendPoints,
       userAnalysis,userAnalysisLoading,userAnalysisFilter,loadUserAnalysis,setUserAnalysisRange,pct,
       oldUserRechargeExpanded,oldUserRechargeDetails,oldUserRechargePage,oldUserRechargeTotal,oldUserRechargeTotalPages,oldUserRechargeSum,oldUserRechargeLoading,toggleOldUserRecharge,loadOldUserRechargeDetails,
-      questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,deleteQuestionBankItem,bankTypeOptions,bankModelOptions,loadBankModels,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,ssoConfig,ssoSaving,showSsoSecret,ssoCallbackUrl,
+      questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,deleteQuestionBankItem,bankTypeOptions,bankModelOptions,loadBankModels,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,ssoConfig,ssoSaving,showSsoSecret,ssoCallbackUrl,riskConfig,riskWhitelistText,riskUsers,riskScanning,riskSaving,
       doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
-      loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadSsoConfig,saveSsoConfig,copySsoUrl,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,
+      loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadSsoConfig,saveSsoConfig,copySsoUrl,loadRiskConfig,saveRiskConfig,scanRisk,riskBan,riskAddWhitelist,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,
       savePaymentConfig,savePayApiConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,movePlan,openUserEdit,saveUserAdmin,
       toggleProvider,collapseAllProviders,togglePayApiSection,
        addProvider,removeProvider,addModel,removeModel,

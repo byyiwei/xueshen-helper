@@ -1163,6 +1163,16 @@ class Database:
         self._add_column_if_missing("admin_config", "sso_app_key", "sso_app_key VARCHAR(128) DEFAULT '' COMMENT 'Hub 分配的 App Key（标识，非密钥）'")
         self._add_column_if_missing("admin_config", "sso_base_url", "sso_base_url VARCHAR(255) DEFAULT '' COMMENT 'Hub 中控基址，默认 https://openget.cn'")
         self._add_column_if_missing("admin_config", "sso_app_secret", "sso_app_secret VARCHAR(255) DEFAULT '' COMMENT 'Hub App Secret，仅服务端持有，界面只显示掩码'")
+        # —— 风控管理（只判退款行为：次数 / 退款率 / 下单后短时退款）——
+        self._add_column_if_missing("admin_config", "risk_enabled", "risk_enabled TINYINT DEFAULT 1 COMMENT '风控判定总开关'")
+        self._add_column_if_missing("admin_config", "risk_refund_days", "risk_refund_days INT DEFAULT 30 COMMENT '退款次数统计窗口（天）'")
+        self._add_column_if_missing("admin_config", "risk_refund_count", "risk_refund_count INT DEFAULT 2 COMMENT '窗口内退款次数达此值判风险，0=关闭该规则'")
+        self._add_column_if_missing("admin_config", "risk_refund_rate_pct", "risk_refund_rate_pct INT DEFAULT 50 COMMENT '退款率阈值百分数，0=关闭该规则'")
+        self._add_column_if_missing("admin_config", "risk_refund_rate_min", "risk_refund_rate_min INT DEFAULT 2 COMMENT '算退款率所需最小已付单量，低于此不计率，避免单笔即百分百误伤'")
+        self._add_column_if_missing("admin_config", "risk_quick_minutes", "risk_quick_minutes INT DEFAULT 120 COMMENT '下单支付后此时长内退款算短时退款（分钟）'")
+        self._add_column_if_missing("admin_config", "risk_quick_count", "risk_quick_count INT DEFAULT 2 COMMENT '短时退款次数达此值判风险，0=关闭该规则'")
+        self._add_column_if_missing("admin_config", "risk_auto_ban", "risk_auto_ban TINYINT DEFAULT 0 COMMENT '命中即自动封总开关，默认关＝只出名单等人工一键封'")
+        self._add_column_if_missing("admin_config", "risk_whitelist", "risk_whitelist TEXT COMMENT '风控白名单用户名，逗号/换行分隔，命中也不处理'")
 
     def _ensure_order_payment_columns(self):
         self._add_column_if_missing("payment_orders", "pay_method", "pay_method VARCHAR(20)")
@@ -1979,6 +1989,94 @@ class Database:
         )
         tip = "已批准，退款已处理" if status == "approved" else "已拒绝"
         return True, f"退款申请{tip}"
+
+    # ==================== 风控管理（退款行为） ====================
+    def get_risk_config(self):
+        c = self.get_admin_config() or {}
+
+        def _i(k, d):
+            v = c.get(k)
+            try:
+                return int(v) if v not in (None, "") else d
+            except Exception:
+                return d
+
+        raw = (c.get("risk_whitelist") or "").replace("\n", ",").replace("，", ",")
+        wl = sorted({p.strip() for p in raw.split(",") if p.strip()})
+        return {
+            "enabled": _i("risk_enabled", 1),
+            "refund_days": _i("risk_refund_days", 30),
+            "refund_count": _i("risk_refund_count", 2),
+            "refund_rate_pct": _i("risk_refund_rate_pct", 50),
+            "refund_rate_min": _i("risk_refund_rate_min", 2),
+            "quick_minutes": _i("risk_quick_minutes", 120),
+            "quick_count": _i("risk_quick_count", 2),
+            "auto_ban": _i("risk_auto_ban", 0),
+            "whitelist": wl,
+        }
+
+    def get_risk_users(self):
+        """按退款行为扫描全站，返回 (config, 命中风险的用户列表)。
+
+        只读，不改库；是否封禁由调用方（后台/自动封开关）决定。
+        聚合口径全部来自 payment_orders：
+          refunded     历史退款成功单数
+          paid_ever    已付过款过的单数（paid + refunded，作为退款率分母）
+          quick_refunds 支付后 quick_minutes 分钟内即退款的单数（买了就用、用完就退）
+          refunds_recent 近 refund_days 天内的退款单数
+        """
+        cfg = self.get_risk_config()
+        rd = max(1, cfg["refund_days"])
+        qm = max(0, cfg["quick_minutes"])
+        rows = self.fetchall(
+            f"""SELECT username,
+                  SUM(CASE WHEN status='refunded' THEN 1 ELSE 0 END) refunded,
+                  SUM(CASE WHEN status IN ('paid','refunded') THEN 1 ELSE 0 END) paid_ever,
+                  SUM(CASE WHEN status='refunded' AND paid_at IS NOT NULL AND refunded_at IS NOT NULL
+                           AND TIMESTAMPDIFF(MINUTE, paid_at, refunded_at) <= {qm} THEN 1 ELSE 0 END) quick_refunds,
+                  SUM(CASE WHEN status='refunded' AND refunded_at >= DATE_SUB(NOW(), INTERVAL {rd} DAY) THEN 1 ELSE 0 END) refunds_recent
+                FROM payment_orders
+                WHERE username IS NOT NULL AND username <> ''
+                GROUP BY username
+                HAVING refunded > 0
+                ORDER BY refunded DESC
+                LIMIT 500""",
+            ()
+        ) or []
+        wl = set(cfg["whitelist"])
+        out = []
+        for r in rows:
+            uname = r.get("username")
+            if not uname or uname in wl:
+                continue
+            refunded = int(r.get("refunded") or 0)
+            paid_ever = int(r.get("paid_ever") or 0)
+            quick = int(r.get("quick_refunds") or 0)
+            recent = int(r.get("refunds_recent") or 0)
+            hits = []
+            if cfg["refund_count"] > 0 and recent >= cfg["refund_count"]:
+                hits.append(f"{rd} 天内退款 {recent} 次（阈值 {cfg['refund_count']}）")
+            if (cfg["refund_rate_pct"] > 0 and paid_ever >= cfg["refund_rate_min"]
+                    and refunded * 100.0 / paid_ever >= cfg["refund_rate_pct"]):
+                rate = round(refunded * 100.0 / paid_ever)
+                hits.append(f"退款率 {rate}%（退款 {refunded}/已付 {paid_ever}，阈值 {cfg['refund_rate_pct']}%）")
+            if cfg["quick_count"] > 0 and quick >= cfg["quick_count"]:
+                hits.append(f"支付后 {qm} 分钟内退款 {quick} 次（阈值 {cfg['quick_count']}）")
+            if not hits:
+                continue
+            ent = self.get_user_entitlement(uname) or {}
+            out.append({
+                "username": uname,
+                "refunded": refunded,
+                "paid_ever": paid_ever,
+                "quick_refunds": quick,
+                "refunds_recent": recent,
+                "hits": hits,
+                "is_banned": bool(ent.get("is_banned")),
+                "ban_reason": ent.get("ban_reason") or "",
+            })
+        out.sort(key=lambda x: (len(x["hits"]), x["refunded"]), reverse=True)
+        return cfg, out
 
     # ========== 闲鱼自动发货 ==========
     def _ensure_xianyu_tables(self):

@@ -5673,6 +5673,11 @@ class Handler(BaseHTTPRequestHandler):
                 "base_url": cfg.get("sso_base_url") or "",
                 "app_secret": "********" if secret else "",
             }})
+        elif path == "/admin/risk-config":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            self._send_json(200, {"code": 200, "config": db.get_risk_config()})
         elif path == "/admin/email-config":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -7111,6 +7116,106 @@ class Handler(BaseHTTPRequestHandler):
                 if secret_in and secret_in != "********":
                     db.execute("UPDATE admin_config SET sso_app_secret=%s WHERE id=1", (secret_in.strip(),))
                 self._send_json(200, {"code": 200, "msg": "已保存"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/risk-config":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+
+                def _ci(key, dflt, lo, hi):
+                    try:
+                        v = int(data.get(key, dflt))
+                    except Exception:
+                        v = dflt
+                    return max(lo, min(hi, v))
+
+                enabled = _ci("enabled", 1, 0, 1)
+                refund_days = _ci("refund_days", 30, 1, 3650)
+                refund_count = _ci("refund_count", 2, 0, 999)
+                refund_rate_pct = _ci("refund_rate_pct", 50, 0, 100)
+                refund_rate_min = _ci("refund_rate_min", 2, 1, 9999)
+                quick_minutes = _ci("quick_minutes", 120, 0, 10080)
+                quick_count = _ci("quick_count", 2, 0, 999)
+                auto_ban = _ci("auto_ban", 0, 0, 1)
+                wl_raw = (data.get("whitelist") or "").replace("\n", ",").replace("，", ",")
+                wl = sorted({p.strip() for p in wl_raw.split(",") if p.strip()})
+                db.execute(
+                    "UPDATE admin_config SET risk_enabled=%s, risk_refund_days=%s, risk_refund_count=%s, "
+                    "risk_refund_rate_pct=%s, risk_refund_rate_min=%s, risk_quick_minutes=%s, "
+                    "risk_quick_count=%s, risk_auto_ban=%s, risk_whitelist=%s WHERE id=1",
+                    (enabled, refund_days, refund_count, refund_rate_pct, refund_rate_min,
+                     quick_minutes, quick_count, auto_ban, ",".join(wl))
+                )
+                self._send_json(200, {"code": 200, "msg": "已保存", "config": db.get_risk_config()})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/risk/scan":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                cfg, users = db.get_risk_users()
+                banned_now = 0
+                # 自动封仅在总开关开启时生效；默认关＝只回名单，等人工一键封
+                if cfg["enabled"] and cfg["auto_ban"]:
+                    for u in users:
+                        if not u["is_banned"]:
+                            reason = "风控自动封禁：" + "；".join(u["hits"])
+                            db.set_user_admin_fields(u["username"], is_banned=1, ban_reason=reason)
+                            u["is_banned"] = True
+                            u["ban_reason"] = reason
+                            banned_now += 1
+                self._send_json(200, {
+                    "code": 200, "enabled": cfg["enabled"], "auto_ban": cfg["auto_ban"],
+                    "users": users, "banned_now": banned_now,
+                })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/risk/ban":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                uname = (data.get("username") or "").strip()
+                do_ban = bool(data.get("ban"))
+                if not uname:
+                    self._send_json(400, {"code": 400, "msg": "缺少用户名"})
+                    return
+                if do_ban:
+                    reason = (data.get("reason") or "").strip()[:255] or "风控人工封禁"
+                    db.set_user_admin_fields(uname, is_banned=1, ban_reason=reason)
+                    self._send_json(200, {"code": 200, "msg": "已封禁 " + uname})
+                else:
+                    db.set_user_admin_fields(uname, is_banned=0, ban_reason="")
+                    self._send_json(200, {"code": 200, "msg": "已解封 " + uname})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/risk/whitelist":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                uname = (data.get("username") or "").strip()
+                add = bool(data.get("add"))
+                if not uname:
+                    self._send_json(400, {"code": 400, "msg": "缺少用户名"})
+                    return
+                cur = set(db.get_risk_config()["whitelist"])
+                if add:
+                    cur.add(uname)
+                else:
+                    cur.discard(uname)
+                db.execute("UPDATE admin_config SET risk_whitelist=%s WHERE id=1", (",".join(sorted(cur)),))
+                self._send_json(200, {"code": 200, "msg": "白名单已更新", "whitelist": sorted(cur)})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
