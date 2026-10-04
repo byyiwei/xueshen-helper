@@ -965,7 +965,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
 
         <!-- 系统配置组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.config}">
-          <div class="menu-group-header dock-item" :class="{active:['email-config','db-config','qq-bot'].includes(page)}" @click="expandedGroups.config=!expandedGroups.config">
+          <div class="menu-group-header dock-item" :class="{active:['email-config','db-config','qq-bot','sso-config'].includes(page)}" @click="expandedGroups.config=!expandedGroups.config">
             <span class="icon">◇</span>系统配置
             <span class="arrow">▶</span>
           </div>
@@ -975,6 +975,9 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
             </div>
             <div class="menu-item" :class="{active:page==='email-config'}" @click="page='email-config';loadEmailConfig();loadEmailTemplates()">
               <span class="icon">✉</span>邮箱配置
+            </div>
+            <div class="menu-item" :class="{active:page==='sso-config'}" @click="page='sso-config';loadSsoConfig()">
+              <span class="icon">⚿</span>单点登录
             </div>
             <div class="menu-item" :class="{active:page==='db-config'}" @click="page='db-config';loadDbConfig()">
               <span class="icon">⛁</span>系统设置
@@ -1266,6 +1269,64 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                 <div class="pwd-wrap">
                   <input v-model="dbConfig.password" :type="showDbPass?'text':'password'" placeholder="留空或保持 ******** 表示不修改">
                   <span class="pwd-eye" @click="showDbPass=!showDbPass">{{showDbPass?'🙈':'👁'}}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- SSO (中控单点登录) Config Page -->
+      <template v-if="page==='sso-config'">
+        <header class="main-header">
+          <h2>单点登录</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index<breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="status-bar">
+            <span class="status-dot" :class="ssoConfig.enabled?'on':'off'"></span>
+            <span v-if="ssoConfig.enabled">中控单点登录已启用</span>
+            <span v-else>单点登录未启用，仅可用账号密码登录后台</span>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <h3><span>⚿</span>中控单点登录</h3>
+              <div class="provider-actions">
+                <button class="btn btn-primary btn-sm" :disabled="ssoSaving" @click="saveSsoConfig()">{{ssoSaving?'保存中...':'保存'}}</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="info-tips" style="margin-bottom:14px">
+                <div class="tip-row"><span class="tip-num">i</span><span class="tip-text">启用后，在 openget 中控点「进入后台」会以一次性票据自动登录本后台。关闭不影响账号密码登录。</span></div>
+                <div class="warn">⚠ App Secret 仅存服务端，页面只显示掩码 <code>********</code>；留空或保持掩码表示不修改，明文不会回传浏览器。</div>
+              </div>
+              <div class="form-group" style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+                <label style="margin:0">启用单点登录</label>
+                <div class="toggle" :class="ssoConfig.enabled?'on':''" @click="ssoConfig.enabled=!ssoConfig.enabled"></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>App Key</label>
+                  <input v-model="ssoConfig.app_key" placeholder="app_ca2a...（中控分配）">
+                </div>
+                <div class="form-group">
+                  <label>中控基址 (Base URL)</label>
+                  <input v-model="ssoConfig.base_url" placeholder="https://openget.cn">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>App Secret</label>
+                <div class="pwd-wrap">
+                  <input v-model="ssoConfig.app_secret" :type="showSsoSecret?'text':'password'" placeholder="留空或保持 ******** 表示不修改">
+                  <span class="pwd-eye" @click="showSsoSecret=!showSsoSecret">{{showSsoSecret?'🙈':'👁'}}</span>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>后台回调地址（填到中控「应用详情 → 基本信息 → 后台地址」）</label>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <input readonly :value="ssoCallbackUrl" @click="$event.target.select()" style="flex:1">
+                  <button class="btn btn-secondary btn-sm" @click="copySsoUrl()">复制</button>
                 </div>
               </div>
             </div>
@@ -5048,6 +5109,10 @@ createApp({
     const dbTesting=ref(false);
     const dbSaving=ref(false);
     const showDbPass=ref(false);
+    const ssoConfig=ref({enabled:false,app_key:'',base_url:'',app_secret:''});
+    const ssoSaving=ref(false);
+    const showSsoSecret=ref(false);
+    const ssoCallbackUrl=computed(()=>location.origin+'/admin/sso');
     const emailConfig=ref({enabled:false,test_recipient:''});
     const mailServers=ref([]);
     const showServerForm=ref(false);
@@ -6367,6 +6432,34 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       }catch(e){showMsg('连接测试失败: '+(e.message||e),'error');}
       finally{dbTesting.value=false;}
     }
+    async function loadSsoConfig(){
+      if(!token.value)return;
+      try{
+        const res=await safeFetch('/admin/sso-config',{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200&&data.config){ssoConfig.value={enabled:false,app_key:'',base_url:'',app_secret:'',...data.config,enabled:!!data.config.enabled};}
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'获取单点登录配置失败','error');
+      }catch(e){showMsg('获取单点登录配置失败: '+(e.message||e),'error',6000);}
+    }
+    async function saveSsoConfig(){
+      if(ssoSaving.value)return;
+      ssoSaving.value=true;
+      try{
+        const payload={enabled:!!ssoConfig.value.enabled,app_key:ssoConfig.value.app_key,base_url:ssoConfig.value.base_url,app_secret:ssoConfig.value.app_secret};
+        const res=await fetch('/admin/sso-config',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify(payload)});
+        const data=await res.json();
+        if(data.code===200){showMsg(data.msg||'已保存');await loadSsoConfig();}
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'保存失败','error');
+      }catch(e){showMsg('保存失败: '+(e.message||e),'error');}
+      finally{ssoSaving.value=false;}
+    }
+    function copySsoUrl(){
+      const url=ssoCallbackUrl.value;
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(url).then(()=>showMsg('回调地址已复制'),()=>showMsg(url,'success',6000));}
+      else showMsg('请手动复制：'+url,'success',6000);
+    }
     async function adminPost(url,payload){
       const res=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify(payload||{})});
       const data=await res.json();
@@ -6679,7 +6772,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       distributor:{title:'代理商分销',icon:'⚑',items:[{page:'distributor',label:'代理商',icon:'◉',load:loadFxList},{page:'distributor-templates',label:'卡密模板',icon:'▤',load:()=>{loadFxOptions();loadFxTemplates();}},{page:'distributor-batches',label:'批次与卡密',icon:'≣',load:()=>{loadFxOptions();loadFxBatches(1);}},{page:'distributor-withdrawals',label:'提现审核',icon:'¥',load:()=>{loadFxOptions();loadFxWds(1);}},{page:'distributor-revenue',label:'收入统计',icon:'↗',load:loadFxRevenue},{page:'distributor-config',label:'分销配置',icon:'⚙',load:loadFxConfig}]},
       logs:{title:'日志监控',icon:'☰',items:[{page:'script-logs',label:'脚本日志',icon:'⌘',load:loadScriptLogs},{page:'log-cleanup',label:'日志清理',icon:'∅',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'⊙',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
       models:{title:'模型服务',icon:'◈',items:[{page:'ai-config',label:'模型配置',icon:'◈',load:loadConfig},{page:'ai-logs',label:'模型日志',icon:'≡',load:loadAiLogs}]},
-      config:{title:'系统配置',icon:'◇',items:[{page:'qq-bot',label:'QQ频道机器人',icon:'🤖',load:loadQqBot},{page:'email-config',label:'邮箱配置',icon:'✉',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'db-config',label:'系统设置',icon:'⛁',load:loadDbConfig}]}
+      config:{title:'系统配置',icon:'◇',items:[{page:'qq-bot',label:'QQ频道机器人',icon:'🤖',load:loadQqBot},{page:'email-config',label:'邮箱配置',icon:'✉',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'sso-config',label:'单点登录',icon:'⚿',load:loadSsoConfig},{page:'db-config',label:'系统设置',icon:'⛁',load:loadDbConfig}]}
     };
     function openMobileSubmenu(key,title,icon){
       const cfg=MOBILE_SUBMENU_MAP[key];
@@ -7776,9 +7869,9 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       answerStats,answerStatsLoading,answerStatsFilter,loadAnswerStats,setAnswerStatRange,ansTrendRows,ansTrendX,ansTrendY,ansTrendPoints,
       userAnalysis,userAnalysisLoading,userAnalysisFilter,loadUserAnalysis,setUserAnalysisRange,pct,
       oldUserRechargeExpanded,oldUserRechargeDetails,oldUserRechargePage,oldUserRechargeTotal,oldUserRechargeTotalPages,oldUserRechargeSum,oldUserRechargeLoading,toggleOldUserRecharge,loadOldUserRechargeDetails,
-      questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,deleteQuestionBankItem,bankTypeOptions,bankModelOptions,loadBankModels,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,
+      questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,deleteQuestionBankItem,bankTypeOptions,bankModelOptions,loadBankModels,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,ssoConfig,ssoSaving,showSsoSecret,ssoCallbackUrl,
       doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
-      loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,
+      loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadSsoConfig,saveSsoConfig,copySsoUrl,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,
       savePaymentConfig,savePayApiConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,movePlan,openUserEdit,saveUserAdmin,
       toggleProvider,collapseAllProviders,togglePayApiSection,
        addProvider,removeProvider,addModel,removeModel,

@@ -1158,6 +1158,11 @@ class Database:
         self._add_column_if_missing("admin_config", "distributor_max_batch", "distributor_max_batch INT DEFAULT 500 COMMENT '单次生成张数上限'")
         self._add_column_if_missing("admin_config", "distributor_daily_card_max", "distributor_daily_card_max INT DEFAULT 2000 COMMENT '每代理商每日生成张数上限，0=不限'")
         self._add_column_if_missing("admin_config", "distributor_script_name", "distributor_script_name VARCHAR(100) DEFAULT '学神助手 纯净版' COMMENT '纯净版脚本名称'")
+        # 中控单点登录（Hub SSO）配置：密钥只在服务端，GET 永不回传明文
+        self._add_column_if_missing("admin_config", "sso_enabled", "sso_enabled TINYINT DEFAULT 0 COMMENT '中控单点登录总开关'")
+        self._add_column_if_missing("admin_config", "sso_app_key", "sso_app_key VARCHAR(128) DEFAULT '' COMMENT 'Hub 分配的 App Key（标识，非密钥）'")
+        self._add_column_if_missing("admin_config", "sso_base_url", "sso_base_url VARCHAR(255) DEFAULT '' COMMENT 'Hub 中控基址，默认 https://openget.cn'")
+        self._add_column_if_missing("admin_config", "sso_app_secret", "sso_app_secret VARCHAR(255) DEFAULT '' COMMENT 'Hub App Secret，仅服务端持有，界面只显示掩码'")
 
     def _ensure_order_payment_columns(self):
         self._add_column_if_missing("payment_orders", "pay_method", "pay_method VARCHAR(20)")

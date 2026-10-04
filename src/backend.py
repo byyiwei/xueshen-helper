@@ -358,6 +358,92 @@ def revoke_admin_session(token):
     if token:
         ADMIN_SESSIONS.pop(token, None)
 
+
+# ==================== 中控单点登录（Hub SSO） ====================
+# hub-v1 请求签名 + 服务端兑换。appSecret 只在服务端读取与签名，兑换出的身份不回传浏览器。
+SSO_DEFAULT_BASE_URL = "https://openget.cn"
+SSO_DEFAULT_APP_KEY = "app_ca2a9122a5d64d5ad367"
+SSO_EXCHANGE_TARGET = "/open/sso/exchange"
+SSO_EMPTY_BODY_SHA = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+
+def _sso_html_escape(text):
+    return (str(text).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;"))
+
+
+def _hub_sign_headers(method, raw_target, body_bytes, app_key, app_secret):
+    """按 hub-v1 生成 4 个签名请求头。stringToSign = METHOD\nrawTarget\nts\nnonce\nbodySha256。"""
+    import hmac as _hmac
+    ts = str(int(time.time()))
+    nonce = secrets.token_hex(12)  # 12 字节随机，hex 表示，一次一换
+    body_sha = hashlib.sha256(body_bytes).hexdigest() if body_bytes else SSO_EMPTY_BODY_SHA
+    string_to_sign = "\n".join([method, raw_target, ts, nonce, body_sha])
+    signature = _hmac.new(app_secret.encode("utf-8"), string_to_sign.encode("utf-8"),
+                          hashlib.sha256).hexdigest()
+    return {
+        "X-Hub-App-Key": app_key,
+        "X-Hub-Timestamp": ts,
+        "X-Hub-Nonce": nonce,
+        "X-Hub-Signature": signature,
+    }
+
+
+def _hub_sso_exchange(ticket):
+    """服务端携带 hub-v1 签名调用中控兑换接口。返回 (ok, data_or_error)。
+
+    ok=True 时 data 为 {"adminId","username","role"}；ok=False 时第二项为人话错误。
+    """
+    cfg = db.get_admin_config() or {}
+    app_secret = (cfg.get("sso_app_secret") or "").strip()
+    if not app_secret:
+        return False, "服务端未配置中控密钥，请在「系统配置 → 单点登录」填写 App Secret"
+    app_key = (cfg.get("sso_app_key") or "").strip() or SSO_DEFAULT_APP_KEY
+    base_url = (cfg.get("sso_base_url") or "").strip() or SSO_DEFAULT_BASE_URL
+    body = json.dumps({"ticket": ticket}, ensure_ascii=False).encode("utf-8")
+    headers = _hub_sign_headers("POST", SSO_EXCHANGE_TARGET, body, app_key, app_secret)
+    headers["Content-Type"] = "application/json"
+    url = base_url.rstrip("/") + SSO_EXCHANGE_TARGET
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        if isinstance(data, dict) and ("username" in data or "adminId" in data):
+            return True, data
+        return False, "中控返回内容异常"
+    except urllib.error.HTTPError as e:
+        try:
+            err = json.loads(e.read().decode("utf-8"))
+        except Exception:
+            err = {}
+        return False, (err.get("message") or "票据无效或已过期（中控拒绝，HTTP %d）" % e.code)
+    except Exception as e:
+        return False, "无法连接中控：" + str(e)
+
+
+def _sso_error_page(msg):
+    safe = _sso_html_escape(msg)
+    return ("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
+            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+            "<title>进入后台失败</title><style>body{font-family:system-ui,-apple-system,sans-serif;"
+            "background:#0f172a;color:#e2e8f0;display:flex;align-items:center;justify-content:center;"
+            "min-height:100vh;margin:0;padding:24px}.box{max-width:420px;text-align:center}"
+            ".t{font-size:18px;margin:0 0 12px}.m{font-size:14px;line-height:1.7;color:#94a3b8;margin:0}"
+            "</style></head><body><div class=\"box\"><p class=\"t\">无法进入后台</p>"
+            "<p class=\"m\">%s</p></div></body></html>") % safe
+
+
+def _sso_bootstrap_page(token):
+    # 只带我方自铸的会话令牌，绝不把中控 adminId/username 写进页面。token 形如 adm_[A-Za-z0-9_-]+。
+    if not re.fullmatch(r"adm_[A-Za-z0-9_\-]+", token or ""):
+        return _sso_error_page("登录状态创建失败，请回中控重新点『进入后台』")
+    return ("<!doctype html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
+            "<title>正在进入后台…</title></head><body style=\"font-family:system-ui;"
+            "color:#94a3b8;padding:40px;text-align:center\">正在进入后台…</body>"
+            "<script>localStorage.setItem('ne21_admin_token','%s');"
+            "location.replace('/admin');</script></html>") % token
+# ==================================================================
+
 def login_rate_key(scope, client_ip, username):
     return f"{scope}:{client_ip or 'unknown'}:{(username or '').strip().lower()}"
 
@@ -4580,6 +4666,32 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
         return False
 
+    def _handle_sso_login(self, parsed):
+        """捕获 hub_ticket → 服务端兑换 → 校验角色 → 自铸会话 → bootstrap 落地。
+
+        失败一律回人话页面，绝不静默放行；中控返回的身份只用于服务端建会话，不回传浏览器。
+        """
+        cfg = db.get_admin_config() or {}
+        if not int(cfg.get("sso_enabled") or 0):
+            self._send_text(404, _sso_error_page("单点登录未启用，请使用账号密码登录后台"), "text/html; charset=utf-8")
+            return
+        qs = parse_qs(parsed.query or "")
+        ticket = (qs.get("hub_ticket", [""])[0] or "").strip()
+        if not ticket:
+            self._send_text(400, _sso_error_page("缺少登录票据，请回中控点『进入后台』重新进入"), "text/html; charset=utf-8")
+            return
+        ok, result = _hub_sso_exchange(ticket)
+        if not ok:
+            self._send_text(401, _sso_error_page("票据无效或已过期，请回中控重新点『进入后台』"), "text/html; charset=utf-8")
+            return
+        role = (result.get("role") or "").strip()
+        if role != "super":
+            self._send_text(403, _sso_error_page("该中控账号角色无权进入本后台，需要超级管理员权限"), "text/html; charset=utf-8")
+            return
+        hub_user = (result.get("username") or "").strip() or "admin"
+        token = create_admin_session(hub_user)
+        self._send_text(200, _sso_bootstrap_page(token), "text/html; charset=utf-8")
+
     def _distributor_user(self, require_approved=True):
         """代理商门户的唯一守卫：登录 → 总开关 → 有申请 → 状态。
 
@@ -5097,7 +5209,15 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/user" or path == "/user/" or path == "/login" or path == "/register" or path == "/forgot":
             self._send_file(200, USER_HTML_FILE, "text/html; charset=utf-8")
         elif path == "/admin" or path == "/admin/":
+            # 中控「后台地址」可能直接指向 /admin，跳转时带上 ?hub_ticket=。
+            # 带票就地走 SSO 兑换并落地会话；不带票才正常吐 SPA（不能误伤账号密码登录）。
+            if (parse_qs(parsed.query or "").get("hub_ticket", [""])[0] or "").strip():
+                self._handle_sso_login(parsed)
+                return
             self._send_file(200, ADMIN_HTML_FILE, "text/html; charset=utf-8")
+        elif path == "/admin/sso":
+            self._handle_sso_login(parsed)
+            return
         elif path == "/distributor" or path == "/distributor/":
             self._send_file(200, DIST_HTML_FILE, "text/html; charset=utf-8")
         elif path == "/invite":
@@ -5541,6 +5661,18 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
             self._send_json(200, {"code": 200, "config": get_db_config()})
+        elif path == "/admin/sso-config":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            cfg = db.get_admin_config() or {}
+            secret = (cfg.get("sso_app_secret") or "").strip()
+            self._send_json(200, {"code": 200, "config": {
+                "enabled": int(cfg.get("sso_enabled") or 0),
+                "app_key": cfg.get("sso_app_key") or "",
+                "base_url": cfg.get("sso_base_url") or "",
+                "app_secret": "********" if secret else "",
+            }})
         elif path == "/admin/email-config":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -6960,6 +7092,25 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(400, {"code": 400, "msg": msg})
                     return
                 self._send_json(200, {"code": 200, "msg": msg, "config": get_db_config()})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/sso-config":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                enabled = 1 if data.get("enabled") else 0
+                app_key = (data.get("app_key") or "").strip()
+                base_url = (data.get("base_url") or "").strip() or SSO_DEFAULT_BASE_URL
+                db.execute("UPDATE admin_config SET sso_enabled=%s, sso_app_key=%s, sso_base_url=%s WHERE id=1",
+                           (enabled, app_key, base_url))
+                # 密钥沿用数据库密码同款约定：留空或仍为掩码则保持原值不变，明文永不回传浏览器
+                secret_in = data.get("app_secret") or ""
+                if secret_in and secret_in != "********":
+                    db.execute("UPDATE admin_config SET sso_app_secret=%s WHERE id=1", (secret_in.strip(),))
+                self._send_json(200, {"code": 200, "msg": "已保存"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
