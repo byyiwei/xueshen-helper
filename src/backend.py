@@ -221,15 +221,38 @@ def _geo_from_pconline(ip):
     return (data.get("addr") or "").strip()
 
 
+def _geo_from_ipapi(ip):
+    """ip-api.com，免费版只有 HTTP（HTTPS 要密钥），中文最全且返简体。
+
+    响应示例：{"status":"success","country":"美国","regionName":"佛罗里达州","city":"迈阿密"}
+    失败时返回 {"status":"fail",...}，必须判 status。
+    """
+    url = f"http://ip-api.com/json/{quote(ip)}?lang=zh-CN&fields=status,country,regionName,city"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urlopen(req, timeout=_IP_GEO_TIMEOUT) as resp:
+        data = json.loads(resp.read().decode("utf-8", errors="replace"))
+    if data.get("status") != "success":
+        return ""
+    return _join_geo([data.get("country"), data.get("regionName"), data.get("city")])
+
+
 def _geo_from_ipwhois(ip):
-    """国际接口兜底，覆盖海外 IP；返回英文地名。"""
-    url = f"https://ipwho.is/{quote(ip)}?lang=zh"
+    """国际接口兜底，覆盖海外 IP。
+
+    ⚠️ 语言参数必须写 zh-CN —— 写成 zh 会被忽略并原样返回英文
+    （之前就是这样，海外 IP 显示成 United States Florida Miami）。
+    """
+    url = f"https://ipwho.is/{quote(ip)}?lang=zh-CN"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urlopen(req, timeout=_IP_GEO_TIMEOUT) as resp:
         data = json.loads(resp.read().decode("utf-8", errors="replace"))
     if not data.get("success"):
         return ""
-    parts = [data.get("country"), data.get("region"), data.get("city")]
+    return _join_geo([data.get("country"), data.get("region"), data.get("city")])
+
+
+def _join_geo(parts):
+    """把国家/省/市拼成一句，去掉空值和重复项（如 country==region），限长 200。"""
     seen = []
     for p in parts:
         p = (p or "").strip()
@@ -239,13 +262,16 @@ def _geo_from_ipwhois(ip):
 
 
 def resolve_ip_geo(ip):
-    """把 IP 解析成归属地字符串，解析不出来就返回空串。"""
+    """把 IP 解析成归属地字符串，解析不出来就返回空串。
+
+    顺序：国内（pconline，最准）-> ip-api（海外，简体）-> ipwho.is（HTTPS 兜底）。
+    """
     ip = (ip or "").strip()
     if not ip:
         return ""
     if is_private_ip(ip):
         return "内网/本机"
-    for fn in (_geo_from_pconline, _geo_from_ipwhois):
+    for fn in (_geo_from_pconline, _geo_from_ipapi, _geo_from_ipwhois):
         try:
             addr = fn(ip)
             if addr:
