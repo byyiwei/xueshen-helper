@@ -228,7 +228,7 @@ body{
 .data-table{width:100%;border-collapse:collapse;font-size:13px}
 /* 可复制单元格：整格点击复制，悬停时按钮浮现在右侧（不占用文字宽度） */
 .copy-cell{position:relative;display:block;cursor:pointer;min-width:0;padding-right:0}
-.copy-cell-text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.copy-cell-text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:38px}
 .copy-cell-btn{
   position:absolute;right:2px;top:50%;transform:translateY(-50%);
   padding:1px 6px;border-radius:4px;font-family:system-ui,-apple-system,sans-serif;
@@ -243,8 +243,17 @@ body{
 .order-link{cursor:pointer;color:var(--primary);text-decoration:underline;text-underline-offset:2px}
 .order-link:hover{color:var(--accent2)}
 .order-link:active{opacity:.7}
-/* 悬停时给文字留出按钮位置，避免文字被按钮压住 */
-.copy-cell:hover .copy-cell-text{padding-right:38px}
+/* IP 单元格：IP 用等宽字体便于核对，归属地小一号灰字跟在下面 */
+.ip-cell{display:flex;flex-direction:column;gap:2px;line-height:1.35}
+.ip-cell .ip-val{font-family:monospace;font-size:12px;color:var(--text2);cursor:pointer;word-break:break-all}
+.ip-cell .ip-val:hover{color:var(--accent2)}
+.ip-cell .ip-addr{font-size:11px;color:var(--text3);word-break:break-all}
+.ip-badge{display:inline-block;padding:1px 7px;border-radius:5px;font-size:11px;font-weight:600;
+  background:rgba(59,130,246,.12);color:#60a5fa;border:1px solid rgba(59,130,246,.2);white-space:nowrap}
+.ip-badge.flag{background:rgba(245,158,11,.12);color:#fbbf24;border-color:rgba(245,158,11,.22)}
+html[data-theme="light"] .ip-badge{color:#1d4ed8}
+html[data-theme="light"] .ip-badge.flag{color:#b45309}
+/* 悬停只做变色与浮现按钮，不动 padding —— 自动布局表格里改 padding 会来回伸缩整列（退款列表闪屏的根源） */
 .data-table thead th{
   text-align:left;padding:10px 12px;
   color:var(--text2);font-weight:500;font-size:12px;
@@ -375,6 +384,7 @@ body{
 }
 .tag-openai{background:rgba(59,130,246,.1);color:var(--accent2);border:1px solid rgba(59,130,246,.2)}
 .tag-claude{background:rgba(245,158,11,.1);color:var(--warn);border:1px solid rgba(245,158,11,.2)}
+.tag-hub{background:rgba(16,185,129,.1);color:var(--success);border:1px solid rgba(16,185,129,.25)}
 .tag-gemini{background:rgba(16,185,129,.1);color:var(--success);border:1px solid rgba(16,185,129,.2)}
 
 /* Message */
@@ -511,6 +521,12 @@ body{
 .puzzle-thumb{position:absolute;left:0;top:3px;width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#fff;color:#0f1724;cursor:grab;font-weight:900;box-shadow:0 5px 14px rgba(0,0,0,.25);touch-action:none}
 .puzzle-thumb:active{cursor:grabbing}
 .puzzle-tip{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:12px;pointer-events:none}
+.hub-box{position:relative;height:auto;overflow:hidden;background:#0f1724;border:1px solid rgba(96,165,250,.16);border-radius:12px;margin-bottom:10px}
+.hub-box .puzzle-bg{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none}
+.hub-box .puzzle-piece-img{position:absolute;left:0;top:0;max-width:none;user-select:none;-webkit-user-drag:none;box-shadow:0 8px 20px rgba(59,130,246,.32);border-radius:4px}
+.hub-box.busy{opacity:.6}
+.hub-skeleton{color:var(--text3);font-size:12px;text-align:center;padding:22px 0}
+html[data-theme="light"] .hub-box{background:#dbeafe;border-color:rgba(59,130,246,.3)}
 
 /* Section title */
 .section-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
@@ -743,16 +759,20 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
       <div :class="['slider-verify',adminSlider.verified&&'done']">
         <div class="slider-top">
           <span>滑块验证</span>
-          <span class="slider-state">{{adminSlider.verified?'验证通过':'拖动拼图到缺口'}}</span>
+          <span class="slider-state">{{adminSlider.verified?'验证通过':(adminSlider.token?'拖动拼图到缺口':'加载中…')}}</span>
         </div>
-        <div class="puzzle-box">
-          <span class="puzzle-gap" :style="{left:'calc('+(adminSlider.target/260*100)+'%)',transform:'translateX(-50%)'}"></span>
-          <span class="puzzle-piece" :style="{left:'calc('+(adminSlider.x/260*100)+'%)',transform:'translateX(-50%)'}"></span>
+        <div class="hub-box" :class="{busy:adminSlider.loading}">
+          <template v-if="adminSlider.bg">
+            <img class="puzzle-bg" :src="adminSlider.bg" draggable="false">
+            <img class="puzzle-piece-img" :src="adminSlider.piece" draggable="false"
+              :style="{left:(adminSlider.x/adminSlider.w*100)+'%',top:(adminSlider.pieceY/adminSlider.h*100)+'%',width:(adminSlider.pieceSize/adminSlider.w*100)+'%',height:(adminSlider.pieceSize/adminSlider.h*100)+'%'}">
+          </template>
+          <div v-else class="hub-skeleton">正在加载验证图…</div>
         </div>
         <div class="puzzle-track">
-          <div class="puzzle-progress" :style="{width:(adminSlider.x/260*100)+'%'}"></div>
+          <div class="puzzle-progress" :style="{width:(adminSlider.x/(adminSlider.w-adminSlider.pieceSize)*100)+'%'}"></div>
           <span class="puzzle-tip">{{adminSlider.verified?'验证通过':'按住滑块，拖动完成拼图'}}</span>
-          <button type="button" class="puzzle-thumb" :style="{left:'calc('+(adminSlider.x/260*100)+'% - 18px)'}" @mousedown="beginAdminPuzzle" @touchstart.prevent="beginAdminPuzzle">›</button>
+          <button type="button" class="puzzle-thumb" :style="{left:'calc((100% - 36px) * '+(adminSlider.x/(adminSlider.w-adminSlider.pieceSize))+')'}" @mousedown="beginAdminPuzzle" @touchstart.prevent="beginAdminPuzzle">›</button>
         </div>
       </div>
       <button class="btn btn-primary" style="width:100%" @click="doLogin">登 录</button>
@@ -1349,7 +1369,10 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
             <span v-if="enabledCount>0">✓ 已有 {{enabledCount}} 个提供商就绪</span>
             <span v-else-if="providerTotalCount>0">已读取 {{providerTotalCount}} 个提供商，请展开检查启用状态、API Key 和模型列表</span>
             <span v-else>⚠ 暂无模型配置，请添加提供商</span>
-            <span style="margin-left:auto;display:flex;gap:8px">
+            <span style="margin-left:auto;display:flex;gap:12px;align-items:center">
+              <label style="font-size:13px;color:var(--text2);display:flex;align-items:center;gap:8px;cursor:pointer" title="开启后中控作为虚拟提供商接入模型列表：调用经 /open/v1/chat/completions，渠道路由、密钥轮换、用量记账由中控处理；密钥只存服务端 HUB_APP_SECRET">走中控模型网关
+                <div class="toggle" :class="modelHubConfig.hub_enabled?'on':''" @click="toggleModelHub"></div>
+              </label>
               <button class="btn btn-secondary btn-sm" @click="collapseAllProviders(true)">全部收起</button>
               <button class="btn btn-secondary btn-sm" @click="collapseAllProviders(false)">全部展开</button>
             </span>
@@ -1367,15 +1390,16 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                 <span class="provider-tag" :class="'tag-'+entry.info.protocol">{{protocolName(entry.info.protocol)}}</span>
               </h3>
               <div class="provider-actions">
+                <span v-if="entry.key==='hub'" style="font-size:12px;color:var(--text3)">中控虚拟提供商 · 不可编辑</span>
                 <button class="btn btn-secondary btn-sm" @click="toggleProvider(entry.key)">{{collapsedProviders[entry.key]?'展开':'收起'}}</button>
-                <button class="btn btn-danger btn-sm" @click="removeProvider(entry.key)">删除</button>
-                <div class="toggle" :class="entry.info.enabled?'on':''" @click="entry.info.enabled=!entry.info.enabled"></div>
+                <button v-if="entry.key!=='hub'" class="btn btn-danger btn-sm" @click="removeProvider(entry.key)">删除</button>
+                <div v-if="entry.key!=='hub'" class="toggle" :class="entry.info.enabled?'on':''" @click="entry.info.enabled=!entry.info.enabled"></div>
               </div>
             </div>
             <div class="card-body" v-show="!collapsedProviders[entry.key]">
               <div class="form-row">
                 <div class="form-group"><label>显示名称</label><input v-model="entry.info.title" placeholder="如：DeepSeek"></div>
-                <div class="form-group">
+                <div class="form-group" v-if="entry.key!=='hub'">
                   <label>协议类型</label>
                   <select v-model="entry.info.protocol">
                     <option value="openai">OpenAI 兼容格式</option>
@@ -1383,8 +1407,12 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     <option value="gemini">Gemini (Google)</option>
                   </select>
                 </div>
+                <div class="form-group" v-else>
+                  <label>协议类型</label>
+                  <input value="中控 Hub 签名（hub-v1）" disabled>
+                </div>
               </div>
-              <div class="form-row">
+              <div class="form-row" v-if="entry.key!=='hub'">
                 <div class="form-group"><label>API Key</label><input type="password" v-model="entry.info.api_key" placeholder="sk-xxxxxxxx"></div>
                 <div class="form-group"><label>Base URL</label><input v-model="entry.info.base_url" placeholder="https://api.xxx.com/v1"></div>
               </div>
@@ -1431,7 +1459,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
               </div>
               <div v-if="modelRowVisible(entry,m) && modelTestResults[entry.key+'-'+idx]" class="model-test-result" :class="modelTestResults[entry.key+'-'+idx].status" v-html="modelTestResults[entry.key+'-'+idx].text"></div>
               </template>
-              <button class="btn-add" @click="addModel(entry.key)">+ 添加模型</button>
+              <button class="btn-add" v-if="entry.key!=='hub'" @click="addModel(entry.key)">+ 添加模型</button>
               <div class="weight-chart">
                 <div class="weight-chart-title">调用比例（按权重实时计算）</div>
                 <div v-if="weightSegments(entry).hasData" class="weight-chart-body">
@@ -1656,6 +1684,21 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
 
           <div class="card">
             <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+              <h3>中控邮件出口（Hub 统一发信）</h3>
+              <div style="display:flex;align-items:center;gap:14px">
+                <label style="font-size:13px;color:var(--text2);display:flex;align-items:center;gap:8px;cursor:pointer" title="开启后所有邮件交中控 /open/mail/send 投递：SMTP 配置、发信人、失败冷却由中控管理，下方邮件服务器不再使用">走中控出口发信
+                  <div class="toggle" :class="emailConfig.hub?'on':''" @click="toggleEmailHub"></div>
+                </label>
+                <button class="btn btn-secondary btn-sm" @click="loadMailHubRecords">查看发信流水</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <p style="font-size:12px;color:var(--text3);line-height:1.7;margin:0">密钥只存服务端（环境变量 <code>HUB_APP_SECRET</code>，或复用「系统配置 → 单点登录」的 App Secret），后台界面不出现明文。403 表示应用未开启「邮件」能力，请到中控应用详情的能力开关里打开。</p>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
               <h3>邮件服务器（多服务器 + 权重）</h3>
               <div style="display:flex;align-items:center;gap:14px">
                 <label style="font-size:13px;color:var(--text2);display:flex;align-items:center;gap:8px;cursor:pointer">启用邮件功能
@@ -1756,6 +1799,36 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
               <div class="modal-footer">
                 <button class="btn btn-secondary" @click="showServerForm=false">取消</button>
                 <button class="btn btn-primary" @click="saveMailServer">保存</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 中控发信流水弹窗 -->
+          <div v-if="showMailHubRecords" class="modal-overlay" @click.self="showMailHubRecords=false">
+            <div class="modal-card" style="max-width:760px">
+              <div class="modal-header"><h3>中控发信流水（最近 20 条）</h3><button class="btn-close" @click="showMailHubRecords=false">×</button></div>
+              <div class="modal-body">
+                <div v-if="mailHubRecordsLoading" style="color:var(--text3);padding:12px 0">加载中…</div>
+                <div v-else-if="mailHubRecordsError" style="color:var(--danger);padding:12px 0">{{mailHubRecordsError}}</div>
+                <div v-else-if="!mailHubRecords.length" style="color:var(--text3);padding:12px 0">暂无发信记录</div>
+                <div v-else style="overflow-x:auto">
+                  <table class="data-table">
+                    <thead><tr><th>时间</th><th>收件人</th><th>主题</th><th>状态</th><th>错误</th></tr></thead>
+                    <tbody>
+                      <tr v-for="(r,i) in mailHubRecords" :key="i">
+                        <td style="white-space:nowrap">{{r.created_at||r.createdAt||r.time||r.sendTime||''}}</td>
+                        <td>{{r.to||r.recipient||''}}</td>
+                        <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="r.subject">{{r.subject||''}}</td>
+                        <td><span class="scene-badge" :class="r.status==='sent'?'scene-user_register':'scene-feedback_reply'">{{r.status||''}}</span></td>
+                        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="r.err">{{r.err||''}}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button class="btn btn-secondary" @click="loadMailHubRecords">刷新</button>
+                <button class="btn btn-primary" @click="showMailHubRecords=false">关闭</button>
               </div>
             </div>
           </div>
@@ -1932,6 +2005,8 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                   <option value="id">ID</option>
                   <option value="username">用户名</option>
                   <option value="points_balance">点数</option>
+                  <option value="register_ip">注册IP</option>
+                  <option value="last_login_ip">登录IP</option>
                 </select>
                 <select v-model="userSortOrder" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:13px" @change="loadUsers()">
                   <option value="desc">降序</option>
@@ -1956,7 +2031,9 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                       <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="setSort('points_balance')">权益 {{userSortBy==='points_balance'?(userSortOrder==='asc'?'↑':'↓'):''}}</th>
                       <th style="text-align:left;padding:10px 8px">状态</th>
                       <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="setSort('created_at')">注册时间 {{userSortBy==='created_at'?(userSortOrder==='asc'?'↑':'↓'):''}}</th>
+                      <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="setSort('register_ip')">注册IP {{userSortBy==='register_ip'?(userSortOrder==='asc'?'↑':'↓'):''}}</th>
                       <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="setSort('last_login_at')">最近登录 {{userSortBy==='last_login_at'?(userSortOrder==='asc'?'↑':'↓'):''}}</th>
+                      <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="setSort('last_login_ip')">登录IP {{userSortBy==='last_login_ip'?(userSortOrder==='asc'?'↑':'↓'):''}}</th>
                       <th style="text-align:left;padding:10px 8px">操作</th>
                     </tr>
                   </thead>
@@ -1975,7 +2052,77 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                         <div style="color:var(--text3)">{{u.is_verified?'已验证':'未验证'}}</div>
                       </td>
                       <td style="padding:10px 8px;color:var(--text3)">{{u.created_at}}</td>
+                      <td style="padding:10px 8px;vertical-align:middle">
+                        <div class="ip-cell" v-if="u.register_ip">
+                          <span class="ip-val" :title="'点击复制：'+u.register_ip" @click="copyText(u.register_ip,$event)">{{u.register_ip}}</span>
+                          <span class="ip-addr" v-if="u.register_ip_addr">{{u.register_ip_addr}}</span>
+                          <span class="ip-addr" v-else style="font-style:italic">归属地解析中…</span>
+                        </div>
+                        <span v-else style="color:var(--text3)">-</span>
+                      </td>
                       <td style="padding:10px 8px;color:var(--text3)">{{u.last_login_at||'未登录'}}</td>
+                      <td style="padding:10px 8px;vertical-align:middle">
+                        <div class="ip-cell" v-if="u.last_login_ip">
+                          <span class="ip-val" :title="'点击复制：'+u.last_login_ip" @click="copyText(u.last_login_ip,$event)">{{u.last_login_ip}}</span>
+                          <span class="ip-addr" v-if="u.last_login_ip_addr">{{u.last_login_ip_addr}}</span>
+                          <span class="ip-addr" v-else style="font-style:italic">归属地解析中…</span>
+                        </div>
+                        <span v-else style="color:var(--text3)">-</span>
+                      </td>
+                      <td style="padding:10px 8px;white-space:nowrap">
+                        <button class="btn btn-secondary btn-sm" @click="openUserEdit(u)">管理</button>
+                        <button class="btn btn-secondary btn-sm" v-if="u.register_ip||u.last_login_ip" title="按该用户 IP 查同 IP 的其他账号（多开/小号排查）" @click="gotoIpSearch(u.last_login_ip||u.register_ip)">查同IP</button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="card" style="margin-top:16px" v-if="ipSearch">
+            <div class="card-header">
+              <h3>同 IP 账号 — <span style="font-family:monospace;color:var(--accent2)">{{ipSearch}}</span></h3>
+              <div style="display:flex;gap:8px;align-items:center">
+                <span v-if="!ipSearchLoading" style="font-size:12px;color:var(--text3)">共 {{ipSearchList.length}} 个账号</span>
+                <button class="btn btn-secondary btn-sm" @click="loadUsersByIp(ipSearch)">刷新</button>
+                <button class="btn btn-secondary btn-sm" @click="ipSearch='';ipSearchList=[]">关闭</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="info-tips" style="margin-bottom:12px">
+                <div class="tip-row"><span class="tip-num">i</span><span class="tip-text">列出「注册IP 或 登录IP」等于该 IP 的全部账号，用于识别同人多开。同一个 IP 也可能是校园网/公司网出口，需结合其它信息判断。</span></div>
+              </div>
+              <div v-if="ipSearchLoading" style="text-align:center;color:var(--text3);padding:28px 0;font-size:13px">正在查询…</div>
+              <div v-else-if="ipSearchList.length===0" style="text-align:center;color:var(--text3);padding:28px 0;font-size:13px">没有其它账号使用该 IP</div>
+              <div v-else style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:13px">
+                  <thead>
+                    <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
+                      <th style="text-align:left;padding:10px 8px">ID</th>
+                      <th style="text-align:left;padding:10px 8px">用户名</th>
+                      <th style="text-align:left;padding:10px 8px">邮箱</th>
+                      <th style="text-align:left;padding:10px 8px">命中</th>
+                      <th style="text-align:left;padding:10px 8px">注册时间</th>
+                      <th style="text-align:left;padding:10px 8px">最近登录</th>
+                      <th style="text-align:left;padding:10px 8px">状态</th>
+                      <th style="text-align:left;padding:10px 8px">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="u in ipSearchList" :key="u.id" style="border-bottom:1px solid var(--border)">
+                      <td style="padding:10px 8px">{{u.id}}</td>
+                      <td style="padding:10px 8px">{{u.username}}</td>
+                      <td style="padding:10px 8px;color:var(--text2)">{{u.email}}</td>
+                      <td style="padding:10px 8px">
+                        <span v-if="u.register_ip===ipSearch" class="ip-badge">注册IP</span>
+                        <span v-if="u.last_login_ip===ipSearch" class="ip-badge flag">登录IP</span>
+                      </td>
+                      <td style="padding:10px 8px;color:var(--text3)">{{u.created_at}}</td>
+                      <td style="padding:10px 8px;color:var(--text3)">{{u.last_login_at||'未登录'}}</td>
+                      <td style="padding:10px 8px">
+                        <span v-if="u.is_banned" style="color:var(--danger)">已封禁</span>
+                        <span v-else style="color:var(--success)">正常</span>
+                      </td>
                       <td style="padding:10px 8px;white-space:nowrap">
                         <button class="btn btn-secondary btn-sm" @click="openUserEdit(u)">管理</button>
                       </td>
@@ -2304,8 +2451,12 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                 <label style="font-size:11px;margin-bottom:4px">订单号</label>
                 <input v-model="rrFilterOrderNo" class="form-control" style="padding:6px 10px;font-size:13px;font-family:monospace" placeholder="搜索订单号" @keyup.enter="loadRefundRequests(1)">
               </div>
+              <div class="form-group" style="margin:0;min-width:150px">
+                <label style="font-size:11px;margin-bottom:4px">申请IP</label>
+                <input v-model="rrFilterIp" class="form-control" style="padding:6px 10px;font-size:13px;font-family:monospace" placeholder="按申请IP筛" @keyup.enter="loadRefundRequests(1)">
+              </div>
               <button class="btn btn-primary" @click="loadRefundRequests(1)">查询</button>
-              <button class="btn btn-secondary" @click="rrFilterStatus='';rrFilterUsername='';rrFilterOrderNo='';loadRefundRequests(1)">重置</button>
+              <button class="btn btn-secondary" @click="rrFilterStatus='';rrFilterUsername='';rrFilterOrderNo='';rrFilterIp='';loadRefundRequests(1)">重置</button>
             </div>
           </div>
           <div class="card">
@@ -2324,6 +2475,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     <th style="text-align:left;padding:10px 8px">套餐</th>
                     <th style="text-align:left;padding:10px 8px">应退/订单</th>
                     <th style="text-align:left;padding:10px 8px">原因</th>
+                    <th style="text-align:left;padding:10px 8px">申请IP</th>
                     <th style="text-align:left;padding:10px 8px">收款信息</th>
                     <th style="text-align:left;padding:10px 8px">状态</th>
                     <th style="text-align:left;padding:10px 8px">操作</th>
@@ -2334,7 +2486,13 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     <td style="padding:10px 8px;color:var(--text3);white-space:nowrap">{{String(r.created_at||'').replace('T',' ').substring(0,16)}}</td>
                     <td style="padding:10px 8px;color:var(--accent2)"><span class="order-link" :title="'查看 '+r.username+' 的支付明细'" @click="gotoPaymentByUsername(r.username)">{{r.username}}</span></td>
                     <td style="padding:10px 8px;font-family:monospace;font-size:12px"><span class="order-link" title="在支付明细中查看该订单" @click="gotoPaymentByOrderNo(r.order_no)">{{r.order_no}}</span></td>
-                    <td style="padding:10px 8px;font-family:monospace;font-size:12px"><span v-if="r.channel_order_no" class="order-link" style="color:var(--text2)" title="在支付明细中按渠道单号查看" @click="gotoPaymentByOrderNo(r.channel_order_no)">{{r.channel_order_no}}</span><span v-else style="color:var(--text3)">-</span></td>
+                    <td style="padding:10px 8px;font-family:monospace;font-size:12px">
+                      <span v-if="r.channel_order_no" class="copy-cell" :title="'点击复制：'+r.channel_order_no" @click="copyText(r.channel_order_no, $event)">
+                        <span class="copy-cell-text order-link" style="color:var(--text2)" title="在支付明细中按渠道单号查看" @click.stop="gotoPaymentByOrderNo(r.channel_order_no)">{{r.channel_order_no}}</span>
+                        <span class="copy-cell-btn" :class="{done:copiedKey===r.channel_order_no}">{{copiedKey===r.channel_order_no?'已复制':'复制'}}</span>
+                      </span>
+                      <span v-else style="color:var(--text3)">-</span>
+                    </td>
                     <td style="padding:10px 8px">{{r.plan_name||'-'}}</td>
                     <td style="padding:10px 8px">
                       <div v-if="Number(r.refund_amount||0)>0" style="color:var(--success);font-weight:600">应退 ¥{{Number(r.refund_amount).toFixed(2)}}</div>
@@ -2343,6 +2501,15 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                       <div v-else style="font-size:11px;color:var(--text3);margin-top:2px">该申请未记录折算，按订单价显示</div>
                     </td>
                     <td style="padding:10px 8px;max-width:200px;word-break:break-all;font-size:12px;color:var(--text2)">{{r.reason||'-'}}</td>
+                    <td style="padding:10px 8px;vertical-align:middle">
+                      <div class="ip-cell" v-if="r.client_ip">
+                        <span class="ip-val" :title="'点击复制：'+r.client_ip" @click="copyText(r.client_ip,$event)">{{r.client_ip}}</span>
+                        <span class="ip-addr" v-if="r.client_ip_addr">{{r.client_ip_addr}}</span>
+                        <span class="ip-addr" v-else style="font-style:italic">解析中…</span>
+                        <span class="ip-badge" style="margin-top:2px" title="按该 IP 查同 IP 的账号" @click="gotoUserSearchByIp(r.client_ip)">查同IP</span>
+                      </div>
+                      <span v-else style="color:var(--text3)">-</span>
+                    </td>
                     <td style="padding:10px 8px;font-size:12px;max-width:180px">
                       <div v-if="r.alipay_account||r.wechat_account" style="display:flex;gap:6px;flex-wrap:wrap">
                         <div v-if="r.alipay_account" style="background:#e8f5e9;padding:2px 6px;border-radius:4px;color:#2e7d32;white-space:nowrap">支付宝: {{r.alipay_account}}</div>
@@ -2367,7 +2534,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                       <span v-else style="font-size:12px;color:var(--text3)">{{r.admin_note||'-'}}</span>
                     </td>
                   </tr>
-                  <tr v-if="rrList.length===0"><td colspan="10" style="text-align:center;padding:32px 20px">
+                  <tr v-if="rrList.length===0"><td colspan="11" style="text-align:center;padding:32px 20px">
                     <div v-if="rrLoading" style="color:var(--text3)">正在加载退款申请…</div>
                     <div v-else-if="rrError">
                       <div style="color:var(--danger);font-weight:600;margin-bottom:6px">接口调用失败，不是「没有申请」</div>
@@ -4684,11 +4851,11 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
           <!-- 表格 -->
           <div class="card">
             <div class="card-body" style="overflow-x:auto">
-              <table class="data-table" style="width:1280px;min-width:100%;font-size:13px;table-layout:fixed">
+              <table class="data-table" style="width:1470px;min-width:100%;font-size:13px;table-layout:fixed">
                 <colgroup>
                   <col style="width:156px"><col style="width:212px"><col style="width:100px"><col style="width:92px">
                   <col style="width:114px"><col style="width:76px"><col style="width:76px"><col style="width:88px">
-                  <col style="width:104px"><col style="width:138px"><col style="width:124px">
+                  <col style="width:130px"><col style="width:104px"><col style="width:138px"><col style="width:124px">
                 </colgroup>
                 <thead>
                   <tr style="text-align:left;color:var(--text3);border-bottom:1px solid var(--border)">
@@ -4700,6 +4867,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     <th style="padding:8px 10px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('price')">金额 {{paymentOrdersSort.field==='price'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
                     <th style="padding:8px 10px;white-space:nowrap">点数/天数</th>
                     <th style="padding:8px 10px;white-space:nowrap">支付方式</th>
+                    <th style="padding:8px 10px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('client_ip')">下单IP {{paymentOrdersSort.field==='client_ip'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
                     <th style="padding:8px 10px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('status')">状态 {{paymentOrdersSort.field==='status'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
                     <th style="padding:8px 10px;cursor:pointer;white-space:nowrap" @click="togglePaymentSort('created_at')">创建时间 {{paymentOrdersSort.field==='created_at'?(paymentOrdersSort.order==='desc'?'↓':'↑'):''}}</th>
                     <th style="padding:8px 10px;white-space:nowrap">备注</th>
@@ -4723,6 +4891,14 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     <td style="padding:8px 10px;font-weight:600;color:var(--success);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">¥{{Number(row.price||0).toFixed(2)}}</td>
                     <td style="padding:8px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{row.points>0?row.points+'点':''}}{{row.days>0?(row.points>0?'/':'')+row.days+'天':''}}{{!row.points&&!row.days?'-':''}}</td>
                     <td style="padding:8px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="paymentMethodLabel(row.pay_method, row.pay_type)">{{paymentMethodLabel(row.pay_method, row.pay_type)}}</td>
+                    <td style="padding:8px 10px;vertical-align:middle">
+                      <div class="ip-cell" v-if="row.client_ip">
+                        <span class="ip-val" :title="'点击复制：'+row.client_ip" @click="copyText(row.client_ip,$event)">{{row.client_ip}}</span>
+                        <span class="ip-addr" v-if="row.client_ip_addr">{{row.client_ip_addr}}</span>
+                        <span class="ip-addr" v-else style="font-style:italic">解析中…</span>
+                      </div>
+                      <span v-else style="color:var(--text3)">-</span>
+                    </td>
                     <td style="padding:8px 10px">
                       <span :style="{color:row.status==='paid'?'var(--success)':row.status==='refunded'?'var(--danger)':row.status==='pending'?'var(--warning)':'var(--text3)'}">{{paymentStatusLabel(row.status)}}</span>
                       <div v-if="row.status==='refunded'" style="font-size:11px;color:var(--text3);margin-top:2px">{{String(row.refunded_at||'').replace('T',' ').substring(0,16)}}</div>
@@ -4736,7 +4912,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                     </td>
                   </tr>
                   <tr v-if="paymentOrders.length===0">
-                    <td colspan="11" style="padding:28px 20px;text-align:center">
+                    <td colspan="12" style="padding:28px 20px;text-align:center">
                       <!-- 1. 加载中 -->
                       <div v-if="paymentOrdersLoading" style="color:var(--text3)">正在加载支付明细…</div>
                       <!-- 2. 接口出错：明确说明是接口问题及原因 -->
@@ -5226,7 +5402,12 @@ createApp({
     const riskUsers=ref([]);
     const riskScanning=ref(false);
     const riskSaving=ref(false);
-    const emailConfig=ref({enabled:false,test_recipient:''});
+    const emailConfig=ref({enabled:false,hub:false,test_recipient:''});
+    const showMailHubRecords=ref(false);
+    const mailHubRecords=ref([]);
+    const mailHubRecordsLoading=ref(false);
+    const mailHubRecordsError=ref('');
+    const modelHubConfig=ref({hub_enabled:false});
     const mailServers=ref([]);
     const showServerForm=ref(false);
     const mailServerForm=ref({id:null,name:'',type:'smtp',enabled:true,weight:1,smtp_host:'',smtp_port:587,smtp_user:'',smtp_pass:'',from_addr:'',from_name:'学神助手',secret_id:'',secret_key:'',ses_region:'ap-guangzhou',ses_template_id:0,is_resend:false});
@@ -5317,6 +5498,10 @@ createApp({
     const userSearch=ref('');
     const userSortBy=ref('created_at');
     const userSortOrder=ref('desc');
+    // 同 IP 账号查询（多开/小号排查）
+    const ipSearch=ref('');
+    const ipSearchList=ref([]);
+    const ipSearchLoading=ref(false);
     const showUserModal=ref(false);
     const userForm=reactive({username:'',email:'',password:'',points_delta:0,member_days_delta:0,member_until:'',is_banned:false,ban_reason:'',reason:''});
     const paymentPlans=ref([]);
@@ -5402,7 +5587,7 @@ createApp({
     const d7ago=fmtLocalDate(new Date(Date.now()-7*86400000));
     const d30ago=fmtLocalDate(new Date(Date.now()-30*86400000));
     const d90ago=fmtLocalDate(new Date(Date.now()-90*86400000));
-    const adminSlider=reactive({id:'',target:130,x:0,token:'',verified:false,loading:false,dragging:false,trackEl:null});
+    const adminSlider=reactive({token:'',bg:'',piece:'',pieceY:0,pieceSize:44,w:620,h:310,x:0,sliderToken:'',verified:false,loading:false,dragging:false,trackEl:null});
     const providerReadyCount=ref(0);
     const providerTotalCount=ref(0);
 
@@ -5452,53 +5637,55 @@ createApp({
     // Auth
     async function initAdminSlider(){
       adminSlider.loading=true;
-      Object.assign(adminSlider,{x:0,token:'',verified:false,dragging:false});
+      Object.assign(adminSlider,{x:0,sliderToken:'',verified:false,dragging:false,token:'',bg:'',piece:''});
       try{
-        const res=await fetch('/api/slider-captcha/start?scope=admin');
+        const res=await fetch('/captcha/new?scope=admin');
         const data=await res.json();
         const c=data.captcha||{};
-        Object.assign(adminSlider,{id:c.id||'',target:Number(c.target_hint||130),x:0,token:'',verified:false});
+        if(data.code!==200||!c.token){showMsg(data.msg||'验证图加载失败，稍后重试','error',4000);return;}
+        Object.assign(adminSlider,{token:c.token,bg:c.bg,piece:c.piece,pieceY:Number(c.pieceY)||0,pieceSize:Number(c.pieceSize)||44,w:Number(c.w)||620,h:Number(c.h)||310,x:0,sliderToken:'',verified:false});
       }catch(e){showMsg('滑块验证初始化失败，请刷新页面','error',5000);}
       finally{adminSlider.loading=false;}
     }
     async function resetAdminSlider(message){
-      Object.assign(adminSlider,{id:'',target:130,x:0,token:'',verified:false,dragging:false});
+      Object.assign(adminSlider,{token:'',bg:'',piece:'',x:0,sliderToken:'',verified:false,dragging:false});
       if(message)showMsg(message,'error',2200);
       await initAdminSlider();
     }
     async function verifyAdminSlider(){
-      if(adminSlider.verified||!adminSlider.id)return;
+      if(adminSlider.verified||!adminSlider.token)return;
       adminSlider.loading=true;
       try{
-        const res=await fetch('/api/slider-captcha/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scope:'admin',id:adminSlider.id,x:adminSlider.x})});
+        const res=await fetch('/captcha/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:adminSlider.token,x:adminSlider.x,scope:'admin'})});
         const data=await res.json();
-        if(data.code===200){adminSlider.token=data.token;adminSlider.verified=true;showMsg('滑块验证通过','success',1200);}
-        else{await resetAdminSlider(data.msg||'滑块验证失败，请重新拖动');}
-      }catch(e){await resetAdminSlider('滑块验证失败，请重新拖动');}
+        if(data.code===200&&data.token){adminSlider.sliderToken=data.token;adminSlider.verified=true;showMsg('滑块验证通过','success',1200);}
+        else{await resetAdminSlider(data.msg||'滑块没对准，已换新图');}
+      }catch(e){await resetAdminSlider('滑块验证失败，已换新图');}
       finally{adminSlider.loading=false;}
     }
     async function ensureAdminSliderVerified(){
-      if(adminSlider.verified&&adminSlider.token)return true;
+      if(adminSlider.verified&&adminSlider.sliderToken)return true;
       if(adminSlider.loading){
         for(let i=0;i<20&&adminSlider.loading;i++)await new Promise(r=>setTimeout(r,100));
-        if(adminSlider.verified&&adminSlider.token)return true;
+        if(adminSlider.verified&&adminSlider.sliderToken)return true;
       }
-      if(adminSlider.id){
+      if(adminSlider.token){
         await verifyAdminSlider();
-        return !!(adminSlider.verified&&adminSlider.token);
+        return !!(adminSlider.verified&&adminSlider.sliderToken);
       }
       return false;
     }
     function beginAdminPuzzle(e){
-      if(adminSlider.verified||adminSlider.loading)return;
+      if(adminSlider.verified||adminSlider.loading||!adminSlider.token)return;
       adminSlider.dragging=true;
       adminSlider.trackEl=e.currentTarget.closest('.puzzle-track');
+      const maxX=Math.max(1,adminSlider.w-adminSlider.pieceSize);
       const move=(ev)=>{
         if(!adminSlider.dragging||!adminSlider.trackEl)return;
         const point=ev.touches?ev.touches[0]:ev;
         const rect=adminSlider.trackEl.getBoundingClientRect();
         const ratio=Math.max(0,Math.min(1,(point.clientX-rect.left)/rect.width));
-        adminSlider.x=Math.round(ratio*260);
+        adminSlider.x=Math.round(ratio*maxX);
       };
       const up=async()=>{
         adminSlider.dragging=false;
@@ -5519,7 +5706,7 @@ createApp({
       const sliderOk=await ensureAdminSliderVerified();
       if(!sliderOk){await resetAdminSlider('请重新完成滑块验证');return;}
       try{
-        const res=await fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:loginForm.username,password:loginForm.password,slider_token:adminSlider.token})});
+        const res=await fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:loginForm.username,password:loginForm.password,slider_token:adminSlider.sliderToken})});
         const data=await res.json();
         if(data.code===200){token.value=data.token;localStorage.setItem('ne21_admin_token',token.value);page.value='dashboard';loadAll();}
         else{loginForm.password='';await resetAdminSlider(data.msg||'用户名或密码错误，请重新完成滑块验证');}
@@ -5612,6 +5799,26 @@ createApp({
         else if(data.code===403){logout();showMsg('登录已过期','error');}
       }catch(e){showMsg('获取用户列表失败: '+e,'error');}
     }
+    // ===== 同 IP 账号查询（多开/小号排查）=====
+    async function loadUsersByIp(ip){
+      ip=(ip||'').trim();
+      if(!ip)return;
+      ipSearch.value=ip;
+      ipSearchLoading.value=true;
+      try{
+        const res=await fetch('/admin/users-by-ip?ip='+encodeURIComponent(ip),{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){ipSearchList.value=data.users||[];}
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'查询失败','error');
+      }catch(e){showMsg('按 IP 查询失败: '+e,'error');}
+      finally{ipSearchLoading.value=false;}
+    }
+    function gotoIpSearch(ip){
+      loadUsersByIp(ip);
+      // 面板在表格下方，滚过去让结果可见
+      setTimeout(()=>{const el=document.querySelector('.ip-cell');if(el)el.scrollIntoView({behavior:'smooth',block:'center'});},80);
+    }
     function setSort(field){
       if(userSortBy.value===field){
         userSortOrder.value=userSortOrder.value==='asc'?'desc':'asc';
@@ -5626,6 +5833,15 @@ createApp({
       page.value='user-mgmt';
       expandedGroups.value.users=true;
       loadUsers();
+    }
+    // 从退款申请页跳过来查同 IP：切到用户管理页再按 IP 列账号
+    function gotoUserSearchByIp(ip){
+      ip=(ip||'').trim();
+      if(!ip)return;
+      page.value='user-mgmt';
+      expandedGroups.value.users=true;
+      loadUsers();
+      loadUsersByIp(ip);
     }
     function resetUserSearch(){
       userSearch.value='';
@@ -5911,6 +6127,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         }
         else{logout();showMsg('登录已过期','error');}
       }catch(e){showMsg('获取配置失败: '+e,'error');}
+      loadModelHubConfig();
     }
     async function loadLogCleanup(){
       if(!token.value)return;
@@ -6045,7 +6262,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         const res=await fetch('/admin/email-config',{headers:{'Authorization':token.value}});
         const data=await res.json();
         if(data.code===200&&data.config){
-          emailConfig.value={enabled:!!data.config.enabled,test_recipient:data.config.test_recipient||''};
+          emailConfig.value={enabled:!!data.config.enabled,hub:!!data.config.hub,test_recipient:data.config.test_recipient||''};
           mailServers.value=data.config.servers||[];
         }
       }catch(e){/* ignore */}
@@ -6058,6 +6275,45 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         if(data.code===200)showMsg(emailConfig.value.enabled?'邮件功能已启用':'邮件功能已停用');
         else showMsg(data.msg||'保存失败','error');
       }catch(e){showMsg('请求失败: '+e,'error');}
+    }
+    async function toggleEmailHub(){
+      emailConfig.value.hub=!emailConfig.value.hub;
+      try{
+        const res=await fetch('/admin/email-config',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({hub:emailConfig.value.hub})});
+        const data=await res.json();
+        if(data.code===200)showMsg(emailConfig.value.hub?'发信已改走中控统一出口':'发信已切回本地邮件服务器');
+        else{emailConfig.value.hub=!emailConfig.value.hub;showMsg(data.msg||'保存失败','error');}
+      }catch(e){emailConfig.value.hub=!emailConfig.value.hub;showMsg('请求失败: '+e,'error');}
+    }
+    async function loadMailHubRecords(){
+      showMailHubRecords.value=true;
+      mailHubRecordsLoading.value=true;
+      mailHubRecordsError.value='';
+      try{
+        const res=await fetch('/admin/mail-hub-records',{method:'POST',headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(res.ok&&data.code===200)mailHubRecords.value=data.items||[];
+        else mailHubRecordsError.value=data.msg||'获取发信流水失败';
+      }catch(e){mailHubRecordsError.value='获取发信流水失败: '+(e.message||e);}
+      mailHubRecordsLoading.value=false;
+    }
+    async function loadModelHubConfig(){
+      try{
+        const res=await fetch('/admin/model-config',{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200&&data.config)modelHubConfig.value={hub_enabled:!!data.config.hub_enabled};
+      }catch(e){/* ignore */}
+    }
+    async function toggleModelHub(){
+      modelHubConfig.value.hub_enabled=!modelHubConfig.value.hub_enabled;
+      try{
+        const res=await fetch('/admin/model-config',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({hub_enabled:modelHubConfig.value.hub_enabled})});
+        const data=await res.json();
+        if(data.code===200){
+          showMsg(modelHubConfig.value.hub_enabled?'模型调用已接入中控网关':'已关闭中控模型网关');
+          await loadConfig();
+        }else{modelHubConfig.value.hub_enabled=!modelHubConfig.value.hub_enabled;showMsg(data.msg||'保存失败','error');}
+      }catch(e){modelHubConfig.value.hub_enabled=!modelHubConfig.value.hub_enabled;showMsg('请求失败: '+e,'error');}
     }
     function openServerForm(s){
       if(s){
@@ -6734,7 +6990,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     async function testModel(info,m,tag){
       const model=(m.value||'').trim();
       if(!model){modelTestResults[tag]={status:'fail',text:'✗ 请先填写模型ID'};return;}
-      if(!info.base_url||!info.api_key){modelTestResults[tag]={status:'fail',text:'✗ 请先填写 Base URL 和 API Key'};return;}
+      if(info.protocol!=='hub'&&(!info.base_url||!info.api_key)){modelTestResults[tag]={status:'fail',text:'✗ 请先填写 Base URL 和 API Key'};return;}
       const vision=!!m.vision;
       testingModel.value=tag;
       modelTestResults[tag]={status:'loading',text:vision?'⏳ 识图测试中（发一张纯色小图问颜色），最长约 45 秒…':'⏳ 调试中，请稍候…'};
@@ -6964,6 +7220,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     const rrFilterStatus=ref('');
     const rrFilterUsername=ref('');
     const rrFilterOrderNo=ref('');
+    const rrFilterIp=ref('');
     const rrList=ref([]);
     const rrPage=ref(1);
     const rrTotalPages=ref(0);
@@ -7347,7 +7604,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     }
     async function loadRefundRequests(page){
       rrPage.value=page||1;
-      const params=new URLSearchParams({status:rrFilterStatus.value,username:rrFilterUsername.value,order_no:rrFilterOrderNo.value,page:String(rrPage.value)});
+      const params=new URLSearchParams({status:rrFilterStatus.value,username:rrFilterUsername.value,order_no:rrFilterOrderNo.value,ip:rrFilterIp.value,page:String(rrPage.value)});
       rrLoading.value=true;
       try{
         const res=await safeFetch('/admin/refund-requests?'+params.toString(),{headers:{'Authorization':token.value}});
@@ -8019,7 +8276,8 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     return{
        loading,page,loginMode,themeMode,themeLabels,themeIcons,cycleTheme,breadcrumbItems,navigateBreadcrumb,config,emailConfig,emailTemplates,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,SCENE_ICONS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
        mailServers,showServerForm,mailServerForm,showSmtpPass,mailServerTotalWeight,mailServerWeightPercent,toggleEmailEnabled,openServerForm,saveMailServer,deleteMailServer,
-       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,userSearch,userSortBy,userSortOrder,showUserModal,userForm,gotoUserSearch,
+       showMailHubRecords,mailHubRecords,mailHubRecordsLoading,mailHubRecordsError,toggleEmailHub,loadMailHubRecords,modelHubConfig,loadModelHubConfig,toggleModelHub,
+       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,userSearch,userSortBy,userSortOrder,ipSearch,ipSearchList,ipSearchLoading,loadUsersByIp,gotoIpSearch,showUserModal,userForm,gotoUserSearch,
         showHtmlPreview,htmlPreviewFrame,htmlPreviewData,toggleHtmlPreview,updateHtmlPreview,switchToHtml,onHtmlInput,syncPlainFromHtml,
        paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,planForm,
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,
@@ -8048,8 +8306,9 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         paymentOrdersLoading,paymentOrdersLoaded,paymentOrdersError,hasPaymentFilter,resetPaymentFilter,
         rrLoading,rrError,
         paymentMethodLabel,paymentStatusLabel,paymentBusinessType,paymentRefundText,paymentRemark,copyText,copiedKey,
-        rrFilterStatus,rrFilterUsername,rrFilterOrderNo,rrList,rrPage,rrTotalPages,rrTotal,rrQrPreview,
+        rrFilterStatus,rrFilterUsername,rrFilterOrderNo,rrFilterIp,rrList,rrPage,rrTotalPages,rrTotal,rrQrPreview,
         loadRefundRequests,processRefundRequest,previewQr,
+        gotoUserSearchByIp,
         gotoPaymentOrder,gotoPaymentByUsername,gotoPaymentByOrderNo,
         xianyuEnabled,xianyuUrl,cardPayName,cardPayIcon,ckList,ckPage,ckTotalPages,ckTotal,ckFilterStatus,ckFilterPlanId,ckGeneratePlanId,ckGenerateCount,ckGenerateSaving,
         loadCardKeys,loadXianyuConfig,saveXianyuConfig,onCardIconUpload,exportCardKeys,generateCardKeys,

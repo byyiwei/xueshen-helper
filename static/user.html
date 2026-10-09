@@ -222,6 +222,11 @@
         .puzzle-thumb { position: absolute; left: 0; top: 3px; width: 32px; height: 32px; border: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--c-surface); color: var(--c-brand); cursor: grab; font-weight: 900; box-shadow: 0 1px 3px rgba(16, 24, 40, .18), 0 0 0 1px rgba(16, 24, 40, .05); touch-action: none; }
         .puzzle-thumb:active { cursor: grabbing; }
         .puzzle-tip { position: absolute; top:0;right:0;bottom:0;left:0; display: flex; align-items: center; justify-content: center; color: var(--c-text-3); font-size: 12px; pointer-events: none; }
+        .hub-box { height: auto; background: #eef3ff; border-radius: var(--c-radius-sm); }
+        .hub-box .puzzle-bg { display: block; width: 100%; height: auto; border-radius: var(--c-radius-sm); user-select: none; -webkit-user-drag: none; }
+        .hub-box .puzzle-piece-img { position: absolute; left: 0; top: 0; max-width: none; border-radius: 4px; user-select: none; -webkit-user-drag: none; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+        .hub-box.busy { opacity: .6; }
+        .hub-skeleton { color: var(--c-text-3); font-size: 12px; text-align: center; padding: 20px 0; }
 
         .dash-card {
             padding: 14px;
@@ -1056,18 +1061,7 @@
                     <input id="loginPwd" type="password" autocomplete="current-password" placeholder="请输入密码">
                     <span class="pwd-toggle" data-target="loginPwd">显示</span>
                 </div>
-                <div class="slider-verify" id="userSliderBox">
-                    <div class="slider-top"><span>滑块验证</span><span class="slider-state" id="userSliderState">拖动拼图到缺口</span></div>
-                    <div class="puzzle-box">
-                        <span class="puzzle-gap" id="userPuzzleGap"></span>
-                        <span class="puzzle-piece" id="userPuzzlePiece"></span>
-                    </div>
-                    <div class="puzzle-track" id="userPuzzleTrack">
-                        <div class="puzzle-progress" id="userPuzzleProgress"></div>
-                        <span class="puzzle-tip" id="userPuzzleTip">按住滑块，拖动完成拼图</span>
-                        <button type="button" class="puzzle-thumb" id="userPuzzleThumb">›</button>
-                    </div>
-                </div>
+                <div id="loginSlider"></div>
                 <button class="primary" id="loginBtn">登录</button>
                 <div class="links">
                     <a href="javascript:void(0)" data-jump="register">没有账号？去注册</a>
@@ -1356,6 +1350,7 @@
                             <div class="info-item"><span>可得题数</span><b id="promoExchangePreview" style="color:var(--t-primary)">0 题</b></div>
                         </div>
                         <p class="hint">按 <b id="promoExchangeRate">50</b> 题/元折算，凑不成整题的零头留在余额里。当前可兑换 <b id="promoExchangeAvail">¥0.00</b><span id="promoFrozenTip"></span></p>
+                        <div id="moneySliderE" style="margin-top:8px"></div>
                         <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
                             <button class="primary" style="width:auto;margin:0;padding:10px 22px" id="submitExchangeBtn">确认兑换</button>
                             <button class="secondary" style="width:auto;margin:0;padding:10px 18px" id="exchangeAllBtn">全部兑换</button>
@@ -1374,6 +1369,7 @@
                             <div class="info-item"><span>收款方式</span><select id="promoWithdrawMethod" style="flex:1;max-width:160px"><option value="alipay">支付宝</option><option value="wechat">微信</option></select></div>
                         </div>
                         <p class="hint" id="promoWithdrawHint">提现申请提交后，管理员审核通过将线下打款至你的收款账户。</p>
+                        <div id="moneySliderW" style="margin-top:8px"></div>
                         <div style="margin-top:12px"><button class="primary" style="width:auto;margin:0" id="submitWithdrawBtn">提交提现申请</button></div>
                         <div id="promoWithdrawMsg" class="msg"></div>
                     </div>
@@ -1702,7 +1698,7 @@
         let cloudSettings = {};
         let profileTimer = null;
         let initialUserSection = '';
-        const userSlider = { id: '', target: 130, x: 0, token: '', verified: false, dragging: false };
+        let moneySliderE = null, moneySliderW = null;
 
         function $(id) { return document.getElementById(id); }
         function msg(id, text, ok) {
@@ -1734,117 +1730,141 @@
             if (!res.ok && !json.code) json = { code: res.status, msg: '请求失败：HTTP ' + res.status };
             return json;
         }
-        async function initUserSlider() {
-            userSlider.loading = true;
-            userSlider.x = 0;
-            userSlider.token = '';
-            userSlider.verified = false;
-            userSlider.dragging = false;
-            updateUserPuzzle();
-            try {
-                const res = await fetch('/api/slider-captcha/start?scope=user');
-                const data = await res.json();
-                const c = data.captcha || {};
-                userSlider.id = c.id || '';
-                userSlider.target = Number(c.target_hint || 130);
-                userSlider.x = 0;
-                userSlider.token = '';
-                userSlider.verified = false;
-                updateUserPuzzle();
-                $('userSliderState').textContent = '拖动拼图到缺口';
-                $('userPuzzleTip').textContent = '按住滑块，拖动完成拼图';
-                $('userSliderBox').classList.remove('done');
-            } catch (_) {
-                msg('loginMsg', '滑块验证初始化失败，请刷新页面', false);
-            } finally {
-                userSlider.loading = false;
+        class HubSlider {
+            constructor(container, scope, opts) {
+                opts = opts || {};
+                this.scope = scope;
+                this.notice = opts.onMessage || function () {};
+                this.container = typeof container === 'string' ? $(container) : container;
+                this._seq = (HubSlider._seq = (HubSlider._seq || 0) + 1);
+                this.token = ''; this.bg = ''; this.piece = ''; this.pieceEl = null;
+                this.pieceY = 0; this.pieceSize = 44; this.w = 620; this.h = 310;
+                this.x = 0; this.sliderToken = ''; this.verified = false; this.loading = false; this.dragging = false;
+                this._build();
+                const self = this;
+                window.addEventListener('resize', function () { if (self.pieceEl) self._posPiece(); });
+                this.reload();
+            }
+            _uid(name) { return this.scope + '-' + name + '-' + this._seq; }
+            _build() {
+                const u = (n) => this._uid(n);
+                this.container.innerHTML =
+                    '<div class="slider-verify">' +
+                    '<div class="slider-top"><span>滑块验证</span><span class="slider-state" id="' + u('state') + '">拖动拼图到缺口</span></div>' +
+                    '<div class="puzzle-box hub-box" id="' + u('box') + '"><div class="hub-skeleton">正在加载验证图…</div></div>' +
+                    '<div class="puzzle-track" id="' + u('track') + '">' +
+                    '<div class="puzzle-progress" id="' + u('progress') + '"></div>' +
+                    '<span class="puzzle-tip" id="' + u('tip') + '">按住滑块，拖动完成拼图</span>' +
+                    '<button type="button" class="puzzle-thumb" id="' + u('thumb') + '">›</button>' +
+                    '</div></div>';
+                this.wrap = this.container.querySelector('.slider-verify');
+                this.box = $(u('box')); this.state = $(u('state')); this.track = $(u('track'));
+                this.progress = $(u('progress')); this.tip = $(u('tip')); this.thumb = $(u('thumb'));
+                const self = this;
+                this.thumb.addEventListener('mousedown', function (e) { self._begin(e); });
+                this.thumb.addEventListener('touchstart', function (e) { e.preventDefault(); self._begin(e); }, { passive: false });
+            }
+            async reload() {
+                this.loading = true;
+                this.token = ''; this.sliderToken = ''; this.verified = false; this.x = 0; this.pieceEl = null;
+                this.wrap.classList.remove('done');
+                this.box.classList.remove('busy');
+                this.box.innerHTML = '<div class="hub-skeleton">正在加载验证图…</div>';
+                this.state.textContent = '拖动拼图到缺口';
+                this.tip.textContent = '按住滑块，拖动完成拼图';
+                try {
+                    const res = await fetch('/captcha/new?scope=' + encodeURIComponent(this.scope));
+                    const data = await res.json();
+                    if (data.code !== 200 || !data.captcha || !data.captcha.token) {
+                        this.box.innerHTML = '<div class="hub-skeleton">' + (data.msg || '验证图加载失败，稍后重试') + '</div>';
+                        return;
+                    }
+                    const c = data.captcha;
+                    this.token = c.token; this.bg = c.bg; this.piece = c.piece;
+                    this.pieceY = Number(c.pieceY) || 0; this.pieceSize = Number(c.pieceSize) || 44;
+                    this.w = Number(c.w) || 620; this.h = Number(c.h) || 310;
+                    this._render();
+                } catch (_) {
+                    this.box.innerHTML = '<div class="hub-skeleton">验证图加载失败，请稍后重试</div>';
+                } finally { this.loading = false; }
+            }
+            _render() {
+                const dispW = this.box.clientWidth || this.track.clientWidth || this.w;
+                const scale = dispW / this.w;
+                const pid = this._uid('piece');
+                this.box.innerHTML = '<img class="puzzle-bg" src="' + this.bg + '" draggable="false">' +
+                    '<img class="puzzle-piece-img" id="' + pid + '" src="' + this.piece + '" draggable="false">';
+                this.pieceEl = $(pid);
+                this.pieceEl.style.width = (this.pieceSize * scale) + 'px';
+                this.pieceEl.style.height = (this.pieceSize * scale) + 'px';
+                this._posPiece();
+            }
+            _posPiece() {
+                if (!this.pieceEl) return;
+                const dispW = this.box.clientWidth || this.w;
+                const scale = dispW / this.w;
+                const maxX = Math.max(0, this.w - this.pieceSize);
+                const frac = maxX > 0 ? this.x / maxX : 0;
+                this.pieceEl.style.left = (frac * (dispW - this.pieceSize * scale)) + 'px';
+                this.pieceEl.style.top = (this.pieceY * scale) + 'px';
+                this.progress.style.width = (frac * 100) + '%';
+                this.thumb.style.left = 'calc((100% - 32px) * ' + frac + ')';
+            }
+            _begin(e) {
+                if (this.verified || !this.token) return;
+                this.dragging = true;
+                const self = this;
+                const move = (ev) => {
+                    if (!self.dragging) return;
+                    const point = ev.touches ? ev.touches[0] : ev;
+                    const rect = self.track.getBoundingClientRect();
+                    const frac = Math.max(0, Math.min(1, (point.clientX - rect.left - 16) / Math.max(1, rect.width - 32)));
+                    self.x = Math.round(frac * Math.max(0, self.w - self.pieceSize));
+                    self._posPiece();
+                };
+                const up = async () => {
+                    self.dragging = false;
+                    document.removeEventListener('mousemove', move);
+                    document.removeEventListener('mouseup', up);
+                    document.removeEventListener('touchmove', move);
+                    document.removeEventListener('touchend', up);
+                    await self.verify();
+                };
+                document.addEventListener('mousemove', move);
+                document.addEventListener('mouseup', up);
+                document.addEventListener('touchmove', move, { passive: false });
+                document.addEventListener('touchend', up);
+                move(e);
+            }
+            async verify() {
+                if (this.verified || !this.token) return;
+                this.loading = true;
+                this.box.classList.add('busy');
+                try {
+                    const res = await fetch('/captcha/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: this.token, x: this.x, scope: this.scope }) });
+                    const data = await res.json();
+                    if (data.code === 200 && data.token) {
+                        this.sliderToken = data.token; this.verified = true;
+                        this.state.textContent = '验证通过'; this.tip.textContent = '验证通过';
+                        this.wrap.classList.add('done');
+                        this.notice('滑块验证通过', true);
+                    } else {
+                        this.notice(data.msg || '滑块没对准，已换新图', false);
+                        await this.reload();
+                    }
+                } catch (_) {
+                    this.notice('滑块验证失败，已换新图', false);
+                    await this.reload();
+                } finally { this.loading = false; this.box.classList.remove('busy'); }
+            }
+            getToken() { return this.sliderToken; }
+            async ensureVerified() {
+                if (this.verified && this.sliderToken) return true;
+                if (this.loading) { for (let i = 0; i < 20 && this.loading; i++) await new Promise(r => setTimeout(r, 100)); if (this.verified && this.sliderToken) return true; }
+                return !!(this.verified && this.sliderToken);
             }
         }
-        async function resetUserSlider(messageText) {
-            userSlider.id = '';
-            userSlider.target = 130;
-            userSlider.x = 0;
-            userSlider.token = '';
-            userSlider.verified = false;
-            userSlider.dragging = false;
-            updateUserPuzzle();
-            $('userSliderState').textContent = '拖动拼图到缺口';
-            $('userPuzzleTip').textContent = '按住滑块，拖动完成拼图';
-            $('userSliderBox').classList.remove('done');
-            if (messageText) msg('loginMsg', messageText, false);
-            await initUserSlider();
-        }
-        function updateUserPuzzle() {
-            const xPct = Math.max(0, Math.min(100, userSlider.x / 260 * 100)) / 100;
-            const targetPct = Math.max(0, Math.min(100, userSlider.target / 260 * 100)) / 100;
-            // 两端各留 16px 行程，避免拼图和滑块被裁成半块
-            const inset = (p) => 'calc(16px + (100% - 32px) * ' + p + ')';
-            $('userPuzzleGap').style.left = inset(targetPct);
-            $('userPuzzleGap').style.transform = 'translateX(-50%)';
-            $('userPuzzlePiece').style.left = inset(xPct);
-            $('userPuzzlePiece').style.transform = 'translateX(-50%)';
-            $('userPuzzleProgress').style.width = inset(xPct);
-            $('userPuzzleThumb').style.left = 'calc((100% - 32px) * ' + xPct + ')';
-        }
-        async function verifyUserSlider() {
-            if (userSlider.verified || !userSlider.id) return;
-            userSlider.loading = true;
-            try {
-                const res = await post('/api/slider-captcha/verify', { scope: 'user', id: userSlider.id, x: userSlider.x });
-                if (res.code === 200) {
-                    userSlider.token = res.token;
-                    userSlider.verified = true;
-                    $('userSliderState').textContent = '验证通过';
-                    $('userPuzzleTip').textContent = '验证通过';
-                    $('userSliderBox').classList.add('done');
-                    msg('loginMsg', '滑块验证通过', true);
-                } else {
-                    await resetUserSlider(res.msg || '滑块验证失败，请重新拖动');
-                }
-            } catch (_) {
-                await resetUserSlider('滑块验证失败，请重新拖动');
-            } finally {
-                userSlider.loading = false;
-            }
-        }
-        async function ensureUserSliderVerified() {
-            if (userSlider.verified && userSlider.token) return true;
-            if (userSlider.loading) {
-                for (let i = 0; i < 20 && userSlider.loading; i++) await new Promise(r => setTimeout(r, 100));
-                if (userSlider.verified && userSlider.token) return true;
-            }
-            if (userSlider.id) {
-                await verifyUserSlider();
-                return !!(userSlider.verified && userSlider.token);
-            }
-            return false;
-        }
-        function beginUserPuzzle(e) {
-            if (userSlider.verified) return;
-            userSlider.dragging = true;
-            const track = $('userPuzzleTrack');
-            const move = (ev) => {
-                if (!userSlider.dragging) return;
-                const point = ev.touches ? ev.touches[0] : ev;
-                const rect = track.getBoundingClientRect();
-                const ratio = Math.max(0, Math.min(1, (point.clientX - rect.left - 16) / Math.max(1, rect.width - 32)));
-                userSlider.x = Math.round(ratio * 260);
-                updateUserPuzzle();
-            };
-            const up = async () => {
-                userSlider.dragging = false;
-                document.removeEventListener('mousemove', move);
-                document.removeEventListener('mouseup', up);
-                document.removeEventListener('touchmove', move);
-                document.removeEventListener('touchend', up);
-                await verifyUserSlider();
-            };
-            document.addEventListener('mousemove', move);
-            document.addEventListener('mouseup', up);
-            document.addEventListener('touchmove', move, { passive: false });
-            document.addEventListener('touchend', up);
-            move(e);
-        }
+        let loginSlider = null;
         function saveSession(token, user) {
             localStorage.setItem(TOKEN_KEY, token);
             localStorage.setItem(USER_KEY, JSON.stringify(user || {}));
@@ -1903,7 +1923,7 @@
             if (el) el.classList.add('active');
             const url = name === 'login' ? '/login' : name === 'register' ? '/register' : name === 'forgot' ? '/forgot' : '/user';
             history.replaceState(null, '', url);
-            if (name === 'login' && (!userSlider.id || userSlider.verified)) initUserSlider();
+            if (name === 'login' && loginSlider) loginSlider.reload();
         }
         function handleAuthExpired(text) {
             localStorage.removeItem(TOKEN_KEY);
@@ -1973,9 +1993,15 @@
             if (name === 'home') loadDashboard();
             if (name === 'consumption') loadDashboard();
             if (name === 'billing') { loadProfile(); loadPlans(); loadCustomModelConfig(); loadCommissionState(); }
-            if (name === 'promotion') loadPromotion();
+            if (name === 'promotion') { loadPromotion(); ensureMoneySliders(); }
             if (name === 'feedback') loadFeedback();
             if (name === 'payment-info') loadPaymentInfo();
+        }
+        function ensureMoneySliders() {
+            if (!moneySliderE && $('moneySliderE')) moneySliderE = new HubSlider($('moneySliderE'), 'money', { onMessage: (t, ok) => msg('promoExchangeMsg', t, ok) });
+            else if (moneySliderE && !moneySliderE.verified) moneySliderE.reload();
+            if (!moneySliderW && $('moneySliderW')) moneySliderW = new HubSlider($('moneySliderW'), 'money', { onMessage: (t, ok) => msg('promoWithdrawMsg', t, ok) });
+            else if (moneySliderW && !moneySliderW.verified) moneySliderW.reload();
         }
         let dashboardTimer = null;
         async function loadDashboard() {
@@ -2715,8 +2741,6 @@
         document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', () => showView(btn.dataset.view)));
         document.querySelectorAll('[data-jump]').forEach(a => a.addEventListener('click', () => showView(a.dataset.jump)));
         document.querySelectorAll('.user-menu-item[data-section]').forEach(btn => btn.addEventListener('click', () => showUserSection(btn.dataset.section)));
-        $('userPuzzleThumb').addEventListener('mousedown', beginUserPuzzle);
-        $('userPuzzleThumb').addEventListener('touchstart', function(e){ e.preventDefault(); beginUserPuzzle(e); });
         ['loginUser', 'loginPwd'].forEach(id => {
             $(id).addEventListener('keydown', function (e) {
                 if (e.key === 'Enter') {
@@ -2762,21 +2786,21 @@ await loadPlans();
             const username = $('loginUser').value.trim();
             const password = $('loginPwd').value.trim();
             if (!username || !password) return msg('loginMsg', '请填写用户名和密码', false);
-            const sliderOk = await ensureUserSliderVerified();
-            if (!sliderOk) return resetUserSlider('请重新完成滑块验证');
+            const sliderOk = await loginSlider.ensureVerified();
+            if (!sliderOk) { loginSlider.reload(); return msg('loginMsg', '请先完成滑块验证', false); }
             setBusy(this, true, '登录中...');
             try {
                 // 安全：密码前端 SHA-256 加密传输，避免明文被抓包
                 const encoder = new TextEncoder();
                 const hashBuf = await crypto.subtle.digest('SHA-256', encoder.encode(password));
                 const passwordHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
-                const res = await post('/api/auth/login', { username, password_hash: passwordHash, login_scene: 'web', slider_token: userSlider.token });
+                const res = await post('/api/auth/login', { username, password_hash: passwordHash, login_scene: 'web', slider_token: loginSlider.getToken() });
                 if (res.code === 200) {
                     saveSession(res.token, res.user);
                     msg('loginMsg', '登录成功', true);
                     setTimeout(showDashboard, 350);
-                } else { await resetUserSlider(res.msg || '登录失败，请重新完成滑块验证'); }
-            } catch (_) { await resetUserSlider('网络请求失败，请重新完成滑块验证'); }
+                } else { await loginSlider.reload(); msg('loginMsg', res.msg || '登录失败，请重新完成滑块验证', false); }
+            } catch (_) { await loginSlider.reload(); msg('loginMsg', '网络请求失败，请重新完成滑块验证', false); }
             setBusy(this, false);
         };
 
@@ -3094,12 +3118,15 @@ await loadPlans();
             const points = exchangePoints(amount);
             if (points < 1) return msg('promoExchangeMsg', '兑换金额不足 1 题，请提高金额', false);
             if (!confirm('确认用 ¥' + amount.toFixed(2) + ' 佣金兑换 ' + points + ' 题？题数即时到账、不可折现。')) return;
+            if (!moneySliderE || !(await moneySliderE.ensureVerified())) { if (moneySliderE) moneySliderE.reload(); return msg('promoExchangeMsg', '请先完成滑块验证', false); }
+            const sliderToken = moneySliderE.getToken();
             const btn = this;
             setBusy(btn, true, '兑换中...');
             try {
                 const res = await post('/api/promotion/exchange', {
                     amount,
-                    request_no: 'EX' + Date.now() + Math.random().toString(36).slice(2, 8)
+                    request_no: 'EX' + Date.now() + Math.random().toString(36).slice(2, 8),
+                    slider_token: sliderToken
                 }, localStorage.getItem(TOKEN_KEY));
                 msg('promoExchangeMsg', res.msg || '兑换失败', res.code === 200);
                 if (res.code === 200) {
@@ -3107,7 +3134,8 @@ await loadPlans();
                     if (typeof fillProfile === 'function') fillProfile(res.profile);
                     loadPromotion();
                 }
-            } catch (_) { msg('promoExchangeMsg', '网络错误', false); }
+                await moneySliderE.reload();
+            } catch (_) { msg('promoExchangeMsg', '网络错误', false); await moneySliderE.reload(); }
             setBusy(btn, false);
         };
         function readFileAsDataURL(file) {
@@ -3170,12 +3198,15 @@ await loadPlans();
             else { payAccount = $('promoWechatAccount').value.trim(); qr = promoWechatQr; }
             if (!payAccount) return msg('promoWithdrawMsg', '请先完善' + (method === 'alipay' ? '支付宝' : '微信') + '收款账号', false);
             if (!qr) return msg('promoWithdrawMsg', '请先上传' + (method === 'alipay' ? '支付宝' : '微信') + '收款二维码', false);
+            if (!moneySliderW || !(await moneySliderW.ensureVerified())) { if (moneySliderW) moneySliderW.reload(); return msg('promoWithdrawMsg', '请先完成滑块验证', false); }
+            const wSliderToken = moneySliderW.getToken();
             setBusy(this, true, '提交中...');
             try {
-                const res = await post('/api/promotion/withdraw', { amount, pay_method: method, pay_account: payAccount, qr_code: qr }, localStorage.getItem(TOKEN_KEY));
+                const res = await post('/api/promotion/withdraw', { amount, pay_method: method, pay_account: payAccount, qr_code: qr, slider_token: wSliderToken }, localStorage.getItem(TOKEN_KEY));
                 msg('promoWithdrawMsg', res.msg || '提交失败', res.code === 200);
                 if (res.code === 200) { $('promoWithdrawAmount').value = ''; loadPromotion(); }
-            } catch (_) { msg('promoWithdrawMsg', '网络错误', false); }
+                await moneySliderW.reload();
+            } catch (_) { msg('promoWithdrawMsg', '网络错误', false); await moneySliderW.reload(); }
             setBusy(this, false);
         };
 
@@ -3590,8 +3621,8 @@ await loadPlans();
             setBusy(btn, false);
         });
 
-        initUserSlider();
         startByPath();
+        loginSlider = new HubSlider($('loginSlider'), 'user', { onMessage: (t, ok) => msg('loginMsg', t, ok) });
 
         // ===== 主题切换 =====
         var themeIcons = { auto: '◐', light: '☀', dark: '☾' };

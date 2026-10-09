@@ -18,6 +18,8 @@ import uuid
 import random
 import string
 import smtplib
+import urllib.request
+import urllib.error
 import threading
 import queue
 import base64
@@ -165,6 +167,151 @@ def enqueue_bank_log(item):
         BANK_LOG_QUEUE.put_nowait(item)
     except queue.Full:
         print("[题库日志队列] 队列已满，丢弃一条日志", flush=True)
+
+# ==================== IP 归属地解析（异步） ====================
+# 归属地查询要走公网 HTTP，绝不能放在注册/登录/下单的请求路径上等 —— 接口一慢就是用户等。
+# 这里只排一个 (ip, table) 进队列，由后台线程串行解析后回写，失败就留空，业务照常。
+IP_GEO_QUEUE = queue.Queue(maxsize=2000)
+_ip_geo_cache = {}                  # ip -> (归属地, 时间戳)；空串表示查过但无结果，避免反复打接口
+_pending_ip_geo = set()             # 已排队但还没解析完的 IP，防同一批请求重复入队
+_ip_geo_cache_lock = threading.Lock()
+_IP_GEO_CACHE_TTL = 6 * 3600
+_IP_GEO_MAX_ATTEMPTS = 3
+_IP_GEO_TIMEOUT = 6
+
+# 内网/保留地址不打接口：它们要么是测试环境，要么是同机代理，公网接口问了也没答案
+_PRIVATE_IP_PREFIXES = (
+    "10.", "192.168.", "127.", "169.254.", "0.",
+    "172.16.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.", "172.23.",
+    "172.24.", "172.25.", "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.",
+)
+
+
+def is_private_ip(ip):
+    ip = (ip or "").strip()
+    if not ip:
+        return True
+    if ip.startswith(_PRIVATE_IP_PREFIXES):
+        return True
+    return ip in ("::1", "localhost") or ip.startswith("fe80:") or ip.startswith("fc") or ip.startswith("fd")
+
+
+def _geo_from_pconline(ip):
+    """太平洋电脑网接口，国内最准，返回 GBK 编码，需要显式解码。"""
+    url = f"https://whois.pconline.com.cn/ipJson.jsp?ip={quote(ip)}&json=true"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://whois.pconline.com.cn/"})
+    with urlopen(req, timeout=_IP_GEO_TIMEOUT) as resp:
+        raw = resp.read()
+    # 该接口是 GBK，用 utf-8 解会变成乱码（之前就是这么踩的）
+    text = raw.decode("gbk", errors="replace").strip()
+    start = text.find("{")
+    if start < 0:
+        return ""
+    data = json.loads(text[start:])
+    if data.get("err"):
+        return ""
+    pro = (data.get("pro") or "").strip()
+    city = (data.get("city") or "").strip()
+    # 省市同名时只留一个（直辖市常见：北京市 北京市）
+    if pro and city and pro == city:
+        city = ""
+    addr = (pro + city).strip()
+    if addr:
+        return addr
+    return (data.get("addr") or "").strip()
+
+
+def _geo_from_ipwhois(ip):
+    """国际接口兜底，覆盖海外 IP；返回英文地名。"""
+    url = f"https://ipwho.is/{quote(ip)}?lang=zh"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urlopen(req, timeout=_IP_GEO_TIMEOUT) as resp:
+        data = json.loads(resp.read().decode("utf-8", errors="replace"))
+    if not data.get("success"):
+        return ""
+    parts = [data.get("country"), data.get("region"), data.get("city")]
+    seen = []
+    for p in parts:
+        p = (p or "").strip()
+        if p and p not in seen:
+            seen.append(p)
+    return " ".join(seen)[:200]
+
+
+def resolve_ip_geo(ip):
+    """把 IP 解析成归属地字符串，解析不出来就返回空串。"""
+    ip = (ip or "").strip()
+    if not ip:
+        return ""
+    if is_private_ip(ip):
+        return "内网/本机"
+    for fn in (_geo_from_pconline, _geo_from_ipwhois):
+        try:
+            addr = fn(ip)
+            if addr:
+                return addr[:200]
+        except Exception:
+            continue
+    return ""
+
+
+def ip_geo_worker():
+    while True:
+        ip, table = IP_GEO_QUEUE.get()
+        try:
+            with _ip_geo_cache_lock:
+                cached = _ip_geo_cache.get(ip)
+            if cached and (time.time() - cached[1]) < _IP_GEO_CACHE_TTL:
+                addr = cached[0]
+            else:
+                addr = ""
+                for _ in range(_IP_GEO_MAX_ATTEMPTS):
+                    addr = resolve_ip_geo(ip)
+                    if addr:
+                        break
+                    time.sleep(1.5)
+                with _ip_geo_cache_lock:
+                    _ip_geo_cache[ip] = (addr, time.time())
+            if addr:
+                db.set_ip_geo(table, ip, addr)
+        except Exception as e:
+            print(f"[IP归属地] 解析失败 ip={ip} table={table}: {e}", flush=True)
+        finally:
+            # 无论成功失败都要从 pending 里摘掉：否则查不到的 IP 会永远卡在集合里，
+            # 之后同一个 IP 再也不会重新排队（除非进程重启）
+            with _ip_geo_cache_lock:
+                _pending_ip_geo.discard(ip)
+            IP_GEO_QUEUE.task_done()
+
+threading.Thread(target=ip_geo_worker, daemon=True).start()
+
+
+def enqueue_ip_geo(ip, table):
+    """把归属地解析排进后台队列。同一 IP 已在队列/缓存里时不重复排队。"""
+    ip = (ip or "").strip()
+    if not ip or table not in db._IP_GEO_TARGETS:
+        return
+    with _ip_geo_cache_lock:
+        cached = _ip_geo_cache.get(ip)
+        if cached and (time.time() - cached[1]) < _IP_GEO_CACHE_TTL:
+            # 已经查过：直接用结果，不再排队
+            addr = cached[0]
+            if addr:
+                try:
+                    db.set_ip_geo(table, ip, addr)
+                except Exception:
+                    pass
+            return
+        if ip in _pending_ip_geo:
+            return
+        _pending_ip_geo.add(ip)
+    try:
+        IP_GEO_QUEUE.put_nowait((ip, table))
+    except queue.Full:
+        with _ip_geo_cache_lock:
+            _pending_ip_geo.discard(ip)
+        print("[IP归属地队列] 队列已满，跳过一条", flush=True)
+
 
 # 「一卷一报」小结：脚本每场答题结束发一条 event_type=answer_summary，
 # 明细走 script_event_logs.extra_json。这里是入库前的钳制——统计口径要经得起有人乱发。
@@ -366,6 +513,268 @@ SSO_DEFAULT_APP_KEY = "app_ca2a9122a5d64d5ad367"
 SSO_EXCHANGE_TARGET = "/open/sso/exchange"
 SSO_EMPTY_BODY_SHA = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 
+# ==================== 中控滑块验证码（服务端校验型） ====================
+# 与 SSO 同一 Hub App、同一 hub-v1 签名；缺口真实 x 只留在中控，绝不下发浏览器。
+# 密钥优先环境变量 HUB_APP_SECRET，其次复用「系统配置→单点登录」已存的 sso_app_secret（均在服务端）。
+CAPTCHA_GEN_TARGET = "/open/captcha/gen"
+CAPTCHA_VERIFY_TARGET = "/open/captcha/verify"
+CAPTCHA_CHECK_TARGET = "/open/captcha/check"
+CAPTCHA_SCOPES = {}          # hub_token -> (scope, expires)：记住这张票是给哪个动作滑的，防串用
+CAPTCHA_SCOPES_MAX = 2000
+CAPTCHA_SCOPE_TTL = 300
+CAPTCHA_PASS_TTL = 120       # 核销成功后铸出的一次性 slider_token 有效期
+CAPTCHA_VALID_SCOPES = ("user", "admin", "money")
+
+# ==================== 中控统一出口：邮件发送 / 模型网关 ====================
+# 与 SSO、滑块同一 Hub App、同一 hub-v1 签名（复用 _hub_sign_headers / _captcha_hub_creds）。
+# SMTP 账号、发信人显示名、失败冷却由中控管理；模板与变量仍由应用渲染，中控只投递成品 html。
+HUB_MAIL_SEND_TARGET = "/open/mail/send"
+HUB_MAIL_RECORDS_TARGET = "/open/mail/records?limit=20"
+HUB_MAIL_MAX_HTML_BYTES = 1024 * 1024   # 中控限制：html ≤ 1MB
+HUB_MAIL_MAX_SUBJECT_CHARS = 190        # 中控限制：主题 ≤ 190 字
+HUB_MAIL_RETRY_WAIT = 30                # SMTP 临时故障重试等待（秒）
+HUB_MAIL_INFLIGHT_TTL = 120
+_hub_mail_inflight = {}                 # key -> 到期时间：同一封信并发重复投递的挡板
+_hub_mail_lock = threading.Lock()
+
+HUB_CHAT_TARGET = "/open/v1/chat/completions"
+HUB_MODELS_TARGET = "/open/v1/models"
+HUB_CHAT_TIMEOUT = 60                   # 非流式建议超时（秒）
+HUB_502_MAX_RETRY = 2                   # 502 属临时故障：指数退避重试次数上限
+HUB_PROVIDER_KEY = "hub"
+HUB_PROVIDER_MODELS = [
+    {"value": "deepseek-flash", "label": "DeepSeek Flash (中控路由)"},
+    {"value": "deepseek-v4-flash", "label": "DeepSeek V4 Flash (中控路由)"},
+    {"value": "deepseek-v4.1-flash", "label": "DeepSeek V4.1 Flash (中控路由)"},
+    {"value": "glm-5.2", "label": "GLM 5.2 (中控路由)"},
+    {"value": "sensenova-6.8-flash-lite", "label": "SenseNova 6.8 Flash Lite (中控路由)"},
+    {"value": "step-3.7-flash", "label": "Step 3.7 Flash (长文本｜中控路由)"},
+    {"value": "step-5-preview", "label": "Step 5 Preview (视觉/推理｜中控路由)", "vision": True},
+]
+
+
+def _hub_mail_enabled():
+    return bool((db.get_admin_config() or {}).get("email_hub_enabled"))
+
+
+def _hub_model_enabled():
+    return bool((db.get_admin_config() or {}).get("model_hub_enabled"))
+
+
+def _hub_provider_info():
+    """中控模型网关的提供商配置（虚拟提供商，不落库、不需要 API Key）。"""
+    app_key, _secret, base_url = _captcha_hub_creds()
+    return {
+        "enabled": True,
+        "title": "中控模型网关",
+        "protocol": "hub",
+        "api_key": "",
+        "base_url": base_url,
+        "hub_app_key": app_key,
+        "models": [dict(m) for m in HUB_PROVIDER_MODELS],
+    }
+
+
+def _inject_hub_provider(providers):
+    """开关开启时把中控作为虚拟提供商并入（内存态）；关闭/缺密钥时移除，防止残留被落库。"""
+    if providers is None:
+        return providers
+    providers.pop(HUB_PROVIDER_KEY, None)
+    if _hub_model_enabled():
+        providers[HUB_PROVIDER_KEY] = _hub_provider_info()
+    return providers
+
+
+def _is_hub_provider(provider_info):
+    return (provider_info or {}).get("protocol") == "hub"
+
+
+def _provider_usable(pinfo):
+    """普通提供商要有 Key 才算就绪；中控提供商由服务端签名，不需要 Key。"""
+    if not pinfo.get("enabled"):
+        return False
+    return _is_hub_provider(pinfo) or bool((pinfo.get("api_key") or "").strip())
+
+
+def _hub_post_json(target, payload_obj, timeout=15):
+    """带 hub-v1 签名 POST JSON 到中控。返回 (ok, parsed_or_err, http_status)。"""
+    app_key, app_secret, base_url = _captcha_hub_creds()
+    if not app_secret:
+        return False, "服务端未配置中控密钥（环境变量 HUB_APP_SECRET 或「系统配置→单点登录」App Secret）", 0
+    body = json.dumps(payload_obj, ensure_ascii=False).encode("utf-8")
+    headers = _hub_sign_headers("POST", target, body, app_key, app_secret)
+    headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(base_url.rstrip("/") + target, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return True, json.loads(resp.read().decode("utf-8") or "{}"), resp.status
+    except urllib.error.HTTPError as e:
+        try:
+            err = json.loads(e.read().decode("utf-8"))
+        except Exception:
+            err = {}
+        msg = err.get("message") if isinstance(err, dict) else None
+        if e.code == 403:
+            return False, "应用未开启「邮件」能力，请到中控应用详情的能力开关里打开", e.code
+        return False, (msg or "中控拒绝（HTTP %d）" % e.code), e.code
+    except Exception as e:
+        return False, "无法连接中控：" + str(e), 0
+
+
+def _hub_classify_mail_err(text):
+    """按 err 区分可恢复性：'too' 命中 oversized/too large 等内容过大类永久错误。"""
+    t = str(text or "").lower()
+    if ("收件人" in text) or ("invalid" in t and ("email" in t or "recipient" in t)) or "format" in t:
+        return "bad_to"
+    if "too" in t or "size" in t or "1mb" in t or "oversized" in t:
+        return "too_large"
+    return "temp"
+
+
+def _hub_mail_send_once(to_addr, subject, html):
+    """单次投递。返回 (True, None, '') 或 (False, 人话, 中控 err 原文)。
+
+    permanent=True 表示根本没走到 SMTP（缺密钥/能力未开/中控明确拒绝），不该再补投一次。
+    """
+    ok, data, status = _hub_post_json(HUB_MAIL_SEND_TARGET,
+                                      {"to": to_addr, "subject": subject, "html": html})
+    if not ok:
+        return False, data, "", True
+    if not isinstance(data, dict):
+        return False, "中控邮件返回内容异常", "", True
+    if data.get("status") == "sent":
+        return True, None, "", False
+    err = str(data.get("err") or "")
+    reason = ("投递失败(id=%s)" % data.get("id")) if data.get("status") == "failed" else "中控返回状态异常"
+    return False, "%s：%s" % (reason, err or "无错误描述"), err, False
+
+
+def hub_send_mail(to_addr, subject, html):
+    """经中控统一出口发信（模板已由应用渲染，中控不做占位符替换）。"""
+    to_addr = (to_addr or "").strip()
+    subject = (subject or "").strip()
+    html = html or ""
+    if not to_addr or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", to_addr):
+        return False, "收件人邮箱格式不对"
+    if not subject:
+        return False, "邮件主题不能为空"
+    if not html.strip():
+        return False, "邮件内容不能为空"
+    if len(subject) > HUB_MAIL_MAX_SUBJECT_CHARS:
+        subject = subject[:HUB_MAIL_MAX_SUBJECT_CHARS]
+    html_bytes = html.encode("utf-8")
+    if len(html_bytes) > HUB_MAIL_MAX_HTML_BYTES:
+        return False, "邮件正文超过中控 1MB 限制，请精简内容后重发"
+    key = hashlib.sha256(("\0".join([to_addr, subject]) + "\0").encode("utf-8") + html_bytes).hexdigest()
+    now = time.time()
+    with _hub_mail_lock:
+        for k, exp in list(_hub_mail_inflight.items()):
+            if exp <= now:
+                _hub_mail_inflight.pop(k, None)
+        if key in _hub_mail_inflight:
+            return False, "同一封邮件正在投递中，未重复发送"
+        _hub_mail_inflight[key] = now + HUB_MAIL_INFLIGHT_TTL
+    try:
+        ok, msg, err_raw, permanent = _hub_mail_send_once(to_addr, subject, html)
+        if ok:
+            return True, None
+        if permanent:
+            return False, msg
+        kind = _hub_classify_mail_err(err_raw or msg)
+        if kind == "bad_to":
+            return False, "收件人邮箱格式不对（中控拒绝）"
+        if kind == "too_large":
+            return False, "邮件正文被中控判为过大，请精简内容后重发（非临时故障，暂不自动重试）"
+        # SMTP 临时故障：钱/token 不计，等 30 秒换一个时间点重试一次
+        print(f"[中控邮件] 首次投递失败({err_raw or msg})，{HUB_MAIL_RETRY_WAIT}s 后重试: {to_addr}", flush=True)
+        time.sleep(HUB_MAIL_RETRY_WAIT)
+        ok, msg2, _, _ = _hub_mail_send_once(to_addr, subject, html)
+        if ok:
+            return True, None
+        return False, "中控邮件投递失败：" + str(msg2)
+    finally:
+        with _hub_mail_lock:
+            _hub_mail_inflight.pop(key, None)
+
+
+def hub_mail_records():
+    """查询本应用最近的中控发信流水。GET 签名必须把 ?limit=20 计入 rawTarget。"""
+    app_key, app_secret, base_url = _captcha_hub_creds()
+    if not app_secret:
+        return False, "服务端未配置中控密钥（环境变量 HUB_APP_SECRET 或「系统配置→单点登录」App Secret）"
+    headers = _hub_sign_headers("GET", HUB_MAIL_RECORDS_TARGET, b"", app_key, app_secret)
+    req = urllib.request.Request(base_url.rstrip("/") + HUB_MAIL_RECORDS_TARGET, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8") or "{}")
+        return True, (data.get("items") if isinstance(data, dict) else None) or []
+    except urllib.error.HTTPError as e:
+        if e.code == 403:
+            return False, "应用未开启「邮件」能力，请到中控应用详情的能力开关里打开"
+        return False, "中控拒绝（HTTP %d）" % e.code
+    except Exception as e:
+        return False, "无法连接中控：" + str(e)
+
+
+def do_hub_chat(messages, model, provider_info=None, timeout=None):
+    """经中控模型网关（OpenAI 兼容）发起一次对话。返回 (content, err, total_tokens)，与 do_openai_compatible_chat 同形状。
+    403/404 属配置问题立即返回不重试；502 为上游临时故障，指数退避重试。"""
+    app_key, app_secret, base_url = _captcha_hub_creds()
+    if not app_secret:
+        return None, "服务端未配置中控密钥（环境变量 HUB_APP_SECRET 或「系统配置→单点登录」App Secret）", 0
+    payload = {"model": model or "auto", "messages": messages,
+               "temperature": 0.1, "max_tokens": 4096}
+    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    url = base_url.rstrip("/") + HUB_CHAT_TARGET
+    _timeout = timeout or HUB_CHAT_TIMEOUT
+    attempt = 0
+    while True:
+        headers = _hub_sign_headers("POST", HUB_CHAT_TARGET, data, app_key, app_secret)
+        headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=_timeout) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+            if result.get("error"):
+                e = result["error"]
+                return None, "中控网关错误: %s" % str(e.get("message") or e), 0
+            choices = result.get("choices") or []
+            if not choices:
+                return None, "中控网关返回异常: 无 choices 字段，响应: %s" % json.dumps(result, ensure_ascii=False)[:200], 0
+            message = choices[0].get("message") or {}
+            content = (message.get("content") or message.get("reasoning_content")
+                       or message.get("reasoning") or choices[0].get("text") or "")
+            if isinstance(content, list):
+                content = "".join(item.get("text", "") if isinstance(item, dict) else str(item)
+                                  for item in content)
+            content = str(content).strip()
+            if not content:
+                return None, "中控网关返回内容为空，请重试", 0
+            usage = result.get("usage") or {}
+            return content, None, int(usage.get("total_tokens") or 0)
+        except urllib.error.HTTPError as e:
+            try:
+                raw = e.read()
+            except Exception:
+                raw = b""
+            body = (raw or b"").decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw or "")
+            try:
+                msg = json.loads(body).get("error", {}).get("message") or body
+            except Exception:
+                msg = body
+            if e.code == 403:
+                return None, "应用未开启「模型」能力，请到中控应用详情的能力开关里打开（HTTP 403）", 0
+            if e.code == 404:
+                return None, "模型 '%s' 在中控没有可用路由（HTTP 404），请换登记过的模型名或留 auto" % model, 0
+            if e.code == 502 and attempt < HUB_502_MAX_RETRY:
+                attempt += 1
+                time.sleep(min(2 ** attempt, _timeout // 4 or 4))
+                continue
+            return None, "中控网关 HTTP %d: %s" % (e.code, str(msg)[:200]), 0
+        except Exception as e:
+            return None, "中控网关请求异常: %s" % str(e), 0
+
+
 
 def _sso_html_escape(text):
     return (str(text).replace("&", "&amp;").replace("<", "&lt;")
@@ -419,6 +828,88 @@ def _hub_sso_exchange(ticket):
         return False, (err.get("message") or "票据无效或已过期（中控拒绝，HTTP %d）" % e.code)
     except Exception as e:
         return False, "无法连接中控：" + str(e)
+
+
+def _captcha_hub_creds():
+    """滑块调用中控所需三元组：app_key/app_secret/base_url。
+    密钥优先 HUB_APP_SECRET 环境变量，其次复用单点登录已存密钥；两者都空则返回空串（调用方须拒绝）。"""
+    cfg = db.get_admin_config() or {}
+    app_secret = (os.environ.get("HUB_APP_SECRET") or cfg.get("sso_app_secret") or "").strip()
+    app_key = (os.environ.get("HUB_APP_KEY") or cfg.get("sso_app_key") or "").strip() or SSO_DEFAULT_APP_KEY
+    base_url = (cfg.get("sso_base_url") or "").strip() or SSO_DEFAULT_BASE_URL
+    return app_key, app_secret, base_url
+
+
+def _hub_captcha_request(target, body_bytes, timeout=10):
+    """带 hub-v1 签名 POST 到中控滑块接口。返回 (ok, parsed_or_err, http_status)。"""
+    app_key, app_secret, base_url = _captcha_hub_creds()
+    if not app_secret:
+        return False, "服务端未配置中控密钥，无法进行滑块验证", 0
+    headers = _hub_sign_headers("POST", target, body_bytes, app_key, app_secret)
+    headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(base_url.rstrip("/") + target, data=body_bytes, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return True, json.loads(resp.read().decode("utf-8")), resp.status
+    except urllib.error.HTTPError as e:
+        try:
+            err = json.loads(e.read().decode("utf-8"))
+        except Exception:
+            err = {}
+        if e.code == 403:
+            return False, "应用未开启「滑块验证」能力，请到中控应用详情打开开关", e.code
+        return False, (err.get("message") or "中控拒绝（HTTP %d）" % e.code), e.code
+    except Exception as e:
+        return False, "无法连接中控：" + str(e), 0
+
+
+def _hub_captcha_gen():
+    """调中控生成滑块素材。返回 (ok, data_or_err)。缺口真实 x 永不出现在 data 里。"""
+    ok, data, _status = _hub_captcha_request(CAPTCHA_GEN_TARGET, b"")
+    if not ok:
+        return False, data
+    if isinstance(data, dict) and data.get("token") and data.get("bg") and data.get("piece"):
+        return True, data
+    return False, "中控返回内容异常"
+
+
+def _hub_captcha_verify(token, x):
+    """调中控校验拖动位置。成功返回 (True, ticket, '')，失败 (False, None, 人话)。"""
+    body = json.dumps({"token": token, "x": int(x)}, ensure_ascii=False).encode("utf-8")
+    ok, data, status = _hub_captcha_request(CAPTCHA_VERIFY_TARGET, body)
+    if ok and isinstance(data, dict) and data.get("ok") and data.get("ticket"):
+        return True, data["ticket"], ""
+    if status in (404, 400):
+        return False, None, "滑块位置不正确或已过期，请重新拖动"
+    return False, None, (data if isinstance(data, str) else "滑块验证失败，请重试")
+
+
+def _hub_captcha_check(ticket):
+    """调中控核销一次性票据。返回 (ok, err)。"""
+    body = json.dumps({"ticket": ticket}, ensure_ascii=False).encode("utf-8")
+    ok, data, _status = _hub_captcha_request(CAPTCHA_CHECK_TARGET, body)
+    if ok and isinstance(data, dict) and data.get("ok"):
+        return True, ""
+    return False, "票据无效或已使用，请重新完成滑块"
+
+
+def _remember_captcha_scope(hub_token, scope):
+    if not hub_token:
+        return
+    now = time.time()
+    for t, (sc, exp) in list(CAPTCHA_SCOPES.items()):
+        if exp < now:
+            CAPTCHA_SCOPES.pop(t, None)
+    if len(CAPTCHA_SCOPES) >= CAPTCHA_SCOPES_MAX:
+        overflow = len(CAPTCHA_SCOPES) - CAPTCHA_SCOPES_MAX + 1
+        for t in list(CAPTCHA_SCOPES)[:overflow]:
+            CAPTCHA_SCOPES.pop(t, None)
+    CAPTCHA_SCOPES[hub_token] = (scope, now + CAPTCHA_SCOPE_TTL)
+
+
+def _take_captcha_scope(hub_token):
+    sc, exp = CAPTCHA_SCOPES.pop(hub_token or "", ("user", 0))
+    return sc if exp >= time.time() else "user"
 
 
 def _sso_error_page(msg):
@@ -610,6 +1101,29 @@ def consume_slider_token(token, scope, client_ip):
             return True
     return False
 
+
+def mint_captcha_pass_token(scope, client_ip):
+    """中控滑块核销成功后，铸一枚一次性 slider_token 放进 SLIDER_CAPTCHAS，
+    沿用登录/资金门已有的 consume_slider_token 契约（绑 scope+ip，120 秒、用一次即弃）。"""
+    now = time.time()
+    for cid, item in list(SLIDER_CAPTCHAS.items()):
+        if float(item.get("expires") or 0) < now or float(item.get("token_expires") or 0) < now:
+            SLIDER_CAPTCHAS.pop(cid, None)
+    if len(SLIDER_CAPTCHAS) >= SLIDER_CAPTCHA_MAX:
+        overflow = len(SLIDER_CAPTCHAS) - SLIDER_CAPTCHA_MAX + 1
+        for cid in list(SLIDER_CAPTCHAS)[:overflow]:
+            SLIDER_CAPTCHAS.pop(cid, None)
+    slider_token = "sld_" + secrets.token_urlsafe(24)
+    SLIDER_CAPTCHAS["hub_" + slider_token] = {
+        "scope": scope,
+        "client_ip": client_ip or "",
+        "expires": now + CAPTCHA_PASS_TTL,
+        "token": slider_token,
+        "token_expires": now + CAPTCHA_PASS_TTL,
+        "verified": True,
+    }
+    return slider_token
+
 def normalize_pem_key(key_text, key_type="PRIVATE KEY"):
     text = (key_text or "").strip().replace("\\n", "\n")
     if not text:
@@ -788,9 +1302,9 @@ def _pick_pay_channel(admin, pay_method):
     weights = [w for _, _, w in available if w > 0] or [1] * len(weighted)
     return random.choices(weighted, weights=weights, k=1)[0]
 
-def create_alipay_precreate_order(username, plan, skip_enabled_check=False, order_no=None):
+def create_alipay_precreate_order(username, plan, skip_enabled_check=False, order_no=None, client_ip=""):
     business_type = _plan_business_type(plan)
-    order_no = db.create_pending_order(username, plan, pay_method="alipay", pay_channel="alipay", pay_type="alipay_precreate", business_type=business_type, order_no=order_no)
+    order_no = db.create_pending_order(username, plan, pay_method="alipay", pay_channel="alipay", pay_type="alipay_precreate", business_type=business_type, order_no=order_no, client_ip=client_ip)
     subject = f"学神助手-{plan.get('name')}"
     res = alipay_api_call("alipay.trade.precreate", {
         "out_trade_no": order_no,
@@ -820,7 +1334,7 @@ def query_and_apply_alipay_order(order_no):
     return False, "订单状态：" + trade_status, order
 
 # ==================== 支付FM ====================
-def create_zhifufm_order(username, plan, pay_type="alipay", skip_enabled_check=False, order_no=None):
+def create_zhifufm_order(username, plan, pay_type="alipay", skip_enabled_check=False, order_no=None, client_ip=""):
     admin = db.get_admin_config() or {}
     if not skip_enabled_check and not admin.get("zhifufm_enabled"):
         raise RuntimeError("支付FM未启用")
@@ -832,7 +1346,7 @@ def create_zhifufm_order(username, plan, pay_type="alipay", skip_enabled_check=F
     if not api_url or not merchant_num or not secret:
         raise RuntimeError("支付FM配置不完整")
     business_type = _plan_business_type(plan)
-    order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="zhifufm", pay_type="sandpayh5", business_type=business_type, order_no=order_no)
+    order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="zhifufm", pay_type="sandpayh5", business_type=business_type, order_no=order_no, client_ip=client_ip)
     amount = f"{float(plan.get('price') or 0):.2f}"
     # 按支付FM文档：待签名字符串=商户号+商户订单号+支付金额+异步通知地址+接入密钥
     sign_str = merchant_num + order_no + amount + notify_url + secret
@@ -895,7 +1409,7 @@ def verify_zhifufm_notify(params):
     return params.get("sign", "") == expected
 
 # ==================== 杉德河马 ====================
-def create_sandpay_order(username, plan, pay_type="alipay", skip_enabled_check=False, product_id=None, custom_head=None, custom_body=None, order_no=None):
+def create_sandpay_order(username, plan, pay_type="alipay", skip_enabled_check=False, product_id=None, custom_head=None, custom_body=None, order_no=None, client_ip=""):
     admin = db.get_admin_config() or {}
     if not skip_enabled_check and not admin.get("sandpay_enabled"):
         raise RuntimeError("杉德支付未启用")
@@ -913,9 +1427,9 @@ def create_sandpay_order(username, plan, pay_type="alipay", skip_enabled_check=F
         # 将自定义订单写入数据库（如果不存在则创建）
         existing = db.get_order(order_no)
         if not existing:
-            db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="sandpay", order_no=order_no, pay_type=pay_type, business_type=business_type)
+            db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="sandpay", order_no=order_no, pay_type=pay_type, business_type=business_type, client_ip=client_ip)
     else:
-        order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="sandpay", pay_type=pay_type, business_type=business_type, order_no=order_no)
+        order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="sandpay", pay_type=pay_type, business_type=business_type, order_no=order_no, client_ip=client_ip)
     amount_yuan = float(plan.get('price') or 0)
     # 杉德金额格式：12位数字，单位分，如 000000000001 = 0.01元
     amount_fen = int(round(amount_yuan * 100))
@@ -1059,7 +1573,7 @@ def verify_sandpay_notify(params):
         return False
 
 # ==================== 易支付（支付FM兼容模式） ====================
-def create_epay_order(username, plan, pay_type="alipay", skip_enabled_check=False, order_no=None):
+def create_epay_order(username, plan, pay_type="alipay", skip_enabled_check=False, order_no=None, client_ip=""):
     admin = db.get_admin_config() or {}
     if not skip_enabled_check and not admin.get("epay_enabled"):
         raise RuntimeError("易支付未启用")
@@ -1071,7 +1585,7 @@ def create_epay_order(username, plan, pay_type="alipay", skip_enabled_check=Fals
     if not api_url or not pid or not key:
         raise RuntimeError("易支付配置不完整")
     business_type = _plan_business_type(plan)
-    order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="epay", pay_type=pay_type, business_type=business_type, order_no=order_no)
+    order_no = db.create_pending_order(username, plan, pay_method=pay_type, pay_channel="epay", pay_type=pay_type, business_type=business_type, order_no=order_no, client_ip=client_ip)
     amount = f"{float(plan.get('price') or 0):.2f}"
     name = f"学神助手-{plan.get('name', '')}"
     # 按照易支付标准签名：参数排序拼接 + 密钥直接追加
@@ -1126,18 +1640,18 @@ def load_providers():
     # 优先从数据库读取
     db_data = db.get_providers()
     if db_data:
-        return db_data
+        return _inject_hub_provider(db_data)
     # 兼容旧文件
     if os.path.exists(PROVIDERS_FILE):
         try:
             with open(PROVIDERS_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
             db.save_providers(data)
-            return data
+            return _inject_hub_provider(data)
         except Exception:
             pass
     db.save_providers(DEFAULT_PROVIDERS)
-    return DEFAULT_PROVIDERS.copy()
+    return _inject_hub_provider(DEFAULT_PROVIDERS.copy())
 
 def has_provider_models(providers):
     return bool(providers) and any((info.get("models") or []) for info in providers.values())
@@ -1149,28 +1663,28 @@ def is_provider_enabled(info):
 def provider_ready_count(providers):
     total = 0
     for info in (providers or {}).values():
-        if is_provider_enabled(info) and (info.get("api_key") or "").strip() and (info.get("models") or []):
+        if is_provider_enabled(info) and _provider_usable(info) and (info.get("models") or []):
             total += 1
     return total
 
 def recover_providers_if_empty(current=None):
     data = current if current is not None else PROVIDERS
     if has_provider_models(data):
-        return data
+        return _inject_hub_provider(data)
     fresh = db.get_providers()
     if has_provider_models(fresh):
-        return fresh
+        return _inject_hub_provider(fresh)
     if os.path.exists(PROVIDERS_FILE):
         try:
             with open(PROVIDERS_FILE, "r", encoding="utf-8") as f:
                 file_data = json.load(f)
             if has_provider_models(file_data):
                 db.save_providers(file_data)
-                return file_data
+                return _inject_hub_provider(file_data)
         except Exception as e:
             print(f"[AI配置恢复] 读取文件失败: {e}", flush=True)
     db.save_providers(DEFAULT_PROVIDERS)
-    return DEFAULT_PROVIDERS.copy()
+    return _inject_hub_provider(DEFAULT_PROVIDERS.copy())
 
 def refresh_providers_from_storage():
     fresh = db.get_providers()
@@ -1179,6 +1693,8 @@ def refresh_providers_from_storage():
 def save_providers(providers):
     if not has_provider_models(providers) and has_provider_models(PROVIDERS):
         raise ValueError("拒绝保存空模型配置：当前请求没有任何模型，已保留原配置")
+    # 中控提供商是虚拟的（不落库、密钥不进配置），入库前一律剔除
+    providers = {k: v for k, v in (providers or {}).items() if k != HUB_PROVIDER_KEY}
     db.save_providers(providers)
     # 同时保留文件备份
     try:
@@ -1195,7 +1711,7 @@ def save_providers_config(providers):
     """
     save_providers(providers)
     global PROVIDERS
-    PROVIDERS = providers
+    PROVIDERS = _inject_hub_provider(dict(providers))
 
 PROVIDERS = load_providers()
 
@@ -1541,14 +2057,17 @@ def send_email(to_addr, subject, body_text=None, body_html=None, template_id=Non
     admin = db.get_admin_config()
     if not admin or not admin.get("email_enabled"):
         return False, "邮箱功能未启用"
-    server = _pick_mail_server(resend=resend)
-    if not server:
+
+    # 先用模板/场景渲染出成品正文，中控只负责投递成品 html（中控不做占位符替换）
+    hub_route = _hub_mail_enabled()
+    server = None if hub_route else _pick_mail_server(resend=resend)
+    if not hub_route and not server:
         if resend:
             return False, "未配置已启用的邮件服务器，无法补发"
         return False, "未配置可用的邮件服务器"
 
     variables = variables or {}
-    from_addr_val = (server.get("from_addr") or "").strip() or (server.get("smtp_user") or "").strip()
+    from_addr_val = ((server or {}).get("from_addr") or "").strip() or ((server or {}).get("smtp_user") or "").strip()
     variables["from_addr"] = from_addr_val
 
     # 补发场景：优先使用标记为"补发"的模板，否则使用对应场景模板
@@ -1576,6 +2095,16 @@ def send_email(to_addr, subject, body_text=None, body_html=None, template_id=Non
 
     if not subject:
         return False, "邮件主题不能为空"
+
+    # 中控统一出口：发件人、SMTP 配置、失败冷却全由中控管理，应用只交成品
+    if hub_route:
+        if body_html:
+            html = body_html
+        elif body_text:
+            html = "<pre style=\"font-family:inherit;white-space:pre-wrap\">" + _sso_html_escape(body_text) + "</pre>"
+        else:
+            return False, "邮件内容不能为空"
+        return hub_send_mail(to_addr, subject, html)
 
     # 腾讯云 SES API 发信
     if server.get("type") == "tencent_ses":
@@ -1811,9 +2340,6 @@ def generate_code(length=6):
 
 
 # ==================== AI 调用 ====================
-import urllib.request
-import urllib.error
-
 def make_ai_cache_key(question, model_mode, model_name="", custom_cfg=None):
     custom_cfg = custom_cfg or {}
     payload = {
@@ -2845,7 +3371,7 @@ def do_gemini_chat(messages, model, api_key, base_url, timeout=60):
 def get_enabled_providers():
     result = []
     for name, info in PROVIDERS.items():
-        if info.get("enabled") and info.get("api_key"):
+        if _provider_usable(info):
             result.append((name, info))
     return result
 
@@ -2934,7 +3460,7 @@ def provider_round_robin_rest(ordered):
 def build_models_html():
     options = []
     for name, info in PROVIDERS.items():
-        if info.get("enabled") and info.get("api_key") and info.get("base_url") and info.get("models"):
+        if info.get("enabled") and _provider_usable(info) and info.get("base_url") and info.get("models"):
             for m in info["models"]:
                 if m.get("value") and m.get("label") and not is_model_expired(m):
                     options.append(f'<option value="{m["value"]}">{m["label"]}</option>')
@@ -2952,7 +3478,7 @@ def get_model_entry(model_name):
 def find_provider_by_model(model_name):
     model_lower = model_name.lower() if model_name else ""
     for pname, pinfo in PROVIDERS.items():
-        if not pinfo.get("enabled") or not pinfo.get("api_key"):
+        if not _provider_usable(pinfo):
             continue
         for m in pinfo.get("models", []):
             if m.get("value", "").lower() == model_lower:
@@ -3191,6 +3717,8 @@ def call_provider_chat(question, model_name, provider_info, time_budget=None, fo
     api_key = provider_info.get("api_key", "")
     base_url = provider_info.get("base_url", "")
     protocol = provider_info.get("protocol", "openai")
+    if protocol == "hub":
+        return do_hub_chat(messages, model_name, provider_info, timeout=time_budget or HUB_CHAT_TIMEOUT)
     if protocol == "openai":
         return do_openai_compatible_chat(messages, model_name, api_key, base_url, time_budget=time_budget)
     elif protocol == "claude":
@@ -3464,6 +3992,8 @@ def call_provider_chat_with_messages(messages, model_name, provider_info, timeou
     api_key = provider_info.get("api_key", "")
     base_url = provider_info.get("base_url", "")
     protocol = provider_info.get("protocol", "openai")
+    if protocol == "hub":
+        return do_hub_chat(messages, model_name, provider_info, timeout=timeout or HUB_CHAT_TIMEOUT)
     if protocol == "openai":
         return do_openai_compatible_chat(messages, model_name, api_key, base_url)
     elif protocol == "claude":
@@ -3571,6 +4101,8 @@ def call_llm_lightweight(messages, model, provider_info, timeout=15):
     api_key = provider_info.get("api_key", "")
     base_url = provider_info.get("base_url", "")
     protocol = provider_info.get("protocol", "openai")
+    if protocol == "hub":
+        return do_hub_chat(messages, model, provider_info, timeout=timeout or HUB_CHAT_TIMEOUT)
     
     if protocol == "openai":
         payload = {
@@ -5265,6 +5797,21 @@ class Handler(BaseHTTPRequestHandler):
             if scope not in ("user", "admin"):
                 scope = "user"
             self._send_json(200, {"code": 200, "captcha": create_slider_captcha(scope, self._client_ip())})
+        elif path == "/captcha/new":
+            qs = parse_qs(parsed.query)
+            scope = qs.get("scope", ["user"])[0]
+            if scope not in CAPTCHA_VALID_SCOPES:
+                scope = "user"
+            ok, data = _hub_captcha_gen()
+            if not ok:
+                self._send_json(503, {"code": 503, "msg": data})
+                return
+            _remember_captcha_scope(data.get("token"), scope)
+            self._send_json(200, {"code": 200, "captcha": {
+                "token": data.get("token"), "bg": data.get("bg"), "piece": data.get("piece"),
+                "pieceY": data.get("pieceY"), "pieceSize": data.get("pieceSize"),
+                "w": data.get("w"), "h": data.get("h"), "ttl": data.get("ttl"),
+            }})
         elif path == "/api/config":
             PROVIDERS = recover_providers_if_empty(PROVIDERS)
             self._send_json(200, {"code": 200, "models": build_models_html(), "providers": list(PROVIDERS.keys())})
@@ -5636,7 +6183,7 @@ class Handler(BaseHTTPRequestHandler):
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
-            PROVIDERS = refresh_providers_from_storage()
+            PROVIDERS = _inject_hub_provider(refresh_providers_from_storage())
             try:
                 model_usage_total = db.get_model_token_usage_total()
             except Exception:
@@ -5673,6 +6220,14 @@ class Handler(BaseHTTPRequestHandler):
                 "base_url": cfg.get("sso_base_url") or "",
                 "app_secret": "********" if secret else "",
             }})
+        elif path == "/admin/model-config":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            cfg = db.get_admin_config() or {}
+            self._send_json(200, {"code": 200, "config": {
+                "hub_enabled": bool(cfg.get("model_hub_enabled")),
+            }})
         elif path == "/admin/risk-config":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -5686,6 +6241,7 @@ class Handler(BaseHTTPRequestHandler):
             servers = db.list_mail_servers()
             self._send_json(200, {"code": 200, "config": {
                 "enabled": bool(admin.get("email_enabled")),
+                "hub": bool(admin.get("email_hub_enabled")),
                 "test_recipient": admin.get("test_recipient") or "",
                 "servers": servers
             }})
@@ -5779,7 +6335,7 @@ class Handler(BaseHTTPRequestHandler):
                 sort_by = (query_params.get("sort_by", ["created_at"])[0] or "created_at").strip()
                 sort_order = (query_params.get("sort_order", ["desc"])[0] or "desc").strip().lower()
                 # 白名单校验排序字段
-                allowed_sort = {"created_at", "last_login_at", "id", "username", "points_balance"}
+                allowed_sort = {"created_at", "last_login_at", "id", "username", "points_balance", "register_ip", "last_login_ip"}
                 if sort_by not in allowed_sort:
                     sort_by = "created_at"
                 if sort_order not in ("asc", "desc"):
@@ -5790,7 +6346,7 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     sort_expr = f"{sort_by} {sort_order}"
                 # 构建查询
-                sql = "SELECT id, username, email, is_verified, points_balance, member_until, is_banned, ban_reason, created_at, last_login_at FROM users"
+                sql = "SELECT id, username, email, is_verified, points_balance, member_until, is_banned, ban_reason, created_at, last_login_at, register_ip, register_ip_addr, last_login_ip, last_login_ip_addr FROM users"
                 params_list = []
                 if search:
                     sql += " WHERE username LIKE %s OR email LIKE %s"
@@ -5799,6 +6355,30 @@ class Handler(BaseHTTPRequestHandler):
                 sql += f" ORDER BY {sort_expr} LIMIT 500"
                 users_list = db.fetchall(sql, tuple(params_list)) if params_list else db.fetchall(sql)
                 self._send_json(200, {"code": 200, "users": users_list})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/users-by-ip":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                ip = (qs.get("ip", [""])[0] or "").strip()
+                if not ip:
+                    self._send_json(400, {"code": 400, "msg": "请提供 IP"})
+                    return
+                # 注册IP 或 登录IP 命中都算，用于排查同人多开
+                rows = db.fetchall(
+                    "SELECT id, username, email, is_banned, created_at, last_login_at, "
+                    "register_ip, register_ip_addr, last_login_ip, last_login_ip_addr "
+                    "FROM users WHERE register_ip = %s OR last_login_ip = %s "
+                    "ORDER BY created_at ASC LIMIT 500",
+                    (ip, ip)
+                )
+                for r in rows:
+                    r["created_at"] = str(r.get("created_at") or "")
+                    r["last_login_at"] = str(r.get("last_login_at") or "") if r.get("last_login_at") else ""
+                self._send_json(200, {"code": 200, "ip": ip, "users": rows})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/login-locks":
@@ -5999,8 +6579,9 @@ class Handler(BaseHTTPRequestHandler):
                 status = qs.get("status", [""])[0]
                 username = qs.get("username", [""])[0]
                 order_no = qs.get("order_no", [""])[0]
+                ip = (qs.get("ip", [""])[0] or "").strip()
                 page = int(qs.get("page", [1])[0])
-                result = db.list_refund_requests(status=status, username=username, order_no=order_no, page=page)
+                result = db.list_refund_requests(status=status, username=username, order_no=order_no, page=page, ip=ip)
                 self._send_json(200, {"code": 200, **result})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -6308,6 +6889,35 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        elif path == "/captcha/check":
+            try:
+                data = json.loads(body or "{}")
+                hub_token = (data.get("token") or "").strip()
+                scope = _take_captcha_scope(hub_token)
+                if scope not in CAPTCHA_VALID_SCOPES:
+                    scope = "user"
+                try:
+                    x = int(round(float(data.get("x"))))
+                except (TypeError, ValueError):
+                    self._send_json(400, {"code": 400, "msg": "滑块位置无效"})
+                    return
+                if not hub_token:
+                    self._send_json(400, {"code": 400, "msg": "缺少验证码，请重新完成滑块"})
+                    return
+                vok, ticket, verr = _hub_captcha_verify(hub_token, x)
+                if not vok:
+                    self._send_json(400, {"code": 400, "msg": verr})
+                    return
+                cok, cerr = _hub_captcha_check(ticket)
+                if not cok:
+                    self._send_json(400, {"code": 400, "msg": cerr})
+                    return
+                # 票据已在服务端核销且不下发浏览器；这里铸一枚一次性 slider_token 交给原登录/资金门。
+                slider_token = mint_captcha_pass_token(scope, self._client_ip())
+                self._send_json(200, {"code": 200, "token": slider_token, "scope": scope, "msg": "验证通过"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         # ========== 用户认证接口 ==========
         elif path == "/api/auth/register":
             try:
@@ -6330,12 +6940,14 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 # 创建用户
                 invite_code = (data.get("invite_code") or "").strip()
-                success, err = db.create_user(username, email, hash_password(password), invite_code=invite_code or None)
+                client_ip = self._client_ip()
+                success, err = db.create_user(username, email, hash_password(password), invite_code=invite_code or None, client_ip=client_ip)
                 if not success:
                     self._send_json(400, {"code": 400, "msg": "用户名或邮箱已被注册"})
                     return
                 db.verify_user_email(email)
                 db.grant_registration_gift(username)
+                enqueue_ip_geo(client_ip, "users")
                 token = jwt_encode({"uid": username, "iat": time.time(), "exp": time.time() + 86400 * 180})
                 session_user = {"username": username, "email": email, "is_verified": True}
                 set_current_user_session(token, session_user)
@@ -6387,8 +6999,9 @@ class Handler(BaseHTTPRequestHandler):
                 set_current_user_session(token, session_user)
                 clear_login_failures("user", self._client_ip(), username)
                 try:
-                    ph = "%s"
-                    db.execute(f"UPDATE users SET last_login_at = NOW() WHERE username = {ph}", (real_username,))
+                    login_ip = self._client_ip()
+                    db.touch_user_login(real_username, login_ip)
+                    enqueue_ip_geo(login_ip, "users")
                 except Exception:
                     pass
                 self._send_json(200, {"code": 200, "msg": "登录成功", "token": token, "user": session_user, "profile": build_user_profile(real_username)})
@@ -6689,7 +7302,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(400, {"code": 400, "msg": "退款原因不能超过200字"})
                     return
                 username = user["username"]
-                ok, msg = db.create_refund_request(username, order_no, reason)
+                ok, msg = db.create_refund_request(username, order_no, reason, client_ip=self._client_ip())
                 if not ok:
                     self._send_json(400, {"code": 400, "msg": msg})
                     return
@@ -6743,6 +7356,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 data = json.loads(body or "{}")
+                if not consume_slider_token(data.get("slider_token"), "money", self._client_ip()):
+                    self._send_json(400, {"code": 400, "msg": "请先完成滑块验证"})
+                    return
                 cfg = db.get_admin_config() or {}
                 if not int(cfg.get("referral_enabled") or 0):
                     self._send_json(400, {"code": 400, "msg": "推广返利未开启"})
@@ -6776,6 +7392,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 data = json.loads(body or "{}")
+                if not consume_slider_token(data.get("slider_token"), "money", self._client_ip()):
+                    self._send_json(400, {"code": 400, "msg": "请先完成滑块验证"})
+                    return
                 ok, msg, row = db.exchange_commission_for_points(
                     user["username"], data.get("amount"), (data.get("request_no") or "").strip()
                 )
@@ -6824,6 +7443,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(403, {"code": 403, "msg": DIST_CHANNEL_CHECKOUT_MSG})
                     return
                 data = json.loads(body or "{}")
+                order_ip = self._client_ip()
                 # —— 自有模型权限购买（不走 payment_plans，使用 admin_config 的开关与定价）——
                 if data.get("plan_type") == "custom_model":
                     cm_cfg = db.get_custom_model_config()
@@ -6837,7 +7457,7 @@ class Handler(BaseHTTPRequestHandler):
                         "enabled": True, "business_type": "custom_model_" + ("monthly" if cm_cfg.get("period") == "monthly" else "lifetime")
                     }
                     if cm_price <= 0:
-                        order_no, ok, msg = db.create_paid_order_and_apply(user["username"], plan)
+                        order_no, ok, msg = db.create_paid_order_and_apply(user["username"], plan, client_ip=order_ip)
                         if not ok:
                             self._send_json(500, {"code": 500, "msg": "自有模型暂未开通成功，可重试或联系管理员", "order_no": order_no})
                             return
@@ -6857,7 +7477,7 @@ class Handler(BaseHTTPRequestHandler):
                         if existing:
                             self._send_json(400, {"code": 400, "msg": "该免费套餐已领取过，不可重复领取"})
                             return
-                        order_no, ok, msg = db.create_paid_order_and_apply(user["username"], plan)
+                        order_no, ok, msg = db.create_paid_order_and_apply(user["username"], plan, client_ip=order_ip)
                         if not ok:
                             self._send_json(500, {"code": 500, "msg": "该套餐暂未到账成功，可重试或联系管理员", "order_no": order_no})
                             return
@@ -6898,7 +7518,7 @@ class Handler(BaseHTTPRequestHandler):
                         return
                 if float(plan.get("price") or 0) <= 0:
                     # 全额抵扣：没有网关可等，直接建单发货；没发出去就把佣金退回并关单
-                    order_no, ok, msg = db.create_paid_order_and_apply(user["username"], plan, order_no=hold_order_no)
+                    order_no, ok, msg = db.create_paid_order_and_apply(user["username"], plan, order_no=hold_order_no, client_ip=order_ip)
                     if not ok:
                         db.release_commission_hold(hold_order_no, "全额抵扣订单未发放")
                         db.execute(
@@ -6918,19 +7538,19 @@ class Handler(BaseHTTPRequestHandler):
                 # 根据通道创建订单
                 try:
                     if pay_channel == "alipay":
-                        order_no, qr_code = create_alipay_precreate_order(user["username"], plan, order_no=hold_order_no or None)
+                        order_no, qr_code = create_alipay_precreate_order(user["username"], plan, order_no=hold_order_no or None, client_ip=order_ip)
                         self._send_json(200, {"code": 200, "msg": "订单已创建，请扫码付款", "paying": True, "pay_channel": "alipay", "order_no": order_no, "qr_code": qr_code, "commission_used": deduct})
                         return
                     if pay_channel == "zhifufm":
-                        order_no, pay_url = create_zhifufm_order(user["username"], plan, pay_type=pay_type, order_no=hold_order_no or None)
+                        order_no, pay_url = create_zhifufm_order(user["username"], plan, pay_type=pay_type, order_no=hold_order_no or None, client_ip=order_ip)
                         self._send_json(200, {"code": 200, "msg": "订单已创建，请跳转付款", "paying": True, "pay_channel": "zhifufm", "order_no": order_no, "pay_url": pay_url, "commission_used": deduct})
                         return
                     if pay_channel == "sandpay":
-                        order_no, pay_url = create_sandpay_order(user["username"], plan, pay_type=pay_type, order_no=hold_order_no or None)
+                        order_no, pay_url = create_sandpay_order(user["username"], plan, pay_type=pay_type, order_no=hold_order_no or None, client_ip=order_ip)
                         self._send_json(200, {"code": 200, "msg": "订单已创建，请跳转付款", "paying": True, "pay_channel": "sandpay", "order_no": order_no, "pay_url": pay_url, "commission_used": deduct})
                         return
                     if pay_channel == "epay":
-                        order_no, pay_url = create_epay_order(user["username"], plan, pay_type=pay_type, order_no=hold_order_no or None)
+                        order_no, pay_url = create_epay_order(user["username"], plan, pay_type=pay_type, order_no=hold_order_no or None, client_ip=order_ip)
                         self._send_json(200, {"code": 200, "msg": "订单已创建，请跳转付款", "paying": True, "pay_channel": "epay", "order_no": order_no, "pay_url": pay_url, "commission_used": deduct})
                         return
                 except Exception as e:
@@ -7056,7 +7676,7 @@ class Handler(BaseHTTPRequestHandler):
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
-            PROVIDERS = refresh_providers_from_storage()
+            PROVIDERS = _inject_hub_provider(refresh_providers_from_storage())
             try:
                 model_usage_total = db.get_model_token_usage_total()
             except Exception:
@@ -7118,6 +7738,31 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {"code": 200, "msg": "已保存"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/model-config":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                enabled = 1 if data.get("hub_enabled") else 0
+                db.execute("UPDATE admin_config SET model_hub_enabled=%s WHERE id=1", (enabled,))
+                # 内存里的提供商列表在下一次 /admin/config 读取时会按开关重新注入，这里只回一份即时视图
+                view = _inject_hub_provider(dict(PROVIDERS))
+                self._send_json(200, {"code": 200, "msg": "已保存", "hub_enabled": bool(enabled),
+                                      "config": {"providers": view}})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/mail-hub-records":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            ok, res = hub_mail_records()
+            if ok:
+                self._send_json(200, {"code": 200, "items": res})
+            else:
+                self._send_json(500, {"code": 500, "msg": res})
 
         elif path == "/admin/risk-config":
             if not self._check_admin():
@@ -7304,6 +7949,9 @@ class Handler(BaseHTTPRequestHandler):
                 if not key:
                     self._send_json(400, {"code": 400, "msg": "缺少提供商唯一标识"})
                     return
+                if key == HUB_PROVIDER_KEY:
+                    self._send_json(400, {"code": 400, "msg": "hub 是中控网关的保留标识，请换一个"})
+                    return
                 if key in PROVIDERS:
                     self._send_json(400, {"code": 400, "msg": "该提供商标识已存在"})
                     return
@@ -7356,9 +8004,17 @@ class Handler(BaseHTTPRequestHandler):
                 base_url = (data.get("base_url") or "").strip()
                 api_key = data.get("api_key") or ""
                 model = (data.get("model") or "").strip()
-                if not base_url or not api_key:
+                if protocol != "hub" and (not base_url or not api_key):
                     self._send_json(200, {"code": 200, "success": False, "msg": "请填写 Base URL 和 API Key"})
                     return
+                if protocol == "hub":
+                    # 中控提供商的基址与密钥都在服务端，测试同样只传模型名
+                    _app_key, _secret, base_url = _captcha_hub_creds()
+                    if not _secret:
+                        self._send_json(200, {"code": 200, "success": False,
+                                              "msg": "服务端未配置中控密钥（环境变量 HUB_APP_SECRET），无法测试"})
+                        return
+                    api_key = ""
                 if not model:
                     self._send_json(200, {"code": 200, "success": False, "msg": "请填写要测试的模型ID"})
                     return
@@ -7388,6 +8044,9 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(body)
                 key = (data.get("key") or "").strip()
                 idx = int(data.get("idx", -1))
+                if key == HUB_PROVIDER_KEY:
+                    self._send_json(400, {"code": 400, "msg": "中控提供商的模型列表由中控维护，不可删除"})
+                    return
                 if key not in PROVIDERS:
                     self._send_json(404, {"code": 404, "msg": "提供商不存在"})
                     return
@@ -7415,6 +8074,9 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(body or "{}")
                 if "enabled" in data:
                     db.set_email_enabled(bool(data.get("enabled")))
+                if "hub" in data:
+                    db.execute("UPDATE admin_config SET email_hub_enabled=%s WHERE id=1",
+                               (1 if data.get("hub") else 0,))
                 if "test_recipient" in data:
                     db.update_admin_email({"test_recipient": (data.get("test_recipient") or "").strip()})
                 self._send_json(200, {"code": 200, "msg": "保存成功"})

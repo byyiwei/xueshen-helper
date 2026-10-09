@@ -269,6 +269,12 @@ class Database:
             self.execute("ALTER TABLE users ADD COLUMN last_login_at TIMESTAMP NULL DEFAULT NULL")
         except Exception:
             pass
+        # 注册/登录 IP 与归属地：历史行为空，新增记录起开始采集；
+        # 归属地由 backend 的后台线程异步回填（见 set_ip_geo）
+        self._add_column_if_missing("users", "register_ip", "register_ip VARCHAR(64) DEFAULT '' COMMENT '注册IP'")
+        self._add_column_if_missing("users", "register_ip_addr", "register_ip_addr VARCHAR(200) DEFAULT '' COMMENT '注册IP归属地'")
+        self._add_column_if_missing("users", "last_login_ip", "last_login_ip VARCHAR(64) DEFAULT '' COMMENT '最后登录IP'")
+        self._add_column_if_missing("users", "last_login_ip_addr", "last_login_ip_addr VARCHAR(200) DEFAULT '' COMMENT '最后登录IP归属地'")
 
         self._ensure_payment_columns()
 
@@ -703,6 +709,9 @@ class Database:
         # 退款金额与计算说明（历史表补列）
         self._add_column_if_missing("refund_requests", "refund_amount", "refund_amount DECIMAL(10,2) DEFAULT 0 COMMENT '应退金额'")
         self._add_column_if_missing("refund_requests", "refund_detail", "refund_detail TEXT COMMENT '退款计算说明'")
+        # 申请时客户端 IP 与归属地（后台线程异步回填归属地）
+        self._add_column_if_missing("refund_requests", "client_ip", "client_ip VARCHAR(64) DEFAULT '' COMMENT '申请IP'")
+        self._add_column_if_missing("refund_requests", "client_ip_addr", "client_ip_addr VARCHAR(200) DEFAULT '' COMMENT '申请IP归属地'")
 
         # ===== 题数批次（用于精确核算单笔订单的剩余题数）=====
         # 每次充值/发放生成一个批次；答题扣点按 FIFO 消耗批次，
@@ -1163,6 +1172,9 @@ class Database:
         self._add_column_if_missing("admin_config", "sso_app_key", "sso_app_key VARCHAR(128) DEFAULT '' COMMENT 'Hub 分配的 App Key（标识，非密钥）'")
         self._add_column_if_missing("admin_config", "sso_base_url", "sso_base_url VARCHAR(255) DEFAULT '' COMMENT 'Hub 中控基址，默认 https://openget.cn'")
         self._add_column_if_missing("admin_config", "sso_app_secret", "sso_app_secret VARCHAR(255) DEFAULT '' COMMENT 'Hub App Secret，仅服务端持有，界面只显示掩码'")
+        # 中控统一出口开关：邮件走 /open/mail/send，模型走 /open/v1/chat/completions；密钥复用上面 Hub 配置
+        self._add_column_if_missing("admin_config", "email_hub_enabled", "email_hub_enabled TINYINT DEFAULT 0 COMMENT '邮件走中控统一发信出口开关'")
+        self._add_column_if_missing("admin_config", "model_hub_enabled", "model_hub_enabled TINYINT DEFAULT 0 COMMENT '模型调用走中控网关开关'")
         # —— 风控管理（只判退款行为：次数 / 退款率 / 下单后短时退款）——
         self._add_column_if_missing("admin_config", "risk_enabled", "risk_enabled TINYINT DEFAULT 1 COMMENT '风控判定总开关'")
         self._add_column_if_missing("admin_config", "risk_refund_days", "risk_refund_days INT DEFAULT 30 COMMENT '退款次数统计窗口（天）'")
@@ -1185,15 +1197,18 @@ class Database:
         self._add_column_if_missing("payment_orders", "channel_order_no", "channel_order_no VARCHAR(128) COMMENT '商户订单号(签约类型支付方式有值)'")
         self._add_column_if_missing("payment_orders", "pay_type", "pay_type VARCHAR(50)")
         self._add_column_if_missing("payment_orders", "business_type", "business_type VARCHAR(50)")
+        # 下单 IP 与归属地（后台线程异步回填归属地）
+        self._add_column_if_missing("payment_orders", "client_ip", "client_ip VARCHAR(64) DEFAULT '' COMMENT '下单IP'")
+        self._add_column_if_missing("payment_orders", "client_ip_addr", "client_ip_addr VARCHAR(200) DEFAULT '' COMMENT '下单IP归属地'")
 
     # ==================== 用户相关 ====================
-    def create_user(self, username, email, password_hash, invite_code=None):
+    def create_user(self, username, email, password_hash, invite_code=None, client_ip=""):
         ph = _ph()
         try:
             code = self._gen_unique_invite_code()
             self.execute(
-                f"INSERT INTO users (username, email, password_hash, is_verified, invite_code) VALUES ({ph}, {ph}, {ph}, 0, {ph})",
-                (username, email, password_hash, code)
+                f"INSERT INTO users (username, email, password_hash, is_verified, invite_code, register_ip, last_login_ip) VALUES ({ph}, {ph}, {ph}, 0, {ph}, {ph}, {ph})",
+                (username, email, password_hash, code, (client_ip or "")[:64], (client_ip or "")[:64])
             )
             # 绑定邀请关系
             if invite_code:
@@ -1201,6 +1216,42 @@ class Database:
             return True, None
         except Exception as e:
             return False, str(e)
+
+    def touch_user_login(self, username, client_ip=""):
+        """记一次登录时间与登录 IP。IP 为空时不覆盖已有值。"""
+        ph = _ph()
+        if client_ip:
+            self.execute(
+                f"UPDATE users SET last_login_at = NOW(), last_login_ip = {ph} WHERE username = {ph}",
+                ((client_ip or "")[:64], username)
+            )
+        else:
+            self.execute(f"UPDATE users SET last_login_at = NOW() WHERE username = {ph}", (username,))
+
+    # 归属地回写的合法目标：表名与列名都写死，杜绝把表名拼进 SQL 的注入面
+    _IP_GEO_TARGETS = {
+        "users": ("register_ip", "register_ip_addr"),
+        "payment_orders": ("client_ip", "client_ip_addr"),
+        "refund_requests": ("client_ip", "client_ip_addr"),
+    }
+
+    def set_ip_geo(self, table, ip, addr):
+        """回写某个 IP 的归属地。由 backend 的后台线程在解析成功后调用。
+
+        只更新「IP 相同、归属地为空」的行，重复调用安全；表名/列名走白名单，
+        不接受外部传入的标识符。
+        """
+        target = self._IP_GEO_TARGETS.get(table)
+        ip = (ip or "").strip()[:64]
+        addr = (addr or "").strip()[:200]
+        if not target or not ip or not addr:
+            return 0
+        ip_col, addr_col = target
+        cur = self.execute(
+            f"UPDATE {table} SET {addr_col} = %s WHERE {ip_col} = %s AND ({addr_col} IS NULL OR {addr_col} = '')",
+            (addr, ip)
+        )
+        return cur.rowcount if cur is not None else 0
 
     def _gen_unique_invite_code(self):
         import random as _r
@@ -1454,7 +1505,7 @@ class Database:
         """订单号只在这里生成：下单抵扣要先把佣金冻结到一个还没落库的订单号上。"""
         return f"ORD{int(time.time() * 1000)}{abs(hash(username)) % 10000:04d}"
 
-    def create_paid_order_and_apply(self, username, plan, order_no=None):
+    def create_paid_order_and_apply(self, username, plan, order_no=None, client_ip=""):
         ph = _ph()
         if not order_no:
             order_no = self.new_order_no(username)
@@ -1462,26 +1513,27 @@ class Database:
         # 建单只能落 pending：apply_paid_order 见 paid 会直接早退「订单已到账」，
         # 于是 ¥0 套餐/自有模型白拿一个已支付订单，权益一分没发，还永久卡住「限领一次」
         self.execute(
-            f"""INSERT INTO payment_orders (order_no, username, plan_id, plan_name, plan_type, price, plan_price, commission_used, points, days, status, paid_at, business_type)
-                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'pending', NULL, {ph})""",
+            f"""INSERT INTO payment_orders (order_no, username, plan_id, plan_name, plan_type, price, plan_price, commission_used, points, days, status, paid_at, business_type, client_ip)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'pending', NULL, {ph}, {ph})""",
             (
                 order_no, username, int(plan.get("id") or 0), plan.get("name", ""),
                 plan.get("plan_type", ""), float(plan.get("price") or 0),
                 float(plan.get("plan_price") or plan.get("price") or 0),
                 float(plan.get("commission_used") or 0),
-                int(plan.get("points") or 0), int(plan.get("days") or 0), business_type
+                int(plan.get("points") or 0), int(plan.get("days") or 0), business_type,
+                (client_ip or "")[:64]
             )
         )
         ok, msg = self.apply_paid_order(order_no)
         return order_no, ok, msg
 
-    def create_pending_order(self, username, plan, pay_method="alipay", pay_channel="", trade_no="", qr_code="", pay_url="", order_no=None, bank_order_no="", pay_type="", business_type=""):
+    def create_pending_order(self, username, plan, pay_method="alipay", pay_channel="", trade_no="", qr_code="", pay_url="", order_no=None, bank_order_no="", pay_type="", business_type="", client_ip=""):
         ph = _ph()
         if not order_no:
             order_no = self.new_order_no(username)
         self.execute(
-            f"""INSERT INTO payment_orders (order_no, username, plan_id, plan_name, plan_type, price, plan_price, commission_used, points, days, status, pay_method, pay_channel, trade_no, qr_code, pay_url, bank_order_no, pay_type, business_type)
-                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'pending', {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+            f"""INSERT INTO payment_orders (order_no, username, plan_id, plan_name, plan_type, price, plan_price, commission_used, points, days, status, pay_method, pay_channel, trade_no, qr_code, pay_url, bank_order_no, pay_type, business_type, client_ip)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, 'pending', {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
             (
                 order_no, username, int(plan.get("id") or 0), plan.get("name", ""),
                 plan.get("plan_type", ""), float(plan.get("price") or 0),
@@ -1489,7 +1541,8 @@ class Database:
                 float(plan.get("commission_used") or 0),
                 int(plan.get("points") or 0), int(plan.get("days") or 0),
                 pay_method, pay_channel, trade_no, qr_code, pay_url,
-                bank_order_no, pay_type, business_type
+                bank_order_no, pay_type, business_type,
+                (client_ip or "")[:64]
             )
         )
         return order_no
@@ -1902,7 +1955,7 @@ class Database:
         """, (username, data.get("alipay_account", ""), data.get("alipay_qr", ""),
               data.get("wechat_account", ""), data.get("wechat_qr", "")))
 
-    def create_refund_request(self, username, order_no, reason=""):
+    def create_refund_request(self, username, order_no, reason="", client_ip=""):
         ph = _ph()
         order = self.get_order(order_no)
         if not order:
@@ -1942,13 +1995,13 @@ class Database:
         if float(calc["amount"]) <= 0:
             return False, "该订单已无可退金额（已使用部分不予退款）"
         self.execute(
-            f"INSERT INTO refund_requests (username, order_no, reason, refund_amount, refund_detail) "
-            f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
-            (username, order_no, reason, float(calc["amount"]), "\n".join(calc["lines"]))
+            f"INSERT INTO refund_requests (username, order_no, reason, refund_amount, refund_detail, client_ip) "
+            f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
+            (username, order_no, reason, float(calc["amount"]), "\n".join(calc["lines"]), (client_ip or "")[:64])
         )
         return True, "退款申请已提交，请等待管理员处理"
 
-    def list_refund_requests(self, status="", username="", order_no="", page=1, page_size=20):
+    def list_refund_requests(self, status="", username="", order_no="", page=1, page_size=20, ip=""):
         ph = _ph()
         where = []
         params = []
@@ -1961,6 +2014,10 @@ class Database:
         if order_no:
             where.append(f"r.order_no LIKE {ph}")
             params.append(f"%{order_no}%")
+        if ip:
+            # 精确匹配申请时的客户端 IP；也允许用前缀查整段（如 112.47.）
+            where.append(f"r.client_ip LIKE {ph}")
+            params.append(f"{ip}%" if not ip.endswith("%") else ip)
         where_sql = (" WHERE " + " AND ".join(where)) if where else ""
         total = self.fetchone(f"SELECT COUNT(*) cnt FROM refund_requests r {where_sql}", params)["cnt"]
         offset = (page - 1) * page_size
@@ -4091,7 +4148,7 @@ class Database:
             xy_params.append(date_to)
         xy_where_sql = (" WHERE " + " AND ".join(xy_where)) if xy_where else ""
 
-        allowed_sorts = {"created_at": "created_at", "price": "price", "username": "username", "status": "status", "order_no": "order_no", "id": "id"}
+        allowed_sorts = {"created_at": "created_at", "price": "price", "username": "username", "status": "status", "order_no": "order_no", "id": "id", "client_ip": "client_ip"}
         sort_field = allowed_sorts.get(sort, "created_at")
         order_dir = "ASC" if order.lower() == "asc" else "DESC"
         offset = (max(1, int(page)) - 1) * int(page_size)
@@ -4115,6 +4172,7 @@ class Database:
                         po.refund_amount, po.refund_detail,
                         po.bank_order_no, po.pay_type, po.business_type,
                         po.channel_order_no,
+                        po.client_ip, po.client_ip_addr,
                         'payment' as source
                 FROM payment_orders po{po_where_sql}
                 UNION ALL
@@ -4129,6 +4187,7 @@ class Database:
                         0 as refund_amount, '' as refund_detail,
                         '' as bank_order_no, '' as pay_type, '' as business_type,
                         '' as channel_order_no,
+                        '' as client_ip, '' as client_ip_addr,
                         'xianyu' as source
                 FROM xianyu_orders xo{xy_where_sql}
             ) combined ORDER BY {sort_field} {order_dir} LIMIT {int(page_size)} OFFSET {offset}
