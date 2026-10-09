@@ -1206,9 +1206,11 @@ class Database:
         ph = _ph()
         try:
             code = self._gen_unique_invite_code()
+            # 注册只记 register_ip；last_login_ip 留给首次登录，
+            # 否则「最近登录」列会出现一个有 IP 却没有登录时间的账号
             self.execute(
-                f"INSERT INTO users (username, email, password_hash, is_verified, invite_code, register_ip, last_login_ip) VALUES ({ph}, {ph}, {ph}, 0, {ph}, {ph}, {ph})",
-                (username, email, password_hash, code, (client_ip or "")[:64], (client_ip or "")[:64])
+                f"INSERT INTO users (username, email, password_hash, is_verified, invite_code, register_ip) VALUES ({ph}, {ph}, {ph}, 0, {ph}, {ph})",
+                (username, email, password_hash, code, (client_ip or "")[:64])
             )
             # 绑定邀请关系
             if invite_code:
@@ -1228,9 +1230,13 @@ class Database:
         else:
             self.execute(f"UPDATE users SET last_login_at = NOW() WHERE username = {ph}", (username,))
 
-    # 归属地回写的合法目标：表名与列名都写死，杜绝把表名拼进 SQL 的注入面
+    # 归属地回写的合法目标：表名 + IP 列 + 归属地列，全部写死，
+    # 杜绝把外部传入的标识符拼进 SQL 的注入面。
+    # users 有两对 IP/归属地列（注册、登录），必须用不同的键区分，
+    # 否则「按登录 IP 查归属地」会去比 register_ip 列，永远匹配 0 行。
     _IP_GEO_TARGETS = {
         "users": ("register_ip", "register_ip_addr"),
+        "users_login": ("last_login_ip", "last_login_ip_addr"),
         "payment_orders": ("client_ip", "client_ip_addr"),
         "refund_requests": ("client_ip", "client_ip_addr"),
     }
@@ -1239,7 +1245,7 @@ class Database:
         """回写某个 IP 的归属地。由 backend 的后台线程在解析成功后调用。
 
         只更新「IP 相同、归属地为空」的行，重复调用安全；表名/列名走白名单，
-        不接受外部传入的标识符。
+        不接受外部传入的标识符。返回受影响行数。
         """
         target = self._IP_GEO_TARGETS.get(table)
         ip = (ip or "").strip()[:64]
@@ -1247,8 +1253,10 @@ class Database:
         if not target or not ip or not addr:
             return 0
         ip_col, addr_col = target
+        # users 的两个键都落在 users 表上
+        real_table = "users" if table.startswith("users") else table
         cur = self.execute(
-            f"UPDATE {table} SET {addr_col} = %s WHERE {ip_col} = %s AND ({addr_col} IS NULL OR {addr_col} = '')",
+            f"UPDATE {real_table} SET {addr_col} = %s WHERE {ip_col} = %s AND ({addr_col} IS NULL OR {addr_col} = '')",
             (addr, ip)
         )
         return cur.rowcount if cur is not None else 0

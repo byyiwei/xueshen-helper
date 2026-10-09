@@ -7001,7 +7001,7 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     login_ip = self._client_ip()
                     db.touch_user_login(real_username, login_ip)
-                    enqueue_ip_geo(login_ip, "users")
+                    enqueue_ip_geo(login_ip, "users_login")
                 except Exception:
                     pass
                 self._send_json(200, {"code": 200, "msg": "登录成功", "token": token, "user": session_user, "profile": build_user_profile(real_username)})
@@ -7302,10 +7302,12 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(400, {"code": 400, "msg": "退款原因不能超过200字"})
                     return
                 username = user["username"]
-                ok, msg = db.create_refund_request(username, order_no, reason, client_ip=self._client_ip())
+                refund_ip = self._client_ip()
+                ok, msg = db.create_refund_request(username, order_no, reason, client_ip=refund_ip)
                 if not ok:
                     self._send_json(400, {"code": 400, "msg": msg})
                     return
+                enqueue_ip_geo(refund_ip, "refund_requests")
                 # 邮件通知管理员
                 try:
                     order = db.get_order(order_no)
@@ -7444,6 +7446,8 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 data = json.loads(body or "{}")
                 order_ip = self._client_ip()
+                # 归属地异步解析，不阻塞下单
+                enqueue_ip_geo(order_ip, "payment_orders")
                 # —— 自有模型权限购买（不走 payment_plans，使用 admin_config 的开关与定价）——
                 if data.get("plan_type") == "custom_model":
                     cm_cfg = db.get_custom_model_config()
