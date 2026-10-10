@@ -170,14 +170,18 @@ def enqueue_bank_log(item):
 
 # ==================== IP 归属地解析（异步） ====================
 # 归属地查询要走公网 HTTP，绝不能放在注册/登录/下单的请求路径上等 —— 接口一慢就是用户等。
-# 这里只排一个 (ip, table) 进队列，由后台线程串行解析后回写，失败就留空，业务照常。
-IP_GEO_QUEUE = queue.Queue(maxsize=2000)
+# 这里只排一个 (ip, table) 进队列，由后台单线程串行解析后回写，失败就留空，业务照常。
+IP_GEO_QUEUE = queue.Queue(maxsize=5000)
 _ip_geo_cache = {}                  # ip -> (归属地, 时间戳)；空串表示查过但无结果，避免反复打接口
-_pending_ip_geo = set()             # 已排队但还没解析完的 IP，防同一批请求重复入队
 _ip_geo_cache_lock = threading.Lock()
 _IP_GEO_CACHE_TTL = 6 * 3600
 _IP_GEO_MAX_ATTEMPTS = 3
 _IP_GEO_TIMEOUT = 6
+# 下单是「先入队、后建单」：回写那一刻订单行可能还没 INSERT 进去，
+# 直接 UPDATE 会匹配 0 行、该行归属地永远空着（曾导致多笔订单一直显示「解析中」）。
+# 因此回写要重试几次把行等出来。
+_IP_GEO_WRITE_ATTEMPTS = 6
+_IP_GEO_WRITE_RETRY_DELAY = 0.5
 
 # 内网/保留地址不打接口：它们要么是测试环境，要么是同机代理，公网接口问了也没答案
 _PRIVATE_IP_PREFIXES = (
@@ -281,61 +285,57 @@ def resolve_ip_geo(ip):
     return ""
 
 
+def _resolve_cached(ip):
+    """带缓存的解析。缓存里存过（含「查过但无结果」）就直接用，避免反复打接口。"""
+    with _ip_geo_cache_lock:
+        cached = _ip_geo_cache.get(ip)
+    if cached and (time.time() - cached[1]) < _IP_GEO_CACHE_TTL:
+        return cached[0]
+    addr = ""
+    for _ in range(_IP_GEO_MAX_ATTEMPTS):
+        addr = resolve_ip_geo(ip)
+        if addr:
+            break
+        time.sleep(1.5)
+    with _ip_geo_cache_lock:
+        _ip_geo_cache[ip] = (addr, time.time())
+    return addr
+
+
 def ip_geo_worker():
     while True:
         ip, table = IP_GEO_QUEUE.get()
         try:
-            with _ip_geo_cache_lock:
-                cached = _ip_geo_cache.get(ip)
-            if cached and (time.time() - cached[1]) < _IP_GEO_CACHE_TTL:
-                addr = cached[0]
-            else:
-                addr = ""
-                for _ in range(_IP_GEO_MAX_ATTEMPTS):
-                    addr = resolve_ip_geo(ip)
-                    if addr:
-                        break
-                    time.sleep(1.5)
-                with _ip_geo_cache_lock:
-                    _ip_geo_cache[ip] = (addr, time.time())
-            if addr:
-                db.set_ip_geo(table, ip, addr)
+            addr = _resolve_cached(ip)
+            if not addr:
+                continue
+            # 重试回写：下单是先入队后建单，这一刻行可能还没落库
+            for i in range(_IP_GEO_WRITE_ATTEMPTS):
+                if db.set_ip_geo(table, ip, addr):
+                    break
+                if i < _IP_GEO_WRITE_ATTEMPTS - 1:
+                    time.sleep(_IP_GEO_WRITE_RETRY_DELAY)
         except Exception as e:
             print(f"[IP归属地] 解析失败 ip={ip} table={table}: {e}", flush=True)
         finally:
-            # 无论成功失败都要从 pending 里摘掉：否则查不到的 IP 会永远卡在集合里，
-            # 之后同一个 IP 再也不会重新排队（除非进程重启）
-            with _ip_geo_cache_lock:
-                _pending_ip_geo.discard(ip)
             IP_GEO_QUEUE.task_done()
 
 threading.Thread(target=ip_geo_worker, daemon=True).start()
 
 
 def enqueue_ip_geo(ip, table):
-    """把归属地解析排进后台队列。同一 IP 已在队列/缓存里时不重复排队。"""
+    """把归属地解析排进后台队列。
+
+    这里一律只入队、绝不就地写库：写库放在请求路径里，会因为「行还没 INSERT」
+    而把 UPDATE 打在旧行上（曾导致同一 IP 的新订单归属地永远为空）。
+    去重由单线程队列天然保证，不需要额外的 pending 集合。
+    """
     ip = (ip or "").strip()
     if not ip or table not in db._IP_GEO_TARGETS:
         return
-    with _ip_geo_cache_lock:
-        cached = _ip_geo_cache.get(ip)
-        if cached and (time.time() - cached[1]) < _IP_GEO_CACHE_TTL:
-            # 已经查过：直接用结果，不再排队
-            addr = cached[0]
-            if addr:
-                try:
-                    db.set_ip_geo(table, ip, addr)
-                except Exception:
-                    pass
-            return
-        if ip in _pending_ip_geo:
-            return
-        _pending_ip_geo.add(ip)
     try:
         IP_GEO_QUEUE.put_nowait((ip, table))
     except queue.Full:
-        with _ip_geo_cache_lock:
-            _pending_ip_geo.discard(ip)
         print("[IP归属地队列] 队列已满，跳过一条", flush=True)
 
 
