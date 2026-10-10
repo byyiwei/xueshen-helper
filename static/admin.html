@@ -1994,6 +1994,59 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
 
+          <div class="card" id="ip-search-panel" style="margin-bottom:16px;border:1px solid rgba(59,130,246,.35);box-shadow:0 0 0 3px rgba(59,130,246,.08)" v-if="ipSearch">
+            <div class="card-header">
+              <h3>同 IP 账号 — <span style="font-family:monospace;color:var(--accent2)">{{ipSearch}}</span></h3>
+              <div style="display:flex;gap:8px;align-items:center">
+                <span v-if="!ipSearchLoading" style="font-size:12px;color:var(--text3)">共 {{ipSearchList.length}} 个账号</span>
+                <button class="btn btn-secondary btn-sm" @click="loadUsersByIp(ipSearch)">刷新</button>
+                <button class="btn btn-secondary btn-sm" @click="ipSearch='';ipSearchList=[]">关闭</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="info-tips" style="margin-bottom:12px">
+                <div class="tip-row"><span class="tip-num">i</span><span class="tip-text">列出「注册IP 或 登录IP」等于该 IP 的全部账号，用于识别同人多开。同一个 IP 也可能是校园网/公司网出口，需结合其它信息判断。</span></div>
+              </div>
+              <div v-if="ipSearchLoading" style="text-align:center;color:var(--text3);padding:28px 0;font-size:13px">正在查询…</div>
+              <div v-else-if="ipSearchList.length===0" style="text-align:center;color:var(--text3);padding:28px 0;font-size:13px">没有其它账号使用该 IP</div>
+              <div v-else style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:13px">
+                  <thead>
+                    <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
+                      <th style="text-align:left;padding:10px 8px">ID</th>
+                      <th style="text-align:left;padding:10px 8px">用户名</th>
+                      <th style="text-align:left;padding:10px 8px">邮箱</th>
+                      <th style="text-align:left;padding:10px 8px">命中</th>
+                      <th style="text-align:left;padding:10px 8px">注册时间</th>
+                      <th style="text-align:left;padding:10px 8px">最近登录</th>
+                      <th style="text-align:left;padding:10px 8px">状态</th>
+                      <th style="text-align:left;padding:10px 8px">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="u in ipSearchList" :key="u.id" style="border-bottom:1px solid var(--border)">
+                      <td style="padding:10px 8px">{{u.id}}</td>
+                      <td style="padding:10px 8px">{{u.username}}</td>
+                      <td style="padding:10px 8px;color:var(--text2)">{{u.email}}</td>
+                      <td style="padding:10px 8px">
+                        <span v-if="u.register_ip===ipSearch" class="ip-badge">注册IP</span>
+                        <span v-if="u.last_login_ip===ipSearch" class="ip-badge flag">登录IP</span>
+                      </td>
+                      <td style="padding:10px 8px;color:var(--text3)">{{u.created_at}}</td>
+                      <td style="padding:10px 8px;color:var(--text3)">{{u.last_login_at||'未登录'}}</td>
+                      <td style="padding:10px 8px">
+                        <span v-if="u.is_banned" style="color:var(--danger)">已封禁</span>
+                        <span v-else style="color:var(--success)">正常</span>
+                      </td>
+                      <td style="padding:10px 8px;white-space:nowrap">
+                        <button class="btn btn-secondary btn-sm" @click="openUserEdit(u)">管理</button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
           <div class="card">
             <div class="card-header">
               <h3>注册用户列表</h3>
@@ -2072,59 +2125,6 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                       <td style="padding:10px 8px;white-space:nowrap">
                         <button class="btn btn-secondary btn-sm" @click="openUserEdit(u)">管理</button>
                         <button class="btn btn-secondary btn-sm" v-if="u.register_ip||u.last_login_ip" title="按该用户 IP 查同 IP 的其他账号（多开/小号排查）" @click="gotoIpSearch(u.last_login_ip||u.register_ip)">查同IP</button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-          <div class="card" style="margin-top:16px" v-if="ipSearch">
-            <div class="card-header">
-              <h3>同 IP 账号 — <span style="font-family:monospace;color:var(--accent2)">{{ipSearch}}</span></h3>
-              <div style="display:flex;gap:8px;align-items:center">
-                <span v-if="!ipSearchLoading" style="font-size:12px;color:var(--text3)">共 {{ipSearchList.length}} 个账号</span>
-                <button class="btn btn-secondary btn-sm" @click="loadUsersByIp(ipSearch)">刷新</button>
-                <button class="btn btn-secondary btn-sm" @click="ipSearch='';ipSearchList=[]">关闭</button>
-              </div>
-            </div>
-            <div class="card-body">
-              <div class="info-tips" style="margin-bottom:12px">
-                <div class="tip-row"><span class="tip-num">i</span><span class="tip-text">列出「注册IP 或 登录IP」等于该 IP 的全部账号，用于识别同人多开。同一个 IP 也可能是校园网/公司网出口，需结合其它信息判断。</span></div>
-              </div>
-              <div v-if="ipSearchLoading" style="text-align:center;color:var(--text3);padding:28px 0;font-size:13px">正在查询…</div>
-              <div v-else-if="ipSearchList.length===0" style="text-align:center;color:var(--text3);padding:28px 0;font-size:13px">没有其它账号使用该 IP</div>
-              <div v-else style="overflow-x:auto">
-                <table style="width:100%;border-collapse:collapse;font-size:13px">
-                  <thead>
-                    <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
-                      <th style="text-align:left;padding:10px 8px">ID</th>
-                      <th style="text-align:left;padding:10px 8px">用户名</th>
-                      <th style="text-align:left;padding:10px 8px">邮箱</th>
-                      <th style="text-align:left;padding:10px 8px">命中</th>
-                      <th style="text-align:left;padding:10px 8px">注册时间</th>
-                      <th style="text-align:left;padding:10px 8px">最近登录</th>
-                      <th style="text-align:left;padding:10px 8px">状态</th>
-                      <th style="text-align:left;padding:10px 8px">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="u in ipSearchList" :key="u.id" style="border-bottom:1px solid var(--border)">
-                      <td style="padding:10px 8px">{{u.id}}</td>
-                      <td style="padding:10px 8px">{{u.username}}</td>
-                      <td style="padding:10px 8px;color:var(--text2)">{{u.email}}</td>
-                      <td style="padding:10px 8px">
-                        <span v-if="u.register_ip===ipSearch" class="ip-badge">注册IP</span>
-                        <span v-if="u.last_login_ip===ipSearch" class="ip-badge flag">登录IP</span>
-                      </td>
-                      <td style="padding:10px 8px;color:var(--text3)">{{u.created_at}}</td>
-                      <td style="padding:10px 8px;color:var(--text3)">{{u.last_login_at||'未登录'}}</td>
-                      <td style="padding:10px 8px">
-                        <span v-if="u.is_banned" style="color:var(--danger)">已封禁</span>
-                        <span v-else style="color:var(--success)">正常</span>
-                      </td>
-                      <td style="padding:10px 8px;white-space:nowrap">
-                        <button class="btn btn-secondary btn-sm" @click="openUserEdit(u)">管理</button>
                       </td>
                     </tr>
                   </tbody>
@@ -4896,6 +4896,7 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
                         <span class="ip-val" :title="'点击复制：'+row.client_ip" @click="copyText(row.client_ip,$event)">{{row.client_ip}}</span>
                         <span class="ip-addr" v-if="row.client_ip_addr">{{row.client_ip_addr}}</span>
                         <span class="ip-addr" v-else style="font-style:italic">解析中…</span>
+                        <span class="ip-badge" style="margin-top:2px" title="按该 IP 查同 IP 的账号" @click="gotoIpSearchFromOrder(row.client_ip)">查同IP</span>
                       </div>
                       <span v-else style="color:var(--text3)">-</span>
                     </td>
@@ -5803,21 +5804,44 @@ createApp({
     async function loadUsersByIp(ip){
       ip=(ip||'').trim();
       if(!ip)return;
+      // 面板已展开且是同一个 IP -> 再点一次收起
+      if(ipSearch.value===ip && !ipSearchLoading.value){
+        ipSearch.value='';ipSearchList.value=[];return;
+      }
       ipSearch.value=ip;
+      ipSearchList.value=[];
       ipSearchLoading.value=true;
       try{
         const res=await fetch('/admin/users-by-ip?ip='+encodeURIComponent(ip),{headers:{'Authorization':token.value}});
-        const data=await res.json();
-        if(data.code===200){ipSearchList.value=data.users||[];}
-        else if(data.code===403){logout();showMsg('登录已过期','error');}
-        else showMsg(data.msg||'查询失败','error');
-      }catch(e){showMsg('按 IP 查询失败: '+e,'error');}
+        const d=await res.json();
+        if(d.code===200){ipSearchList.value=d.users||[];}
+        else if(d.code===403){logout();showMsg('登录已过期','error');ipSearch.value='';}
+        else{showMsg(d.msg||'查询失败','error');ipSearch.value='';}
+      }catch(e){showMsg('按 IP 查询失败: '+e,'error');ipSearch.value='';}
       finally{ipSearchLoading.value=false;}
     }
+    // 点「查同IP」：先把请求发出去（不依赖表格是否还有这行），再滚到面板
     function gotoIpSearch(ip){
+      ip=(ip||'').trim();
+      if(!ip)return;
       loadUsersByIp(ip);
-      // 面板在表格下方，滚过去让结果可见
-      setTimeout(()=>{const el=document.querySelector('.ip-cell');if(el)el.scrollIntoView({behavior:'smooth',block:'center'});},80);
+      setTimeout(()=>{
+        const el=document.getElementById('ip-search-panel');
+        if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
+      },60);
+    }
+    // 支付明细里的 IP 列：先切到用户管理页再查（否则面板在不显示的那一页上）
+    function gotoIpSearchFromOrder(ip){
+      ip=(ip||'').trim();
+      if(!ip)return;
+      page.value='user-mgmt';
+      expandedGroups.value.users=true;
+      loadUsers();
+      loadUsersByIp(ip);
+      setTimeout(()=>{
+        const el=document.getElementById('ip-search-panel');
+        if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
+      },120);
     }
     function setSort(field){
       if(userSortBy.value===field){
@@ -8277,7 +8301,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
        loading,page,loginMode,themeMode,themeLabels,themeIcons,cycleTheme,breadcrumbItems,navigateBreadcrumb,config,emailConfig,emailTemplates,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,SCENE_ICONS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
        mailServers,showServerForm,mailServerForm,showSmtpPass,mailServerTotalWeight,mailServerWeightPercent,toggleEmailEnabled,openServerForm,saveMailServer,deleteMailServer,
        showMailHubRecords,mailHubRecords,mailHubRecordsLoading,mailHubRecordsError,toggleEmailHub,loadMailHubRecords,modelHubConfig,loadModelHubConfig,toggleModelHub,
-       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,userSearch,userSortBy,userSortOrder,ipSearch,ipSearchList,ipSearchLoading,loadUsersByIp,gotoIpSearch,showUserModal,userForm,gotoUserSearch,
+       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,userSearch,userSortBy,userSortOrder,ipSearch,ipSearchList,ipSearchLoading,loadUsersByIp,gotoIpSearch,gotoIpSearchFromOrder,showUserModal,userForm,gotoUserSearch,
         showHtmlPreview,htmlPreviewFrame,htmlPreviewData,toggleHtmlPreview,updateHtmlPreview,switchToHtml,onHtmlInput,syncPlainFromHtml,
        paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,planForm,
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,
