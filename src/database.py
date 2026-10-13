@@ -4088,6 +4088,11 @@ class Database:
     def list_payment_orders_admin(self, username="", status="", plan_name="", pay_method="", date_from="", date_to="", order_no="", sort="created_at", order="desc", page=1, page_size=20):
         """管理员支付明细查询，包含闲鱼订单"""
         ph = _ph()
+        # 单号搜索：既支持整串粘贴，也支持只记得片段时模糊查找。
+        # 转义 LIKE 通配符，免得用户输进来的 % 被当成通配符。
+        _ono_like = ""
+        if order_no:
+            _ono_like = "%" + order_no.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         # 支付订单 WHERE
         po_where = []
         po_params = []
@@ -4109,11 +4114,11 @@ class Database:
             else:
                 po_where.append(f"po.pay_method = {ph}")
                 po_params.append(pay_method)
-        # 订单号/渠道单号定位：支持从退款申请页跳转过来精确查单
+        # 订单号/渠道单号：整串粘贴或片段模糊都能命中
         if order_no:
-            po_where.append(f"(po.order_no = {ph} OR po.channel_order_no = {ph})")
-            po_params.append(order_no)
-            po_params.append(order_no)
+            po_where.append(f"(po.order_no LIKE {ph} OR po.channel_order_no LIKE {ph})")
+            po_params.append(_ono_like)
+            po_params.append(_ono_like)
         if date_from:
             po_where.append(f"DATE(po.created_at) >= {ph}")
             po_params.append(date_from)
@@ -4145,9 +4150,10 @@ class Database:
         if pay_method:
             if pay_method != "xianyu":
                 xy_where.append("1=0")
-        # 闲鱼订单无渠道单号，按订单号定位时排除，避免结果混杂
+        # 闲鱼订单也有订单号：按单号搜索时要一并列出来（它没有渠道单号）
         if order_no:
-            xy_where.append("1=0")
+            xy_where.append(f"xo.order_no LIKE {ph}")
+            xy_params.append(_ono_like)
         if date_from:
             xy_where.append(f"DATE(xo.created_at) >= {ph}")
             xy_params.append(date_from)
