@@ -6358,6 +6358,7 @@ class Handler(BaseHTTPRequestHandler):
                 # 解析查询参数
                 query_params = urllib.parse.parse_qs(parsed.query)
                 search = (query_params.get("search", [""])[0] or "").strip()
+                banned = (query_params.get("banned", [""])[0] or "").strip()
                 sort_by = (query_params.get("sort_by", ["created_at"])[0] or "created_at").strip()
                 sort_order = (query_params.get("sort_order", ["desc"])[0] or "desc").strip().lower()
                 # 白名单校验排序字段
@@ -6371,13 +6372,21 @@ class Handler(BaseHTTPRequestHandler):
                     sort_expr = f"(last_login_at IS NULL) ASC, last_login_at {sort_order}"
                 else:
                     sort_expr = f"{sort_by} {sort_order}"
-                # 构建查询
+                # 构建查询（条件用列表拼，避免 search 与 banned 只能二选一）
                 sql = "SELECT id, username, email, is_verified, points_balance, member_until, is_banned, ban_reason, created_at, last_login_at, register_ip, register_ip_addr, last_login_ip, last_login_ip_addr FROM users"
+                where_list = []
                 params_list = []
                 if search:
-                    sql += " WHERE username LIKE %s OR email LIKE %s"
+                    where_list.append("(username LIKE %s OR email LIKE %s)")
                     like = f"%{search}%"
-                    params_list = [like, like]
+                    params_list.extend([like, like])
+                # 封禁筛选：1=只看已封禁；0=只看正常（NULL 视为正常，与前端 u.is_banned 判定一致）
+                if banned == "1":
+                    where_list.append("is_banned = 1")
+                elif banned == "0":
+                    where_list.append("(is_banned = 0 OR is_banned IS NULL)")
+                if where_list:
+                    sql += " WHERE " + " AND ".join(where_list)
                 sql += f" ORDER BY {sort_expr} LIMIT 500"
                 users_list = db.fetchall(sql, tuple(params_list)) if params_list else db.fetchall(sql)
                 self._send_json(200, {"code": 200, "users": users_list})

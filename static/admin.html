@@ -2052,6 +2052,11 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
               <h3>注册用户列表</h3>
               <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                 <input v-model="userSearch" placeholder="搜索用户名/邮箱" style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:13px;width:200px" @keyup.enter="loadUsers()">
+                <select v-model="userBanFilter" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:13px" @change="loadUsers()">
+                  <option value="">全部状态</option>
+                  <option value="0">正常用户</option>
+                  <option value="1">已封禁</option>
+                </select>
                 <select v-model="userSortBy" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:13px" @change="loadUsers()">
                   <option value="created_at">注册时间</option>
                   <option value="last_login_at">最近登录</option>
@@ -4204,6 +4209,53 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
               </div>
             </div>
 
+            <div class="card" v-if="userAnalysis.geo && userAnalysis.geo.register">
+              <div class="card-header">
+                <h3>用户画像 · 地域分布</h3>
+              </div>
+              <div class="card-body">
+                <div v-if="userAnalysis.geo.register.covered===0 && userAnalysis.geo.login.covered===0" style="text-align:center;color:var(--text3);padding:24px 0;font-size:13px">
+                  当前统计区间内还没有已解析的 IP 归属地数据，可扩大统计范围再看
+                </div>
+                <template v-else>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+                    <div>
+                      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">按注册地</div>
+                      <div style="font-size:11px;color:var(--text3);margin-bottom:12px">区间内注册 {{userAnalysis.geo.register.total}} 人，其中 {{userAnalysis.geo.register.covered}} 人有归属地数据</div>
+                      <div v-for="(p,i) in userAnalysis.geo.register.provinces" :key="'rp'+i" style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+                        <span style="width:70px;flex:none;font-size:12px;color:var(--text2);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{p.name}}</span>
+                        <div style="flex:1;height:16px;background:var(--bg3);border-radius:4px;overflow:hidden">
+                          <div :style="{width:barW(p.users,userAnalysis.geo.register.provinces[0].users)+'%',height:'100%',background:'var(--accent2)',borderRadius:'4px'}"></div>
+                        </div>
+                        <span style="width:82px;flex:none;font-size:12px;color:var(--text3)">{{p.users}} 人 · {{p.pct}}%</span>
+                      </div>
+                      <div v-if="userAnalysis.geo.register.cities.length" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px">
+                        <span v-for="(c,i) in userAnalysis.geo.register.cities" :key="'rc'+i" style="font-size:11px;padding:3px 9px;border-radius:11px;background:var(--bg3);color:var(--text2)">{{c.name}} {{c.users}}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">按登录地</div>
+                      <div style="font-size:11px;color:var(--text3);margin-bottom:12px">区间内活跃 {{userAnalysis.geo.login.total}} 人，其中 {{userAnalysis.geo.login.covered}} 人有归属地数据</div>
+                      <div v-for="(p,i) in userAnalysis.geo.login.provinces" :key="'lp'+i" style="display:flex;align-items:center;gap:8px;margin-bottom:7px">
+                        <span style="width:70px;flex:none;font-size:12px;color:var(--text2);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{p.name}}</span>
+                        <div style="flex:1;height:16px;background:var(--bg3);border-radius:4px;overflow:hidden">
+                          <div :style="{width:barW(p.users,userAnalysis.geo.login.provinces[0].users)+'%',height:'100%',background:'var(--success)',borderRadius:'4px'}"></div>
+                        </div>
+                        <span style="width:82px;flex:none;font-size:12px;color:var(--text3)">{{p.users}} 人 · {{p.pct}}%</span>
+                      </div>
+                      <div v-if="userAnalysis.geo.login.cities.length" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px">
+                        <span v-for="(c,i) in userAnalysis.geo.login.cities" :key="'lc'+i" style="font-size:11px;padding:3px 9px;border-radius:11px;background:var(--bg3);color:var(--text2)">{{c.name}} {{c.users}}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);font-size:11px;color:var(--text3);line-height:1.8">
+                    「注册地」＝ 注册时的出口 IP 归属地；「登录地」＝ 最近一次登录的出口 IP 归属地。<br>
+                    归属地自本功能上线后开始记录，早期老用户暂无数据（上方「已解析」即实际覆盖人数）；使用代理/VPN 的用户会显示为机房所在地。
+                  </div>
+                </template>
+              </div>
+            </div>
+
             <div v-if="oldUserRechargeExpanded" class="card" style="margin-top:-8px;border-top-left-radius:0;border-top-right-radius:0">
               <div class="card-header" style="border-bottom:1px solid var(--border)">
                 <h3>📋 老用户充值明细（区间内老用户已支付订单）</h3>
@@ -5501,6 +5553,7 @@ createApp({
     const accountConfig=reactive({username:'admin',admin_email:'',avatar_data:''});
     const users=ref([]);
     const userSearch=ref('');
+    const userBanFilter=ref('');
     const userSortBy=ref('created_at');
     const userSortOrder=ref('desc');
     // 同 IP 账号查询（多开/小号排查）
@@ -5794,6 +5847,7 @@ createApp({
       try{
         const params=new URLSearchParams();
         if(userSearch.value.trim())params.set('search',userSearch.value.trim());
+        if(userBanFilter.value!=='')params.set('banned',userBanFilter.value);
         if(userSortBy.value)params.set('sort_by',userSortBy.value);
         if(userSortOrder.value)params.set('sort_order',userSortOrder.value);
         const qs=params.toString();
@@ -5873,6 +5927,7 @@ createApp({
     }
     function resetUserSearch(){
       userSearch.value='';
+      userBanFilter.value='';
       userSortBy.value='created_at';
       userSortOrder.value='desc';
       loadUsers();
@@ -6038,6 +6093,8 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     function ansTrendPoints(key){
       return ansTrendRows().map(r=>ansTrendX(r.i).toFixed(1)+','+ansTrendY(r[key]).toFixed(1)).join(' ');
     }
+    // 条形图宽度：按最大值等比缩放，最小 3% 保证极小项也看得见
+    function barW(v,max){const m=Number(max)||0;if(m<=0)return 0;return Math.max(Math.round(Number(v)*100/m),3);}
     async function loadUserAnalysis(){
       if(!token.value)return;
       if(!userAnalysisFilter.date_from||!userAnalysisFilter.date_to){
@@ -8304,8 +8361,8 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     return{
        loading,page,loginMode,themeMode,themeLabels,themeIcons,cycleTheme,breadcrumbItems,navigateBreadcrumb,config,emailConfig,emailTemplates,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,SCENE_ICONS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
        mailServers,showServerForm,mailServerForm,showSmtpPass,mailServerTotalWeight,mailServerWeightPercent,toggleEmailEnabled,openServerForm,saveMailServer,deleteMailServer,
-       showMailHubRecords,mailHubRecords,mailHubRecordsLoading,mailHubRecordsError,toggleEmailHub,loadMailHubRecords,modelHubConfig,loadModelHubConfig,toggleModelHub,
-       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,userSearch,userSortBy,userSortOrder,ipSearch,ipSearchList,ipSearchLoading,loadUsersByIp,gotoIpSearch,gotoIpSearchFromOrder,showUserModal,userForm,gotoUserSearch,
+       showMailHubRecords,mailHubRecords,mailHubRecordsLoading,mailHubRecordsError,toggleEmailHub,loadMailHubRecords,modelHubConfig,loadModelHubConfig,toggleModelHub,barW,
+       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,userSearch,userBanFilter,userSortBy,userSortOrder,ipSearch,ipSearchList,ipSearchLoading,loadUsersByIp,gotoIpSearch,gotoIpSearchFromOrder,showUserModal,userForm,gotoUserSearch,
         showHtmlPreview,htmlPreviewFrame,htmlPreviewData,toggleHtmlPreview,updateHtmlPreview,switchToHtml,onHtmlInput,syncPlainFromHtml,
        paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,planForm,
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,

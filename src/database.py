@@ -62,6 +62,73 @@ def _ph():
     return "%s"
 
 
+# —— 地域归一化（用户画像统计用）——
+# 归属地有两种来源格式，同一个地方会写成两样，不先归一的话排名会碎成两条重复项：
+#   pconline（国内） : "广东省广州市" / "西藏拉萨市"
+#   ip-api/ipwho.is  : "中国 广东 广州市" / "中国 江苏省 南京"（空格分隔、末段可不带“市”）
+#   海外/港澳台       : "美国 佛罗里达州 迈阿密" / "香港 北區 古洞"
+_CN_PROVINCE_CANON = {
+    "北京": "北京市", "天津": "天津市", "上海": "上海市", "重庆": "重庆市",
+    "河北": "河北省", "山西": "山西省", "辽宁": "辽宁省", "吉林": "吉林省", "黑龙江": "黑龙江省",
+    "江苏": "江苏省", "浙江": "浙江省", "安徽": "安徽省", "福建": "福建省", "江西": "江西省",
+    "山东": "山东省", "河南": "河南省", "湖北": "湖北省", "湖南": "湖南省", "广东": "广东省",
+    "海南": "海南省", "四川": "四川省", "贵州": "贵州省", "云南": "云南省", "陕西": "陕西省",
+    "甘肃": "甘肃省", "青海": "青海省", "台湾": "台湾省",
+    "内蒙古": "内蒙古", "广西": "广西", "西藏": "西藏", "宁夏": "宁夏", "新疆": "新疆",
+    "香港": "香港", "澳门": "澳门",
+}
+# 长名优先，保证 "黑龙江/内蒙古" 这类多字省名不被短名抢先匹配
+_CN_PROVINCE_KEYS = sorted(_CN_PROVINCE_CANON, key=len, reverse=True)
+
+
+def _province_of(addr):
+    """归属地 → 省级名称；海外/港澳台取第一段（国家或地区名），分不出就原样返回。"""
+    a = (addr or "").strip()
+    if not a:
+        return ""
+    parts = a.split()
+    if len(parts) >= 2 and parts[0] not in ("中国", "中国大陆"):
+        return parts[0]
+    cand = parts[1] if len(parts) >= 2 else parts[0]
+    for name in _CN_PROVINCE_KEYS:
+        if cand.startswith(name):
+            return _CN_PROVINCE_CANON[name]
+    return cand
+
+
+def _strip_admin_suffix(s):
+    """去掉一个市/区后缀："广州市"→"广州"，"北京市"→"北京"。"""
+    for suf in ("市", "区"):
+        if s.endswith(suf) and len(s) > len(suf):
+            return s[:-len(suf)]
+    return s
+
+
+def _city_of(addr):
+    """归属地 → 市级名称（归一后两种格式会合并），取不到就用省级兜底。"""
+    a = (addr or "").strip()
+    if not a:
+        return ""
+    parts = a.split()
+    if len(parts) >= 2:
+        city = parts[-1]
+    else:
+        t = parts[0]
+        if "省" in t:
+            city = t.split("省", 1)[1] or t
+        else:
+            city = t
+            for name in _CN_PROVINCE_KEYS:
+                if t.startswith(name) and len(t) > len(name):
+                    city = t[len(name):]
+                    break
+    city = city.strip()
+    if city in ("市", "区", "省"):   # 只剩行政级别字，说明本身是直辖市/省名
+        city = ""
+    city = _strip_admin_suffix(city)
+    return city or _strip_admin_suffix(_province_of(a))
+
+
 def _model_expire_date(value):
     """模型到期日期只认 YYYY-MM-DD：留空写 NULL（永久有效）。
     写成别的直接报错，不悄悄当空处理——静默丢掉日期等于把「到期停用」这句话撤销了。
@@ -5196,6 +5263,54 @@ class Database:
             result["overview"]["custom_model_calls"] = 0
             result["overview"]["custom_user_rate"] = 0
             result["custom_model_top_users"] = []
+
+        # —— 用户画像：地域分布（按注册地 / 按登录地）——
+        # 注意：IP 归属地是「上线后才开始记录」的，老用户没有数据 —— 必须把覆盖率一起返回，
+        # 否则用户看到总数只有几十会以为功能坏了。pct 以「已解析」为分母。
+        try:
+            def _geo_block(addr_col, time_col):
+                where = (f"WHERE u.{time_col} IS NOT NULL "
+                         f"AND DATE(u.{time_col}) >= {ph} AND DATE(u.{time_col}) <= {ph}")
+                rows = self.fetchall(
+                    f"SELECT u.{addr_col} AS addr, COUNT(*) AS c FROM users u {where} "
+                    f"GROUP BY u.{addr_col}", (date_from, date_to)
+                ) or []
+                total = covered = 0
+                prov, city = {}, {}
+                for r in rows:
+                    c = int(r.get("c") or 0)
+                    addr = (r.get("addr") or "").strip()
+                    total += c
+                    if not addr:
+                        continue
+                    covered += c
+                    p = _province_of(addr)
+                    if p:
+                        prov[p] = prov.get(p, 0) + c
+                    ci = _city_of(addr)
+                    if ci:
+                        city[ci] = city.get(ci, 0) + c
+
+                def _rank(d, limit):
+                    items = sorted(d.items(), key=lambda kv: (-kv[1], kv[0]))[:limit]
+                    return [{"name": k, "users": v,
+                             "pct": round(v * 100.0 / max(covered, 1), 1)} for k, v in items]
+
+                return {
+                    "total": total,
+                    "covered": covered,
+                    "pending": total - covered,
+                    "provinces": _rank(prov, 40),   # 省级行政区就三十来个，全列出来不截断（截断会让合计小于覆盖数）
+                    "cities": _rank(city, 30),
+                }
+
+            result["geo"] = {
+                "register": _geo_block("register_ip_addr", "created_at"),
+                "login": _geo_block("last_login_ip_addr", "last_login_at"),
+            }
+        except Exception as e:
+            print(f"[用户分析] 地域分布统计失败: {e}", flush=True)
+            result["geo"] = {}
 
         result["returning_users"] = self.fetchall(
             f"""SELECT username, created_at, last_login_at FROM users
