@@ -473,6 +473,23 @@ class Database:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
 
+        # 用户做过的题：同一用户同一道题只扣一次题数
+        # 题目身份用「题面+题型+选项+图片指纹」的匹配键，**不含答案** ——
+        # 答案换了一般还是同一道题，不该二次收费；含答案的指纹会随答案变化，不能当身份用。
+        self.execute(f"""
+            CREATE TABLE IF NOT EXISTS user_question_history (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                username VARCHAR(50) NOT NULL,
+                question_key CHAR(64) NOT NULL COMMENT '题目身份: 题面+题型+选项+图片指纹(不含答案)',
+                ask_count INT NOT NULL DEFAULT 1 COMMENT '这道题被该用户问了几次',
+                charged_count INT NOT NULL DEFAULT 0 COMMENT '其中实际扣了几次题数',
+                first_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uk_user_question (username, question_key),
+                INDEX idx_username (username)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
         self._ensure_order_payment_columns()
         self._ensure_xianyu_tables()
         self._ensure_distributor_tables()
@@ -1209,6 +1226,7 @@ class Database:
         self._add_column_if_missing("admin_config", "referral_points_rate", "referral_points_rate INT DEFAULT 50 COMMENT '佣金兑换题数比率（题/元）'")
         self._add_column_if_missing("admin_config", "referral_exchange_enabled", "referral_exchange_enabled TINYINT DEFAULT 1 COMMENT '允许佣金直接兑换题数'")
         self._add_column_if_missing("admin_config", "referral_deduct_enabled", "referral_deduct_enabled TINYINT DEFAULT 1 COMMENT '允许下单时用佣金抵扣现金'")
+        self._add_column_if_missing("admin_config", "dedup_question_enabled", "dedup_question_enabled TINYINT DEFAULT 1 COMMENT '同一用户同一道题只扣一次题数'")
         self._add_column_if_missing("admin_config", "referral_hold_minutes", "referral_hold_minutes INT DEFAULT 30 COMMENT '下单抵扣冻结时长（分钟），超时退回'")
         self._add_column_if_missing("admin_config", "feedback_auto_close_days", "feedback_auto_close_days INT DEFAULT 7")
         self._add_column_if_missing("admin_config", "feedback_notify_enabled", "feedback_notify_enabled TINYINT DEFAULT 0")
@@ -4003,6 +4021,66 @@ class Database:
             (username, delta, new_balance, reason, question_hash, order_no or "")
         )
         return True, new_balance
+
+    # ==================== 同一用户同一道题只扣一次题数 ====================
+    def claim_user_question(self, username, question_key):
+        """登记「这个用户做过这道题」。
+
+        返回 True  = 第一次做，需要扣点。
+        返回 False = 之前做过，本次免费。
+
+        并发安全靠唯一索引 + INSERT IGNORE：同一瞬间来两个相同请求，只有一个能插进去，
+        另一个自然拿到 False。不需要额外加锁。
+        """
+        if not username or not question_key:
+            return True   # 拿不到题目标识时按"没做过"处理：宁可扣点，也不能白送
+        ph = _ph()
+        cur = self.execute(
+            f"INSERT IGNORE INTO user_question_history (username, question_key, ask_count, charged_count) "
+            f"VALUES ({ph}, {ph}, 1, 0)", (username, question_key)
+        )
+        return bool(cur and cur.rowcount > 0)
+
+    def mark_question_charged(self, username, question_key):
+        """扣点成功后调用，记录这道题确实收过钱（包月用户不调用，他们没扣点）"""
+        if not username or not question_key:
+            return
+        ph = _ph()
+        self.execute(
+            f"UPDATE user_question_history SET charged_count = charged_count + 1 "
+            f"WHERE username = {ph} AND question_key = {ph}", (username, question_key)
+        )
+
+    def touch_user_question(self, username, question_key):
+        """做过的题又被问了一次：只累加被问次数，便于后台看重复情况"""
+        if not username or not question_key:
+            return
+        ph = _ph()
+        self.execute(
+            f"UPDATE user_question_history SET ask_count = ask_count + 1 "
+            f"WHERE username = {ph} AND question_key = {ph}", (username, question_key)
+        )
+
+    def release_user_question(self, username, question_key):
+        """扣点失败（余额不足等）时撤回登记，避免「没收钱却算他做过」白送一道题。
+
+        只删 charged_count = 0 的行 —— 已付过费的记录不能被删掉。
+        """
+        if not username or not question_key:
+            return
+        ph = _ph()
+        self.execute(
+            f"DELETE FROM user_question_history WHERE username = {ph} AND question_key = {ph} "
+            f"AND charged_count = 0", (username, question_key)
+        )
+
+    def count_user_questions(self, username):
+        """这个用户做过多少道不同的题（后台用户画像用）"""
+        ph = _ph()
+        row = self.fetchone(
+            f"SELECT COUNT(*) AS c FROM user_question_history WHERE username = {ph}", (username,)
+        )
+        return int(row.get("c") or 0) if row else 0
 
     def _create_point_lot(self, username, order_no, source, points):
         """建立题数批次（充值/发放时调用）"""

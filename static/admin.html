@@ -2226,6 +2226,26 @@ html[data-theme="light"] .model-test-result.fail{color:#dc2626}
             </div>
           </div>
           <div class="card">
+            <div class="card-header"><h3><span>✓</span>扣题规则</h3><button class="btn btn-success btn-sm" @click="savePaymentConfig">保存扣题规则</button></div>
+            <div class="card-body">
+              <div class="info-tips" style="margin-bottom:14px">
+                <div class="tip-row"><span class="tip-num">i</span><span class="tip-text">控制「同一道题要不要重复扣题数」。开启后按<b>用户 + 题目</b>记账：某个用户为某道题扣过一次题数，之后他再遇到这道题（不管答案来自题库还是 AI）都不再扣。</span></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>同题只扣一次</label>
+                  <label style="display:flex;gap:8px;align-items:center;margin:0;cursor:pointer"><input type="checkbox" v-model="paymentConfig.dedup_question_enabled" style="width:auto"> <span style="font-size:13px;color:var(--text2)">{{paymentConfig.dedup_question_enabled?'已开启 — 同一道题只扣一次':'已关闭 — 每次提问都扣题数'}}</span></label>
+                </div>
+              </div>
+              <div class="info-tips" style="margin-top:10px;background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.2)">
+                <div class="tip-row"><span class="tip-num" style="background:var(--primary);color:#fff">✓</span><span class="tip-text">
+                  <b v-if="paymentConfig.dedup_question_enabled">开启状态：用户为某道题付过一次题数后，再遇到同一道题免费。题目按「题干 + 题型 + 选项」识别（不含答案），所以答案换了仍算同一道题；题干相同但选项不同的两道题照常各扣一次。</b>
+                  <b v-else>关闭状态：每次提问都正常扣 1 点题数，不做任何去重。</b>
+                </span></div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
             <div class="card-header"><h3><span>◈</span>套餐配置</h3><button class="btn btn-secondary btn-sm" @click="newPlan()">新增套餐</button></div>
             <div class="card-body">
               <div class="info-tips" style="margin-bottom:14px">
@@ -5563,7 +5583,7 @@ createApp({
     const showUserModal=ref(false);
     const userForm=reactive({username:'',email:'',password:'',points_delta:0,member_days_delta:0,member_until:'',is_banned:false,ban_reason:'',reason:''});
     const paymentPlans=ref([]);
-    const paymentConfig=reactive({gift_type:'none',gift_points:0,gift_days:0,custom_model_enabled:false,custom_model_price:0,custom_model_period:'permanent'});
+    const paymentConfig=reactive({gift_type:'none',gift_points:0,gift_days:0,custom_model_enabled:false,custom_model_price:0,custom_model_period:'permanent',dedup_question_enabled:true});
     const payApiConfig=reactive({
       // 支付宝官方
       alipay_enabled:false,alipay_app_id:'',alipay_gateway:'https://openapi.alipay.com/gateway.do',alipay_private_key:'',alipay_public_key:'',

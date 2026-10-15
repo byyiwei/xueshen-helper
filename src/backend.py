@@ -483,19 +483,63 @@ def is_distributor_channel(ent):
 # 渠道账号在官网被拦下时的说法：说清去哪儿续费，不评价用户，也不承诺做不到的事
 DIST_CHANNEL_CHECKOUT_MSG = "本账号由渠道发卡提供服务，套餐购买不对其开放。续费请用渠道发放的卡密：在脚本「账号」面板输入 16 位卡密激活，或在官网「套餐购买」页下方激活。"
 
-def consume_answer_quota(username, question_hash=""):
+# 同一用户同一道题只扣一次题数的开关。放后台「付费配置」里改，这里 30 秒缓存一次，
+# 避免每道题都去查一次 admin_config。
+_DEDUP_QUESTION = {"enabled": True, "ts": 0.0}
+_DEDUP_QUESTION_TTL = 30.0
+
+def dedup_question_enabled():
+    now = time.time()
+    if now - _DEDUP_QUESTION["ts"] > _DEDUP_QUESTION_TTL:
+        try:
+            cfg = db.get_admin_config() or {}
+            v = cfg.get("dedup_question_enabled")
+            # 取不到字段（老库还没迁移）时默认开启，与建表默认值一致
+            _DEDUP_QUESTION["enabled"] = True if v is None else bool(int(v))
+        except Exception as e:
+            print(f"[扣题去重] 读取开关失败，沿用上次设置: {e}", flush=True)
+        _DEDUP_QUESTION["ts"] = now
+    return _DEDUP_QUESTION["enabled"]
+
+def consume_answer_quota(username, question_hash="", question_key=""):
+    """扣 1 点题数。
+
+    question_key = 题目身份（题面+题型+选项，不含答案），用来判断「这个用户是不是做过这道题」。
+    注意不能拿 question_hash 当这个身份 —— 题库命中时它是含答案的完整指纹、未命中时是匹配键，
+    同一道题会有两个值，拿它去重会漏掉一批重复。
+    """
     ent = db.get_user_entitlement(username)
     if not ent:
         return False, "用户不存在", None
     if ent.get("is_banned"):
         return False, "账号已被封禁：" + (ent.get("ban_reason") or "请联系管理员"), ent
+
+    dedup_on = dedup_question_enabled() and bool(question_key)
+
+    # 包月用户本来就不扣点，但仍然登记「做过这道题」：
+    # 等包月到期后，这道题不该因为他当初没被扣点就被再收一次钱。
     if ent.get("active_member"):
+        if dedup_on:
+            db.claim_user_question(username, question_key)
         return True, "包月权益生效，本题不扣点", ent
+
     if int(ent.get("points_balance") or 0) <= 0:
         if is_distributor_channel(ent):
             return False, "题数余额不足，请联系您的服务方获取卡密后在脚本内兑换", ent
         return False, "题数余额不足，请到用户中心购买点数或包月套餐", ent
+
+    # 同一用户同一道题只扣一次：占位成功 = 第一次做；占位失败 = 之前做过，本次免费
+    if dedup_on and not db.claim_user_question(username, question_key):
+        db.touch_user_question(username, question_key)
+        return True, "这道题你之前做过，本次不扣题数", ent
+
     ok, balance = db.adjust_user_points(username, -1, "答题扣点", question_hash)
+    if ok:
+        if dedup_on:
+            db.mark_question_charged(username, question_key)
+    elif dedup_on:
+        # 扣点失败（多半是并发下余额刚好被扣完）：撤回占位，否则等于白送一道题
+        db.release_user_question(username, question_key)
     ent["points_balance"] = balance if ok else int(ent.get("points_balance") or 0)
     return ok, "已扣除 1 点题数", ent
 
@@ -6302,7 +6346,9 @@ class Handler(BaseHTTPRequestHandler):
                 "gift_days": int(admin.get("gift_days") or 0),
                 "custom_model_enabled": bool(admin.get("custom_model_enabled")),
                 "custom_model_price": float(admin.get("custom_model_price") or 0),
-                "custom_model_period": (admin.get("custom_model_period") or "permanent").strip() or "permanent"
+                "custom_model_period": (admin.get("custom_model_period") or "permanent").strip() or "permanent",
+                # 同一用户同一道题只扣一次（取不到字段时按开启处理，与列默认值一致）
+                "dedup_question_enabled": bool(1 if admin.get("dedup_question_enabled") is None else admin.get("dedup_question_enabled"))
             }, "plans": db.list_payment_plans(False)})
         elif path == "/admin/pay-api-config":
             if not self._check_admin():
@@ -8559,10 +8605,12 @@ class Handler(BaseHTTPRequestHandler):
                 period = (data.get("custom_model_period") or "permanent").strip()
                 if period not in ("monthly", "permanent"):
                     period = "permanent"
+                dedup_on = 1 if data.get("dedup_question_enabled") else 0
                 db.execute(
-                    "UPDATE admin_config SET gift_type = %s, gift_points = %s, gift_days = %s, custom_model_enabled = %s, custom_model_price = %s, custom_model_period = %s WHERE id = 1",
-                    (gift_type, gift_points, gift_days, custom_model_enabled, custom_model_price, period)
+                    "UPDATE admin_config SET gift_type = %s, gift_points = %s, gift_days = %s, custom_model_enabled = %s, custom_model_price = %s, custom_model_period = %s, dedup_question_enabled = %s WHERE id = 1",
+                    (gift_type, gift_points, gift_days, custom_model_enabled, custom_model_price, period, dedup_on)
                 )
+                _DEDUP_QUESTION["ts"] = 0.0   # 立即生效，不用等 30 秒缓存过期
                 self._send_json(200, {"code": 200, "msg": "付费配置已保存"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -9545,6 +9593,9 @@ class Handler(BaseHTTPRequestHandler):
                         self._send_json(402, {"code": 402, "msg": err})
                         return
                 bank_row, question_hash, bank_method, bank_duration = get_question_bank_match(question)
+                # 题目身份（题面+题型+选项，不含答案），用于判断「这个用户做过这道题没有」。
+                # 不能用上面的 question_hash：题库命中时它含答案、未命中时不含，同一道题会有两个值。
+                question_key = make_matching_key(question)
                 _bank_info = parse_question_payload(question)
                 enqueue_bank_log({
                     "username": user.get("username", ""),
@@ -9572,7 +9623,7 @@ class Handler(BaseHTTPRequestHandler):
                         resolved_model = bank_row.get("source_model") or "题库"
                         provider_name = "question_bank"
                         status = "success"
-                        ok_quota, quota_msg, ent_after = consume_answer_quota(user["username"], question_hash)
+                        ok_quota, quota_msg, ent_after = consume_answer_quota(user["username"], question_hash, question_key)
                         if not ok_quota:
                             err = quota_msg
                             self._send_json(402, {"code": 402, "msg": quota_msg})
@@ -9597,7 +9648,7 @@ class Handler(BaseHTTPRequestHandler):
                         resolved_model = cached.get("model") or resolved_model or model
                         provider_name = cached.get("provider") or provider_name
                         status = "success"
-                        ok_quota, quota_msg, ent_after = consume_answer_quota(user["username"], question_hash)
+                        ok_quota, quota_msg, ent_after = consume_answer_quota(user["username"], question_hash, question_key)
                         if not ok_quota:
                             err = quota_msg
                             self._send_json(402, {"code": 402, "msg": quota_msg})
@@ -9645,7 +9696,7 @@ class Handler(BaseHTTPRequestHandler):
                         # 自己判定不可用的答案不扣题数：同一题重试不该二次付费
                         quota_msg = "答案质量未达标，本次未消耗题数"
                     else:
-                        ok_quota, quota_msg, ent_after = consume_answer_quota(user["username"], question_hash)
+                        ok_quota, quota_msg, ent_after = consume_answer_quota(user["username"], question_hash, question_key)
                         if not ok_quota:
                             err = quota_msg
                             self._send_json(402, {"code": 402, "msg": quota_msg})
