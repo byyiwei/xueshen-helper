@@ -969,6 +969,655 @@
             input, select, textarea, button.primary, button.secondary, .code-btn { --c-control: 44px; font-size: 16px; }
         }
 
+    
+        /* ===================== 全屏现代 SaaS 布局 (Workspace Shell) ===================== */
+        html.app-mode, html.app-mode body, body.app-mode {
+            height: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
+            background: var(--c-bg) !important;
+        }
+
+        .user-app {
+            display: none;
+            width: 100vw;
+            height: 100vh;
+            height: 100dvh;
+            min-height: 0;
+            border-radius: 0;
+            border: none;
+            box-shadow: none;
+            grid-template-columns: 252px 1fr;
+            background: var(--c-bg);
+            overflow: hidden;
+        }
+        .user-app.active { display: grid; }
+
+        /* 侧边栏重构 */
+        .user-sidebar {
+            background: var(--c-surface);
+            color: var(--c-text);
+            padding: 18px 14px;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid var(--c-border);
+            height: 100vh;
+            height: 100dvh;
+            overflow: hidden;
+            z-index: 10;
+        }
+        .user-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+            padding: 2px 6px 14px;
+            border-bottom: 1px solid var(--c-border);
+        }
+        .user-logo {
+            width: 38px; height: 38px; flex: 0 0 38px;
+            border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            color: #fff;
+            background: linear-gradient(135deg, var(--c-brand), var(--c-brand-strong));
+            box-shadow: 0 4px 14px var(--c-brand-glow);
+            font-size: 18px; font-weight: 800;
+        }
+        .user-brand-text b { font-size: 15px; font-weight: 700; color: var(--c-text); display: flex; align-items: center; gap: 6px; }
+        .user-brand-badge {
+            font-size: 10px; font-weight: 700; padding: 1px 6px;
+            border-radius: 999px; background: var(--c-brand-soft); color: var(--c-brand);
+        }
+        .user-brand-text span { font-size: 12px; color: var(--c-text-3); }
+
+        .user-menu {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding-right: 2px;
+        }
+        .user-menu-item {
+            border: 0; width: 100%;
+            display: flex; align-items: center; gap: 10px;
+            padding: 9px 12px;
+            border-radius: 8px;
+            background: transparent;
+            color: var(--c-text-2);
+            cursor: pointer; font-weight: 500; font-size: 13.5px; font-family: inherit;
+            text-align: left; text-decoration: none;
+            transition: all .15s ease;
+        }
+        .user-menu-item .mi {
+            width: 28px; height: 28px; flex: 0 0 28px;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 6px;
+            background: transparent;
+            color: var(--c-text-3);
+            transition: all .15s ease;
+        }
+        .user-menu-item:hover {
+            background: var(--c-surface-2);
+            color: var(--c-text);
+        }
+        .user-menu-item:hover .mi {
+            color: var(--c-brand);
+        }
+        .user-menu-item.active {
+            background: var(--c-brand-soft);
+            color: var(--c-brand);
+            font-weight: 600;
+        }
+        .user-menu-item.active .mi {
+            background: var(--c-brand);
+            color: #fff;
+            box-shadow: 0 2px 8px var(--c-brand-glow);
+        }
+
+        .user-side-foot {
+            margin-top: auto;
+            padding: 10px 12px;
+            border-radius: var(--c-radius-sm);
+            background: var(--c-surface-2);
+            border: 1px solid var(--c-border);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .user-avatar-mini {
+            width: 34px; height: 34px; border-radius: 8px;
+            background: var(--c-brand-soft);
+            border: 1px solid var(--c-brand-ring);
+            display: flex; align-items: center; justify-content: center;
+            color: var(--c-brand); flex-shrink: 0;
+        }
+
+        /* 主工作台区域 */
+        .user-main {
+            flex: 1;
+            min-width: 0;
+            height: 100vh;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: var(--c-bg);
+        }
+        .user-header {
+            height: 60px;
+            padding: 0 28px;
+            background: var(--c-surface);
+            border-bottom: 1px solid var(--c-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            flex-shrink: 0;
+        }
+        .user-titlebox h2 {
+            margin: 0;
+            font-size: 17px;
+            font-weight: 700;
+            color: var(--c-text);
+        }
+        .user-titlebox p {
+            margin: 2px 0 0;
+            color: var(--c-text-3);
+            font-size: 12px;
+        }
+        .user-body {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 24px 28px 60px;
+            scroll-behavior: smooth;
+        }
+        .user-section {
+            display: none;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+        }
+        .user-section.active {
+            display: block;
+            animation: fadeIn .18s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ===================== 滑块安全验证组件 (彻底限制尺寸与美化) ===================== */
+        .slider-verify {
+            max-width: 320px !important;
+            width: 100% !important;
+            margin: 12px auto !important;
+            padding: 12px;
+            background: var(--c-surface-2);
+            border: 1px solid var(--c-border);
+            border-radius: var(--c-radius-sm);
+            box-shadow: var(--c-shadow-sm);
+            user-select: none;
+            box-sizing: border-box;
+        }
+        .slider-verify .slider-top {
+            display: flex; justify-content: space-between; align-items: center;
+            color: var(--c-text-3); font-size: 12px; font-weight: 600; margin-bottom: 8px;
+        }
+        .slider-verify.done {
+            border-color: rgba(34, 197, 94, .45);
+            background: rgba(34, 197, 94, .04);
+        }
+        .slider-verify.done .slider-state { color: var(--c-success); font-weight: 700; }
+        .slider-verify.done .puzzle-thumb {
+            background: var(--c-success);
+            color: #fff;
+            border-color: var(--c-success);
+        }
+        .puzzle-box {
+            position: relative;
+            height: 46px;
+            border-radius: 6px;
+            overflow: hidden;
+            background: linear-gradient(120deg, #eaf1ff, #f7f9ff);
+            margin-bottom: 7px;
+            border: 1px solid var(--c-border);
+        }
+        .puzzle-track {
+            position: relative;
+            height: 38px;
+            border-radius: 999px;
+            background: var(--c-surface);
+            overflow: hidden;
+            border: 1px solid var(--c-border);
+        }
+        .puzzle-progress {
+            position: absolute;
+            left: 0; top: 0; height: 100%;
+            background: linear-gradient(90deg, rgba(47, 107, 255, .25), rgba(47, 107, 255, .1));
+        }
+        .puzzle-thumb {
+            position: absolute; left: 0; top: 2px; width: 34px; height: 34px;
+            border: 0; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            background: var(--c-surface); color: var(--c-brand); cursor: grab; font-weight: 800;
+            box-shadow: 0 2px 6px rgba(16, 24, 40, .18); touch-action: none;
+            transition: transform .1s, box-shadow .15s;
+        }
+        .puzzle-thumb:hover { transform: scale(1.05); color: var(--c-brand-strong); box-shadow: 0 3px 10px var(--c-brand-glow); }
+        .puzzle-thumb:active { cursor: grabbing; transform: scale(0.98); }
+        .puzzle-tip { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--c-text-3); font-size: 12px; pointer-events: none; }
+        .hub-box {
+            height: auto !important;
+            max-width: 294px !important;
+            width: 100% !important;
+            aspect-ratio: 2 / 1;
+            background: var(--c-surface-3);
+            border-radius: 6px;
+            overflow: hidden;
+            margin-bottom: 8px;
+            position: relative;
+        }
+        .hub-box .puzzle-bg {
+            display: block;
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover;
+            border-radius: 6px;
+            user-select: none;
+        }
+        .hub-box .puzzle-piece-img {
+            position: absolute;
+            left: 0; top: 0;
+            max-width: none;
+            border-radius: 4px;
+            user-select: none;
+            box-shadow: 0 2px 8px rgba(0,0,0,.35);
+        }
+        .hub-box.busy { opacity: .6; }
+        .hub-skeleton { color: var(--c-text-3); font-size: 12px; text-align: center; padding: 40px 0; }
+
+        /* ===================== 推广返利专区现代化布局 ===================== */
+        .promo-hero-grid {
+            display: grid;
+            grid-template-columns: 1.4fr 1fr;
+            gap: 18px;
+            margin-bottom: 18px;
+        }
+        .promo-invite-hero {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 22px 24px;
+            background: linear-gradient(135deg, var(--c-surface) 60%, var(--c-brand-soft) 100%);
+            border: 1px solid var(--c-border);
+        }
+        .promo-hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 9px;
+            border-radius: 999px;
+            background: var(--c-brand-soft);
+            color: var(--c-brand);
+            font-size: 12px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+        .promo-hero-title {
+            margin: 0 0 6px;
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--c-text);
+        }
+        .promo-hero-subtitle {
+            margin: 0 0 16px;
+            font-size: 13px;
+            color: var(--c-text-2);
+            line-height: 1.6;
+        }
+        .promo-rule-pills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .promo-rule-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 8px;
+            background: var(--c-surface);
+            border: 1px solid var(--c-border);
+            font-size: 12.5px;
+            color: var(--c-text-2);
+        }
+        .promo-rule-pill b { color: var(--c-brand); }
+        .promo-link-bar {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .promo-link-input-wrap {
+            flex: 1;
+            min-width: 240px;
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        .promo-link-input-wrap input {
+            width: 100%;
+            padding-right: 120px;
+            font-family: var(--c-font-mono);
+            font-size: 13px;
+        }
+        .promo-code-tag {
+            position: absolute;
+            right: 10px;
+            font-size: 11.5px;
+            color: var(--c-text-3);
+            pointer-events: none;
+        }
+        .promo-code-tag b { color: var(--c-brand); }
+        .promo-rule-footer {
+            margin-top: 14px;
+            padding-top: 12px;
+            border-top: 1px dashed var(--c-border);
+            font-size: 12px;
+            color: var(--c-text-3);
+            line-height: 1.6;
+        }
+
+        /* 推广收益 2x2 Bento 看板 */
+        .promo-stats-bento {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .promo-stat-card {
+            background: var(--c-surface);
+            border: 1px solid var(--c-border);
+            border-radius: var(--c-radius);
+            padding: 16px 18px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            transition: transform .18s, box-shadow .18s;
+        }
+        .promo-stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--c-shadow-sm);
+        }
+        .promo-stat-card.highlight {
+            background: linear-gradient(135deg, var(--c-surface) 40%, rgba(47, 107, 255, .08) 100%);
+            border-color: rgba(47, 107, 255, .35);
+        }
+        .pstat-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .pstat-title {
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--c-text-2);
+        }
+        .pstat-icon {
+            width: 28px; height: 28px; border-radius: 7px;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--c-brand-soft); color: var(--c-brand);
+        }
+        .pstat-icon.green { background: rgba(34, 197, 94, .12); color: var(--c-success); }
+        .pstat-icon.warning { background: rgba(245, 158, 11, .12); color: var(--c-warning); }
+        .pstat-icon.brand { background: var(--c-brand-soft); color: var(--c-brand); }
+        .pstat-value {
+            font-size: 22px;
+            font-weight: 800;
+            color: var(--c-text);
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -.5px;
+            margin-bottom: 4px;
+        }
+        .promo-stat-card.highlight .pstat-value { color: var(--c-brand); }
+        .pstat-sub {
+            font-size: 11.5px;
+            color: var(--c-text-3);
+        }
+
+        /* 佣金操作双列网格 (兑换与提现并排) */
+        .promo-actions-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+            margin-bottom: 18px;
+        }
+        .promo-action-card {
+            padding: 22px 24px;
+            display: flex;
+            flex-direction: column;
+        }
+        .pcard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid var(--c-border);
+        }
+        .pcard-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .pcard-icon {
+            width: 36px; height: 36px; border-radius: 9px;
+            background: var(--c-brand-soft); color: var(--c-brand);
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+        }
+        .pcard-title h4 { margin: 0; font-size: 15.5px; font-weight: 700; color: var(--c-text); }
+        .pcard-title p { margin: 3px 0 0; font-size: 12px; color: var(--c-text-3); }
+        .badge-soft-success {
+            font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+            background: rgba(34, 197, 94, .12); color: var(--c-success);
+        }
+        .badge-soft-brand {
+            font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px;
+            background: var(--c-brand-soft); color: var(--c-brand);
+        }
+
+        .promo-form-body {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .field-group label {
+            display: block;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: var(--c-text-2);
+            margin-bottom: 6px;
+        }
+        .field-label-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        .field-label-row label { margin-bottom: 0; }
+        .avail-text { font-size: 12px; color: var(--c-text-3); }
+        .avail-text b { color: var(--c-brand); }
+        .input-with-action {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        .currency-prefix {
+            position: absolute;
+            left: 12px;
+            font-weight: 700;
+            color: var(--c-text-3);
+            pointer-events: none;
+        }
+        .input-with-action input {
+            width: 100%;
+            padding-left: 28px;
+            padding-right: 90px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .btn-input-chip {
+            position: absolute;
+            right: 8px;
+            border: 0;
+            background: var(--c-brand-soft);
+            color: var(--c-brand);
+            font-size: 11.5px;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background .15s;
+        }
+        .btn-input-chip:hover { background: var(--c-brand); color: #fff; }
+        .exchange-preview-box {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            border-radius: 8px;
+            background: var(--c-surface-2);
+            border: 1px solid var(--c-border);
+            font-size: 13px;
+            color: var(--c-text-2);
+        }
+        .exchange-preview-box b { font-size: 15px; color: var(--c-brand); }
+        .btn-block { width: 100%; justify-content: center; height: 42px; font-size: 14px; margin-top: 6px; }
+
+        /* 底部收款信息与记录 (并排网格) */
+        .promo-bottom-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+            margin-bottom: 18px;
+        }
+        .payment-method-box {
+            border: 1px solid var(--c-border);
+            border-radius: var(--c-radius-sm);
+            padding: 14px;
+            background: var(--c-surface-2);
+            margin-bottom: 12px;
+        }
+        .pm-box-head {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .pm-brand-badge {
+            width: 24px; height: 24px; border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            color: #fff; font-size: 12px; font-weight: 700;
+        }
+        .pm-brand-badge.alipay { background: #1677ff; }
+        .pm-brand-badge.wechat { background: #07c160; }
+        .pm-upload-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-top: 10px;
+        }
+        .qr-box {
+            width: 68px; height: 68px;
+            border: 2px dashed var(--c-border);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; overflow: hidden; position: relative;
+            background: var(--c-surface); flex-shrink: 0;
+        }
+        .qr-box img { width: 100%; height: 100%; object-fit: cover; }
+        .qr-box span { font-size: 11px; color: var(--c-text-3); text-align: center; line-height: 1.3; }
+        .pm-upload-info { flex: 1; font-size: 12px; color: var(--c-text-3); }
+        .btn-text-sm {
+            border: 0; background: transparent; color: var(--c-brand);
+            font-size: 11px; cursor: pointer; padding: 4px 0; display: block; margin-top: 4px;
+        }
+        .btn-text-sm:hover { text-decoration: underline; }
+        .pm-save-action {
+            margin-top: 14px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        /* 记录切换 Tab */
+        .records-header-tabs {
+            display: flex;
+            gap: 6px;
+            border-bottom: 1px solid var(--c-border);
+            padding-bottom: 12px;
+            margin-bottom: 14px;
+        }
+        .record-tab {
+            border: 0;
+            background: var(--c-surface-2);
+            color: var(--c-text-2);
+            font-size: 13px;
+            font-weight: 600;
+            padding: 7px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all .15s;
+        }
+        .record-tab.active {
+            background: var(--c-brand-soft);
+            color: var(--c-brand);
+        }
+        .table-empty {
+            padding: 28px;
+            text-align: center;
+            color: var(--c-text-3);
+            font-size: 13px;
+        }
+
+        /* 首页双图表并排 */
+        .home-charts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+            margin-top: 18px;
+        }
+        @media (max-width: 900px) {
+            .home-charts-grid { grid-template-columns: 1fr; }
+        }
+
+        /* 账号信息双列并排 */
+        .account-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+        }
+        @media (max-width: 860px) {
+            .account-grid { grid-template-columns: 1fr; }
+        }
+
+        /* 响应式断点适配 */
+        @media (max-width: 1024px) {
+            .promo-hero-grid { grid-template-columns: 1fr; }
+            .promo-actions-grid { grid-template-columns: 1fr; }
+            .promo-bottom-grid { grid-template-columns: 1fr; }
+        }
+        @media (max-width: 820px) {
+            .user-app { grid-template-columns: 1fr; }
+            .user-sidebar { display: none; }
+        }
+    
     </style>
     <script>
         (function(){
@@ -1187,9 +1836,9 @@
             </header>
 
             <div class="user-body">
-                <!-- 1. 首页 Section -->
+                                <!-- 1. 首页 Section -->
                 <section class="user-section active" id="section-home">
-                    <!-- 状态卡片网格 -->
+                    <!-- 核心状态卡片网格 -->
                     <div class="stat-grid" id="statGrid">
                         <div class="stat-card">
                             <div class="stat-icon bg-primary"><svg class="ui-icon md"><use href="#i-check-circle-2"></use></svg></div>
@@ -1240,186 +1889,297 @@
                         </div>
                     </div>
 
-                    <!-- 7天答题趋势图 -->
-                    <div class="dash-section">
-                        <h4 class="dash-title"><svg class="ui-icon"><use href="#i-trending-up"></use></svg> 7天答题趋势</h4>
-                        <div class="chart-wrap" id="answerChartWrap">
-                            <svg id="answerChart" class="dash-chart" viewBox="0 0 700 240" preserveAspectRatio="xMidYMid meet"></svg>
+                    <!-- 7天趋势图并排网格 -->
+                    <div class="home-charts-grid">
+                        <div class="dash-section" style="margin-top:0">
+                            <h4 class="dash-title"><svg class="ui-icon"><use href="#i-trending-up"></use></svg> 7天答题趋势</h4>
+                            <div class="chart-wrap" id="answerChartWrap">
+                                <svg id="answerChart" class="dash-chart" viewBox="0 0 700 240" preserveAspectRatio="xMidYMid meet"></svg>
+                            </div>
                         </div>
-                    </div>
-
-                    <!-- 7天活动趋势图 -->
-                    <div class="dash-section">
-                        <h4 class="dash-title"><svg class="ui-icon"><use href="#i-trending-up"></use></svg> 7天活动趋势</h4>
-                        <div class="chart-wrap" id="activityChartWrap">
-                            <svg id="activityChart" class="dash-chart" viewBox="0 0 700 240" preserveAspectRatio="xMidYMid meet"></svg>
+                        <div class="dash-section" style="margin-top:0">
+                            <h4 class="dash-title"><svg class="ui-icon"><use href="#i-trending-up"></use></svg> 7天活动趋势</h4>
+                            <div class="chart-wrap" id="activityChartWrap">
+                                <svg id="activityChart" class="dash-chart" viewBox="0 0 700 240" preserveAspectRatio="xMidYMid meet"></svg>
+                            </div>
                         </div>
                     </div>
                 </section>
 
-                <!-- 2. 账号信息 Section -->
+                                <!-- 2. 账号信息 Section -->
                 <section class="user-section" id="section-account">
-                    <div class="user-card">
-                        <h3><svg class="ui-icon"><use href="#i-user"></use></svg> 账号信息</h3>
-                        <div class="info-list">
-                            <div class="info-item"><span>用户名</span><b id="accountName">-</b></div>
-                            <div class="info-item"><span>邮箱</span><b id="accountEmail">-</b></div>
-                            <div class="info-item"><span>验证状态</span><b id="accountVerified">-</b></div>
-                            <div class="info-item"><span>剩余题数</span><b id="accountPoints">0</b></div>
-                            <div class="info-item"><span>包月到期</span><b id="accountMemberUntil">未开通</b></div>
-                            <div class="info-item"><span>登录来源</span><b>用户中心</b></div>
+                    <div class="account-grid">
+                        <div class="user-card" style="margin-bottom:0">
+                            <h3><svg class="ui-icon"><use href="#i-user"></use></svg> 账号信息</h3>
+                            <div class="info-list">
+                                <div class="info-item"><span>用户名</span><b id="accountName">-</b></div>
+                                <div class="info-item"><span>邮箱</span><b id="accountEmail">-</b></div>
+                                <div class="info-item"><span>验证状态</span><b id="accountVerified">-</b></div>
+                                <div class="info-item"><span>剩余题数</span><b id="accountPoints">0</b></div>
+                                <div class="info-item"><span>包月到期</span><b id="accountMemberUntil">未开通</b></div>
+                                <div class="info-item"><span>登录来源</span><b>用户中心</b></div>
+                            </div>
                         </div>
-                    </div>
-                    <div class="user-card">
-                        <h3><svg class="ui-icon"><use href="#i-key"></use></svg> 脚本密钥</h3>
-                        <p class="hint">学神助手脚本点击“点我获取密钥”会来到这里。复制下面的密钥，回到脚本“配置密钥”页面填入“密钥”栏即可使用云端AI答题服务。</p>
-                        <div class="script-key-box">
-                            <input id="scriptKeyInput" readonly placeholder="登录后点击生成脚本密钥">
-                            <button class="secondary" style="width:auto;margin:0" id="copyScriptKeyBtn">复制密钥</button>
-                            <button class="primary" style="width:auto;margin:0" id="regenScriptKeyBtn">生成/刷新</button>
+                        <div class="user-card" style="margin-bottom:0">
+                            <h3><svg class="ui-icon"><use href="#i-key"></use></svg> 脚本密钥</h3>
+                            <p class="hint">学神助手脚本点击“点我获取密钥”会来到这里。复制下面的密钥，回到脚本“配置密钥”页面填入“密钥”栏即可使用云端AI答题服务。</p>
+                            <div class="script-key-box">
+                                <input id="scriptKeyInput" readonly placeholder="登录后点击生成脚本密钥">
+                                <button class="secondary" style="width:auto;margin:0" id="copyScriptKeyBtn">复制密钥</button>
+                                <button class="primary" style="width:auto;margin:0" id="regenScriptKeyBtn">生成/刷新</button>
+                            </div>
+                            <div class="script-key-tip" id="scriptKeyTip">密钥有效期 180 天。重新生成后，请把新密钥重新填入脚本设置。</div>
+                            <div id="scriptKeyMsg" class="msg"></div>
                         </div>
-                        <div class="script-key-tip" id="scriptKeyTip">密钥有效期 180 天。重新生成后，请把新密钥重新填入脚本设置。</div>
-                        <div id="scriptKeyMsg" class="msg"></div>
                     </div>
                 </section>
 
-                <!-- 3. 推广返利 Section -->
+                                <!-- 3. 推广返利 Section -->
                 <section class="user-section" id="section-promotion">
-                    <div class="user-card">
-                        <h3><svg class="ui-icon"><use href="#i-gift"></use></svg> 推广邀请链接</h3>
-                        <p class="hint">分享你的专属邀请链接，好友通过链接注册并完成首单付费消费后，你即可获得现金佣金。</p>
-                        <div class="script-key-box">
-                            <input id="promoInviteLink" readonly placeholder="加载中...">
-                            <button class="secondary" style="width:auto;margin:0" id="copyInviteLinkBtn">复制链接</button>
-                            <button class="primary" style="width:auto;margin:0" id="openInviteLinkBtn">打开</button>
-                        </div>
-                        <div class="script-key-tip">邀请码：<b id="promoInviteCode">-</b></div>
-                        <div id="promoLinkMsg" class="msg"></div>
-                    </div>
-
-                    <div class="user-card" style="padding:14px 18px;background:var(--c-surface-2);border:1px solid var(--c-border)">
-                        <div style="font-size:13.5px;font-weight:700;margin-bottom:8px;color:var(--c-text);display:flex;align-items:center;gap:6px">
-                            <svg class="ui-icon sm" style="color:var(--c-brand)"><use href="#i-info"></use></svg> 推广返利怎么用
-                        </div>
-                        <div style="font-size:12.5px;line-height:1.85;color:var(--c-text-2)">
-                            <div>· 佣金比例 <b id="promoRuleRate" style="color:var(--c-brand)">10%</b> · 结算冷却 <b id="promoRuleDays" style="color:var(--c-brand)">7</b> 天 · 最低提现 <b id="promoRuleMin" style="color:var(--c-brand)">¥10.00</b></div>
-                            <div>· 每位用户仅可被绑定一次；好友首单实付金额按比例计佣，冷却期结束后进入「可提现余额」。</div>
-                            <div>· 余额有三种用法：<b style="color:var(--c-brand)">提现</b>（管理员审核后打款）、<b style="color:var(--c-brand)">兑换题数</b>（<b id="promoRulePointsRate">50</b> 题/元，即时到账）、<b style="color:var(--c-brand)">下单抵扣</b>（1 元佣金抵 1 元现金，最多抵到订单金额为 0 元）。</div>
-                            <div>· 待结算佣金不能使用；好友订单退款会扣回对应佣金。</div>
-                            <div>· 抵扣的佣金在该订单付清前处于冻结，超过 <b id="promoRuleHold">30</b> 分钟未付款自动退回。</div>
-                        </div>
-                    </div>
-
-                    <!-- 推广返利统计 -->
-                    <div class="stat-grid" style="margin-bottom:18px" id="promoStatGrid">
-                        <div class="stat-card">
-                            <div class="stat-icon bg-primary"><svg class="ui-icon md"><use href="#i-users"></use></svg></div>
-                            <div class="stat-info"><div class="k">已推广人数</div><div class="v" id="promoInvitedCount">0</div></div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-icon bg-green"><svg class="ui-icon md"><use href="#i-wallet"></use></svg></div>
-                            <div class="stat-info"><div class="k">已到账佣金</div><div class="v" id="promoPaidCommission">¥0.00</div></div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-icon bg-warning"><svg class="ui-icon md"><use href="#i-clock"></use></svg></div>
-                            <div class="stat-info"><div class="k">待结算佣金</div><div class="v" id="promoPendingCommission">¥0.00</div></div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-icon bg-cyan"><svg class="ui-icon md"><use href="#i-wallet"></use></svg></div>
-                            <div class="stat-info"><div class="k">可提现余额</div><div class="v" id="promoBalance">¥0.00</div></div>
-                        </div>
-                    </div>
-
-                    <!-- 收款信息 -->
-                    <div class="user-card">
-                        <h3><svg class="ui-icon"><use href="#i-credit-card"></use></svg> 收款信息 <span style="font-size:12px;font-weight:400;color:var(--c-text-3)">提现前请完善，每种方式仅需一张收款码</span></h3>
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" id="promoPaymentGrid">
-                            <!-- 支付宝卡片 -->
-                            <div style="border:1px solid var(--c-border);border-radius:var(--c-radius-sm);padding:16px;background:var(--c-surface-2)" id="promoAlipayCard">
-                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-                                    <span style="width:26px;height:26px;border-radius:6px;background:#1677ff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">支</span>
-                                    <b style="font-size:14px;color:var(--c-text)">支付宝</b>
+                    <!-- Tier 1: 推广返利 Hero 区域 (双栏协同) -->
+                    <div class="promo-hero-grid">
+                        <!-- 左侧: 专属推广邀请卡片 -->
+                        <div class="user-card promo-invite-hero">
+                            <div>
+                                <div class="promo-hero-badge"><svg class="ui-icon sm"><use href="#i-gift"></use></svg> 邀请奖励计划</div>
+                                <h3 class="promo-hero-title">邀请好友使用，享终身现金返利</h3>
+                                <p class="promo-hero-subtitle">好友通过专属链接注册并完成首单消费，佣金自动计入钱包，支持提现、兑换题数或购物立减。</p>
+                            </div>
+                            
+                            <!-- 核心规则三胶囊标签 -->
+                            <div class="promo-rule-pills">
+                                <div class="promo-rule-pill">
+                                    <svg class="ui-icon sm" style="color:var(--c-brand)"><use href="#i-percent"></use></svg>
+                                    <span>返利比例 <b id="promoRuleRate">10%</b></span>
                                 </div>
-                                <input id="promoAlipayAccount" placeholder="支付宝账号/手机号/邮箱" style="margin-bottom:10px">
-                                <div style="display:flex;align-items:center;gap:10px">
-                                    <div id="promoAlipayQrZone" style="width:72px;height:72px;border:2px dashed var(--c-border);border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;flex-shrink:0;position:relative;background:var(--c-surface)">
-                                        <img id="promoAlipayQrPreview" style="display:none;width:100%;height:100%;object-fit:cover;border-radius:6px">
-                                        <span id="promoAlipayQrPlaceholder" style="font-size:11px;color:var(--c-text-3);text-align:center;line-height:1.3">点击<br>上传</span>
-                                    </div>
-                                    <div style="flex:1">
-                                        <p style="font-size:11.5px;color:var(--c-text-3);line-height:1.5;margin:0">上传支付宝收款二维码<br>再次点击可替换</p>
-                                        <button class="secondary" style="width:auto;margin:6px 0 0;padding:4px 10px;font-size:11px;height:28px;min-height:28px" id="promoAlipayQrClear">清除</button>
-                                    </div>
-                                    <input type="file" accept="image/*" id="promoAlipayQrFile" style="display:none">
+                                <div class="promo-rule-pill">
+                                    <svg class="ui-icon sm" style="color:var(--c-brand)"><use href="#i-clock"></use></svg>
+                                    <span>结算周期 <b id="promoRuleDays">7</b> 天</span>
+                                </div>
+                                <div class="promo-rule-pill">
+                                    <svg class="ui-icon sm" style="color:var(--c-brand)"><use href="#i-wallet"></use></svg>
+                                    <span>起提门槛 <b id="promoRuleMin">¥10.00</b></span>
                                 </div>
                             </div>
-                            <!-- 微信卡片 -->
-                            <div style="border:1px solid var(--c-border);border-radius:var(--c-radius-sm);padding:16px;background:var(--c-surface-2)" id="promoWechatCard">
-                                <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-                                    <span style="width:26px;height:26px;border-radius:6px;background:#07c160;color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700">微</span>
-                                    <b style="font-size:14px;color:var(--c-text)">微信</b>
+
+                            <!-- 专属链接复制栏 -->
+                            <div class="promo-link-bar">
+                                <div class="promo-link-input-wrap">
+                                    <input id="promoInviteLink" readonly placeholder="专属链接生成中...">
+                                    <div class="promo-code-tag">邀请码：<b id="promoInviteCode">-</b></div>
                                 </div>
-                                <input id="promoWechatAccount" placeholder="微信号/手机号" style="margin-bottom:10px">
-                                <div style="display:flex;align-items:center;gap:10px">
-                                    <div id="promoWechatQrZone" style="width:72px;height:72px;border:2px dashed var(--c-border);border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;flex-shrink:0;position:relative;background:var(--c-surface)">
-                                        <img id="promoWechatQrPreview" style="display:none;width:100%;height:100%;object-fit:cover;border-radius:6px">
-                                        <span id="promoWechatQrPlaceholder" style="font-size:11px;color:var(--c-text-3);text-align:center;line-height:1.3">点击<br>上传</span>
-                                    </div>
-                                    <div style="flex:1">
-                                        <p style="font-size:11.5px;color:var(--c-text-3);line-height:1.5;margin:0">上传微信收款二维码<br>再次点击可替换</p>
-                                        <button class="secondary" style="width:auto;margin:6px 0 0;padding:4px 10px;font-size:11px;height:28px;min-height:28px" id="promoWechatQrClear">清除</button>
-                                    </div>
-                                    <input type="file" accept="image/*" id="promoWechatQrFile" style="display:none">
-                                </div>
+                                <button class="primary" style="width:auto;margin:0" id="copyInviteLinkBtn"><svg class="ui-icon sm"><use href="#i-check"></use></svg> 复制链接</button>
+                                <button class="secondary" style="width:auto;margin:0" id="openInviteLinkBtn">打开</button>
+                            </div>
+                            <div id="promoLinkMsg" class="msg"></div>
+
+                            <!-- 规则折叠说明 -->
+                            <div class="promo-rule-footer">
+                                <span>· 好友首单实付金额按比例计佣；余额按 <b id="promoRulePointsRate">50</b> 题/元兑换题数；未付款抵扣冻结 <b id="promoRuleHold">30</b> 分钟后自动释放。</span>
                             </div>
                         </div>
-                        <div style="margin-top:14px"><button class="primary" style="width:auto;margin:0;padding:0 22px" id="savePaymentInfoBtn">保存收款信息</button></div>
-                        <div id="promoPaymentMsg" class="msg"></div>
+
+                        <!-- 右侧: 推广收益 2x2 Bento 看板 -->
+                        <div class="promo-stats-bento" id="promoStatGrid">
+                            <div class="promo-stat-card highlight">
+                                <div class="pstat-head">
+                                    <span class="pstat-title">可提现余额</span>
+                                    <span class="pstat-icon"><svg class="ui-icon"><use href="#i-wallet"></use></svg></span>
+                                </div>
+                                <div class="pstat-value" id="promoBalance">¥0.00</div>
+                                <div class="pstat-sub">支持随时提现或兑换题数</div>
+                            </div>
+                            <div class="promo-stat-card">
+                                <div class="pstat-head">
+                                    <span class="pstat-title">已到账佣金</span>
+                                    <span class="pstat-icon green"><svg class="ui-icon"><use href="#i-check-circle-2"></use></svg></span>
+                                </div>
+                                <div class="pstat-value" id="promoPaidCommission">¥0.00</div>
+                                <div class="pstat-sub">累计已结算佣金</div>
+                            </div>
+                            <div class="promo-stat-card">
+                                <div class="pstat-head">
+                                    <span class="pstat-title">待结算佣金</span>
+                                    <span class="pstat-icon warning"><svg class="ui-icon"><use href="#i-clock"></use></svg></span>
+                                </div>
+                                <div class="pstat-value" id="promoPendingCommission">¥0.00</div>
+                                <div class="pstat-sub">满7天结算自动释放</div>
+                            </div>
+                            <div class="promo-stat-card">
+                                <div class="pstat-head">
+                                    <span class="pstat-title">已推广人数</span>
+                                    <span class="pstat-icon brand"><svg class="ui-icon"><use href="#i-users"></use></svg></span>
+                                </div>
+                                <div class="pstat-value" id="promoInvitedCount">0</div>
+                                <div class="pstat-sub">通过专属链接成功注册</div>
+                            </div>
+                        </div>
                     </div>
 
-                    <!-- 兑换题数 -->
-                    <div class="user-card" id="promoExchangeCard">
-                        <h3><svg class="ui-icon"><use href="#i-refresh-cw"></use></svg> 兑换题数 <span style="font-size:12px;font-weight:400;color:var(--c-text-3)">即时到账，不可折现</span></h3>
-                        <div class="info-list">
-                            <div class="info-item"><span>兑换金额</span><input id="promoExchangeAmount" type="number" step="0.01" min="0" placeholder="最低 ¥0.00" style="flex:1;max-width:160px"></div>
-                            <div class="info-item"><span>可得题数</span><b id="promoExchangePreview" style="color:var(--c-brand)">0 题</b></div>
+                    <!-- Tier 2: 佣金使用双中枢 (并排双列卡片) -->
+                    <div class="promo-actions-grid">
+                        <!-- 左列: 余额兑换题数 -->
+                        <div class="user-card promo-action-card" id="promoExchangeCard">
+                            <div class="pcard-header">
+                                <div class="pcard-title">
+                                    <div class="pcard-icon"><svg class="ui-icon"><use href="#i-refresh-cw"></use></svg></div>
+                                    <div>
+                                        <h4>余额兑换题数</h4>
+                                        <p>按 <b id="promoExchangeRate">50</b> 题/元折算，即时到账不扣减</p>
+                                    </div>
+                                </div>
+                                <span class="badge-soft-success">即时到账</span>
+                            </div>
+
+                            <div class="promo-form-body">
+                                <div class="field-group">
+                                    <div class="field-label-row">
+                                        <label>兑换金额</label>
+                                        <span class="avail-text">当前可兑换: <b id="promoExchangeAvail">¥0.00</b><span id="promoFrozenTip"></span></span>
+                                    </div>
+                                    <div class="input-with-action">
+                                        <span class="currency-prefix">¥</span>
+                                        <input id="promoExchangeAmount" type="number" step="0.01" min="0" placeholder="0.00">
+                                        <button type="button" class="btn-input-chip" id="exchangeAllBtn">全部兑换</button>
+                                    </div>
+                                </div>
+
+                                <div class="exchange-preview-box">
+                                    <span>预计可获得题数</span>
+                                    <b id="promoExchangePreview">0 题</b>
+                                </div>
+
+                                <!-- 紧凑滑块验证 -->
+                                <div id="moneySliderE"></div>
+
+                                <button class="primary btn-block" id="submitExchangeBtn">确认兑换题数</button>
+                                <div id="promoExchangeMsg" class="msg"></div>
+                            </div>
                         </div>
-                        <p class="hint" style="margin-top:10px">按 <b id="promoExchangeRate">50</b> 题/元折算，凑不成整题的零头留在余额里。当前可兑换 <b id="promoExchangeAvail">¥0.00</b><span id="promoFrozenTip"></span></p>
-                        <div id="moneySliderE" style="margin-top:8px"></div>
-                        <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
-                            <button class="primary" style="width:auto;margin:0;padding:0 22px" id="submitExchangeBtn">确认兑换</button>
-                            <button class="secondary" style="width:auto;margin:0;padding:0 18px" id="exchangeAllBtn">全部兑换</button>
-                        </div>
-                        <div id="promoExchangeMsg" class="msg"></div>
-                        <div class="dash-table-wrap" style="margin-top:16px">
-                            <table class="data-table">
-                                <thead><tr><th>时间</th><th>类型</th><th>佣金</th><th>题数</th><th>状态</th><th>关联订单</th></tr></thead>
-                                <tbody id="promoRedemptionTbody"><tr><td colspan="6" style="padding:18px;text-align:center;color:var(--c-text-3)">暂无记录</td></tr></tbody>
-                            </table>
+
+                        <!-- 右列: 佣金申请提现 -->
+                        <div class="user-card promo-action-card">
+                            <div class="pcard-header">
+                                <div class="pcard-title">
+                                    <div class="pcard-icon"><svg class="ui-icon"><use href="#i-wallet"></use></svg></div>
+                                    <div>
+                                        <h4>申请佣金提现</h4>
+                                        <p id="promoWithdrawHint">审核通过后线下打款至收款账户</p>
+                                    </div>
+                                </div>
+                                <span class="badge-soft-brand">人工打款</span>
+                            </div>
+
+                            <div class="promo-form-body">
+                                <div class="field-group">
+                                    <label>提现金额</label>
+                                    <div class="input-with-action">
+                                        <span class="currency-prefix">¥</span>
+                                        <input id="promoWithdrawAmount" type="number" step="0.01" placeholder="最低 ¥10.00">
+                                    </div>
+                                </div>
+
+                                <div class="field-group">
+                                    <label>打款到账方式</label>
+                                    <select id="promoWithdrawMethod" style="width:100%">
+                                        <option value="alipay">支付宝</option>
+                                        <option value="wechat">微信</option>
+                                    </select>
+                                </div>
+
+                                <!-- 紧凑滑块验证 -->
+                                <div id="moneySliderW"></div>
+
+                                <button class="primary btn-block" id="submitWithdrawBtn">提交提现申请</button>
+                                <div id="promoWithdrawMsg" class="msg"></div>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- 提现表单 -->
-                    <div class="user-card">
-                        <h3><svg class="ui-icon"><use href="#i-wallet"></use></svg> 申请提现</h3>
-                        <div class="info-list">
-                            <div class="info-item"><span>提现金额</span><input id="promoWithdrawAmount" type="number" step="0.01" placeholder="最低 ¥0.00" style="flex:1;max-width:160px"></div>
-                            <div class="info-item"><span>收款方式</span><select id="promoWithdrawMethod" style="flex:1;max-width:160px"><option value="alipay">支付宝</option><option value="wechat">微信</option></select></div>
-                        </div>
-                        <p class="hint" id="promoWithdrawHint" style="margin-top:10px">提现申请提交后，管理员审核通过将打款至你的收款账户。</p>
-                        <div id="moneySliderW" style="margin-top:8px"></div>
-                        <div style="margin-top:14px"><button class="primary" style="width:auto;margin:0;padding:0 22px" id="submitWithdrawBtn">提交提现申请</button></div>
-                        <div id="promoWithdrawMsg" class="msg"></div>
-                    </div>
+                    <!-- Tier 3: 收款信息与流水记录 (并排网格) -->
+                    <div class="promo-bottom-grid">
+                        <!-- 收款信息卡片 -->
+                        <div class="user-card promo-payment-card">
+                            <div class="pcard-header">
+                                <div class="pcard-title">
+                                    <div class="pcard-icon"><svg class="ui-icon"><use href="#i-credit-card"></use></svg></div>
+                                    <div>
+                                        <h4>收款信息配置</h4>
+                                        <p>提现前请完善，每种方式仅需一张收款码</p>
+                                    </div>
+                                </div>
+                            </div>
 
-                    <!-- 提现记录 -->
-                    <div class="user-card">
-                        <h3><svg class="ui-icon"><use href="#i-receipt"></use></svg> 提现记录</h3>
-                        <div class="dash-table-wrap">
-                            <table class="data-table" id="promoWithdrawTable">
-                                <thead><tr><th>时间</th><th>金额</th><th>方式</th><th>状态</th><th>备注</th></tr></thead>
-                                <tbody id="promoWithdrawTbody"><tr><td colspan="5" style="padding:18px;text-align:center;color:var(--c-text-3)">暂无记录</td></tr></tbody>
-                            </table>
+                            <div id="promoPaymentGrid">
+                                <!-- 支付宝卡片 -->
+                                <div class="payment-method-box" id="promoAlipayCard">
+                                    <div class="pm-box-head">
+                                        <span class="pm-brand-badge alipay">支</span>
+                                        <b style="font-size:13.5px;color:var(--c-text)">支付宝</b>
+                                    </div>
+                                    <input id="promoAlipayAccount" placeholder="支付宝账号/手机号/邮箱" style="margin-bottom:8px">
+                                    <div class="pm-upload-row">
+                                        <div id="promoAlipayQrZone" class="qr-box">
+                                            <img id="promoAlipayQrPreview" style="display:none;width:100%;height:100%;object-fit:cover;border-radius:6px">
+                                            <span id="promoAlipayQrPlaceholder">点击<br>上传</span>
+                                        </div>
+                                        <div class="pm-upload-info">
+                                            <div>上传支付宝收款二维码</div>
+                                            <button class="btn-text-sm" id="promoAlipayQrClear">清除重传</button>
+                                        </div>
+                                        <input type="file" accept="image/*" id="promoAlipayQrFile" style="display:none">
+                                    </div>
+                                </div>
+
+                                <!-- 微信卡片 -->
+                                <div class="payment-method-box" id="promoWechatCard">
+                                    <div class="pm-box-head">
+                                        <span class="pm-brand-badge wechat">微</span>
+                                        <b style="font-size:13.5px;color:var(--c-text)">微信</b>
+                                    </div>
+                                    <input id="promoWechatAccount" placeholder="微信号/手机号" style="margin-bottom:8px">
+                                    <div class="pm-upload-row">
+                                        <div id="promoWechatQrZone" class="qr-box">
+                                            <img id="promoWechatQrPreview" style="display:none;width:100%;height:100%;object-fit:cover;border-radius:6px">
+                                            <span id="promoWechatQrPlaceholder">点击<br>上传</span>
+                                        </div>
+                                        <div class="pm-upload-info">
+                                            <div>上传微信收款二维码</div>
+                                            <button class="btn-text-sm" id="promoWechatQrClear">清除重传</button>
+                                        </div>
+                                        <input type="file" accept="image/*" id="promoWechatQrFile" style="display:none">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="pm-save-action">
+                                <button class="primary" style="width:auto;margin:0;padding:0 22px" id="savePaymentInfoBtn">保存收款信息</button>
+                                <div id="promoPaymentMsg" class="msg"></div>
+                            </div>
+                        </div>
+
+                        <!-- 流水明细历史卡片 -->
+                        <div class="user-card promo-records-card">
+                            <div class="records-header-tabs">
+                                <button type="button" class="record-tab active" id="tabBtnExchange" onclick="switchPromoRecordTab('exchange')">兑换题数明细</button>
+                                <button type="button" class="record-tab" id="tabBtnWithdraw" onclick="switchPromoRecordTab('withdraw')">提现审核记录</button>
+                            </div>
+
+                            <!-- 兑换题数记录表 -->
+                            <div class="dash-table-wrap" id="promoExchangeTableWrap">
+                                <table class="data-table">
+                                    <thead><tr><th>时间</th><th>类型</th><th>佣金</th><th>题数</th><th>状态</th><th>关联订单</th></tr></thead>
+                                    <tbody id="promoRedemptionTbody"><tr><td colspan="6" class="table-empty">暂无记录</td></tr></tbody>
+                                </table>
+                            </div>
+
+                            <!-- 提现记录表 -->
+                            <div class="dash-table-wrap" id="promoWithdrawTableWrap" style="display:none">
+                                <table class="data-table" id="promoWithdrawTable">
+                                    <thead><tr><th>时间</th><th>金额</th><th>方式</th><th>状态</th><th>备注</th></tr></thead>
+                                    <tbody id="promoWithdrawTbody"><tr><td colspan="5" class="table-empty">暂无记录</td></tr></tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 </section>
