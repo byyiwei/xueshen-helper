@@ -904,13 +904,292 @@
         .qr-upload-hint { font-size: 12px; color: var(--c-text-3); margin-top: 6px; }
 
         /* ===================== 问题反馈 ===================== */
-        .fb-tab, .fb-time-tab {
-            padding: 5px 12px; border-radius: var(--c-radius-xs); border: 1px solid var(--c-border);
-            font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit;
-            background: var(--c-surface-2); color: var(--c-text-2); transition: all .16s;
+        .feedback-layout {
+            display: grid;
+            grid-template-columns: 390px 1fr;
+            gap: 20px;
+            align-items: start;
         }
-        .fb-tab:hover, .fb-time-tab:hover { color: var(--c-brand); border-color: var(--c-brand); }
-        .fb-tab.active, .fb-time-tab.active { background: var(--c-brand); color: #fff; border-color: var(--c-brand); }
+        @media (max-width: 960px) {
+            .feedback-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+        .fb-panel {
+            background: var(--c-surface);
+            border: 1px solid var(--c-border);
+            border-radius: var(--c-radius);
+            box-shadow: var(--c-shadow-sm);
+            padding: 22px;
+            box-sizing: border-box;
+        }
+        .fb-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--c-border);
+        }
+        .fb-panel-header h3 {
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--c-text);
+        }
+        .fb-filter-bar {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        .fb-search-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+        .fb-search-wrap .fb-search-icon {
+            position: absolute;
+            left: 10px;
+            color: var(--c-text-3);
+            pointer-events: none;
+        }
+        .fb-search-wrap input {
+            width: 100%;
+            height: 36px;
+            padding-left: 32px;
+            padding-right: 12px;
+            font-size: 13px;
+            border-radius: var(--c-radius-sm);
+            border: 1px solid var(--c-border);
+            background: var(--c-surface-2);
+            color: var(--c-text);
+            box-sizing: border-box;
+        }
+        .fb-search-wrap input:focus {
+            background: var(--c-surface);
+            border-color: var(--c-brand);
+            outline: none;
+            box-shadow: 0 0 0 3px var(--c-brand-ring);
+        }
+        .fb-tab-group {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+        .fb-tab, .fb-time-tab {
+            padding: 5px 12px;
+            border-radius: 999px;
+            border: 1px solid var(--c-border);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+            background: var(--c-surface-2);
+            color: var(--c-text-2);
+            transition: all .16s ease;
+            user-select: none;
+        }
+        .fb-tab:hover, .fb-time-tab:hover {
+            color: var(--c-brand);
+            border-color: var(--c-brand-ring);
+            background: var(--c-surface-3);
+        }
+        .fb-tab.active, .fb-time-tab.active {
+            background: var(--c-brand);
+            color: #fff;
+            border-color: var(--c-brand);
+            box-shadow: 0 2px 6px rgba(47, 107, 255, .25);
+        }
+        .fb-list-container {
+            max-height: 520px;
+            overflow-y: auto;
+            padding-right: 4px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .fb-list-item {
+            position: relative;
+            padding: 12px 14px;
+            border-radius: var(--c-radius-sm);
+            border: 1px solid var(--c-border);
+            background: var(--c-surface-2);
+            cursor: pointer;
+            transition: all .16s ease;
+        }
+        .fb-list-item:hover {
+            background: var(--c-surface-3);
+            border-color: var(--c-brand-ring);
+            transform: translateY(-1px);
+        }
+        .fb-list-item.active {
+            border-color: var(--c-brand);
+            background: var(--c-brand-soft);
+        }
+        .fb-item-head {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        .fb-item-title {
+            font-weight: 600;
+            font-size: 13.5px;
+            color: var(--c-text);
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .fb-item-tag {
+            font-size: 10.5px;
+            padding: 1px 7px;
+            border-radius: 999px;
+            background: var(--c-surface-3);
+            color: var(--c-text-3);
+            white-space: nowrap;
+        }
+        .fb-item-status {
+            font-size: 10.5px;
+            padding: 1px 7px;
+            border-radius: 999px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .fb-item-preview {
+            font-size: 12px;
+            color: var(--c-text-2);
+            line-height: 1.5;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .fb-item-time {
+            font-size: 11px;
+            color: var(--c-text-3);
+            margin-top: 3px;
+        }
+        .fb-unread-dot {
+            position: absolute;
+            right: 12px;
+            top: 14px;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--c-brand);
+            box-shadow: 0 0 0 2px var(--c-surface-2);
+        }
+        #fbChatBody {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            max-height: 440px;
+            min-height: 240px;
+            overflow-y: auto;
+            padding: 14px;
+            background: var(--c-surface-2);
+            border: 1px solid var(--c-border);
+            border-radius: var(--c-radius-sm);
+        }
+        .fb-msg-row {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+        }
+        .fb-msg-row.user {
+            flex-direction: row-reverse;
+        }
+        .fb-msg-row.user .fb-msg-content {
+            text-align: right;
+        }
+        .fb-avatar {
+            flex: 0 0 32px;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+        }
+        .fb-avatar.admin {
+            background: linear-gradient(135deg, var(--c-brand), #1d4ed8);
+            box-shadow: 0 2px 6px rgba(47, 107, 255, .3);
+        }
+        .fb-avatar.user {
+            background: linear-gradient(135deg, #10b981, #059669);
+            box-shadow: 0 2px 6px rgba(16, 185, 129, .3);
+        }
+        .fb-sender-label {
+            font-size: 11px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .fb-sender-label.admin {
+            color: var(--c-brand);
+        }
+        .fb-sender-label.user {
+            color: #10b981;
+        }
+        .fb-bubble {
+            display: inline-block;
+            padding: 10px 14px;
+            font-size: 13.5px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-width: 90%;
+            text-align: left;
+            box-shadow: var(--c-shadow-sm);
+        }
+        .fb-bubble.admin {
+            background: var(--c-surface);
+            color: var(--c-text);
+            border: 1px solid var(--c-border);
+            border-radius: 4px 14px 14px 14px;
+        }
+        .fb-bubble.user {
+            background: var(--c-brand-soft);
+            color: var(--c-text);
+            border: 1px solid var(--c-brand-ring);
+            border-radius: 14px 4px 14px 14px;
+        }
+        .global-toast {
+            position: fixed;
+            top: 24px;
+            left: 50%;
+            transform: translate(-50%, -20px);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border-radius: 999px;
+            background: var(--c-surface);
+            color: var(--c-text);
+            border: 1px solid var(--c-border);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, .2);
+            font-size: 13.5px;
+            font-weight: 600;
+            z-index: 99999;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .22s ease, transform .22s ease;
+        }
+        .global-toast.show {
+            opacity: 1;
+            transform: translate(-50%, 0);
+            pointer-events: auto;
+        }
+        .global-toast.ok {
+            border-color: rgba(16, 185, 129, .4);
+        }
+        .global-toast.err {
+            border-color: rgba(239, 68, 68, .4);
+        }
 
         /* ===================== 响应式排版适配 ===================== */
         @media (max-width: 1080px) {
@@ -1686,6 +1965,10 @@
             <g id="i-theme-auto"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a10 10 0 0 1 0 20Z" fill="currentColor"></path></g>
             <g id="i-sun"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32 1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path></g>
             <g id="i-moon"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></g>
+            <g id="i-shield"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></g>
+            <g id="i-plus"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></g>
+            <g id="i-send"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></g>
+            <g id="i-search"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></g>
         </defs>
     </svg>
     <button class="theme-toggle login-theme-toggle" title="主题：跟随系统"><svg class="ui-icon"><use href="#i-theme-auto"></use></svg></button>
@@ -2186,78 +2469,105 @@
 
                 <!-- 4. 问题反馈 Section -->
                 <section class="user-section" id="section-feedback">
-                    <div class="user-card">
-                        <h3><svg class="ui-icon"><use href="#i-message-square"></use></svg> 我的反馈记录</h3>
-                        <div id="fbListView" style="margin-top:12px">
-                            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
-                                <div id="fbStatusTabs" style="display:flex;gap:4px;flex-wrap:wrap">
-                                    <button class="fb-tab active" data-status="">全部</button>
-                                    <button class="fb-tab" data-status="pending">待处理</button>
-                                    <button class="fb-tab" data-status="processing">处理中</button>
-                                    <button class="fb-tab" data-status="resolved">已回复</button>
-                                    <button class="fb-tab" data-status="closed">已关闭</button>
-                                </div>
-                                <input type="text" id="fbSearchInput" placeholder="搜索标题或内容..." style="flex:1;min-width:140px;height:34px;font-size:13px">
-                            </div>
-                            <div id="fbTimeTabs" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px">
-                                <button class="fb-time-tab active" data-days="7">近7天</button>
-                                <button class="fb-time-tab" data-days="30">近30天</button>
-                                <button class="fb-time-tab" data-days="90">近3个月</button>
-                                <button class="fb-time-tab" data-days="0">全部</button>
-                            </div>
-                            <div id="fbList" style="margin-top:4px">
-                                <div style="padding:24px;text-align:center;color:var(--c-text-3)">暂无反馈记录</div>
-                            </div>
-                        </div>
-
-                        <!-- 聊天详情视图 -->
-                        <div id="fbChatView" style="display:none">
-                            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--c-border)">
-                                <button id="fbChatBack" title="返回反馈列表" style="border:none;background:transparent;color:var(--c-text-2);cursor:pointer;padding:6px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;transition:background .15s">
-                                    <svg class="ui-icon md"><use href="#i-arrow-left"></use></svg>
+                    <div class="feedback-layout">
+                        <!-- 左列：工单列表与筛选 -->
+                        <div class="fb-panel" id="fbListView">
+                            <div class="fb-panel-header">
+                                <h3><svg class="ui-icon"><use href="#i-message-square"></use></svg> 我的反馈记录</h3>
+                                <button type="button" class="btn sm primary" id="fbNewTicketBtn" style="height:30px;min-height:30px;padding:0 12px;font-size:12px;display:inline-flex;align-items:center;gap:4px">
+                                    <svg class="ui-icon sm"><use href="#i-plus"></use></svg> 提交反馈
                                 </button>
-                                <span id="fbChatTitle" style="font-weight:700;font-size:15px;color:var(--c-text)"></span>
-                                <span id="fbChatStatus" style="font-size:11px;padding:2px 8px;border-radius:6px"></span>
                             </div>
-                            <div id="fbChatBody" style="display:flex;flex-direction:column;gap:12px;min-height:200px"></div>
-                            <div id="fbChatReplyArea" style="margin-top:14px;border-top:1px solid var(--c-border);padding-top:14px">
-                                <textarea id="fbChatInput" rows="2" maxlength="2000" placeholder="输入追问内容..." style="width:100%;font-size:13px;resize:vertical;line-height:1.5"></textarea>
-                                <div style="display:flex;justify-content:flex-end;margin-top:8px">
-                                    <button id="fbChatSend" class="primary" style="width:auto;padding:0 22px;height:36px;min-height:36px;font-size:13px">发送</button>
+
+                            <div id="fbOpenTicketNotice" style="display:none;align-items:center;gap:10px;padding:9px 12px;margin-bottom:12px;border-radius:8px;background:var(--c-warning-soft);border:1px solid rgba(245,158,11,.3)">
+                                <svg class="ui-icon sm" style="color:var(--c-warning);flex-shrink:0"><use href="#i-info"></use></svg>
+                                <span style="flex:1;font-size:12px;color:var(--c-warning);line-height:1.4">您有 <strong id="fbOpenCount">0</strong> 条未关闭的反馈，可优先追问。</span>
+                                <button type="button" id="fbJumpToRecords" class="btn sm secondary" style="height:24px;min-height:24px;padding:0 8px;font-size:11px;white-space:nowrap">查看</button>
+                            </div>
+
+                            <div class="fb-filter-bar">
+                                <div class="fb-search-wrap">
+                                    <svg class="ui-icon sm fb-search-icon"><use href="#i-search"></use></svg>
+                                    <input type="text" id="fbSearchInput" placeholder="搜索标题或内容...">
+                                </div>
+                                <div id="fbStatusTabs" class="fb-tab-group">
+                                    <button type="button" class="fb-tab active" data-status="">全部</button>
+                                    <button type="button" class="fb-tab" data-status="pending">待处理</button>
+                                    <button type="button" class="fb-tab" data-status="processing">处理中</button>
+                                    <button type="button" class="fb-tab" data-status="resolved">已回复</button>
+                                    <button type="button" class="fb-tab" data-status="closed">已关闭</button>
+                                </div>
+                                <div id="fbTimeTabs" class="fb-tab-group">
+                                    <button type="button" class="fb-time-tab active" data-days="0">全部</button>
+                                    <button type="button" class="fb-time-tab" data-days="7">近7天</button>
+                                    <button type="button" class="fb-time-tab" data-days="30">近30天</button>
+                                    <button type="button" class="fb-time-tab" data-days="90">近3个月</button>
                                 </div>
                             </div>
-                        </div>
-                    </div>
 
-                    <div class="user-card" style="margin-top:16px">
-                        <div id="fbOpenTicketNotice" style="display:none;align-items:center;gap:10px;padding:10px 14px;margin-bottom:14px;border-radius:10px;background:var(--c-warning-soft);border:1px solid rgba(245,158,11,.3)">
-                            <svg class="ui-icon md" style="color:var(--c-warning)"><use href="#i-info"></use></svg>
-                            <span style="flex:1;font-size:13px;color:var(--c-warning);line-height:1.5">您有 <strong id="fbOpenCount">0</strong> 条未关闭的反馈，建议先在原反馈中追问，无需重复提交。</span>
-                            <button id="fbJumpToRecords" class="secondary" style="height:28px;min-height:28px;padding:0 12px;font-size:12px;white-space:nowrap">查看记录</button>
+                            <div id="fbList" class="fb-list-container">
+                                <div style="padding:28px 12px;text-align:center;color:var(--c-text-3);font-size:13px">暂无反馈记录</div>
+                            </div>
                         </div>
-                        <h3><svg class="ui-icon"><use href="#i-message-square"></use></svg> 提交问题反馈</h3>
-                        <p class="hint">遇到问题或有建议？提交反馈，我们会通过邮件回复您。</p>
-                        <div style="display:grid;gap:14px;margin-top:16px">
-                            <div>
-                                <label>反馈类型</label>
-                                <select id="fbCategory">
-                                    <option value="bug">Bug 反馈</option>
-                                    <option value="feature">功能建议</option>
-                                    <option value="payment">支付问题</option>
-                                    <option value="account">账号问题</option>
-                                    <option value="other">其他</option>
-                                </select>
+
+                        <!-- 右列：对话流或新建工单 -->
+                        <div class="fb-right-col" style="display:flex;flex-direction:column;gap:16px">
+                            <!-- 聊天详情视图 -->
+                            <div class="fb-panel" id="fbChatView" style="display:none">
+                                <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--c-border)">
+                                    <button type="button" id="fbChatBack" title="返回" style="border:none;background:var(--c-surface-2);color:var(--c-text-2);cursor:pointer;padding:6px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;transition:all .15s">
+                                        <svg class="ui-icon md"><use href="#i-arrow-left"></use></svg>
+                                    </button>
+                                    <div style="flex:1;min-width:0">
+                                        <div id="fbChatTitle" style="font-weight:700;font-size:15px;color:var(--c-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+                                        <div style="margin-top:2px"><span id="fbChatStatus" style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600"></span></div>
+                                    </div>
+                                </div>
+                                <div id="fbChatBody"></div>
+                                <div id="fbChatReplyArea" style="margin-top:14px;border-top:1px solid var(--c-border);padding-top:14px">
+                                    <textarea id="fbChatInput" rows="3" maxlength="2000" placeholder="输入追问内容，管理员将继续跟进..." style="width:100%;font-size:13px;resize:vertical;line-height:1.5;box-sizing:border-box"></textarea>
+                                    <div style="display:flex;justify-content:flex-end;margin-top:10px">
+                                        <button type="button" id="fbChatSend" class="primary" style="width:auto;padding:0 22px;height:36px;min-height:36px;font-size:13px;display:inline-flex;align-items:center;gap:6px">
+                                            <svg class="ui-icon sm"><use href="#i-send"></use></svg> 发送追问
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <label>问题标题</label>
-                                <input type="text" id="fbTitle" maxlength="100" placeholder="请简要描述问题">
-                            </div>
-                            <div>
-                                <label>问题描述 <span id="fbCharCount" style="color:var(--c-text-3);font-size:12px;font-weight:400">0/2000</span></label>
-                                <textarea id="fbContent" rows="5" maxlength="2000" placeholder="请详细描述您遇到的问题或建议..." style="font-size:14px;resize:vertical;line-height:1.6"></textarea>
-                            </div>
-                            <div>
-                                <button class="primary" id="fbSubmitBtn" style="width:auto;padding:0 28px">提交反馈</button>
+
+                            <!-- 提交问题反馈卡片 -->
+                            <div class="fb-panel" id="fbSubmitCard">
+                                <div class="fb-panel-header">
+                                    <h3><svg class="ui-icon"><use href="#i-message-square"></use></svg> 提交问题反馈</h3>
+                                </div>
+                                <p class="hint" style="margin-top:-6px;margin-bottom:16px;font-size:13px;color:var(--c-text-2)">遇到问题或有优化建议？请填写下方表单，管理员将在 24 小时内处理并通过邮件及系统回复。</p>
+                                <div style="display:grid;gap:14px">
+                                    <div>
+                                        <label style="font-weight:600;font-size:13px;margin-bottom:6px;display:block">反馈类型</label>
+                                        <select id="fbCategory" style="height:38px;font-size:13.5px">
+                                            <option value="bug">Bug 反馈</option>
+                                            <option value="feature">功能建议</option>
+                                            <option value="payment">支付问题</option>
+                                            <option value="account">账号问题</option>
+                                            <option value="other">其他</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label style="font-weight:600;font-size:13px;margin-bottom:6px;display:block">问题标题</label>
+                                        <input type="text" id="fbTitle" maxlength="100" placeholder="请用一句话简要描述问题或建议" style="height:38px;font-size:13.5px">
+                                    </div>
+                                    <div>
+                                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                                            <label style="font-weight:600;font-size:13px;margin:0">详细描述</label>
+                                            <span id="fbCharCount" style="color:var(--c-text-3);font-size:12px;font-weight:400">0/2000</span>
+                                        </div>
+                                        <textarea id="fbContent" rows="5" maxlength="2000" placeholder="请详细描述您遇到的问题现象、复现步骤或具体改进建议..." style="font-size:13.5px;resize:vertical;line-height:1.6;box-sizing:border-box"></textarea>
+                                    </div>
+                                    <div>
+                                        <button type="button" class="primary" id="fbSubmitBtn" style="width:auto;padding:0 28px;height:40px;min-height:40px;display:inline-flex;align-items:center;gap:6px">
+                                            <svg class="ui-icon sm"><use href="#i-send"></use></svg> 提交反馈
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -2518,11 +2828,32 @@
         let moneySliderE = null, moneySliderW = null;
 
         function $(id) { return document.getElementById(id); }
+        function escapeHtml(s) {
+            return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
         function msg(id, text, ok) {
             const el = $(id);
             if (!el) return;
             el.textContent = text;
             el.className = 'msg ' + (ok ? 'ok' : 'err');
+        }
+        function showToast(text, isErr = false) {
+            let el = $('globalToast');
+            if (!el) {
+                el = document.createElement('div');
+                el.id = 'globalToast';
+                el.className = 'global-toast';
+                document.body.appendChild(el);
+            }
+            el.innerHTML = (isErr 
+                ? '<svg class="ui-icon sm" style="color:#ef4444;flex-shrink:0"><use href="#i-alert"></use></svg>' 
+                : '<svg class="ui-icon sm" style="color:#10b981;flex-shrink:0"><use href="#i-check-circle-2"></use></svg>') +
+                '<span>' + escapeHtml(text) + '</span>';
+            el.className = 'global-toast ' + (isErr ? 'err' : 'ok') + ' show';
+            clearTimeout(window._toastTimer);
+            window._toastTimer = setTimeout(() => {
+                if (el) el.classList.remove('show');
+            }, 2800);
         }
         function setPageTitle(title, desc) {
             $('userPageTitle').textContent = title;
@@ -2849,7 +3180,7 @@
                 const ut = $('dashUsageTable').querySelector('tbody');
                 ut.innerHTML = (c.usage_breakdown || []).length
                     ? c.usage_breakdown.map(r => '<tr><td>' + (r.reason || '-') + '</td><td>' + r.count + '</td></tr>').join('')
-                    : '<tr><td colspan="2" style="text-align:center;color:var(--v-muted)">暂无消费记录</td></tr>';
+                    : '<tr><td colspan="2" style="text-align:center;color:var(--c-text-3)">暂无消费记录</td></tr>';
                 // 最近订单
                 const ot = $('dashOrderTable').querySelector('tbody');
                 ot.innerHTML = (c.recent_orders || []).length
@@ -2857,10 +3188,10 @@
                         var op = '';
                         if (o.can_refund) {
                             op = '<button class="btn-refund" data-order="' + o.order_no + '" data-plan="' + (o.plan_name || '') + '" data-price="' + (o.price || 0) + '">申请退款</button>'
-                               + '<div style="font-size:11px;color:var(--v-muted);margin-top:4px">可退 <b style="color:var(--v-success,#10b981)">¥' + Number(o.refund_amount || 0).toFixed(2) + '</b> / ¥' + Number(o.price || 0).toFixed(2) + '</div>';
+                               + '<div style="font-size:11px;color:var(--c-text-3);margin-top:4px">可退 <b style="color:var(--c-success)">¥' + Number(o.refund_amount || 0).toFixed(2) + '</b> / ¥' + Number(o.price || 0).toFixed(2) + '</div>';
                         } else if (o.no_refund_left) {
-                            op = '<span style="font-size:12px;color:var(--v-muted)">已无可退金额</span>'
-                               + '<div style="font-size:11px;color:var(--v-muted);margin-top:4px">已使用部分不予退款</div>';
+                            op = '<span style="font-size:12px;color:var(--c-text-3)">已无可退金额</span>'
+                               + '<div style="font-size:11px;color:var(--c-text-3);margin-top:4px">已使用部分不予退款</div>';
                         } else if (o.refund_request_status === 'pending') {
                             op = '<span class="tag-request-pending">审核中</span>';
                         } else if (o.refund_request_status === 'approved') {
@@ -2868,14 +3199,14 @@
                         } else if (o.refund_request_status === 'rejected') {
                             op = '<span class="tag-request-rejected">已拒绝</span>';
                         } else if (o.status === 'paid' && !o.can_refund && !o.no_refund_left) {
-                            op = '<span style="font-size:12px;color:var(--v-muted)">已过退款期</span>';
+                            op = '<span style="font-size:12px;color:var(--c-text-3)">已过退款期</span>';
                         }
                         var stMap = { paid: '已支付', refunded: '已退款', pending: '待支付', cancelled: '已取消', failed: '支付失败', expired: '已过期' };
                         var stText = stMap[o.status] || o.status || '-';
                         var stClass = (o.status === 'paid' || o.status === 'refunded') ? o.status : 'pending';
                         return '<tr><td>' + (o.plan_name || '-') + '</td><td>¥' + (o.price || 0).toFixed(2) + '</td><td class="tag-' + stClass + '">' + stText + '</td><td>' + (o.created_at || '-') + '</td><td>' + op + '</td></tr>';
                     }).join('')
-                    : '<tr><td colspan="5" style="text-align:center;color:var(--v-muted)">暂无订单</td></tr>';
+                    : '<tr><td colspan="5" style="text-align:center;color:var(--c-text-3)">暂无订单</td></tr>';
                 // 图表
                 renderLineChart('answerChart', d.answers_7d || [], ['bank', 'ai'], ['#10b981', '#06b6d4'], ['题库', 'AI']);
                 renderLineChart('activityChart', d.activity_7d || [], ['answers', 'videos', 'exams', 'readings'], ['#10b981', '#06b6d4', '#34d399', '#67e8f9'], ['答题', '视频', '考试', '阅读']);
@@ -4032,8 +4363,18 @@ await loadPlans();
         const FB_STATUS_MAP = { pending: { label: '待处理', color: '#f59e0b' }, processing: { label: '处理中', color: '#3b82f6' }, resolved: { label: '已回复', color: '#10b981' }, closed: { label: '已关闭', color: '#6b7280' } };
         let fbList = [];
         let fbFilterStatus = '';
-        let fbFilterDays = 7;
+        let fbFilterDays = 0; // 默认展示全部，避免超过7天的历史反馈被误判为丢失
         let fbSearchKeyword = '';
+        let fbCurrentChat = null;
+
+        function parseFbTime(str) {
+            if (!str) return 0;
+            const s = String(str).replace(/-/g, '/').replace('T', ' ');
+            const t = new Date(s).getTime();
+            if (!isNaN(t)) return t;
+            const t2 = new Date(str).getTime();
+            return isNaN(t2) ? 0 : t2;
+        }
 
         async function loadFeedback() {
             const token = localStorage.getItem(TOKEN_KEY);
@@ -4044,6 +4385,10 @@ await loadPlans();
                 if (d.code === 200) {
                     fbList = d.feedback || [];
                     renderFeedbackList();
+                    if (fbCurrentChat) {
+                        const updated = fbList.find(x => x.id === fbCurrentChat.id);
+                        if (updated) openFbChat(updated.id);
+                    }
                 }
             } catch (_) {}
         }
@@ -4053,10 +4398,7 @@ await loadPlans();
             if (fbFilterStatus) list = list.filter(f => f.status === fbFilterStatus);
             if (fbFilterDays > 0) {
                 const cutoff = Date.now() - fbFilterDays * 86400000;
-                list = list.filter(f => {
-                    const t = new Date((f.created_at || '').replace(' ', 'T')).getTime();
-                    return !isNaN(t) && t >= cutoff;
-                });
+                list = list.filter(f => parseFbTime(f.created_at) >= cutoff);
             }
             if (fbSearchKeyword) {
                 const kw = fbSearchKeyword.toLowerCase();
@@ -4078,9 +4420,10 @@ await loadPlans();
         function renderFeedbackList() {
             updateFbNotice();
             const el = $('fbList');
+            if (!el) return;
             const list = getFilteredFeedback();
             if (!list.length) {
-                el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--v-muted)">' + (fbList.length ? '没有匹配的记录' : '暂无反馈记录') + '</div>';
+                el.innerHTML = '<div style="padding:32px 12px;text-align:center;color:var(--c-text-3);font-size:13px">' + (fbList.length ? '没有匹配的记录' : '暂无反馈记录') + '</div>';
                 return;
             }
             el.innerHTML = list.map(f => {
@@ -4090,22 +4433,26 @@ await loadPlans();
                 const replies = f.replies || [];
                 const lastReply = replies.length ? replies[replies.length - 1] : null;
                 const lastTime = lastReply ? (lastReply.created_at || '').replace('T', ' ').substring(0, 16) : time;
-                const lastSender = lastReply ? (lastReply.sender === 'admin' ? '管理员' : '我') : '';
-                const preview = lastReply ? lastReply.content.substring(0, 50) : (f.content || '').substring(0, 50);
-                const unreadBadge = (f.status === 'resolved' || (lastReply && lastReply.sender === 'admin')) ? '<span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);width:8px;height:8px;border-radius:50%;background:#3b82f6"></span>' : '';
-                return `<div class="fb-list-item" data-fid="${f.id}" style="position:relative;padding:12px 36px 12px 0;border-bottom:1px solid var(--v-border);cursor:pointer;transition:background .15s" onmouseover="this.style.background='rgba(59,130,246,.04)'" onmouseout="this.style.background='transparent'">
-                    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-                        <span style="font-weight:600;font-size:14px;color:var(--v-text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(f.title)}</span>
-                        <span style="font-size:10px;padding:1px 6px;border-radius:5px;background:rgba(148,163,184,.15);color:var(--v-muted)">${cat}</span>
-                        <span style="font-size:10px;padding:1px 6px;border-radius:5px;background:${st.color}20;color:${st.color}">${st.label}</span>
+                const lastSender = lastReply ? (lastReply.sender === 'admin' ? '管理员' : '我') : (f.admin_reply ? '管理员' : '');
+                const preview = lastReply ? lastReply.content.substring(0, 50) : (f.admin_reply ? f.admin_reply.substring(0, 50) : (f.content || '').substring(0, 50));
+                const isUnread = (f.status === 'resolved' || (lastReply && lastReply.sender === 'admin'));
+                const unreadDot = isUnread ? '<span class="fb-unread-dot"></span>' : '';
+                const isSelected = fbCurrentChat && fbCurrentChat.id === f.id;
+
+                return `<div class="fb-list-item ${isSelected ? 'active' : ''}" data-fid="${f.id}">
+                    <div class="fb-item-head">
+                        <span class="fb-item-title">${escapeHtml(f.title)}</span>
+                        <span class="fb-item-tag">${cat}</span>
+                        <span class="fb-item-status" style="background:${st.color}20;color:${st.color}">${st.label}</span>
                     </div>
-                    <div style="font-size:12px;color:var(--v-muted);line-height:1.5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${lastSender ? lastSender + '：' : ''}${escapeHtml(preview)}</div>
-                    <div style="font-size:11px;color:var(--v-muted);margin-top:2px">${lastTime}</div>
-                    ${unreadBadge}
+                    <div class="fb-item-preview">${lastSender ? lastSender + '：' : ''}${escapeHtml(preview)}</div>
+                    <div class="fb-item-time">${lastTime}</div>
+                    ${unreadDot}
                 </div>`;
             }).join('');
+
             // 绑定点击进入聊天
-            document.querySelectorAll('.fb-list-item').forEach(item => {
+            el.querySelectorAll('.fb-list-item').forEach(item => {
                 item.addEventListener('click', function () {
                     const fid = parseInt(this.dataset.fid);
                     openFbChat(fid);
@@ -4113,13 +4460,26 @@ await loadPlans();
             });
         }
 
-        let fbCurrentChat = null;
         function openFbChat(fid) {
             const f = fbList.find(x => x.id === fid);
             if (!f) return;
             fbCurrentChat = f;
-            $('fbListView').style.display = 'none';
-            $('fbChatView').style.display = 'block';
+
+            // 高亮选中项
+            document.querySelectorAll('#fbList .fb-list-item').forEach(item => {
+                item.classList.toggle('active', parseInt(item.dataset.fid) === fid);
+            });
+
+            const chatView = $('fbChatView');
+            const submitCard = $('fbSubmitCard');
+            if (chatView) chatView.style.display = 'block';
+            if (submitCard) submitCard.style.display = 'none';
+
+            // 移动端隐藏列表面板，聚焦详情
+            if (window.innerWidth <= 960 && $('fbListView')) {
+                $('fbListView').style.display = 'none';
+            }
+
             const cat = FB_CATEGORY_MAP[f.category] || '其他';
             const st = FB_STATUS_MAP[f.status] || FB_STATUS_MAP.pending;
             $('fbChatTitle').textContent = f.title;
@@ -4131,8 +4491,17 @@ await loadPlans();
             renderFbChat(f);
         }
 
+        function closeFbChat() {
+            fbCurrentChat = null;
+            document.querySelectorAll('#fbList .fb-list-item').forEach(item => item.classList.remove('active'));
+            if ($('fbChatView')) $('fbChatView').style.display = 'none';
+            if ($('fbSubmitCard')) $('fbSubmitCard').style.display = 'block';
+            if ($('fbListView')) $('fbListView').style.display = 'block';
+        }
+
         function renderFbChat(f) {
             const body = $('fbChatBody');
+            if (!body) return;
             const replies = f.replies || [];
             let html = '';
             // 初始反馈（用户消息，右侧）
@@ -4149,52 +4518,51 @@ await loadPlans();
                 html += fbChatBubble(rp.sender, rp.content, t);
             });
             if (f.status === 'closed' && !replies.length && !f.admin_reply) {
-                html += '<div style="text-align:center;color:var(--v-muted);font-size:12px;padding:12px">该反馈已关闭</div>';
+                html += '<div style="text-align:center;color:var(--c-text-3);font-size:12px;padding:12px">该反馈已关闭</div>';
             }
             body.innerHTML = html;
-            body.scrollTop = body.scrollHeight;
+            setTimeout(() => { body.scrollTop = body.scrollHeight; }, 30);
         }
 
         function fbChatBubble(sender, content, time) {
             const isAdmin = sender === 'admin';
             const avatar = isAdmin
-                ? '<div style="flex:0 0 32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#3b82f6,#2563eb);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:600">管</div>'
-                : '<div style="flex:0 0 32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#10b981,#059669);display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:600">我</div>';
-            const bubble = isAdmin
-                ? `<div style="display:inline-block;padding:10px 14px;background:rgba(59,130,246,.12);border-radius:4px 14px 14px 14px;font-size:13px;color:var(--v-text);line-height:1.6;white-space:pre-wrap;max-width:100%">${escapeHtml(content)}</div>`
-                : `<div style="display:inline-block;padding:10px 14px;background:rgba(16,185,129,.12);border-radius:14px 4px 14px 14px;font-size:13px;color:var(--v-text);line-height:1.6;white-space:pre-wrap;max-width:100%;text-align:left">${escapeHtml(content)}</div>`;
+                ? `<div class="fb-avatar admin" title="管理员"><svg class="ui-icon sm"><use href="#i-shield"></use></svg></div>`
+                : `<div class="fb-avatar user" title="我"><svg class="ui-icon sm"><use href="#i-user"></use></svg></div>`;
             const label = isAdmin ? '管理员 · ' + time : time + ' · 我';
-            const labelColor = isAdmin ? '#3b82f6' : '#10b981';
-            if (isAdmin) {
-                return `<div style="display:flex;gap:8px;align-items:flex-start">
-                    ${avatar}
-                    <div style="flex:1">
-                        <div style="font-size:11px;color:${labelColor};margin-bottom:3px">${label}</div>
-                        ${bubble}
-                    </div>
-                </div>`;
-            } else {
-                return `<div style="display:flex;gap:8px;align-items:flex-start;flex-direction:row-reverse">
-                    ${avatar}
-                    <div style="flex:1;text-align:right">
-                        <div style="font-size:11px;color:${labelColor};margin-bottom:3px">${label}</div>
-                        <div style="display:inline-block;text-align:left">${bubble}</div>
-                    </div>
-                </div>`;
-            }
+            const labelClass = isAdmin ? 'fb-sender-label admin' : 'fb-sender-label user';
+            const bubbleClass = isAdmin ? 'fb-bubble admin' : 'fb-bubble user';
+
+            return `<div class="fb-msg-row ${isAdmin ? 'admin' : 'user'}">
+                ${avatar}
+                <div class="fb-msg-content" style="flex:1;min-width:0">
+                    <div class="${labelClass}">${label}</div>
+                    <div class="${bubbleClass}">${escapeHtml(content)}</div>
+                </div>
+            </div>`;
         }
 
         // 聊天返回按钮
-        $('fbChatBack').addEventListener('click', function () {
-            $('fbChatView').style.display = 'none';
-            $('fbListView').style.display = 'block';
-            fbCurrentChat = null;
-        });
-        // 聊天发送
+        $('fbChatBack').addEventListener('click', closeFbChat);
+
+        // 新建反馈按钮
+        if ($('fbNewTicketBtn')) {
+            $('fbNewTicketBtn').addEventListener('click', function () {
+                closeFbChat();
+                if (window.innerWidth <= 960) {
+                    $('fbListView').style.display = 'none';
+                    $('fbSubmitCard').style.display = 'block';
+                }
+                const titleInput = $('fbTitle');
+                if (titleInput) titleInput.focus();
+            });
+        }
+
+        // 聊天追问发送
         $('fbChatSend').addEventListener('click', async function () {
             if (!fbCurrentChat) return;
             const content = $('fbChatInput').value.trim();
-            if (!content) return alert('请输入追问内容');
+            if (!content) return showToast('请输入追问内容', true);
             setBusy(this, true, '发送中...');
             try {
                 const token = localStorage.getItem(TOKEN_KEY);
@@ -4206,53 +4574,40 @@ await loadPlans();
                 const d = await res.json().catch(() => ({}));
                 if (d.code === 200) {
                     $('fbChatInput').value = '';
+                    showToast('追问发送成功！');
                     await loadFeedback();
-                    // 重新打开当前聊天
                     openFbChat(fbCurrentChat.id);
                 } else {
-                    alert(d.msg || '发送失败');
+                    showToast(d.msg || '发送失败', true);
                 }
-            } catch (_) { alert('网络错误'); }
+            } catch (_) { showToast('网络错误，请稍后重试', true); }
             setBusy(this, false);
         });
-
-        function escapeHtml(s) {
-            return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-        }
 
         $('fbContent').addEventListener('input', function () {
             $('fbCharCount').textContent = this.value.length + '/2000';
         });
-        // 状态筛选标签
+
+        // 状态筛选标签 (标准 class 切换，绝不写死破坏性 inline style)
         document.querySelectorAll('#fbStatusTabs .fb-tab').forEach(btn => {
             btn.addEventListener('click', function () {
-                document.querySelectorAll('#fbStatusTabs .fb-tab').forEach(b => {
-                    b.classList.remove('active');
-                    b.style.background = 'var(--v-card-bg)';
-                    b.style.color = 'var(--v-muted)';
-                });
+                document.querySelectorAll('#fbStatusTabs .fb-tab').forEach(b => b.classList.remove('active'));
                 this.classList.add('active');
-                this.style.background = 'rgba(59,130,246,.15)';
-                this.style.color = '#60a5fa';
-                fbFilterStatus = this.dataset.status;
+                fbFilterStatus = this.dataset.status || '';
                 renderFeedbackList();
             });
         });
-        // 时间筛选标签
+
+        // 时间筛选标签 (标准 class 切换，绝不写死破坏性 inline style)
         document.querySelectorAll('#fbTimeTabs .fb-time-tab').forEach(btn => {
             btn.addEventListener('click', function () {
-                document.querySelectorAll('#fbTimeTabs .fb-time-tab').forEach(b => {
-                    b.classList.remove('active');
-                    b.style.background = 'var(--v-card-bg)';
-                    b.style.color = 'var(--v-muted)';
-                });
+                document.querySelectorAll('#fbTimeTabs .fb-time-tab').forEach(b => b.classList.remove('active'));
                 this.classList.add('active');
-                this.style.background = 'rgba(59,130,246,.15)';
-                this.style.color = '#60a5fa';
                 fbFilterDays = parseInt(this.dataset.days) || 0;
                 renderFeedbackList();
             });
         });
+
         // 搜索框
         let fbSearchTimer = null;
         $('fbSearchInput').addEventListener('input', function () {
@@ -4262,18 +4617,27 @@ await loadPlans();
                 renderFeedbackList();
             }, 300);
         });
+
+        // 响应未关闭反馈提示的「查看」
         $('fbJumpToRecords').addEventListener('click', function () {
-            $('fbChatView').style.display = 'none';
-            $('fbListView').style.display = 'block';
-            fbCurrentChat = null;
-            $('fbListView').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            fbFilterStatus = '';
+            fbFilterDays = 0;
+            document.querySelectorAll('#fbStatusTabs .fb-tab').forEach(b => b.classList.toggle('active', !b.dataset.status));
+            document.querySelectorAll('#fbTimeTabs .fb-time-tab').forEach(b => b.classList.toggle('active', b.dataset.days === '0'));
+            renderFeedbackList();
+            const openTicket = fbList.find(x => x.status !== 'closed');
+            if (openTicket) {
+                openFbChat(openTicket.id);
+            }
         });
+
+        // 提交问题反馈
         $('fbSubmitBtn').onclick = async function () {
             const category = $('fbCategory').value;
             const title = $('fbTitle').value.trim();
             const content = $('fbContent').value.trim();
-            if (!title) return alert('请输入问题标题');
-            if (!content) return alert('请输入问题描述');
+            if (!title) return showToast('请输入问题标题', true);
+            if (!content) return showToast('请输入问题描述', true);
             setBusy(this, true, '提交中...');
             try {
                 const token = localStorage.getItem(TOKEN_KEY);
@@ -4287,18 +4651,15 @@ await loadPlans();
                     $('fbTitle').value = '';
                     $('fbContent').value = '';
                     $('fbCharCount').textContent = '0/2000';
+                    showToast('反馈提交成功！');
                     await loadFeedback();
                     if (fbList.length > 0) {
                         openFbChat(fbList[0].id);
-                        $('section-feedback').scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        setTimeout(() => alert('提交成功！您可以在上方"我的反馈记录"中查看回复并继续追问。'), 400);
-                    } else {
-                        alert('提交成功！我们会尽快处理并通过邮件回复您。');
                     }
                 } else {
-                    alert(d.msg || '提交失败');
+                    showToast(d.msg || '提交失败', true);
                 }
-            } catch (_) { alert('网络错误'); }
+            } catch (_) { showToast('网络错误，请稍后重试', true); }
             setBusy(this, false);
         };
 
