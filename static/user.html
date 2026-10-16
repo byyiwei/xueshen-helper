@@ -1199,61 +1199,18 @@
             border-color: rgba(239, 68, 68, .4);
         }
 
-        /* ===================== 响应式排版适配 ===================== */
-        @media (max-width: 1080px) {
-            body { padding: 16px; }
-            .user-app { grid-template-columns: 210px 1fr; }
-            .user-sidebar { padding: 18px 12px; }
-            .stat-grid { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
-        }
+        /* ===================== 登录 / 注册外层 Shell 响应式适配 ===================== */
         @media (max-width: 900px) {
-            body { padding: 10px; display: block; }
+            body:not(.app-mode) { padding: 10px; display: block; }
             .shell { width: min(480px, 100%); grid-template-columns: 1fr; }
             .auth-brand { padding: 20px 22px; flex-direction: row; align-items: center; justify-content: flex-start; gap: 14px; }
             .auth-brand .brand-mid, .auth-brand .brand-foot { display: none; }
             .panel { padding: 24px 20px 20px; }
-
-            .user-app {
-                width: 100%; height: calc(100vh - 20px); height: calc(100dvh - 20px);
-                min-height: calc(100vh - 20px); grid-template-columns: 1fr;
-                border-radius: var(--c-radius);
-            }
-            .user-sidebar {
-                padding: 12px 14px; border-right: 0; border-bottom: 1px solid var(--c-border);
-            }
-            .user-brand { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
-            .user-side-foot { display: none; }
-            #sideLogoutBtn { display: none; }
-
-            /* 移动端底部悬浮 Dock */
-            .user-menu {
-                position: fixed; left: 10px; right: 10px; bottom: 10px; z-index: 50;
-                flex-direction: row; justify-content: space-around; gap: 4px;
-                padding: 6px; border-radius: var(--c-radius);
-                background: var(--c-surface); border: 1px solid var(--c-border);
-                box-shadow: 0 10px 30px rgba(0, 0, 0, .2);
-                backdrop-filter: blur(16px);
-            }
-            .user-menu-item {
-                flex: 1 1 0; padding: 6px 2px; flex-direction: column;
-                gap: 4px; border-radius: var(--c-radius-xs); font-size: 10.5px;
-                white-space: nowrap; justify-content: center;
-            }
-            .user-menu-item .mi { width: 28px; height: 28px; flex-basis: 28px; border: 0; background: transparent; }
-            .user-menu-item:hover, .user-menu-item.active { transform: none; }
-            .user-menu-item.active { background: var(--c-brand-soft); }
-
-            .user-body { padding: 16px 16px 96px; }
-            .stat-grid, .info-list, .form-grid, .setting-checks, .model-mode, .plan-grid { grid-template-columns: 1fr; }
-            .script-key-box { grid-template-columns: 1fr; }
         }
         @media (max-width: 480px) {
-            body { padding: 6px; }
+            body:not(.app-mode) { padding: 6px; }
             .panel { padding: 18px 14px 14px; }
-            .user-header { padding: 12px 14px; }
-            .user-header h2 { font-size: 18px; }
-            .user-body { padding: 12px 12px 96px; }
-            input, select, textarea, button.primary, button.secondary, .code-btn { --c-control: 44px; font-size: 16px; }
+            input, select, textarea, button.primary, button.secondary, .code-btn { --c-control: 44px; }
         }
 
     
@@ -1264,6 +1221,10 @@
             padding: 0 !important;
             overflow: hidden !important;
             background: var(--c-bg) !important;
+        }
+        html.app-mode .login-theme-toggle,
+        body.app-mode .login-theme-toggle {
+            display: none !important;
         }
 
         .user-app {
@@ -1976,43 +1937,528 @@
             line-height: 1.3;
         }
 
-        /* 响应式断点适配 */
-        @media (max-width: 1024px) {
-            .promo-hero-grid { grid-template-columns: 1fr; }
-            .promo-actions-grid { grid-template-columns: 1fr; }
-            .promo-bottom-grid { grid-template-columns: 1fr; }
+        /* ===================== 移动端与全平台响应式重构 (Mobile & Tablet) ===================== */
+
+        /* 桌面端隐藏移动端专属控制组件 */
+        .mobile-menu-btn,
+        .drawer-close-btn,
+        .sidebar-backdrop,
+        .mobile-nav-bar {
+            display: none;
         }
-        @media (max-width: 820px) {
-            .user-app { grid-template-columns: 1fr; }
-            .user-sidebar {
-                height: auto;
-                border-right: none;
-                border-bottom: 1px solid var(--c-border);
-                padding: 10px 14px;
+
+        /* --- 平板与紧凑屏幕适配 (max-width: 1080px) --- */
+        @media (max-width: 1080px) {
+            .user-app {
+                grid-template-columns: 220px 1fr;
             }
-            .user-side-foot { display: none; }
+            .user-sidebar {
+                padding: 16px 10px;
+            }
+            .user-header {
+                padding: 0 20px;
+            }
+            .user-body {
+                padding: 20px 20px 40px;
+            }
+            .stat-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+            .promo-hero-grid,
+            .promo-actions-grid,
+            .promo-bottom-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* --- 移动端核心架构适配 (max-width: 820px) --- */
+        @media (max-width: 820px) {
+            /* 主工作台全屏网格变为单列单屏 Flex 布局 */
+            .user-app {
+                display: none;
+                width: 100vw;
+                height: 100vh;
+                height: 100dvh;
+                grid-template-columns: 1fr;
+                grid-template-rows: auto 1fr;
+                overflow: hidden;
+            }
+            .user-app.active {
+                display: flex;
+                flex-direction: column;
+            }
+
+            /* 移动端侧滑抽屉背景遮罩 (Backdrop) */
+            .sidebar-backdrop {
+                display: block;
+                position: fixed;
+                inset: 0;
+                background: rgba(15, 23, 42, .48);
+                backdrop-filter: blur(4px);
+                -webkit-backdrop-filter: blur(4px);
+                z-index: 998;
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity .24s ease-out;
+            }
+            body.sidebar-open .sidebar-backdrop {
+                opacity: 1;
+                pointer-events: auto;
+            }
+
+            /* 左侧栏转为高品质移动端侧滑抽屉 (Drawer) */
+            .user-sidebar {
+                position: fixed;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                width: 285px;
+                max-width: 84vw;
+                height: 100vh;
+                height: 100dvh;
+                z-index: 999;
+                transform: translateX(-100%);
+                transition: transform .28s cubic-bezier(0.16, 1, 0.3, 1), box-shadow .28s;
+                box-shadow: none;
+                border-right: 1px solid var(--c-border);
+                background: var(--c-surface);
+                padding: 16px 14px 20px;
+                display: flex;
+                flex-direction: column;
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+            body.sidebar-open .user-sidebar,
+            .user-sidebar.open {
+                transform: translateX(0);
+                box-shadow: 10px 0 40px rgba(0, 0, 0, .3);
+            }
+
+            /* 抽屉头部 Brand 与关闭按钮 */
+            .user-brand {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 12px;
+                padding: 2px 2px 12px;
+                border-bottom: 1px solid var(--c-border);
+            }
+            .user-brand-main {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .drawer-close-btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                border: 1px solid var(--c-border);
+                background: var(--c-surface-2);
+                color: var(--c-text-2);
+                cursor: pointer;
+                transition: all .15s;
+            }
+            .drawer-close-btn:hover {
+                background: var(--c-surface-3);
+                color: var(--c-text);
+            }
+
+            /* 抽屉菜单项维持整洁纵向排列 */
             .user-menu {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                overflow-y: auto;
+                position: static;
+                padding: 0;
+                border: none;
+                box-shadow: none;
+                background: transparent;
+            }
+            .user-menu-item {
+                width: 100%;
                 flex-direction: row;
+                justify-content: flex-start;
+                padding: 9px 12px;
+                font-size: 13.5px;
+                gap: 12px;
+                border-radius: 10px;
+            }
+            .user-menu-item .mi {
+                width: 32px;
+                height: 32px;
+                flex: 0 0 32px;
+                border-radius: 8px;
+                background: var(--c-surface-2);
+                border: 1px solid var(--c-border);
+                color: var(--c-text-2);
+            }
+            .user-menu-item.active .mi {
+                background: linear-gradient(135deg, var(--c-brand), var(--c-brand-strong));
+                color: #fff;
+                border-color: transparent;
+            }
+
+            /* 抽屉底部用户卡片与退出按钮恢复显示 */
+            .user-side-foot {
+                display: flex;
+                margin-top: 12px;
+                padding-top: 12px;
+                border-top: 1px solid var(--c-border);
+            }
+            #sideLogoutBtn {
+                display: inline-flex;
+            }
+
+            /* 移动端主工作区 (Main) */
+            .user-main {
+                flex: 1;
+                min-height: 0;
+                height: 100vh;
+                height: 100dvh;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+                background: var(--c-bg);
+            }
+
+            /* 移动端精致顶栏 (Header) */
+            .user-header {
+                height: 52px;
+                min-height: 52px;
+                padding: 0 14px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                background: var(--c-surface);
+                border-bottom: 1px solid var(--c-border);
+                flex-shrink: 0;
+                z-index: 20;
+            }
+            .user-header-left {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                min-width: 0;
+                flex: 1;
+            }
+            .mobile-menu-btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 36px;
+                height: 36px;
+                flex: 0 0 36px;
+                border-radius: 8px;
+                border: 1px solid var(--c-border);
+                background: var(--c-surface-2);
+                color: var(--c-text);
+                cursor: pointer;
+                transition: all .15s;
+            }
+            .mobile-menu-btn:hover {
+                background: var(--c-surface-3);
+                border-color: var(--c-brand-ring);
+                color: var(--c-brand);
+            }
+            .user-titlebox h2 {
+                font-size: 15.5px;
+                font-weight: 700;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .user-titlebox p {
+                display: none;
+            }
+            .user-header-right {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-shrink: 0;
+            }
+            .user-header .theme-toggle {
+                width: 34px;
+                height: 34px;
+                flex: 0 0 34px;
+                padding: 0;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 8px;
+            }
+            .user-header .btn-refresh-data {
+                height: 34px;
+                min-height: 34px;
+                padding: 0 10px;
+                font-size: 12.5px;
+                border-radius: 8px;
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                white-space: nowrap;
+            }
+
+            /* 移动端快捷水平胶囊导航栏 (Sticky Horizontal Tabs) */
+            .mobile-nav-bar {
+                display: block;
+                background: var(--c-surface);
+                border-bottom: 1px solid var(--c-border);
+                flex-shrink: 0;
+                z-index: 15;
+            }
+            .mobile-nav-scroll {
+                display: flex;
+                gap: 6px;
+                padding: 7px 12px;
                 overflow-x: auto;
                 overflow-y: hidden;
                 white-space: nowrap;
-                gap: 6px;
-                padding-bottom: 4px;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
             }
-            .user-menu-item {
+            .mobile-nav-scroll::-webkit-scrollbar {
+                display: none;
+            }
+            .mobile-nav-item {
                 flex: 0 0 auto;
-                padding: 6px 10px;
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                height: 32px;
+                padding: 0 12px;
+                border-radius: 999px;
                 font-size: 12.5px;
+                font-weight: 600;
+                border: 1px solid var(--c-border);
+                background: var(--c-surface-2);
+                color: var(--c-text-2);
+                cursor: pointer;
+                transition: all .16s ease;
+                text-decoration: none;
             }
-            .user-menu-item .mi {
-                width: 26px;
-                height: 26px;
-                flex: 0 0 26px;
-                border-radius: 6px;
-            }
-            .user-menu-item .mi .ui-icon {
+            .mobile-nav-item .ui-icon {
                 width: 14px;
                 height: 14px;
+            }
+            .mobile-nav-item:hover {
+                background: var(--c-surface-3);
+                color: var(--c-text);
+            }
+            .mobile-nav-item.active {
+                background: var(--c-brand);
+                color: #ffffff;
+                border-color: transparent;
+                box-shadow: 0 2px 8px var(--c-brand-glow);
+            }
+
+            /* 移动端工作台内容滚动容器 (Body) */
+            .user-body {
+                flex: 1;
+                min-height: 0;
+                overflow-y: auto;
+                overflow-x: hidden;
+                -webkit-overflow-scrolling: touch;
+                padding: 14px 12px 36px;
+            }
+
+            /* 移动端卡片通用排版优化 */
+            .user-card {
+                padding: 16px 14px;
+                margin-bottom: 14px;
+                border-radius: var(--c-radius-sm);
+            }
+            .user-card h3 {
+                font-size: 15px;
+                margin-bottom: 12px;
+            }
+
+            /* 核心状态卡片与小卡片网格双列紧凑排布 */
+            .stat-grid {
+                grid-template-columns: repeat(2, 1fr);
+                gap: 10px;
+                margin-bottom: 14px;
+            }
+            .stat-card {
+                min-width: 0;
+                padding: 12px;
+                gap: 10px;
+                border-radius: 10px;
+            }
+            .stat-info {
+                min-width: 0;
+            }
+            .stat-icon {
+                width: 38px;
+                height: 38px;
+                flex: 0 0 38px;
+                border-radius: 10px;
+            }
+            .stat-icon .ui-icon {
+                width: 18px;
+                height: 18px;
+            }
+            .stat-icon-sm {
+                width: 34px;
+                height: 34px;
+                flex: 0 0 34px;
+                border-radius: 8px;
+            }
+            .stat-card .k {
+                font-size: 11px;
+            }
+            .stat-card .v {
+                font-size: 17px;
+                margin-top: 2px;
+            }
+            .stat-card .sub {
+                font-size: 10px;
+                margin-top: 2px;
+            }
+
+            /* 7天图表卡片 */
+            .home-charts-grid {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+            .chart-wrap {
+                padding: 12px 10px;
+            }
+            .dash-chart {
+                height: 200px;
+            }
+
+            /* 账号信息单列适配 */
+            .account-grid {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+
+            /* 推广返利单列适配 */
+            .promo-rule-pills {
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            .promo-link-bar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .promo-link-input-wrap {
+                min-width: 0;
+                width: 100%;
+            }
+
+            /* 表格水平顺畅滑屏 (防止表格挤压变形或撑破卡片) */
+            .dash-table-wrap {
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                border-radius: 8px;
+            }
+            .dash-table,
+            .data-table {
+                min-width: 480px;
+            }
+
+            /* 支付方式与卡密激活手机端布局 */
+            .pay-methods {
+                gap: 8px;
+            }
+            .pay-method-card {
+                flex: 1 1 calc(50% - 6px);
+                justify-content: center;
+                padding: 10px 12px;
+                font-size: 13px;
+            }
+            .billing-status {
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+            }
+            .billing-status .bs {
+                padding: 10px 12px;
+            }
+            .billing-status b {
+                font-size: 17px;
+            }
+            .ck-input-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .ck-input-row input {
+                min-width: 0 !important;
+                width: 100%;
+            }
+            .ck-input-row button {
+                width: 100%;
+            }
+
+            /* 脚本密钥与反馈返回按钮适配 */
+            .script-key-box {
+                grid-template-columns: 1fr 1fr;
+            }
+            .script-key-box input {
+                grid-column: 1 / -1;
+                width: 100%;
+            }
+            .script-key-box button {
+                width: 100% !important;
+            }
+            .fb-submit-back-btn {
+                display: inline-flex !important;
+            }
+            .fb-panel-header {
+                gap: 10px;
+                padding-bottom: 10px;
+                margin-bottom: 12px;
+            }
+            .card-header-main {
+                min-width: 0;
+                flex: 1;
+            }
+            .card-header-text {
+                min-width: 0;
+            }
+            .card-header-text h3 {
+                font-size: 14.5px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .card-header-desc {
+                display: none;
+            }
+            #fbNewTicketBtn {
+                width: auto !important;
+                margin: 0 !important;
+                flex-shrink: 0;
+            }
+
+            /* 表单输入与按钮 */
+            .form-grid,
+            .setting-checks,
+            .model-mode,
+            .plan-grid {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+        }
+
+        /* --- 超小屏极窄手机适配 (max-width: 420px) --- */
+        @media (max-width: 420px) {
+            .user-header .btn-refresh-data .btn-text {
+                display: none;
+            }
+            .user-header .btn-refresh-data {
+                width: 34px;
+                height: 34px;
+                padding: 0;
+                justify-content: center;
+            }
+            .stat-card .v {
+                font-size: 16px;
             }
         }
     
@@ -2091,6 +2537,8 @@
             <symbol id="i-edit-3" viewBox="0 0 24 24"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></symbol>
             <symbol id="i-inbox" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></symbol>
             <symbol id="i-store" viewBox="0 0 24 24"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"></path><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"></path><path d="M2 7h20"></path></symbol>
+            <symbol id="i-menu" viewBox="0 0 24 24"><line x1="4" x2="20" y1="12" y2="12"></line><line x1="4" x2="20" y1="6" y2="6"></line><line x1="4" x2="20" y1="18" y2="18"></line></symbol>
+            <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></symbol>
         </defs>
     </svg>
     <button class="theme-toggle login-theme-toggle" title="主题：跟随系统"><svg class="ui-icon"><use href="#i-theme-auto"></use></svg></button>
@@ -2196,15 +2644,24 @@
     </main>
 
     <main id="userApp" class="user-app">
-        <aside class="user-sidebar">
+        <!-- 移动端侧滑抽屉背景遮罩 -->
+        <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+        <aside class="user-sidebar" id="userSidebar">
             <div class="user-brand">
-                <span class="user-logo">学</span>
-                <div class="user-brand-text">
-                    <b>用户中心</b>
-                    <span>学神助手</span>
+                <div class="user-brand-main">
+                    <span class="user-logo">学</span>
+                    <div class="user-brand-text">
+                        <b>用户中心</b>
+                        <span>学神助手</span>
+                    </div>
                 </div>
+                <!-- 移动端抽屉关闭按钮 -->
+                <button type="button" class="drawer-close-btn" id="drawerCloseBtn" aria-label="关闭菜单">
+                    <svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-x"></use></svg>
+                </button>
             </div>
-            <nav class="user-menu">
+            <nav class="user-menu" id="userMenu">
                 <button class="user-menu-item active" data-section="home"><span class="mi"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-home"></use></svg></span><span class="user-menu-label">首页</span></button>
                 <button class="user-menu-item" data-section="consumption"><span class="mi"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-receipt"></use></svg></span><span class="user-menu-label">消费记录</span></button>
                 <button class="user-menu-item" data-section="billing"><span class="mi"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-zap"></use></svg></span><span class="user-menu-label">套餐购买</span></button>
@@ -2228,17 +2685,39 @@
 
         <section class="user-main">
             <header class="user-header">
-                <div class="user-titlebox">
-                    <h2 id="userPageTitle">首页</h2>
-                    <p id="userPageDesc">查看账号状态、默认模型和脚本同步设置。</p>
+                <div class="user-header-left">
+                    <!-- 移动端汉堡菜单触发按钮 -->
+                    <button type="button" class="mobile-menu-btn" id="mobileMenuBtn" aria-label="打开侧边导航">
+                        <svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-menu"></use></svg>
+                    </button>
+                    <div class="user-titlebox">
+                        <h2 id="userPageTitle">首页</h2>
+                        <p id="userPageDesc">查看账号状态、默认模型和脚本同步设置。</p>
+                    </div>
                 </div>
-                <div style="display:flex;align-items:center;gap:10px">
+                <div class="user-header-right">
                     <button class="theme-toggle" title="主题：跟随系统"><svg class="ui-icon"><use href="#i-theme-auto"></use></svg></button>
-                    <button class="secondary" style="width:auto;margin:0" id="refreshUserBtn">
-                        <svg class="ui-icon sm"><use href="#i-refresh-cw"></use></svg> 刷新数据
+                    <button class="secondary btn-refresh-data" id="refreshUserBtn">
+                        <svg class="ui-icon sm"><use href="#i-refresh-cw"></use></svg> <span class="btn-text">刷新数据</span>
                     </button>
                 </div>
             </header>
+
+            <!-- 移动端顶部快捷横滑胶囊导航栏 -->
+            <nav class="mobile-nav-bar" id="mobileNavBar">
+                <div class="mobile-nav-scroll">
+                    <button type="button" class="mobile-nav-item active" data-section="home"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-home"></use></svg> 首页</button>
+                    <button type="button" class="mobile-nav-item" data-section="consumption"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-receipt"></use></svg> 消费</button>
+                    <button type="button" class="mobile-nav-item" data-section="billing"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-zap"></use></svg> 套餐</button>
+                    <button type="button" class="mobile-nav-item" data-section="model"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-cpu"></use></svg> 模型</button>
+                    <button type="button" class="mobile-nav-item" data-section="script"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-sliders"></use></svg> 脚本</button>
+                    <button type="button" class="mobile-nav-item" data-section="account"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-user"></use></svg> 账号</button>
+                    <button type="button" class="mobile-nav-item" data-section="promotion"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-gift"></use></svg> 返利</button>
+                    <a class="mobile-nav-item" href="/distributor" target="_blank"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-store"></use></svg> 分销</a>
+                    <button type="button" class="mobile-nav-item" data-section="payment-info"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-credit-card"></use></svg> 收款</button>
+                    <button type="button" class="mobile-nav-item" data-section="feedback"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-message-square"></use></svg> 反馈</button>
+                </div>
+            </nav>
 
             <div class="user-body">
                                 <!-- 1. 首页 Section -->
@@ -2604,7 +3083,7 @@
                                         <span class="card-header-desc">查看历史工单与官方处理答复</span>
                                     </div>
                                 </div>
-                                <button type="button" class="btn sm primary" id="fbNewTicketBtn" style="height:32px;min-height:32px;padding:0 14px;font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px;border-radius:8px">
+                                <button type="button" class="btn sm primary" id="fbNewTicketBtn" style="width:auto;margin:0;height:32px;min-height:32px;padding:0 14px;font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:6px;border-radius:8px">
                                     <svg class="ui-icon sm" viewBox="0 0 24 24"><use href="#i-plus"></use></svg> 提交反馈
                                 </button>
                             </div>
@@ -2666,7 +3145,7 @@
 
                             <!-- 提交问题反馈卡片 -->
                             <div class="fb-panel" id="fbSubmitCard">
-                                <div class="fb-panel-header">
+                                <div class="fb-panel-header" style="display:flex;align-items:center;justify-content:space-between">
                                     <div class="card-header-main">
                                         <div class="card-header-icon indigo">
                                             <svg class="ui-icon md" viewBox="0 0 24 24"><use href="#i-edit-3"></use></svg>
@@ -2676,6 +3155,9 @@
                                             <span class="card-header-desc">遇到异常或功能建议？我们将尽快为您核实回复</span>
                                         </div>
                                     </div>
+                                    <button type="button" id="fbSubmitBack" class="fb-submit-back-btn" title="返回列表" style="border:none;background:var(--c-surface-2);color:var(--c-text-2);cursor:pointer;padding:6px 12px;display:none;align-items:center;gap:4px;border-radius:6px;transition:all .15s;font-size:12.5px;font-weight:600">
+                                        <svg class="ui-icon sm" viewBox="0 0 24 24"><use href="#i-arrow-left"></use></svg> 返回
+                                    </button>
                                 </div>
                                 <p class="hint" style="margin-top:-6px;margin-bottom:16px;font-size:13px;color:var(--c-text-2)">遇到问题或有优化建议？请填写下方表单，管理员将在 24 小时内处理并通过邮件及系统回复。</p>
                                 <div style="display:grid;gap:14px">
@@ -3202,6 +3684,8 @@
         function showView(name) {
             $('userApp').classList.remove('active');
             document.documentElement.classList.remove('app-mode');
+            document.body.classList.remove('app-mode');
+            closeMobileSidebar();
             document.querySelector('.shell').style.display = 'grid';
             document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
             document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === name));
@@ -3210,6 +3694,16 @@
             const url = name === 'login' ? '/login' : name === 'register' ? '/register' : name === 'forgot' ? '/forgot' : '/user';
             history.replaceState(null, '', url);
             if (name === 'login' && loginSlider) loginSlider.reload();
+        }
+        function openMobileSidebar() {
+            document.body.classList.add('sidebar-open');
+            const s = $('userSidebar');
+            if (s) s.classList.add('open');
+        }
+        function closeMobileSidebar() {
+            document.body.classList.remove('sidebar-open');
+            const s = $('userSidebar');
+            if (s) s.classList.remove('open');
         }
         function handleAuthExpired(text) {
             localStorage.removeItem(TOKEN_KEY);
@@ -3232,6 +3726,7 @@
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelector('.shell').style.display = 'none';
             document.documentElement.classList.add('app-mode');
+            document.body.classList.add('app-mode');
             $('userApp').classList.add('active');
             if (!profileTimer) profileTimer = setInterval(loadProfile, 8000);
             const section = ['home', 'account', 'billing', 'model', 'script', 'consumption', 'promotion'].includes(initialUserSection) ? initialUserSection : 'home';
@@ -3270,6 +3765,16 @@
             };
             document.querySelectorAll('.user-section').forEach(v => v.classList.remove('active'));
             document.querySelectorAll('.user-menu-item[data-section]').forEach(v => v.classList.toggle('active', v.dataset.section === name));
+            document.querySelectorAll('.mobile-nav-item[data-section]').forEach(v => {
+                const isActive = v.dataset.section === name;
+                v.classList.toggle('active', isActive);
+                if (isActive) {
+                    try { v.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); } catch (_) {}
+                }
+            });
+            closeMobileSidebar();
+            const bodyEl = document.querySelector('.user-body');
+            if (bodyEl) bodyEl.scrollTop = 0;
             const el = $('section-' + name);
             if (el) el.classList.add('active');
             setPageTitle((titles[name] || titles.home)[0], (titles[name] || titles.home)[1]);
@@ -4027,6 +4532,13 @@
         document.querySelectorAll('.tab').forEach(btn => btn.addEventListener('click', () => showView(btn.dataset.view)));
         document.querySelectorAll('[data-jump]').forEach(a => a.addEventListener('click', () => showView(a.dataset.jump)));
         document.querySelectorAll('.user-menu-item[data-section]').forEach(btn => btn.addEventListener('click', () => showUserSection(btn.dataset.section)));
+        document.querySelectorAll('.mobile-nav-item[data-section]').forEach(btn => btn.addEventListener('click', () => showUserSection(btn.dataset.section)));
+        if ($('mobileMenuBtn')) $('mobileMenuBtn').addEventListener('click', openMobileSidebar);
+        if ($('drawerCloseBtn')) $('drawerCloseBtn').addEventListener('click', closeMobileSidebar);
+        if ($('sidebarBackdrop')) $('sidebarBackdrop').addEventListener('click', closeMobileSidebar);
+        window.addEventListener('keydown', e => {
+            if (e.key === 'Escape') closeMobileSidebar();
+        });
         ['loginUser', 'loginPwd'].forEach(id => {
             $(id).addEventListener('keydown', function (e) {
                 if (e.key === 'Enter') {
@@ -4693,6 +5205,14 @@ await loadPlans();
                 }
                 const titleInput = $('fbTitle');
                 if (titleInput) titleInput.focus();
+            });
+        }
+
+        // 新建反馈卡片返回按钮 (移动端专用)
+        if ($('fbSubmitBack')) {
+            $('fbSubmitBack').addEventListener('click', function () {
+                if ($('fbListView')) $('fbListView').style.display = 'block';
+                if (window.innerWidth <= 960 && $('fbSubmitCard')) $('fbSubmitCard').style.display = 'none';
             });
         }
 
