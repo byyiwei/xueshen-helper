@@ -368,61 +368,99 @@
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-  /* ========== 安装指南 ========== */
-  .method-card {
+  /* ========== 安装指南（多线路探测 + Edge 专区） ========== */
+  .install-panel {
     background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg);
-    padding: 32px; margin-bottom: 24px; box-shadow: var(--shadow);
+    padding: 28px 32px; margin-bottom: 20px; box-shadow: var(--shadow);
   }
-  .method-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 24px; }
-  .method-badge {
-    padding: 5px 14px; border-radius: 999px; font-size: 13px; font-weight: 700; color: #fff;
+  .install-panel h3 { font-size: 18px; font-weight: 800; margin-bottom: 8px; }
+  .install-panel > p { font-size: 14px; color: var(--text-secondary); margin-bottom: 18px; line-height: 1.7; }
+  .route-status {
+    font-size: 13.5px; color: var(--text-muted); margin-bottom: 14px;
+    display: flex; align-items: flex-start; gap: 8px;
   }
-  .method-badge.cat { background: linear-gradient(135deg, #ff9f1a, #ff6a3d); }
-  .method-badge.monkey { background: linear-gradient(135deg, #2f6bff, #6f3bff); }
-  .method-head h3 { font-size: 19px; font-weight: 800; }
-  .method-tip { font-size: 12.5px; color: #0a8f76; background: var(--teal-light); padding: 3px 10px; border-radius: 999px; font-weight: 600; }
-  .install-steps { list-style: none; }
-  .install-steps li { display: flex; gap: 16px; padding: 14px 0; }
-  .install-steps li + li { border-top: 1px dashed var(--border); }
-  .step-no {
-    flex-shrink: 0; width: 34px; height: 34px; border-radius: 10px;
-    background: var(--primary-light); color: var(--primary); font-size: 15px; font-weight: 800;
-    display: flex; align-items: center; justify-content: center;
+  .route-status > span { flex: 1; line-height: 1.7; }
+  .route-status .dot-spin { margin-top: 7px; flex: none; }
+  .route-status .dot-spin {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--primary);
+    animation: routePulse 1s ease-in-out infinite;
   }
-  .install-steps li b { font-size: 15.5px; display: block; margin-bottom: 4px; }
-  .install-steps li p { font-size: 14px; color: var(--text-secondary); line-height: 1.8; }
-  .dl-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; font-size: 13px; color: var(--text-secondary); }
-  .dl-btn {
+  @keyframes routePulse { 0%,100%{opacity:.35} 50%{opacity:1} }
+  .smart-install {
+    width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+    appearance: none; border: 0; border-radius: 12px; cursor: pointer;
+    padding: 15px 20px; margin-bottom: 14px; text-align: left;
+    background: linear-gradient(135deg, var(--primary), #5b8cff); color: #fff;
+    box-shadow: 0 8px 20px rgba(47,107,255,.28); transition: transform .18s, box-shadow .18s, opacity .18s;
+  }
+  .smart-install:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 26px rgba(47,107,255,.34); }
+  .smart-install:disabled { cursor: progress; opacity: .85; }
+  .smart-install .si-main { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 800; }
+  .smart-install .si-sub { font-size: 12.5px; opacity: .92; padding-left: 24px; }
+  .smart-install .si-spin {
+    width: 14px; height: 14px; border-radius: 50%; flex: none;
+    border: 2px solid rgba(255,255,255,.45); border-top-color: #fff;
+    animation: siSpin .8s linear infinite;
+  }
+  .smart-install.ok .si-spin { display: none; }
+  .smart-install.fail { background: linear-gradient(135deg, #ef4444, #f87171); box-shadow: 0 8px 20px rgba(239,68,68,.28); }
+  @keyframes siSpin { to { transform: rotate(360deg); } }
+  .route-advanced { margin-top: 12px; }
+  .route-advanced > summary {
+    cursor: pointer; font-size: 13px; color: var(--text-secondary); font-weight: 700;
+    padding: 4px 0; list-style: none; user-select: none;
+  }
+  .route-advanced > summary::-webkit-details-marker { display: none; }
+  .route-advanced > summary::before { content: '▸ '; }
+  .route-advanced[open] > summary::before { content: '▾ '; }
+  .route-advanced .route-btns { margin-top: 10px; }
+  .route-btns { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+  .route-btn {
+    appearance: none; border: 1px solid var(--border); background: #fff; color: var(--text);
+    padding: 11px 18px; border-radius: 10px; font-size: 14px; font-weight: 700;
+    cursor: pointer; transition: all .2s;
+  }
+  .route-btn:hover { border-color: var(--primary); color: var(--primary); }
+  .route-btn.ready { border-color: rgba(15,188,155,.45); background: var(--teal-light); color: #0a8f76; }
+  .route-btn.best {
+    background: var(--primary); color: #fff; border-color: var(--primary);
+    box-shadow: 0 6px 16px rgba(47,107,255,.28);
+  }
+  .route-btn:disabled { opacity: .45; cursor: not-allowed; }
+  .route-btn.checking { opacity: .7; }
+  .install-note {
+    font-size: 13px; color: var(--text-secondary); line-height: 1.8;
+    background: var(--bg); border-radius: 10px; padding: 12px 14px;
+  }
+  .install-grid {
+    display: grid; grid-template-columns: 1.2fr .8fr; gap: 16px; margin-bottom: 20px;
+  }
+  @media (max-width: 860px) { .install-grid { grid-template-columns: 1fr; } }
+  .edge-panel {
+    background: linear-gradient(160deg, #eef4ff, #fff); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 28px 32px; margin-bottom: 20px;
+  }
+  .edge-panel h3 { font-size: 18px; font-weight: 800; margin-bottom: 8px; }
+  .edge-panel > p { font-size: 14px; color: var(--text-secondary); margin-bottom: 14px; line-height: 1.7; }
+  .edge-panel ul { padding-left: 18px; margin-bottom: 14px; color: var(--text-secondary); font-size: 14px; line-height: 1.9; }
+  .edge-steps { list-style: none; padding: 0; }
+  .edge-steps li {
+    display: flex; gap: 12px; padding: 10px 0; border-top: 1px dashed var(--border);
+    font-size: 14px; color: var(--text-secondary); line-height: 1.7;
+  }
+  .edge-steps .n {
+    flex-shrink: 0; width: 26px; height: 26px; border-radius: 8px;
+    background: var(--primary-light); color: var(--primary); font-weight: 800;
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+  }
+  .manual-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+  .manual-links a {
     display: inline-flex; align-items: center; gap: 6px;
-    background: var(--primary); color: #fff; font-size: 13px; font-weight: 700;
-    padding: 7px 16px; border-radius: 8px; transition: all .2s;
+    padding: 9px 14px; border-radius: 8px; font-size: 13px; font-weight: 700;
+    border: 1px solid var(--border); background: #fff; color: var(--text);
   }
-  .dl-btn:hover { background: var(--primary-dark); transform: translateY(-1px); }
-  .dl-link { font-size: 13px; font-weight: 600; }
-  .dl-summary {
-    background: linear-gradient(135deg, #f0f5ff, #fff); border: 1px solid var(--border);
-    border-radius: var(--radius-lg); padding: 32px; text-align: center; margin-bottom: 24px;
-  }
-  .dl-summary h3 { font-size: 20px; font-weight: 800; margin-bottom: 6px; }
-  .dl-summary > p { font-size: 14px; color: var(--text-secondary); margin-bottom: 20px; }
-  .dl-grid { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin-bottom: 24px; }
-  .dl-big {
-    flex: 1; max-width: 300px; padding: 18px 20px; border-radius: var(--radius);
-    color: #fff; font-size: 16px; font-weight: 800; transition: all .2s;
-    display: flex; align-items: center; justify-content: center; gap: 8px;
-  }
-  .dl-big.cat { background: linear-gradient(135deg, #ff9f1a, #ff6a3d); box-shadow: 0 6px 18px rgba(255,159,26,.35); }
-  .dl-big.monkey { background: linear-gradient(135deg, #2f6bff, #6f3bff); box-shadow: 0 6px 18px rgba(47,107,255,.3); }
-  .dl-big:hover { transform: translateY(-2px); }
-  .dl-channels { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; text-align: left; }
-  .dl-channels a {
-    background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 18px; display: flex; flex-direction: column; gap: 4px; color: var(--text); transition: all .2s;
-  }
-  .dl-channels a:hover { border-color: var(--primary); box-shadow: var(--shadow); transform: translateY(-2px); }
-  .dl-channels .emoji { font-size: 26px; margin-bottom: 4px; }
-  .dl-channels b { font-size: 15.5px; }
-  .dl-channels small { font-size: 12.5px; color: var(--text-muted); line-height: 1.6; }
+  .manual-links a.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .manual-links a.cat { background: linear-gradient(135deg, #ff9f1a, #ff6a3d); color: #fff; border: none; }
   .install-tip {
     display: flex; gap: 14px; align-items: flex-start;
     background: var(--amber-light); border: 1px solid rgba(255,159,26,.35);
@@ -573,116 +611,72 @@
     <div class="section-header">
       <div class="section-tag">安装学神助手</div>
       <h2 class="section-title">安装刷课脚本，整课托管</h2>
-      <p class="section-desc">支持油猴 (Tampermonkey) 和脚本猫 (ScriptCat) 两种管理方式，任选其一即可</p>
+      <p class="section-desc">自动识别你的脚本管理器与可用线路，点一下直接进安装页；推荐先装脚本猫或油猴</p>
     </div>
 
-    <!-- 方法一：脚本猫 -->
-    <div class="method-card">
-      <div class="method-head">
-        <span class="method-badge cat">🐱 方法一</span>
-        <h3>脚本猫 ScriptCat（推荐国内用户）</h3>
-        <span class="method-tip">国内访问更稳定，支持脚本同步备份</span>
+    <div class="install-grid">
+      <div class="install-panel">
+        <h3>一键安装</h3>
+        <p>不用挑版本、不用挑线路：自动认你的脚本管理器（脚本猫 / 油猴），自动选最快能打开的线路，点一下直接进安装页。</p>
+        <button type="button" class="smart-install" id="smartInstall" disabled>
+          <span class="si-main"><span class="si-spin"></span><span id="smartInstallText">正在自动匹配安装方式…</span></span>
+          <span class="si-sub" id="smartInstallSub">检测脚本管理器与可用线路</span>
+        </button>
+        <div class="route-status" id="routeStatus"><span class="dot-spin"></span><span>正在寻找最优线路…</span></div>
+        <div class="install-note">
+          <div style="font-weight:700;margin-bottom:6px">自动匹配规则</div>
+          管理器：<b>脚本猫</b> 装 xueshen-sc 版，<b>油猴 / Violentmonkey</b> 装 xueshen-gf 版（功能一致，勿装两份）。<br>
+          线路：优先本站；本站打不开（如未开 VPN 被拦）自动改用 GitHub。<br>
+          若弹出的是「下载文件」而不是安装页，说明管理器没接管 .user.js，请在管理器设置里打开「.user.js 安装」，或直接点下方对应版本。
+        </div>
+        <details class="route-advanced">
+          <summary>其它安装来源 / 手动选择</summary>
+          <div class="route-btns" id="routeBtns">
+            <button type="button" class="route-btn checking" data-route="site" disabled>本站安装</button>
+            <button type="button" class="route-btn checking" data-route="github" disabled>GitHub 仓库</button>
+            <button type="button" class="route-btn checking" data-route="gf" disabled>Greasy Fork</button>
+            <button type="button" class="route-btn checking" data-route="scriptcat" disabled>脚本猫</button>
+          </div>
+        </details>
+        <div class="manual-links" style="margin-top:14px">
+          <a class="cat" id="manualSc" href="https://xs.openget.cn/xueshen-sc.user.js" target="_blank" rel="noopener">脚本猫版安装</a>
+          <a class="primary" id="manualGf" href="https://xs.openget.cn/xueshen-gf.user.js" target="_blank" rel="noopener">油猴版安装</a>
+          <a href="https://docs.scriptcat.org/" target="_blank" rel="noopener">脚本猫文字教程</a>
+          <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener">油猴官网</a>
+        </div>
       </div>
-      <ol class="install-steps">
-        <li>
-          <span class="step-no">1</span>
-          <div>
-            <b>安装脚本猫扩展</b>
-            <p>打开 Chrome/Edge 浏览器，访问 脚本猫官网 或 Chrome 扩展商店，搜索 "ScriptCat" 并安装。安装后浏览器右上角会出现猫咪图标，点击即可打开脚本猫面板。</p>
-          </div>
-        </li>
-        <li>
-          <span class="step-no">2</span>
-          <div>
-            <b>添加学神助手脚本</b>
-            <p>点击脚本猫图标 → 点击"添加脚本" → 选择"从链接安装"或直接粘贴脚本代码。</p>
-            <div class="dl-row">
-              <span>脚本下载渠道：</span>
-              <a class="dl-btn" href="https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js" target="_blank" rel="noopener">⬇️ 下载脚本猫版</a>
-              <a class="dl-link" href="https://greasyfork.org/zh-CN" target="_blank" rel="noopener">Greasy Fork</a>
-              <a class="dl-link" href="https://github.com/byyiwei/xueshen-helper" target="_blank" rel="noopener">GitHub</a>
-            </div>
-          </div>
-        </li>
-        <li>
-          <span class="step-no">3</span>
-          <div>
-            <b>启用脚本并刷新页面</b>
-            <p>添加完成后，在脚本猫面板中确保学神助手处于"启用"状态。打开 超星学习通 或 智慧树 课程页面，刷新后即可看到悬浮面板。</p>
-          </div>
-        </li>
+
+      <div class="install-panel">
+        <h3>兼容与环境</h3>
+        <p style="margin-bottom:10px">Chromium 内核（Edge / Chrome）优先；手机请用下方 Edge 专区。</p>
+        <ul style="padding-left:18px;color:var(--text-secondary);font-size:14px;line-height:1.9;margin:0">
+          <li>推荐脚本猫最新版（国内更稳）</li>
+          <li>首次 AI 答题需登录拿密钥</li>
+          <li>倍速建议 1–2 倍，过高可能清空进度</li>
+          <li>电脑休眠 / 关机后任务会停</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="edge-panel" id="install-edge">
+      <h3>兼容 Edge 手机 APP</h3>
+      <p>脚本可在 Android Edge + 脚本猫下使用。后台挂机可能被系统杀进程，建议保持屏幕常亮、不要切出 APP。</p>
+      <ul>
+        <li>支持桌面版 Edge / Chrome</li>
+        <li>支持 Android Edge（后台能力受限）</li>
+        <li>手机运行时尽量不要最小化</li>
+      </ul>
+      <ol class="edge-steps">
+        <li><span class="n">1</span><div>Edge APP 底部菜单 → <b>扩展</b></div></li>
+        <li><span class="n">2</span><div>启用 <b>脚本猫</b></div></li>
+        <li><span class="n">3</span><div>在 APP 内打开本页，点上方「本站安装」或「脚本猫版直链」</div></li>
+        <li><span class="n">4</span><div>若暂停或掉线：保持浏览器在前台，勿切到其它 App</div></li>
       </ol>
     </div>
 
-    <!-- 方法二：Tampermonkey 油猴 -->
-    <div class="method-card">
-      <div class="method-head">
-        <span class="method-badge monkey">🐵 方法二</span>
-        <h3>Tampermonkey 油猴（国际通用）</h3>
-        <span class="method-tip">全球最大脚本管理平台，脚本生态完善</span>
-      </div>
-      <ol class="install-steps">
-        <li>
-          <span class="step-no">1</span>
-          <div>
-            <b>安装 Tampermonkey 油猴</b>
-            <p>Chrome/Edge 用户访问 油猴官网 或直接在扩展商店搜索 "Tampermonkey" 安装。Firefox 用户搜索 "Tampermonkey" 或 "Violentmonkey" 安装。安装后浏览器右上角会出现黑色猴子图标。</p>
-          </div>
-        </li>
-        <li>
-          <span class="step-no">2</span>
-          <div>
-            <b>安装学神助手脚本</b>
-            <p>点击以下按钮下载脚本，油猴会自动弹出安装确认框，点击"安装"即可。</p>
-            <div class="dl-row">
-              <span>脚本下载渠道：</span>
-              <a class="dl-btn" href="https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js" target="_blank" rel="noopener">⬇️ 下载油猴版</a>
-              <a class="dl-link" href="https://greasyfork.org/zh-CN" target="_blank" rel="noopener">Greasy Fork</a>
-              <a class="dl-link" href="https://github.com/byyiwei/xueshen-helper" target="_blank" rel="noopener">GitHub</a>
-            </div>
-          </div>
-        </li>
-        <li>
-          <span class="step-no">3</span>
-          <div>
-            <b>打开网课页面开始使用</b>
-            <p>安装完成后，进入 超星学习通 或 智慧树 的课程页面。页面左上角会出现蓝色"学神"悬浮球，点击进入设置面板，调整倍速和答题模式后即可全自动运行。</p>
-          </div>
-        </li>
-      </ol>
-    </div>
-
-    <!-- 下载渠道汇总 -->
-    <div class="dl-summary">
-      <h3>📦 脚本下载渠道汇总</h3>
-      <p>学神助手提供两个版本脚本，分别适配油猴和脚本猫，功能完全一致。点击下方按钮直接下载：</p>
-      <div class="dl-grid">
-        <a class="dl-big cat" href="https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js" target="_blank" rel="noopener">⬇️ 下载脚本猫版脚本</a>
-        <a class="dl-big monkey" href="https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js" target="_blank" rel="noopener">⬇️ 下载油猴版脚本</a>
-      </div>
-      <div class="dl-channels">
-        <a href="https://greasyfork.org/zh-CN" target="_blank" rel="noopener">
-          <span class="emoji">🍴</span>
-          <b>Greasy Fork</b>
-          <small>greasyfork.org 搜索"学神助手"<br>支持一键安装到油猴，自动更新</small>
-        </a>
-        <a href="https://scriptcat.org/" target="_blank" rel="noopener">
-          <span class="emoji">🐱</span>
-          <b>脚本猫市场</b>
-          <small>scriptcat.org 搜索"学神助手"<br>国内访问快，支持脚本云同步</small>
-        </a>
-        <a href="https://github.com/byyiwei/xueshen-helper" target="_blank" rel="noopener">
-          <span class="emoji">🐙</span>
-          <b>GitHub 仓库</b>
-          <small>github.com/byyiwei/xueshen-helper<br>开源仓库，Release 页面下载最新版</small>
-        </a>
-      </div>
-    </div>
-
-    <!-- 使用提示 -->
     <div class="install-tip">
       <div class="tip-icon">💡</div>
-      <p>使用提示：首次使用AI答题功能需要登录/注册账号获取密钥，新用户赠送免费体验次数。视频倍速建议设置在1-2倍，过高倍速可能导致进度被清空。两个脚本版本功能完全一致，仅适配的管理器不同，无需重复安装。</p>
+      <p>安装后打开超星 / 智慧树课程页，左上角出现学神悬浮球即成功。切后台时脚本会尝试静音保活；电脑休眠仍会中断。两个版本功能一致，按管理器选一份即可。</p>
     </div>
   </div>
 </section>
@@ -1080,10 +1074,274 @@
     }
   };
 
+  /* ---------- 安装线路探测 ----------
+     安装页必须是 .user.js 结尾：Tampermonkey / ScriptCat / Violentmonkey 只接管这个后缀，
+     /scripts/xueshen-gf.js 这类普通 .js 会被浏览器当文件直接打开（就是「点了没反应」的原因）。
+     本站 Nginx 已把 /xueshen-gf.user.js、/xueshen-sc.user.js 指向 scripts/ 下对应文件。 */
+  var INSTALL_ROUTES = {
+    site: {
+      label: '本站安装',
+      probe: '/scripts/version.json',
+      sc: 'https://xs.openget.cn/xueshen-sc.user.js',
+      gf: 'https://xs.openget.cn/xueshen-gf.user.js'
+    },
+    github: {
+      label: 'GitHub 仓库',
+      probe: 'https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/version.json',
+      // GitHub 的 raw 文件名永远是 xueshen-gf.js，浏览器不会把 .user.js 识别成安装包，
+      // 这里用 blob 页面（url 带 .user.js 后缀）交给脚本管理器接管；若 git 仓库里没有该文件也无妨，
+      // 主线仍然是本站 .user.js 安装。
+      sc: 'https://github.com/byyiwei/xueshen-helper/blob/main/scripts/xueshen-sc.user.js?raw=true',
+      gf: 'https://github.com/byyiwei/xueshen-helper/blob/main/scripts/xueshen-gf.user.js?raw=true'
+    },
+    gf: {
+      label: 'Greasy Fork',
+      probe: 'https://greasyfork.org/zh-CN',
+      open: 'https://greasyfork.org/zh-CN/scripts?q=%E5%AD%A6%E7%A5%9E%E5%8A%A9%E6%89%8B',
+      portal: true
+    },
+    scriptcat: {
+      label: '脚本猫',
+      probe: 'https://scriptcat.org/',
+      open: 'https://scriptcat.org/',
+      portal: true
+    }
+  };
+
+  function preferScriptCat() {
+    try {
+      return /EdgA|Android|Mobile|ScriptCat/i.test(navigator.userAgent || '');
+    } catch (_) { return true; }
+  }
+
+  /* 客户有的用脚本猫、有的用油猴：UA 里 ScriptCat / Violentmonkey 会带标识，
+     油猴通常查不出来。所以按「有标识就按标识，没标识默认油猴版」来选安装地址，
+     两份脚本功能完全一致；两种管理器都能安装任一份，选错也只是版本渠道不同。 */
+  function detectManager() {
+    try {
+      var ua = navigator.userAgent || '';
+      if (/ScriptCat/i.test(ua)) return 'scriptcat';
+      if (/Violentmonkey|VM_/i.test(ua)) return 'violentmonkey';
+      if (/Tampermonkey/i.test(ua)) return 'tampermonkey';
+    } catch (_) { }
+    return '';
+  }
+
+  function installUrl(route, manager) {
+    // 脚本猫 / 未知（UA 认不出，多半是油猴）给 sc 版（国内更稳），
+    // Violentmonkey 与明确认出的 Tampermonkey 给 gf 版；两份脚本功能一致，装哪份都能跑
+    var preferSc = manager !== 'violentmonkey' && manager !== 'tampermonkey';
+    var url = preferSc ? route.sc : route.gf;
+    if (manager === 'scriptcat') {
+      url += (url.indexOf('?') >= 0 ? '&' : '?') + 'from=scriptcat';
+    }
+    return url;
+  }
+
+  function probeUrl(url, ms) {
+    return new Promise(function (resolve) {
+      var done = false;
+      var timer = setTimeout(function () {
+        if (done) return;
+        done = true;
+        resolve(false);
+      }, ms || 3500);
+      var finish = function (ok) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve(!!ok);
+      };
+      fetch(url, { method: 'GET', mode: 'cors', cache: 'no-store' })
+        .then(function (r) { finish(r.ok || r.type === 'opaque'); })
+        .catch(function () {
+          fetch(url, { method: 'GET', mode: 'no-cors', cache: 'no-store' })
+            .then(function () { finish(true); })
+            .catch(function () { finish(false); });
+        });
+    });
+  }
+
+  function openInstall(routeKey) {
+    var route = INSTALL_ROUTES[routeKey];
+    if (!route) return;
+    if (route.portal) {
+      window.open(route.open, '_blank', 'noopener');
+      return;
+    }
+    var manager = detectManager();
+    var url = installUrl(route, manager);
+    // 直接打开 .user.js 地址：装了脚本猫 / 油猴就会弹安装页，没装才会变成下载
+    var win = window.open(url, '_blank', 'noopener');
+    if (!win) {
+      location.href = url;
+      return;
+    }
+    toast(manager === 'scriptcat'
+      ? '已打开脚本猫安装页，点击「安装脚本」即可'
+      : '已打开安装页；油猴 / 脚本猫都会拦截并弹出「安装」按钮');
+  }
+
+  function setRouteStatus(html) {
+    var el = document.getElementById('routeStatus');
+    if (!el) return;
+    // 容器是 flex，整段包一层 span，否则 <b> 会被拆成独立 flex item 而换行
+    var dot = el.querySelector('.dot-spin');
+    el.innerHTML = '';
+    if (dot) el.appendChild(dot);
+    var span = document.createElement('span');
+    span.innerHTML = html;
+    el.appendChild(span);
+  }
+
+  /* ================= 智能安装：自动挑线路 + 自动挑版本 ================= */
+
+  // 优先级：本站最快且是自家域名；GitHub 作为被墙时的兜底；后面两个是门户页
+  var ROUTE_ORDER = ['site', 'github', 'scriptcat', 'gf'];
+
+  function managerLabel(m) {
+    return m === 'scriptcat' ? '脚本猫'
+      : m === 'tampermonkey' ? '油猴'
+      : m === 'violentmonkey' ? 'Violentmonkey'
+      : '';
+  }
+
+  function setSmartButton(state, main, sub) {
+    var btn = document.getElementById('smartInstall');
+    if (!btn) return;
+    btn.classList.toggle('ok', state === 'ok');
+    btn.classList.toggle('fail', state === 'fail');
+    btn.disabled = state === 'checking';
+    var t = document.getElementById('smartInstallText');
+    var d = document.getElementById('smartInstallSub');
+    if (t) t.textContent = main;
+    if (d) d.textContent = sub || '';
+  }
+
+  // 记住探测结果，点击时再次确认，避免页面停留很久后线路已失效
+  var routeReady = {};
+
+  async function pickRoute() {
+    // 1) 用已探测结果；2) 都不可用时现场重探一次
+    var hit = ROUTE_ORDER.filter(function (k) { return routeReady[k]; });
+    if (!hit.length) {
+      for (var i = 0; i < ROUTE_ORDER.length; i++) {
+        var key = ROUTE_ORDER[i];
+        if (await probeUrl(INSTALL_ROUTES[key].probe, 3000)) {
+          routeReady[key] = true;
+          hit.push(key);
+        }
+      }
+    }
+    return hit[0] || '';
+  }
+
+  async function smartInstall() {
+    var btn = document.getElementById('smartInstall');
+    if (btn && btn.disabled) return;
+    setSmartButton('checking', '正在匹配…', '确认线路与脚本管理器');
+
+    var manager = detectManager();
+    var label = managerLabel(manager);
+    var routeKey = await pickRoute();
+
+    if (!routeKey) {
+      setSmartButton('fail', '线路都不通，点此重试', '可展开下方「其它安装来源」手动选择');
+      toast('本站与 GitHub 都连不上，请检查网络或稍后重试');
+      return;
+    }
+
+    var route = INSTALL_ROUTES[routeKey];
+    var ver = (manager === 'tampermonkey' || manager === 'violentmonkey') ? 'gf' : 'sc';
+    setSmartButton('ok', '打开安装页 →',
+      '线路：' + route.label + ' ｜ 版本：' + ver + ' 版' + (label ? '（' + label + '）' : ''));
+
+    if (route.portal) {
+      // 门户页站点：没有 .user.js 直链，交给用户在站内找
+      window.open(route.open, '_blank', 'noopener');
+      toast('已打开 ' + route.label + '，搜索「学神助手」安装即可');
+      return;
+    }
+
+    var url = installUrl(route, manager);
+    var win = window.open(url, '_blank', 'noopener');
+    if (!win) { location.href = url; return; }
+    toast(label
+      ? '已按 ' + label + ' 打开 ' + (ver === 'sc' ? '脚本猫' : '油猴') + ' 版安装页'
+      : '已打开 ' + ver + ' 版安装页；若管理器没接管会出现下载，可按提示处理');
+  }
+
+  async function initInstallRoutes() {
+    var btns = document.querySelectorAll('#routeBtns .route-btn');
+    if (!btns.length) return;
+
+    var smartBtn = document.getElementById('smartInstall');
+    if (smartBtn) smartBtn.addEventListener('click', function () {
+      if (smartBtn.classList.contains('fail')) {
+        routeReady = {};
+        setSmartButton('checking', '正在重新匹配…', '');
+      }
+      smartInstall();
+    });
+
+    var ready = [];
+    await Promise.all(Object.keys(INSTALL_ROUTES).map(async function (key) {
+      var route = INSTALL_ROUTES[key];
+      var ok = await probeUrl(route.probe, 4000);
+      routeReady[key] = ok;
+      var btn = document.querySelector('#routeBtns [data-route="' + key + '"]');
+      if (!btn) return;
+      btn.classList.remove('checking');
+      btn.disabled = !ok;
+      if (ok) {
+        btn.classList.add('ready');
+        ready.push(key);
+      } else {
+        btn.title = '当前线路不可达，可稍后再试或换其它来源';
+      }
+      btn.addEventListener('click', function () { openInstall(key); });
+    }));
+
+    // 推荐线路高亮
+    var manager = detectManager();
+    var best = ROUTE_ORDER.find(function (k) { return ready.indexOf(k) >= 0; });
+    if (best) {
+      var bestBtn = document.querySelector('#routeBtns [data-route="' + best + '"]');
+      if (bestBtn) bestBtn.classList.add('best');
+    }
+
+    // 主按钮：就绪态直接点即可安装
+    var label = managerLabel(manager);
+    var ver = (manager === 'tampermonkey' || manager === 'violentmonkey') ? 'gf' : 'sc';
+    if (best) {
+      setSmartButton('ok', '一键安装学神助手 →',
+        '将自动使用：' + INSTALL_ROUTES[best].label + ' ｜ ' +
+        (label ? '识别到 ' + label + '，装 ' + ver + ' 版' : '未识别管理器，默认装 ' + ver + ' 版'));
+      var status = '已找到可用线路：<b style="color:var(--primary)">' + INSTALL_ROUTES[best].label + '</b>，';
+      status += label
+        ? '检测到 <b>' + label + '</b>，点上方按钮自动装 ' + ver + ' 版'
+        : '点上方按钮自动匹配管理器并安装';
+      setRouteStatus(status);
+      var bestRoute = INSTALL_ROUTES[best];
+      var sc = document.getElementById('manualSc');
+      var gf = document.getElementById('manualGf');
+      if (sc && bestRoute.sc) sc.href = bestRoute.sc;
+      if (gf && bestRoute.gf) gf.href = bestRoute.gf;
+    } else {
+      setSmartButton('fail', '线路都不通，点此重试', '也可展开「其它安装来源」手动选择');
+      setRouteStatus('自动探测未找到可用线路，请稍后再试，或展开下方「其它安装来源」');
+      btns.forEach(function (btn) {
+        btn.disabled = false;
+        btn.classList.remove('checking');
+      });
+    }
+  }
+
   /* ---------- 初始化 ---------- */
   renderNav();
   checkLogin();
   loadRandomQuestions();
+  initInstallRoutes();
 })();
 </script>
 </body>
