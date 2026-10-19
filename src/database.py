@@ -574,6 +574,9 @@ class Database:
         """)
         self._add_column_if_missing("ai_call_logs", "username", "username VARCHAR(50) DEFAULT ''")
         self._add_column_if_missing("ai_call_logs", "final_model", "final_model VARCHAR(255) DEFAULT ''")
+        # 写入时快照：调用记录里的「剩余/到期」应是该次写入时的值，不能每次列表 JOIN 当前余额
+        self._add_column_if_missing("ai_call_logs", "points_balance", "points_balance INT NULL COMMENT '写入时题数快照'")
+        self._add_column_if_missing("ai_call_logs", "member_until", "member_until TIMESTAMP NULL COMMENT '写入时包月到期快照'")
         # 题库调用日志
         self.execute("""
             CREATE TABLE IF NOT EXISTS bank_call_logs (
@@ -595,6 +598,8 @@ class Database:
                 INDEX idx_question_hash (question_hash)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
+        self._add_column_if_missing("bank_call_logs", "points_balance", "points_balance INT NULL COMMENT '写入时题数快照'")
+        self._add_column_if_missing("bank_call_logs", "member_until", "member_until TIMESTAMP NULL COMMENT '写入时包月到期快照'")
         self.execute("""
             CREATE TABLE IF NOT EXISTS script_event_logs (
                 id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -615,6 +620,8 @@ class Database:
                 INDEX idx_level_created (level, created_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
+        self._add_column_if_missing("script_event_logs", "points_balance", "points_balance INT NULL COMMENT '写入时题数快照'")
+        self._add_column_if_missing("script_event_logs", "member_until", "member_until TIMESTAMP NULL COMMENT '写入时包月到期快照'")
         self.execute("""
             CREATE TABLE IF NOT EXISTS question_bank (
                 id INT PRIMARY KEY AUTO_INCREMENT,
@@ -4562,12 +4569,16 @@ class Database:
             extra = item.get("extra")
             if extra is not None and not isinstance(extra, str):
                 extra = json.dumps(extra, ensure_ascii=False)
+            uname = username or item.get("username", "") or ""
+            points, member_until = self._quota_snapshot(
+                uname, item.get("points_balance"), item.get("member_until")
+            )
             self.execute(
                 f"""INSERT INTO script_event_logs
-                    (username, event_type, level, message, page_url, course_id, task_id, client_ip, user_agent, extra_json)
-                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+                    (username, event_type, level, message, page_url, course_id, task_id, client_ip, user_agent, extra_json, points_balance, member_until)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
                 (
-                    username or item.get("username", ""),
+                    uname,
                     event_type,
                     level,
                     message,
@@ -4576,7 +4587,9 @@ class Database:
                     str(item.get("task_id", ""))[:100],
                     client_ip,
                     user_agent[:500],
-                    extra
+                    extra,
+                    points,
+                    member_until,
                 )
             )
             count += 1
@@ -4603,7 +4616,11 @@ class Database:
         if date_to:
             where.append(f"s.created_at <= {ph}")
             params.append(date_to)
-        sql = "SELECT s.id, s.username, s.event_type, s.level, s.message, s.page_url, s.course_id, s.task_id, s.client_ip, s.extra_json, s.created_at, u.points_balance, u.member_until FROM script_event_logs s LEFT JOIN users u ON u.username = s.username"
+        sql = ("SELECT s.id, s.username, s.event_type, s.level, s.message, s.page_url, s.course_id, s.task_id, "
+               "s.client_ip, s.extra_json, s.created_at, "
+               "COALESCE(s.points_balance, u.points_balance) AS points_balance, "
+               "COALESCE(s.member_until, u.member_until) AS member_until "
+               "FROM script_event_logs s LEFT JOIN users u ON u.username = s.username")
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY s.created_at DESC, s.id DESC"
@@ -4763,15 +4780,38 @@ class Database:
         self.execute(f"UPDATE providers_config SET data = {ph} WHERE id = 1", (json.dumps(data, ensure_ascii=False),))
 
     # ==================== AI 调用日志 ====================
+    def _quota_snapshot(self, username, points_balance=None, member_until=None):
+        """取用户题数/包月到期快照。调用方可传入已算好的值；缺省字段再读库补齐。"""
+        need_db = points_balance is None or member_until is None
+        row = None
+        uname = (username or "").strip()
+        if need_db and uname:
+            ph = _ph()
+            row = self.fetchone(
+                f"SELECT points_balance, member_until FROM users WHERE username = {ph}",
+                (uname,),
+            )
+        if points_balance is None:
+            points_balance = int(row.get("points_balance") or 0) if row else None
+        else:
+            points_balance = int(points_balance)
+        if member_until is None:
+            member_until = row.get("member_until") if row else None
+        return points_balance, member_until
+
     def save_ai_call_log(self, log):
         ph = _ph()
+        username = log.get("username", "") or ""
+        points, member_until = self._quota_snapshot(
+            username, log.get("points_balance"), log.get("member_until")
+        )
         self.execute(
             f"""INSERT INTO ai_call_logs
-                (provider_key, username, model, final_model, question, answer, status, error, duration_ms, client_ip)
-                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+                (provider_key, username, model, final_model, question, answer, status, error, duration_ms, client_ip, points_balance, member_until)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
             (
                 log.get("provider_key", ""),
-                log.get("username", ""),
+                username,
                 log.get("model", ""),
                 log.get("final_model", ""),
                 log.get("question", ""),
@@ -4780,6 +4820,8 @@ class Database:
                 log.get("error", ""),
                 int(log.get("duration_ms") or 0),
                 log.get("client_ip", ""),
+                points,
+                member_until,
             )
         )
 
@@ -4878,7 +4920,11 @@ class Database:
         page = max(1, page)
         offset = (page - 1) * limit
         where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to, source, username)
-        sql = "SELECT a.id, a.provider_key, a.username, a.model, a.final_model, a.question, a.answer, a.status, a.error, a.duration_ms, a.client_ip, a.created_at, u.points_balance, u.member_until FROM ai_call_logs a LEFT JOIN users u ON u.username = a.username"
+        sql = ("SELECT a.id, a.provider_key, a.username, a.model, a.final_model, a.question, a.answer, a.status, a.error, "
+               "a.duration_ms, a.client_ip, a.created_at, "
+               "COALESCE(a.points_balance, u.points_balance) AS points_balance, "
+               "COALESCE(a.member_until, u.member_until) AS member_until "
+               "FROM ai_call_logs a LEFT JOIN users u ON u.username = a.username")
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY id DESC"
@@ -4916,13 +4962,17 @@ class Database:
     # ==================== 题库调用日志 ====================
     def save_bank_call_log(self, log):
         ph = _ph()
+        username = log.get("username", "") or ""
+        points, member_until = self._quota_snapshot(
+            username, log.get("points_balance"), log.get("member_until")
+        )
         self.execute(
             f"""INSERT INTO bank_call_logs
                 (username, question_hash, question_text, question_type, options_text,
-                 matched, matched_hash, match_method, duration_ms, client_ip)
-                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+                 matched, matched_hash, match_method, duration_ms, client_ip, points_balance, member_until)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
             (
-                log.get("username", ""),
+                username,
                 log.get("question_hash", ""),
                 log.get("question_text", ""),
                 log.get("question_type", ""),
@@ -4932,6 +4982,8 @@ class Database:
                 log.get("match_method", ""),
                 int(log.get("duration_ms") or 0),
                 log.get("client_ip", ""),
+                points,
+                member_until,
             )
         )
 
@@ -4966,7 +5018,8 @@ class Database:
         where, params = self._build_bank_log_where(matched, keyword, date_from, date_to)
         sql = """SELECT b.id, b.username, b.question_hash, b.question_text, b.question_type, b.options_text,
                         b.matched, b.matched_hash, b.match_method, b.duration_ms, b.client_ip, b.created_at,
-                        u.points_balance, u.member_until
+                        COALESCE(b.points_balance, u.points_balance) AS points_balance,
+                        COALESCE(b.member_until, u.member_until) AS member_until
                  FROM bank_call_logs b
                  LEFT JOIN users u ON u.username = b.username"""
         if where:
@@ -5764,8 +5817,8 @@ class Database:
         ph = _ph()
         self.execute(f"UPDATE admin_config SET email_enabled = {ph} WHERE id = 1", (1 if enabled else 0,))
 
-    def cleanup_old_logs(self, days, batch_size=5000, max_batches=200):
-        """删除超过指定天数的日志数据，返回各表删除条数。
+    def cleanup_old_logs(self, days, batch_size=5000, max_batches=200, target_table=None):
+        """删除超过指定天数的日志数据（若 days=0 则清空全部历史日志），返回各表删除条数。
 
         分批删除：单次 DELETE 大量数据（如 script_event_logs 积压 20 万行/200MB）
         会超过 MySQL net_read_timeout(30s) 导致 "Lost connection during query"。
@@ -5774,24 +5827,39 @@ class Database:
         下次调用可继续（幂等）。
         """
         ph = _ph()
-        if not days or int(days) <= 0:
+        if days is None:
             return {}
-        days = int(days)
+        try:
+            days = int(days)
+        except Exception:
+            return {}
+        if days < 0:
+            return {}
+
         result = {}
-        tables = [
+        all_tables = [
+            ("script_event_logs", "created_at"),
             ("ai_call_logs", "created_at"),
             ("bank_call_logs", "created_at"),
-            ("script_event_logs", "created_at"),
             ("usage_logs", "created_at"),
         ]
+        tables = [t for t in all_tables if t[0] == target_table] if target_table else all_tables
+        if not tables:
+            return {}
+
+        total_deleted = 0
         for table, col in tables:
             deleted = 0
             try:
                 for _ in range(max_batches):
-                    # 用 LIMIT 限制单批删除量，配合索引 idx_created_id 走范围扫描
-                    sql = (f"DELETE FROM {table} WHERE {col} < DATE_SUB(NOW(), INTERVAL {ph} DAY) "
-                           f"LIMIT {int(batch_size)}")
-                    cur = self.execute(sql, (days,))
+                    # 若 days==0 则无时间限制全量清空；否则删除超过保留天数的数据
+                    if days == 0:
+                        sql = f"DELETE FROM {table} LIMIT {int(batch_size)}"
+                        cur = self.execute(sql)
+                    else:
+                        sql = (f"DELETE FROM {table} WHERE {col} < DATE_SUB(NOW(), INTERVAL {ph} DAY) "
+                               f"LIMIT {int(batch_size)}")
+                        cur = self.execute(sql, (days,))
                     n = cur.rowcount if cur and cur.rowcount and cur.rowcount > 0 else 0
                     deleted += n
                     if n < batch_size:
@@ -5799,10 +5867,76 @@ class Database:
                     # 每批之间短暂让出，缓解主从延迟与锁竞争
                     time.sleep(0.05)
                 result[table] = deleted
+                total_deleted += deleted
             except Exception as e:
                 print(f"[日志清理] 清理 {table} 失败（已删 {deleted} 行）: {e}", flush=True)
                 # 已成功删除的部分仍然算数，便于观察进度；失败标记为负数
                 result[table] = -1 if deleted == 0 else deleted
+
+        if total_deleted > 0 or days == 0:
+            try:
+                self.set_log_cleanup_last_at()
+            except Exception:
+                pass
+
+        return result
+
+    def get_log_stats(self, days=None):
+        """获取各日志表的统计信息：总记录数、最早/最晚记录时间、以及按指定天数预计清理条数"""
+        ph = _ph()
+        tables_meta = [
+            ("script_event_logs", "脚本事件日志", "created_at"),
+            ("ai_call_logs", "AI调用日志", "created_at"),
+            ("bank_call_logs", "题库接口日志", "created_at"),
+            ("usage_logs", "功能使用日志", "created_at"),
+        ]
+        retention = self.get_log_retention_days()
+        result = {
+            "tables": {},
+            "total_count": 0,
+            "total_to_delete": 0,
+            "retention_days": retention,
+            "last_cleanup_at": None
+        }
+        last_at = self.get_log_cleanup_last_at()
+        if last_at:
+            result["last_cleanup_at"] = str(last_at)[:19]
+
+        calc_days = days if days is not None else retention
+        try:
+            calc_days = int(calc_days)
+        except Exception:
+            calc_days = 0
+
+        for table, label, col in tables_meta:
+            try:
+                row = self.fetchone(f"SELECT COUNT(*) as cnt, MIN({col}) as earliest, MAX({col}) as latest FROM {table}")
+                cnt = int(row.get("cnt") or 0) if row else 0
+                earliest = str(row.get("earliest"))[:19] if row and row.get("earliest") else None
+                latest = str(row.get("latest"))[:19] if row and row.get("latest") else None
+
+                to_delete = 0
+                if calc_days == 0:
+                    to_delete = cnt
+                elif calc_days > 0:
+                    del_row = self.fetchone(f"SELECT COUNT(*) as cnt FROM {table} WHERE {col} < DATE_SUB(NOW(), INTERVAL {ph} DAY)", (calc_days,))
+                    to_delete = int(del_row.get("cnt") or 0) if del_row else 0
+
+                result["tables"][table] = {
+                    "label": label,
+                    "count": cnt,
+                    "earliest": earliest,
+                    "latest": latest,
+                    "to_delete": to_delete
+                }
+                result["total_count"] += cnt
+                result["total_to_delete"] += to_delete
+            except Exception as e:
+                result["tables"][table] = {
+                    "label": label,
+                    "count": -1,
+                    "error": str(e)
+                }
         return result
 
     def get_log_retention_days(self):
