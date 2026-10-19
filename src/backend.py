@@ -2665,6 +2665,39 @@ def get_question_bank_match(question):
     return None, mkey, None, elapsed
 
 
+def get_question_bank_similar(question):
+    """相似题匹配：哈希/主干都没命中，或存在多个相似候选时，按题面+选项+题型相似度排序。
+    返回最高分的那条（分数需达到 MATCH_AUTO_MIN_SCORE 才算同一题）。"""
+    _t0 = time.time()
+    info = parse_question_payload(question)
+    current_type = info.get("question_type", "")
+    q_norm = normalize_question_text(info.get("question_text", ""))
+    if len(q_norm) < 4:
+        return None, None, 0.0, (time.time() - _t0) * 1000
+    candidates = db.search_question_bank(keyword=q_norm, limit=20)
+    ranked = _rank_bank_candidates(question, candidates)
+    if not ranked:
+        return None, None, 0.0, (time.time() - _t0) * 1000
+    score, best = ranked[0]
+    answer = best.get("answer", "")
+    if _is_multiple_choice_type(current_type) and _is_truncated_multi_answer(question, answer):
+        return None, None, score, (time.time() - _t0) * 1000
+    if score < MATCH_AUTO_MIN_SCORE:
+        return None, None, score, (time.time() - _t0) * 1000
+    return best, best.get("question_hash", ""), score, (time.time() - _t0) * 1000
+
+
+def _bank_row_from_candidate(candidate):
+    """把 get_bank_match_all / search_question_bank 的候选统一成带答案的题库行。
+    完整记录直接用；只有 question_hash 的占位行回表查一次。"""
+    if not candidate:
+        return None
+    if candidate.get("answer"):
+        return candidate
+    qh = candidate.get("question_hash", "")
+    return db.get_question_answer_by_hash(qh) if qh else None
+
+
 def get_bank_match_all(question):
     """返回题库中所有匹配该题的候选（同题可多个答案版本），用于网页搜题多结果展示。"""
     _t0 = time.time()
@@ -2682,7 +2715,11 @@ def get_bank_match_all(question):
         q_norm = normalize_question_text(info.get("question_text", ""))
         if len(q_norm) >= 4:
             fb = db.search_question_bank(keyword=q_norm, limit=20)
-            candidates = [{"question_hash": r.get("question_hash")} for r in fb if r.get("answer")]
+            if not fb:
+                # 全文索引对去掉标点后的长串常常零命中：退到原题干的关键词搜索
+                fb = db.search_question_bank(keyword=str(info.get("question_text") or "").strip()[:200], limit=20)
+            # 保留整行：完整记录（自带 answer）直接用，只有占位行才回表查
+            candidates = [r for r in fb if r.get("question_hash")]
     candidates = [c for c in candidates if c.get("answer")]
     rows = []
     seen = set()
@@ -2691,7 +2728,7 @@ def get_bank_match_all(question):
         if not qh or qh in seen:
             continue
         seen.add(qh)
-        row = db.get_question_answer_by_hash(qh)
+        row = _bank_row_from_candidate(c)
         if row and row.get("answer"):
             rows.append(row)
     elapsed = (time.time() - _t0) * 1000
@@ -2700,6 +2737,89 @@ def get_bank_match_all(question):
     else:
         print(f"[首页搜题] 命中 {len(rows)} 条 {mkey[:12]} ({elapsed:.1f}ms)", flush=True)
     return rows, mkey, elapsed
+
+MATCH_AUTO_MIN_SCORE = 0.9   # 自动选最优：题面相似度低于这个值视为「不是同一题」，宁可交给 AI 重答
+MATCH_MANUAL_LIMIT = 5       # 手动选择：最多回传几条候选给脚本弹窗
+
+
+def _bigram_set(text):
+    t = str(text or "")
+    if len(t) < 2:
+        return {t} if t else set()
+    return {t[i:i + 2] for i in range(len(t) - 1)}
+
+
+def _jaccard(a, b):
+    if not a or not b:
+        return 0.0
+    inter = len(a & b)
+    return inter / float(len(a) + len(b) - inter)
+
+
+def _match_score(info, row):
+    """候选与当前题的相似度（0~1）。题面 6 : 选项 3 : 题型 1。
+    选项按「逐项最高相似度的平均」算，题目文本只差标点/前后缀时仍能拿到接近 1 分。"""
+    q_norm = normalize_question_text(_canonicalize_img_urls_in_text(info.get("question_text", "")))
+    row_text = _canonicalize_img_urls_in_text(str(row.get("question_text") or ""))
+    row_q = normalize_question_text(row_text)
+    score = _jaccard(_bigram_set(q_norm), _bigram_set(row_q))
+    if q_norm and q_norm == row_q:
+        score = 1.0
+    elif q_norm and row_q and (q_norm in row_q or row_q in q_norm):
+        score = max(score, 0.95)
+    opt_score = 0.0
+    cur_opts = [_bigram_set(normalize_question_text(_canonicalize_img_urls_in_text(x))) for x in (info.get("options") or [])]
+    row_opts = [_bigram_set(normalize_question_text(_canonicalize_img_urls_in_text(x))) for x in str(row.get("options_text") or "").split("|") if x.strip()]
+    if cur_opts and row_opts:
+        opt_score = sum(max((_jaccard(c, r) for r in row_opts), default=0.0) for c in cur_opts) / len(cur_opts)
+    elif not cur_opts and not row_opts:
+        opt_score = 1.0
+    type_score = 1.0 if normalize_question_text(info.get("question_type", "")) == normalize_question_text(row.get("question_type", "")) else 0.0
+    total = score * 0.6 + opt_score * 0.3 + type_score * 0.1
+    # 题面几乎没有交集时，光靠选项雷同不能算同一题（大量题目共用同样的四个选项）
+    if score < 0.5:
+        total = min(total, 0.5)
+    return round(total, 4)
+
+
+def _rank_bank_candidates(question, rows, limit=MATCH_MANUAL_LIMIT):
+    """按相似度给候选排序，同题多答案版本去重后只留最高分的那条。"""
+    info = parse_question_payload(question)
+    scored = []
+    for row in rows or []:
+        if not row or not row.get("answer"):
+            continue
+        if _is_garbage_bank_answer(row.get("answer", ""), question):
+            continue
+        scored.append((_match_score(info, row), row))
+    # 分数并列时，命中次数多 / 更新更近的靠前，用户看到的第一条更可能是对的
+    scored.sort(key=lambda x: (x[0], int(x[1].get("hit_count") or 0), str(x[1].get("updated_at") or x[1].get("created_at") or "")), reverse=True)
+    out, seen = [], set()
+    for score, row in scored:
+        key = (row.get("question_text") or "") + "\n" + (row.get("options_text") or "")
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append((score, row))
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _build_match_candidates(question, ranked):
+    items = []
+    for score, row in ranked:
+        options = [x.strip() for x in (row.get("options_text") or "").split("|") if x.strip()]
+        items.append({
+            "question_hash": row.get("question_hash", ""),
+            "question": (row.get("question_text") or "")[:500],
+            "type": row.get("question_type") or "",
+            "options": options,
+            "answer": normalize_ai_answer(question, row.get("answer", "")),
+            "score": round(float(score) * 100, 1),
+        })
+    return items
+
 
 def _collect_html_image_urls(info):
     """从题干/选项 HTML 里抽出 http(s) 图片地址，供 images 数组为空时补发给多模态模型。"""
@@ -3983,23 +4103,12 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
                 time.sleep(min(3, max(deadline - time.time(), 0)))
 
     # 补记失败模型日志，标注最后成功调用的模型（全部失败则为空）
+    # 成功那条由 /api/answer 的 finally 在扣点后再写，避免「剩余题数」快照落在扣点前
     for item in error_logs:
         item["final_model"] = final_model
         enqueue_ai_log(item)
 
     if final_model:
-        enqueue_ai_log({
-            "provider_key": provider_name or "",
-            "username": username,
-            "model": final_model,
-            "question": question,
-            "answer": answer,
-            "status": "success",
-            "error": "",
-            "duration_ms": 0,
-            "client_ip": client_ip,
-            "final_model": final_model
-        })
         return answer, None, final_model, provider_name
 
     # 含图题必须由视觉模型作答，禁止去掉图片后用纯文本猜答案。
@@ -6332,7 +6441,15 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 retention = db.get_log_retention_days()
-                self._send_json(200, {"code": 200, "retention_days": retention})
+                qs = parse_qs(parsed.query or "")
+                calc_days_str = qs.get("days", [""])[0]
+                calc_days = int(calc_days_str) if calc_days_str != "" else retention
+                stats = db.get_log_stats(calc_days)
+                self._send_json(200, {
+                    "code": 200,
+                    "retention_days": retention,
+                    "stats": stats
+                })
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/payment-config":
@@ -7987,12 +8104,18 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
             try:
-                data = json.loads(body)
+                data = json.loads(body) if body else {}
                 days = int(data.get("retention_days", 0))
                 if days < 0:
                     days = 0
                 db.set_log_retention_days(days)
-                self._send_json(200, {"code": 200, "msg": "保存成功"})
+                stats = db.get_log_stats(days)
+                self._send_json(200, {
+                    "code": 200,
+                    "msg": "自动清理保留天数已更新",
+                    "retention_days": days,
+                    "stats": stats
+                })
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -8015,12 +8138,48 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
             try:
-                retention = db.get_log_retention_days()
-                if retention <= 0:
-                    self._send_json(200, {"code": 200, "msg": "未启用自动清理（保留天数为0）", "result": {}})
-                    return
-                result = db.cleanup_old_logs(retention)
-                self._send_json(200, {"code": 200, "msg": "清理完成", "result": result})
+                data = {}
+                if body:
+                    try:
+                        data = json.loads(body)
+                    except Exception:
+                        data = {}
+
+                # 优先读取用户手动传入的天数（若为0则表示全量清空）；未传则使用后台配置的保留天数
+                target_days = data.get("days") if "days" in data else data.get("retention_days")
+                if target_days is not None:
+                    try:
+                        target_days = int(target_days)
+                    except Exception:
+                        target_days = None
+
+                if target_days is None:
+                    target_days = db.get_log_retention_days()
+
+                target_table = data.get("table")
+                if target_table and target_table not in ("script_event_logs", "ai_call_logs", "bank_call_logs", "usage_logs"):
+                    target_table = None
+
+                result = db.cleanup_old_logs(target_days, target_table=target_table)
+                total_deleted = sum(v for v in result.values() if v > 0)
+                stats = db.get_log_stats(target_days)
+
+                if total_deleted > 0:
+                    msg = f"清理完成，共成功删除 {total_deleted:,} 条历史日志数据"
+                elif target_days == 0:
+                    msg = "日志表当前已全部为空，无需清空"
+                else:
+                    msg = f"清理完成，删除 0 条（当前所有日志均在 {target_days} 天保留期内，无过期数据）"
+
+                self._send_json(200, {
+                    "code": 200,
+                    "msg": msg,
+                    "target_days": target_days,
+                    "target_table": target_table,
+                    "total_deleted": total_deleted,
+                    "result": result,
+                    "stats": stats
+                })
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -9531,6 +9690,10 @@ class Handler(BaseHTTPRequestHandler):
                 model = params.get("model", [""])[0]
                 req_model_mode = params.get("model_mode", ["auto"])[0] or "auto"
                 skip_bank = str(params.get("skip_bank", ["0"])[0] or "0").strip().lower() in ("1", "true", "yes")
+                # 题库匹配方式：auto=相似题按题面/选项相似度自动取最优；manual=相似题不自动作答，回传候选给脚本让用户挑
+                match_mode = str(params.get("match_mode", ["auto"])[0] or "auto").strip().lower()
+                if match_mode not in ("auto", "manual"):
+                    match_mode = "auto"
                 custom_cfg = {}
                 quota_msg = ""
                 if not question:
@@ -9597,7 +9760,8 @@ class Handler(BaseHTTPRequestHandler):
                 # 不能用上面的 question_hash：题库命中时它含答案、未命中时不含，同一道题会有两个值。
                 question_key = make_matching_key(question)
                 _bank_info = parse_question_payload(question)
-                enqueue_bank_log({
+                # 题库日志延后写入：命中并扣点后再记，否则「剩余/到期」会停在扣点前
+                _bank_log = {
                     "username": user.get("username", ""),
                     "question_hash": question_hash,
                     "question_text": _bank_info.get("question_text", question)[:500],
@@ -9608,15 +9772,65 @@ class Handler(BaseHTTPRequestHandler):
                     "match_method": bank_method or "none",
                     "duration_ms": int(bank_duration or 0),
                     "client_ip": self.client_address[0] if self.client_address else ""
-                })
+                }
+                _bank_logged = False
+                # ---------- 手动选择模式：题库里有多条相似题时不自动作答，只把候选回给脚本 ----------
+                if not use_custom and not skip_bank and match_mode == "manual":
+                    cand_rows, _cand_rows_seen = [], set()
+                    for _row in ([bank_row] if bank_row else []) + get_bank_match_all(question)[0]:
+                        if not _row or not _row.get("answer"):
+                            continue
+                        _qh = _row.get("question_hash", "")
+                        if not _qh or _qh in _cand_rows_seen:
+                            continue
+                        _cand_rows_seen.add(_qh)
+                        cand_rows.append(_row)
+                    ranked = _rank_bank_candidates(question, cand_rows)
+                    if len(ranked) > 1:
+                        items = _build_match_candidates(question, ranked)
+                        print(f"[题库相似题] 手动选择 user={user.get('username','')} 候选={len(items)} top={items[0].get('score')} question={question[:60]}...", flush=True)
+                        _bank_log["matched"] = False
+                        _bank_log["match_method"] = "manual_pick"
+                        enqueue_bank_log(_bank_log)
+                        _bank_logged = True
+                        profile_now = build_user_profile(user.get("username", ""))
+                        self._send_json(200, {"code": 200, "msg": "题库中有多道相似题，请手动选择", "data": {
+                            "answer": "",
+                            "mode": "question_bank",
+                            "bank": False,
+                            "multimatch": True,
+                            "candidates": items,
+                            "match_mode": "manual",
+                            "profile": profile_now,
+                            "remainCount": 999999 if profile_now and profile_now.get("active_member") else int((profile_now or {}).get("points_balance") or 0)
+                        }})
+                        return
+                # ---------- 精确命中不可用（同题多答案版本）时，按相似度自动取最优 ----------
+                if not bank_row and not use_custom and not skip_bank and match_mode == "auto":
+                    similar_row, similar_hash, similar_score, similar_duration = get_question_bank_similar(question)
+                    if similar_row:
+                        bank_row, question_hash = similar_row, similar_hash
+                        bank_method = "similar"
+                        bank_duration = similar_duration
+                        _bank_log.update({
+                            "question_hash": question_hash,
+                            "matched": True,
+                            "matched_hash": question_hash,
+                            "match_method": "similar",
+                            "duration_ms": int(similar_duration or 0),
+                        })
+                        print(f"[题库相似题] 自动选最优 hash={question_hash[:12]} score={similar_score:.3f}", flush=True)
                 if bank_row and not use_custom and not skip_bank:
                     answer = normalize_ai_answer(question, bank_row.get("answer", ""))
                     if answer and (_is_truncated_multi_answer(question, answer) or _is_garbage_bank_answer(answer, question)):
                         print(f"[题库命中但答案不可用，改走AI] hash={question_hash[:12]} answer={str(answer)[:80]}", flush=True)
                         bank_row = None
+                        _bank_log["matched"] = False
                     elif not answer:
                         err = "题库答案为空"
                         print(f"[题库命中但答案为空] hash={question_hash[:12]}", flush=True)
+                        enqueue_bank_log(_bank_log)
+                        _bank_logged = True
                         self._send_json(500, {"code": 500, "msg": err})
                         return
                     else:
@@ -9626,12 +9840,18 @@ class Handler(BaseHTTPRequestHandler):
                         ok_quota, quota_msg, ent_after = consume_answer_quota(user["username"], question_hash, question_key)
                         if not ok_quota:
                             err = quota_msg
+                            enqueue_bank_log(_bank_log)
+                            _bank_logged = True
                             self._send_json(402, {"code": 402, "msg": quota_msg})
                             return
+                        enqueue_bank_log(_bank_log)
+                        _bank_logged = True
                         print(f"[题库命中] hash={question_hash[:12]}, question={question[:60]}...", flush=True)
                         profile_after = build_user_profile(user["username"])
                         self._send_json(200, {"code": 200, "msg": quota_msg, "data": {"answer": answer, "model": resolved_model, "mode": "question_bank", "bank": True, "cache": True, "profile": profile_after, "remainCount": 999999 if profile_after and profile_after.get("active_member") else int((profile_after or {}).get("points_balance") or 0)}})
                         return
+                if not _bank_logged:
+                    enqueue_bank_log(_bank_log)
                 cache_key = make_ai_cache_key(question, model_mode, model, custom_cfg)
                 cached = get_ai_cache(cache_key)
                 if cached and not use_custom and not skip_bank:
