@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.4.0
+// @version      5.5.0
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @author       IPYIWEI
@@ -10,6 +10,12 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.5.0 (2026-10-19)
+// @changelog    1. 题库「相似题」不再卡住：新增设置项「题库匹配方式」，可选自动选最优 / 手动选择
+// @changelog    2. 自动选最优：按题面 6 : 选项 3 : 题型 1 加权算相似度，≥90% 才算同一题直接作答，低于阈值交给 AI 重答
+// @changelog    3. 手动选择：命中相似题时不再乱答，作业入口列出候选（最多 5 条、标注相似度），点一下即填入
+// @changelog    4. 手动选题不扣答题次数，只有真正拿到答案才计入额度
+// @changelog    5. 修复题库回退检索：去符号后搜不到时改用原始题干再搜，减少明明有题却匹配不到
 // @changelog    v5.4.0 (2026-09-22)
 // @changelog    1. 新增「跳过已完成章节」开关：自动切章按目录完成状态优先跳到未完成章节
 // @changelog    2. 任务点完成统一确认：监听任务上报与完成图标，未确认完成时停止自动跳转并提示手动确认
