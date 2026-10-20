@@ -10,6 +10,7 @@ import hmac
 import json
 import time
 import threading
+from dbutils.pooled_db import PooledDB
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -288,24 +289,25 @@ class Database:
         DB_INSTANCE = self
 
     def _connect(self):
-        # MySQL 多人并发场景下不复用单个连接；每次查询创建短连接，避免 PyMySQL 连接跨线程冲突。
+        # 使用线程安全的连接池：连接在查询结束后归还池中复用。
+        # 既保留「避免 PyMySQL 单连接跨线程冲突」的原有意图，又省去每次查询的完整握手。
+        import pymysql
         self.conn = None
+        self._pool = PooledDB(
+            creator=pymysql,
+            maxconnections=12,   # 池内最大连接数（须小于 MySQL max_connections）
+            mincached=2,         # 启动时预热连接
+            maxcached=8,
+            blocking=True,       # 池满时等待，而非直接报错
+            ping=1,              # 取连接时探活，自动重连失效连接
+            **MYSQL_CONFIG,
+            cursorclass=pymysql.cursors.DictCursor,
+            autocommit=False
+        )
 
     def _new_mysql_conn(self):
-        import pymysql
-        last_error = None
-        for attempt in range(3):
-            try:
-                return pymysql.connect(
-                    **MYSQL_CONFIG,
-                    cursorclass=pymysql.cursors.DictCursor,
-                    autocommit=False
-                )
-            except Exception as e:
-                last_error = e
-                if attempt < 2:
-                    time.sleep(1.5 * (attempt + 1))
-        raise last_error
+        # 从连接池取连接；调用方 close() 即归还池中复用
+        return self._pool.connection()
 
     def _ensure_connection(self):
         """确保数据库连接可用，MySQL 断线时自动重连"""
@@ -968,12 +970,6 @@ class Database:
             return cursor
         finally:
             conn.close()
-        with self.lock:
-            self._ensure_connection()
-            cursor = self.conn.cursor()
-            cursor.execute(sql, _adapt_params(params))
-            self.conn.commit()
-            return cursor
 
     def fetchone(self, sql, params=()):
         """查询单条"""
@@ -985,12 +981,6 @@ class Database:
             return dict(row) if row else None
         finally:
             conn.close()
-        with self.lock:
-            self._ensure_connection()
-            cursor = self.conn.cursor()
-            cursor.execute(sql, _adapt_params(params))
-            row = cursor.fetchone()
-            return dict(row) if row else None
 
     def fetchall(self, sql, params=()):
         """查询多条"""
@@ -1002,12 +992,6 @@ class Database:
             return [dict(row) for row in rows]
         finally:
             conn.close()
-        with self.lock:
-            self._ensure_connection()
-            cursor = self.conn.cursor()
-            cursor.execute(sql, _adapt_params(params))
-            rows = cursor.fetchall()
-            return [dict(row) for row in rows]
 
     def _column_exists(self, table, column):
         return bool(self.fetchone(f"SHOW COLUMNS FROM {table} LIKE %s", (column,)))
