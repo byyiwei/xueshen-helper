@@ -1900,6 +1900,16 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 { value: "questionBankAndAI", label: "题库+AI" }
               ]
             },
+            matchMode: {
+              text: "题库匹配方式",
+              value: "auto",
+              type: "select",
+              tips: "自动：题库里有相似题时，按题面/选项相似度自动选最匹配的一条作答；手动：遇到相似题不自动作答，留空由你自行选择（作业入口会列出候选题）",
+              options: [
+                { value: "auto", label: "自动选最优" },
+                { value: "manual", label: "手动选择" }
+              ]
+            },
             videoPlayrate: {
               text: "视频倍速",
               value: 2,
@@ -2151,6 +2161,27 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     }
   };
   const ScriptHome = /* @__PURE__ */ _export_sfc(_sfc_main$8, [["__scopeId", "data-v-137ea562"]]);
+  // 「模糊题手动选择」：最近一次带填题逻辑的处理器把自己登记在这里，
+  // 这样「题目结果」里点选候选题时能用页面原本的填充逻辑（含超星/智慧树各自的点击方式）。
+  const _questionFillHook = { handler: null };
+  const registerQuestionFillHook = (handler) => {
+    _questionFillHook.handler = handler || null;
+  };
+  const getQuestionFillHook = () => _questionFillHook.handler;
+  const applyPickedCandidate = (index, candidate) => {
+    const questionStore = useQuestionStore();
+    const question = questionStore.questionList[index];
+    const hook = getQuestionFillHook();
+    if (!question || !hook || !hook.questions || !hook.questions[index]) return false;
+    const real = hook.questions[index];
+    const answer = normalizeLocalBackendAnswers(candidate && candidate.answer);
+    if (!answer.length) return false;
+    real.answer = { code: 1, answer, src: "bank" };
+    question.answer = { code: 1, answer, src: "bank" };
+    const filled = hook.fillQuestion(real, index);
+    questionStore.questionList = [...questionStore.questionList];
+    return !!filled;
+  };
   const useQuestionStore = pinia.defineStore("questionStore", {
     state: () => ({
       questionList: [],
@@ -2224,6 +2255,16 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         const dom = answerDom.value.getElementsByClassName("answer-item")[index];
         answerDom.value.scrollTo({ top: dom.offsetTop });
         selectedIndex.value = index;
+      };
+      const pickCandidate = (qIndex, candidate) => {
+        const filled = applyPickedCandidate(qIndex, candidate);
+        const q = questionList.value[qIndex];
+        if (q && q.answer) {
+          q.answer.picked = filled;
+          if (filled) q.answer.code = 1;
+        }
+        questionList.value = [...questionList.value];
+        useLogStore().insertLog(filled ? `第${qIndex + 1}题已按你选中的候选题填入答案` : `第${qIndex + 1}题候选答案没点上去，请手动勾选`, filled ? undefined : "warning");
       };
       return (_ctx, _cache) => {
         const _component_a_button = vue.resolveComponent("a-button");
@@ -2312,7 +2353,19 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                       vue.createElementVNode("div", {
                         innerHTML: (_b = (_a = vue.unref(questionList)[index - 1].answer) == null ? void 0 : _a.answer) == null ? void 0 : _b.join()
                       }, null, 8, _hoisted_15),
-                      ((_c = vue.unref(questionList)[index - 1].answer) == null ? void 0 : _c.code) === 0 ? (vue.openBlock(), vue.createElementBlock("div", _hoisted_16, "有答案（不完全匹配），请手动选择")) : vue.createCommentVNode("", true)
+                      ((_c = vue.unref(questionList)[index - 1].answer) == null ? void 0 : _c.code) === 0 ? (vue.openBlock(), vue.createElementBlock("div", _hoisted_16, "有答案（不完全匹配），请手动选择")) : vue.createCommentVNode("", true),
+                      (vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList((_a = vue.unref(questionList)[index - 1].answer) === null || _a === void 0 ? void 0 : _a.candidates, (cand, candIdx) => {
+                        return vue.openBlock(), vue.createElementBlock("div", {
+                          key: "cand-" + candIdx,
+                          onClick: ($event) => pickCandidate(index - 1, cand),
+                          style: { "margin-top": "6px", "padding": "6px 8px", "border": "1px solid var(--t-border)", "border-radius": "6px", "cursor": "pointer", "background": "var(--t-surface)" }
+                        }, [
+                          vue.createElementVNode("div", { style: { "font-weight": "600", "margin-bottom": "2px" } }, "候选" + (candIdx + 1) + "（相似度 " + vue.toDisplayString(cand.score) + "%）", 1),
+                          vue.createElementVNode("div", { innerHTML: cand.question }, null, 8, ["innerHTML"]),
+                          vue.createElementVNode("div", { innerHTML: "答案：" + vue.toDisplayString(cand.answer) }, null, 8, ["innerHTML"]),
+                          vue.createElementVNode("div", { style: { "color": "var(--t-primary)", "margin-top": "2px" } }, "点击填入本题", 1)
+                        ], 8, ["onClick"]);
+                      }), 128))
                     ])
                   ])) : vue.createCommentVNode("", true)
                 ]);
@@ -2771,6 +2824,15 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       ontimeout: () => resolve(null),
     });
   });
+  const getQuestionMatchMode = () => {
+    try {
+      const setting = useSettingStore();
+      const cfg = setting && setting.config && setting.config.basicConfig && setting.config.basicConfig.matchMode;
+      return cfg && cfg.value === "manual" ? "manual" : "auto";
+    } catch (_) {
+      return "auto";
+    }
+  };
   const callLocalBackendAnswer = async (question, extra = {}) => {
     const setting = useSettingStore();
     const token = setting.config.basicConfig.token.value || getLocalBackendToken() || "";
@@ -2816,6 +2878,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     const data = "question=" + encodeURIComponent(payload)
       + "&u=" + encodeURIComponent(getCookieValue("_uid") || getCookieValue("UID") || "")
       + "&model_mode=auto"
+      + "&match_mode=" + getQuestionMatchMode()
       + (extra && extra.skipBank ? "&skip_bank=1" : "");
     await sleep(setting.config.basicConfig.reqIntervalTime.value);
     const result = await new Promise((resolve) => {
@@ -2831,15 +2894,18 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         onload: (response) => {
           try {
             const obj = JSON.parse(response.responseText || "{}");
-            if (obj.code === 200 && obj.data && obj.data.answer) {
+            if (obj.code === 200 && obj.data && (obj.data.answer || (obj.data.multimatch && obj.data.candidates && obj.data.candidates.length))) {
+              const candidates = Array.isArray(obj.data.candidates) ? obj.data.candidates : [];
               resolve({
                 code: 1,
                 data: {
                   answer: normalizeLocalBackendAnswers(obj.data.answer),
-                  src: obj.data.bank ? "bank" : obj.data.cache ? "cache" : "ai",
+                  src: obj.data.bank ? "bank" : obj.data.cache ? "cache" : obj.data.multimatch ? "pick" : "ai",
+                  multimatch: !!obj.data.multimatch && candidates.length > 0,
+                  candidates,
                   remainCount: obj.data.remainCount !== void 0 ? formatLocalRemainCount(obj.data.remainCount) : getProfileRemainingCount(obj.data.profile)
                 },
-                msg: obj.msg || (obj.data.bank ? "题库命中" : obj.data.cache ? "缓存命中" : "本地后端返回")
+                msg: obj.data.multimatch ? (obj.msg || "题库中有多道相似题，请手动选择") : (obj.msg || (obj.data.bank ? "题库命中" : obj.data.cache ? "缓存命中" : "本地后端返回"))
               });
               if (obj.data.profile) updateUserInfoFromProfile(obj.data.profile);
             } else if (response.status === 401 || obj.code === 401) {
@@ -8058,6 +8124,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           }, 1e3);
           const { answerMode } = this.setting.config.basicConfig;
           const mode = answerMode.value;
+          registerQuestionFillHook(this);
           for (const [index, question] of this.questions.entries()) {
             if (!this.setting.config.basicConfig.autoAnswer.value) break;
             this.questionStore.currentQuestionIndex = index;
@@ -8066,11 +8133,17 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               if (!this.setting.config.basicConfig.autoAnswer.value) break;
               if (answerData.code === 1) {
                 question.answer = {
-                  code: 1,
+                  code: answerData.data.multimatch ? 0 : 1,
                   answer: answerData.data.answer,
                   src: answerData.data.src
                 };
                 this.setting.userInfo.remainCount = formatLocalRemainCount(answerData.data.remainCount);
+                if (answerData.data.multimatch) {
+                  // 手动选择模式：题库有多道相似题，先不填，等用户自己挑
+                  question.answer.msg = "存在多道相似题，请先手动选择后再填写";
+                  this.log.insertLog(`第${index + 1}题有${answerData.data.candidates.length}道相似题，已暂停自动作答，请去「题目结果」里手动选择`);
+                  continue;
+                }
                 saveAnswerRecord({
                   question,
                   answer: answerData.data.answer,
@@ -10165,6 +10238,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             if (mode !== "ai") {
               const answerData = await getAccurateAnswer(question);
               if (answerData.code === 1) {
+                if (answerData.data.multimatch) {
+                  // 手动选择模式：题库有多道相似题，先不填，等用户自己挑
+                  question.answer = { code: 0, answer: [], src: "pick", msg: "存在多道相似题，请先手动选择后再填写" };
+                  this.log.insertLog(`第${index + 1}题有${answerData.data.candidates.length}道相似题，已暂停自动作答，请去「题目结果」里手动选择`);
+                  continue;
+                }
                 question.answer = {
                   code: 1,
                   answer: answerData.data.answer,
@@ -12647,6 +12726,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       const apiQuestion = toApiQuestion(question);
       if (mode !== "ai") {
         const answerData = await getAccurateAnswer(apiQuestion);
+        if (answerData.code === 1 && answerData.data.multimatch) {
+          // 手动选择模式：题库有多道相似题，交给用户挑，不自动填也不转 AI
+          question.answer = { code: 0, answer: [], src: "pick", msg: "存在多道相似题，请先手动选择后再填写" };
+          useLogStore().insertLog(`本题有${answerData.data.candidates.length}道相似题，已暂停自动作答，请去「题目结果」里手动选择`);
+          return false;
+        }
         if (answerData.code === 1) {
           question.answer = { code: 1, answer: answerData.data.answer, src: answerData.data.src };
           setting.userInfo.remainCount = formatLocalRemainCount(answerData.data.remainCount);
