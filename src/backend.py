@@ -2665,6 +2665,44 @@ def get_question_bank_match(question):
     return None, mkey, None, elapsed
 
 
+def _search_keywords(q_norm):
+    """把规范化题干切成由长到短的检索关键词。
+
+    题库检索走 MATCH ... AGAINST(BOOLEAN MODE)，中文没有空格，整句会被当成一个
+    超长 token：题干越长，各片段同时命中的概率越低，长题反而搜不到
+    （实测 26 字搜到 0 条，截到 20 字能搜到 2 条）。
+    这里改用「首个分句 / 前 N 字」做召回，完整题干留给 _rank_bank_candidates 打分。"""
+    text = (q_norm or "").strip()
+    if not text:
+        return []
+    words = []
+    # 1) 首个分句：典型题目「……的是（）。」前半句信息量最高
+    m = re.search(r"^(.{8,}?)[，,。.；;：:？！?!（(]", text)
+    if m:
+        words.append(m.group(1))
+    # 2) 由长到短的前缀，保证一定能召回到
+    for n in (24, 18, 14, 10, 6):
+        if len(text) >= n:
+            words.append(text[:n])
+    # 去重保序
+    out, seen = [], set()
+    for w in words:
+        w = w.strip()
+        if len(w) >= 4 and w not in seen:
+            seen.add(w)
+            out.append(w)
+    return out
+
+
+def _search_bank_candidates(q_norm, limit=20):
+    """先用短关键词召回，召回不到再退回整句，避免长题干全文检索命中为空。"""
+    for kw in _search_keywords(q_norm):
+        rows = db.search_question_bank(keyword=kw, limit=limit)
+        if rows:
+            return rows
+    return db.search_question_bank(keyword=q_norm, limit=limit)
+
+
 def get_question_bank_similar(question):
     """相似题匹配：哈希/主干都没命中，或存在多个相似候选时，按题面+选项+题型相似度排序。
     返回最高分的那条（分数需达到 MATCH_AUTO_MIN_SCORE 才算同一题）。"""
@@ -2674,7 +2712,7 @@ def get_question_bank_similar(question):
     q_norm = normalize_question_text(info.get("question_text", ""))
     if len(q_norm) < 4:
         return None, None, 0.0, (time.time() - _t0) * 1000
-    candidates = db.search_question_bank(keyword=q_norm, limit=20)
+    candidates = _search_bank_candidates(q_norm, limit=20)
     ranked = _rank_bank_candidates(question, candidates)
     if not ranked:
         return None, None, 0.0, (time.time() - _t0) * 1000

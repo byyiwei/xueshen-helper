@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
 // @namespace    IPYIWEI
-// @version      5.5.0
+// @version      5.5.1
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @author       IPYIWEI
@@ -10,6 +10,11 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.5.1 (2026-10-21)
+// @changelog    1. 「手动选择」新增处理方式：等待我选择后继续 / 跳过此题（不自动提交）
+// @changelog    2. 等待模式：遇到相似题停下整条答题链，你在「题目结果」里点选后自动继续答后面的题
+// @changelog    3. 跳过模式：该题留空、本轮不自动提交，等你有空自己处理
+// @changelog    4. 还有题等你选择时，自动提交与自动切章都会暂停，选完自动补上，不会再被刷走
 // @changelog    v5.5.0 (2026-10-19)
 // @changelog    1. 题库「相似题」不再卡住：新增设置项「题库匹配方式」，可选自动选最优 / 手动选择
 // @changelog    2. 自动选最优：按题面 6 : 选项 3 : 题型 1 加权算相似度，≥90% 才算同一题直接作答，低于阈值交给 AI 重答
@@ -1907,6 +1912,16 @@
                 { value: "manual", label: "手动选择" }
               ]
             },
+            manualWaitMode: {
+              text: "手动选择的处理",
+              value: "wait",
+              type: "select",
+              tips: "仅「手动选择」时生效。等待：遇到相似题就停下来，等你选完再继续答后面的题、再提交；跳过：不等待，该题留空、本轮不自动提交，等你事后自己处理",
+              options: [
+                { value: "wait", label: "等待我选择后继续" },
+                { value: "skip", label: "跳过此题（不自动提交）" }
+              ]
+            },
             videoPlayrate: {
               text: "视频倍速",
               value: 2,
@@ -2165,6 +2180,17 @@
     _questionFillHook.handler = handler || null;
   };
   const getQuestionFillHook = () => _questionFillHook.handler;
+  // 手动选择完成后通知答题流程：等待中的 loop 会继续，搁置的提交/切章会补上
+  const _manualPickListeners = /* @__PURE__ */ new Set();
+  const onManualPickResolved = (fn) => {
+    _manualPickListeners.add(fn);
+    return () => _manualPickListeners.delete(fn);
+  };
+  const notifyManualPickResolved = (questionNo) => {
+    for (const fn of _manualPickListeners) {
+      try { fn(questionNo); } catch (_) { }
+    }
+  };
   const applyPickedCandidate = (index, candidate) => {
     const questionStore = useQuestionStore();
     const question = questionStore.questionList[index];
@@ -2262,6 +2288,7 @@
         }
         questionList.value = [...questionList.value];
         useLogStore().insertLog(filled ? `第${qIndex + 1}题已按你选中的候选题填入答案` : `第${qIndex + 1}题候选答案没点上去，请手动勾选`, filled ? undefined : "warning");
+        if (filled) notifyManualPickResolved(qIndex + 1);
       };
       return (_ctx, _cache) => {
         const _component_a_button = vue.resolveComponent("a-button");
@@ -2821,6 +2848,45 @@
       ontimeout: () => resolve(null),
     });
   });
+  // 「手动选择」时的处理方式：wait=停下来等我选完再继续；skip=跳过本题、本轮不自动提交
+  const getManualWaitMode = () => {
+    try {
+      const setting = useSettingStore();
+      const cfg = setting && setting.config && setting.config.basicConfig && setting.config.basicConfig.manualWaitMode;
+      return cfg && cfg.value === "skip" ? "skip" : "wait";
+    } catch (_) {
+      return "wait";
+    }
+  };
+  // 等待用户在第 index 题上点选候选答案；返回选中的答案数组，超时返回 null
+  const waitForManualPick = (index) => new Promise((resolve) => {
+    const qs = useQuestionStore();
+    const started = Date.now();
+    const LIMIT = 10 * 60 * 1000;   // 最多等 10 分钟，避免挂死整个任务
+    const timer = setInterval(() => {
+      const q = (qs.questionList || [])[index];
+      const a = q && q.answer;
+      if (a && a.picked && a.answer && a.answer.length) {
+        clearInterval(timer);
+        resolve(a.answer);
+        return;
+      }
+      if (Date.now() - started > LIMIT) {
+        clearInterval(timer);
+        resolve(null);
+      }
+    }, 500);
+  });
+  // 等待手动选择期间，自动提交/自动切章必须先停下：否则空题会被当成未作答提交，或被刷走
+  const hasPendingManualPick = () => {
+    try {
+      const qs = useQuestionStore();
+      const list = (qs && qs.questionList) || [];
+      return list.some((q) => q && q.answer && q.answer.src === "pick" && !q.answer.picked);
+    } catch (_) {
+      return false;
+    }
+  };
   const getQuestionMatchMode = () => {
     try {
       const setting = useSettingStore();
@@ -9143,7 +9209,10 @@
         questionStore.accuracy = accuracy;
         iframeWindow.alert = () => {
         };
-        if (setting.config.basicConfig.autoSubmit.value && setting.config.basicConfig.autoAnswer.value) {
+        if (setting.config.basicConfig.autoSubmit.value && setting.config.basicConfig.autoAnswer.value && hasPendingManualPick()) {
+          log.insertLog("还有题目等待手动选择，已暂停自动提交，请先去「题目结果」选择", "warning", 8);
+          await iframeWindow.noSubmit();
+        } else if (setting.config.basicConfig.autoSubmit.value && setting.config.basicConfig.autoAnswer.value) {
           log.insertLog("自动提交已开启，提交中...");
           if (accuracy < Number(setting.config.basicConfig.accuracy.value)) {
             log.insertLog(
@@ -9331,6 +9400,10 @@
     const changeToNextChapter = async (documentElement, isCurrent = () => true) => {
       const enabled = () => setting.config.basicConfig.autoChangeChapter.value && isCurrent();
       if (!enabled()) return false;
+      if (hasPendingManualPick()) {
+        log.insertLog("还有题目等待手动选择，已暂停自动切换章节；选完后继续", "warning", 8);
+        return false;
+      }
       if (isInFinalTab() && isStuckOnSameChapter()) {
         log.insertLog("已多次重复进入当前章节，可能存在需要手动完成的章节测试，请手动完成后再继续。", "warning", 4);
         return false;
@@ -9395,6 +9468,31 @@
       } finally { advancingChapter = false; }
     };
     vue.watch(() => setting.config.basicConfig.autoChangeChapter.value, enabled => { if (enabled) advancePendingChapter(); });
+    // 手动选择完成后，若之前因等待选择而搁置了切章，这里自动补上
+    let manualPickWatchTimer = null;
+    const watchPendingManualPick = () => {
+      if (manualPickWatchTimer) return;
+      manualPickWatchTimer = setInterval(() => {
+        if (advancingChapter) return;
+        if (hasPendingManualPick()) return;
+        if (!pendingChapterAdvance) return;
+        if (!setting.config.basicConfig.autoChangeChapter.value) return;
+        advancePendingChapter();
+      }, 2000);
+    };
+    watchPendingManualPick();
+    let _afterPickBusy = false;
+    const afterManualPickResolved = async (questionNo) => {
+      if (_afterPickBusy || hasPendingManualPick()) return;
+      _afterPickBusy = true;
+      try {
+        if (pendingChapterAdvance && setting.config.basicConfig.autoChangeChapter.value) {
+          log.insertLog(`第${questionNo}题已手动选择，继续切换章节`);
+          await advancePendingChapter();
+        }
+      } finally { _afterPickBusy = false; }
+    };
+    onManualPickResolved(afterManualPickResolved);
     const watchIframe = (documentElement) => {
       const thisTaskId = ++currentWatchIframeTaskId;
       pendingChapterAdvance = null;
@@ -10040,6 +10138,10 @@
   const submitCxHomework = async (log, setting, accuracy, pageWindow) => {
     const enabled = () => setting.config.basicConfig.autoSubmit.value && setting.config.basicConfig.autoAnswer.value;
     if (!enabled()) return false;
+    if (hasPendingManualPick()) {
+      log.insertLog("还有题目等待手动选择，已暂停自动提交；选完后再提交", "warning", 8);
+      return false;
+    }
     const rate = Number(accuracy);
     if (!Number.isFinite(rate) || rate < Number(setting.config.basicConfig.accuracy.value)) {
       log.insertLog("未达到自动提交阈值，保留作业答案", "warning"); return false;
@@ -10235,8 +10337,19 @@
               if (answerData.code === 1) {
                 if (answerData.data.multimatch) {
                   // 手动选择模式：题库有多道相似题，先不填，等用户自己挑
-                  question.answer = { code: 0, answer: [], src: "pick", msg: "存在多道相似题，请先手动选择后再填写" };
-                  this.log.insertLog(`第${index + 1}题有${answerData.data.candidates.length}道相似题，已暂停自动作答，请去「题目结果」里手动选择`);
+                  question.answer = { code: 0, answer: [], src: "pick", msg: "存在多道相似题，请先手动选择后再填写", candidates: answerData.data.candidates };
+                  if (getManualWaitMode() === "skip") {
+                    this.log.insertLog(`第${index + 1}题有${answerData.data.candidates.length}道相似题，已按设置跳过（本轮不自动提交）`, "warning", 6);
+                    continue;
+                  }
+                  this.log.insertLog(`第${index + 1}题有${answerData.data.candidates.length}道相似题，已暂停，等待你选择后继续…`, "warning", 8);
+                  const picked = await waitForManualPick(index);
+                  if (!picked) {
+                    this.log.insertLog(`第${index + 1}题等待选择超时，已跳过（本轮不自动提交）`, "warning", 6);
+                    continue;
+                  }
+                  question.answer = Object.assign({}, question.answer, { code: 1, answer: picked });
+                  this.log.insertLog(`第${index + 1}题已按你的选择填入，继续答题`, void 0, 4);
                   continue;
                 }
                 question.answer = {
@@ -12723,9 +12836,24 @@
         const answerData = await getAccurateAnswer(apiQuestion);
         if (answerData.code === 1 && answerData.data.multimatch) {
           // 手动选择模式：题库有多道相似题，交给用户挑，不自动填也不转 AI
-          question.answer = { code: 0, answer: [], src: "pick", msg: "存在多道相似题，请先手动选择后再填写" };
-          useLogStore().insertLog(`本题有${answerData.data.candidates.length}道相似题，已暂停自动作答，请去「题目结果」里手动选择`);
-          return false;
+          question.answer = { code: 0, answer: [], src: "pick", msg: "存在多道相似题，请先手动选择后再填写", candidates: answerData.data.candidates };
+          const _idx = useQuestionStore().questionList.indexOf(question);
+          if (getManualWaitMode() === "skip") {
+            useLogStore().insertLog(`本题有${answerData.data.candidates.length}道相似题，已按设置跳过（本轮不自动提交）`, "warning", 6);
+            return false;
+          }
+          useLogStore().insertLog(`本题有${answerData.data.candidates.length}道相似题，已暂停，等待你选择后继续…`, "warning", 8);
+          const picked = _idx >= 0 ? await waitForManualPick(_idx) : null;
+          if (!picked) {
+            useLogStore().insertLog("本题等待选择超时，已跳过（本轮不自动提交）", "warning", 6);
+            return false;
+          }
+          question.answer = Object.assign({}, question.answer, { code: 1, answer: picked });
+          if (fillQuestion(question)) {
+            bankFilled = true;
+            handled = true;
+          }
+          return true;
         }
         if (answerData.code === 1) {
           question.answer = { code: 1, answer: answerData.data.answer, src: answerData.data.src };
