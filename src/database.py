@@ -980,6 +980,50 @@ class Database:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
 
+        # 题库工具：个人（私人）题库。按 username 隔离，命中不入公共题库。
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS user_question_bank (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                username VARCHAR(100) NOT NULL,
+                item_hash VARCHAR(64) NOT NULL,
+                question_text TEXT NOT NULL,
+                question_type VARCHAR(50) DEFAULT '',
+                options_text TEXT,
+                answer TEXT NOT NULL,
+                source VARCHAR(32) DEFAULT 'import',
+                hit_count INT DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE INDEX idx_user_item (username, item_hash),
+                INDEX idx_user_created (username, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
+        # 题库工具：答案有误上报。同一题被报 2 次即给公共题库打降级标记。
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS question_answer_reports (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                username VARCHAR(100) NOT NULL,
+                question_hash VARCHAR(64) NOT NULL DEFAULT '',
+                question_text TEXT,
+                answer_text TEXT,
+                reason VARCHAR(200) DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_hash (question_hash),
+                INDEX idx_user_created (username, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        # 答案降级标记：1 = 被多次上报有误，命中时不再自动复用（改走 AI 重算）
+        try:
+            self._add_column_if_missing(
+                "question_bank",
+                "answer_flag",
+                "answer_flag TINYINT NOT NULL DEFAULT 0 COMMENT '1=答案被多次上报有误，停止自动复用'"
+            )
+        except Exception as e:
+            # 迁移失败不能拖垮服务启动：功能降级为「不上报降级」，其余照常
+            print(f"[题库工具] answer_flag 迁移失败（忽略）: {e}", flush=True)
+
     def _ensure_index(self, table, index_name, *columns):
         """确保普通索引存在，不存在则创建"""
         try:
@@ -5223,6 +5267,165 @@ class Database:
             (username,)
         )
         return self.get_web_search_count(username)
+
+    # ==================== 题库工具：个人题库 / 答案报错 ====================
+
+    @staticmethod
+    def private_item_hash(question, options=None):
+        """个人题库的去重指纹：题面 + 排序后选项（忽略空白差异）。"""
+        def _n(s):
+            return "".join(str(s or "").split())
+        payload = {"q": _n(question), "o": sorted(_n(o) for o in (options or []) if _n(o))}
+        return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
+
+    def add_user_bank_items(self, username, items, source="import"):
+        """写入个人题库，同题（指纹相同）覆盖答案。返回 {added, updated, skipped}。"""
+        added = updated = skipped = 0
+        ph = _ph()
+        for item in items or []:
+            question = str((item or {}).get("question") or "").strip()
+            answer = str((item or {}).get("answer") or "").strip()
+            if not question or not answer:
+                skipped += 1
+                continue
+            options = [str(o).strip() for o in (item.get("options") or []) if str(o).strip()]
+            qtype = str(item.get("type") or "").strip()
+            item_hash = self.private_item_hash(question, options)
+            exists = self.fetchone(
+                f"SELECT id FROM user_question_bank WHERE username = {ph} AND item_hash = {ph}",
+                (username, item_hash)
+            )
+            try:
+                if exists:
+                    self.execute(
+                        f"""UPDATE user_question_bank
+                               SET answer = {ph}, question_type = {ph}, options_text = {ph}, source = {ph}
+                             WHERE username = {ph} AND item_hash = {ph}""",
+                        (answer, qtype, "|".join(options), source, username, item_hash)
+                    )
+                    updated += 1
+                else:
+                    self.execute(
+                        f"""INSERT INTO user_question_bank
+                               (username, item_hash, question_text, question_type, options_text, answer, source)
+                            VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+                        (username, item_hash, question[:2000], qtype, "|".join(options), answer, source)
+                    )
+                    added += 1
+            except Exception as e:
+                print(f"[个人题库] 写入失败 user={username}: {e}", flush=True)
+                skipped += 1
+        return {"added": added, "updated": updated, "skipped": skipped}
+
+    def list_user_bank(self, username, keyword="", page=1, limit=20):
+        ph = _ph()
+        try:
+            limit = max(1, min(int(limit), 100))
+        except Exception:
+            limit = 20
+        try:
+            page = max(1, int(page))
+        except Exception:
+            page = 1
+        where = [f"username = {ph}"]
+        params = [username]
+        kw = str(keyword or "").strip()
+        if kw:
+            where.append(f"(question_text LIKE {ph} OR answer LIKE {ph})")
+            like = f"%{kw}%"
+            params.extend([like, like])
+        sql = ("SELECT id, question_text, question_type, options_text, answer, source, hit_count, created_at "
+               "FROM user_question_bank WHERE " + " AND ".join(where) +
+               f" ORDER BY id DESC LIMIT {ph} OFFSET {ph}")
+        params.extend([limit, (page - 1) * limit])
+        return self.fetchall(sql, tuple(params))
+
+    def count_user_bank(self, username, keyword=""):
+        ph = _ph()
+        where = [f"username = {ph}"]
+        params = [username]
+        kw = str(keyword or "").strip()
+        if kw:
+            where.append(f"(question_text LIKE {ph} OR answer LIKE {ph})")
+            like = f"%{kw}%"
+            params.extend([like, like])
+        row = self.fetchone("SELECT COUNT(*) AS c FROM user_question_bank WHERE " + " AND ".join(where), tuple(params))
+        return int(row.get("c") or 0) if row else 0
+
+    def search_user_bank(self, username, keyword, limit=20):
+        """个人题库召回：LIKE 命中题面/答案，排序交给上层相似度重排。"""
+        ph = _ph()
+        kw = str(keyword or "").strip()
+        if not kw:
+            return []
+        try:
+            limit = max(1, min(int(limit), 100))
+        except Exception:
+            limit = 20
+        sql = (f"SELECT id, question_text, question_type, options_text, answer, hit_count FROM user_question_bank "
+               f"WHERE username = {ph} AND (question_text LIKE {ph} OR options_text LIKE {ph}) "
+               f"ORDER BY id DESC LIMIT {limit}")
+        like = f"%{kw[:200]}%"
+        return self.fetchall(sql, (username, like, like))
+
+    def delete_user_bank(self, username, ids=None, delete_all=False):
+        ph = _ph()
+        if delete_all:
+            cur = self.execute(f"DELETE FROM user_question_bank WHERE username = {ph}", (username,))
+            return int(getattr(cur, "rowcount", 0) or 0)
+        clean = []
+        for i in ids or []:
+            try:
+                clean.append(int(i))
+            except Exception:
+                continue
+        if not clean:
+            return 0
+        marks = ",".join([ph] * len(clean))
+        cur = self.execute(
+            f"DELETE FROM user_question_bank WHERE username = {ph} AND id IN ({marks})",
+            tuple([username] + clean)
+        )
+        return int(getattr(cur, "rowcount", 0) or 0)
+
+    def touch_user_bank_hit(self, username, item_id):
+        ph = _ph()
+        try:
+            self.execute(
+                f"UPDATE user_question_bank SET hit_count = hit_count + 1 WHERE username = {ph} AND id = {ph}",
+                (username, int(item_id))
+            )
+        except Exception:
+            pass
+
+    def add_answer_report(self, username, question_hash, question_text, answer_text, reason=""):
+        """记录一次「答案有误」。同一题累计 2 次即降级公共题库答案。返回 (count, flagged)。"""
+        ph = _ph()
+        self.execute(
+            f"""INSERT INTO question_answer_reports (username, question_hash, question_text, answer_text, reason)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph})""",
+            (username, question_hash or "", str(question_text or "")[:2000], str(answer_text or "")[:2000], str(reason or "")[:200])
+        )
+        count = self.count_answer_reports(question_hash)
+        flagged = False
+        if question_hash and count >= 2:
+            try:
+                self.execute(
+                    f"UPDATE question_bank SET answer_flag = 1 WHERE question_hash = {ph}",
+                    (question_hash,)
+                )
+                flagged = True
+            except Exception as e:
+                print(f"[答案上报] 降级标记失败 hash={question_hash[:12]}: {e}", flush=True)
+        return count, flagged
+
+    def count_answer_reports(self, question_hash):
+        ph = _ph()
+        row = self.fetchone(
+            f"SELECT COUNT(*) AS c FROM question_answer_reports WHERE question_hash = {ph}",
+            (question_hash or "",)
+        )
+        return int(row.get("c") or 0) if row else 0
 
     def get_random_bank_questions(self, count=6):
         """从题库随机抽取有答案的题目，供首页展示"""

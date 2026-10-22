@@ -2462,6 +2462,216 @@
             }
         }
     
+        /* ===================== 题库工具（首页入口卡 + 工具页） ===================== */
+        .tool-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(258px, 1fr));
+            gap: 14px;
+        }
+        .tool-card {
+            display: flex;
+            gap: 14px;
+            align-items: flex-start;
+            text-align: left;
+            width: 100%;
+            font-family: inherit;
+            background: var(--c-surface);
+            border: 1px solid var(--c-border);
+            border-radius: var(--c-radius);
+            box-shadow: var(--c-shadow-sm);
+            padding: 16px 18px;
+            cursor: pointer;
+            transition: transform .16s, border-color .16s, box-shadow .16s;
+        }
+        .tool-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(47, 107, 255, .4);
+            box-shadow: 0 8px 24px rgba(47, 107, 255, .09);
+        }
+        .tool-ico {
+            flex: 0 0 40px;
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+        }
+        .tool-ico .ui-icon { width: 20px; height: 20px; color: #fff; }
+        .tool-ico.t-ai { background: #0ea5e9; }
+        .tool-ico.t-search { background: #2f6bff; }
+        .tool-ico.t-photo { background: #1d53e0; }
+        .tool-ico.t-batch { background: #475467; }
+        .tool-ico.t-convert { background: #12b76a; }
+        .tool-ico.t-mine { background: #0f766e; }
+        .tool-body { min-width: 0; }
+        .tool-title { font-size: 14.5px; font-weight: 700; color: var(--c-text); margin-bottom: 4px; }
+        .tool-desc { font-size: 12.5px; color: var(--c-text-3); line-height: 1.55; }
+
+        .bank-stat-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+        .bank-stat {
+            background: var(--c-surface);
+            border: 1px solid var(--c-border);
+            border-radius: var(--c-radius-sm);
+            padding: 12px 14px;
+        }
+        .bank-stat span { display: block; font-size: 12px; color: var(--c-text-3); margin-bottom: 4px; }
+        .bank-stat b { font-size: 19px; font-weight: 700; color: var(--c-text); letter-spacing: -.2px; }
+        .bank-stat i { font-style: normal; font-size: 12px; color: var(--c-text-3); margin-left: 4px; }
+
+        .bank-tabs {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+        .bank-tab {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            text-align: left;
+            font-family: inherit;
+            background: var(--c-surface);
+            border: 1px solid var(--c-border);
+            border-radius: var(--c-radius-sm);
+            padding: 11px 13px;
+            cursor: pointer;
+            transition: border-color .16s, background .16s;
+        }
+        .bank-tab:hover { border-color: rgba(47, 107, 255, .38); }
+        .bank-tab .bt-ico {
+            flex: 0 0 32px;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background: var(--c-surface-2);
+            color: var(--c-text-2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background .16s, color .16s;
+        }
+        .bank-tab .bt-ico .ui-icon { width: 16px; height: 16px; color: inherit; }
+        .bank-tab.active { border-color: var(--c-brand); background: var(--c-brand-soft); }
+        .bank-tab.active .bt-ico { background: var(--c-brand); color: #fff; }
+        .bt-text { min-width: 0; }
+        .bt-text b { display: block; font-size: 13.5px; font-weight: 700; color: var(--c-text); }
+        .bt-text span { display: block; font-size: 11.5px; color: var(--c-text-3); margin-top: 1px; }
+
+        .bank-panel { display: none; }
+        .bank-panel.active { display: block; }
+        .bank-hint { font-size: 12.5px; color: var(--c-text-3); line-height: 1.65; margin: 0 0 12px; }
+        .bank-hint b { color: var(--c-text-2); }
+        .bank-textarea { width: 100%; min-height: 128px; resize: vertical; line-height: 1.7; }
+        .bank-inline { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+        .bank-inline input, .bank-inline select { flex: 1; min-width: 160px; }
+        .bank-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+        .bank-actions .primary, .bank-actions .secondary { width: auto; margin: 0; }
+        .bank-actions button:disabled { opacity: .5; cursor: not-allowed; }
+        .bank-status { font-size: 12.5px; color: var(--c-text-2); margin-top: 10px; min-height: 18px; line-height: 1.6; }
+        .bank-status.err { color: var(--c-danger); }
+
+        .bank-drop {
+            border: 1.5px dashed var(--c-border);
+            border-radius: var(--c-radius);
+            background: var(--c-surface-2);
+            padding: 24px 18px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color .16s, background .16s;
+        }
+        .bank-drop:hover, .bank-drop.over { border-color: var(--c-brand); background: var(--c-brand-soft); }
+        .bank-drop .ui-icon { width: 26px; height: 26px; color: var(--c-brand); margin-bottom: 8px; }
+        .bank-drop-title { font-size: 13.5px; font-weight: 600; color: var(--c-text); }
+        .bank-drop-sub { font-size: 12px; color: var(--c-text-3); margin-top: 4px; }
+
+        .bank-result {
+            border: 1px solid var(--c-border);
+            border-radius: var(--c-radius-sm);
+            padding: 14px 16px;
+            margin-top: 14px;
+            background: var(--c-surface);
+        }
+        .bank-result + .bank-result { margin-top: 10px; }
+        .bank-q { font-size: 13.5px; color: var(--c-text); line-height: 1.7; margin-bottom: 10px; white-space: pre-wrap; word-break: break-word; }
+        .bank-opts { display: grid; gap: 6px; margin-bottom: 10px; }
+        .bank-opt { font-size: 13px; color: var(--c-text-2); display: flex; gap: 8px; line-height: 1.6; }
+        .bank-opt i { font-style: normal; color: var(--c-text-3); flex: 0 0 14px; }
+        .bank-ans {
+            background: var(--c-success-soft);
+            border: 1px solid rgba(18, 183, 106, .25);
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 13.5px;
+            font-weight: 600;
+            color: #05603a;
+            word-break: break-word;
+            line-height: 1.7;
+            white-space: pre-wrap;
+        }
+        .bank-ans.miss { background: var(--c-warning-soft); border-color: rgba(245, 158, 11, .3); color: #92400e; font-weight: 500; }
+        .bank-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; font-size: 12px; color: var(--c-text-3); }
+        .bank-meta .spacer { flex: 1; }
+        .bank-link {
+            background: none;
+            border: none;
+            padding: 0;
+            font-family: inherit;
+            font-size: 12px;
+            color: var(--c-brand);
+            cursor: pointer;
+        }
+        .bank-link:hover { text-decoration: underline; }
+        .tag {
+            display: inline-block;
+            font-size: 11.5px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: var(--c-surface-2);
+            color: var(--c-text-2);
+            border: 1px solid var(--c-border-2);
+            font-weight: 500;
+        }
+        .tag.ok { background: var(--c-success-soft); color: #05603a; border-color: rgba(18, 183, 106, .25); }
+        .tag.bad { background: var(--c-danger-soft); color: #b42318; border-color: rgba(240, 68, 56, .25); }
+        .tag.warn { background: var(--c-warning-soft); color: #92400e; border-color: rgba(245, 158, 11, .3); }
+
+        .bank-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+        .bank-table th {
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--c-text-3);
+            padding: 8px 10px;
+            border-bottom: 1px solid var(--c-border);
+            white-space: nowrap;
+        }
+        .bank-table td {
+            font-size: 12.5px;
+            color: var(--c-text-2);
+            padding: 9px 10px;
+            border-bottom: 1px solid var(--c-border-2);
+            vertical-align: top;
+            line-height: 1.6;
+        }
+        .bank-table tr:last-child td { border-bottom: none; }
+        .bank-table td.q { color: var(--c-text); max-width: 460px; word-break: break-word; }
+        .bank-table .num { color: var(--c-text-3); width: 34px; }
+        .bank-empty { padding: 26px 10px; text-align: center; font-size: 12.5px; color: var(--c-text-3); }
+        .bank-table-wrap { overflow-x: auto; }
+
+        @media (max-width: 720px) {
+            .tool-grid, .bank-stat-row, .bank-tabs { grid-template-columns: 1fr; }
+            .bank-table td.q { max-width: 200px; }
+        }
+
+        /* ===================== 题库工具结束 ===================== */
     </style>
     <script>
         (function(){
@@ -2534,6 +2744,14 @@
             <symbol id="i-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></symbol>
             <symbol id="i-send" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></symbol>
             <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></symbol>
+            <symbol id="i-camera" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"></path><circle cx="12" cy="13" r="3"></circle></symbol>
+            <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></symbol>
+            <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></symbol>
+            <symbol id="i-shuffle" viewBox="0 0 24 24"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></symbol>
+            <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></symbol>
+            <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></symbol>
+            <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></symbol>
+            <symbol id="i-trash" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></symbol>
             <symbol id="i-edit-3" viewBox="0 0 24 24"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></symbol>
             <symbol id="i-inbox" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></symbol>
             <symbol id="i-store" viewBox="0 0 24 24"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"></path><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"></path><path d="M2 7h20"></path></symbol>
@@ -2667,6 +2885,7 @@
                 <button class="user-menu-item" data-section="billing"><span class="mi"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-zap"></use></svg></span><span class="user-menu-label">套餐购买</span></button>
                 <button class="user-menu-item" data-section="model"><span class="mi"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-cpu"></use></svg></span><span class="user-menu-label">模型设置</span></button>
                 <button class="user-menu-item" data-section="script"><span class="mi"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-sliders"></use></svg></span><span class="user-menu-label">脚本设置</span></button>
+                <button class="user-menu-item" data-section="bank"><span class="mi"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-book"></use></svg></span><span class="user-menu-label">题库工具</span></button>
                 <button class="user-menu-item" data-section="account"><span class="mi"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-user"></use></svg></span><span class="user-menu-label">账号信息</span></button>
                 <button class="user-menu-item" data-section="promotion"><span class="mi"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-gift"></use></svg></span><span class="user-menu-label">推广返利</span></button>
                 <a class="user-menu-item" href="/distributor" target="_blank"><span class="mi"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-store"></use></svg></span><span class="user-menu-label">代理商分销</span><svg class="ui-icon sm" viewBox="0 0 24 24" style="color:var(--c-text-3);margin-left:auto"><use href="#i-external-link"></use></svg></a>
@@ -2711,6 +2930,7 @@
                     <button type="button" class="mobile-nav-item" data-section="billing"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-zap"></use></svg> 套餐</button>
                     <button type="button" class="mobile-nav-item" data-section="model"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-cpu"></use></svg> 模型</button>
                     <button type="button" class="mobile-nav-item" data-section="script"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-sliders"></use></svg> 脚本</button>
+                    <button type="button" class="mobile-nav-item" data-section="bank"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-book"></use></svg> 题库</button>
                     <button type="button" class="mobile-nav-item" data-section="account"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-user"></use></svg> 账号</button>
                     <button type="button" class="mobile-nav-item" data-section="promotion"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-gift"></use></svg> 返利</button>
                     <a class="mobile-nav-item" href="/distributor" target="_blank"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-store"></use></svg> 分销</a>
@@ -2747,6 +2967,55 @@
                         <div class="stat-card">
                             <div class="stat-icon bg-primary"><svg class="ui-icon md"><use href="#i-refresh-cw"></use></svg></div>
                             <div class="stat-info"><div class="k">同步状态</div><div class="v" id="statSync">已同步</div></div>
+                        </div>
+                    </div>
+
+                    <!-- 题库工具入口 -->
+                    <div class="dash-section" style="margin-top:0">
+                        <h4 class="dash-title"><svg class="ui-icon"><use href="#i-book"></use></svg> 题库工具</h4>
+                        <div class="tool-grid">
+                            <button type="button" class="tool-card" data-goto-bank="ai">
+                                <span class="tool-ico t-ai"><svg class="ui-icon"><use href="#i-sparkles"></use></svg></span>
+                                <span class="tool-body">
+                                    <span class="tool-title">AI 工具</span>
+                                    <span class="tool-desc">作文、文档、PPT 大纲，一句话生成你想要的内容</span>
+                                </span>
+                            </button>
+                            <button type="button" class="tool-card" data-goto-bank="search">
+                                <span class="tool-ico t-search"><svg class="ui-icon"><use href="#i-search"></use></svg></span>
+                                <span class="tool-body">
+                                    <span class="tool-title">在线搜题</span>
+                                    <span class="tool-desc">输入题目文字，快速搜索网课题目</span>
+                                </span>
+                            </button>
+                            <button type="button" class="tool-card" data-goto-bank="photo">
+                                <span class="tool-ico t-photo"><svg class="ui-icon"><use href="#i-camera"></use></svg></span>
+                                <span class="tool-body">
+                                    <span class="tool-title">拍照搜题</span>
+                                    <span class="tool-desc">截图识别题目，一图多题也能一次搜</span>
+                                </span>
+                            </button>
+                            <button type="button" class="tool-card" data-goto-bank="batch">
+                                <span class="tool-ico t-batch"><svg class="ui-icon"><use href="#i-file-text"></use></svg></span>
+                                <span class="tool-body">
+                                    <span class="tool-title">批量/全文搜题</span>
+                                    <span class="tool-desc">文档、表格、文本自动切题，批量出答案</span>
+                                </span>
+                            </button>
+                            <button type="button" class="tool-card" data-goto-bank="convert">
+                                <span class="tool-ico t-convert"><svg class="ui-icon"><use href="#i-shuffle"></use></svg></span>
+                                <span class="tool-body">
+                                    <span class="tool-title">题库转换</span>
+                                    <span class="tool-desc">题库文档、表格、文本标准化成题库文件</span>
+                                </span>
+                            </button>
+                            <button type="button" class="tool-card" data-goto-bank="mine">
+                                <span class="tool-ico t-mine"><svg class="ui-icon"><use href="#i-upload"></use></svg></span>
+                                <span class="tool-body">
+                                    <span class="tool-title">自建/私人题库</span>
+                                    <span class="tool-desc">搭建自己的私人题库，精准问答优先命中</span>
+                                </span>
+                            </button>
                         </div>
                     </div>
 
@@ -3435,6 +3704,177 @@
                         <div id="settingsMsg" class="msg"></div>
                     </div>
                 </section>
+
+                <!-- 10. 题库工具 Section -->
+                <section class="user-section" id="section-bank">
+                    <div class="bank-stat-row">
+                        <div class="bank-stat"><span>今日免费搜题</span><b id="bankQuotaLeft">--</b><i id="bankQuotaLimit">/ 30 次</i></div>
+                        <div class="bank-stat"><span>题数余额</span><b id="bankPoints">--</b><i id="bankPointsTip">点</i></div>
+                        <div class="bank-stat"><span>个人题库</span><b id="bankMineTotal">0</b><i>道</i></div>
+                        <div class="bank-stat"><span>AI 能力</span><b id="bankAiState" style="font-size:15px">检测中</b><i id="bankAiTip"></i></div>
+                    </div>
+
+                    <div class="bank-tabs" id="bankTabs">
+                        <button type="button" class="bank-tab active" data-bank-tab="search">
+                            <span class="bt-ico"><svg class="ui-icon"><use href="#i-search"></use></svg></span>
+                            <span class="bt-text"><b>在线搜题</b><span>输入题目文字快速搜索</span></span>
+                        </button>
+                        <button type="button" class="bank-tab" data-bank-tab="photo">
+                            <span class="bt-ico"><svg class="ui-icon"><use href="#i-camera"></use></svg></span>
+                            <span class="bt-text"><b>拍照搜题</b><span>截图识别，一图多题</span></span>
+                        </button>
+                        <button type="button" class="bank-tab" data-bank-tab="batch">
+                            <span class="bt-ico"><svg class="ui-icon"><use href="#i-file-text"></use></svg></span>
+                            <span class="bt-text"><b>批量/全文搜题</b><span>文档表格批量出答案</span></span>
+                        </button>
+                        <button type="button" class="bank-tab" data-bank-tab="convert">
+                            <span class="bt-ico"><svg class="ui-icon"><use href="#i-shuffle"></use></svg></span>
+                            <span class="bt-text"><b>题库转换</b><span>文档转标准题库文件</span></span>
+                        </button>
+                        <button type="button" class="bank-tab" data-bank-tab="mine">
+                            <span class="bt-ico"><svg class="ui-icon"><use href="#i-book"></use></svg></span>
+                            <span class="bt-text"><b>自建/私人题库</b><span>我自己的题库管理</span></span>
+                        </button>
+                        <button type="button" class="bank-tab" data-bank-tab="ai">
+                            <span class="bt-ico"><svg class="ui-icon"><use href="#i-sparkles"></use></svg></span>
+                            <span class="bt-text"><b>AI 工具</b><span>作文 / 文档 / PPT 大纲</span></span>
+                        </button>
+                    </div>
+
+                    <!-- 在线搜题 -->
+                    <div class="bank-panel active" id="bankPanel-search">
+                        <div class="user-card" style="margin-bottom:0">
+                            <h3><svg class="ui-icon"><use href="#i-search"></use></svg> 在线搜题</h3>
+                            <p class="bank-hint">输入题目文字，尽量带上选项。查询顺序：先查你自己的私人题库，再查公共题库。命中公共题库消耗 1 次今日免费额度，未收录不扣次数，私人题库命中也不扣。</p>
+                            <textarea class="bank-textarea" id="bankSearchInput" maxlength="2000" placeholder="例如：下列关于细胞膜的叙述，正确的是（ ）&#10;A. 细胞膜具有选择透过性&#10;B. 细胞膜是全透性的&#10;C. 细胞膜不含蛋白质&#10;D. 细胞膜只由磷脂组成"></textarea>
+                            <div class="bank-actions">
+                                <button type="button" class="primary" id="bankSearchBtn"><svg class="ui-icon sm"><use href="#i-search"></use></svg> 搜索题目</button>
+                                <button type="button" class="secondary" id="bankSearchClear">清空</button>
+                            </div>
+                            <div class="bank-status" id="bankSearchStatus"></div>
+                            <div id="bankSearchResult"></div>
+                        </div>
+                    </div>
+
+                    <!-- 拍照搜题 -->
+                    <div class="bank-panel" id="bankPanel-photo">
+                        <div class="user-card" style="margin-bottom:0">
+                            <h3><svg class="ui-icon"><use href="#i-camera"></use></svg> 拍照搜题</h3>
+                            <p class="bank-hint">上传题目截图（也可以直接 Ctrl+V 粘贴图片）。识别出来的题目可以手动修改再搜索。识别本身不扣题数，每天 <b id="bankOcrLimit">30</b> 次；搜索命中才按上面的规则计次数。</p>
+                            <div class="bank-drop" id="bankPhotoDrop">
+                                <svg class="ui-icon"><use href="#i-image"></use></svg>
+                                <div class="bank-drop-title">点击选择图片，或把图片拖到这里</div>
+                                <div class="bank-drop-sub">支持 jpg / png，单张 6MB 以内；一图多题也能识别</div>
+                            </div>
+                            <input type="file" id="bankPhotoInput" accept="image/*" style="display:none">
+                            <div id="bankPhotoPreviewWrap" style="display:none;margin-top:12px">
+                                <img id="bankPhotoPreview" alt="题目截图" style="max-width:100%;max-height:320px;border:1px solid var(--c-border);border-radius:10px">
+                            </div>
+                            <textarea class="bank-textarea" id="bankPhotoText" style="margin-top:12px" placeholder="识别结果会出现在这里，可以修改后再搜索"></textarea>
+                            <div class="bank-actions">
+                                <button type="button" class="primary" id="bankOcrBtn"><svg class="ui-icon sm"><use href="#i-sparkles"></use></svg> 识别题目</button>
+                                <button type="button" class="secondary" id="bankPhotoSearchBtn"><svg class="ui-icon sm"><use href="#i-search"></use></svg> 搜索识别结果</button>
+                            </div>
+                            <div class="bank-status" id="bankPhotoStatus"></div>
+                            <div id="bankPhotoResult"></div>
+                        </div>
+                    </div>
+
+                    <!-- 批量全文搜题 -->
+                    <div class="bank-panel" id="bankPanel-batch">
+                        <div class="user-card" style="margin-bottom:0">
+                            <h3><svg class="ui-icon"><use href="#i-file-text"></use></svg> 批量/全文搜题</h3>
+                            <p class="bank-hint">上传 .txt / .csv / .xlsx / .docx 或直接粘贴题目，自动切题后逐条查题库。单次最多 <b id="bankBatchLimit">50</b> 道；<b>命中的题按 1 点/题扣题数</b>，未命中和私人题库命中都不扣。</p>
+                            <div class="bank-drop" id="bankBatchDrop">
+                                <svg class="ui-icon"><use href="#i-upload"></use></svg>
+                                <div class="bank-drop-title">点击选择文件，或把文件拖到这里</div>
+                                <div class="bank-drop-sub">支持 txt / csv / xlsx / docx，8MB 以内；PDF 请先另存为 docx</div>
+                            </div>
+                            <input type="file" id="bankBatchFile" accept=".txt,.csv,.xlsx,.docx,.md,.json" style="display:none">
+                            <textarea class="bank-textarea" id="bankBatchText" style="margin-top:12px" placeholder="也可以直接粘题目：每题用「1.」开头，选项用「A.」开头，可选「答案：」"></textarea>
+                            <div class="bank-actions">
+                                <button type="button" class="primary" id="bankBatchParseBtn">解析题目</button>
+                                <button type="button" class="primary" id="bankBatchRunBtn" disabled>开始批量搜题</button>
+                                <button type="button" class="secondary" id="bankBatchExportBtn" disabled>导出结果 CSV</button>
+                            </div>
+                            <div class="bank-status" id="bankBatchStatus"></div>
+                            <div id="bankBatchTableWrap"></div>
+                        </div>
+                    </div>
+
+                    <!-- 题库转换 -->
+                    <div class="bank-panel" id="bankPanel-convert">
+                        <div class="user-card" style="margin-bottom:0">
+                            <h3><svg class="ui-icon"><use href="#i-shuffle"></use></svg> 题库转换</h3>
+                            <p class="bank-hint">把零散的文档、表格、文本整理成标准题库：题目、选项、答案、题型四列。解析结果可以下载成 CSV（Excel 直接打开），也可以一键存进你的私人题库。</p>
+                            <div class="bank-drop" id="bankConvertDrop">
+                                <svg class="ui-icon"><use href="#i-download"></use></svg>
+                                <div class="bank-drop-title">点击选择文件，或把文件拖到这里</div>
+                                <div class="bank-drop-sub">支持 txt / csv / xlsx / docx，8MB 以内；有「题目 / 选项 / 答案」表头的表格识别最准</div>
+                            </div>
+                            <input type="file" id="bankConvertFile" accept=".txt,.csv,.xlsx,.docx,.md,.json" style="display:none">
+                            <textarea class="bank-textarea" id="bankConvertText" style="margin-top:12px" placeholder="也可以直接粘贴要转换的题库文本"></textarea>
+                            <div class="bank-actions">
+                                <button type="button" class="primary" id="bankConvertParseBtn">解析并转换</button>
+                                <button type="button" class="secondary" id="bankConvertCsvBtn" disabled>下载标准题库 CSV</button>
+                                <button type="button" class="secondary" id="bankConvertSaveBtn" disabled>存入我的题库</button>
+                            </div>
+                            <div class="bank-status" id="bankConvertStatus"></div>
+                            <div id="bankConvertTableWrap"></div>
+                        </div>
+                    </div>
+
+                    <!-- 自建/私人题库 -->
+                    <div class="bank-panel" id="bankPanel-mine">
+                        <div class="user-card">
+                            <h3><svg class="ui-icon"><use href="#i-book"></use></svg> 自建 / 私人题库</h3>
+                            <p class="bank-hint">私人题库只对你自己生效：命中的题不消耗免费额度、也不扣题数，并且优先于公共题库。导入的每道题都要带答案。表格模板：题目 | 题型 | 选项 | 答案。</p>
+                            <div class="bank-inline">
+                                <input id="bankMineSearch" placeholder="搜索我的题库（题面或答案）">
+                                <button type="button" class="secondary" id="bankMineSearchBtn" style="width:auto;margin:0">搜索</button>
+                            </div>
+                            <textarea class="bank-textarea" id="bankMineImportText" style="margin-top:12px" placeholder="粘贴要导入的题目，例如：&#10;1. 下列说法正确的是（ ）&#10;A. ... B. ...&#10;答案：A"></textarea>
+                            <div class="bank-actions">
+                                <button type="button" class="primary" id="bankMineImportBtn">导入粘贴的题目</button>
+                                <button type="button" class="secondary" id="bankMineFileBtn">从文件导入</button>
+                                <input type="file" id="bankMineFile" accept=".txt,.csv,.xlsx,.docx,.md,.json" style="display:none">
+                                <button type="button" class="secondary" id="bankMineDeleteAllBtn">清空我的题库</button>
+                            </div>
+                            <div class="bank-status" id="bankMineStatus"></div>
+                        </div>
+                        <div class="user-card" style="margin-bottom:0">
+                            <h3><svg class="ui-icon"><use href="#i-layers"></use></svg> 我的题目 <span class="tag" id="bankMineCount">0 道</span></h3>
+                            <div id="bankMineTableWrap"><div class="bank-empty">还没有导入题目</div></div>
+                            <div class="bank-actions" id="bankMinePager"></div>
+                        </div>
+                    </div>
+
+                    <!-- AI 工具 -->
+                    <div class="bank-panel" id="bankPanel-ai">
+                        <div class="user-card" style="margin-bottom:0">
+                            <h3><svg class="ui-icon"><use href="#i-sparkles"></use></svg> AI 工具</h3>
+                            <p class="bank-hint">作文、文档、PPT 大纲生成。每次生成消耗 1 点题数（包月期间不扣），生成失败自动退回。</p>
+                            <div class="bank-inline">
+                                <select id="bankAiKind">
+                                    <option value="essay">作文</option>
+                                    <option value="doc">文档 / 报告</option>
+                                    <option value="ppt">PPT 大纲</option>
+                                    <option value="summary">知识总结</option>
+                                </select>
+                                <input id="bankAiLength" placeholder="篇幅，如 800 字（可留空）">
+                            </div>
+                            <input id="bankAiTopic" style="margin-top:10px" placeholder="主题或题目，例如：我的家乡 / 人工智能对教育的影响">
+                            <textarea class="bank-textarea" id="bankAiRequirement" style="margin-top:10px;min-height:88px" placeholder="额外要求（可留空）：体裁、对象、必须包含的要点"></textarea>
+                            <div class="bank-actions">
+                                <button type="button" class="primary" id="bankAiBtn">开始生成</button>
+                                <button type="button" class="secondary" id="bankAiCopyBtn" disabled>复制结果</button>
+                                <button type="button" class="secondary" id="bankAiDownloadBtn" disabled>下载 txt</button>
+                            </div>
+                            <div class="bank-status" id="bankAiStatus"></div>
+                            <div id="bankAiResult"></div>
+                        </div>
+                    </div>
+                </section>
             </div>
         </section>
     </main>
@@ -3729,7 +4169,7 @@
             document.body.classList.add('app-mode');
             $('userApp').classList.add('active');
             if (!profileTimer) profileTimer = setInterval(loadProfile, 8000);
-            const section = ['home', 'account', 'billing', 'model', 'script', 'consumption', 'promotion'].includes(initialUserSection) ? initialUserSection : 'home';
+            const section = ['home', 'account', 'billing', 'model', 'script', 'bank', 'consumption', 'promotion'].includes(initialUserSection) ? initialUserSection : 'home';
             initialUserSection = '';
             showUserSection(section);
             history.replaceState(null, '', '/user');
@@ -3759,6 +4199,7 @@
                 billing: ['套餐购买', '购买包月或题数套餐，权益可叠加保留。'],
                 model: ['模型设置', '配置自动模型或自有模型。'],
                 script: ['脚本设置', '编辑脚本同步到账号的云端记忆。'],
+                bank: ['题库工具', '在线搜题、拍照搜题、批量搜题、题库转换和私人题库。'],
                 promotion: ['推广返利', '邀请好友赚取现金佣金。'],
                 feedback: ['问题反馈', '提交问题或建议，我们通过邮件回复您。'],
                 'payment-info': ['收款信息', '设置退款收款方式，支付宝或微信。']
@@ -3779,6 +4220,7 @@
             if (el) el.classList.add('active');
             setPageTitle((titles[name] || titles.home)[0], (titles[name] || titles.home)[1]);
             if (name === 'script') loadScriptSettings();
+            if (name === 'bank') loadBankTools();
             if (name === 'model') { loadScriptSettings(); loadCustomModelConfig(); }
             if (name === 'account') loadScriptKey(false);
             if (name === 'home') loadDashboard();
@@ -5483,6 +5925,781 @@ await loadPlans();
                 syncThemeButtons();
             });
         });
+
+        /* ===================== 题库工具 ===================== */
+        const bankState = {
+            overview: null,
+            batchFile: null,
+            convertFile: null,
+            photoImage: '',
+            parseItems: [],
+            batchResults: [],
+            convertItems: [],
+            mine: { page: 1, keyword: '', items: [], total: 0 },
+            aiContent: ''
+        };
+
+        function bankToken() { return localStorage.getItem(TOKEN_KEY) || ''; }
+
+        function bankApi(path, options) {
+            const opts = Object.assign({ headers: {} }, options || {});
+            opts.headers = Object.assign({ 'Authorization': 'Bearer ' + bankToken() }, opts.headers || {});
+            if (opts.body && !opts.headers['Content-Type']) opts.headers['Content-Type'] = 'application/json';
+            return fetch(path, opts).then(function (res) {
+                return res.json().catch(function () { return {}; }).then(function (data) {
+                    if (!res.ok || (data && data.code && data.code >= 400)) {
+                        const err = new Error((data && data.msg) || ('请求失败 ' + res.status));
+                        err.data = data || {};
+                        err.status = res.status;
+                        throw err;
+                    }
+                    return data || {};
+                });
+            });
+        }
+
+        function bankSetStatus(id, text, isErr) {
+            const el = $(id);
+            if (!el) return;
+            el.textContent = text || '';
+            el.className = 'bank-status' + (isErr ? ' err' : '');
+        }
+
+        function bankApplyQuota(quota) {
+            if (!quota) return;
+            if ($('bankQuotaLeft')) $('bankQuotaLeft').textContent = quota.remaining != null ? quota.remaining : '--';
+            if ($('bankQuotaLimit')) $('bankQuotaLimit').textContent = '/ ' + (quota.limit || 30) + ' 次';
+        }
+
+        function bankRenderResults(containerId, items) {
+            const box = $(containerId);
+            if (!box) return;
+            if (!items || !items.length) {
+                box.innerHTML = '<div class="bank-result"><div class="bank-ans miss">题库暂未收录这道题。可以换一段更完整的题面（带上关键分句和选项）再搜，或把题目导入「自建/私人题库」。</div></div>';
+                return;
+            }
+            box.innerHTML = items.map(function (item, idx) {
+                const tags = [];
+                tags.push('<span class="tag ' + (item.source === 'private' ? 'ok' : '') + '">' + (item.source === 'private' ? '私人题库' : '公共题库') + '</span>');
+                if (item.type) tags.push('<span class="tag">' + escapeHtml(item.type) + '</span>');
+                if (item.score) tags.push('<span class="tag">匹配度 ' + Math.round(item.score) + '%</span>');
+                const optHtml = (item.options || []).map(function (opt, i) {
+                    return '<div class="bank-opt"><i>' + String.fromCharCode(65 + i) + '.</i><span>' + escapeHtml(opt) + '</span></div>';
+                }).join('');
+                return '<div class="bank-result">' +
+                    '<div class="bank-q">' + escapeHtml(item.question || '') + '</div>' +
+                    (optHtml ? '<div class="bank-opts">' + optHtml + '</div>' : '') +
+                    '<div class="bank-ans">' + escapeHtml(item.answer || '') + '</div>' +
+                    '<div class="bank-meta">' + tags.join('') + '<span class="spacer"></span>' +
+                    '<button type="button" class="bank-link" data-bank-report="' + idx + '">答案有误？</button>' +
+                    '</div></div>';
+            }).join('');
+            box.querySelectorAll('[data-bank-report]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    bankReportWrong(items[Number(btn.getAttribute('data-bank-report'))]);
+                });
+            });
+        }
+
+        async function bankReportWrong(item) {
+            if (!item) return;
+            try {
+                const res = await bankApi('/api/bank/report', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        question_hash: item.question_hash || '',
+                        question: item.question || '',
+                        answer: item.answer || '',
+                        reason: '用户在题库工具反馈答案有误'
+                    })
+                });
+                showToast(res.msg || '已记录反馈');
+            } catch (e) {
+                showToast(e.message || '上报失败', true);
+            }
+        }
+
+        async function doBankSearch(text, statusId, resultId) {
+            const question = String(text || '').trim();
+            if (question.length < 4) {
+                bankSetStatus(statusId, '题目太短，至少输入 4 个字', true);
+                return;
+            }
+            bankSetStatus(statusId, '搜索中…');
+            try {
+                const res = await bankApi('/api/bank/search', {
+                    method: 'POST',
+                    body: JSON.stringify({ question: question, scope: 'all' })
+                });
+                const data = res.data || {};
+                bankRenderResults(resultId, data.items || []);
+                bankApplyQuota(data.quota);
+                const left = data.quota && data.quota.remaining != null ? data.quota.remaining : '-';
+                if (data.found) {
+                    const where = data.source === 'private' ? '来自你的私人题库，未消耗次数' : '来自公共题库，已扣 1 次';
+                    bankSetStatus(statusId, '命中 ' + (data.total || 0) + ' 条（' + where + '），今日剩余 ' + left + ' 次免费搜题');
+                } else {
+                    bankSetStatus(statusId, '题库暂未收录，本次不扣次数。今日剩余 ' + left + ' 次免费搜题');
+                }
+            } catch (e) {
+                bankSetStatus(statusId, e.message || '搜索失败', true);
+                if (e.data && e.data.remaining != null) bankApplyQuota(e.data);
+            }
+        }
+
+        function switchBankTab(name) {
+            document.querySelectorAll('.bank-tab').forEach(function (btn) {
+                btn.classList.toggle('active', btn.getAttribute('data-bank-tab') === name);
+            });
+            document.querySelectorAll('.bank-panel').forEach(function (panel) {
+                panel.classList.toggle('active', panel.id === 'bankPanel-' + name);
+            });
+            if (name === 'mine') loadBankMine();
+        }
+
+        async function loadBankTools() {
+            try {
+                const res = await bankApi('/api/bank/overview');
+                const data = res.data || {};
+                bankState.overview = data;
+                bankApplyQuota(data.quota);
+                if ($('bankPoints')) $('bankPoints').textContent = data.active_member ? '包月' : (data.points != null ? data.points : '--');
+                if ($('bankPointsTip')) $('bankPointsTip').textContent = data.active_member ? '期间不扣点' : '点';
+                if ($('bankMineTotal')) $('bankMineTotal').textContent = data.personal_total || 0;
+                if ($('bankMineCount')) $('bankMineCount').textContent = (data.personal_total || 0) + ' 道';
+                const limits = data.limits || {};
+                if ($('bankOcrLimit')) $('bankOcrLimit').textContent = limits.ocr_daily || 30;
+                if ($('bankBatchLimit')) $('bankBatchLimit').textContent = limits.batch || 50;
+                const ai = data.ai || {};
+                if ($('bankAiState')) $('bankAiState').textContent = ai.text ? '可用' : '未配置';
+                if ($('bankAiTip')) $('bankAiTip').textContent = ai.text ? (ai.vision ? '含识图' : '无识图模型') : '需后台配置模型';
+                if (!ai.vision && $('bankPhotoStatus')) {
+                    bankSetStatus('bankPhotoStatus', '当前后台没有启用「支持图片」的模型，拍照识别暂不可用。', true);
+                }
+            } catch (e) {
+                bankSetStatus('bankSearchStatus', '加载额度失败：' + (e.message || ''), true);
+            }
+        }
+
+        /* ---------- 文件 / 图片读取 ---------- */
+
+        function bankReadFileBase64(file) {
+            return new Promise(function (resolve, reject) {
+                if (!file) return reject(new Error('没有选择文件'));
+                if (file.size > 8 * 1024 * 1024) return reject(new Error('文件超过 8MB，请拆分后再传'));
+                const reader = new FileReader();
+                reader.onload = function () {
+                    const raw = String(reader.result || '');
+                    resolve(raw.indexOf(',') >= 0 ? raw.slice(raw.indexOf(',') + 1) : raw);
+                };
+                reader.onerror = function () { reject(new Error('读取文件失败')); };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function bankReadImage(file) {
+            return new Promise(function (resolve, reject) {
+                if (!file) return reject(new Error('没有选择图片'));
+                if (!/^image\//.test(file.type || '')) return reject(new Error('请选择图片文件（jpg / png）'));
+                if (file.size > 6 * 1024 * 1024) return reject(new Error('图片超过 6MB，请压缩后再传'));
+                const reader = new FileReader();
+                reader.onload = function () { resolve(String(reader.result || '')); };
+                reader.onerror = function () { reject(new Error('读取图片失败')); };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function bankDownload(filename, text) {
+            const blob = new Blob(['\ufeff' + text], { type: 'text/csv;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+        }
+
+        function bankCsvCell(value) {
+            const text = String(value == null ? '' : value);
+            return /[",\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+        }
+
+        function bankBindDrop(dropId, inputId, onFile) {
+            const drop = $(dropId);
+            const input = $(inputId);
+            if (!drop || !onFile) return;
+            drop.addEventListener('click', function () { if (input) input.click(); });
+            if (input) {
+                input.addEventListener('change', function () {
+                    const file = input.files && input.files[0];
+                    input.value = '';
+                    if (file) onFile(file);
+                });
+            }
+            ['dragenter', 'dragover'].forEach(function (evt) {
+                drop.addEventListener(evt, function (e) {
+                    e.preventDefault();
+                    drop.classList.add('over');
+                });
+            });
+            ['dragleave', 'drop'].forEach(function (evt) {
+                drop.addEventListener(evt, function (e) {
+                    e.preventDefault();
+                    drop.classList.remove('over');
+                });
+            });
+            drop.addEventListener('drop', function (e) {
+                const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+                if (file) onFile(file);
+            });
+        }
+
+        /* ---------- 拍照搜题 ---------- */
+
+        async function bankUsePhotoFile(file) {
+            try {
+                const dataUrl = await bankReadImage(file);
+                bankState.photoImage = dataUrl;
+                if ($('bankPhotoPreview')) $('bankPhotoPreview').src = dataUrl;
+                if ($('bankPhotoPreviewWrap')) $('bankPhotoPreviewWrap').style.display = 'block';
+                bankSetStatus('bankPhotoStatus', '图片已就绪，点「识别题目」开始识别。');
+            } catch (e) {
+                bankSetStatus('bankPhotoStatus', e.message || '读取图片失败', true);
+            }
+        }
+
+        async function doBankOcr() {
+            if (!bankState.photoImage) {
+                bankSetStatus('bankPhotoStatus', '请先选择或粘贴一张题目截图', true);
+                return;
+            }
+            const btn = $('bankOcrBtn');
+            if (btn) btn.disabled = true;
+            bankSetStatus('bankPhotoStatus', '识别中，通常 3-10 秒…');
+            try {
+                const res = await bankApi('/api/bank/ocr', {
+                    method: 'POST',
+                    body: JSON.stringify({ image: bankState.photoImage })
+                });
+                const data = res.data || {};
+                if ($('bankPhotoText')) $('bankPhotoText').value = data.text || '';
+                if (data.ocr_limit && $('bankOcrLimit')) $('bankOcrLimit').textContent = data.ocr_limit;
+                const left = Math.max(0, (data.ocr_limit || 0) - (data.ocr_used || 0));
+                bankSetStatus('bankPhotoStatus', '识别完成，结果已填入下方文本框（可直接修改）。今日识别剩余 ' + left + ' 次。');
+            } catch (e) {
+                bankSetStatus('bankPhotoStatus', e.message || '识别失败', true);
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        /* ---------- 解析（批量 / 转换 / 导入共用） ---------- */
+
+        async function bankParseByFile(file) {
+            const b64 = await bankReadFileBase64(file);
+            return bankApi('/api/bank/parse', {
+                method: 'POST',
+                body: JSON.stringify({ name: file.name || '', data_b64: b64 })
+            });
+        }
+
+        async function bankParseByText(text) {
+            return bankApi('/api/bank/parse', {
+                method: 'POST',
+                body: JSON.stringify({ text: text })
+            });
+        }
+
+        function bankRenderParsePreview(containerId, items) {
+            const box = $(containerId);
+            if (!box) return;
+            if (!items || !items.length) {
+                box.innerHTML = '<div class="bank-empty">没有解析出题目。文档里每题用「1.」开头、选项用「A.」开头，或者表格用「题目 / 选项 / 答案」做表头。</div>';
+                return;
+            }
+            const rows = items.slice(0, 200).map(function (item, idx) {
+                return '<tr>' +
+                    '<td class="num">' + (idx + 1) + '</td>' +
+                    '<td class="q">' + escapeHtml(item.question || '') + '</td>' +
+                    '<td>' + escapeHtml(item.type || '') + '</td>' +
+                    '<td>' + (item.options || []).length + ' 项</td>' +
+                    '<td>' + escapeHtml(item.answer || '') + '</td>' +
+                    '</tr>';
+            }).join('');
+            box.innerHTML = '<div class="bank-table-wrap"><table class="bank-table">' +
+                '<thead><tr><th>#</th><th>题目</th><th>题型</th><th>选项</th><th>答案</th></tr></thead>' +
+                '<tbody>' + rows + '</tbody></table></div>';
+        }
+
+        /* ---------- 批量搜题 ---------- */
+
+        async function doBankBatchParse() {
+            const text = ($('bankBatchText') && $('bankBatchText').value) || '';
+            const file = bankState.batchFile;
+            const btn = $('bankBatchParseBtn');
+            if (!file && !text.trim()) {
+                bankSetStatus('bankBatchStatus', '请先上传文件或粘贴题目', true);
+                return;
+            }
+            if (btn) btn.disabled = true;
+            bankSetStatus('bankBatchStatus', '解析中…');
+            try {
+                const res = file ? await bankParseByFile(file) : await bankParseByText(text);
+                const data = res.data || {};
+                bankState.parseItems = data.questions || [];
+                bankState.batchResults = [];
+                bankRenderParsePreview('bankBatchTableWrap', bankState.parseItems);
+                if ($('bankBatchRunBtn')) $('bankBatchRunBtn').disabled = !bankState.parseItems.length;
+                if ($('bankBatchExportBtn')) $('bankBatchExportBtn').disabled = true;
+                const cap = (bankState.overview && bankState.overview.limits && bankState.overview.limits.batch) || 50;
+                bankSetStatus('bankBatchStatus', (res.msg || '') + (bankState.parseItems.length > cap ? '；单次只跑前 ' + cap + ' 道，其余请分批' : ''));
+            } catch (e) {
+                bankSetStatus('bankBatchStatus', e.message || '解析失败', true);
+            } finally {
+                bankState.batchFile = null;
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        async function doBankBatchRun() {
+            if (!bankState.parseItems.length) {
+                bankSetStatus('bankBatchStatus', '请先解析题目', true);
+                return;
+            }
+            const cap = (bankState.overview && bankState.overview.limits && bankState.overview.limits.batch) || 50;
+            const items = bankState.parseItems.slice(0, cap);
+            const btn = $('bankBatchRunBtn');
+            if (btn) btn.disabled = true;
+            bankSetStatus('bankBatchStatus', '正在批量搜索 ' + items.length + ' 道题…');
+            try {
+                const res = await bankApi('/api/bank/batch-search', {
+                    method: 'POST',
+                    body: JSON.stringify({ questions: items })
+                });
+                const data = res.data || {};
+                bankState.batchResults = data.results || [];
+                bankRenderBatchResults();
+                if ($('bankBatchExportBtn')) $('bankBatchExportBtn').disabled = !bankState.batchResults.length;
+                if ($('bankPoints')) $('bankPoints').textContent = data.active_member ? '包月' : (data.points != null ? data.points : '--');
+                bankSetStatus('bankBatchStatus', res.msg || '完成');
+            } catch (e) {
+                bankSetStatus('bankBatchStatus', e.message || '批量搜题失败', true);
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        function bankRenderBatchResults() {
+            const box = $('bankBatchTableWrap');
+            if (!box) return;
+            const results = bankState.batchResults || [];
+            if (!results.length) {
+                box.innerHTML = '<div class="bank-empty">还没有批量结果</div>';
+                return;
+            }
+            const statusTag = function (status) {
+                if (status === 'hit') return '<span class="tag ok">命中</span>';
+                if (status === 'quota') return '<span class="tag warn">余额不足</span>';
+                if (status === 'skip') return '<span class="tag">已跳过</span>';
+                return '<span class="tag bad">未收录</span>';
+            };
+            const rows = results.map(function (r) {
+                return '<tr>' +
+                    '<td class="num">' + r.index + '</td>' +
+                    '<td class="q">' + escapeHtml(r.question || '') + '</td>' +
+                    '<td>' + statusTag(r.status) + '</td>' +
+                    '<td>' + escapeHtml(r.answer || '—') + '</td>' +
+                    '</tr>';
+            }).join('');
+            box.innerHTML = '<div class="bank-table-wrap"><table class="bank-table">' +
+                '<thead><tr><th>#</th><th>题目</th><th>状态</th><th>答案</th></tr></thead>' +
+                '<tbody>' + rows + '</tbody></table></div>';
+        }
+
+        function doBankBatchExport() {
+            const results = bankState.batchResults || [];
+            if (!results.length) return;
+            const lines = ['序号,题目,状态,答案,来源,匹配度'];
+            results.forEach(function (r) {
+                const statusText = r.status === 'hit' ? '命中' : (r.status === 'quota' ? '余额不足' : (r.status === 'skip' ? '跳过' : '未收录'));
+                lines.push([r.index, r.question, statusText, r.answer, r.source, r.score].map(bankCsvCell).join(','));
+            });
+            bankDownload('批量搜题结果.csv', lines.join('\n'));
+        }
+
+        /* ---------- 题库转换 ---------- */
+
+        async function doBankConvertParse() {
+            const text = ($('bankConvertText') && $('bankConvertText').value) || '';
+            const file = bankState.convertFile;
+            const btn = $('bankConvertParseBtn');
+            if (!file && !text.trim()) {
+                bankSetStatus('bankConvertStatus', '请先上传文件或粘贴文本', true);
+                return;
+            }
+            if (btn) btn.disabled = true;
+            bankSetStatus('bankConvertStatus', '解析中…');
+            try {
+                const res = file ? await bankParseByFile(file) : await bankParseByText(text);
+                const data = res.data || {};
+                bankState.convertItems = data.questions || [];
+                bankRenderParsePreview('bankConvertTableWrap', bankState.convertItems);
+                if ($('bankConvertCsvBtn')) $('bankConvertCsvBtn').disabled = !bankState.convertItems.length;
+                if ($('bankConvertSaveBtn')) $('bankConvertSaveBtn').disabled = !bankState.convertItems.length;
+                const withAnswer = bankState.convertItems.filter(function (i) { return i.answer; }).length;
+                bankSetStatus('bankConvertStatus', (res.msg || '') + (bankState.convertItems.length ? '；其中 ' + withAnswer + ' 道带答案（只有带答案的能存进私人题库）' : ''));
+            } catch (e) {
+                bankSetStatus('bankConvertStatus', e.message || '解析失败', true);
+            } finally {
+                bankState.convertFile = null;
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        function doBankConvertCsv() {
+            const items = bankState.convertItems || [];
+            if (!items.length) return;
+            const lines = ['题目,题型,选项,答案'];
+            items.forEach(function (item) {
+                lines.push([item.question, item.type, (item.options || []).join('|'), item.answer].map(bankCsvCell).join(','));
+            });
+            bankDownload('题库转换结果.csv', lines.join('\n'));
+        }
+
+        async function doBankConvertSave() {
+            const items = (bankState.convertItems || []).filter(function (i) { return i.answer; });
+            if (!items.length) {
+                bankSetStatus('bankConvertStatus', '这些题目都没有答案，先补上答案再存入题库', true);
+                return;
+            }
+            const btn = $('bankConvertSaveBtn');
+            if (btn) btn.disabled = true;
+            bankSetStatus('bankConvertStatus', '正在存入私人题库…');
+            try {
+                const res = await bankApi('/api/bank/mine/import', {
+                    method: 'POST',
+                    body: JSON.stringify({ items: items, source: 'convert' })
+                });
+                bankSetStatus('bankConvertStatus', res.msg || '已存入');
+                const total = (res.data && res.data.total) || 0;
+                if ($('bankMineTotal')) $('bankMineTotal').textContent = total;
+                if ($('bankMineCount')) $('bankMineCount').textContent = total + ' 道';
+                loadBankMine(1);
+            } catch (e) {
+                bankSetStatus('bankConvertStatus', e.message || '存入失败', true);
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        /* ---------- 自建 / 私人题库 ---------- */
+
+        async function loadBankMine(page, keyword) {
+            if (page != null) bankState.mine.page = page;
+            if (keyword != null) bankState.mine.keyword = keyword;
+            const kw = bankState.mine.keyword || '';
+            const p = bankState.mine.page || 1;
+            const box = $('bankMineTableWrap');
+            if (box && !bankState.mine.items.length) box.innerHTML = '<div class="bank-empty">加载中…</div>';
+            try {
+                const res = await bankApi('/api/bank/mine?page=' + p + '&keyword=' + encodeURIComponent(kw));
+                const data = res.data || {};
+                bankState.mine.items = data.items || [];
+                bankState.mine.total = data.total || 0;
+                if ($('bankMineCount')) $('bankMineCount').textContent = bankState.mine.total + ' 道';
+                if ($('bankMineTotal')) $('bankMineTotal').textContent = bankState.mine.total;
+                bankRenderMine();
+            } catch (e) {
+                if (box) box.innerHTML = '<div class="bank-empty">' + escapeHtml(e.message || '加载失败') + '</div>';
+            }
+        }
+
+        function bankRenderMine() {
+            const box = $('bankMineTableWrap');
+            const pager = $('bankMinePager');
+            if (!box) return;
+            const items = bankState.mine.items || [];
+            if (!items.length) {
+                box.innerHTML = '<div class="bank-empty">' + (bankState.mine.keyword ? '没有匹配的题目' : '还没有导入题目') + '</div>';
+                if (pager) pager.innerHTML = '';
+                return;
+            }
+            const rows = items.map(function (item) {
+                const options = (item.options || []).join(' | ');
+                return '<tr>' +
+                    '<td class="q">' + escapeHtml(item.question || '') + (options ? '<div style="color:var(--c-text-3);margin-top:4px;font-size:12px">' + escapeHtml(options) + '</div>' : '') + '</td>' +
+                    '<td>' + escapeHtml(item.type || '') + '</td>' +
+                    '<td>' + escapeHtml(item.answer || '') + '</td>' +
+                    '<td>' + (item.hit_count || 0) + '</td>' +
+                    '<td><button type="button" class="bank-link" data-mine-del="' + item.id + '">删除</button></td>' +
+                    '</tr>';
+            }).join('');
+            box.innerHTML = '<div class="bank-table-wrap"><table class="bank-table">' +
+                '<thead><tr><th>题目</th><th>题型</th><th>答案</th><th>命中</th><th></th></tr></thead>' +
+                '<tbody>' + rows + '</tbody></table></div>';
+            box.querySelectorAll('[data-mine-del]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    bankDeleteMine([Number(btn.getAttribute('data-mine-del'))]);
+                });
+            });
+            const pageSize = 20;
+            const totalPages = Math.max(1, Math.ceil(bankState.mine.total / pageSize));
+            if (pager) {
+                pager.innerHTML = totalPages > 1
+                    ? '<button type="button" class="secondary" ' + (bankState.mine.page <= 1 ? 'disabled' : '') + ' id="bankMinePrev">上一页</button>' +
+                      '<span class="bank-status" style="margin:0;align-self:center">第 ' + bankState.mine.page + ' / ' + totalPages + ' 页</span>' +
+                      '<button type="button" class="secondary" ' + (bankState.mine.page >= totalPages ? 'disabled' : '') + ' id="bankMineNext">下一页</button>'
+                    : '';
+                const prev = $('bankMinePrev');
+                const next = $('bankMineNext');
+                if (prev) prev.addEventListener('click', function () { loadBankMine(bankState.mine.page - 1); });
+                if (next) next.addEventListener('click', function () { loadBankMine(bankState.mine.page + 1); });
+            }
+        }
+
+        async function bankDeleteMine(ids) {
+            if (!ids || !ids.length) return;
+            bankSetStatus('bankMineStatus', '删除中…');
+            try {
+                const res = await bankApi('/api/bank/mine/delete', {
+                    method: 'POST',
+                    body: JSON.stringify({ ids: ids })
+                });
+                bankSetStatus('bankMineStatus', res.msg || '已删除');
+                loadBankMine(bankState.mine.page);
+            } catch (e) {
+                bankSetStatus('bankMineStatus', e.message || '删除失败', true);
+            }
+        }
+
+        async function bankImportItems(items, source) {
+            if (!items || !items.length) {
+                bankSetStatus('bankMineStatus', '没有可导入的题目', true);
+                return;
+            }
+            bankSetStatus('bankMineStatus', '正在导入 ' + items.length + ' 道题…');
+            try {
+                const res = await bankApi('/api/bank/mine/import', {
+                    method: 'POST',
+                    body: JSON.stringify({ items: items, source: source || 'mine' })
+                });
+                const data = res.data || {};
+                bankSetStatus('bankMineStatus', res.msg || '导入完成');
+                if ($('bankMineTotal')) $('bankMineTotal').textContent = data.total || 0;
+                loadBankMine(1);
+            } catch (e) {
+                bankSetStatus('bankMineStatus', e.message || '导入失败', true);
+            }
+        }
+
+        async function doBankMineImportText() {
+            const text = ($('bankMineImportText') && $('bankMineImportText').value) || '';
+            if (!text.trim()) {
+                bankSetStatus('bankMineStatus', '请先粘贴题目', true);
+                return;
+            }
+            try {
+                const res = await bankParseByText(text);
+                const items = (res.data && res.data.questions) || [];
+                const withAnswer = items.filter(function (i) { return i.answer; });
+                if (!withAnswer.length) {
+                    bankSetStatus('bankMineStatus', '解析出 ' + items.length + ' 道题，但都没有「答案：」，私人题库需要答案', true);
+                    return;
+                }
+                await bankImportItems(withAnswer, 'paste');
+                if ($('bankMineImportText')) $('bankMineImportText').value = '';
+            } catch (e) {
+                bankSetStatus('bankMineStatus', e.message || '导入失败', true);
+            }
+        }
+
+        async function doBankMineImportFile(file) {
+            bankSetStatus('bankMineStatus', '解析文件…');
+            try {
+                const res = await bankParseByFile(file);
+                const items = (res.data && res.data.questions) || [];
+                const withAnswer = items.filter(function (i) { return i.answer; });
+                if (!withAnswer.length) {
+                    bankSetStatus('bankMineStatus', '解析出 ' + items.length + ' 道题，但没有答案列，无法导入私人题库', true);
+                    return;
+                }
+                await bankImportItems(withAnswer, 'file');
+            } catch (e) {
+                bankSetStatus('bankMineStatus', e.message || '导入失败', true);
+            }
+        }
+
+        /* ---------- AI 工具 ---------- */
+
+        async function doBankAiWrite() {
+            const kind = ($('bankAiKind') && $('bankAiKind').value) || 'doc';
+            const topic = (($('bankAiTopic') && $('bankAiTopic').value) || '').trim();
+            const requirement = (($('bankAiRequirement') && $('bankAiRequirement').value) || '').trim();
+            const length = (($('bankAiLength') && $('bankAiLength').value) || '').trim();
+            if (!topic) {
+                bankSetStatus('bankAiStatus', '请先填写主题或题目', true);
+                return;
+            }
+            const btn = $('bankAiBtn');
+            if (btn) btn.disabled = true;
+            bankSetStatus('bankAiStatus', '生成中，通常 10-30 秒…');
+            try {
+                const res = await bankApi('/api/bank/ai-write', {
+                    method: 'POST',
+                    body: JSON.stringify({ kind: kind, topic: topic, requirement: requirement, length: length })
+                });
+                const data = res.data || {};
+                bankState.aiContent = data.content || '';
+                if ($('bankAiResult')) {
+                    $('bankAiResult').innerHTML = '<div class="bank-result"><div class="bank-q" style="white-space:pre-wrap">' +
+                        escapeHtml(bankState.aiContent) + '</div><div class="bank-meta">' +
+                        '<span class="tag ok">' + escapeHtml(data.kind_name || '') + '</span>' +
+                        (data.model ? '<span class="tag">' + escapeHtml(data.model) + '</span>' : '') +
+                        '<span class="spacer"></span><span>题数余额 ' + (data.active_member ? '包月不扣' : (data.points != null ? data.points : '-')) + '</span>' +
+                        '</div></div>';
+                }
+                if ($('bankAiCopyBtn')) $('bankAiCopyBtn').disabled = !bankState.aiContent;
+                if ($('bankAiDownloadBtn')) $('bankAiDownloadBtn').disabled = !bankState.aiContent;
+                bankSetStatus('bankAiStatus', res.msg || '生成完成');
+                if ($('bankPoints')) $('bankPoints').textContent = data.active_member ? '包月' : (data.points != null ? data.points : '--');
+            } catch (e) {
+                bankSetStatus('bankAiStatus', e.message || '生成失败', true);
+            } finally {
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        /* ---------- 事件绑定 ---------- */
+
+        function bankBindEvents() {
+            const tabs = $('bankTabs');
+            if (tabs) {
+                tabs.addEventListener('click', function (e) {
+                    const btn = e.target.closest('[data-bank-tab]');
+                    if (btn) switchBankTab(btn.getAttribute('data-bank-tab'));
+                });
+            }
+            document.querySelectorAll('[data-goto-bank]').forEach(function (card) {
+                card.addEventListener('click', function () {
+                    const tab = card.getAttribute('data-goto-bank');
+                    showUserSection('bank');
+                    switchBankTab(tab);
+                    loadBankTools();
+                });
+            });
+
+            if ($('bankSearchBtn')) $('bankSearchBtn').addEventListener('click', function () {
+                doBankSearch($('bankSearchInput') && $('bankSearchInput').value, 'bankSearchStatus', 'bankSearchResult');
+            });
+            if ($('bankSearchClear')) $('bankSearchClear').addEventListener('click', function () {
+                if ($('bankSearchInput')) $('bankSearchInput').value = '';
+                if ($('bankSearchResult')) $('bankSearchResult').innerHTML = '';
+                bankSetStatus('bankSearchStatus', '');
+            });
+            if ($('bankSearchInput')) $('bankSearchInput').addEventListener('keydown', function (e) {
+                if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                    doBankSearch($('bankSearchInput').value, 'bankSearchStatus', 'bankSearchResult');
+                }
+            });
+
+            bankBindDrop('bankPhotoDrop', 'bankPhotoInput', bankUsePhotoFile);
+            if ($('bankOcrBtn')) $('bankOcrBtn').addEventListener('click', doBankOcr);
+            if ($('bankPhotoSearchBtn')) $('bankPhotoSearchBtn').addEventListener('click', function () {
+                doBankSearch($('bankPhotoText') && $('bankPhotoText').value, 'bankPhotoStatus', 'bankPhotoResult');
+            });
+            document.addEventListener('paste', function (ev) {
+                const panel = $('bankPanel-photo');
+                if (!panel || !panel.classList.contains('active')) return;
+                const items = (ev.clipboardData && ev.clipboardData.items) || [];
+                for (let i = 0; i < items.length; i++) {
+                    if ((items[i].type || '').indexOf('image/') === 0) {
+                        const file = items[i].getAsFile();
+                        if (file) {
+                            ev.preventDefault();
+                            bankUsePhotoFile(file);
+                            return;
+                        }
+                    }
+                }
+            });
+
+            bankBindDrop('bankBatchDrop', 'bankBatchFile', function (file) {
+                bankState.batchFile = file;
+                bankSetStatus('bankBatchStatus', '已选择文件：' + file.name + '，点「解析题目」');
+            });
+            if ($('bankBatchParseBtn')) $('bankBatchParseBtn').addEventListener('click', doBankBatchParse);
+            if ($('bankBatchRunBtn')) $('bankBatchRunBtn').addEventListener('click', doBankBatchRun);
+            if ($('bankBatchExportBtn')) $('bankBatchExportBtn').addEventListener('click', doBankBatchExport);
+
+            bankBindDrop('bankConvertDrop', 'bankConvertFile', function (file) {
+                bankState.convertFile = file;
+                bankSetStatus('bankConvertStatus', '已选择文件：' + file.name + '，点「解析并转换」');
+            });
+            if ($('bankConvertParseBtn')) $('bankConvertParseBtn').addEventListener('click', doBankConvertParse);
+            if ($('bankConvertCsvBtn')) $('bankConvertCsvBtn').addEventListener('click', doBankConvertCsv);
+            if ($('bankConvertSaveBtn')) $('bankConvertSaveBtn').addEventListener('click', doBankConvertSave);
+
+            if ($('bankMineSearchBtn')) $('bankMineSearchBtn').addEventListener('click', function () {
+                loadBankMine(1, (($('bankMineSearch') && $('bankMineSearch').value) || '').trim());
+            });
+            if ($('bankMineSearch')) $('bankMineSearch').addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') loadBankMine(1, ($('bankMineSearch').value || '').trim());
+            });
+            if ($('bankMineImportBtn')) $('bankMineImportBtn').addEventListener('click', doBankMineImportText);
+            if ($('bankMineFileBtn')) $('bankMineFileBtn').addEventListener('click', function () {
+                if ($('bankMineFile')) $('bankMineFile').click();
+            });
+            if ($('bankMineFile')) $('bankMineFile').addEventListener('change', function () {
+                const input = $('bankMineFile');
+                const file = input.files && input.files[0];
+                input.value = '';
+                if (file) doBankMineImportFile(file);
+            });
+            if ($('bankMineDeleteAllBtn')) $('bankMineDeleteAllBtn').addEventListener('click', async function () {
+                if (!confirm('确定清空你的私人题库？这一步不可恢复。')) return;
+                try {
+                    const res = await bankApi('/api/bank/mine/delete', { method: 'POST', body: JSON.stringify({ all: true }) });
+                    bankSetStatus('bankMineStatus', res.msg || '已清空');
+                    loadBankMine(1);
+                } catch (e) {
+                    bankSetStatus('bankMineStatus', e.message || '清空失败', true);
+                }
+            });
+
+            if ($('bankAiBtn')) $('bankAiBtn').addEventListener('click', doBankAiWrite);
+            if ($('bankAiCopyBtn')) $('bankAiCopyBtn').addEventListener('click', function () {
+                if (!bankState.aiContent) return;
+                const done = function () { showToast('已复制到剪贴板'); };
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(bankState.aiContent).then(done).catch(function () { showToast('复制失败，请手动选择文本', true); });
+                } else {
+                    const ta = document.createElement('textarea');
+                    ta.value = bankState.aiContent;
+                    document.body.appendChild(ta);
+                    ta.select();
+                    try { document.execCommand('copy'); done(); } catch (_) { showToast('复制失败', true); }
+                    document.body.removeChild(ta);
+                }
+            });
+            if ($('bankAiDownloadBtn')) $('bankAiDownloadBtn').addEventListener('click', function () {
+                if (!bankState.aiContent) return;
+                const blob = new Blob([bankState.aiContent], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'AI工具生成.txt';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+            });
+        }
+
+        window.loadBankTools = loadBankTools;
+        bankBindEvents();
+
         syncThemeButtons();
     </script>
 </body>

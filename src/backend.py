@@ -45,6 +45,7 @@ except Exception:
     BOTPY_AVAILABLE = False
 
 from database import db, hash_password, verify_password, is_legacy_password, get_db_config, save_db_config, _normalize_question_type_name
+import bank_tools
 
 # ==================== 全局配置 ====================
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1050,6 +1051,9 @@ _API_RATE_BUCKETS = {}
 
 # 首页免费搜题：每日每用户最多搜索次数（不扣题数点数）
 WEB_SEARCH_DAILY_LIMIT = 30
+
+# 请求体上限：题库工具用 base64 传文件/图片，别让一次超大请求顶爆 2G 内存
+MAX_REQUEST_BODY_BYTES = 16 * 1024 * 1024
 
 def check_api_rate(client_ip, path, max_count=30, window_sec=60):
     """通用 API 限流：每个 IP 在 window_sec 秒内对同一 path 最多 max_count 次"""
@@ -2759,6 +2763,8 @@ def get_bank_match_all(question):
             # 保留整行：完整记录（自带 answer）直接用，只有占位行才回表查
             candidates = [r for r in fb if r.get("question_hash")]
     candidates = [c for c in candidates if c.get("answer")]
+    # 被多次上报「答案有误」的题不再自动复用（P0 污染控制）：宁可回未命中，也不把错答案发出去
+    candidates = [c for c in candidates if int(c.get("answer_flag") or 0) == 0]
     rows = []
     seen = set()
     for c in candidates:
@@ -2775,6 +2781,172 @@ def get_bank_match_all(question):
     else:
         print(f"[首页搜题] 命中 {len(rows)} 条 {mkey[:12]} ({elapsed:.1f}ms)", flush=True)
     return rows, mkey, elapsed
+
+
+# ==================== 题库工具（用户中心） ====================
+# 红线：任何「批量」出口都是题库导出通道，必须限条数 + 按命中扣点 + 限流，
+# 不要拿每日 30 次免费搜题额度去喂批量接口。
+BANK_TOOL_BATCH_LIMIT = 50        # 单次批量搜题最多题数
+BANK_TOOL_IMPORT_LIMIT = 300      # 单次导入个人题库最多条数
+BANK_TOOL_OCR_MAX_BYTES = 6 * 1024 * 1024
+BANK_TOOL_OCR_DAILY_LIMIT = 30    # 每人每天 OCR 次数（走多模态模型，有成本）
+_BANK_TOOL_OCR_COUNT = {}         # {"用户名:日期": 次数}
+
+OCR_SYSTEM_PROMPT = (
+    "你是题库录入助手。请把图片里的题目原样转成文字，严格遵守：\n"
+    "1. 只输出题目本身，题干在前，选项按「A. 内容」每行一个；\n"
+    "2. 图片里有多道题时用空行分隔，每题以「1.」「2.」编号；\n"
+    "3. 不要作答、不要解释、不要输出 Markdown 代码块；\n"
+    "4. 认不清的字用 □ 代替；图片里没有题目就只输出「未识别到题目」。\n"
+)
+
+AI_WRITE_KINDS = {
+    "essay": "作文",
+    "doc": "文档",
+    "ppt": "PPT大纲",
+    "summary": "知识总结",
+}
+
+
+def _bank_tool_quota(username):
+    try:
+        used = db.get_web_search_count(username)
+    except Exception:
+        used = 0
+    return {"limit": WEB_SEARCH_DAILY_LIMIT, "used": used, "remaining": max(0, WEB_SEARCH_DAILY_LIMIT - used)}
+
+
+def _ocr_daily_used(username):
+    key = f"{username}:{datetime.now().strftime('%Y-%m-%d')}"
+    return int(_BANK_TOOL_OCR_COUNT.get(key) or 0)
+
+
+def _ocr_daily_bump(username):
+    key = f"{username}:{datetime.now().strftime('%Y-%m-%d')}"
+    _BANK_TOOL_OCR_COUNT[key] = int(_BANK_TOOL_OCR_COUNT.get(key) or 0) + 1
+    for stale in [k for k in list(_BANK_TOOL_OCR_COUNT.keys())[:400] if not k.endswith(datetime.now().strftime('%Y-%m-%d'))]:
+        _BANK_TOOL_OCR_COUNT.pop(stale, None)
+    return _BANK_TOOL_OCR_COUNT[key]
+
+
+def search_personal_bank(username, question, limit=3, min_score=0.55):
+    """个人题库优先命中。用与公共题库同一套召回+重排，避免两套标准。"""
+    info = parse_question_payload(question)
+    q_norm = normalize_question_text(info.get("question_text", ""))
+    if len(q_norm) < 4:
+        return []
+    rows = []
+    for kw in (_search_keywords(q_norm) or [q_norm[:24]]):
+        rows = db.search_user_bank(username, kw, limit=30)
+        if rows:
+            break
+    if not rows:
+        rows = db.search_user_bank(username, q_norm[:12], limit=30)
+    if not rows:
+        return []
+    ranked = [(s, r) for s, r in _rank_bank_candidates(question, rows, limit=limit * 2) if s >= min_score]
+    items = _build_match_candidates(question, ranked)
+    for idx, item in enumerate(items):
+        item["source"] = "private"
+        row = ranked[idx][1] if idx < len(ranked) else {}
+        item["item_id"] = row.get("id")
+        if item.get("item_id"):
+            db.touch_user_bank_hit(username, item["item_id"])
+    return items[:limit]
+
+
+def public_bank_items(question, limit=3):
+    """公共题库命中（含相似题），带相似度分数。"""
+    matches, _mkey, _elapsed = get_bank_match_all(question)
+    if not matches:
+        return []
+    ranked = _rank_bank_candidates(question, matches, limit=limit)
+    items = _build_match_candidates(question, ranked)
+    for item in items:
+        item["source"] = "public"
+    return items
+
+
+def bank_tool_search(username, question, limit=3):
+    """个人题库 → 公共题库。返回 (items, source)，source = private/public/none。"""
+    private = search_personal_bank(username, question, limit=limit)
+    if private:
+        return private, "private"
+    public = public_bank_items(question, limit=limit)
+    if public:
+        return public, "public"
+    return [], "none"
+
+
+def ocr_question_text(image_data, username=""):
+    """图片 → 题目文字。只做识别，不作答、不扣题数（识别成本由 OCR 日限控制）。"""
+    candidates = get_enabled_model_candidates(need_vision=True)
+    if not candidates:
+        return None, "当前没有可用的多模态（支持图片）模型，请到后台给模型勾选「支持图片」"
+    messages = [
+        {"role": "system", "content": OCR_SYSTEM_PROMPT},
+        {"role": "user", "content": [
+            {"type": "text", "text": "请识别这张图片里的题目。"},
+            {"type": "image_url", "image_url": {"url": image_data}},
+        ]},
+    ]
+    errors = []
+    for provider_name, provider_info, model_name, _weight in candidates[:3]:
+        try:
+            answer, err, _tokens = call_provider_chat("", model_name, provider_info, time_budget=60, prepared_messages=messages)
+        except Exception as e:
+            answer, err = None, str(e)
+        if answer:
+            text = str(answer).strip()
+            text = re.sub(r"^```[a-zA-Z]*\s*|```$", "", text).strip()
+            print(f"[题库工具] OCR 成功 model={model_name} user={username} 字数={len(text)}", flush=True)
+            return text[:6000], None
+        errors.append(f"{model_name}: {err}")
+        print(f"[题库工具] OCR 失败 model={model_name} err={err}", flush=True)
+    return None, "图片识别失败：" + "；".join(errors[-2:])
+
+
+def ask_text_prompt(system_prompt, user_prompt, max_models=3):
+    """自由文本生成（作文/文档/PPT大纲）：不套题库的题目格式，直接给完整 messages。"""
+    candidates = get_enabled_model_candidates(need_vision=False)
+    if not candidates:
+        return None, "当前没有可用的 AI 模型，请到后台启用模型", ""
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+    errors = []
+    for provider_name, provider_info, model_name, _weight in candidates[:max_models]:
+        try:
+            answer, err, tokens = call_provider_chat("", model_name, provider_info, time_budget=90, prepared_messages=messages)
+        except Exception as e:
+            answer, err, tokens = None, str(e), 0
+        if answer:
+            record_model_token_usage(model_name, tokens or 0)
+            return str(answer).strip(), None, model_name
+        errors.append(f"{model_name}: {err}")
+        print(f"[AI工具] 生成失败 model={model_name} err={err}", flush=True)
+    return None, "生成失败：" + "；".join(errors[-2:]), ""
+
+
+def ai_write_prompt(kind, topic, requirement="", length=""):
+    kind_name = AI_WRITE_KINDS.get(kind, "文档")
+    lines = [
+        f"请按要求写一篇{kind_name}，直接输出正文，不要解释你做了什么，不要用 Markdown 代码块包裹。",
+        f"主题：{topic.strip()}",
+    ]
+    if requirement.strip():
+        lines.append(f"要求：{requirement.strip()}")
+    if str(length).strip():
+        lines.append(f"篇幅：{str(length).strip()}")
+    if kind == "ppt":
+        lines.append("输出格式：先一行标题，然后按「第N页：标题」分段，每页 3-5 条要点。")
+    elif kind == "essay":
+        lines.append("要求：结构完整（开头-主体-结尾），语言自然，不要套模板句式、不要出现「首先/其次/最后」式罗列。")
+    elif kind == "summary":
+        lines.append("要求：按知识点分条，每条一句话，最后给 3 条易错点。")
+    return "\n".join(lines)
+
 
 MATCH_AUTO_MIN_SCORE = 0.9   # 自动选最优：题面相似度低于这个值视为「不是同一题」，宁可交给 AI 重答
 MATCH_MANUAL_LIMIT = 5       # 手动选择：最多回传几条候选给脚本弹窗
@@ -5416,8 +5588,21 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _read_body(self):
-        length = int(self.headers.get("Content-Length", 0))
-        return self.rfile.read(length).decode("utf-8") if length > 0 else "{}"
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+        except Exception:
+            length = 0
+        if length <= 0:
+            return "{}"
+        # 题库工具要收 base64 文件/图片，必须有上限：超限只读掉一小段就返回标记，
+        # 避免一次 100MB 的请求把 2G 内存的后端顶爆。
+        if length > MAX_REQUEST_BODY_BYTES:
+            try:
+                self.rfile.read(min(length, 1 << 20))
+            except Exception:
+                pass
+            return json.dumps({"_too_large": length})
+        return self.rfile.read(length).decode("utf-8")
 
     def _get_user_from_token(self):
         """从请求头解析用户 Token"""
@@ -7114,6 +7299,69 @@ class Handler(BaseHTTPRequestHandler):
                     "used": used,
                     "remaining": max(0, WEB_SEARCH_DAILY_LIMIT - used)
                 })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        # ==================== 题库工具（GET） ====================
+        elif path == "/api/bank/overview":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "未登录"})
+                return
+            try:
+                username = user["username"]
+                ent = db.get_user_entitlement(username) or {}
+                self._send_json(200, {"code": 200, "msg": "ok", "data": {
+                    "quota": _bank_tool_quota(username),
+                    "personal_total": db.count_user_bank(username),
+                    "points": int(ent.get("points_balance") or 0),
+                    "active_member": bool(ent.get("active_member")),
+                    "ai": {
+                        "text": bool(get_enabled_model_candidates(need_vision=False)),
+                        "vision": bool(get_enabled_model_candidates(need_vision=True)),
+                    },
+                    "limits": {
+                        "batch": BANK_TOOL_BATCH_LIMIT,
+                        "import": BANK_TOOL_IMPORT_LIMIT,
+                        "ocr_daily": BANK_TOOL_OCR_DAILY_LIMIT,
+                        "ocr_used": _ocr_daily_used(username),
+                    },
+                    "supported": list(bank_tools.SUPPORTED_EXTS),
+                }})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/api/bank/mine":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "未登录"})
+                return
+            try:
+                username = user["username"]
+                qs = parse_qs(parsed.query)
+                keyword = (qs.get("keyword", [""])[0] or "").strip()
+                try:
+                    page = max(1, int(qs.get("page", ["1"])[0] or 1))
+                except Exception:
+                    page = 1
+                page_size = 20
+                rows = db.list_user_bank(username, keyword, page, page_size)
+                items = [{
+                    "id": r.get("id"),
+                    "question": r.get("question_text") or "",
+                    "type": r.get("question_type") or "",
+                    "options": [x for x in (r.get("options_text") or "").split("|") if x],
+                    "answer": r.get("answer") or "",
+                    "hit_count": int(r.get("hit_count") or 0),
+                    "created_at": str(r.get("created_at") or ""),
+                } for r in rows]
+                self._send_json(200, {"code": 200, "msg": "ok", "data": {
+                    "items": items,
+                    "total": db.count_user_bank(username, keyword),
+                    "page": page,
+                    "page_size": page_size,
+                    "keyword": keyword,
+                }})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -9731,6 +9979,407 @@ class Handler(BaseHTTPRequestHandler):
                         "found": False,
                         **quota_info
                     }})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        # ==================== 题库工具（POST） ====================
+        elif path == "/api/bank/search":
+            try:
+                ok_rate, retry_rate = check_api_rate(self._client_ip(), "/api/bank/search", 30, 60)
+                if not ok_rate:
+                    self._send_json(429, {"code": 429, "msg": f"请求过于频繁，请 {retry_rate} 秒后再试"}, {"Retry-After": str(retry_rate)})
+                    return
+                user = self._get_user_from_token()
+                if not user:
+                    self._send_json(401, {"code": 401, "msg": "请先登录后再搜题"})
+                    return
+                if user.get("is_banned"):
+                    self._send_json(403, {"code": 403, "msg": "账号已被封禁：" + (user.get("ban_reason") or "请联系管理员")})
+                    return
+                data = json.loads(body or "{}")
+                question = str(data.get("question") or "").strip()
+                scope = str(data.get("scope") or "all").strip()
+                if not question:
+                    self._send_json(400, {"code": 400, "msg": "请输入题目"})
+                    return
+                if len(question) > 2000:
+                    self._send_json(400, {"code": 400, "msg": "题目内容过长，请控制在 2000 字以内"})
+                    return
+                username = user["username"]
+                if scope == "public":
+                    items = public_bank_items(question, limit=3)
+                    source = "public" if items else "none"
+                else:
+                    items, source = bank_tool_search(username, question, limit=3)
+                quota = _bank_tool_quota(username)
+                if source == "public":
+                    if quota["remaining"] <= 0:
+                        self._send_json(429, {
+                            "code": 429,
+                            "msg": f"今日免费搜题次数已用完（每天 {WEB_SEARCH_DAILY_LIMIT} 次），明天再来吧",
+                            **quota
+                        })
+                        return
+                    db.increment_web_search_count(username)
+                    quota = _bank_tool_quota(username)
+                # 检索日志：未命中的题目就是补库线索（后台据此聚合）
+                try:
+                    _info = parse_question_payload(question)
+                    enqueue_bank_log({
+                        "username": username,
+                        "question_hash": make_matching_key(question),
+                        "question_text": _info.get("question_text", question)[:500],
+                        "question_type": _info.get("question_type", ""),
+                        "options_text": " | ".join(_info.get("options", [])),
+                        "matched": bool(items),
+                        "matched_hash": (items[0].get("question_hash") or "") if items else "",
+                        "match_method": "tool_" + source,
+                        "duration_ms": 0,
+                        "client_ip": self._client_ip()
+                    })
+                except Exception:
+                    pass
+                payload = {"found": bool(items), "source": source, "quota": quota, "items": items, "total": len(items)}
+                if items:
+                    top = items[0]
+                    payload.update({
+                        "question": top.get("question") or "",
+                        "type": top.get("type") or "",
+                        "options": top.get("options") or [],
+                        "answer": top.get("answer") or "",
+                        "question_hash": top.get("question_hash") or "",
+                    })
+                self._send_json(200, {
+                    "code": 200,
+                    "msg": "搜索成功" if items else "题库暂未收录该题目",
+                    "data": payload
+                })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/api/bank/ocr":
+            try:
+                ok_rate, retry_rate = check_api_rate(self._client_ip(), "/api/bank/ocr", 10, 60)
+                if not ok_rate:
+                    self._send_json(429, {"code": 429, "msg": f"请求过于频繁，请 {retry_rate} 秒后再试"}, {"Retry-After": str(retry_rate)})
+                    return
+                user = self._get_user_from_token()
+                if not user:
+                    self._send_json(401, {"code": 401, "msg": "请先登录"})
+                    return
+                data = json.loads(body or "{}")
+                if data.get("_too_large"):
+                    self._send_json(413, {"code": 413, "msg": "图片太大，请压缩到 6MB 以内"})
+                    return
+                image = str(data.get("image") or "").strip()
+                if not image.startswith("data:image/"):
+                    self._send_json(400, {"code": 400, "msg": "请上传 jpg / png 图片"})
+                    return
+                approx_bytes = int(len(image) * 3 / 4)
+                if approx_bytes > BANK_TOOL_OCR_MAX_BYTES:
+                    self._send_json(413, {"code": 413, "msg": "图片超过 6MB，请压缩后再传"})
+                    return
+                username = user["username"]
+                used = _ocr_daily_used(username)
+                if used >= BANK_TOOL_OCR_DAILY_LIMIT:
+                    self._send_json(429, {
+                        "code": 429,
+                        "msg": f"今日图片识别次数已用完（每天 {BANK_TOOL_OCR_DAILY_LIMIT} 次），明天再来吧",
+                        "ocr_used": used,
+                        "ocr_limit": BANK_TOOL_OCR_DAILY_LIMIT
+                    })
+                    return
+                text, err = ocr_question_text(image, username)
+                if not text:
+                    self._send_json(500, {"code": 500, "msg": err or "识别失败"})
+                    return
+                new_used = _ocr_daily_bump(username)
+                self._send_json(200, {"code": 200, "msg": "识别完成", "data": {
+                    "text": text,
+                    "ocr_used": new_used,
+                    "ocr_limit": BANK_TOOL_OCR_DAILY_LIMIT,
+                }})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/api/bank/parse":
+            try:
+                ok_rate, retry_rate = check_api_rate(self._client_ip(), "/api/bank/parse", 20, 60)
+                if not ok_rate:
+                    self._send_json(429, {"code": 429, "msg": f"请求过于频繁，请 {retry_rate} 秒后再试"}, {"Retry-After": str(retry_rate)})
+                    return
+                user = self._get_user_from_token()
+                if not user:
+                    self._send_json(401, {"code": 401, "msg": "请先登录"})
+                    return
+                data = json.loads(body or "{}")
+                if data.get("_too_large"):
+                    self._send_json(413, {"code": 413, "msg": "文件太大（上限 16MB），请拆分后再传"})
+                    return
+                name = str(data.get("name") or "").strip()
+                raw_b64 = str(data.get("data_b64") or "").strip()
+                pasted = str(data.get("text") or "")
+                if raw_b64:
+                    if raw_b64.startswith("data:") and "," in raw_b64[:120]:
+                        raw_b64 = raw_b64.split(",", 1)[1]
+                    try:
+                        file_bytes = base64.b64decode(raw_b64, validate=False)
+                    except Exception:
+                        self._send_json(400, {"code": 400, "msg": "文件内容读取失败，请重新上传"})
+                        return
+                    result = bank_tools.parse_document(name, file_bytes)
+                    questions = result.get("questions") or []
+                    meta = {
+                        "source": result.get("source") or "",
+                        "truncated": bool(result.get("truncated")),
+                        "raw_text": result.get("raw_text") or "",
+                        "file": name,
+                    }
+                elif pasted.strip():
+                    questions = bank_tools.split_questions_from_any(pasted)
+                    meta = {
+                        "source": "text",
+                        "truncated": len(questions) >= bank_tools.MAX_QUESTIONS,
+                        "raw_text": pasted[:4000],
+                        "file": "",
+                    }
+                else:
+                    self._send_json(400, {"code": 400, "msg": "请上传文件或粘贴题目文本"})
+                    return
+                questions = [q for q in questions if q.get("question")]
+                print(f"[题库工具] 解析 user={user['username']} file={name or '(粘贴)'} 题数={len(questions)}", flush=True)
+                self._send_json(200, {
+                    "code": 200,
+                    "msg": f"解析出 {len(questions)} 道题" if questions else "没解析出题目，检查一下格式（每题用「1.」开头、选项用「A.」开头）",
+                    "data": dict(meta, count=len(questions), questions=questions, max=bank_tools.MAX_QUESTIONS)
+                })
+            except bank_tools.BankToolError as e:
+                self._send_json(400, {"code": 400, "msg": str(e)})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/api/bank/batch-search":
+            try:
+                ok_rate, retry_rate = check_api_rate(self._client_ip(), "/api/bank/batch-search", 6, 60)
+                if not ok_rate:
+                    self._send_json(429, {"code": 429, "msg": f"请求过于频繁，请 {retry_rate} 秒后再试"}, {"Retry-After": str(retry_rate)})
+                    return
+                user = self._get_user_from_token()
+                if not user:
+                    self._send_json(401, {"code": 401, "msg": "请先登录"})
+                    return
+                data = json.loads(body or "{}")
+                if data.get("_too_large"):
+                    self._send_json(413, {"code": 413, "msg": "提交内容过大，请分批"})
+                    return
+                raw_list = data.get("questions")
+                if isinstance(raw_list, str):
+                    raw_list = bank_tools.split_questions_from_any(raw_list)
+                if not isinstance(raw_list, list) or not raw_list:
+                    self._send_json(400, {"code": 400, "msg": "没有要搜索的题目"})
+                    return
+                if len(raw_list) > BANK_TOOL_BATCH_LIMIT:
+                    self._send_json(400, {"code": 400, "msg": f"单次最多 {BANK_TOOL_BATCH_LIMIT} 道题，请分批提交"})
+                    return
+                username = user["username"]
+                results = []
+                charged = 0
+                blocked = False
+                quota_msg = ""
+                for idx, raw_item in enumerate(raw_list, 1):
+                    if isinstance(raw_item, dict):
+                        q_text = str(raw_item.get("question") or "").strip()
+                        payload = bank_tools.question_payload({
+                            "question": q_text,
+                            "type": raw_item.get("type") or "",
+                            "options": raw_item.get("options") or [],
+                        })
+                    else:
+                        q_text = str(raw_item or "").strip()
+                        payload = q_text
+                    entry = {
+                        "index": idx, "question": q_text[:300], "status": "miss",
+                        "answer": "", "type": "", "options": [], "source": "none", "score": 0, "msg": ""
+                    }
+                    if len(q_text) < 4:
+                        entry.update({"status": "skip", "msg": "题目太短，已跳过"})
+                        results.append(entry)
+                        continue
+                    personal = search_personal_bank(username, payload, limit=1)
+                    if personal:
+                        top = personal[0]
+                        entry.update({
+                            "status": "hit", "answer": top.get("answer") or "",
+                            "type": top.get("type") or "", "options": top.get("options") or [],
+                            "source": "private", "score": top.get("score") or 0
+                        })
+                        results.append(entry)
+                        continue
+                    if blocked:
+                        entry.update({"status": "quota", "msg": quota_msg or "题数余额不足"})
+                        results.append(entry)
+                        continue
+                    public = public_bank_items(payload, limit=1)
+                    if not public:
+                        results.append(entry)
+                        continue
+                    top = public[0]
+                    ok_quota, qmsg, _ent = consume_answer_quota(
+                        username, top.get("question_hash") or "", make_matching_key(payload)
+                    )
+                    if not ok_quota:
+                        blocked = True
+                        quota_msg = qmsg
+                        entry.update({"status": "quota", "msg": qmsg})
+                        results.append(entry)
+                        continue
+                    charged += 1
+                    entry.update({
+                        "status": "hit", "answer": top.get("answer") or "",
+                        "type": top.get("type") or "", "options": top.get("options") or [],
+                        "source": "public", "score": top.get("score") or 0, "msg": qmsg
+                    })
+                    results.append(entry)
+                hit = sum(1 for r in results if r["status"] == "hit")
+                ent_after = db.get_user_entitlement(username) or {}
+                print(f"[题库工具] 批量搜题 user={username} 题数={len(results)} 命中={hit} 扣点={charged}", flush=True)
+                self._send_json(200, {
+                    "code": 200,
+                    "msg": f"共 {len(results)} 题，命中 {hit} 题" + (f"（扣 {charged} 点题数）" if charged else ""),
+                    "data": {
+                        "results": results,
+                        "total": len(results),
+                        "hit": hit,
+                        "charged": charged,
+                        "points": int(ent_after.get("points_balance") or 0),
+                        "active_member": bool(ent_after.get("active_member")),
+                        "limit_per_run": BANK_TOOL_BATCH_LIMIT,
+                    }
+                })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/api/bank/mine/import":
+            try:
+                user = self._get_user_from_token()
+                if not user:
+                    self._send_json(401, {"code": 401, "msg": "请先登录"})
+                    return
+                data = json.loads(body or "{}")
+                if data.get("_too_large"):
+                    self._send_json(413, {"code": 413, "msg": "内容过大，请分批导入"})
+                    return
+                items = data.get("items")
+                if not items and str(data.get("text") or "").strip():
+                    items = bank_tools.split_questions_from_any(str(data.get("text")))
+                if not isinstance(items, list) or not items:
+                    self._send_json(400, {"code": 400, "msg": "没有可导入的题目"})
+                    return
+                if len(items) > BANK_TOOL_IMPORT_LIMIT:
+                    self._send_json(400, {"code": 400, "msg": f"单次最多导入 {BANK_TOOL_IMPORT_LIMIT} 道题"})
+                    return
+                result = db.add_user_bank_items(user["username"], items, source=str(data.get("source") or "import")[:16])
+                total = db.count_user_bank(user["username"])
+                print(f"[题库工具] 个人题库导入 user={user['username']} 新增={result['added']} 更新={result['updated']} 跳过={result['skipped']}", flush=True)
+                self._send_json(200, {
+                    "code": 200,
+                    "msg": f"已导入 {result['added']} 道" + (f"，更新 {result['updated']} 道" if result["updated"] else "") + (f"，跳过 {result['skipped']} 道（缺答案）" if result["skipped"] else ""),
+                    "data": dict(result, total=total)
+                })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/api/bank/mine/delete":
+            try:
+                user = self._get_user_from_token()
+                if not user:
+                    self._send_json(401, {"code": 401, "msg": "请先登录"})
+                    return
+                data = json.loads(body or "{}")
+                deleted = db.delete_user_bank(user["username"], data.get("ids") or [], delete_all=bool(data.get("all")))
+                self._send_json(200, {
+                    "code": 200,
+                    "msg": f"已删除 {deleted} 道",
+                    "data": {"deleted": deleted, "total": db.count_user_bank(user["username"])}
+                })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/api/bank/report":
+            try:
+                user = self._get_user_from_token()
+                if not user:
+                    self._send_json(401, {"code": 401, "msg": "请先登录"})
+                    return
+                data = json.loads(body or "{}")
+                question_hash = str(data.get("question_hash") or "").strip()
+                question_text = str(data.get("question") or "").strip()
+                answer_text = str(data.get("answer") or "").strip()
+                reason = str(data.get("reason") or "用户反馈答案有误").strip()[:180]
+                if not answer_text and not question_text:
+                    self._send_json(400, {"code": 400, "msg": "缺少题目信息"})
+                    return
+                count, flagged = db.add_answer_report(user["username"], question_hash, question_text, answer_text, reason)
+                print(f"[题库工具] 答案上报 user={user['username']} hash={question_hash[:12]} 累计={count} 降级={flagged}", flush=True)
+                self._send_json(200, {
+                    "code": 200,
+                    "msg": "已记录，感谢反馈。同一题被反馈 2 次会自动停用这条答案。",
+                    "data": {"count": count, "flagged": flagged}
+                })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/api/bank/ai-write":
+            try:
+                ok_rate, retry_rate = check_api_rate(self._client_ip(), "/api/bank/ai-write", 10, 60)
+                if not ok_rate:
+                    self._send_json(429, {"code": 429, "msg": f"请求过于频繁，请 {retry_rate} 秒后再试"}, {"Retry-After": str(retry_rate)})
+                    return
+                user = self._get_user_from_token()
+                if not user:
+                    self._send_json(401, {"code": 401, "msg": "请先登录"})
+                    return
+                data = json.loads(body or "{}")
+                kind = str(data.get("kind") or "doc").strip()
+                topic = str(data.get("topic") or "").strip()
+                requirement = str(data.get("requirement") or "").strip()
+                length = str(data.get("length") or "").strip()
+                if not topic:
+                    self._send_json(400, {"code": 400, "msg": "请填写主题或题目要求"})
+                    return
+                if len(topic) > 1200 or len(requirement) > 1200:
+                    self._send_json(400, {"code": 400, "msg": "主题或要求过长，请精简到 1200 字以内"})
+                    return
+                username = user["username"]
+                prompt = ai_write_prompt(kind, topic, requirement, length)
+                ok_quota, quota_msg, _ent = consume_answer_quota(
+                    username, "", "aiwrite:" + hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:24]
+                )
+                if not ok_quota:
+                    self._send_json(402, {"code": 402, "msg": quota_msg})
+                    return
+                content, err, model_name = ask_text_prompt(
+                    "你是学习辅导写作助手。输出中文，语言自然，不写废话、不写免责声明、不用 Markdown 代码块包裹正文。",
+                    prompt
+                )
+                if not content:
+                    # 生成失败把刚扣的点退回去，不能让用户为失败付费
+                    try:
+                        db.adjust_user_points(username, 1, "AI工具生成失败退款", "")
+                    except Exception:
+                        pass
+                    self._send_json(500, {"code": 500, "msg": err or "生成失败"})
+                    return
+                ent_after = db.get_user_entitlement(username) or {}
+                print(f"[题库工具] AI工具 {kind} user={username} model={model_name} 字数={len(content)}", flush=True)
+                self._send_json(200, {"code": 200, "msg": quota_msg, "data": {
+                    "content": content,
+                    "kind": kind,
+                    "kind_name": AI_WRITE_KINDS.get(kind, "文档"),
+                    "model": model_name,
+                    "points": int(ent_after.get("points_balance") or 0),
+                    "active_member": bool(ent_after.get("active_member")),
+                }})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
