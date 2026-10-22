@@ -2462,53 +2462,7 @@
             }
         }
     
-        /* ===================== 题库工具（首页入口卡 + 工具页） ===================== */
-        .tool-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(258px, 1fr));
-            gap: 14px;
-        }
-        .tool-card {
-            display: flex;
-            gap: 14px;
-            align-items: flex-start;
-            text-align: left;
-            width: 100%;
-            font-family: inherit;
-            background: var(--c-surface);
-            border: 1px solid var(--c-border);
-            border-radius: var(--c-radius);
-            box-shadow: var(--c-shadow-sm);
-            padding: 16px 18px;
-            cursor: pointer;
-            transition: transform .16s, border-color .16s, box-shadow .16s;
-        }
-        .tool-card:hover {
-            transform: translateY(-2px);
-            border-color: rgba(47, 107, 255, .4);
-            box-shadow: 0 8px 24px rgba(47, 107, 255, .09);
-        }
-        .tool-ico {
-            flex: 0 0 40px;
-            width: 40px;
-            height: 40px;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #fff;
-        }
-        .tool-ico .ui-icon { width: 20px; height: 20px; color: #fff; }
-        .tool-ico.t-ai { background: #0ea5e9; }
-        .tool-ico.t-search { background: #2f6bff; }
-        .tool-ico.t-photo { background: #1d53e0; }
-        .tool-ico.t-batch { background: #475467; }
-        .tool-ico.t-convert { background: #12b76a; }
-        .tool-ico.t-mine { background: #0f766e; }
-        .tool-body { min-width: 0; }
-        .tool-title { font-size: 14.5px; font-weight: 700; color: var(--c-text); margin-bottom: 4px; }
-        .tool-desc { font-size: 12.5px; color: var(--c-text-3); line-height: 1.55; }
-
+        /* ===================== 题库工具（工具页） ===================== */
         .bank-stat-row {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -2667,8 +2621,192 @@
         .bank-table-wrap { overflow-x: auto; }
 
         @media (max-width: 720px) {
-            .tool-grid, .bank-stat-row, .bank-tabs { grid-template-columns: 1fr; }
+            .bank-stat-row, .bank-tabs { grid-template-columns: 1fr; }
             .bank-table td.q { max-width: 200px; }
+        }
+
+        /* ===================== 首页重构（状态条 / 工具行 / 数据面板） ===================== */
+        .home-status {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 1px;
+            background: var(--c-border-2);
+            border: 1px solid var(--c-border);
+            border-radius: var(--c-radius-sm);
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        .home-status > div { background: var(--c-surface); padding: 13px 15px; min-width: 0; }
+        .home-status span {
+            display: block;
+            font-size: 11.5px;
+            color: #6b7280;
+            margin-bottom: 5px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .home-status b {
+            display: block;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--c-text);
+            letter-spacing: -.2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .home-status .hs-sub {
+            display: block;
+            font-style: normal;
+            font-size: 11px;
+            color: var(--c-text-3);
+            margin-top: 3px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .home-tools-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        .home-section-title {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--c-text);
+        }
+        .home-link {
+            background: none;
+            border: none;
+            padding: 0;
+            font-family: inherit;
+            font-size: 12px;
+            color: var(--c-brand);
+            cursor: pointer;
+        }
+        .home-link:hover { text-decoration: underline; }
+
+        .home-tools {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .home-tool {
+            display: flex;
+            flex-direction: column;
+            gap: 9px;
+            text-align: left;
+            width: 100%;
+            min-width: 0;
+            font-family: inherit;
+            background: var(--c-surface);
+            border: 1px solid var(--c-border);
+            border-radius: var(--c-radius-sm);
+            padding: 13px 14px 14px;
+            cursor: pointer;
+            transition: border-color .16s, transform .16s, background .16s;
+        }
+        .home-tool:hover { border-color: rgba(47, 107, 255, .45); transform: translateY(-1px); }
+        .ht-ico {
+            width: 34px;
+            height: 34px;
+            border-radius: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--c-surface-2);
+            color: var(--c-text-2);
+            flex: 0 0 34px;
+        }
+        .ht-ico .ui-icon { width: 17px; height: 17px; color: inherit; }
+        .ht-search .ht-ico { background: var(--c-brand-soft); color: var(--c-brand); }
+        .ht-photo .ht-ico { background: rgba(29, 83, 224, .1); color: #1d53e0; }
+        .ht-batch .ht-ico { background: rgba(71, 84, 103, .1); color: #475467; }
+        .ht-convert .ht-ico { background: rgba(18, 183, 106, .1); color: #12b76a; }
+        .ht-mine .ht-ico { background: rgba(15, 118, 110, .1); color: #0f766e; }
+        .home-tool b { display: block; font-size: 13.5px; font-weight: 700; color: var(--c-text); line-height: 1.3; }
+        .ht-desc {
+            display: block;
+            font-size: 11.5px;
+            color: var(--c-text-3);
+            line-height: 1.45;
+            margin-top: 3px;
+        }
+        .home-tool.is-primary { background: var(--c-brand-strong); border-color: var(--c-brand-strong); }
+        .home-tool.is-primary:hover { border-color: #17439f; background: #17439f; }
+        .home-tool.is-primary b { color: #fff; }
+        .home-tool.is-primary .ht-desc { color: rgba(255, 255, 255, .76); }
+        .home-tool.is-primary .ht-ico { background: rgba(255, 255, 255, .16); color: #fff; }
+
+        .home-panels {
+            display: grid;
+            grid-template-columns: 1.05fr 1fr;
+            gap: 14px;
+        }
+        .home-panel {
+            background: var(--c-surface);
+            border: 1px solid var(--c-border);
+            border-radius: var(--c-radius-sm);
+            padding: 15px 17px 14px;
+            min-width: 0;
+        }
+        .home-panel h4 {
+            margin: 0 0 10px;
+            font-size: 13.5px;
+            font-weight: 700;
+            color: var(--c-text);
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }
+        .home-panel h4 .ui-icon { width: 15px; height: 15px; color: var(--c-brand); }
+        .home-metrics {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1px;
+            background: var(--c-border-2);
+        }
+        .home-metric { background: var(--c-surface); padding: 10px 2px 12px; }
+        .home-metric:nth-child(even) { padding-left: 14px; }
+        .home-metric .mk { display: block; font-size: 11.5px; color: var(--c-text-3); margin-bottom: 4px; }
+        .home-metric .mv { display: block; font-size: 21px; font-weight: 700; color: var(--c-text); letter-spacing: -.4px; }
+        .home-rows { display: grid; }
+        .home-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 2px;
+            border-bottom: 1px solid var(--c-border-2);
+            font-size: 12.5px;
+            color: var(--c-text-2);
+        }
+        .home-row:last-child { border-bottom: none; }
+        .home-row b { font-size: 14px; font-weight: 700; color: var(--c-text); }
+        .home-charts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+            margin-top: 14px;
+        }
+
+        @media (max-width: 1200px) {
+            .home-status { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            .home-tools { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        }
+        @media (max-width: 900px) {
+            .home-panels, .home-charts-grid { grid-template-columns: 1fr; }
+            .home-metric .mv { font-size: 19px; }
+        }
+        @media (max-width: 560px) {
+            .home-status { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .home-tools { grid-template-columns: 1fr; gap: 10px; }
+            .home-tool { flex-direction: row; align-items: center; gap: 12px; padding: 12px 14px; }
+            .ht-desc { margin-top: 1px; }
         }
 
         /* ===================== 题库工具结束 ===================== */
@@ -2942,117 +3080,100 @@
             <div class="user-body">
                                 <!-- 1. 首页 Section -->
                 <section class="user-section active" id="section-home">
-                    <!-- 核心状态卡片网格 -->
-                    <div class="stat-grid" id="statGrid">
-                        <div class="stat-card">
-                            <div class="stat-icon bg-primary"><svg class="ui-icon md"><use href="#i-check-circle-2"></use></svg></div>
-                            <div class="stat-info"><div class="k">账号状态</div><div class="v" id="statStatus">正常</div></div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-icon bg-primary"><svg class="ui-icon md"><use href="#i-layers"></use></svg></div>
-                            <div class="stat-info"><div class="k">剩余题数</div><div class="v" id="statPoints">0</div><div class="sub">包月期间保留不扣</div></div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-icon bg-primary"><svg class="ui-icon md"><use href="#i-crown"></use></svg></div>
-                            <div class="stat-info"><div class="k">包月状态</div><div class="v" id="statMember">未开通</div><div class="sub" id="statMemberUntil">未开通</div></div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-icon bg-primary"><svg class="ui-icon md"><use href="#i-bot"></use></svg></div>
-                            <div class="stat-info"><div class="k">默认模型</div><div class="v" id="statModel">自动</div></div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-icon bg-primary"><svg class="ui-icon md"><use href="#i-settings"></use></svg></div>
-                            <div class="stat-info"><div class="k">脚本设置</div><div class="v" id="statSettings">0</div></div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-icon bg-primary"><svg class="ui-icon md"><use href="#i-refresh-cw"></use></svg></div>
-                            <div class="stat-info"><div class="k">同步状态</div><div class="v" id="statSync">已同步</div></div>
-                        </div>
+                    <!-- 账号状态条 -->
+                    <div class="home-status">
+                        <div><span>剩余题数</span><b id="statPoints">0</b></div>
+                        <div><span>包月状态</span><b id="statMember">未开通</b><i class="hs-sub" id="statMemberUntil"></i></div>
+                        <div><span>账号状态</span><b id="statStatus">正常</b></div>
+                        <div><span>默认模型</span><b id="statModel">自动</b></div>
+                        <div><span>脚本设置</span><b id="statSettings">0</b></div>
+                        <div><span>同步状态</span><b id="statSync">已同步</b></div>
                     </div>
 
                     <!-- 题库工具入口 -->
-                    <div class="dash-section" style="margin-top:0">
-                        <h4 class="dash-title"><svg class="ui-icon"><use href="#i-book"></use></svg> 题库工具</h4>
-                        <div class="tool-grid">
-                            <button type="button" class="tool-card" data-goto-bank="ai">
-                                <span class="tool-ico t-ai"><svg class="ui-icon"><use href="#i-sparkles"></use></svg></span>
-                                <span class="tool-body">
-                                    <span class="tool-title">AI 工具</span>
-                                    <span class="tool-desc">作文、文档、PPT 大纲，一句话生成你想要的内容</span>
-                                </span>
-                            </button>
-                            <button type="button" class="tool-card" data-goto-bank="search">
-                                <span class="tool-ico t-search"><svg class="ui-icon"><use href="#i-search"></use></svg></span>
-                                <span class="tool-body">
-                                    <span class="tool-title">在线搜题</span>
-                                    <span class="tool-desc">输入题目文字，快速搜索网课题目</span>
-                                </span>
-                            </button>
-                            <button type="button" class="tool-card" data-goto-bank="photo">
-                                <span class="tool-ico t-photo"><svg class="ui-icon"><use href="#i-camera"></use></svg></span>
-                                <span class="tool-body">
-                                    <span class="tool-title">拍照搜题</span>
-                                    <span class="tool-desc">截图识别题目，一图多题也能一次搜</span>
-                                </span>
-                            </button>
-                            <button type="button" class="tool-card" data-goto-bank="batch">
-                                <span class="tool-ico t-batch"><svg class="ui-icon"><use href="#i-file-text"></use></svg></span>
-                                <span class="tool-body">
-                                    <span class="tool-title">批量/全文搜题</span>
-                                    <span class="tool-desc">文档、表格、文本自动切题，批量出答案</span>
-                                </span>
-                            </button>
-                            <button type="button" class="tool-card" data-goto-bank="convert">
-                                <span class="tool-ico t-convert"><svg class="ui-icon"><use href="#i-shuffle"></use></svg></span>
-                                <span class="tool-body">
-                                    <span class="tool-title">题库转换</span>
-                                    <span class="tool-desc">题库文档、表格、文本标准化成题库文件</span>
-                                </span>
-                            </button>
-                            <button type="button" class="tool-card" data-goto-bank="mine">
-                                <span class="tool-ico t-mine"><svg class="ui-icon"><use href="#i-upload"></use></svg></span>
-                                <span class="tool-body">
-                                    <span class="tool-title">自建/私人题库</span>
-                                    <span class="tool-desc">搭建自己的私人题库，精准问答优先命中</span>
-                                </span>
-                            </button>
-                        </div>
+                    <div class="home-tools-head">
+                        <h4 class="home-section-title">题库工具</h4>
+                        <button type="button" class="home-link" data-goto-section="bank">进入工具页</button>
+                    </div>
+                    <div class="home-tools">
+                        <button type="button" class="home-tool ht-search" data-goto-bank="search">
+                            <span class="ht-ico"><svg class="ui-icon"><use href="#i-search"></use></svg></span>
+                            <span class="ht-text">
+                                <b>在线搜题</b>
+                                <span class="ht-desc">输入题目文字快速搜索</span>
+                            </span>
+                        </button>
+                        <button type="button" class="home-tool ht-photo" data-goto-bank="photo">
+                            <span class="ht-ico"><svg class="ui-icon"><use href="#i-camera"></use></svg></span>
+                            <span class="ht-text">
+                                <b>拍照搜题</b>
+                                <span class="ht-desc">截图识别，一图多题</span>
+                            </span>
+                        </button>
+                        <button type="button" class="home-tool ht-batch" data-goto-bank="batch">
+                            <span class="ht-ico"><svg class="ui-icon"><use href="#i-file-text"></use></svg></span>
+                            <span class="ht-text">
+                                <b>批量/全文搜题</b>
+                                <span class="ht-desc">文档表格批量出答案</span>
+                            </span>
+                        </button>
+                        <button type="button" class="home-tool ht-convert" data-goto-bank="convert">
+                            <span class="ht-ico"><svg class="ui-icon"><use href="#i-shuffle"></use></svg></span>
+                            <span class="ht-text">
+                                <b>题库转换</b>
+                                <span class="ht-desc">文档转标准题库文件</span>
+                            </span>
+                        </button>
+                        <button type="button" class="home-tool ht-mine" data-goto-bank="mine">
+                            <span class="ht-ico"><svg class="ui-icon"><use href="#i-book"></use></svg></span>
+                            <span class="ht-text">
+                                <b>自建/私人题库</b>
+                                <span class="ht-desc">我自己的题库管理</span>
+                            </span>
+                        </button>
+                        <button type="button" class="home-tool is-primary" data-goto-bank="ai">
+                            <span class="ht-ico"><svg class="ui-icon"><use href="#i-sparkles"></use></svg></span>
+                            <span class="ht-text">
+                                <b>AI 工具</b>
+                                <span class="ht-desc">作文 / 文档 / PPT 大纲</span>
+                            </span>
+                        </button>
                     </div>
 
-                    <!-- 答题统计 -->
-                    <div class="dash-section">
-                        <h4 class="dash-title"><svg class="ui-icon"><use href="#i-bar-chart"></use></svg> 答题统计</h4>
-                        <div class="stat-grid">
-                            <div class="stat-card stat-mini"><div class="stat-icon-sm bg-primary"><svg class="ui-icon"><use href="#i-pen-tool"></use></svg></div><div class="stat-info"><div class="k">总答题数</div><div class="v" id="dashTotalAnswers">0</div></div></div>
-                            <div class="stat-card stat-mini"><div class="stat-icon-sm bg-primary"><svg class="ui-icon"><use href="#i-target"></use></svg></div><div class="stat-info"><div class="k">题库命中</div><div class="v" id="dashBankHits">0</div></div></div>
-                            <div class="stat-card stat-mini"><div class="stat-icon-sm bg-primary"><svg class="ui-icon"><use href="#i-percent"></use></svg></div><div class="stat-info"><div class="k">命中率</div><div class="v" id="dashHitRate">0%</div></div></div>
-                            <div class="stat-card stat-mini"><div class="stat-icon-sm bg-primary"><svg class="ui-icon"><use href="#i-sparkles"></use></svg></div><div class="stat-info"><div class="k">AI答题</div><div class="v" id="dashAiAnswers">0</div></div></div>
+                    <!-- 答题统计 / 今日数据 -->
+                    <div class="home-panels">
+                        <div class="home-panel">
+                            <h4><svg class="ui-icon"><use href="#i-bar-chart"></use></svg> 答题统计</h4>
+                            <div class="home-metrics">
+                                <div class="home-metric"><span class="mk">总答题数</span><span class="mv" id="dashTotalAnswers">0</span></div>
+                                <div class="home-metric"><span class="mk">题库命中</span><span class="mv" id="dashBankHits">0</span></div>
+                                <div class="home-metric"><span class="mk">命中率</span><span class="mv" id="dashHitRate">0%</span></div>
+                                <div class="home-metric"><span class="mk">AI 答题</span><span class="mv" id="dashAiAnswers">0</span></div>
+                            </div>
                         </div>
-                    </div>
-
-                    <!-- 今日数据 -->
-                    <div class="dash-section">
-                        <h4 class="dash-title"><svg class="ui-icon"><use href="#i-calendar"></use></svg> 今日数据</h4>
-                        <div class="stat-grid">
-                            <div class="stat-card stat-mini"><div class="stat-icon-sm bg-primary"><svg class="ui-icon"><use href="#i-file-text"></use></svg></div><div class="stat-info"><div class="k">答题</div><div class="v" id="dashTodayAnswers">0</div></div></div>
-                            <div class="stat-card stat-mini"><div class="stat-icon-sm bg-cyan"><svg class="ui-icon"><use href="#i-play-circle"></use></svg></div><div class="stat-info"><div class="k">视频</div><div class="v" id="dashTodayVideos">0</div></div></div>
-                            <div class="stat-card stat-mini"><div class="stat-icon-sm bg-warning"><svg class="ui-icon"><use href="#i-radio"></use></svg></div><div class="stat-info"><div class="k">直播</div><div class="v" id="dashTodayLives">0</div></div></div>
-                            <div class="stat-card stat-mini"><div class="stat-icon-sm bg-green"><svg class="ui-icon"><use href="#i-book-open"></use></svg></div><div class="stat-info"><div class="k">阅读</div><div class="v" id="dashTodayReadings">0</div></div></div>
-                            <div class="stat-card stat-mini"><div class="stat-icon-sm bg-red"><svg class="ui-icon"><use href="#i-award"></use></svg></div><div class="stat-info"><div class="k">考试</div><div class="v" id="dashTodayExams">0</div></div></div>
+                        <div class="home-panel">
+                            <h4><svg class="ui-icon"><use href="#i-calendar"></use></svg> 今日数据</h4>
+                            <div class="home-rows">
+                                <div class="home-row"><span>答题</span><b id="dashTodayAnswers">0</b></div>
+                                <div class="home-row"><span>视频</span><b id="dashTodayVideos">0</b></div>
+                                <div class="home-row"><span>直播</span><b id="dashTodayLives">0</b></div>
+                                <div class="home-row"><span>阅读</span><b id="dashTodayReadings">0</b></div>
+                                <div class="home-row"><span>考试</span><b id="dashTodayExams">0</b></div>
+                            </div>
                         </div>
                     </div>
 
                     <!-- 7天趋势图并排网格 -->
                     <div class="home-charts-grid">
-                        <div class="dash-section" style="margin-top:0">
-                            <h4 class="dash-title"><svg class="ui-icon"><use href="#i-trending-up"></use></svg> 7天答题趋势</h4>
-                            <div class="chart-wrap" id="answerChartWrap">
+                        <div class="home-panel">
+                            <h4><svg class="ui-icon"><use href="#i-trending-up"></use></svg> 7天答题趋势</h4>
+                            <div class="chart-wrap" id="answerChartWrap" style="border:0;padding:0;border-radius:0">
                                 <svg id="answerChart" class="dash-chart" viewBox="0 0 700 240" preserveAspectRatio="xMidYMid meet"></svg>
                             </div>
                         </div>
-                        <div class="dash-section" style="margin-top:0">
-                            <h4 class="dash-title"><svg class="ui-icon"><use href="#i-trending-up"></use></svg> 7天活动趋势</h4>
-                            <div class="chart-wrap" id="activityChartWrap">
+                        <div class="home-panel">
+                            <h4><svg class="ui-icon"><use href="#i-trending-up"></use></svg> 7天活动趋势</h4>
+                            <div class="chart-wrap" id="activityChartWrap" style="border:0;padding:0;border-radius:0">
                                 <svg id="activityChart" class="dash-chart" viewBox="0 0 700 240" preserveAspectRatio="xMidYMid meet"></svg>
                             </div>
                         </div>
@@ -6587,6 +6708,11 @@ await loadPlans();
                     showUserSection('bank');
                     switchBankTab(tab);
                     loadBankTools();
+                });
+            });
+            document.querySelectorAll('[data-goto-section]').forEach(function (el) {
+                el.addEventListener('click', function () {
+                    showUserSection(el.getAttribute('data-goto-section'));
                 });
             });
 
