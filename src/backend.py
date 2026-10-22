@@ -2763,8 +2763,10 @@ def get_bank_match_all(question):
             # 保留整行：完整记录（自带 answer）直接用，只有占位行才回表查
             candidates = [r for r in fb if r.get("question_hash")]
     candidates = [c for c in candidates if c.get("answer")]
-    # 被多次上报「答案有误」的题不再自动复用（P0 污染控制）：宁可回未命中，也不把错答案发出去
-    candidates = [c for c in candidates if int(c.get("answer_flag") or 0) == 0]
+    # 被多次上报「答案有误」的题不再自动复用（污染控制）：宁可回未命中，也不把错答案发出去
+    _flagged = _flagged_answer_hashes()
+    if _flagged:
+        candidates = [c for c in candidates if c.get("question_hash") not in _flagged]
     rows = []
     seen = set()
     for c in candidates:
@@ -2806,6 +2808,22 @@ AI_WRITE_KINDS = {
     "ppt": "PPT大纲",
     "summary": "知识总结",
 }
+
+
+_ANSWER_FLAG_CACHE = {"ts": 0.0, "hashes": set()}
+
+
+def _flagged_answer_hashes():
+    """被上报有误的题目指纹（60 秒缓存，避免每题都查一次库）。"""
+    now = time.time()
+    if now - _ANSWER_FLAG_CACHE["ts"] < 60:
+        return _ANSWER_FLAG_CACHE["hashes"]
+    try:
+        _ANSWER_FLAG_CACHE["hashes"] = {h for h in db.get_flagged_question_hashes() if h}
+    except Exception as e:
+        print(f"[题库工具] 读取答案标记失败: {e}", flush=True)
+    _ANSWER_FLAG_CACHE["ts"] = now
+    return _ANSWER_FLAG_CACHE["hashes"]
 
 
 def _bank_tool_quota(username):

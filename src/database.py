@@ -1013,16 +1013,16 @@ class Database:
                 INDEX idx_user_created (username, created_at)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
-        # 答案降级标记：1 = 被多次上报有误，命中时不再自动复用（改走 AI 重算）
-        try:
-            self._add_column_if_missing(
-                "question_bank",
-                "answer_flag",
-                "answer_flag TINYINT NOT NULL DEFAULT 0 COMMENT '1=答案被多次上报有误，停止自动复用'"
-            )
-        except Exception as e:
-            # 迁移失败不能拖垮服务启动：功能降级为「不上报降级」，其余照常
-            print(f"[题库工具] answer_flag 迁移失败（忽略）: {e}", flush=True)
+        # 答案降级标记表：被多次上报有误的题记在这里。
+        # 刻意不动 question_bank（生产表很大，ALTER 会长时间占连接，2C/2G 上还可能超时），
+        # 改用一张小表 + 进程内缓存过滤，加表是瞬时操作。
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS question_answer_flags (
+                question_hash VARCHAR(64) PRIMARY KEY,
+                report_count INT DEFAULT 0,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
 
     def _ensure_index(self, table, index_name, *columns):
         """确保普通索引存在，不存在则创建"""
@@ -5411,13 +5411,26 @@ class Database:
         if question_hash and count >= 2:
             try:
                 self.execute(
-                    f"UPDATE question_bank SET answer_flag = 1 WHERE question_hash = {ph}",
-                    (question_hash,)
+                    f"""INSERT INTO question_answer_flags (question_hash, report_count)
+                        VALUES ({ph}, {ph})
+                        ON DUPLICATE KEY UPDATE report_count = {ph}""",
+                    (question_hash, count, count)
                 )
                 flagged = True
             except Exception as e:
                 print(f"[答案上报] 降级标记失败 hash={question_hash[:12]}: {e}", flush=True)
         return count, flagged
+
+    def get_flagged_question_hashes(self, limit=20000):
+        """被上报有误而停用的题目指纹列表（供检索层过滤，量大也不该超过几千条）。"""
+        try:
+            rows = self.fetchall(
+                f"SELECT question_hash FROM question_answer_flags ORDER BY updated_at DESC LIMIT {int(limit)}"
+            )
+            return [r.get("question_hash") for r in rows if r.get("question_hash")]
+        except Exception as e:
+            print(f"[答案上报] 读取标记失败: {e}", flush=True)
+            return []
 
     def count_answer_reports(self, question_hash):
         ph = _ph()
