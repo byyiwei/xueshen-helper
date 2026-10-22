@@ -3621,14 +3621,18 @@ def get_enabled_model_candidates(need_vision=False, prefer_non_vision=True):
                     continue
                 if is_model_expired(m):
                     continue
+                # 权重 ≤ 0 视为关闭：不进自动候选，也不当失败兜底（与后台占比图口径一致）
+                try:
+                    weight = int(m.get("weight") or 0)
+                except (TypeError, ValueError):
+                    weight = 0
+                if weight <= 0:
+                    continue
                 is_vision = m.get("vision") is True or m.get("vision") == 1 or str(m.get("vision")).lower() in ("1", "true", "yes", "on")
                 if only_vision and (not is_vision or m.get("value") in MODEL_NON_VISION):
                     continue
                 if not only_vision and is_vision and prefer_non_vision:
                     continue
-                weight = int(m.get("weight") or 100)
-                if weight < 0:
-                    weight = 0
                 result.append((pname, pinfo, m.get("value"), weight))
         return result
     if need_vision:
@@ -3690,7 +3694,11 @@ def build_models_html():
     for name, info in PROVIDERS.items():
         if info.get("enabled") and _provider_usable(info) and info.get("base_url") and info.get("models"):
             for m in info["models"]:
-                if m.get("value") and m.get("label") and not is_model_expired(m):
+                try:
+                    _w = int(m.get("weight") or 0)
+                except (TypeError, ValueError):
+                    _w = 0
+                if m.get("value") and m.get("label") and not is_model_expired(m) and _w > 0:
                     options.append(f'<option value="{m["value"]}">{m["label"]}</option>')
     return "".join(options) if options else '<option value="">请先配置 AI 提供商</option>'
 

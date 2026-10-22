@@ -1845,7 +1845,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                 <div class="form-group"><label>API Key</label><input type="password" v-model="entry.info.api_key" placeholder="sk-xxxxxxxx"></div>
                 <div class="form-group"><label>Base URL</label><input v-model="entry.info.base_url" placeholder="https://api.xxx.com/v1"></div>
               </div>
-              <div class="models-title">模型列表 <span style="font-size:12px;color:var(--text3);font-weight:400">权重越高被调用概率越大（默认100），每日/总额Token限额为0表示不限制，总额超过后自动停用不再调用；到期日期留空为永久有效，填了则到期日当天照常调用、次日起不管额度剩多少都不再调用</span></div>
+              <div class="models-title">模型列表 <span style="font-size:12px;color:var(--text3);font-weight:400">权重越高被调用概率越大（默认100）；权重设为 0 = 关闭该模型（不参与自动调用与兜底）。每日/总额 Token 限额为 0 表示不限制，总额超过后自动停用。到期日期留空为永久有效；填了则到期日当天仍可调用，次日零点起不再调用。改完后须点「保存配置」才会生效。</span></div>
               <div style="display:flex;gap:8px;padding:0 4px 6px;font-size:11px;color:var(--text3);font-weight:600;letter-spacing:.3px;align-items:center;flex-wrap:wrap">
                 <div style="flex:1 1 170px;min-width:0">模型ID</div>
                 <div style="flex:1 1 170px;min-width:0">显示名称</div>
@@ -1861,7 +1861,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                 <input v-model="m.value" placeholder="如: deepseek-chat" style="flex:1 1 170px;min-width:0;font-size:12px">
                 <input v-model="m.label" placeholder="如: DeepSeek V3" style="flex:1 1 170px;min-width:0;font-size:12px">
                 <div style="width:64px;flex:none;display:flex;align-items:center;justify-content:center">
-                  <input v-model.number="m.weight" type="number" min="0" max="100" placeholder="100" title="调用权重(0-100)" style="width:56px;text-align:center;padding:8px 2px">
+                  <input v-model.number="m.weight" type="number" min="0" max="100" placeholder="100" title="调用权重(0-100)；设为 0 表示关闭，不参与自动调用" style="width:56px;text-align:center;padding:8px 2px">
                 </div>
                 <div style="width:80px;flex:none;display:flex;align-items:center;justify-content:center">
                   <input v-model.number="m.daily_token_limit" type="number" min="0" placeholder="0" title="每日Token限额(0=不限)" style="width:70px;text-align:center;padding:8px 2px">
