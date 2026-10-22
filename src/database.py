@@ -144,6 +144,52 @@ def _model_expire_date(value):
     return text
 
 
+def _dedupe_model_items(models):
+    """同一提供商下的模型按 ID 去重。
+
+    前端历史上允许重复添加同一个模型，而 ai_models 是一行一条。重复项里
+    只要有一条到期日期为空，过期检查就会被绕过（空日期永远判为永久有效），
+    所以读写两侧都收敛成一条，到期日期取最早的非空值。
+    """
+    merged = []
+    positions = {}
+    for model in models or []:
+        if not isinstance(model, dict):
+            continue
+        key = str(model.get("value") or "").strip().lower()
+        if not key:
+            merged.append(dict(model))
+            continue
+        if key not in positions:
+            positions[key] = len(merged)
+            merged.append(dict(model))
+            continue
+        kept = merged[positions[key]]
+        expire = str(model.get("expire_date") or "")[:10]
+        kept_expire = str(kept.get("expire_date") or "")[:10]
+        if expire and (not kept_expire or expire < kept_expire):
+            kept["expire_date"] = expire
+        # 权重取大值：重复项不能把仍在用的模型意外降成 0（0 表示关闭）
+        try:
+            kept["weight"] = max(int(kept.get("weight") or 0), int(model.get("weight") or 0))
+        except (TypeError, ValueError):
+            pass
+        if model.get("label") and not kept.get("label"):
+            kept["label"] = model["label"]
+        if model.get("vision"):
+            kept["vision"] = True
+        for limit_key in ("daily_token_limit", "total_token_limit"):
+            try:
+                cur = int(kept.get(limit_key) or 0)
+                new = int(model.get(limit_key) or 0)
+            except (TypeError, ValueError):
+                continue
+            # 0 = 不限；有具体额度时取更严格的非零值
+            if new > 0 and (cur <= 0 or new < cur):
+                kept[limit_key] = new
+    return merged
+
+
 def _dec(value, default="0"):
     """把 DECIMAL/None/空串统一转成 Decimal。金额运算禁止走 float。"""
     try:
@@ -4703,7 +4749,7 @@ class Database:
                     "protocol": p.get("protocol", "openai"),
                     "api_key": p.get("api_key", ""),
                     "base_url": p.get("base_url", ""),
-                    "models": models_map.get(key, [])
+                    "models": _dedupe_model_items(models_map.get(key, []))
                 }
             return providers
 
@@ -4718,10 +4764,14 @@ class Database:
 
     def save_providers(self, data):
         ph = _ph()
-        # 先把到期日期整体校验一遍再动表：这个函数是「全删再全插」，
+        # 先收敛重复模型、再整体校验到期日期：这个函数是「全删再全插」，
         # 中途抛错会留下一份被删了一半的模型配置，比保存失败严重得多。
         for provider_key, info in (data or {}).items():
-            for model in info.get("models", []) or []:
+            if not isinstance(info, dict):
+                continue
+            models = _dedupe_model_items(info.get("models") or [])
+            info["models"] = models
+            for model in models:
                 _model_expire_date(model.get("expire_date"))
         # 写入结构化 AI 表
         self.execute("DELETE FROM ai_models")

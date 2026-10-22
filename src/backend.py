@@ -4166,6 +4166,27 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
         err_msg = "自动模型全部尝试失败；" + "；".join(errors[-5:])
     return None, err_msg, last[2], last[0]
 
+def is_model_available_for_custom(model_name):
+    """自有模型也必须服从后台的停用/到期状态。
+
+    用户中心填的模型如果与后台配置里的模型同名，就按后台状态判断：
+    只要还存在一个「提供商启用 + 未到期」的同名模型就放行。纯自定义
+    模型（后台完全没有这个名字）不受影响。
+    """
+    low = (model_name or "").strip().lower()
+    if not low:
+        return True
+    seen = False
+    for pinfo in PROVIDERS.values():
+        for m in pinfo.get("models", []):
+            if str(m.get("value", "")).strip().lower() != low:
+                continue
+            seen = True
+            if _provider_usable(pinfo) and not is_model_expired(m):
+                return True
+    return not seen
+
+
 def ask_ai_custom(question, custom_cfg):
     model_name = (custom_cfg.get("model") or "").strip()
     provider_info = {
@@ -4175,6 +4196,8 @@ def ask_ai_custom(question, custom_cfg):
     }
     if not model_name:
         return None, "自有模型未配置模型 ID"
+    if not is_model_available_for_custom(model_name):
+        return None, f"模型 '{model_name}' 已在后台停用或已到期，请改用其他模型或联系管理员续期"
     if not provider_info["api_key"]:
         return None, "自有模型未配置 API Key"
     if not provider_info["base_url"]:
