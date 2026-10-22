@@ -1,495 +1,798 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="学神助手·免费搜题 - 百万级网课题库在线搜索，输入题目秒出答案。支持单选、多选、判断、填空等题型，登录即可免费搜题，不扣题数，每日30次。">
+<title>学神助手 - 免费搜题 · 网课题库 · 刷课脚本</title>
+<meta name="description" content="学神助手：覆盖学习通、智慧树等网课平台的免费搜题工具。在线题库直查、不扣题数，每天 30 次免费；配套刷课脚本支持自动答题、倍速播放与 AI 兜底作答。">
 <meta name="keywords" content="免费搜题,网课答案,题库搜索,学习通答案,智慧树答案,在线搜题,网课题库,学神助手">
-<meta name="author" content="学神助手">
-<link rel="icon" href="/favicon.ico?v=20260704" type="image/x-icon">
-<link rel="shortcut icon" href="/favicon.ico?v=20260704" type="image/x-icon">
-<title>学神助手·免费搜题 - 输入题目秒出答案 | 网课题库在线搜索</title>
+<link rel="icon" href="/static/icon.jpg" type="image/x-icon">
+<link rel="shortcut icon" href="/static/icon.jpg" type="image/x-icon">
 <style>
   :root {
+    --ink: #0f172a;
+    --ink-2: #334155;
+    --muted: #64748b;
+    --muted-2: #94a3b8;
+    --line: #e6e9f0;
+    --line-2: #eef1f6;
+    --bg: #ffffff;
+    --bg-soft: #f7f9fc;
+    --brand: #2f6bff;
+    --brand-strong: #1d53e0;
+    --brand-deep: #16389c;
+    --brand-soft: #eef3ff;
+    --ok: #12b76a;
+    --ok-soft: #ecfdf3;
+    --warn: #b54708;
+    --warn-soft: #fffaeb;
+    --danger: #b42318;
+    --danger-soft: #fef3f2;
     --primary: #2f6bff;
-    --primary-dark: #1d53e0;
-    --primary-light: #eaf1ff;
-    --teal: #0fbc9b;
-    --teal-light: #e3faf4;
-    --amber: #ff9f1a;
-    --amber-light: #fff6e6;
-    --danger: #f5483b;
-    --bg: #f5f7fc;
-    --card: #ffffff;
-    --text: #1c2333;
-    --text-secondary: #54607a;
-    --text-muted: #8a94ab;
-    --border: #e6eaf3;
-    --shadow: 0 4px 16px rgba(31, 56, 120, 0.06);
-    --shadow-lg: 0 12px 40px rgba(31, 56, 120, 0.12);
     --radius: 14px;
-    --radius-lg: 22px;
+    --radius-sm: 10px;
+    --radius-xs: 7px;
+    --shadow-sm: 0 1px 2px rgba(16, 24, 40, .04);
+    --shadow: 0 10px 30px -12px rgba(16, 24, 40, .14);
+    --container: 1120px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-    color: var(--text);
-    line-height: 1.6;
+    margin: 0;
+    font-family: var(--font);
+    color: var(--ink-2);
     background: var(--bg);
     -webkit-font-smoothing: antialiased;
+    font-size: 15px;
+    line-height: 1.65;
   }
-  a { color: var(--primary); text-decoration: none; }
+  a { color: inherit; text-decoration: none; }
   button { font-family: inherit; }
-  ::selection { background: rgba(47,107,255,.18); }
+  img { max-width: 100%; display: block; }
+  .wrap { width: 100%; max-width: var(--container); margin: 0 auto; padding: 0 24px; }
 
-  /* ========== 顶部导航 ========== */
-  .navbar {
-    position: sticky; top: 0; z-index: 100;
-    background: rgba(255,255,255,0.92);
-    backdrop-filter: blur(16px);
-    border-bottom: 1px solid var(--border);
+  .ico {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
-  .navbar-inner {
-    max-width: 1160px; margin: 0 auto; padding: 0 24px;
-    height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  .ico.lg { width: 20px; height: 20px; }
+  .spin { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ============ 导航 ============ */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: rgba(255, 255, 255, .88);
+    backdrop-filter: saturate(180%) blur(12px);
+    border-bottom: 1px solid var(--line);
   }
-  .logo { display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 800; color: var(--text); cursor: pointer; }
-  .logo-icon {
-    width: 38px; height: 38px; border-radius: 11px;
-    background: linear-gradient(135deg, var(--primary), #6f3bff);
-    display: flex; align-items: center; justify-content: center;
-    color: #fff; font-size: 19px; box-shadow: 0 4px 12px rgba(47,107,255,.3);
-    overflow: hidden;
+  .nav-inner {
+    max-width: var(--container);
+    margin: 0 auto;
+    padding: 0 24px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    gap: 28px;
   }
-  .logo-icon img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 11px; }
-  .logo small { font-size: 12px; font-weight: 600; color: var(--teal); background: var(--teal-light); padding: 2px 8px; border-radius: 999px; margin-left: 2px; }
-  .nav-right { display: flex; align-items: center; gap: 8px; }
+  .brand { display: flex; align-items: center; gap: 10px; cursor: pointer; flex: 0 0 auto; }
+  .brand img { width: 30px; height: 30px; border-radius: 8px; }
+  .brand-name { font-size: 16px; font-weight: 700; color: var(--ink); letter-spacing: -.2px; }
+  .brand-tag {
+    font-size: 11px;
+    color: var(--brand);
+    background: var(--brand-soft);
+    border: 1px solid rgba(47, 107, 255, .16);
+    border-radius: 999px;
+    padding: 1px 7px;
+    font-weight: 600;
+  }
+  .nav-links { display: flex; align-items: center; gap: 22px; margin-left: 8px; }
+  .nav-link { font-size: 13.5px; color: var(--muted); transition: color .15s; }
+  .nav-link:hover { color: var(--ink); }
+  .nav-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
   .btn {
-    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-    padding: 9px 20px; border-radius: 10px; font-size: 14px; font-weight: 600;
-    cursor: pointer; border: none; transition: all .2s; white-space: nowrap;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    padding: 8px 15px;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s, border-color .15s, color .15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    line-height: 1.2;
   }
-  .btn-primary { background: var(--primary); color: #fff; box-shadow: 0 4px 12px rgba(47,107,255,.25); }
-  .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); }
-  .btn-outline { background: #fff; color: var(--primary); border: 1.5px solid rgba(47,107,255,.4); }
-  .btn-outline:hover { background: var(--primary-light); border-color: var(--primary); }
-  .btn-text { background: transparent; color: var(--text-secondary); padding: 9px 12px; }
-  .btn-text:hover { color: var(--primary); }
+  .btn-primary { background: var(--brand); color: #fff; }
+  .btn-primary:hover { background: var(--brand-strong); }
+  .btn-outline { background: #fff; border-color: var(--line); color: var(--ink); }
+  .btn-outline:hover { border-color: #c8d2e4; background: #fcfdff; }
+  .btn-text { background: none; color: var(--muted); padding: 8px 6px; }
+  .btn-text:hover { color: var(--ink); }
   .user-chip {
-    display: flex; align-items: center; gap: 8px; padding: 5px 14px 5px 5px;
-    border-radius: 999px; background: var(--primary-light); cursor: pointer;
-    border: 1px solid rgba(47,107,255,.2); transition: all .2s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px 5px 5px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    cursor: pointer;
+    background: #fff;
+    transition: border-color .15s;
   }
-  .user-chip:hover { box-shadow: var(--shadow); }
+  .user-chip:hover { border-color: #c8d2e4; }
   .user-avatar {
-    width: 30px; height: 30px; border-radius: 50%;
-    background: linear-gradient(135deg, var(--primary), #6f3bff);
-    color: #fff; font-size: 14px; font-weight: 700;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-size: 13px; font-weight: 700;
     display: flex; align-items: center; justify-content: center;
   }
-  .user-name { font-size: 14px; font-weight: 600; color: var(--primary-dark); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .user-name { font-size: 13px; color: var(--ink); max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-  /* ========== Hero 搜题区 ========== */
+  /* ============ Hero ============ */
   .hero {
-    position: relative; padding: 72px 24px 88px; overflow: hidden;
     background:
-      radial-gradient(600px 300px at 15% 0%, rgba(47,107,255,.10), transparent 60%),
-      radial-gradient(500px 260px at 85% 20%, rgba(15,188,155,.10), transparent 60%),
-      linear-gradient(180deg, #f0f5ff 0%, var(--bg) 100%);
+      radial-gradient(900px 420px at 78% -10%, rgba(47, 107, 255, .07), transparent 70%),
+      linear-gradient(180deg, #fbfcff 0%, #ffffff 62%);
+    border-bottom: 1px solid var(--line-2);
+    padding: 56px 0 64px;
   }
-  .hero::before {
-    content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .5;
-    background-image: radial-gradient(rgba(47,107,255,.12) 1.2px, transparent 1.2px);
-    background-size: 26px 26px;
-    mask-image: linear-gradient(180deg, #000 0%, transparent 75%);
-    -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 75%);
+  .hero-inner {
+    max-width: var(--container);
+    margin: 0 auto;
+    padding: 0 24px;
+    display: grid;
+    grid-template-columns: 1.02fr .98fr;
+    gap: 52px;
+    align-items: start;
   }
-  .hero-inner { position: relative; max-width: 860px; margin: 0 auto; text-align: center; }
-  .hero-badge {
-    display: inline-flex; align-items: center; gap: 8px;
-    padding: 6px 16px; border-radius: 999px; font-size: 13px; font-weight: 600;
-    background: #fff; border: 1px solid var(--border); color: var(--text-secondary);
-    box-shadow: var(--shadow); margin-bottom: 22px;
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--ink-2);
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 13px 5px 10px;
+    box-shadow: var(--shadow-sm);
+    margin-bottom: 22px;
   }
-  .hero-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--teal); animation: pulse 2s infinite; }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
-  .hero-title {
-    font-size: clamp(34px, 5.5vw, 54px); font-weight: 800; line-height: 1.25; letter-spacing: 1px;
-    margin-bottom: 16px;
+  .eyebrow b { color: var(--ink); font-weight: 700; }
+  .pulse {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 0 3px rgba(18, 183, 106, .16);
   }
-  .hero-title .hl {
-    background: linear-gradient(120deg, var(--primary) 0%, #6f3bff 60%, var(--teal) 100%);
-    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  .hero h1 {
+    margin: 0 0 18px;
+    font-size: clamp(34px, 4.2vw, 52px);
+    line-height: 1.1;
+    letter-spacing: -1.4px;
+    font-weight: 800;
+    color: var(--ink);
   }
-  .hero-desc { font-size: clamp(15px, 2vw, 18px); color: var(--text-secondary); margin-bottom: 36px; }
-  .hero-desc b { color: var(--teal); font-weight: 700; }
+  .hero h1 em { font-style: normal; color: var(--brand); }
+  .hero-sub {
+    margin: 0 0 26px;
+    font-size: 15.5px;
+    line-height: 1.75;
+    color: var(--muted);
+    max-width: 480px;
+  }
+  .hero-sub b { color: var(--ink-2); font-weight: 700; }
+  .hero-stats {
+    display: flex;
+    gap: 34px;
+    padding: 18px 0 4px;
+    border-top: 1px solid var(--line);
+    margin-bottom: 26px;
+  }
+  .hero-stats > div b {
+    display: block;
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--ink);
+    letter-spacing: -.6px;
+    line-height: 1.2;
+  }
+  .hero-stats > div span { font-size: 12.5px; color: var(--muted); }
+  .hero-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .btn-lg {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 20px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: background .15s, border-color .15s, transform .15s;
+  }
+  .btn-lg.primary { background: var(--brand); color: #fff; }
+  .btn-lg.primary:hover { background: var(--brand-strong); transform: translateY(-1px); }
+  .btn-lg.ghost { background: #fff; border-color: var(--line); color: var(--ink); }
+  .btn-lg.ghost:hover { border-color: #c8d2e4; transform: translateY(-1px); }
 
-  .search-card {
-    background: var(--card); border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-lg); border: 1px solid var(--border);
-    padding: 18px; text-align: left;
+  /* ============ 搜题面板 ============ */
+  .hero-panel {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 18px;
   }
-  .search-box { display: flex; gap: 12px; align-items: stretch; }
-  .search-input-wrap { position: relative; flex: 1; }
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    row-gap: 4px;
+    gap: 10px;
+    padding: 2px 4px 14px;
+    border-bottom: 1px solid var(--line-2);
+    margin-bottom: 14px;
+  }
+  .panel-title { font-size: 14px; font-weight: 700; color: var(--ink); display: inline-flex; align-items: center; gap: 7px; }
+  .panel-title .ico { color: var(--brand); }
+  .panel-note { font-size: 11.5px; color: var(--muted-2); }
+  .search-box {
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .search-box:focus-within { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(47, 107, 255, .1); }
   .search-input {
-    width: 100%; min-height: 96px; max-height: 220px; resize: vertical;
-    border: 1.5px solid var(--border); border-radius: 12px;
-    padding: 14px 16px; font-size: 15px; line-height: 1.7; font-family: inherit;
-    color: var(--text); background: #fbfcff; outline: none; transition: all .2s;
+    width: 100%;
+    min-height: 108px;
+    max-height: 240px;
+    border: 0;
+    outline: none;
+    resize: vertical;
+    padding: 14px 15px;
+    font-family: inherit;
+    font-size: 13.5px;
+    line-height: 1.7;
+    color: var(--ink);
+    background: #fff;
   }
-  .search-input:focus { border-color: var(--primary); background: #fff; box-shadow: 0 0 0 4px rgba(47,107,255,.1); }
-  .search-input::placeholder { color: var(--text-muted); }
-  .search-btn {
-    align-self: stretch; min-width: 128px; border-radius: 12px;
-    background: linear-gradient(135deg, var(--primary), #5585ff);
-    color: #fff; font-size: 16px; font-weight: 700; border: none; cursor: pointer;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-    transition: all .2s; box-shadow: 0 6px 18px rgba(47,107,255,.3);
+  .search-input::placeholder { color: var(--muted-2); }
+  .search-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+    row-gap: 8px;
+    padding: 9px 10px;
+    background: var(--bg-soft);
+    border-top: 1px solid var(--line-2);
   }
-  .search-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(47,107,255,.4); }
-  .search-btn:disabled { opacity: .6; cursor: not-allowed; transform: none; }
-  .search-btn .icon { font-size: 22px; }
-  .search-meta {
-    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
-    margin-top: 12px; padding: 0 4px;
+  .search-hint { font-size: 11.5px; color: var(--muted-2); padding-left: 4px; flex: 1 1 auto; min-width: 0; white-space: normal; }
+  .btn-search {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--brand);
+    color: #fff;
+    border: 0;
+    border-radius: 8px;
+    padding: 9px 18px;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .15s;
   }
-  .search-tips { font-size: 12.5px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+  .btn-search:hover { background: var(--brand-strong); }
+  .btn-search:disabled { opacity: .65; cursor: default; }
+  .search-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; min-height: 22px; }
   .quota-pill {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-size: 12.5px; font-weight: 600; padding: 4px 12px; border-radius: 999px;
-    background: var(--teal-light); color: #0a8f76; border: 1px solid rgba(15,188,155,.25);
+    display: inline-flex;
+    align-items: center;
+    font-size: 12px;
+    color: var(--ink-2);
+    background: var(--bg-soft);
+    border: 1px solid var(--line-2);
+    border-radius: 999px;
+    padding: 4px 11px;
   }
-  .quota-pill.warn { background: var(--amber-light); color: #b26a00; border-color: rgba(255,159,26,.35); }
-  .quota-pill.empty { background: #fdeceb; color: var(--danger); border-color: rgba(245,72,59,.3); }
+  .quota-pill.warn { color: var(--warn); background: var(--warn-soft); border-color: rgba(181, 71, 8, .16); }
+  .quota-pill.empty { color: var(--danger); background: var(--danger-soft); border-color: rgba(180, 35, 24, .16); }
 
-  /* 搜索结果 */
-  .result-area { margin-top: 18px; display: none; }
-  .result-area.show { display: block; animation: slideUp .3s ease; }
-  @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
-  .result-card {
-    background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 20px 22px; text-align: left;
-  }
-  .result-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+  .result-area { display: none; margin-top: 14px; }
+  .result-area.show { display: block; }
+  .result-card { border-top: 1px solid var(--line-2); padding-top: 14px; }
+  .result-item { animation: fadeUp .2s ease both; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .result-head { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; flex-wrap: wrap; }
   .q-tag {
-    font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 6px;
-    background: var(--primary-light); color: var(--primary-dark);
+    font-size: 11.5px;
+    color: var(--muted);
+    background: var(--bg-soft);
+    border: 1px solid var(--line-2);
+    border-radius: 999px;
+    padding: 2px 9px;
+    font-weight: 500;
   }
-  .q-tag.hit { background: var(--teal-light); color: #0a8f76; }
-  .q-tag.miss { background: var(--amber-light); color: #b26a00; }
-  .result-q { font-size: 15.5px; font-weight: 600; line-height: 1.8; margin-bottom: 10px; white-space: pre-wrap; word-break: break-word; }
-  .result-options { list-style: none; margin-bottom: 12px; }
-  .result-options li {
-    padding: 8px 12px; margin-bottom: 6px; border-radius: 8px;
-    background: #f7f9fe; border: 1px solid var(--border);
-    font-size: 14px; color: var(--text-secondary); word-break: break-word;
-  }
-  .result-options li .opt-label { font-weight: 700; color: var(--primary); margin-right: 8px; }
+  .q-tag.hit { color: #05603a; background: var(--ok-soft); border-color: rgba(18, 183, 106, .22); font-weight: 600; }
+  .result-q { font-size: 14px; color: var(--ink); line-height: 1.75; margin-bottom: 10px; word-break: break-word; white-space: pre-wrap; }
+  .result-options { list-style: none; margin: 0 0 12px; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+  .result-options li { font-size: 13px; color: var(--ink-2); display: flex; gap: 6px; line-height: 1.6; }
+  .opt-label { color: var(--muted-2); flex: 0 0 15px; }
   .answer-box {
-    border-radius: 10px; padding: 14px 16px;
-    background: linear-gradient(135deg, var(--teal-light), #eefcf8);
-    border: 1px solid rgba(15,188,155,.3);
+    background: var(--ok-soft);
+    border: 1px solid rgba(18, 183, 106, .2);
+    border-radius: var(--radius-xs);
+    padding: 11px 13px;
   }
-  .answer-label { font-size: 13px; font-weight: 700; color: #0a8f76; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
-  .answer-text { font-size: 16px; font-weight: 700; color: #064e3f; white-space: pre-wrap; word-break: break-word; }
-  .result-foot { margin-top: 10px; font-size: 12.5px; color: var(--text-muted); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
-  .miss-box { text-align: center; padding: 28px 16px; }
-  .miss-box .emoji { font-size: 40px; margin-bottom: 10px; }
-  .miss-box p { font-size: 15px; color: var(--text-secondary); }
-  .miss-box .sub { font-size: 13px; color: var(--text-muted); margin-top: 6px; }
+  .answer-label { font-size: 11.5px; font-weight: 600; color: #05603a; opacity: .85; display: flex; align-items: center; gap: 5px; margin-bottom: 4px; }
+  .answer-text { font-size: 14.5px; font-weight: 700; color: #05603a; line-height: 1.65; word-break: break-word; white-space: pre-wrap; }
+  .result-foot { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; font-size: 11.5px; color: var(--muted-2); }
+  .miss-box { text-align: center; padding: 22px 12px 8px; }
+  .miss-box .emoji { color: var(--muted-2); display: flex; justify-content: center; margin-bottom: 8px; }
+  .miss-box .emoji .ico { width: 26px; height: 26px; }
+  .miss-box p { margin: 0; font-size: 14px; color: var(--ink); font-weight: 600; }
+  .miss-box p.sub { margin-top: 5px; font-size: 12.5px; color: var(--muted); font-weight: 400; }
 
-  /* 数据条 */
-  .stats-strip {
-    position: relative; max-width: 860px; margin: 44px auto 0;
-    display: flex; justify-content: center; gap: clamp(24px, 6vw, 72px); flex-wrap: wrap;
+  /* ============ 通用区块 ============ */
+  .sec { padding: 72px 0; }
+  .sec-soft { background: var(--bg-soft); border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); }
+  .sec-head { max-width: 640px; margin-bottom: 34px; }
+  .sec-head.center { margin-left: auto; margin-right: auto; text-align: center; }
+  .tag {
+    display: inline-block;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--brand);
+    background: var(--brand-soft);
+    border: 1px solid rgba(47, 107, 255, .14);
+    border-radius: 999px;
+    padding: 3px 10px;
+    margin-bottom: 12px;
   }
-  .stat-item { text-align: center; }
-  .stat-num { font-size: clamp(22px, 3vw, 30px); font-weight: 800; color: var(--primary-dark); }
-  .stat-num em { font-style: normal; font-size: 14px; color: var(--text-muted); font-weight: 600; margin-left: 2px; }
-  .stat-label { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
-
-  /* ========== 通用 Section ========== */
-  .section { padding: 72px 24px; }
-  .container { max-width: 1160px; margin: 0 auto; }
-  .section-header { text-align: center; margin-bottom: 44px; }
-  .section-tag {
-    display: inline-block; padding: 4px 14px; border-radius: 999px;
-    background: var(--primary-light); color: var(--primary);
-    font-size: 13px; font-weight: 700; margin-bottom: 12px;
+  .sec-head h2 {
+    margin: 0 0 10px;
+    font-size: clamp(24px, 2.6vw, 30px);
+    line-height: 1.25;
+    letter-spacing: -.7px;
+    font-weight: 800;
+    color: var(--ink);
   }
-  .section-title { font-size: clamp(26px, 3.6vw, 36px); font-weight: 800; margin-bottom: 10px; }
-  .section-desc { font-size: 16px; color: var(--text-secondary); }
+  .sec-head p { margin: 0; font-size: 14px; color: var(--muted); }
 
-  /* ========== 题库精选 ========== */
-  .bank-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 20px; }
+  /* ============ 题库精选 ============ */
+  .bank-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
   .q-card {
-    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 20px; display: flex; flex-direction: column; transition: all .25s; position: relative; overflow: hidden;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-height: 190px;
+    transition: border-color .16s, box-shadow .16s, transform .16s;
   }
-  .q-card::before {
-    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
-    background: linear-gradient(90deg, var(--primary), var(--teal)); opacity: 0; transition: opacity .25s;
-  }
-  .q-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
-  .q-card:hover::before { opacity: 1; }
-  .q-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-  .q-card-q { font-size: 14.5px; font-weight: 600; line-height: 1.75; margin-bottom: 10px; white-space: pre-wrap; word-break: break-word;
-    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
-  .q-card-options { list-style: none; margin-bottom: 12px; }
-  .q-card-options li { font-size: 13px; color: var(--text-secondary); padding: 3px 0; display: flex; gap: 8px; word-break: break-word; }
-  .q-card-options li .opt-label { font-weight: 700; color: var(--primary); flex-shrink: 0; }
-  .q-card-foot { margin-top: auto; }
+  .q-card:hover { border-color: #cbd7ef; box-shadow: 0 10px 26px -16px rgba(16, 24, 40, .28); transform: translateY(-2px); }
+  .q-card-head { display: flex; align-items: center; gap: 8px; }
+  .q-card-q { font-size: 14px; color: var(--ink); line-height: 1.7; font-weight: 500; word-break: break-word; }
+  .q-card-options { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+  .q-card-options li { font-size: 12.5px; color: var(--muted); display: flex; gap: 6px; line-height: 1.6; }
+  .q-card-foot { margin-top: auto; padding-top: 10px; border-top: 1px dashed var(--line-2); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .q-card-answer {
-    display: none; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
-    background: var(--teal-light); border: 1px solid rgba(15,188,155,.25);
-    font-size: 14px; color: #064e3f; font-weight: 600; white-space: pre-wrap; word-break: break-word;
+    display: none;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #05603a;
+    background: var(--ok-soft);
+    border: 1px solid rgba(18, 183, 106, .18);
+    border-radius: var(--radius-xs);
+    padding: 6px 9px;
+    flex: 1;
+    min-width: 0;
+    word-break: break-word;
   }
-  .q-card-answer.open { display: block; animation: slideUp .25s ease; }
+  .q-card-answer.open { display: block; }
   .toggle-answer {
-    width: 100%; padding: 8px; border-radius: 8px; font-size: 13px; font-weight: 600;
-    background: #f7f9fe; color: var(--primary); border: 1px dashed rgba(47,107,255,.4); cursor: pointer; transition: all .2s;
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    color: var(--ink-2);
+    font-size: 12px;
+    padding: 5px 11px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color .15s, color .15s;
   }
-  .toggle-answer:hover { background: var(--primary-light); }
-  .bank-actions { text-align: center; margin-top: 32px; }
-  .bank-empty { text-align: center; padding: 48px 16px; color: var(--text-muted); font-size: 14px; }
+  .toggle-answer:hover { border-color: var(--brand); color: var(--brand); }
+  .bank-empty { grid-column: 1/-1; text-align: center; color: var(--muted-2); font-size: 13px; padding: 40px 0; }
+  .bank-actions { display: flex; justify-content: center; margin-top: 26px; }
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 9px 18px;
+    font-size: 13px;
+    color: var(--ink-2);
+    cursor: pointer;
+    transition: border-color .15s, color .15s;
+  }
+  .btn-ghost:hover { border-color: var(--brand); color: var(--brand); }
+  .btn-ghost:disabled { opacity: .6; cursor: default; }
 
-  /* ========== QQ 频道 ========== */
-  .channel-wrap { max-width: 860px; margin: 0 auto; }
-  .channel-card {
-    position: relative; border-radius: var(--radius-lg); overflow: hidden;
-    background: linear-gradient(120deg, #17233f 0%, #1f3a6e 55%, #173a4d 100%);
-    color: #fff; padding: 44px 40px; display: flex; gap: 28px; align-items: center; flex-wrap: wrap;
+  /* ============ 三步 ============ */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; overflow: hidden; }
+  .step { padding: 26px 26px 28px; border-left: 1px solid var(--line-2); }
+  .step:first-child { border-left: 0; }
+  .step-num {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--brand);
+    background: var(--brand-soft);
+    border-radius: 6px;
+    padding: 2px 8px;
+    display: inline-block;
+    margin-bottom: 14px;
   }
-  .channel-card::after {
-    content: ''; position: absolute; right: -60px; top: -60px; width: 240px; height: 240px; border-radius: 50%;
-    background: radial-gradient(circle, rgba(47,107,255,.35), transparent 70%);
+  .step-title { font-size: 15.5px; font-weight: 700; color: var(--ink); margin-bottom: 6px; }
+  .step-desc { font-size: 13px; color: var(--muted); line-height: 1.7; }
+
+  /* ============ 安装 ============ */
+  .install-grid { display: grid; grid-template-columns: 1.12fr .88fr; gap: 18px; }
+  .install-panel { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; }
+  .install-panel h3 { margin: 0 0 8px; font-size: 16px; font-weight: 700; color: var(--ink); }
+  .install-panel > p { margin: 0 0 16px; font-size: 13px; color: var(--muted); line-height: 1.7; }
+  .smart-install {
+    width: 100%;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: var(--brand);
+    color: #fff;
+    padding: 14px 16px;
+    cursor: pointer;
+    text-align: left;
+    transition: background .15s;
+  }
+  .smart-install:hover { background: var(--brand-strong); }
+  .smart-install:disabled { cursor: default; }
+  .smart-install.ok { background: var(--brand-strong); }
+  .smart-install.fail { background: var(--danger); }
+  .si-main { display: flex; align-items: center; gap: 9px; font-size: 14.5px; font-weight: 700; }
+  .si-sub { display: block; margin-top: 5px; font-size: 11.5px; color: rgba(255, 255, 255, .78); line-height: 1.5; }
+  .si-spin {
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, .35);
+    border-top-color: #fff;
+    animation: spin .8s linear infinite;
+    flex: 0 0 13px;
+  }
+  .smart-install.ok .si-spin, .smart-install.fail .si-spin { display: none; }
+  .route-status { display: flex; align-items: center; gap: 7px; margin-top: 11px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+  .route-status b { color: var(--ink-2); }
+  .dot-spin {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 0 3px rgba(18, 183, 106, .14);
+    flex: 0 0 7px;
+  }
+  .install-note {
+    margin-top: 14px;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.75;
+    background: var(--bg-soft);
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-xs);
+    padding: 12px 13px;
+  }
+  .install-note b { color: var(--ink-2); }
+  .route-advanced { margin-top: 12px; }
+  .route-advanced summary { font-size: 12.5px; color: var(--muted); cursor: pointer; }
+  .route-advanced summary:hover { color: var(--ink-2); }
+  .route-btns { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 10px; }
+  .route-btn {
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 9px 10px;
+    font-size: 12.5px;
+    color: var(--ink-2);
+    cursor: pointer;
+    transition: border-color .15s, color .15s;
+  }
+  .route-btn:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
+  .route-btn.checking { color: var(--muted-2); }
+  .route-btn.ready { border-color: rgba(18, 183, 106, .4); color: #05603a; }
+  .route-btn.best { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); font-weight: 600; }
+  .route-btn:disabled { opacity: .55; cursor: default; }
+  .manual-links { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 14px; font-size: 12.5px; }
+  .manual-links a { color: var(--muted); border-bottom: 1px dashed var(--line); padding-bottom: 1px; }
+  .manual-links a:hover { color: var(--brand); border-color: var(--brand); }
+  .manual-links a.primary { color: var(--brand); font-weight: 600; border-color: rgba(47, 107, 255, .35); }
+  .compat-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 9px; }
+  .compat-list li { font-size: 13px; color: var(--muted); display: flex; gap: 8px; line-height: 1.6; }
+  .compat-list .ico { color: var(--ok); margin-top: 3px; }
+  .edge-panel {
+    margin-top: 18px;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 24px;
+    display: grid;
+    grid-template-columns: 1fr 1.1fr;
+    gap: 24px;
+  }
+  .edge-panel h3 { margin: 0 0 6px; font-size: 15px; font-weight: 700; color: var(--ink); }
+  .edge-panel p { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.7; }
+  .edge-steps { margin: 0; padding: 0; list-style: none; display: grid; gap: 9px; }
+  .edge-steps li { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+  .edge-steps .n {
+    flex: 0 0 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-size: 11px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    margin-top: 1px;
+  }
+  .edge-steps b { color: var(--ink-2); }
+  .install-tip {
+    margin-top: 18px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    background: var(--brand-soft);
+    border: 1px solid rgba(47, 107, 255, .14);
+    border-radius: var(--radius-sm);
+    padding: 14px 16px;
+  }
+  .install-tip .tip-icon { color: var(--brand); margin-top: 2px; }
+  .install-tip p { margin: 0; font-size: 12.5px; color: #1e3a8a; line-height: 1.7; }
+
+  /* ============ 频道 ============ */
+  .channel-card {
+    background: #0f172a;
+    border-radius: var(--radius);
+    padding: 30px 34px;
+    display: flex;
+    align-items: center;
+    gap: 26px;
+    color: #fff;
   }
   .channel-icon {
-    width: 76px; height: 76px; border-radius: 20px; flex-shrink: 0;
-    background: linear-gradient(135deg, #12b7f5, #2f6bff);
-    display: flex; align-items: center; justify-content: center; font-size: 38px;
-    box-shadow: 0 8px 24px rgba(18,183,245,.4);
+    flex: 0 0 52px; height: 52px;
+    border-radius: 13px;
+    background: rgba(255, 255, 255, .08);
+    border: 1px solid rgba(255, 255, 255, .1);
+    display: flex; align-items: center; justify-content: center;
+    color: #9db6ff;
   }
-  .channel-body { flex: 1; min-width: 240px; position: relative; z-index: 1; }
-  .channel-title { font-size: 22px; font-weight: 800; margin-bottom: 6px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .channel-title .badge { font-size: 12px; font-weight: 700; background: rgba(255,159,26,.2); color: #ffc163; border: 1px solid rgba(255,159,26,.4); padding: 2px 10px; border-radius: 999px; }
-  .channel-desc { font-size: 14px; color: rgba(255,255,255,.65); margin-bottom: 14px; line-height: 1.8; }
-  .channel-id {
-    display: inline-flex; align-items: center; gap: 10px;
-    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.15);
-    padding: 8px 14px; border-radius: 10px; font-size: 14px; margin-bottom: 18px;
+  .channel-icon .ico { width: 24px; height: 24px; }
+  .channel-body { flex: 1; min-width: 0; }
+  .channel-title { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .badge {
+    font-size: 11px; font-weight: 600;
+    color: #b9cbff;
+    background: rgba(47, 107, 255, .18);
+    border: 1px solid rgba(47, 107, 255, .28);
+    border-radius: 999px;
+    padding: 1px 8px;
   }
-  .channel-id code { font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 15px; font-weight: 700; color: #7ec8ff; letter-spacing: 1px; }
+  .channel-desc { font-size: 13px; color: rgba(255, 255, 255, .66); line-height: 1.7; margin-top: 6px; }
+  .channel-id { margin-top: 10px; font-size: 12.5px; color: rgba(255, 255, 255, .6); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .channel-id code { font-family: var(--mono); font-size: 12.5px; color: #fff; background: rgba(255, 255, 255, .1); border-radius: 6px; padding: 2px 8px; }
   .copy-btn {
-    background: rgba(255,255,255,.12); border: none; color: #fff; font-size: 12.5px; font-weight: 600;
-    padding: 4px 12px; border-radius: 6px; cursor: pointer; transition: all .2s;
+    background: none; border: 1px solid rgba(255, 255, 255, .2); color: rgba(255, 255, 255, .8);
+    border-radius: 6px; padding: 2px 9px; font-size: 11.5px; cursor: pointer;
   }
-  .copy-btn:hover { background: rgba(255,255,255,.22); }
-  .channel-actions { display: flex; gap: 12px; flex-wrap: wrap; position: relative; z-index: 1; }
+  .copy-btn:hover { border-color: rgba(255, 255, 255, .45); color: #fff; }
+  .channel-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
   .btn-channel {
-    display: inline-flex; align-items: center; gap: 8px;
-    background: linear-gradient(135deg, #12b7f5, #2f6bff); color: #fff;
-    padding: 12px 28px; border-radius: 10px; font-size: 15px; font-weight: 700;
-    box-shadow: 0 6px 18px rgba(18,183,245,.35); transition: all .2s; border: none; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 7px;
+    background: #fff; color: #0f172a;
+    border-radius: 9px; padding: 9px 16px;
+    font-size: 13px; font-weight: 600;
   }
-  .btn-channel:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(18,183,245,.5); }
+  .btn-channel:hover { background: #eef2ff; }
   .btn-channel-ghost {
-    display: inline-flex; align-items: center; gap: 8px;
-    background: transparent; color: rgba(255,255,255,.85);
-    padding: 12px 24px; border-radius: 10px; font-size: 15px; font-weight: 600;
-    border: 1.5px solid rgba(255,255,255,.3); cursor: pointer; transition: all .2s;
+    display: inline-flex; align-items: center; gap: 7px;
+    background: rgba(255, 255, 255, .06); color: #fff;
+    border: 1px solid rgba(255, 255, 255, .18);
+    border-radius: 9px; padding: 9px 16px;
+    font-size: 13px; cursor: pointer;
   }
-  .btn-channel-ghost:hover { background: rgba(255,255,255,.1); }
+  .btn-channel-ghost:hover { background: rgba(255, 255, 255, .12); }
 
-  /* ========== 使用步骤 ========== */
-  .steps-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; max-width: 960px; margin: 0 auto; }
-  .step-card {
-    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 28px 24px; text-align: center; transition: all .25s;
+  /* ============ FAQ ============ */
+  .faq-list { border-top: 1px solid var(--line); }
+  .faq-item { border-bottom: 1px solid var(--line); }
+  .faq-q {
+    padding: 20px 40px 20px 2px;
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--ink);
+    cursor: pointer;
+    position: relative;
+    transition: color .15s;
   }
-  .step-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
-  .step-num {
-    width: 52px; height: 52px; margin: 0 auto 16px; border-radius: 16px;
-    display: flex; align-items: center; justify-content: center; font-size: 24px;
+  .faq-q:hover { color: var(--brand); }
+  .faq-q::after {
+    content: "";
+    position: absolute; right: 6px; top: 50%;
+    width: 9px; height: 9px;
+    border-right: 1.8px solid var(--muted-2);
+    border-bottom: 1.8px solid var(--muted-2);
+    transform: translateY(-70%) rotate(45deg);
+    transition: transform .2s, border-color .15s;
   }
-  .step-card:nth-child(1) .step-num { background: var(--primary-light); }
-  .step-card:nth-child(2) .step-num { background: var(--teal-light); }
-  .step-card:nth-child(3) .step-num { background: var(--amber-light); }
-  .step-title { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
-  .step-desc { font-size: 14px; color: var(--text-secondary); line-height: 1.8; }
+  .faq-item.open .faq-q::after { transform: translateY(-30%) rotate(-135deg); border-color: var(--brand); }
+  .faq-a { max-height: 0; overflow: hidden; transition: max-height .25s ease; }
+  .faq-item.open .faq-a { max-height: 320px; }
+  .faq-a p { margin: 0 0 20px; font-size: 13.5px; color: var(--muted); line-height: 1.8; max-width: 820px; }
 
-  /* ========== FAQ ========== */
-  .faq-list { max-width: 780px; margin: 0 auto; }
-  .faq-item { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 12px; overflow: hidden; }
-  .faq-q { padding: 18px 22px; font-size: 15.5px; font-weight: 600; cursor: pointer; display: flex; justify-content: space-between; align-items: center; user-select: none; }
-  .faq-q::after { content: '+'; font-size: 22px; color: var(--text-muted); transition: transform .2s; font-weight: 400; }
-  .faq-item.open .faq-q::after { transform: rotate(45deg); }
-  .faq-a { max-height: 0; overflow: hidden; transition: max-height .3s ease, padding .3s ease; padding: 0 22px; }
-  .faq-item.open .faq-a { max-height: 240px; padding: 0 22px 18px; }
-  .faq-a p { font-size: 14.5px; color: var(--text-secondary); line-height: 1.9; }
+  /* ============ 页脚 ============ */
+  .footer { background: #0f172a; color: rgba(255, 255, 255, .64); padding: 48px 0 34px; }
+  .footer-grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr;
+    gap: 32px;
+    padding-bottom: 28px;
+    border-bottom: 1px solid rgba(255, 255, 255, .1);
+  }
+  .footer-brand { display: flex; align-items: center; gap: 10px; color: #fff; font-weight: 700; font-size: 15px; }
+  .footer-brand img { width: 28px; height: 28px; border-radius: 7px; }
+  .footer-desc { margin: 12px 0 0; font-size: 12.5px; line-height: 1.8; color: rgba(255, 255, 255, .5); max-width: 340px; }
+  .footer-col h4 { margin: 2px 0 12px; font-size: 12.5px; color: #fff; font-weight: 600; }
+  .footer-col a { display: block; font-size: 12.5px; color: rgba(255, 255, 255, .56); padding: 4px 0; }
+  .footer-col a:hover { color: #fff; }
+  .footer-copy { padding-top: 20px; font-size: 12px; color: rgba(255, 255, 255, .38); display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 
-  /* ========== 页脚 ========== */
-  .footer { background: #141d33; color: rgba(255,255,255,.5); padding: 44px 24px 28px; text-align: center; }
-  .footer-links { display: flex; gap: 24px; justify-content: center; margin-bottom: 18px; flex-wrap: wrap; }
-  .footer-links a { color: rgba(255,255,255,.7); font-size: 14px; }
-  .footer-links a:hover { color: #7ec8ff; }
-  .footer-copy { font-size: 13px; line-height: 2; }
-
-  /* ========== 登录弹窗 ========== */
+  /* ============ 弹窗 / Toast ============ */
   .modal-mask {
-    position: fixed; inset: 0; z-index: 200; display: none;
-    background: rgba(15, 23, 42, .5); backdrop-filter: blur(4px);
-    align-items: center; justify-content: center; padding: 24px;
+    position: fixed; inset: 0; z-index: 90;
+    background: rgba(15, 23, 42, .44);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
   }
-  .modal-mask.show { display: flex; animation: fadeIn .2s ease; }
-  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .modal-mask.show { display: flex; }
   .modal {
-    background: #fff; border-radius: var(--radius-lg); padding: 36px 32px; max-width: 400px; width: 100%;
-    text-align: center; box-shadow: var(--shadow-lg); animation: slideUp .25s ease; position: relative;
+    background: #fff;
+    border-radius: var(--radius);
+    padding: 28px 26px 24px;
+    width: 100%;
+    max-width: 372px;
+    position: relative;
+    text-align: center;
+    box-shadow: 0 24px 60px -20px rgba(15, 23, 42, .5);
   }
   .modal-close {
-    position: absolute; top: 14px; right: 16px; width: 32px; height: 32px; border-radius: 50%;
-    border: none; background: #f2f4f9; color: var(--text-muted); font-size: 16px; cursor: pointer; transition: all .2s;
+    position: absolute; right: 12px; top: 12px;
+    background: none; border: 0; color: var(--muted-2);
+    cursor: pointer; padding: 4px; line-height: 0;
   }
-  .modal-close:hover { background: #e6eaf3; color: var(--text); }
-  .modal .emoji { font-size: 44px; margin-bottom: 12px; }
-  .modal h3 { font-size: 20px; font-weight: 800; margin-bottom: 8px; }
-  .modal p { font-size: 14px; color: var(--text-secondary); margin-bottom: 24px; line-height: 1.8; }
-  .modal-actions { display: flex; gap: 12px; }
-  .modal-actions .btn { flex: 1; padding: 12px; font-size: 15px; }
-
-  /* ========== Toast ========== */
+  .modal-close:hover { color: var(--ink); }
+  .modal .emoji { display: flex; justify-content: center; color: var(--brand); margin-bottom: 12px; }
+  .modal .emoji .ico { width: 26px; height: 26px; }
+  .modal h3 { margin: 0 0 8px; font-size: 17px; font-weight: 700; color: var(--ink); }
+  .modal p { margin: 0 0 20px; font-size: 13px; color: var(--muted); line-height: 1.7; }
+  .modal-actions { display: flex; gap: 10px; justify-content: center; }
+  .modal-actions .btn { flex: 1; justify-content: center; padding: 10px 14px; }
   .toast {
-    position: fixed; top: 80px; left: 50%; transform: translateX(-50%) translateY(-12px);
-    background: #1c2333; color: #fff; font-size: 14px; font-weight: 600;
-    padding: 10px 22px; border-radius: 999px; box-shadow: var(--shadow-lg);
-    z-index: 300; opacity: 0; pointer-events: none; transition: all .3s; max-width: 90vw;
+    position: fixed;
+    left: 50%;
+    bottom: 32px;
+    transform: translate(-50%, 10px);
+    background: #0f172a;
+    color: #fff;
+    font-size: 13px;
+    padding: 10px 18px;
+    border-radius: 9px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s, transform .2s;
+    z-index: 100;
+    max-width: 86vw;
+    text-align: center;
   }
-  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
-  /* ========== 安装指南（多线路探测 + Edge 专区） ========== */
-  .install-panel {
-    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg);
-    padding: 28px 32px; margin-bottom: 20px; box-shadow: var(--shadow);
+  /* ============ 响应式 ============ */
+  @media (max-width: 1000px) {
+    .hero-inner { grid-template-columns: 1fr; gap: 34px; }
+    .hero { padding: 40px 0 48px; }
+    .bank-grid { grid-template-columns: 1fr 1fr; }
+    .install-grid, .edge-panel { grid-template-columns: 1fr; }
+    .nav-links { display: none; }
+    .footer-grid { grid-template-columns: 1fr 1fr; }
   }
-  .install-panel h3 { font-size: 18px; font-weight: 800; margin-bottom: 8px; }
-  .install-panel > p { font-size: 14px; color: var(--text-secondary); margin-bottom: 18px; line-height: 1.7; }
-  .route-status {
-    font-size: 13.5px; color: var(--text-muted); margin-bottom: 14px;
-    display: flex; align-items: flex-start; gap: 8px;
-  }
-  .route-status > span { flex: 1; line-height: 1.7; }
-  .route-status .dot-spin { margin-top: 7px; flex: none; }
-  .route-status .dot-spin {
-    width: 8px; height: 8px; border-radius: 50%; background: var(--primary);
-    animation: routePulse 1s ease-in-out infinite;
-  }
-  @keyframes routePulse { 0%,100%{opacity:.35} 50%{opacity:1} }
-  .smart-install {
-    width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
-    appearance: none; border: 0; border-radius: 12px; cursor: pointer;
-    padding: 15px 20px; margin-bottom: 14px; text-align: left;
-    background: linear-gradient(135deg, var(--primary), #5b8cff); color: #fff;
-    box-shadow: 0 8px 20px rgba(47,107,255,.28); transition: transform .18s, box-shadow .18s, opacity .18s;
-  }
-  .smart-install:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 26px rgba(47,107,255,.34); }
-  .smart-install:disabled { cursor: progress; opacity: .85; }
-  .smart-install .si-main { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 800; }
-  .smart-install .si-sub { font-size: 12.5px; opacity: .92; padding-left: 24px; }
-  .smart-install .si-spin {
-    width: 14px; height: 14px; border-radius: 50%; flex: none;
-    border: 2px solid rgba(255,255,255,.45); border-top-color: #fff;
-    animation: siSpin .8s linear infinite;
-  }
-  .smart-install.ok .si-spin { display: none; }
-  .smart-install.fail { background: linear-gradient(135deg, #ef4444, #f87171); box-shadow: 0 8px 20px rgba(239,68,68,.28); }
-  @keyframes siSpin { to { transform: rotate(360deg); } }
-  .route-advanced { margin-top: 12px; }
-  .route-advanced > summary {
-    cursor: pointer; font-size: 13px; color: var(--text-secondary); font-weight: 700;
-    padding: 4px 0; list-style: none; user-select: none;
-  }
-  .route-advanced > summary::-webkit-details-marker { display: none; }
-  .route-advanced > summary::before { content: '▸ '; }
-  .route-advanced[open] > summary::before { content: '▾ '; }
-  .route-advanced .route-btns { margin-top: 10px; }
-  .route-btns { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
-  .route-btn {
-    appearance: none; border: 1px solid var(--border); background: #fff; color: var(--text);
-    padding: 11px 18px; border-radius: 10px; font-size: 14px; font-weight: 700;
-    cursor: pointer; transition: all .2s;
-  }
-  .route-btn:hover { border-color: var(--primary); color: var(--primary); }
-  .route-btn.ready { border-color: rgba(15,188,155,.45); background: var(--teal-light); color: #0a8f76; }
-  .route-btn.best {
-    background: var(--primary); color: #fff; border-color: var(--primary);
-    box-shadow: 0 6px 16px rgba(47,107,255,.28);
-  }
-  .route-btn:disabled { opacity: .45; cursor: not-allowed; }
-  .route-btn.checking { opacity: .7; }
-  .install-note {
-    font-size: 13px; color: var(--text-secondary); line-height: 1.8;
-    background: var(--bg); border-radius: 10px; padding: 12px 14px;
-  }
-  .install-grid {
-    display: grid; grid-template-columns: 1.2fr .8fr; gap: 16px; margin-bottom: 20px;
-  }
-  @media (max-width: 860px) { .install-grid { grid-template-columns: 1fr; } }
-  .edge-panel {
-    background: linear-gradient(160deg, #eef4ff, #fff); border: 1px solid var(--border);
-    border-radius: var(--radius-lg); padding: 28px 32px; margin-bottom: 20px;
-  }
-  .edge-panel h3 { font-size: 18px; font-weight: 800; margin-bottom: 8px; }
-  .edge-panel > p { font-size: 14px; color: var(--text-secondary); margin-bottom: 14px; line-height: 1.7; }
-  .edge-panel ul { padding-left: 18px; margin-bottom: 14px; color: var(--text-secondary); font-size: 14px; line-height: 1.9; }
-  .edge-steps { list-style: none; padding: 0; }
-  .edge-steps li {
-    display: flex; gap: 12px; padding: 10px 0; border-top: 1px dashed var(--border);
-    font-size: 14px; color: var(--text-secondary); line-height: 1.7;
-  }
-  .edge-steps .n {
-    flex-shrink: 0; width: 26px; height: 26px; border-radius: 8px;
-    background: var(--primary-light); color: var(--primary); font-weight: 800;
-    display: flex; align-items: center; justify-content: center; font-size: 13px;
-  }
-  .manual-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
-  .manual-links a {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 9px 14px; border-radius: 8px; font-size: 13px; font-weight: 700;
-    border: 1px solid var(--border); background: #fff; color: var(--text);
-  }
-  .manual-links a.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
-  .manual-links a.cat { background: linear-gradient(135deg, #ff9f1a, #ff6a3d); color: #fff; border: none; }
-  .install-tip {
-    display: flex; gap: 14px; align-items: flex-start;
-    background: var(--amber-light); border: 1px solid rgba(255,159,26,.35);
-    border-radius: var(--radius); padding: 18px 20px;
-  }
-  .tip-icon { font-size: 22px; flex-shrink: 0; }
-  .install-tip p { font-size: 13.5px; color: #8a5b1a; line-height: 1.9; }
-
-  /* ========== 响应式 ========== */
   @media (max-width: 720px) {
-    .search-box { flex-direction: column; }
-    .search-btn { min-height: 52px; flex-direction: row; }
-    .hero { padding: 48px 16px 64px; }
-    .section { padding: 52px 16px; }
-    .channel-card { padding: 32px 24px; }
-    .btn-text.hide-mobile { display: none; }
-    .user-name { max-width: 80px; }
+    body { font-size: 14.5px; }
+    .sec { padding: 48px 0; }
+    .wrap, .nav-inner, .hero-inner { padding: 0 18px; }
+    .hero-stats { gap: 22px; }
+    .hero-stats > div b { font-size: 20px; }
+    .bank-grid, .steps { grid-template-columns: 1fr; }
+    .step { border-left: 0; border-top: 1px solid var(--line-2); }
+    .step:first-child { border-top: 0; }
+    .result-options { grid-template-columns: 1fr; }
+    .channel-card { flex-direction: column; align-items: flex-start; padding: 24px; }
+    .footer-grid { grid-template-columns: 1fr; gap: 24px; }
+    .hide-mobile { display: none !important; }
+    .brand-tag { display: none; }
+    .search-hint { display: none; }
+    .hero-inner > *, .hero-panel, .search-box { min-width: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+    html { scroll-behavior: auto; }
   }
 </style>
 </head>
 <body>
 
+<svg style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7.5"/><line x1="20.5" y1="20.5" x2="16.4" y2="16.4"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7.5 12 12 15.5 13.8"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1"/><polyline points="20.5 4 20.5 9 15.5 9"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><polyline points="20 6.5 9.5 17 4 11.5"/></symbol>
+    <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="8.5 12.2 11 14.7 15.7 9.8"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><line x1="4" y1="12" x2="19" y2="12"/><polyline points="13 6 19 12 13 18"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10.5" width="16" height="10.5" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9.5" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></symbol>
+  </defs>
+</svg>
+
 <!-- 顶部导航 -->
-<nav class="navbar">
-  <div class="navbar-inner">
-    <div class="logo" onclick="window.scrollTo({top:0,behavior:'smooth'})">
-      <div class="logo-icon"><img src="/static/icon.jpg" alt="学神助手" loading="lazy"></div>
-      <span>学神助手</span>
-      <small>免费搜题</small>
+<nav class="nav">
+  <div class="nav-inner">
+    <div class="brand" onclick="window.scrollTo({top:0,behavior:'smooth'})">
+      <img src="/static/icon.jpg" alt="学神助手">
+      <span class="brand-name">学神助手</span>
+      <span class="brand-tag">免费搜题</span>
+    </div>
+    <div class="nav-links">
+      <a class="nav-link" href="#search">在线搜题</a>
+      <a class="nav-link" href="#bank">题库精选</a>
+      <a class="nav-link" href="#install">安装脚本</a>
+      <a class="nav-link" href="#faq">常见问题</a>
     </div>
     <div class="nav-right" id="navRight">
       <button class="btn btn-text hide-mobile" onclick="location.href='/forgot'">找回密码</button>
@@ -499,136 +802,121 @@
   </div>
 </nav>
 
-<!-- Hero 搜题 -->
-<section class="hero">
+<!-- Hero + 搜题 -->
+<header class="hero" id="search">
   <div class="hero-inner">
-    <div class="hero-badge"><span class="dot"></span>题库持续更新中 · 已有 <b id="bankTotalBadge">海量</b> 道题目</div>
-    <h1 class="hero-title">输入题目，<span class="hl">秒出答案</span></h1>
-    <p class="hero-desc">覆盖学习通、智慧树等网课平台题库 · 登录即可<b>免费搜索</b> · 不扣题数 · 每日 <b>30</b> 次</p>
+    <div class="hero-copy">
+      <div class="eyebrow"><span class="pulse"></span>题库持续更新 · 已收录 <b id="bankTotalBadge">—</b> 道题</div>
+      <h1>输入题目<br><em>秒出答案</em></h1>
+      <p class="hero-sub">覆盖学习通、智慧树等网课平台题库。登录即可<b>免费搜索</b>，命中题库直出答案，<b>不扣题数</b>，每天 30 次。</p>
+      <div class="hero-stats">
+        <div><b id="bankTotal">—</b><span>题库题目总数</span></div>
+        <div><b>30</b><span>次 / 天 免费额度</span></div>
+        <div><b>0</b><span>搜题不扣题数</span></div>
+      </div>
+      <div class="hero-actions">
+        <a class="btn-lg primary" href="#install"><svg class="ico lg"><use href="#i-download"></use></svg>安装刷课脚本</a>
+        <a class="btn-lg ghost" href="/user"><svg class="ico lg"><use href="#i-book"></use></svg>进入用户中心</a>
+      </div>
+    </div>
 
-    <div class="search-card">
+    <div class="hero-panel">
+      <div class="panel-head">
+        <span class="panel-title"><svg class="ico"><use href="#i-search"></use></svg>在线搜题</span>
+        <span class="panel-note">题库直查 · 不扣题数</span>
+      </div>
       <div class="search-box">
-        <div class="search-input-wrap">
-          <textarea class="search-input" id="searchInput" placeholder="把题目粘贴到这里，例如：&#10;下列关于计算机网络的说法，正确的是（　　）&#10;A. ……　B. ……　C. ……　D. ……"></textarea>
+        <textarea class="search-input" id="searchInput" placeholder="把题目粘贴到这里，例如：&#10;下列关于计算机网络的说法，正确的是（　　）&#10;A. ……　B. ……　C. ……　D. ……"></textarea>
+        <div class="search-actions">
+          <span class="search-hint">支持单选 / 多选 / 判断 / 填空 · Ctrl + Enter</span>
+          <button class="btn-search" id="searchBtn" onclick="doSearch()">
+            <svg class="ico"><use href="#i-search"></use></svg><span>立即搜题</span>
+          </button>
         </div>
-        <button class="search-btn" id="searchBtn" onclick="doSearch()">
-          <span class="icon">🔍</span>
-          <span>立即搜题</span>
-        </button>
       </div>
       <div class="search-meta">
-        <div class="search-tips">💡 支持单选 / 多选 / 判断 / 填空，题干越完整匹配越准</div>
         <div class="quota-pill" id="quotaPill" style="display:none"></div>
       </div>
-
-      <!-- 搜索结果 -->
       <div class="result-area" id="resultArea">
         <div class="result-card" id="resultCard"></div>
       </div>
     </div>
-
-    <div class="stats-strip">
-      <div class="stat-item"><div class="stat-num" id="bankTotal">—</div><div class="stat-label">题库题目总数</div></div>
-      <div class="stat-item"><div class="stat-num">30<em>次/天</em></div><div class="stat-label">免费搜索额度</div></div>
-      <div class="stat-item"><div class="stat-num">0<em>扣点</em></div><div class="stat-label">搜题不扣题数</div></div>
-      <div class="stat-item"><div class="stat-num">⚡<em>秒级</em></div><div class="stat-label">题库直达响应</div></div>
-    </div>
   </div>
-</section>
+</header>
 
 <!-- 题库精选 -->
-<section class="section" id="bank">
-  <div class="container">
-    <div class="section-header">
-      <div class="section-tag">题库精选</div>
-      <h2 class="section-title">随机一瞥，看看题库里都有什么</h2>
-      <p class="section-desc">以下题目随机抽取自真实题库，点击即可查看参考答案</p>
+<section class="sec" id="bank">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="tag">题库精选</span>
+      <h2>随机一瞥，看看题库里都有什么</h2>
+      <p>以下题目随机抽取自真实题库，点开即可查看参考答案</p>
     </div>
     <div class="bank-grid" id="bankGrid">
-      <div class="bank-empty" style="grid-column:1/-1">题目加载中…</div>
+      <div class="bank-empty">题目加载中…</div>
     </div>
     <div class="bank-actions">
-      <button class="btn btn-outline" id="refreshBankBtn" onclick="loadRandomQuestions()">🎲 换一批</button>
-    </div>
-  </div>
-</section>
-
-<!-- QQ 频道 -->
-<section class="section" id="channel" style="padding-top:0">
-  <div class="container channel-wrap">
-    <div class="channel-card">
-      <div class="channel-icon">🐧</div>
-      <div class="channel-body">
-        <div class="channel-title">QQ 频道【学神助手】<span class="badge">官方频道</span></div>
-        <div class="channel-desc">
-          脚本更新通知、题库问题反馈、使用交流都在频道里进行。<br>
-          搜不到的题、想提的需求，来频道里喊一声就有人回应。
-        </div>
-        <div class="channel-id">
-          频道号 <code>pd22434767</code>
-          <button class="copy-btn" onclick="copyChannelId(this)">复制</button>
-        </div>
-        <div class="channel-actions">
-          <a class="btn-channel" href="https://pd.qq.com/s/ga2bgmmf8" target="_blank" rel="noopener">🚀 加入频道</a>
-          <button class="btn-channel-ghost" onclick="copyChannelId(this)">📋 复制频道号</button>
-        </div>
-      </div>
+      <button class="btn-ghost" id="refreshBankBtn" onclick="loadRandomQuestions()">
+        <svg class="ico"><use href="#i-refresh"></use></svg><span>换一批</span>
+      </button>
     </div>
   </div>
 </section>
 
 <!-- 使用步骤 -->
-<section class="section" style="background:#fff">
-  <div class="container">
-    <div class="section-header">
-      <div class="section-tag">使用指南</div>
-      <h2 class="section-title">三步搞定搜题</h2>
-      <p class="section-desc">简单到不需要教程</p>
+<section class="sec sec-soft" id="how">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="tag">使用指南</span>
+      <h2>三步搞定搜题</h2>
+      <p>不需要教程，也不扣任何题数点数</p>
     </div>
-    <div class="steps-grid">
-      <div class="step-card">
-        <div class="step-num">🔑</div>
-        <div class="step-title">1. 登录账号</div>
-        <div class="step-desc">右上角登录或注册账号，新用户邮箱验证后即可使用，每日赠送 30 次免费搜题。</div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">01</div>
+        <div class="step-title">登录账号</div>
+        <div class="step-desc">右上角登录或注册，邮箱验证后即可使用。新账号每天赠送 30 次免费搜题额度。</div>
       </div>
-      <div class="step-card">
-        <div class="step-num">📝</div>
-        <div class="step-title">2. 粘贴题目</div>
-        <div class="step-desc">把题干（可带选项）粘贴进搜索框，支持单选、多选、判断、填空等常见题型。</div>
+      <div class="step">
+        <div class="step-num">02</div>
+        <div class="step-title">粘贴题目</div>
+        <div class="step-desc">把题干（建议连选项一起）粘贴进搜索框，支持单选、多选、判断、填空等常见题型。</div>
       </div>
-      <div class="step-card">
-        <div class="step-num">✅</div>
-        <div class="step-title">3. 查看答案</div>
-        <div class="step-desc">命中题库即刻返回参考答案，全程免费，不扣题数点数，答完记得自己核对一遍。</div>
+      <div class="step">
+        <div class="step-num">03</div>
+        <div class="step-title">查看答案</div>
+        <div class="step-desc">命中题库即刻返回参考答案，全程免费不扣题数。答案为题库沉淀，建议自己再核对一遍。</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- 安装学神助手（刷课脚本） -->
-<section class="section" id="install" style="background:#fff">
-  <div class="container">
-    <div class="section-header">
-      <div class="section-tag">安装学神助手</div>
-      <h2 class="section-title">安装刷课脚本，整课托管</h2>
-      <p class="section-desc">自动识别你的脚本管理器与可用线路，点一下直接进安装页；推荐先装脚本猫或油猴</p>
+<!-- 安装脚本 -->
+<section class="sec" id="install">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="tag">学神助手脚本</span>
+      <h2>安装刷课脚本，整课托管</h2>
+      <p>自动识别你的脚本管理器与可用线路，点一下直接进安装页；未装管理器请先装脚本猫或油猴</p>
     </div>
 
     <div class="install-grid">
       <div class="install-panel">
         <h3>一键安装</h3>
-        <p>不用挑版本、不用挑线路：自动认你的脚本管理器（脚本猫 / 油猴），自动选最快能打开的线路，点一下直接进安装页。</p>
+        <p>不用挑版本、不用挑线路：自动识别脚本管理器（脚本猫 / 油猴），自动选最快能打开的线路，点一下直接进安装页。</p>
         <button type="button" class="smart-install" id="smartInstall" disabled>
           <span class="si-main"><span class="si-spin"></span><span id="smartInstallText">正在自动匹配安装方式…</span></span>
           <span class="si-sub" id="smartInstallSub">检测脚本管理器与可用线路</span>
         </button>
         <div class="route-status" id="routeStatus"><span class="dot-spin"></span><span>正在寻找最优线路…</span></div>
+
         <div class="install-note">
-          <div style="font-weight:700;margin-bottom:6px">自动匹配规则</div>
+          <div style="font-weight:700;margin-bottom:6px;color:var(--ink)">自动匹配规则</div>
           管理器：<b>脚本猫</b> 装 xueshen-sc 版，<b>油猴 / Violentmonkey</b> 装 xueshen-gf 版（功能一致，勿装两份）。<br>
-          线路：优先本站；本站打不开（如未开 VPN 被拦）自动改用 GitHub。<br>
+          线路：优先本站；本站打不开时自动改用 GitHub。<br>
           若弹出的是「下载文件」而不是安装页，说明管理器没接管 .user.js，请在管理器设置里打开「.user.js 安装」，或直接点下方对应版本。
         </div>
+
         <details class="route-advanced">
           <summary>其它安装来源 / 手动选择</summary>
           <div class="route-btns" id="routeBtns">
@@ -638,55 +926,71 @@
             <button type="button" class="route-btn checking" data-route="scriptcat" disabled>脚本猫</button>
           </div>
         </details>
-        <div class="manual-links" style="margin-top:14px">
-          <a class="cat" id="manualSc" href="https://xs.openget.cn/xueshen-sc.user.js" target="_blank" rel="noopener">脚本猫版安装</a>
-          <a class="primary" id="manualGf" href="https://xs.openget.cn/xueshen-gf.user.js" target="_blank" rel="noopener">油猴版安装</a>
-          <a href="https://docs.scriptcat.org/" target="_blank" rel="noopener">脚本猫文字教程</a>
+
+        <div class="manual-links">
+          <a class="primary" id="manualGf" href="https://xs.openget.cn/xueshen-gf.user.js" target="_blank" rel="noopener">油猴版直链</a>
+          <a id="manualSc" href="https://xs.openget.cn/xueshen-sc.user.js" target="_blank" rel="noopener">脚本猫版直链</a>
+          <a href="https://docs.scriptcat.org/" target="_blank" rel="noopener">脚本猫教程</a>
           <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener">油猴官网</a>
         </div>
       </div>
 
       <div class="install-panel">
         <h3>兼容与环境</h3>
-        <p style="margin-bottom:10px">Chromium 内核（Edge / Chrome）优先；手机请用下方 Edge 专区。</p>
-        <ul style="padding-left:18px;color:var(--text-secondary);font-size:14px;line-height:1.9;margin:0">
-          <li>推荐脚本猫最新版（国内更稳）</li>
-          <li>首次 AI 答题需登录拿密钥</li>
-          <li>倍速建议 1–2 倍，过高可能清空进度</li>
-          <li>电脑休眠 / 关机后任务会停</li>
+        <p>Chromium 内核（Edge / Chrome）优先，手机请用下方 Edge 专区。</p>
+        <ul class="compat-list">
+          <li><svg class="ico"><use href="#i-check-circle"></use></svg><span>推荐脚本猫最新版，国内更稳</span></li>
+          <li><svg class="ico"><use href="#i-check-circle"></use></svg><span>首次 AI 答题需在用户中心登录拿密钥</span></li>
+          <li><svg class="ico"><use href="#i-check-circle"></use></svg><span>倍速建议 1–2 倍，过高可能清空学习进度</span></li>
+          <li><svg class="ico"><use href="#i-check-circle"></use></svg><span>电脑休眠 / 关机后任务会停，需保持运行</span></li>
         </ul>
       </div>
     </div>
 
     <div class="edge-panel" id="install-edge">
-      <h3>兼容 Edge 手机 APP</h3>
-      <p>脚本可在 Android Edge + 脚本猫下使用。后台挂机可能被系统杀进程，建议保持屏幕常亮、不要切出 APP。</p>
-      <ul>
-        <li>支持桌面版 Edge / Chrome</li>
-        <li>支持 Android Edge（后台能力受限）</li>
-        <li>手机运行时尽量不要最小化</li>
-      </ul>
+      <div>
+        <h3>兼容 Edge 手机 APP</h3>
+        <p>脚本可在 Android Edge + 脚本猫下使用。后台挂机可能被系统杀进程，建议保持屏幕常亮、不要切出 APP。</p>
+      </div>
       <ol class="edge-steps">
         <li><span class="n">1</span><div>Edge APP 底部菜单 → <b>扩展</b></div></li>
         <li><span class="n">2</span><div>启用 <b>脚本猫</b></div></li>
         <li><span class="n">3</span><div>在 APP 内打开本页，点上方「本站安装」或「脚本猫版直链」</div></li>
-        <li><span class="n">4</span><div>若暂停或掉线：保持浏览器在前台，勿切到其它 App</div></li>
+        <li><span class="n">4</span><div>若暂停或掉线：保持浏览器在前台，不要切到其它 App</div></li>
       </ol>
     </div>
 
     <div class="install-tip">
-      <div class="tip-icon">💡</div>
-      <p>安装后打开超星 / 智慧树课程页，左上角出现学神悬浮球即成功。切后台时脚本会尝试静音保活；电脑休眠仍会中断。两个版本功能一致，按管理器选一份即可。</p>
+      <span class="tip-icon"><svg class="ico"><use href="#i-bolt"></use></svg></span>
+      <p>安装后打开超星 / 智慧树课程页，左上角出现学神悬浮球即成功。切后台时脚本会尝试静音保活，电脑休眠仍会中断。两个版本功能一致，按自己的管理器选一份即可。</p>
+    </div>
+  </div>
+</section>
+
+<!-- QQ 频道 -->
+<section class="sec sec-soft" id="channel">
+  <div class="wrap">
+    <div class="channel-card">
+      <div class="channel-icon"><svg class="ico"><use href="#i-chat"></use></svg></div>
+      <div class="channel-body">
+        <div class="channel-title">QQ 频道【学神助手】<span class="badge">官方频道</span></div>
+        <div class="channel-desc">脚本更新通知、题库问题反馈、使用交流都在频道里进行。搜不到的题、想提的需求，来频道里说一声就有人回应。</div>
+        <div class="channel-id">频道号 <code>pd22434767</code><button class="copy-btn" onclick="copyChannelId(this)">复制</button></div>
+        <div class="channel-actions">
+          <a class="btn-channel" href="https://pd.qq.com/s/ga2bgmmf8" target="_blank" rel="noopener">加入频道<svg class="ico"><use href="#i-arrow-right"></use></svg></a>
+          <button class="btn-channel-ghost" onclick="copyChannelId(this)"><svg class="ico"><use href="#i-copy"></use></svg>复制频道号</button>
+        </div>
+      </div>
     </div>
   </div>
 </section>
 
 <!-- FAQ -->
-<section class="section" id="faq">
-  <div class="container">
-    <div class="section-header">
-      <div class="section-tag">常见问题</div>
-      <h2 class="section-title">你可能想知道</h2>
+<section class="sec" id="faq">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="tag">常见问题</span>
+      <h2>你可能想知道</h2>
     </div>
     <div class="faq-list">
       <div class="faq-item">
@@ -695,15 +999,19 @@
       </div>
       <div class="faq-item">
         <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">为什么每天只能搜 30 次？</div>
-        <div class="faq-a"><p>为了保证所有用户都能稳定使用，免费搜题每人每天限 30 次，次日零点自动重置。如果你是刷课脚本用户，脚本内答题不受此限制影响。</p></div>
+        <div class="faq-a"><p>为了保证所有用户都能稳定使用，免费搜题每人每天限 30 次，次日零点自动重置。如果你用刷课脚本，脚本内的答题不受这个额度限制。</p></div>
       </div>
       <div class="faq-item">
         <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">搜不到我的题怎么办？</div>
-        <div class="faq-a"><p>题库仍在持续扩充。建议：1）题干尽量粘贴完整，去掉题号等多余字符；2）换个关键词再试；3）仍搜不到可以到 QQ 频道【学神助手】（频道号 pd22434767）留言反馈，也可以安装学神助手脚本，使用 AI 答题兜底。</p></div>
+        <div class="faq-a"><p>题库仍在持续扩充。建议：题干尽量粘贴完整、去掉题号等多余字符；换个关键分句再试；仍搜不到可以到 QQ 频道【学神助手】（频道号 pd22434767）留言反馈，或者安装学神助手脚本用 AI 兜底作答。</p></div>
       </div>
       <div class="faq-item">
-        <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">这个搜题和学神助手脚本是什么关系？</div>
+        <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">网页搜题和学神助手脚本是什么关系？</div>
         <div class="faq-a"><p>网页搜题是学神助手提供的免费在线服务，与刷课脚本共用同一套题库。脚本额外支持视频倍速、自动答题、AI 兜底等功能，适合整课托管；临时查几道题，用网页搜题就够了。</p></div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">答案一定对吗？</div>
+        <div class="faq-a"><p>题库答案来自模型作答后的沉淀与人工校验，绝大多数可直接使用，但不排除个别题目存在多个版本或答案有偏。你可以直接在搜题结果里点「答案有误」反馈，同一道题被反馈两次后系统会自动停用这条答案并重新生成。</p></div>
       </div>
     </div>
   </div>
@@ -711,19 +1019,30 @@
 
 <!-- 页脚 -->
 <footer class="footer">
-  <div class="container">
-    <div class="footer-links">
-      <a href="#bank">题库精选</a>
-      <a href="#install">安装脚本</a>
-      <a href="https://pd.qq.com/s/ga2bgmmf8" target="_blank" rel="noopener">QQ频道</a>
-      <a href="/user">用户中心</a>
-      <a href="/login">登录</a>
-      <a href="/register">注册</a>
-      <a href="#faq">常见问题</a>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <div class="footer-brand"><img src="/static/icon.jpg" alt="学神助手">学神助手</div>
+        <p class="footer-desc">免费网课搜题与刷课脚本。题库持续扩充，答案仅供参考，请独立完成课业要求内的学习。</p>
+      </div>
+      <div class="footer-col">
+        <h4>产品</h4>
+        <a href="#search">在线搜题</a>
+        <a href="#bank">题库精选</a>
+        <a href="#install">安装脚本</a>
+        <a href="/user">用户中心</a>
+      </div>
+      <div class="footer-col">
+        <h4>支持</h4>
+        <a href="#faq">常见问题</a>
+        <a href="https://pd.qq.com/s/ga2bgmmf8" target="_blank" rel="noopener">QQ 频道</a>
+        <a href="/login">登录</a>
+        <a href="/register">注册</a>
+      </div>
     </div>
     <div class="footer-copy">
-      <p>学神助手 · 免费搜题 · 仅供学习交流使用，答案仅供参考，请独立思考</p>
-      <p style="font-size:12px;color:rgba(255,255,255,.3)">Copyright © 2026 学神助手 Team. All rights reserved.</p>
+      <span>学神助手 · 免费搜题 · 仅供学习交流使用</span>
+      <span>Copyright © 2026 学神助手 Team</span>
     </div>
   </div>
 </footer>
@@ -731,8 +1050,8 @@
 <!-- 登录提示弹窗 -->
 <div class="modal-mask" id="loginModal" onclick="if(event.target===this)closeLoginModal()">
   <div class="modal">
-    <button class="modal-close" onclick="closeLoginModal()">✕</button>
-    <div class="emoji">🔐</div>
+    <button class="modal-close" onclick="closeLoginModal()"><svg class="ico"><use href="#i-x"></use></svg></button>
+    <div class="emoji"><svg class="ico"><use href="#i-lock"></use></svg></div>
     <h3>登录后即可免费搜题</h3>
     <p>搜题完全免费、不扣题数<br>登录账号每天可搜索 30 次</p>
     <div class="modal-actions">
@@ -898,7 +1217,7 @@
 
     var btn = document.getElementById('searchBtn');
     btn.disabled = true;
-    btn.innerHTML = '<span class="icon">⏳</span><span>搜索中…</span>';
+    btn.innerHTML = '<svg class="ico spin"><use href="#i-refresh"></use></svg><span>搜索中…</span>';
 
     fetch('/api/web/search', {
       method: 'POST',
@@ -918,13 +1237,13 @@
         }
         if (res.code === 429) {
           renderQuota({ remaining: 0, limit: res.limit || DAILY_LIMIT });
-          showMiss('🌙', res.msg || '今日免费搜题次数已用完，明天再来吧', '每日 0 点自动重置额度');
+          showMiss('#i-clock', res.msg || '今日免费搜题次数已用完，明天再来吧', '每日 0 点自动重置额度');
           return;
         }
         if (res.code === 200 && res.data) {
           if (res.data.remaining != null) renderQuota({ remaining: res.data.remaining, limit: res.data.limit || DAILY_LIMIT });
           if (res.data.found) showResult(res.data);
-          else showMiss('🔍', '题库暂未收录这道题', '建议题干粘贴完整、去掉题号后重试，或到 QQ 频道反馈收录');
+          else showMiss('#i-search', '题库暂未收录这道题', '建议题干粘贴完整、去掉题号后重试，或到 QQ 频道反馈收录');
           return;
         }
         toast(res.msg || '搜索失败，请稍后再试');
@@ -933,7 +1252,7 @@
       .finally(function () {
         searching = false;
         btn.disabled = false;
-        btn.innerHTML = '<span class="icon">🔍</span><span>立即搜题</span>';
+        btn.innerHTML = '<svg class="ico"><use href="#i-search"></use></svg><span>立即搜题</span>';
       });
   };
 
@@ -953,13 +1272,13 @@
       html +=
         '<div class="result-item"' + (idx > 0 ? ' style="margin-top:16px;padding-top:16px;border-top:1px dashed rgba(148,163,184,.25)"' : '') + '>' +
           '<div class="result-head">' +
-            '<span class="q-tag hit">✓ 题库命中</span>' +
+            '<span class="q-tag hit">题库命中</span>' +
             (m.type ? '<span class="q-tag">' + escapeHtml(typeLabel(m.type)) + '</span>' : '') +
           '</div>' +
           '<div class="result-q">' + escapeHtml(m.question || '') + '</div>' +
           optionsHtml +
           '<div class="answer-box">' +
-            '<div class="answer-label">📖 参考答案</div>' +
+            '<div class="answer-label"><svg class="ico"><use href="#i-book"></use></svg>参考答案</div>' +
             '<div class="answer-text">' + escapeHtml(m.answer || '') + '</div>' +
           '</div>' +
         '</div>';
@@ -974,12 +1293,12 @@
     area.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
-  function showMiss(emoji, title, sub) {
+  function showMiss(iconId, title, sub) {
     var area = document.getElementById('resultArea');
     var card = document.getElementById('resultCard');
     card.innerHTML =
       '<div class="miss-box">' +
-        '<div class="emoji">' + emoji + '</div>' +
+        '<div class="emoji"><svg class="ico"><use href="' + iconId + '"></use></svg></div>' +
         '<p>' + escapeHtml(title) + '</p>' +
         '<p class="sub">' + escapeHtml(sub) + '</p>' +
       '</div>';
@@ -997,7 +1316,7 @@
     var grid = document.getElementById('bankGrid');
     var btn = document.getElementById('refreshBankBtn');
     btn.disabled = true;
-    btn.textContent = '⏳ 抽取中…';
+    btn.textContent = '抽取中…';
     fetch('/api/web/random-questions?count=6')
       .then(function (r) { return r.json(); })
       .then(function (res) {
@@ -1016,7 +1335,7 @@
       })
       .finally(function () {
         btn.disabled = false;
-        btn.textContent = '🎲 换一批';
+        btn.textContent = '换一批';
       });
   };
 
@@ -1039,7 +1358,7 @@
         '<div class="q-card-q">' + escapeHtml(it.question || '') + '</div>' +
         optionsHtml +
         '<div class="q-card-foot">' +
-          '<div class="q-card-answer" id="ans-' + idx + '">📖 ' + escapeHtml(it.answer || '') + '</div>' +
+          '<div class="q-card-answer" id="ans-' + idx + '">' + escapeHtml(it.answer || '') + '</div>' +
           '<button class="toggle-answer" onclick="toggleAnswer(' + idx + ', this)">查看答案</button>' +
         '</div>' +
       '</div>';
@@ -1057,7 +1376,7 @@
     var id = 'pd22434767';
     function done() {
       var old = btn.textContent;
-      btn.textContent = '✓ 已复制';
+      btn.textContent = '已复制';
       toast('频道号已复制：' + id);
       setTimeout(function () { btn.textContent = old; }, 1600);
     }
