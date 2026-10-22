@@ -98,8 +98,10 @@ MODEL_429_DEFAULT_SECONDS = 60  # 默认冷却60秒
 MODEL_NON_VISION = set()
 # 自动答题整体时间预算（秒）：含多模型切换，需小于前端请求超时与 nginx proxy_read_timeout
 ANSWER_TIME_BUDGET = 180
-# 单个模型最多耗时（秒）：防止某个慢/挂掉的模型独占预算，让其他提供商兜底模型有机会被尝试
-MAX_MODEL_BUDGET = 60
+# 单个模型最多耗时（秒）：防止某个慢/挂掉的模型独占预算，让其他提供商兜底模型有机会被尝试。
+# 40 秒是实测折中：总预算 180 秒内至少能试 4 个模型；原来 60 秒时前 3 个慢模型就能把预算吃光，
+# 剩下 8 个兜底模型直接拿到「超出整体时间预算」。
+MAX_MODEL_BUDGET = 40
 DASHBOARD_CACHE = {"time": 0, "data": None}
 DASHBOARD_CACHE_SECONDS = 5
 # 官网直营营收口径：代理商充值（plan_type='dist_recharge'）是压在平台的预存款、属于负债，
@@ -3616,16 +3618,15 @@ def do_openai_compatible_chat(messages, model, api_key, base_url, time_budget=No
                 continue
             return None, f"API HTTP {e.code} (模型:{model}): {err_msg}", 0
         except Exception as e:
+            _is_timeout = isinstance(e, (TimeoutError, socket.timeout)) or (
+                isinstance(e, urllib.error.URLError)
+                and isinstance(getattr(e, "reason", None), (TimeoutError, socket.timeout))
+            ) or "timed out" in str(e).lower()
+            if _is_timeout:
+                # 超时说明上游拥堵：同一个模型再降级重试，大概率还是超时，还会把剩余预算吃光，
+                # 让后面的兜底模型连试的机会都没有。直接返回，交给上层换模型。
+                return None, f"API 请求超时（{attempt_timeout}s 内无响应，模型:{model}）", 0
             if attempt < 2:
-                # 超时类错误：上游慢/网络抖动，退避后再重试（配合逐次放宽的超时时间）
-                if isinstance(e, (TimeoutError, socket.timeout)):
-                    if time_budget is not None:
-                        remaining = time_budget - (time.time() - _budget_start)
-                        sleep_s = min(1 + attempt, max(remaining, 0))
-                    else:
-                        sleep_s = 1 + attempt
-                    if sleep_s > 0:
-                        time.sleep(sleep_s)
                 continue
             return None, f"API 异常: {str(e)}", 0
     return None, "API 请求失败：所有重试均被拒绝，请检查模型名称和接口配置", 0

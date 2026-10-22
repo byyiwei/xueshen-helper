@@ -355,6 +355,20 @@ class Database:
         # 从连接池取连接；调用方 close() 即归还池中复用
         return self._pool.connection()
 
+    # 连接被服务端掐断时 pymysql 会抛 InterfaceError (0, '') / 2006 / 2013。
+    # pooling 的 ping=1 只能探活「取连接时」，取到之后、语句真正执行前仍可能被断，
+    # 这时语句根本没落地，整体重取连接重试一次是安全的（读操作更是幂等）。
+    _CONN_LOST_CODES = (0, 2006, 2013, 2055)
+
+    @classmethod
+    def _is_conn_lost(cls, exc):
+        args = getattr(exc, "args", ()) or ()
+        if args and args[0] in cls._CONN_LOST_CODES:
+            return True
+        msg = str(exc).lower()
+        return ("lost connection" in msg or "server has gone away" in msg
+                or "connection already closed" in msg or "broken pipe" in msg)
+
     def _ensure_connection(self):
         """确保数据库连接可用，MySQL 断线时自动重连"""
         try:
@@ -1051,37 +1065,55 @@ class Database:
             pass
 
     def execute(self, sql, params=()):
-        """执行 SQL"""
-        conn = self._new_mysql_conn()
-        try:
-            cursor = conn.cursor()
-            cursor.execute(sql, _adapt_params(params))
-            conn.commit()
-            return cursor
-        finally:
-            conn.close()
+        """执行 SQL（连接被服务端掐断时自动重取连接重试一次）"""
+        for attempt in range(2):
+            conn = self._new_mysql_conn()
+            try:
+                cursor = conn.cursor()
+                cursor.execute(sql, _adapt_params(params))
+                conn.commit()
+                return cursor
+            except Exception as e:
+                if attempt == 0 and self._is_conn_lost(e):
+                    print(f"[DB] 连接已被服务端断开，重取连接重试一次: {e}", flush=True)
+                    continue
+                raise
+            finally:
+                conn.close()
 
     def fetchone(self, sql, params=()):
-        """查询单条"""
-        conn = self._new_mysql_conn()
-        try:
-            cursor = conn.cursor()
-            cursor.execute(sql, _adapt_params(params))
-            row = cursor.fetchone()
-            return dict(row) if row else None
-        finally:
-            conn.close()
+        """查询单条（连接被服务端掐断时自动重试一次）"""
+        for attempt in range(2):
+            conn = self._new_mysql_conn()
+            try:
+                cursor = conn.cursor()
+                cursor.execute(sql, _adapt_params(params))
+                row = cursor.fetchone()
+                return dict(row) if row else None
+            except Exception as e:
+                if attempt == 0 and self._is_conn_lost(e):
+                    print(f"[DB] 连接已被服务端断开，重取连接重试一次: {e}", flush=True)
+                    continue
+                raise
+            finally:
+                conn.close()
 
     def fetchall(self, sql, params=()):
-        """查询多条"""
-        conn = self._new_mysql_conn()
-        try:
-            cursor = conn.cursor()
-            cursor.execute(sql, _adapt_params(params))
-            rows = cursor.fetchall()
-            return [dict(row) for row in rows]
-        finally:
-            conn.close()
+        """查询多条（连接被服务端掐断时自动重试一次）"""
+        for attempt in range(2):
+            conn = self._new_mysql_conn()
+            try:
+                cursor = conn.cursor()
+                cursor.execute(sql, _adapt_params(params))
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+            except Exception as e:
+                if attempt == 0 and self._is_conn_lost(e):
+                    print(f"[DB] 连接已被服务端断开，重取连接重试一次: {e}", flush=True)
+                    continue
+                raise
+            finally:
+                conn.close()
 
     def _column_exists(self, table, column):
         return bool(self.fetchone(f"SHOW COLUMNS FROM {table} LIKE %s", (column,)))
