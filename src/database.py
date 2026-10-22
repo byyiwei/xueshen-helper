@@ -8,11 +8,25 @@ import os
 import hashlib
 import hmac
 import json
+import re
 import time
 import threading
 from dbutils.pooled_db import PooledDB
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+
+# 全文检索里 MySQL(InnoDB ngram) 对「phrase 词数」有硬上限，超过会抛
+# (191, 'Too many words in a FTS phrase or proximity search')。
+# 实测：80 字正常，150 字开始报错；这里统一压到 60 字并保留原文给 LIKE 兜底。
+_FTS_SAFE_CHARS = 60
+_FTS_STRIP_RE = re.compile(r'[+\-<>()~*"@]+')
+
+
+def _fts_safe_term(keyword):
+    """把任意字符串压成可安全进 MATCH ... AGAINST(BOOLEAN MODE) 的短语。"""
+    text = _FTS_STRIP_RE.sub(" ", (keyword or "").strip())
+    text = " ".join(text.split())
+    return text[:_FTS_SAFE_CHARS]
 
 # ==================== 配置 ====================
 
@@ -5216,10 +5230,12 @@ class Database:
         if keyword:
             # 优先使用全文索引（MATCH AGAINST），大幅提升大数据量搜索性能
             # ngram 分词器支持中文，2字以上可命中
+            # 注意：短语过长会触发 MySQL (191) 错误，统一走 _fts_safe_term 截断
             kw = keyword.strip()
-            if len(kw) >= 2:
+            fts_term = _fts_safe_term(kw) if len(kw) >= 2 else ""
+            if fts_term:
                 where.append(f"(MATCH(question_text, answer) AGAINST({ph} IN BOOLEAN MODE) OR options_text LIKE {ph})")
-                params.extend([kw, f"%{kw}%"])
+                params.extend([fts_term, f"%{kw}%"])
             else:
                 like = f"%{kw}%"
                 where.append(f"(question_text LIKE {ph} OR options_text LIKE {ph} OR answer LIKE {ph})")
@@ -5230,7 +5246,18 @@ class Database:
         sql += " ORDER BY updated_at DESC, id DESC"
         sql += f" LIMIT {ph} OFFSET {ph}"
         params.extend([limit, offset])
-        return self.fetchall(sql, tuple(params))
+        try:
+            return self.fetchall(sql, tuple(params))
+        except Exception as e:
+            # 兜底：万一 ngram 仍判定短语过长，退回纯 LIKE 查询，绝不把 DB 错误抛给业务层
+            if "FTS phrase" not in str(e):
+                raise
+            like = f"%{keyword.strip()}%"
+            sql = ("SELECT id, question_hash, question_text, question_type, options_text, answer, source_model, "
+                   "source_provider, hit_count, created_at, updated_at, last_used_at FROM question_bank "
+                   f"WHERE (question_text LIKE {ph} OR options_text LIKE {ph} OR answer LIKE {ph}) "
+                   f"ORDER BY updated_at DESC, id DESC LIMIT {ph} OFFSET {ph}")
+            return self.fetchall(sql, (like, like, like, limit, offset))
 
     def count_question_bank(self, keyword="", question_hash="", question_type="", is_image=None, source_model=""):
         ph = _ph()
@@ -5255,9 +5282,10 @@ class Database:
             params.append(source_model)
         if keyword:
             kw = keyword.strip()
-            if len(kw) >= 2:
+            fts_term = _fts_safe_term(kw) if len(kw) >= 2 else ""
+            if fts_term:
                 where.append(f"(MATCH(question_text, answer) AGAINST({ph} IN BOOLEAN MODE) OR options_text LIKE {ph})")
-                params.extend([kw, f"%{kw}%"])
+                params.extend([fts_term, f"%{kw}%"])
             else:
                 like = f"%{kw}%"
                 where.append(f"(question_text LIKE {ph} OR options_text LIKE {ph} OR answer LIKE {ph})")
@@ -5265,7 +5293,15 @@ class Database:
         sql = "SELECT COUNT(*) AS total FROM question_bank"
         if where:
             sql += " WHERE " + " AND ".join(where)
-        row = self.fetchone(sql, tuple(params))
+        try:
+            row = self.fetchone(sql, tuple(params))
+        except Exception as e:
+            if "FTS phrase" not in str(e):
+                raise
+            like = f"%{keyword.strip()}%"
+            sql = ("SELECT COUNT(*) AS total FROM question_bank "
+                   f"WHERE (question_text LIKE {ph} OR options_text LIKE {ph} OR answer LIKE {ph})")
+            row = self.fetchone(sql, (like, like, like))
         return int(row.get("total", 0) if row else 0)
 
     def list_question_bank_models(self):
