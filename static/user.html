@@ -4118,20 +4118,37 @@
                 } finally { this.loading = false; }
             }
             _render() {
-                const dispW = this.box.clientWidth || this.track.clientWidth || this.w;
-                const scale = dispW / this.w;
                 const pid = this._uid('piece');
                 this.box.innerHTML = '<img class="puzzle-bg" src="' + this.bg + '" draggable="false">' +
                     '<img class="puzzle-piece-img" id="' + pid + '" src="' + this.piece + '" draggable="false">';
                 this.pieceEl = $(pid);
-                this.pieceEl.style.width = (this.pieceSize * scale) + 'px';
-                this.pieceEl.style.height = (this.pieceSize * scale) + 'px';
-                this._posPiece();
+                // 首帧版面还没定型（弹窗动画、图片未解码）就量宽度，会把比例算错，
+                // 拼图尺寸与缺口对不上 —— 表现为「第一次滑对了却说错，第二次才对」。
+                const self = this;
+                const token = this.token;
+                let tries = 0;
+                const settle = () => {
+                    if (!self.pieceEl || self.token !== token) return;
+                    const bg = self.box.querySelector('.puzzle-bg');
+                    const ready = !bg || (bg.complete && bg.naturalWidth > 0);
+                    if (self.box.clientWidth > 0 && ready) { self._posPiece(); return; }
+                    if (++tries < 60) { requestAnimationFrame(settle); return; }
+                    self._posPiece();
+                };
+                const bgImg = this.box.querySelector('.puzzle-bg');
+                if (bgImg && !bgImg.complete) {
+                    bgImg.addEventListener('load', settle);
+                    bgImg.addEventListener('error', settle);
+                }
+                requestAnimationFrame(settle);
             }
             _posPiece() {
                 if (!this.pieceEl) return;
                 const dispW = this.box.clientWidth || this.w;
                 const scale = dispW / this.w;
+                // 尺寸也按当前比例重算：宽度后到时不能继续用首帧的旧尺寸
+                this.pieceEl.style.width = (this.pieceSize * scale) + 'px';
+                this.pieceEl.style.height = (this.pieceSize * scale) + 'px';
                 const maxX = Math.max(0, this.w - this.pieceSize);
                 const frac = maxX > 0 ? this.x / maxX : 0;
                 this.pieceEl.style.left = (frac * (dispW - this.pieceSize * scale)) + 'px';
@@ -4143,11 +4160,15 @@
                 if (this.verified || !this.token) return;
                 this.dragging = true;
                 const self = this;
+                const startPoint0 = e.touches ? e.touches[0] : e;
+                const thumbRect0 = this.thumb.getBoundingClientRect();
+                // 用户按住滑块的位置不一定是左边缘，按实际抓取点换算，避免整段位移偏 0~32px
+                const grabDx = Math.max(0, Math.min(32, startPoint0.clientX - thumbRect0.left));
                 const move = (ev) => {
                     if (!self.dragging) return;
                     const point = ev.touches ? ev.touches[0] : ev;
                     const rect = self.track.getBoundingClientRect();
-                    const frac = Math.max(0, Math.min(1, (point.clientX - rect.left - 16) / Math.max(1, rect.width - 32)));
+                    const frac = Math.max(0, Math.min(1, (point.clientX - rect.left - grabDx) / Math.max(1, rect.width - 32)));
                     self.x = Math.round(frac * Math.max(0, self.w - self.pieceSize));
                     self._posPiece();
                 };
