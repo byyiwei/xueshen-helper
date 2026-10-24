@@ -4050,8 +4050,10 @@ def build_ai_messages(question_payload_str, force_text_only=False, deadline=None
         for u in _collect_html_image_urls(info):
             if u not in uploaded and u not in images:
                 images.append(u)
-        if len(images) > 16:
-            raise ValueError("题目图片超过16张，请拆分后重试；未截断图片作答")
+        # 超长组合题可能出现几十张图，直接报错会让整题答不出来；
+        # 放宽到 32 张，仍超出时只记日志不拦截，交给模型尽力作答
+        if len(images) > 32:
+            print(f"[build_ai_messages] 题目图片 {len(images)} 张，超过32张软上限，继续作答", flush=True)
     system_prompt = (
         "你是答题助手，只输出最终答案，禁止输出任何解释、分析、思考过程或中间步骤。\n"
         "规则：\n"
