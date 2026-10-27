@@ -1,12 +1,13 @@
 // ==UserScript==
-// @name         学习通学神助手｜超星·智慧树全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试
+// @name         学习通学神助手｜超星·智慧树·知到全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试｜网课助手
 // @namespace    IPYIWEI
 // @version      5.5.2
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @author       IPYIWEI
-// @description  超星学习通/智慧树自动学习助手｜DeepSeek AI智能辅助学习｜视频倍速学习｜自动切换任务点｜作业考试全自动｜字体加密解析｜海量题库每日更新
-// @description:zh-CN 超星学习通/智慧树自动学习助手｜DeepSeek AI智能辅助学习｜视频倍速学习｜自动切换任务点｜作业考试全自动｜字体加密解析｜海量题库每日更新
+// @keywords     学习通,超星,智慧树,知到,zhihuishu,chaoxing,网课,刷课,题库,搜题,AI答题,作业,考试,倍速
+// @description  超星学习通/智慧树(知到)自动学习助手｜DeepSeek AI智能辅助学习｜视频倍速学习｜自动切换任务点｜作业考试全自动｜字体加密解析｜海量题库每日更新｜网课答案
+// @description:zh-CN 超星学习通/智慧树(知到)自动学习助手｜DeepSeek AI智能辅助学习｜视频倍速学习｜自动切换任务点｜作业考试全自动｜字体加密解析｜海量题库每日更新｜网课答案
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
