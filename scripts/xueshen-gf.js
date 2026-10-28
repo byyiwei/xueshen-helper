@@ -2373,7 +2373,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               class: "answer-detail"
             }, [
               (vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(vue.unref(currentIndex), (index) => {
-                var _a, _b, _c;
+                var _a, _b, _c, _d;
                 return vue.openBlock(), vue.createElementBlock("div", {
                   class: "answer-item",
                   key: index
@@ -2392,6 +2392,10 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                         innerHTML: (_b = (_a = vue.unref(questionList)[index - 1].answer) == null ? void 0 : _a.answer) == null ? void 0 : _b.join()
                       }, null, 8, _hoisted_15),
                       ((_c = vue.unref(questionList)[index - 1].answer) == null ? void 0 : _c.code) === 0 ? (vue.openBlock(), vue.createElementBlock("div", _hoisted_16, "有答案（不完全匹配），请手动选择")) : vue.createCommentVNode("", true),
+                      ((_d = vue.unref(questionList)[index - 1].answer) == null ? void 0 : _d.msg) ? (vue.openBlock(), vue.createElementBlock("div", {
+                        key: 1,
+                        style: { "color": "var(--t-text3)", "font-size": "12px", "margin-top": "2px", "word-break": "break-all" }
+                      }, vue.toDisplayString(_d.msg), 1)) : vue.createCommentVNode("", true),
                       (vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList((_a = vue.unref(questionList)[index - 1].answer) === null || _a === void 0 ? void 0 : _a.candidates, (cand, candIdx) => {
                         return vue.openBlock(), vue.createElementBlock("div", {
                           key: "cand-" + candIdx,
