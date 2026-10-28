@@ -14197,13 +14197,15 @@ const XS_EXT = (() => {
   /** 把后端返回的答案数组转成青书的选项字母 */
   function qsResolveLabels(question, answers) {
     const labels = question.options.map((item) => item.label);
+    // 页面选项是复选框时按多选题处理，避免题型文字没识别出来把多选当成单选只填一个
+    const multiDom = question.options.some((opt) => opt.input && String(opt.input.type || '').toLowerCase() === 'checkbox');
     const raw = (Array.isArray(answers) ? answers : [answers]).map((item) => extText(item)).filter(Boolean);
     if (!raw.length) return [];
     const joined = raw.join('');
     const letterOnly = joined.replace(/^(参考答案|正确答案|答案)\s*[:：]\s*/i, '').toUpperCase();
     if (/^[A-Z]+$/.test(letterOnly) && letterOnly.split('').every((ch) => labels.includes(ch))) {
       const unique = Array.from(new Set(letterOnly.split('')));
-      if (question.type !== '1' && unique.length > 1) return [];
+      if (question.type !== '1' && !multiDom && unique.length > 1) return [];
       return unique;
     }
     const hits = [];
@@ -14212,7 +14214,7 @@ const XS_EXT = (() => {
       const matched = question.options.find((opt) => qsCleanOption(opt.content) === key);
       if (matched) hits.push(matched.label);
     }
-    if (hits.length && (question.type === '1' || hits.length === 1)) return Array.from(new Set(hits));
+    if (hits.length && (question.type === '1' || multiDom || hits.length === 1)) return Array.from(new Set(hits));
     if (question.type === '3') {
       const truth = /^(对|正确|是|√|✓|T|TRUE|Y|1)$/i.test(qsCleanOption(joined));
       const falsey = /^(错|错误|否|×|✗|F|FALSE|N|0)$/i.test(qsCleanOption(joined));
@@ -14581,17 +14583,40 @@ const XS_EXT = (() => {
 
   function ctAnswerLetters(answer, options) {
     const labels = options.map((opt) => opt.label);
-    const raw = String(answer || '').toUpperCase().replace(/^(参考答案|正确答案|答案)\s*[:：]\s*/i, '');
+    const srcList = (Array.isArray(answer) ? answer : [answer]).map((x) => String(x == null ? '' : x).trim()).filter(Boolean);
+    const raw = srcList.join(',').toUpperCase().replace(/^(参考答案|正确答案|答案)\s*[:：]\s*/i, '');
     if (/^[A-Z](?:\s*[,，、;；|]?\s*[A-Z])*$/.test(raw)) {
       const letters = Array.from(new Set(raw.match(/[A-Z]/g) || []));
       if (letters.every((letter) => labels.includes(letter))) return letters;
     }
     const hits = [];
-    String(answer || '').split(/[\s,，、;；|]+/).filter(Boolean).forEach((part) => {
-      const found = options.find((opt) => qsCleanOption(opt.content) === qsCleanOption(part));
-      if (found) hits.push(found.label);
+    const addLabel = (label) => { if (label && !hits.includes(label)) hits.push(label); };
+    const matchPart = (part) => {
+      const key = qsCleanOption(part);
+      if (!key) return false;
+      const found = options.find((opt) => qsCleanOption(opt.content) === key);
+      if (!found) return false;
+      addLabel(found.label);
+      return true;
+    };
+    srcList.forEach((item) => {
+      if (matchPart(item)) return;
+      // "A. 选项正文"：字母与选项正文都对得上就按字母点，避免多选题只认到一项
+      const m = item.match(/^([A-Za-z])\s*[.、．)）:：]\s*(\S[\s\S]*)$/);
+      if (m && labels.includes(m[1].toUpperCase())) {
+        const letter = m[1].toUpperCase();
+        const opt = options.find((o) => o.label === letter);
+        const optClean = opt ? qsCleanOption(opt.content) : '';
+        const bodyClean = qsCleanOption(m[2]);
+        if (!optClean || !bodyClean || optClean.includes(bodyClean) || bodyClean.includes(optClean)) {
+          addLabel(letter);
+          return;
+        }
+      }
+      // 同一条里塞了多个答案（"A、B"）：最后才按分隔符拆
+      item.split(/[\s,，、;；|]+/).filter(Boolean).forEach((part) => { matchPart(part); });
     });
-    return Array.from(new Set(hits));
+    return hits;
   }
 
   function ctVisible(el) {
@@ -14762,7 +14787,7 @@ const XS_EXT = (() => {
           continue;
         }
         const answers = Array.isArray(result.data.answer) ? result.data.answer : [result.data.answer];
-        const letters = ctAnswerLetters(answers.join(''), options);
+        const letters = ctAnswerLetters(answers, options);
         pending.push({ index, letters, textAnswer: extText(answers.join('、')).slice(0, 60) });
         done += 1;
       }
