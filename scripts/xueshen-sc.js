@@ -15,7 +15,7 @@
 // @changelog    1. 新增「青书学堂」支持：课件学习时长接口上报、作业自动作答（默认只保存不交卷）
 // @changelog    2. 新增「出头科技」支持：章节学习时长上报、考试自动作答并逐题核对（交卷需手动）
 // @changelog    3. 两个新平台均为接口直通，超星 / 智慧树 原有功能不受影响
-// @changelog    4. 修复智慧树多选题只答一项：题型统一归一化，题型缺失时按页面复选框识别多选，不再当单选处理
+// @changelog    4. 修复智慧树多选题答不全：题型统一归一化、按页面复选框识别多选，选项逐项点击并回读确认，不再漏选
 // @changelog    v5.5.2 (2026-10-27)
 // @changelog    1. 适配智慧树新版前端检测：视频倍速钳制 1.8x（平台红线）、考试页 XHR hook 原生伪装，答题/视频页不再弹「检测到异常脚本」
 // @changelog    1. 「手动选择」新增处理方式：等待我选择后继续 / 跳过此题（不自动提交）
@@ -12770,6 +12770,7 @@
           optionsText,
           options,
           optionEls,
+          optionSelector: profile2.options,
           answer: { code: -1, answer: [] },
           workType: "zhs",
           refer: location.href,
@@ -12821,36 +12822,58 @@
         inputs.map((i) => isInputChecked(i) ? 1 : 0).join("")
       ].join("|");
     };
-    // 只点一次：多选题是切换语义，补点第二下会把已勾的取消掉（表现就是最后答不完整）。
-    // 有没有点上，交给后面的复核轮次统一纠正。
-    const clickChoiceOption = (el) => {
-      if (!el) return false;
-      if (choiceOptionSelected(el)) return true;
-      const before = choiceOptionSig(el);
-      try {
-        el.click();
-      } catch (_) {
-      }
-      return choiceOptionSelected(el) || choiceOptionSig(el) !== before;
-    };
     // 答案可能是「A. 正文, B. 正文…」这样被拼成一条的：先按「字母+分隔符」拆成多项，
     // 否则多选题只会认到其中一项（其余选项匹配不上，表现就是只勾一个）
     const normalizeChoiceAnswerList = (answers) => {
       const list = (Array.isArray(answers) ? answers : [answers]).map((a) => String(a == null ? "" : a).trim()).filter(Boolean);
-      if (list.length !== 1) return list;
-      const parts = list[0].split(/(?=[A-Za-z]\s*[.、．)）:：]\s*\S)/)
-        .map((s) => s.replace(/^[,，、;；\s]+/, "").trim()).filter(Boolean);
-      const allPrefixed = parts.length > 1 && parts.every((p) => /^[A-Za-z]\s*[.、．)）:：]/.test(p));
-      return allPrefixed ? parts : list;
+      // 每一项都试着拆：后端偶尔会把两三选项挤在同一条里（"D.甲 E.乙"），只拆整条拼串的那种会漏
+      const splitItem = (text) => {
+        const parts = text.split(/(?=[A-Za-z]\s*[.、．)）:：]\s*\S)/)
+          .map((s) => s.replace(/^[,，、;；\s]+/, "").trim()).filter(Boolean);
+        const allPrefixed = parts.length > 1 && parts.every((p) => /^[A-Za-z]\s*[.、．)）:：]/.test(p));
+        return allPrefixed ? parts : [text];
+      };
+      const out = [];
+      list.forEach((item) => {
+        splitItem(item).forEach((part) => {
+          if (!out.includes(part)) out.push(part);
+        });
+      });
+      return out;
     };
     const fillChoice = async (question, answers) => {
       var _a2;
       answers = normalizeChoiceAnswerList(answers);
+      const optionSelector = question.optionSelector || "";
+      const pickOptions = (root) => queryAllSafe(root, optionSelector).filter((option) => {
+        if (cleanText(option.textContent)) return true;
+        return !!(option.querySelector && option.querySelector("img"));
+      });
       const optionEls = ((_a2 = question.optionEls) == null ? void 0 : _a2.length) ? question.optionEls : Array.from(
-        question.element.querySelectorAll(
+        (question.element || document).querySelectorAll(
           ".optionUl label, label.user-select.group, .radio-view li.clearfix, .checkbox-views label.el-checkbox, label, [role='radio'], [role='checkbox']"
         )
       );
+      const questionRoot = () => {
+        const root = question.element;
+        return root && root.isConnected !== false ? root : document;
+      };
+      // 页面每勾一项都可能重新渲染，点击前按索引重新取一次，避免点在被替换掉的旧节点上（旧节点点了没反应，就会漏选）
+      const resolveOption = (idx) => {
+        const root = questionRoot();
+        if (optionSelector && root && root.querySelectorAll) {
+          const live = pickOptions(root);
+          if (live.length === optionEls.length && live[idx]) return live[idx];
+        }
+        const cached = optionEls[idx];
+        if (cached && cached.isConnected !== false) return cached;
+        const want = normalize((cached && cached.textContent) || "");
+        if (optionSelector && want) {
+          const hit = queryAllSafe(document, optionSelector).find((node) => normalize(node.textContent) === want);
+          if (hit) return hit;
+        }
+        return null;
+      };
       let selected = false;
       const normalizedAnswers = answers.map((answer) => normalize(answer));
       const judgementAnswer = normalizedAnswers[0];
@@ -12894,6 +12917,21 @@
       // 逐字母映射：越界的那个字母匹配不到选项自然跳过，不再一票否决整组字母答案
       const letterMappingOk = letterAnswers.length > 0;
       const isMultiChoice = question.type === "多选题" || /多选|X型|不定项/.test(question.type || "");
+      // 最长公共片段占较短一方的比例：答案和选项文字只有标点、截断、全半角这类小差异时也能对上
+      const lcsRatio = (a, b) => {
+        if (!a || !b) return 0;
+        const shortText = a.length <= b.length ? a : b;
+        const longText = a.length <= b.length ? b : a;
+        let best = 0;
+        for (let i = 0; i < shortText.length; i += 1) {
+          for (let j = i + best + 1; j <= shortText.length; j += 1) {
+            const piece = shortText.slice(i, j);
+            if (longText.includes(piece)) best = piece.length;
+            else break;
+          }
+        }
+        return best / shortText.length;
+      };
       // 先算出「应该勾哪几项」，再统一去点：多选题点一下是勾、点两下是取消，
       // 边点边判很容易把已经勾上的又点掉，最后就缺项
       const targetIdx = new Set();
@@ -12932,30 +12970,68 @@
               }
             }
           }
-          if (matched) targetIdx.add(idx);
+          if (matched) {
+            targetIdx.add(idx);
+            return;
+          }
+        }
+        // 模糊兜底：答案文字和选项文字差一点点（截断、标点、全半角、多空格）就漏选，
+        // 多选题最容易出现「答了 5 个只勾上 3 个」，这里按公共片段占比再认一次
+        if (optionText.length >= 4 && normalizedAnswers.some((answer) => answer.length >= 4 && lcsRatio(optionText, answer) >= 0.85)) {
+          targetIdx.add(idx);
         }
       });
-      // 分轮复核：点一次 → 等一下读真实选中态 → 还不对再点，最多三轮
-      const sigBefore = /* @__PURE__ */ new Map();
-      for (let round = 0; round < 3; round += 1) {
-        let mismatch = false;
-        optionEls.forEach((option, idx) => {
-          const want = targetIdx.has(idx);
-          const now = choiceOptionSelected(option);
-          const sig = choiceOptionSig(option);
-          if (isMultiChoice ? want !== now : (want && !now)) {
-            // 上一轮点完状态已经变了、但仍判为未选中：是读取口径的问题，不能重复点，
-            // 多选再点一次会把已勾的取消掉
-            if (round > 0 && sigBefore.get(idx) !== void 0 && sigBefore.get(idx) !== sig) return;
-            mismatch = true;
-            sigBefore.set(idx, sig);
-            clickChoiceOption(option);
-          }
+      const letterOf = (idx) => String.fromCharCode(65 + idx);
+      const lettersFrom = (set) => Array.from(set).map(letterOf).sort().join("");
+      const selectedLetters = () => {
+        const out = [];
+        optionEls.forEach((_, idx) => {
+          const el = resolveOption(idx);
+          if (el && choiceOptionSelected(el)) out.push(letterOf(idx));
         });
-        if (!mismatch) break;
-        await sleep(round === 0 ? 0.15 : 0.3);
+        return out.sort().join("");
+      };
+      // 逐项设置：点一次 → 等一下 → 回读页面真实选中态，只有确实没生效才补点，已生效绝不重复点
+      const setOption = async (idx, want) => {
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          const el = resolveOption(idx);
+          if (!el) return false;
+          if (choiceOptionSelected(el) === want) return true;
+          const sig = choiceOptionSig(el);
+          let clicked = false;
+          try {
+            el.click();
+            clicked = true;
+          } catch (_) {
+          }
+          await sleep(attempt === 0 ? 0.12 : 0.25);
+          const after = resolveOption(idx);
+          if (!after) return false;
+          if (choiceOptionSelected(after) === want) return true;
+          // 页面不暴露勾选态（只改颜色、不写 checked 类名）时，签名变了就当点上了，不能重复点
+          if (clicked && choiceOptionSig(after) !== sig) return true;
+        }
+        return false;
+      };
+      const indexes = optionEls.map((_, idx) => idx);
+      const applied = /* @__PURE__ */ new Set();
+      // 先勾该勾的，再取消不该勾的：多选题是切换语义，顺序反了会把刚勾上的又取消
+      for (const idx of indexes) {
+        if (!targetIdx.has(idx)) continue;
+        if (await setOption(idx, true)) applied.add(idx);
       }
-      return Array.from(targetIdx).some((idx) => optionEls[idx] && choiceOptionSelected(optionEls[idx]));
+      if (isMultiChoice) {
+        for (const idx of indexes) {
+          if (targetIdx.has(idx)) continue;
+          await setOption(idx, false);
+        }
+      }
+      const targets = lettersFrom(targetIdx);
+      const actual = selectedLetters();
+      if (targets && actual && actual !== targets) {
+        log.insertLog(`本题答案 ${targets}，实际只点上 ${actual}${targets.length > actual.length ? "（有选项没点上去）" : ""}`, "warning", 6);
+      }
+      return Array.from(targetIdx).some((idx) => actual.includes(letterOf(idx)) || applied.has(idx));
     };
     const fillQuestion = async (question) => {
       var _a2;
