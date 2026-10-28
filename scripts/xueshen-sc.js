@@ -15,6 +15,7 @@
 // @changelog    1. 新增「青书学堂」支持：课件学习时长接口上报、作业自动作答（默认只保存不交卷）
 // @changelog    2. 新增「出头科技」支持：章节学习时长上报、考试自动作答并逐题核对（交卷需手动）
 // @changelog    3. 两个新平台均为接口直通，超星 / 智慧树 原有功能不受影响
+// @changelog    4. 修复智慧树多选题只答一项：题型统一归一化，题型缺失时按页面复选框识别多选，不再当单选处理
 // @changelog    v5.5.2 (2026-10-27)
 // @changelog    1. 适配智慧树新版前端检测：视频倍速钳制 1.8x（平台红线）、考试页 XHR hook 原生伪装，答题/视频页不再弹「检测到异常脚本」
 // @changelog    1. 「手动选择」新增处理方式：等待我选择后继续 / 跳过此题（不自动提交）
@@ -2703,6 +2704,45 @@
     }
     return "";
   };
+  // 题型归一化：平台给的题型常带修饰（如「多项选择题」「多选题(2分)」），
+  // 统一成后端认识的规范名称，避免多选被当成单选、只答一项
+  const XS_TYPE_RULES = [
+    { keywords: ["多选", "多项选择", "不定项", "X型"], name: "多选题" },
+    { keywords: ["判断", "是非"], name: "判断题" },
+    { keywords: ["填空", "完型", "完形"], name: "填空题" },
+    { keywords: ["名词解释"], name: "名词解释" },
+    { keywords: ["连线", "匹配"], name: "连线题" },
+    { keywords: ["阅读理解"], name: "阅读理解" },
+    { keywords: ["简答"], name: "简答题" },
+    { keywords: ["论述"], name: "论述题" },
+    { keywords: ["计算"], name: "计算题" },
+    { keywords: ["单选", "单项选择", "A1型", "A2型", "A3型"], name: "单选题" }
+  ];
+  const normalizeQuestionTypeName = (type) => {
+    const raw = String(type == null ? "" : type).trim();
+    if (!raw) return "";
+    if (/^\d{1,3}$/.test(raw)) return raw;
+    if (/^[a-zA-Z]{3,}$/.test(raw)) return raw;
+    const hit = XS_TYPE_RULES.find((rule) => rule.keywords.some((keyword) => raw.includes(keyword)));
+    return hit ? hit.name : raw;
+  };
+  // 题型文字缺失或不准时的兜底：题目区域内出现复选框样式就按多选题处理，
+  // 否则多选会被当成单选，只填一个选项
+  const detectMultiChoiceDom = (root) => {
+    if (!root || !root.querySelector) return false;
+    if (root.nodeType === 9) return false;   // document 级容器会扫到别题的控件，不能作为依据
+    try {
+      if (root.querySelector("input[type='radio'], [role='radio']")) return false;
+      if (root.querySelector("input[type='checkbox'], [role='checkbox']")) return true;
+      const nodes = root.querySelectorAll("[class*='option'], [class*='Option'], label, li, [class*='checkbox']");
+      for (const node of nodes) {
+        const cls = String((node && node.className) || "");
+        if (/el-checkbox-group|checkbox-views|checkbox-list|is-checkbox/i.test(cls)) return true;
+      }
+    } catch (_) {
+    }
+    return false;
+  };
   const normalizeLocalBackendAnswers = (answer) => {
     if (Array.isArray(answer)) return answer.map((x) => String(x).trim()).filter(Boolean);
     const text = String(answer || "").replace(/。$/, "").trim();
@@ -2783,7 +2823,7 @@
     return JSON.stringify({
       question: question.title || "",
       options: question.optionsText || [],
-      type: question.type || "",
+      type: normalizeQuestionTypeName(question.type),
       platform: "abc-helper",
       refer: question.refer || location.href
     });
@@ -2942,7 +2982,7 @@
     const payloadObj = {
       question: question.title || "",
       options: question.optionsText || [],
-      type: question.type || "",
+      type: normalizeQuestionTypeName(question.type),
       platform: "abc-helper",
       refer: question.refer || location.href
     };
@@ -10469,6 +10509,9 @@
         const optionsDOM = document.querySelectorAll(".subject_node")[index].querySelectorAll(".node_detail");
         const normalizeOptText = (str) => String(str ?? "").replace(/^[A-Z][.、．]\s*/i, "").replace(/\s+/g, "").replace(/[^\p{L}\p{N}√×]/gu, "").toLowerCase();
         if (question.type === "单选题" || question.type === "多选题" || /多选|X型|不定项/.test(question.type || "")) {
+          // 先把命中的选项序号收齐再去点，避免同一选项被点两次（多选题再点一次会取消勾选，
+          // 表现就是「多选题只答一个」）
+          const pickedIdx = new Set();
           question.answer.answer.forEach((answer) => {
             // 字母答案映射：A / ABD / A,B,D → 按选项序号勾选
             const letterText = String(answer || "").trim();
@@ -10478,23 +10521,24 @@
             else if (/^[A-Z](?:[\s,，、;；|]+[A-Z])+$/i.test(letterText)) letters = letterText.toUpperCase().split(/[\s,，、;；|]+/).filter(Boolean);
             optionsDOM.forEach((optionDOM, optIdx) => {
               if (letters.length) {
-                if (letters.includes(String.fromCharCode(65 + optIdx))) {
-                  isSelected = true;
-                  optionDOM.click();
-                }
+                if (letters.includes(String.fromCharCode(65 + optIdx))) pickedIdx.add(optIdx);
                 return;
               }
               const optionText = this.removeHtml(optionDOM.innerHTML);
               const nAnswer = normalizeOptText(answer);
               const nOption = normalizeOptText(optionText);
               if (answer == optionText || this.removeAllTags(answer) == this.removeAllTags(optionText) || (nAnswer.length >= 2 && nOption && nOption.includes(nAnswer))) {
-                isSelected = true;
-                optionDOM.click();
+                pickedIdx.add(optIdx);
               } else if (imgSrcsMatch(collectImgSrcs(answer), collectImgSrcs(optionDOM).concat(collectImgSrcs(optionText)))) {
-                isSelected = true;
-                optionDOM.click();
+                pickedIdx.add(optIdx);
               }
             });
+          });
+          Array.from(pickedIdx).sort((a, b) => a - b).forEach((optIdx) => {
+            const optionDOM = optionsDOM[optIdx];
+            if (!optionDOM) return;
+            isSelected = true;
+            optionDOM.click();
           });
         } else if (question.type === "判断题") {
           let answer = "对";
@@ -10530,7 +10574,9 @@
       __publicField(this, "addQuestions", (questions) => {
         questions.forEach((question) => {
           const questionTitle = this.removeHtml(question.name);
-          const questionType = question.questionType.name;
+          const rawType = question && question.questionType;
+          const apiTypeText = rawType && typeof rawType === "object" ? (rawType.name || rawType.code || "") : rawType;
+          let questionType = normalizeQuestionTypeName(apiTypeText);
           const [optionsObject, optionTexts] = this.extractOptions(
             question.questionOptions,
             questionType
@@ -10538,8 +10584,11 @@
           const subjectNodes = (this._document && this._document.querySelectorAll)
             ? this._document.querySelectorAll(".subject_node")
             : [];
+          const subjectNode = subjectNodes[this.questions.length] || this._document || null;
+          // 接口给的题型为空或写成单选、但页面选项是复选框时按多选题处理，避免只填一个选项
+          if ((!questionType || questionType === "单选题") && detectMultiChoiceDom(subjectNode)) questionType = "多选题";
           this.questions.push({
-            element: subjectNodes[this.questions.length] || this._document || null,
+            element: subjectNode,
             type: questionType,
             title: questionTitle,
             optionsText: optionTexts,
@@ -12649,9 +12698,13 @@
       const matched = TYPE_TEXT_MAP.find(
         ({ keywords }) => keywords.some((keyword) => rawText.includes(keyword))
       );
-      if (matched == null ? void 0 : matched.type) return matched.type;
-      if (root.querySelector("input[type=checkbox]")) return "多选题";
-      if (root.querySelector("input[type=radio]")) return "单选题";
+      const domMulti = detectMultiChoiceDom(root);
+      if (matched == null ? void 0 : matched.type) {
+        // 题型文字写的是单选、页面却是复选框：以页面控件为准，否则多选只答一项
+        if (domMulti && matched.type === "单选题") return "多选题";
+        return matched.type;
+      }
+      if (domMulti) return "多选题";
       return "单选题";
     };
     const toApiQuestion = (question) => ({
@@ -12968,9 +13021,9 @@
           {
             ...domQuestion,
             ...apiQuestion,
-            type: (domQuestion.element && domQuestion.element.querySelector && domQuestion.element.querySelector("input[type=checkbox]"))
+            type: detectMultiChoiceDom(domQuestion.element)
               ? "多选题"
-              : (apiQuestion.type || domQuestion.type),
+              : (normalizeQuestionTypeName(apiQuestion.type || domQuestion.type) || "单选题"),
             title: apiQuestion.title || domQuestion.title,
             optionsText: ((_a2 = apiQuestion.optionsText) == null ? void 0 : _a2.length) ? apiQuestion.optionsText : domQuestion.optionsText || [],
             options: Object.keys(apiQuestion.options || {}).length ? apiQuestion.options : domQuestion.options || {},
