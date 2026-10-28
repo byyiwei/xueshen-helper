@@ -2823,7 +2823,7 @@
     return JSON.stringify({
       question: question.title || "",
       options: question.optionsText || [],
-      type: normalizeQuestionTypeName(question.type),
+      type: question.type || "",
       platform: "abc-helper",
       refer: question.refer || location.href
     });
@@ -2982,7 +2982,7 @@
     const payloadObj = {
       question: question.title || "",
       options: question.optionsText || [],
-      type: normalizeQuestionTypeName(question.type),
+      type: question.type || "",
       platform: "abc-helper",
       refer: question.refer || location.href
     };

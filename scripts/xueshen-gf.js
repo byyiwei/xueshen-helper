@@ -2826,7 +2826,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     return JSON.stringify({
       question: question.title || "",
       options: question.optionsText || [],
-      type: normalizeQuestionTypeName(question.type),
+      type: question.type || "",
       platform: "abc-helper",
       refer: question.refer || location.href
     });
@@ -2985,7 +2985,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     const payloadObj = {
       question: question.title || "",
       options: question.optionsText || [],
-      type: normalizeQuestionTypeName(question.type),
+      type: question.type || "",
       platform: "abc-helper",
       refer: question.refer || location.href
     };
