@@ -3507,11 +3507,24 @@ def normalize_ai_answer(question, answer):
     cleaned = re.sub(r"^\s*[A-Z]\s*[:：、.．)]\s*", "", text).strip()
     return cleaned or text
 
+def _normalize_openai_base_url(base_url):
+    """Base URL 统一成「到版本号为止」的地址。
+    常见填错：把完整接口地址（.../v2/chat/completions）填进 Base URL，
+    代码再拼一次就成了 .../chat/completions/chat/completions，上游返回 404 page not found。"""
+    url = str(base_url or "").strip().rstrip("/")
+    for suffix in ("/chat/completions", "/completions"):
+        if url.lower().endswith(suffix):
+            url = url[: -len(suffix)].rstrip("/")
+            break
+    return url
+
+
 def do_openai_compatible_chat(messages, model, api_key, base_url, time_budget=None):
     if not api_key:
         return None, "API Key 为空，请先在管理后台配置 AI 提供商的 API Key", 0
     if not base_url:
         return None, "Base URL 为空，请先在管理后台配置 AI 提供商的接口地址", 0
+    base_url = _normalize_openai_base_url(base_url)
 
     _budget_start = time.time()
 
@@ -4546,6 +4559,7 @@ def call_llm_lightweight(messages, model, provider_info, timeout=15):
         return do_hub_chat(messages, model, provider_info, timeout=timeout or HUB_CHAT_TIMEOUT)
     
     if protocol == "openai":
+        base_url = _normalize_openai_base_url(base_url)
         payload = {
             "model": model,
             "messages": messages,
@@ -8599,6 +8613,11 @@ class Handler(BaseHTTPRequestHandler):
                     api_key = ""
                 if not model:
                     self._send_json(200, {"code": 200, "success": False, "msg": "请填写要测试的模型ID"})
+                    return
+                # 常见填错：密钥填进了模型ID，上游会用这个密钥当模型名去请求，报错看不明白
+                if re.match(r"^(ak|sk|api)[-_]", model, re.I) and len(model) >= 20:
+                    self._send_json(200, {"code": 200, "success": False,
+                                          "msg": "模型ID 框里填的是密钥：请把密钥填到「API Key」，模型ID 填如 spark-x2.6 / deepseek-chat"})
                     return
                 provider_info = {"protocol": protocol, "base_url": base_url, "api_key": api_key}
                 want_vision = bool(data.get("vision"))
