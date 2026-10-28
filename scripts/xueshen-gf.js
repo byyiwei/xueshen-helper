@@ -1,16 +1,20 @@
 // ==UserScript==
-// @name         学习通学神助手｜超星·智慧树·知到全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试｜网课助手
+// @name         学习通学神助手｜超星·智慧树·知到·青书·出头全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试｜网课助手
 // @namespace    IPYIWEI
-// @version      5.5.2
+// @version      5.6.0
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @author       IPYIWEI
-// @keywords     学习通,超星,智慧树,知到,zhihuishu,chaoxing,网课,刷课,题库,搜题,AI答题,作业,考试,倍速
-// @description  超星学习通/智慧树(知到)自动学习助手｜DeepSeek AI智能辅助学习｜视频倍速学习｜自动切换任务点｜作业考试全自动｜字体加密解析｜海量题库每日更新｜网课答案
-// @description:zh-CN 超星学习通/智慧树(知到)自动学习助手｜DeepSeek AI智能辅助学习｜视频倍速学习｜自动切换任务点｜作业考试全自动｜字体加密解析｜海量题库每日更新｜网课答案
+// @keywords     学习通,超星,智慧树,知到,zhihuishu,chaoxing,青书,青书学堂,qingshuxuetang,出头,出头科技,superchutou,网课,刷课,题库,搜题,AI答题,作业,考试,倍速
+// @description  超星学习通/智慧树(知到)/青书学堂/出头科技自动学习助手｜DeepSeek AI智能辅助学习｜视频倍速学习｜自动切换任务点｜作业考试全自动｜字体加密解析｜海量题库每日更新｜网课答案
+// @description:zh-CN 超星学习通/智慧树(知到)/青书学堂/出头科技自动学习助手｜DeepSeek AI智能辅助学习｜视频倍速学习｜自动切换任务点｜作业考试全自动｜字体加密解析｜海量题库每日更新｜网课答案
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.6.0 (2026-10-28)
+// @changelog    1. 新增「青书学堂」支持：课件学习时长接口上报、作业自动作答（默认只保存不交卷）
+// @changelog    2. 新增「出头科技」支持：章节学习时长上报、考试取题与答案提示
+// @changelog    3. 两个新平台均为接口直通，超星 / 智慧树 原有功能不受影响
 // @changelog    v5.5.2 (2026-10-27)
 // @changelog    1. 适配智慧树新版前端检测：视频倍速钳制 1.8x（平台红线）、考试页 XHR hook 原生伪装，答题/视频页不再弹「检测到异常脚本」
 // @changelog    1. 「手动选择」新增处理方式：等待我选择后继续 / 跳过此题（不自动提交）
@@ -122,6 +126,8 @@
 // @match        *://*.edu.cn/*
 // @match        *://*.jxrtvu.com/*
 // @match        *://*.o-learn.cn/*
+// @match        *://*.qingshuxuetang.com/*
+// @match        *://*.web2.superchutou.com/*
 // @require      https://cdn.jsdelivr.net/npm/vue@3.4.31/dist/vue.global.prod.js
 // @require      https://cdn.jsdelivr.net/npm/vue-demi@0.14.7/lib/index.iife.js
 // @require      data:application/javascript,window.Vue%3DVue%3B
@@ -143,6 +149,8 @@
 // @connect      zhihuishu.com
 // @connect      xs.openget.cn
 // @connect      *.o-learn.cn
+// @connect      qingshuxuetang.com
+// @connect      web2.superchutou.com
 // @connect      *.webtrn.cn
 // @connect      127.0.0.1
 // @connect      localhost
@@ -13647,6 +13655,966 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       if (visibilityTimer) clearInterval(visibilityTimer);
     };
   };
+/* ==================== 青书学堂 / 出头科技（接口直通模块） ====================
+ * 接入方式：全部走平台自己的 HTTP 接口 + 页面上下文请求（带 Cookie），
+ * 不注入第三方依赖，不改动超星 / 智慧树 的任何逻辑。
+ * 青书：学习时长上报、作业取题与保存；默认不自动交卷。
+ * 出头：章节学习时长上报、考试取题与点选。
+ */
+const XS_EXT = (() => {
+  'use strict';
+
+  /* ------------------------------ 通用工具 ------------------------------ */
+  const EXT_CONF = {
+    minGapMs: 10000,        // 两次接口请求最小间隔
+    requestTimeout: 30000,
+    studyStepSec: 120,      // 青书每次上报的学习时长（秒）
+    studyScorePoll: 5,      // 青书每上报 N 次读一次分数
+    studyMaxMinutes: 180,   // 青书单次挂机上限
+    ctStepSec: 60,          // 出头每个打包片段的学习时长（秒）
+    ctMaxChapters: 30,      // 出头单次最多处理的章节数
+    ctMinGapMs: 1500,       // 出头接口间隔（比青书宽松，平台限流不同）
+    autoSubmit: false       // 作业 / 考试是否自动交卷（默认关闭）
+  };
+
+  const extLog = (text, type) => {
+    try { useLogStore().insertLog(text, type || null); } catch (e) { /* ignore */ }
+  };
+  const extSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const extText = (value) => String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+
+  /** 页面上下文 XHR：带 Cookie，避免 GM_xmlhttpRequest 丢登录态 */
+  function extFetch(url, opts = {}) {
+    return new Promise((resolve, reject) => {
+      let Xhr;
+      try { Xhr = (_unsafeWindow && _unsafeWindow.XMLHttpRequest) || XMLHttpRequest; }
+      catch (e) { Xhr = XMLHttpRequest; }
+      const xhr = new Xhr();
+      xhr.open(opts.method || 'GET', url, true);
+      try { xhr.withCredentials = true; } catch (e) { /* ignore */ }
+      const headers = opts.headers || {};
+      Object.keys(headers).forEach((key) => {
+        try { if (headers[key] != null) xhr.setRequestHeader(key, headers[key]); } catch (e) { /* ignore */ }
+      });
+      xhr.timeout = opts.timeout || EXT_CONF.requestTimeout;
+      xhr.onload = () => resolve({ status: xhr.status, text: xhr.responseText || '', raw: xhr });
+      xhr.onerror = () => reject(new Error('网络连接失败'));
+      xhr.ontimeout = () => reject(new Error('请求超时'));
+      xhr.onabort = () => reject(new Error('请求已取消'));
+      try { xhr.send(opts.body == null ? null : opts.body); }
+      catch (e) { reject(e); }
+    });
+  }
+
+  /** 全局串行 + 最小间隔，避免触发平台限流 */
+  let extChain = Promise.resolve();
+  let extNextAt = 0;
+  function extPaced(run, gapMs) {
+    const task = async () => {
+      const wait = extNextAt - Date.now();
+      if (wait > 0) await extSleep(wait);
+      try { return await run(); }
+      finally { extNextAt = Date.now() + (gapMs || EXT_CONF.minGapMs); }
+    };
+    const promise = extChain.then(task, task);
+    extChain = promise.catch(() => {});
+    return promise;
+  }
+
+  function extRandomId() {
+    const rand = () => Math.random().toString(16).slice(2, 10);
+    return `${rand()}-${rand()}-${rand()}`;
+  }
+
+  function extParseJson(text, label) {
+    try { return JSON.parse(String(text || '')); }
+    catch (e) { throw new Error(`${label || '接口'}返回内容不是 JSON`); }
+  }
+
+  function extIsHttpOk(status) {
+    return status >= 200 && status < 400;
+  }
+
+  /* ============================== 青书学堂 ============================== */
+  const QS = {
+    key: 'qs',
+    minGap: 10000
+  };
+
+  function qsOnSite() {
+    return /(^|\.)qingshuxuetang\.com$/i.test(location.hostname || '');
+  }
+
+  function qsOrgCode(pathOrUrl) {
+    let path = String(pathOrUrl || '');
+    try { path = new URL(path, location.href).pathname; } catch (e) { /* ignore */ }
+    const match = path.match(/^\/([^/?#]+)\/Student(?:\/|$)/i);
+    return match ? decodeURIComponent(match[1]) : '';
+  }
+
+  function qsQueryOf(url, names) {
+    try {
+      const u = new URL(url, location.href);
+      for (const name of names) {
+        const value = u.searchParams.get(name);
+        if (value) return value;
+      }
+    } catch (e) { /* ignore */ }
+    return '';
+  }
+
+  function qsContext() {
+    const ctx = {
+      siteHost: location.origin,
+      orgCode: qsOrgCode(location.pathname),
+      courseId: qsQueryOf(location.href, ['courseId', 'courseid']),
+      teachPlanId: qsQueryOf(location.href, ['teachPlanId', 'teachplanId']),
+      teachPlanCourseId: qsQueryOf(location.href, ['teachPlanCourseId', 'teachplanCourseId', 'teachingPlanCourseId']),
+      periodId: qsQueryOf(location.href, ['periodId']),
+      nodeId: qsQueryOf(location.href, ['nodeId', 'contentId', 'cw_nodeId']),
+      quizId: qsQueryOf(location.href, ['quizId'])
+    };
+    if (!ctx.orgCode) {
+      const first = String(location.pathname || '').split('/').filter(Boolean)[0];
+      ctx.orgCode = first && !/^Student$/i.test(first) ? first : '';
+    }
+    return ctx;
+  }
+
+  function qsApiBase(ctx) {
+    const origin = String(ctx.siteHost || location.origin).replace(/\/$/, '');
+    return `${origin}/${ctx.orgCode}`;
+  }
+
+  function qsMultipart(fields) {
+    const boundary = `----XsHelper${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+    let body = '';
+    Object.keys(fields).forEach((key) => {
+      const value = fields[key];
+      body += `--${boundary}\r\nContent-Disposition: form-data; name="${key}"\r\n\r\n${value == null ? '' : value}\r\n`;
+    });
+    body += `--${boundary}--\r\n`;
+    return { body, contentType: `multipart/form-data; boundary=${boundary}` };
+  }
+
+  async function qsRequest(ctx, endpoint, opts = {}) {
+    const target = new URL(String(endpoint || ''), qsApiBase(ctx) + '/');
+    const params = opts.params || {};
+    Object.keys(params).forEach((key) => {
+      const value = params[key];
+      if (value !== undefined && value !== null && value !== '') target.searchParams.set(key, String(value));
+    });
+    if (!target.searchParams.has('_t')) target.searchParams.set('_t', String(Date.now()));
+
+    const headers = {
+      Accept: opts.accept || '*/*',
+      'X-Requested-With': 'XMLHttpRequest',
+      'Device-Trace-Id-QS': qsDeviceId()
+    };
+    if (opts.referer) headers.Referer = opts.referer;
+
+    let body = opts.body;
+    if (opts.json !== undefined) {
+      headers['Content-Type'] = 'application/json; charset=utf-8';
+      body = JSON.stringify(opts.json);
+    } else if (opts.multipart) {
+      const packed = qsMultipart(opts.multipart);
+      headers['Content-Type'] = packed.contentType;
+      body = packed.body;
+    } else if (opts.form) {
+      headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8';
+      body = new URLSearchParams(opts.form).toString();
+    }
+
+    const res = await extPaced(() => extFetch(target.href, {
+      method: opts.method || 'GET',
+      headers,
+      body,
+      timeout: opts.timeout || EXT_CONF.requestTimeout
+    }));
+
+    if (res.status === 401 || res.status === 403) throw new Error('青书登录已失效，请重新登录');
+    if (res.status === 429) throw new Error('青书请求过于频繁（429），请稍后再试');
+    if (!extIsHttpOk(res.status)) throw new Error(`青书接口返回 HTTP ${res.status}`);
+    return res.text;
+  }
+
+  let qsDevice = '';
+  function qsDeviceId() {
+    if (!qsDevice) {
+      try { qsDevice = GM_getValue('xs-qs-device-id', '') || ''; } catch (e) { qsDevice = ''; }
+      if (!qsDevice) {
+        qsDevice = extRandomId();
+        try { GM_setValue('xs-qs-device-id', qsDevice); } catch (e) { /* ignore */ }
+      }
+    }
+    return qsDevice;
+  }
+
+  function qsResponseOk(json) {
+    if (!json || typeof json !== 'object') return false;
+    if (Object.prototype.hasOwnProperty.call(json, 'hr')) return String(json.hr) === '0';
+    if (Object.prototype.hasOwnProperty.call(json, 'code')) return String(json.code) === '0';
+    if (Object.prototype.hasOwnProperty.call(json, 'success')) return json.success === true;
+    return extText(json.message) === '成功';
+  }
+
+  function qsNum(value) {
+    const match = String(value == null ? '' : value).match(/-?\d+(?:\.\d+)?/);
+    return match ? Number(match[0]) : 0;
+  }
+
+  async function qsCourseList(ctx) {
+    const text = await qsRequest(ctx, 'Student/Course/CourseData', { method: 'POST' });
+    const json = extParseJson(text, '青书课程列表');
+    if (!qsResponseOk(json)) throw new Error(json.message || '读取青书课程列表失败');
+    const rows = Array.isArray(json.data) ? json.data : [];
+    return rows.map((raw) => ({
+      courseId: String(raw.courseId || raw.id || ''),
+      courseName: String(raw.courseName || raw.name || '青书课程'),
+      teachPlanCourseId: String(raw.teachingPlanCourseId || raw.teachPlanCourseId || raw.teachplanCourseId || ''),
+      teachPlanId: String(raw.teachPlanId || raw.classId || ''),
+      periodId: String(raw.periodId || ''),
+      learnStatus: raw.learnStatus,
+      learnStatusName: String(raw.learnStatusName || ''),
+      score: raw.score,
+      allowLearn: ![false, 0, '0', 'false'].includes(raw.allowLearn)
+    })).filter((item) => item.courseId);
+  }
+
+  async function qsResolveContext(ctx) {
+    if (ctx.courseId && ctx.teachPlanId && ctx.periodId) {
+      if (ctx.teachPlanCourseId) return ctx;
+    }
+    const courses = await qsCourseList(ctx);
+    const matched = courses.filter((item) =>
+      (!ctx.courseId || item.courseId === String(ctx.courseId)) &&
+      (!ctx.teachPlanId || item.teachPlanId === String(ctx.teachPlanId)) &&
+      (!ctx.periodId || item.periodId === String(ctx.periodId)));
+    if (matched.length !== 1) {
+      throw new Error('无法确定当前青书课程，请先进入具体课程页面再运行');
+    }
+    const course = matched[0];
+    return Object.assign({}, ctx, {
+      courseId: course.courseId,
+      courseName: course.courseName,
+      teachPlanId: course.teachPlanId,
+      teachPlanCourseId: course.teachPlanCourseId,
+      periodId: course.periodId,
+      course
+    });
+  }
+
+  async function qsProgress(ctx) {
+    const text = await qsRequest(ctx, 'Student/Course/GetStudyRecordAndScore', {
+      params: { teachPlanCourseId: ctx.teachPlanCourseId, periodId: ctx.periodId, _: Date.now() - 100 }
+    });
+    const json = extParseJson(text, '青书学习进度');
+    if (!qsResponseOk(json)) throw new Error(json.message || '读取青书学习进度失败');
+    const data = json.data || {};
+    return {
+      score: qsNum(data.studyScoreStr || data.score),
+      studyTime: String(data.studyTimeStr || data.studyTime || ''),
+      learnStatus: String(data.learnStatusName || data.learnStatus || ''),
+      passed: String(data.learnStatusName || '').trim() === '已通过',
+      records: Array.isArray(data.studyRecordList) ? data.studyRecordList : []
+    };
+  }
+
+  async function qsScoreDetail(ctx) {
+    const text = await qsRequest(ctx, 'Student/Course/CourseScore', {
+      params: { courseId: ctx.courseId, teachplanCourseId: ctx.teachPlanCourseId, _: Date.now() - 100 },
+      accept: 'text/html,*/*'
+    });
+    const doc = new DOMParser().parseFromString(text || '', 'text/html');
+    let current = null;
+    let target = null;
+    const rows = Array.from(doc.querySelectorAll('tr')).filter((row) =>
+      Array.from(row.children).some((cell) => extText(cell.textContent) === '课件学习'));
+    if (rows.length) {
+      const match = extText(rows[0].lastElementChild && rows[0].lastElementChild.textContent)
+        .match(/^(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)$/);
+      if (match) {
+        current = Number(match[1]);
+        target = Number(match[2]);
+      }
+    }
+    if (current === null) {
+      const table = doc.querySelector('#studySummaryTbl');
+      if (table) {
+        current = qsNum((table.querySelector('.study-login') || {}).textContent || 0);
+        target = qsNum((table.querySelector('.title-class-score') || {}).textContent || 0);
+      }
+    }
+    if (current === null || !Number.isFinite(target) || target <= 0) {
+      return { known: false, currentScore: 0, targetScore: 80 };
+    }
+    return { known: true, currentScore: current, targetScore: target };
+  }
+
+  async function qsBeginStudy(ctx, contentId) {
+    const text = await qsRequest(ctx, 'Student/Course/UploadStudyRecordBegin', {
+      method: 'POST',
+      json: {
+        classId: ctx.teachPlanId,
+        courseId: ctx.courseId,
+        contentId: contentId || ctx.nodeId || 'kcjs_1_1',
+        contentType: 11,
+        periodId: ctx.periodId,
+        position: 0,
+        detectId: null
+      }
+    });
+    const json = extParseJson(text, '青书开始学习');
+    if (!qsResponseOk(json)) throw new Error(json.message || '青书开始学习失败');
+    const recordId = json.data && typeof json.data === 'object' ? (json.data.recordId || json.data.id) : json.data;
+    if (!recordId) throw new Error('青书未返回学习记录号');
+    return String(recordId);
+  }
+
+  async function qsContinueStudy(ctx, recordId, position, end) {
+    const text = await qsRequest(ctx, 'Student/Course/UploadStudyRecordContinue', {
+      method: 'POST',
+      multipart: {
+        recordId,
+        end: end ? 'true' : 'false',
+        position: Math.max(0, Math.round(position)),
+        timeOutConfirm: 'true'
+      }
+    });
+    const json = extParseJson(text, '青书学习进度上报');
+    if (!qsResponseOk(json)) throw new Error(json.message || '青书学习进度上报失败');
+    return json;
+  }
+
+  /** 青书：学习挂机 */
+  async function qsStudyLogic() {
+    if (!qsOnSite()) return;
+    if (!/\/Student\/Course\/CourseStudy/i.test(location.pathname)) return;
+    const startHref = location.href;
+    const setting = useSettingStore();
+    if (setting.config && setting.config.basicConfig && setting.config.basicConfig.token) {
+      if (!setting.config.basicConfig.token.value) {
+        extLog('青书：未配置密钥，学习挂机仍可运行，但作业答题需要密钥', 'warning');
+      }
+    }
+    try {
+      const ctx = await qsResolveContext(qsContext());
+      const detail = await qsScoreDetail(ctx).catch(() => ({ known: false, currentScore: 0, targetScore: 80 }));
+      const progress = await qsProgress(ctx).catch(() => ({ score: 0, passed: false, records: [] }));
+      if (progress.passed || (detail.known && detail.currentScore >= detail.targetScore)) {
+        extLog(`青书：课件学习已达标（${detail.currentScore}/${detail.targetScore} 分），无需挂机`, 'success');
+        return;
+      }
+      const target = detail.known ? detail.targetScore : 80;
+      extLog(`青书：开始挂课，当前 ${progress.score || detail.currentScore}/${target} 分；每 ${EXT_CONF.studyStepSec} 秒上报一次`, null);
+
+      const recent = (progress.records && progress.records[0]) || {};
+      const contentId = ctx.nodeId || recent.contentId || recent.nodeId || 'kcjs_1_1';
+      const recordId = await qsBeginStudy(ctx, contentId);
+      const deadline = Date.now() + EXT_CONF.studyMaxMinutes * 60 * 1000;
+      let position = 0;
+      let uploads = 0;
+      let score = progress.score || detail.currentScore || 0;
+      try {
+        while (Date.now() < deadline) {
+          await extSleep(EXT_CONF.studyStepSec * 1000);
+          if (location.href !== startHref) {
+            extLog('青书：页面已切换，挂机停止', 'warning');
+            return;
+          }
+          position += EXT_CONF.studyStepSec;
+          await qsContinueStudy(ctx, recordId, position, false);
+          uploads += 1;
+          extLog(`青书：已上报 ${uploads} 次，进度位置 ${Math.round(position / 60)} 分钟，分数 ${score}/${target}`, null);
+          if (uploads % EXT_CONF.studyScorePoll === 0) {
+            const fresh = await qsProgress(ctx).catch(() => null);
+            if (fresh) {
+              score = fresh.score;
+              extLog(`青书：最新分数 ${score}/${target}${fresh.studyTime ? `，学习时长 ${fresh.studyTime}` : ''}`, score >= target ? 'success' : null);
+              if (fresh.passed || score >= target) break;
+            }
+          }
+        }
+      } finally {
+        try { await qsContinueStudy(ctx, recordId, position, true); }
+        catch (e) { extLog('青书：学习记录关闭未确认，可能影响时长统计', 'warning'); }
+      }
+      extLog(`青书：挂机结束，共上报 ${uploads} 次，当前分数 ${score}/${target}`, 'success');
+    } catch (error) {
+      extLog(`青书挂课失败：${(error && error.message) || error}`, 'error');
+    }
+  }
+
+  /* ---------------------------- 青书作业答题 ---------------------------- */
+
+  const QS_TYPE_NAMES = {
+    0: '单选题', 1: '多选题', 2: '填空题', 3: '判断题', 4: '简答题'
+  };
+
+  function qsTypeFromText(text) {
+    const raw = String(text || '');
+    if (/多选/.test(raw)) return '1';
+    if (/填空/.test(raw)) return '2';
+    if (/判断/.test(raw)) return '3';
+    if (/单选/.test(raw)) return '0';
+    if (/简答|问答|论述|名词解释|计算/.test(raw)) return '4';
+    return 'unknown';
+  }
+
+  function qsCleanOption(text) {
+    return extText(String(text || '').replace(/<[^>]+>/g, '')).replace(/^[A-Z][.、．)\s]+/i, '').trim();
+  }
+
+  function qsParsePageQuestions() {
+    const containers = Array.from(document.querySelectorAll('.question-detail-container'));
+    const questions = [];
+    for (const container of containers) {
+      const typeText = (container.querySelector('.question-detail-type-desc') || {}).textContent || '';
+      const type = qsTypeFromText(typeText);
+      const descEl = container.querySelector('.question-detail-description') ||
+        container.querySelector('.detail-description-content');
+      const stem = descEl ? extText(descEl.textContent) : '';
+      const options = [];
+      Array.from(container.querySelectorAll('.question-detail-option')).forEach((optEl, index) => {
+        const input = optEl.querySelector('input.option-input, input[type="radio"], input[type="checkbox"]');
+        const preview = optEl.querySelector('.option-input-preview');
+        let label = (input && input.value) || (preview && preview.getAttribute('content')) || '';
+        label = String(label || '').trim().toUpperCase();
+        if (!label) label = String.fromCharCode(65 + index);
+        const desc = optEl.querySelector('.option-description');
+        options.push({
+          label,
+          content: desc ? extText(desc.textContent) : '',
+          element: optEl,
+          input
+        });
+      });
+      questions.push({
+        questionId: container.id || '',
+        type,
+        typeName: QS_TYPE_NAMES[type] || typeText.trim() || '未知题型',
+        stem,
+        stemHtml: descEl ? descEl.innerHTML : stem,
+        options,
+        element: container
+      });
+    }
+    return questions;
+  }
+
+  /** 把后端返回的答案数组转成青书的选项字母 */
+  function qsResolveLabels(question, answers) {
+    const labels = question.options.map((item) => item.label);
+    const raw = (Array.isArray(answers) ? answers : [answers]).map((item) => extText(item)).filter(Boolean);
+    if (!raw.length) return [];
+    const joined = raw.join('');
+    const letterOnly = joined.replace(/^(参考答案|正确答案|答案)\s*[:：]\s*/i, '').toUpperCase();
+    if (/^[A-Z]+$/.test(letterOnly) && letterOnly.split('').every((ch) => labels.includes(ch))) {
+      const unique = Array.from(new Set(letterOnly.split('')));
+      if (question.type !== '1' && unique.length > 1) return [];
+      return unique;
+    }
+    const hits = [];
+    for (const item of raw) {
+      const key = qsCleanOption(item);
+      const matched = question.options.find((opt) => qsCleanOption(opt.content) === key);
+      if (matched) hits.push(matched.label);
+    }
+    if (hits.length && (question.type === '1' || hits.length === 1)) return Array.from(new Set(hits));
+    if (question.type === '3') {
+      const truth = /^(对|正确|是|√|✓|T|TRUE|Y|1)$/i.test(qsCleanOption(joined));
+      const falsey = /^(错|错误|否|×|✗|F|FALSE|N|0)$/i.test(qsCleanOption(joined));
+      if (truth || falsey) {
+        const found = question.options.find((opt) => {
+          const text = qsCleanOption(opt.content);
+          return truth
+            ? /^(对|正确|是|√|✓|T|TRUE|Y|1)$/i.test(text)
+            : /^(错|错误|否|×|✗|F|FALSE|N|0)$/i.test(text);
+        });
+        if (found) return [found.label];
+      }
+    }
+    return [];
+  }
+
+  /** 提交给青书接口的答案字符串 */
+  function qsNativeAnswer(question, answers) {
+    if (question.type === '2' || question.type === '4') {
+      const list = (Array.isArray(answers) ? answers : [answers]).map((item) => String(item == null ? '' : item).trim()).filter(Boolean);
+      return list.join('||');
+    }
+    if (!['0', '1', '3'].includes(question.type) || !question.options.length) return '';
+    const labels = qsResolveLabels(question, answers);
+    if (!labels.length) return '';
+    return labels.join('');
+  }
+
+  function qsFillPage(question, labels) {
+    let filled = 0;
+    question.options.forEach((opt) => {
+      if (!opt.input) return;
+      const wanted = labels.includes(String(opt.input.value || '').trim().toUpperCase());
+      if (opt.input.checked !== wanted) {
+        try { (opt.element || opt.input).click(); } catch (e) { /* ignore */ }
+      }
+      if (opt.input.checked) filled += 1;
+    });
+    return filled;
+  }
+
+  function qsBuildQuestionPayload(question) {
+    return {
+      title: question.stemHtml || question.stem,
+      optionsText: question.options.map((opt) => opt.content),
+      type: question.type === 'unknown' ? '' : question.type,
+      refer: location.href,
+      element: question.element
+    };
+  }
+
+  /** 青书：作业页自动作答（默认只保存，不交卷） */
+  async function qsHomeworkLogic() {
+    if (!qsOnSite()) return;
+    const ctx = qsContext();
+    if (!ctx.quizId) {
+      extLog('青书：未识别到作业编号（quizId），请从作业列表进入具体作业', 'warning');
+      return;
+    }
+    const log = useLogStore();
+    const setting = useSettingStore();
+    const token = setting.config && setting.config.basicConfig && setting.config.basicConfig.token
+      ? setting.config.basicConfig.token.value : '';
+    if (!token) {
+      extLog('青书：未配置密钥，无法答题。请到「设置」配置后再试', 'warning');
+      return;
+    }
+    const questions = qsParsePageQuestions();
+    if (!questions.length) {
+      extLog('青书：当前页面没有解析到题目，可能不是作业作答页', 'warning');
+      return;
+    }
+    extLog(`青书：解析到 ${questions.length} 道题，开始作答（默认只保存，不自动交卷）`, null);
+    let answered = 0;
+    let skipped = 0;
+    for (let index = 0; index < questions.length; index += 1) {
+      const question = questions[index];
+      const rowText = `青书 第${index + 1}/${questions.length}题`;
+      if (question.type === 'unknown') {
+        extLog(`${rowText}：题型未识别，已跳过`, 'warning');
+        skipped += 1;
+        continue;
+      }
+      if (question.type !== '2' && question.type !== '4' && !question.options.length) {
+        extLog(`${rowText}：没有选项，已跳过`, 'warning');
+        skipped += 1;
+        continue;
+      }
+      let result;
+      try {
+        result = await getAccurateAnswer(qsBuildQuestionPayload(question));
+      } catch (error) {
+        extLog(`${rowText}：查询答案失败（${(error && error.message) || error}）`, 'error');
+        skipped += 1;
+        continue;
+      }
+      if (!result || result.code !== 1 || !result.data || !result.data.answer) {
+        extLog(`${rowText}：未查到答案（${(result && result.msg) || '题库与 AI 都没有结果'}）`, 'warning');
+        skipped += 1;
+        continue;
+      }
+      const answers = Array.isArray(result.data.answer) ? result.data.answer : [result.data.answer];
+      const native = qsNativeAnswer(question, answers);
+      if (!native) {
+        extLog(`${rowText}：答案与选项对不上，已跳过（原始答案：${extText(answers.join('、')).slice(0, 40)}）`, 'warning');
+        skipped += 1;
+        continue;
+      }
+      if (question.type === '2' || question.type === '4') {
+        extLog(`${rowText}：主观题，答案已取到但需你在页面填写：${native.slice(0, 60)}`, 'warning');
+      } else {
+        const labels = qsResolveLabels(question, answers);
+        qsFillPage(question, labels);
+        extLog(`${rowText}：已选择 ${labels.join('')}`, 'success');
+      }
+      try {
+        await qsRequest(ctx, 'Svc/SaveQuestionAnswer', {
+          method: 'POST',
+          json: { quizId: ctx.quizId, questionAnswers: [{ questionId: question.questionId, answer: native }] }
+        });
+      } catch (error) {
+        extLog(`${rowText}：保存失败（${(error && error.message) || error}）`, 'error');
+        skipped += 1;
+        continue;
+      }
+      answered += 1;
+      log.insertLog(`${rowText}：已作答并保存`, 'success', 2);
+    }
+    extLog(`青书：作答结束，已保存 ${answered} 题，跳过 ${skipped} 题；请检查后手动交卷`, 'success');
+    if (EXT_CONF.autoSubmit && skipped === 0) {
+      extLog('青书：自动交卷已开启，请在面板确认', 'warning');
+    }
+  }
+
+  /* ============================== 出头科技 ============================== */
+
+  function ctOnSite() {
+    return /(^|\.)web2\.superchutou\.com$/i.test(location.hostname || '');
+  }
+
+  function ctApiBase() {
+    return `${location.origin}/service`;
+  }
+
+  function ctUser() {
+    try { return JSON.parse(localStorage.getItem('user') || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+
+  async function ctApi(method, path, opts = {}) {
+    const url = new URL(ctApiBase() + (String(path || '').startsWith('/') ? path : '/' + path));
+    const params = opts.params || {};
+    Object.keys(params).forEach((key) => {
+      const value = params[key];
+      if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
+    });
+    const headers = { Accept: '*/*' };
+    let body;
+    if (opts.body !== undefined) {
+      headers['Content-Type'] = 'application/json; charset=utf-8';
+      body = JSON.stringify(opts.body);
+    }
+    const res = await extPaced(() => extFetch(url.href, { method, headers, body }), EXT_CONF.ctMinGapMs);
+    if (res.status === 401 || res.status === 403) throw new Error('出头登录已失效，请重新登录');
+    if (!extIsHttpOk(res.status)) throw new Error(`出头接口返回 HTTP ${res.status}`);
+    const json = extParseJson(res.text, '出头接口');
+    if (!json || typeof json !== 'object') throw new Error('出头接口返回格式异常');
+    return json;
+  }
+
+  async function ctCourseTree(user) {
+    const res = await ctApi('GET', '/eduSuper/Specialty/GetStuSpecialtyCurriculumList', {
+      params: { StuDetail_ID: user.StuDetail_ID, IsStudyYear: 1, StuID: user.StuID }
+    });
+    if (!res.SuccessResponse) throw new Error(res.Message || '读取出头课程失败');
+    const data = res.Data || {};
+    let list = data.list || data.rows || data;
+    if (!Array.isArray(list)) list = [];
+    return { all: list, meta: { curStudyYear: data.CurStudyYear } };
+  }
+
+  async function ctChapters(user, courseId, curriculumId) {
+    const res = await ctApi('GET', '/eduSuper/Question/GetCourse_ChaptersNodeList', {
+      params: {
+        Valid: 1,
+        Course_ID: courseId,
+        StuID: user.StuID,
+        Curriculum_ID: curriculumId,
+        Examination_ID: 0,
+        StuDetail_ID: user.StuDetail_ID
+      }
+    });
+    if (!res.SuccessResponse) return [];
+    return Array.isArray(res.Data) ? res.Data : [];
+  }
+
+  function ctToInt(value, fallback) {
+    const num = parseInt(value, 10);
+    return Number.isFinite(num) ? num : fallback;
+  }
+
+  function ctChapterDuration(chapter) {
+    const direct = ctToInt(chapter.Duration, 0);
+    if (direct > 0) return direct;
+    return ctToInt(chapter.VideoDuration || chapter.WareDuration || chapter.TimeLength, 0);
+  }
+
+  function ctChapterLearned(chapter) {
+    const total = Number(chapter.TotalSecond);
+    if (Number.isFinite(total) && total > 0) return Math.floor(total);
+    return ctToInt(chapter.PlayRecord || chapter.LookDuration || chapter.LastWatchPos || chapter.StudyDuration, 0);
+  }
+
+  function ctChapterDone(chapter) {
+    const id = ctToInt(chapter.ID, 0);
+    if (id > 0 && ctToInt(chapter.IsLook, 0) === id) return true;
+    if (ctToInt(chapter.LookEndTime, 0) > 0) return true;
+    const duration = ctChapterDuration(chapter);
+    const learned = ctChapterLearned(chapter);
+    if (duration > 0 && learned >= duration) return true;
+    const progress = chapter.Progress != null ? chapter.Progress : chapter.StudyProgress;
+    if (progress != null && ctToInt(progress, 0) >= 100) return true;
+    return false;
+  }
+
+  function ctLeafChapters(nodes, out) {
+    const result = out || [];
+    for (const node of nodes || []) {
+      const children = node.ChildNodeList;
+      if (children && children.length) {
+        ctLeafChapters(children, result);
+        continue;
+      }
+      const wareType = node.CourseWareType_ID != null ? node.CourseWareType_ID : node.WareType;
+      if (wareType != null && ![0, 1, 2].includes(ctToInt(wareType, -1))) continue;
+      if (node.ID != null) result.push(node);
+    }
+    return result;
+  }
+
+  async function ctSaveLook(chapterId, lookTime, lastWatchPos, lookType) {
+    return ctApi('POST', '/datastore/WebCourse/SaveCourse_Look', {
+      body: {
+        CourseChapters_ID: chapterId,
+        LookType: lookType || 0,
+        LookTime: Math.max(0, Math.round(lookTime)),
+        LastWatchPos: Math.max(0, Math.round(lastWatchPos)),
+        IP: (window.returnCitySN && window.returnCitySN.cip) || '127.0.0.1'
+      }
+    });
+  }
+
+  /** 出头：刷课（章节学习时长上报） */
+  async function ctStudyLogic() {
+    if (!ctOnSite()) return;
+    const user = ctUser();
+    if (!user.StuID || !user.StuDetail_ID) {
+      extLog('出头：未读取到登录信息，请先登录后再打开课程页', 'warning');
+      return;
+    }
+    const startHref = location.href;
+    try {
+      const tree = await ctCourseTree(user);
+      const courses = tree.all.filter((course) => {
+        const courseId = ctToInt(course.Course_ID || course.spcuCourseId, 0);
+        const chapters = ctToInt(course.CourseChapters, 0);
+        return courseId > 0 && chapters > 0;
+      });
+      if (!courses.length) {
+        extLog('出头：当前账号没有可学习的网课', 'warning');
+        return;
+      }
+      const route = ctRoute();
+      const scoped = route.curriculumId
+        ? courses.filter((course) => String(course.Curriculum_ID) === String(route.curriculumId))
+        : courses;
+      const targets = scoped.length ? scoped : courses;
+      extLog(`出头：共 ${targets.length} 门网课待检查`, null);
+      let handled = 0;
+      let skippedCourse = 0;
+      for (const course of targets) {
+        if (handled >= EXT_CONF.ctMaxChapters) break;
+        if (location.href !== startHref) {
+          extLog('出头：页面已切换，刷课停止', 'warning');
+          return;
+        }
+        const courseId = ctToInt(course.Course_ID || course.spcuCourseId, 0);
+        const curriculumId = ctToInt(course.Curriculum_ID, 0);
+        const courseName = course.CuName || course.Name || String(courseId);
+        let chapters = [];
+        try { chapters = ctLeafChapters(await ctChapters(user, courseId, curriculumId)); }
+        catch (error) {
+          extLog(`出头：${courseName} 章节读取失败（${(error && error.message) || error}）`, 'warning');
+          skippedCourse += 1;
+          continue;
+        }
+        const todo = chapters.filter((chapter) => !ctChapterDone(chapter));
+        if (!todo.length) continue;
+        extLog(`出头：${courseName} 有 ${todo.length} 个章节待学习`, null);
+        for (const chapter of todo) {
+          if (handled >= EXT_CONF.ctMaxChapters) break;
+          if (location.href !== startHref) return;
+          const chapterId = ctToInt(chapter.ID, 0);
+          const duration = ctChapterDuration(chapter) || Math.max(ctChapterLearned(chapter), 300);
+          const learned = Math.min(ctChapterLearned(chapter), duration);
+          const title = chapter.Name || chapter.ChapterName || chapter.CourseWare_Name || `章节${chapterId}`;
+          let position = learned;
+          if (position >= duration) continue;
+          while (position < duration) {
+            const step = Math.min(EXT_CONF.ctStepSec, duration - position);
+            position += step;
+            await ctSaveLook(chapterId, position, position, ctToInt(chapter.LookType, 0));
+          }
+          handled += 1;
+          extLog(`出头：${courseName} / ${title} 已上报至 ${Math.round(position / 60)} 分钟`, 'success');
+          await extSleep(300);
+        }
+      }
+      extLog(`出头：本轮刷课结束，处理 ${handled} 个章节${skippedCourse ? `，${skippedCourse} 门课程读取失败` : ''}`, 'success');
+    } catch (error) {
+      extLog(`出头刷课失败：${(error && error.message) || error}`, 'error');
+    }
+  }
+
+  function ctRoute() {
+    const path = (location.hash || '').replace(/^#/, '') || location.pathname;
+    let match = path.match(/\/onlineclass\/paper\/(\d+)\/(\d+)\/(\d+)\/(\d+)/i);
+    if (match) {
+      return {
+        kind: 'paper',
+        examPaperId: ctToInt(match[1], 0),
+        examinationId: ctToInt(match[2], 0),
+        modeType: ctToInt(match[3], 0),
+        curriculumId: ctToInt(match[4], 0)
+      };
+    }
+    match = path.match(/\/onlineclass\/curriculum\/(\d+)\/(\d+)\/(\d+)\/(\d+)/i);
+    if (match) {
+      return {
+        kind: 'curriculum',
+        curriculumId: ctToInt(match[1], 0),
+        courseId: ctToInt(match[2], 0),
+        examinationId: ctToInt(match[3], 0),
+        tabIndex: ctToInt(match[4], 0)
+      };
+    }
+    return { kind: 'other' };
+  }
+
+  const CT_TYPES = {
+    1: '0', 2: '1', 3: '2', 4: '3', 5: '4', 6: '7',
+    9: '1', 10: '5', 11: '6'
+  };
+
+  function ctParseBody(bodyText) {
+    if (!bodyText) return [];
+    try {
+      const obj = typeof bodyText === 'string' ? JSON.parse(bodyText) : bodyText;
+      if (!obj || typeof obj !== 'object') return [];
+      return Object.keys(obj).map((key) => ({
+        label: String(key).toUpperCase(),
+        content: extText(String(obj[key]).replace(/<[^>]+>/g, ''))
+      }));
+    } catch (e) { return []; }
+  }
+
+  function ctAnswerLetters(answer, options) {
+    const labels = options.map((opt) => opt.label);
+    const raw = String(answer || '').toUpperCase().replace(/^(参考答案|正确答案|答案)\s*[:：]\s*/i, '');
+    if (/^[A-Z](?:\s*[,，、;；|]?\s*[A-Z])*$/.test(raw)) {
+      const letters = Array.from(new Set(raw.match(/[A-Z]/g) || []));
+      if (letters.every((letter) => labels.includes(letter))) return letters;
+    }
+    const hits = [];
+    String(answer || '').split(/[\s,，、;；|]+/).filter(Boolean).forEach((part) => {
+      const found = options.find((opt) => qsCleanOption(opt.content) === qsCleanOption(part));
+      if (found) hits.push(found.label);
+    });
+    return Array.from(new Set(hits));
+  }
+
+  async function ctExamLogic() {
+    if (!ctOnSite()) return;
+    const route = ctRoute();
+    if (route.kind !== 'paper' || !route.examPaperId || !route.examinationId) return;
+    const user = ctUser();
+    if (!user.StuID) {
+      extLog('出头：未读取到登录信息，无法读取试卷', 'warning');
+      return;
+    }
+    const setting = useSettingStore();
+    const token = setting.config && setting.config.basicConfig && setting.config.basicConfig.token
+      ? setting.config.basicConfig.token.value : '';
+    if (!token) {
+      extLog('出头：未配置密钥，无法答题', 'warning');
+      return;
+    }
+    try {
+      const res = await ctApi('GET', '/eduSuper/Question/GetExamPaperQuestions', {
+        params: {
+          examPaperId: route.examPaperId,
+          StuID: user.StuID,
+          StuDetail_ID: user.StuDetail_ID,
+          Examination_ID: route.examinationId,
+          Curriculum_ID: route.curriculumId,
+          SignId: 0,
+          type: 2
+        }
+      });
+      if (!res.SuccessResponse || !res.Data) throw new Error(res.Message || '读取试卷失败');
+      const blocks = res.Data.QuestionType || [];
+      const questions = [];
+      blocks.forEach((block) => {
+        (block.Question || []).forEach((q) => questions.push(q));
+      });
+      if (!questions.length) {
+        extLog('出头：试卷里没有题目', 'warning');
+        return;
+      }
+      extLog(`出头：试卷共 ${questions.length} 道题，开始作答`, null);
+      let done = 0;
+      let skipped = 0;
+      for (let index = 0; index < questions.length; index += 1) {
+        const q = questions[index];
+        const typeId = ctToInt(q.QuestionType_ID, 0);
+        const type = CT_TYPES[typeId];
+        const rowText = `出头 第${index + 1}/${questions.length}题`;
+        if (!type) {
+          extLog(`${rowText}：题型（${typeId}）暂不支持，已跳过`, 'warning');
+          skipped += 1;
+          continue;
+        }
+        const options = ctParseBody(q.Body);
+        const title = extText(String(q.Title || '').replace(/<[^>]+>/g, ''));
+        if (!title) {
+          skipped += 1;
+          continue;
+        }
+        let result;
+        try {
+          result = await getAccurateAnswer({
+            title,
+            optionsText: options.map((opt) => opt.content),
+            type,
+            refer: location.href
+          });
+        } catch (error) {
+          extLog(`${rowText}：查询答案失败（${(error && error.message) || error}）`, 'error');
+          skipped += 1;
+          continue;
+        }
+        if (!result || result.code !== 1 || !result.data || !result.data.answer) {
+          extLog(`${rowText}：未查到答案`, 'warning');
+          skipped += 1;
+          continue;
+        }
+        const answers = Array.isArray(result.data.answer) ? result.data.answer : [result.data.answer];
+        const letters = ctAnswerLetters(answers.join(''), options);
+        if (letters.length) {
+          extLog(`${rowText}：答案 ${letters.join('')}（请在页面上核对）`, 'success');
+        } else {
+          extLog(`${rowText}：答案 ${extText(answers.join('、')).slice(0, 60)}（请在页面上核对）`, 'warning');
+        }
+        done += 1;
+      }
+      extLog(`出头：作答提示完成，可作答 ${done} 题，跳过 ${skipped} 题；请人工核对后再交卷`, 'success');
+    } catch (error) {
+      extLog(`出头考试处理失败：${(error && error.message) || error}`, 'error');
+    }
+  }
+
+  /* ------------------------------ 路由表 ------------------------------ */
+  const qsRoutes = {
+    match: [
+      { keyword: 'ExercisePaper', tab: '1', logic: qsHomeworkLogic },
+      { keyword: '/Student/Course/CourseStudy', tab: '0', logic: qsStudyLogic },
+      { keyword: '/Student/', tab: '0' }
+    ],
+    defaultRoute: { show: true, tab: '0' }
+  };
+
+  const ctRoutes = {
+    match: [
+      { keyword: '/onlineclass/paper/', tab: '1', logic: ctExamLogic },
+      { keyword: '/onlineclass/curriculum/', tab: '0', logic: ctStudyLogic },
+      { keyword: 'superchutou', tab: '0' }
+    ],
+    defaultRoute: { show: true, tab: '0' }
+  };
+
+  return { qsRoutes, ctRoutes, qsOnSite, ctOnSite };
+})();
+
   const zhsRoutes = {
     match: [
       { keyword: "/studyvideoh5.zhihuishu.com", tab: "1", logic: videoStudyLogic },
@@ -13724,6 +14692,20 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           domains: ["zhihuishu.com", "polymas.com"],
           routes: zhsRoutes,
           showAi: false
+        },
+        {
+          key: "qs",
+          name: "青书学堂",
+          domains: ["qingshuxuetang.com"],
+          routes: XS_EXT.qsRoutes,
+          showAi: true
+        },
+        {
+          key: "ct",
+          name: "出头科技",
+          domains: ["web2.superchutou.com"],
+          routes: XS_EXT.ctRoutes,
+          showAi: true
         }
       ];
       const currentPlatform = platformConfigs.find(
