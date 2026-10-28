@@ -12726,7 +12726,8 @@
     });
     const getActiveProfile = async () => {
       const startTime = Date.now();
-      while (Date.now() - startTime < 2e4) {
+      // 页面异步加载，题目区可能晚一些才出现，等 45 秒
+      while (Date.now() - startTime < 4.5e4) {
         const profile2 = PROFILES.find((item) => document.querySelector(item.root));
         if (profile2) return profile2;
         await sleep(0.3);
@@ -12892,6 +12893,7 @@
       // 纯字母答案收集：["A","B","D"] 或紧凑串 ["ABD"] → 按索引映射（A=第1个选项）
       // 紧凑串仅在不等于任何选项文本时才按字母拆，避免把单词选项误拆成字母
       const letterAnswers = [];
+      let letterItemCount = 0;
       answers.forEach(a => {
         const t = String(a || "").trim();
         // "A. 以人民安全为宗旨" / "B、政治安全" 这类「字母 + 分隔符 + 选项正文」，
@@ -12906,16 +12908,24 @@
           if (!optText || !body || optText.includes(body) || body.includes(optText)) {
             const letter = prefixed[1].toUpperCase();
             if (!letterAnswers.includes(letter)) letterAnswers.push(letter);
+            letterItemCount += 1;
           }
         } else if (/^[A-Za-z]$/.test(t)) {
           if (!letterAnswers.includes(t.toUpperCase())) letterAnswers.push(t.toUpperCase());
+          letterItemCount += 1;
         } else if (/^[A-Z]{2,10}$/.test(t) && [...t].every((c, i) => i === 0 || c > t[i - 1])) {
           const isOptionText = optionEls.some(op => normalize(op.textContent) === normalize(t));
-          if (!isOptionText) t.toUpperCase().split("").forEach(c => { if (!letterAnswers.includes(c)) letterAnswers.push(c); });
+          if (!isOptionText) {
+            t.toUpperCase().split("").forEach(c => { if (!letterAnswers.includes(c)) letterAnswers.push(c); });
+            letterItemCount += 1;
+          }
         }
       });
       // 逐字母映射：越界的那个字母匹配不到选项自然跳过，不再一票否决整组字母答案
       const letterMappingOk = letterAnswers.length > 0;
+      // 答案每一条都自带字母时就以字母为准。否则文字包含匹配会把「C.社会组织和公民个人」也算进来
+      // （它的文字正好是 B 选项的一部分），单选题就会出现「答案是 B、脚本却勾了 C」
+      const useLettersOnly = letterItemCount > 0 && letterItemCount >= answers.length;
       const isMultiChoice = question.type === "多选题" || /多选|X型|不定项/.test(question.type || "");
       // 最长公共片段占较短一方的比例：答案和选项文字只有标点、截断、全半角这类小差异时也能对上
       const lcsRatio = (a, b) => {
@@ -12938,6 +12948,10 @@
       optionEls.forEach((option, idx) => {
         const optionText = normalize(option.textContent);
         const isLetterMatched = letterMappingOk && letterAnswers.includes(String.fromCharCode(65 + idx));
+        if (useLettersOnly) {
+          if (isLetterMatched) targetIdx.add(idx);
+          return;
+        }
         const isJudgementMatched = question.type === "判断题" && (/^(正确|是|对|√|t|true|right)$/i.test(judgementAnswer) && /^(正确|是|对|√|t|true|right)$/i.test(optionText) || /^(错误|否|错|×|f|false|wrong)$/i.test(judgementAnswer) && /^(错误|否|错|×|f|false|wrong)$/i.test(optionText));
         if (isLetterMatched || normalizedAnswers.includes(optionText) || isJudgementMatched) {
           targetIdx.add(idx);
@@ -12983,55 +12997,58 @@
       });
       const letterOf = (idx) => String.fromCharCode(65 + idx);
       const lettersFrom = (set) => Array.from(set).map(letterOf).sort().join("");
-      const selectedLetters = () => {
-        const out = [];
-        optionEls.forEach((_, idx) => {
-          const el = resolveOption(idx);
-          if (el && choiceOptionSelected(el)) out.push(letterOf(idx));
-        });
-        return out.sort().join("");
-      };
-      // 逐项设置：点一次 → 等一下 → 回读页面真实选中态，只有确实没生效才补点，已生效绝不重复点
-      const setOption = async (idx, want) => {
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-          const el = resolveOption(idx);
-          if (!el) return false;
-          if (choiceOptionSelected(el) === want) return true;
-          const sig = choiceOptionSig(el);
-          let clicked = false;
-          try {
-            el.click();
-            clicked = true;
-          } catch (_) {
-          }
-          await sleep(attempt === 0 ? 0.12 : 0.25);
-          const after = resolveOption(idx);
-          if (!after) return false;
-          if (choiceOptionSelected(after) === want) return true;
-          // 页面不暴露勾选态（只改颜色、不写 checked 类名）时，签名变了就当点上了，不能重复点
-          if (clicked && choiceOptionSig(after) !== sig) return true;
-        }
-        return false;
-      };
       const indexes = optionEls.map((_, idx) => idx);
-      const applied = /* @__PURE__ */ new Set();
-      // 先勾该勾的，再取消不该勾的：多选题是切换语义，顺序反了会把刚勾上的又取消
+      // 页面到底能不能读出「已勾选」：只要能读到一个勾上的，就说明读得准，后面才敢补点
+      let stateReadable = false;
+      const readSelected = (idx) => {
+        const el = resolveOption(idx);
+        if (!el) return false;
+        const selectedNow = choiceOptionSelected(el);
+        if (selectedNow) stateReadable = true;
+        return selectedNow;
+      };
+      const clickOnce = (idx) => {
+        const el = resolveOption(idx);
+        if (!el) return false;
+        try {
+          el.click();
+          return true;
+        } catch (_) {
+          return false;
+        }
+      };
+      // 第一遍：每个该勾的项只点一次，绝不补点，避免多选题被点成取消
       for (const idx of indexes) {
         if (!targetIdx.has(idx)) continue;
-        if (await setOption(idx, true)) applied.add(idx);
+        if (readSelected(idx)) continue;
+        clickOnce(idx);
+        await sleep(0.15 + Math.random() * 0.1);
       }
+      // 复核一遍：个别选项点了没反应（页面重绘把点击吃掉）时，只对「确实还是没勾上」的补点一次。
+      // 页面读取不出勾选态时不做补点，否则会把已经勾上的又点掉。
+      if (stateReadable) {
+        const missing = Array.from(targetIdx).filter((idx) => !readSelected(idx));
+        for (const idx of missing) {
+          clickOnce(idx);
+          await sleep(0.2);
+        }
+      }
+      // 多选题：把不该勾的取消掉（同样只对确实勾着的动手）
       if (isMultiChoice) {
         for (const idx of indexes) {
           if (targetIdx.has(idx)) continue;
-          await setOption(idx, false);
+          if (!readSelected(idx)) continue;
+          clickOnce(idx);
+          await sleep(0.15);
         }
       }
       const targets = lettersFrom(targetIdx);
-      const actual = selectedLetters();
+      const selectedNow = indexes.filter((idx) => readSelected(idx)).map(letterOf).join("");
+      const actual = selectedNow;
       if (targets && actual && actual !== targets) {
         log.insertLog(`本题答案 ${targets}，实际只点上 ${actual}${targets.length > actual.length ? "（有选项没点上去）" : ""}`, "warning", 6);
       }
-      return Array.from(targetIdx).some((idx) => actual.includes(letterOf(idx)) || applied.has(idx));
+      return Array.from(targetIdx).some((idx) => actual.includes(letterOf(idx))) || (targets.length > 0 && actual.length === 0);
     };
     const fillQuestion = async (question) => {
       var _a2;
@@ -13141,6 +13158,7 @@
     }
     const questions = [];
     let correctNum = 0;
+    let emptyTries = 0;
     const handleCurrentPage = async () => {
       var _a2;
       let rawQuestions = parseQuestions(profile);
@@ -13168,23 +13186,27 @@
       }
       const pageQuestions = rawQuestions.filter((question) => question.title || (question.element && question.element.querySelector && question.element.querySelector("img")));
       if (!pageQuestions.length) {
-        const rootTexts = Array.from(document.querySelectorAll(profile.root)).map(
-          (root) => {
+        // 题目是接口异步拉来的，前面几次解析不到很正常，只在第一次记详细情况，别刷屏
+        if (emptyTries === 0) {
+          const rootTexts = Array.from(document.querySelectorAll(profile.root)).map(
+            (root) => {
+              var _a3;
+              return (_a3 = root.textContent) == null ? void 0 : _a3.replace(/\s+/g, " ").trim().slice(0, 80);
+            }
+          );
+          const buttons = Array.from(document.querySelectorAll("button")).map((button) => {
             var _a3;
-            return (_a3 = root.textContent) == null ? void 0 : _a3.replace(/\s+/g, " ").trim().slice(0, 80);
-          }
-        );
-        const buttons = Array.from(document.querySelectorAll("button")).map((button) => {
-          var _a3;
-          return (_a3 = button.textContent) == null ? void 0 : _a3.replace(/\s+/g, " ").trim();
-        }).filter(Boolean).slice(0, 20);
-        log.insertLog(
-          `题目区域数量：${rawQuestions.length}，选项数量：${rawQuestions.reduce(
-          (sum, question) => sum + question.optionsText.length,
-          0
-        )}，题目区域文本：${rootTexts.join(" | ") || "空"}，按钮：${buttons.join(" / ") || "无"}`,
-          "warning"
-        );
+            return (_a3 = button.textContent) == null ? void 0 : _a3.replace(/\s+/g, " ").trim();
+          }).filter(Boolean).slice(0, 20);
+          log.insertLog(
+            `题目区域数量：${rawQuestions.length}，选项数量：${rawQuestions.reduce(
+            (sum, question) => sum + question.optionsText.length,
+            0
+          )}，题目区域文本：${rootTexts.join(" | ") || "空"}，按钮：${buttons.join(" / ") || "无"}`,
+            "warning"
+          );
+        }
+        emptyTries += 1;
       }
       if (!pageQuestions.length) return false;
       questions.push(...pageQuestions);
@@ -13203,11 +13225,23 @@
       return true;
     };
     setting.tabIndex = "2";
-    await sleep(2 + Math.random() * 3);
+    await sleep(1 + Math.random() * 2);
     let previousTitle = "";
+    let parsedOnce = false;
+    // 这版考试页是进页面之后才用接口拉题的：题目区先出现、内容后到。
+    // 以前解析一次为空就直接收工，表现就是「明明有题却提示未检测到试题」，必须手动刷新页面。
+    // 现在首题没解析到就每秒重试，最多等 60 秒。
+    const parseDeadline = Date.now() + 6e4;
     while (true) {
       const parsed = await handleCurrentPage();
-      if (!parsed) break;
+      if (!parsed) {
+        if (!parsedOnce && Date.now() < parseDeadline) {
+          await sleep(1);
+          continue;
+        }
+        break;
+      }
+      parsedOnce = true;
       if (!profile.nextButton) break;
       const nextButton = typeof profile.nextButton === "function" ? profile.nextButton() : document.querySelector(profile.nextButton);
       if (!nextButton || nextButton.classList.contains("disabled")) break;
@@ -13218,7 +13252,7 @@
       await sleep(1.5 + Math.random() * 2);
     }
     if (!questions.length) {
-      log.insertLog("没有解析到题目，请检查是否进入正确页面...", "warning");
+      log.insertLog("等了 60 秒仍未解析到题目，请确认页面已加载完成，或手动刷新一次..", "warning");
       return;
     }
     questionStore.currentQuestionIndex = questions.length;
