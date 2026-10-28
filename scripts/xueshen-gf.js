@@ -10521,11 +10521,20 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           // 先把命中的选项序号收齐再去点，避免同一选项被点两次（多选题再点一次会取消勾选，
           // 表现就是「多选题只答一个」）
           const pickedIdx = new Set();
-          question.answer.answer.forEach((answer) => {
+          const answerList = normalizeChoiceAnswerList(question.answer.answer);
+          answerList.forEach((answer) => {
             // 字母答案映射：A / ABD / A,B,D → 按选项序号勾选
             const letterText = String(answer || "").trim();
             let letters = [];
-            if (/^[A-Za-z]$/.test(letterText)) letters = [letterText.toUpperCase()];
+            const prefixed = letterText.match(/^([A-Za-z])\s*[.、．)）:：]\s*(\S[\s\S]*)$/);
+            if (prefixed) {
+              const pIdx = prefixed[1].toUpperCase().charCodeAt(0) - 65;
+              const pOpt = optionsDOM[pIdx];
+              const pOptText = pOpt ? normalizeOptText(this.removeHtml(pOpt.innerHTML)) : "";
+              const pBody = normalizeOptText(prefixed[2]);
+              // 字母与选项正文对得上才按字母点，防止选项顺序被打乱时点错
+              if (!pOptText || !pBody || pOptText.includes(pBody) || pBody.includes(pOptText)) letters = [prefixed[1].toUpperCase()];
+            } else if (/^[A-Za-z]$/.test(letterText)) letters = [letterText.toUpperCase()];
             else if (/^[A-Za-z]{2,12}$/.test(letterText)) letters = letterText.toUpperCase().split("");
             else if (/^[A-Z](?:[\s,，、;；|]+[A-Z])+$/i.test(letterText)) letters = letterText.toUpperCase().split(/[\s,，、;；|]+/).filter(Boolean);
             optionsDOM.forEach((optionDOM, optIdx) => {
@@ -12835,8 +12844,19 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       }
       return choiceOptionSelected(el) || choiceOptionSig(el) !== before;
     };
+    // 答案可能是「A. 正文, B. 正文…」这样被拼成一条的：先按「字母+分隔符」拆成多项，
+    // 否则多选题只会认到其中一项（其余选项匹配不上，表现就是只勾一个）
+    const normalizeChoiceAnswerList = (answers) => {
+      const list = (Array.isArray(answers) ? answers : [answers]).map((a) => String(a == null ? "" : a).trim()).filter(Boolean);
+      if (list.length !== 1) return list;
+      const parts = list[0].split(/(?=[A-Za-z]\s*[.、．)）:：]\s*\S)/)
+        .map((s) => s.replace(/^[,，、;；\s]+/, "").trim()).filter(Boolean);
+      const allPrefixed = parts.length > 1 && parts.every((p) => /^[A-Za-z]\s*[.、．)）:：]/.test(p));
+      return allPrefixed ? parts : list;
+    };
     const fillChoice = (question, answers) => {
       var _a2;
+      answers = normalizeChoiceAnswerList(answers);
       const optionEls = ((_a2 = question.optionEls) == null ? void 0 : _a2.length) ? question.optionEls : Array.from(
         question.element.querySelectorAll(
           ".optionUl label, label.user-select.group, .radio-view li.clearfix, .checkbox-views label.el-checkbox, label, [role='radio'], [role='checkbox']"
@@ -12862,7 +12882,20 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       const letterAnswers = [];
       answers.forEach(a => {
         const t = String(a || "").trim();
-        if (/^[A-Za-z]$/.test(t)) {
+        // "A. 以人民安全为宗旨" / "B、政治安全" 这类「字母 + 分隔符 + 选项正文」，
+        // 直接按字母取；不这么处理就只能靠正文匹配，多选题经常只中最后一项
+        const prefixed = t.match(/^([A-Za-z])\s*[.、．)）:：]\s*(\S[\s\S]*)$/);
+        if (prefixed) {
+          const idx = prefixed[1].toUpperCase().charCodeAt(0) - 65;
+          const opt = optionEls[idx];
+          const optText = opt ? normalize(opt.textContent) : "";
+          const body = normalize(prefixed[2]);
+          // 字母与选项正文对得上才按字母点，防止选项顺序被打乱时点错
+          if (!optText || !body || optText.includes(body) || body.includes(optText)) {
+            const letter = prefixed[1].toUpperCase();
+            if (!letterAnswers.includes(letter)) letterAnswers.push(letter);
+          }
+        } else if (/^[A-Za-z]$/.test(t)) {
           if (!letterAnswers.includes(t.toUpperCase())) letterAnswers.push(t.toUpperCase());
         } else if (/^[A-Z]{2,10}$/.test(t) && [...t].every((c, i) => i === 0 || c > t[i - 1])) {
           const isOptionText = optionEls.some(op => normalize(op.textContent) === normalize(t));
