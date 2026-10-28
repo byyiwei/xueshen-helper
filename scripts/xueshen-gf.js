@@ -12826,20 +12826,14 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         inputs.map((i) => isInputChecked(i) ? 1 : 0).join("")
       ].join("|");
     };
-    // 点一次后回读状态：认得出已选就算成功，认不出但状态确实变了也算成功；
-    // 两连发（click + dispatchEvent）在切换语义的选项上会自己把自己取消掉。
+    // 只点一次：多选题是切换语义，补点第二下会把已勾的取消掉（表现就是最后答不完整）。
+    // 有没有点上，交给后面的复核轮次统一纠正。
     const clickChoiceOption = (el) => {
-      var _a2;
       if (!el) return false;
       if (choiceOptionSelected(el)) return true;
       const before = choiceOptionSig(el);
       try {
         el.click();
-      } catch (_) {
-      }
-      if (choiceOptionSelected(el) || choiceOptionSig(el) !== before) return true;
-      try {
-        (_a2 = el.dispatchEvent) == null ? void 0 : _a2.call(el, new MouseEvent("click", { bubbles: true }));
       } catch (_) {
       }
       return choiceOptionSelected(el) || choiceOptionSig(el) !== before;
@@ -12854,7 +12848,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       const allPrefixed = parts.length > 1 && parts.every((p) => /^[A-Za-z]\s*[.、．)）:：]/.test(p));
       return allPrefixed ? parts : list;
     };
-    const fillChoice = (question, answers) => {
+    const fillChoice = async (question, answers) => {
       var _a2;
       answers = normalizeChoiceAnswerList(answers);
       const optionEls = ((_a2 = question.optionEls) == null ? void 0 : _a2.length) ? question.optionEls : Array.from(
@@ -12904,20 +12898,25 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       });
       // 逐字母映射：越界的那个字母匹配不到选项自然跳过，不再一票否决整组字母答案
       const letterMappingOk = letterAnswers.length > 0;
+      const isMultiChoice = question.type === "多选题" || /多选|X型|不定项/.test(question.type || "");
+      // 先算出「应该勾哪几项」，再统一去点：多选题点一下是勾、点两下是取消，
+      // 边点边判很容易把已经勾上的又点掉，最后就缺项
+      const targetIdx = new Set();
       optionEls.forEach((option, idx) => {
         const optionText = normalize(option.textContent);
         const isLetterMatched = letterMappingOk && letterAnswers.includes(String.fromCharCode(65 + idx));
         const isJudgementMatched = question.type === "判断题" && (/^(正确|是|对|√|t|true|right)$/i.test(judgementAnswer) && /^(正确|是|对|√|t|true|right)$/i.test(optionText) || /^(错误|否|错|×|f|false|wrong)$/i.test(judgementAnswer) && /^(错误|否|错|×|f|false|wrong)$/i.test(optionText));
-        // 精确匹配 / 字母索引匹配
         if (isLetterMatched || normalizedAnswers.includes(optionText) || isJudgementMatched) {
-          if (clickChoiceOption(option)) selected = true;
+          targetIdx.add(idx);
+          return;
         }
         // 子串匹配兜底：答案可能含任何标点无法拆分，用选项文本在答案中查找包含关系
-        else if (optionText && optionText.length >= 2 && rawAnswers.some(raw => normalize(raw).includes(optionText))) {
-          if (clickChoiceOption(option)) selected = true;
+        if (optionText && optionText.length >= 2 && rawAnswers.some(raw => normalize(raw).includes(optionText))) {
+          targetIdx.add(idx);
+          return;
         }
         // 图片匹配：按 URL 最后一段（去查询串/扩展名）比对，兼容超星无扩展名 CDN 图
-        else if (answerImgs.length > 0) {
+        if (answerImgs.length > 0) {
           const getImgKey = (url) => {
             const clean = String(url || "").split(/[?#]/)[0].replace(/\/+$/, "");
             const seg = (clean.split("/").pop() || clean).replace(/\.(jpg|jpeg|png|gif|webp)$/i, "");
@@ -12938,14 +12937,32 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               }
             }
           }
-          if (matched) {
-            if (clickChoiceOption(option)) selected = true;
-          }
+          if (matched) targetIdx.add(idx);
         }
       });
-      return selected;
+      // 分轮复核：点一次 → 等一下读真实选中态 → 还不对再点，最多三轮
+      const sigBefore = /* @__PURE__ */ new Map();
+      for (let round = 0; round < 3; round += 1) {
+        let mismatch = false;
+        optionEls.forEach((option, idx) => {
+          const want = targetIdx.has(idx);
+          const now = choiceOptionSelected(option);
+          const sig = choiceOptionSig(option);
+          if (isMultiChoice ? want !== now : (want && !now)) {
+            // 上一轮点完状态已经变了、但仍判为未选中：是读取口径的问题，不能重复点，
+            // 多选再点一次会把已勾的取消掉
+            if (round > 0 && sigBefore.get(idx) !== void 0 && sigBefore.get(idx) !== sig) return;
+            mismatch = true;
+            sigBefore.set(idx, sig);
+            clickChoiceOption(option);
+          }
+        });
+        if (!mismatch) break;
+        await sleep(round === 0 ? 0.15 : 0.3);
+      }
+      return Array.from(targetIdx).some((idx) => optionEls[idx] && choiceOptionSelected(optionEls[idx]));
     };
-    const fillQuestion = (question) => {
+    const fillQuestion = async (question) => {
       var _a2;
       const answers = ((_a2 = question.answer) == null ? void 0 : _a2.answer) || [];
       if (!answers.length) return false;
@@ -12975,7 +12992,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             return false;
           }
           question.answer = Object.assign({}, question.answer, { code: 1, answer: picked });
-          if (fillQuestion(question)) {
+          if (await fillQuestion(question)) {
             bankFilled = true;
             handled = true;
           }
@@ -12989,7 +13006,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             answer: answerData.data.answer,
             source: "accurate"
           });
-          if (fillQuestion(question)) {
+          if (await fillQuestion(question)) {
             bankFilled = true;
             handled = true;
           } else {
@@ -13025,7 +13042,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       }
       if (bankFilled) return true;
       if ([1, 2].includes(question.answer.code)) {
-        const filled = fillQuestion(question);
+        const filled = await fillQuestion(question);
         if (!filled) question.answer.code = 0;
         return filled;
       }
