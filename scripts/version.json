@@ -2,11 +2,11 @@
   "xueshen-sc": {
     "version": "5.6.0",
     "download_url": "https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js",
-    "changelog": "v5.6.0 新增青书学堂与出头科技：学习时长接口上报、作业自动作答、考试取题提示"
+    "changelog": "v5.6.0 新增青书学堂与出头科技：学习时长接口上报、作业自动作答、考试自动作答并逐题核对"
   },
   "xueshen-gf": {
     "version": "5.6.0",
     "download_url": "https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js",
-    "changelog": "v5.6.0 新增青书学堂与出头科技：学习时长接口上报、作业自动作答、考试取题提示"
+    "changelog": "v5.6.0 新增青书学堂与出头科技：学习时长接口上报、作业自动作答、考试自动作答并逐题核对"
   }
 }

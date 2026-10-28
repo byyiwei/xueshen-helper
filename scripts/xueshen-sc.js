@@ -13,7 +13,7 @@
 // @license      Proprietary
 // @changelog    v5.6.0 (2026-10-28)
 // @changelog    1. 新增「青书学堂」支持：课件学习时长接口上报、作业自动作答（默认只保存不交卷）
-// @changelog    2. 新增「出头科技」支持：章节学习时长上报、考试取题与答案提示
+// @changelog    2. 新增「出头科技」支持：章节学习时长上报、考试自动作答并逐题核对（交卷需手动）
 // @changelog    3. 两个新平台均为接口直通，超星 / 智慧树 原有功能不受影响
 // @changelog    v5.5.2 (2026-10-27)
 // @changelog    1. 适配智慧树新版前端检测：视频倍速钳制 1.8x（平台红线）、考试页 XHR hook 原生伪装，答题/视频页不再弹「检测到异常脚本」
@@ -13669,7 +13669,8 @@ const XS_EXT = (() => {
     ctStepSec: 60,          // 出头每个打包片段的学习时长（秒）
     ctMaxChapters: 30,      // 出头单次最多处理的章节数
     ctMinGapMs: 1500,       // 出头接口间隔（比青书宽松，平台限流不同）
-    autoSubmit: false       // 作业 / 考试是否自动交卷（默认关闭）
+    autoSubmit: false,      // 作业 / 考试是否自动交卷（默认关闭）
+    autoFillExam: true      // 出头考试是否自动点选（点完逐题核对，点不中退回提示）
   };
 
   const extLog = (text, type) => {
@@ -14498,8 +14499,99 @@ const XS_EXT = (() => {
     return Array.from(new Set(hits));
   }
 
+  function ctVisible(el) {
+    if (!el || !el.getBoundingClientRect) return false;
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return false;
+    const style = window.getComputedStyle ? window.getComputedStyle(el) : null;
+    if (style && (style.visibility === 'hidden' || style.display === 'none' || Number(style.opacity) === 0)) return false;
+    return true;
+  }
+
+  function ctClick(el) {
+    if (!el) return false;
+    try {
+      ['mousedown', 'mouseup', 'click'].forEach((type) => {
+        el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+      });
+      return true;
+    } catch (e) {
+      try { el.click(); return true; } catch (_) { return false; }
+    }
+  }
+
+  function ctOptionChecked(node) {
+    if (!node) return false;
+    const input = node.matches && node.matches('input')
+      ? node
+      : (node.querySelector ? node.querySelector('input[type="radio"], input[type="checkbox"], input') : null);
+    if (input && input.checked) return true;
+    let host = node;
+    try { host = (node.closest && node.closest('.ant-radio-wrapper, .ant-checkbox-wrapper, label, li')) || node; }
+    catch (e) { host = node; }
+    const cls = String((host && host.className) || '');
+    return /checked|selected|active/i.test(cls);
+  }
+
+  /** 在当前题目范围内按选项字母点选，返回是否点中并确认 */
+  function ctClickLetters(letters) {
+    if (!letters || !letters.length) return false;
+    const scopes = [
+      document.querySelector('.question-content, .exam-question, [class*="questionContent"], [class*="QuestionContent"], .ant-card-body'),
+      document.body
+    ].filter(Boolean);
+    let allOk = true;
+    for (const letter of letters) {
+      const lower = letter.toLowerCase();
+      let input = null;
+      for (const scope of scopes) {
+        const list = Array.from(scope.querySelectorAll(
+          `input[type="radio"][value="${letter}"], input[type="checkbox"][value="${letter}"], ` +
+          `input[type="radio"][value="${lower}"], input[type="checkbox"][value="${lower}"]`
+        )).filter(ctVisible);
+        if (list.length) { input = list[list.length - 1]; break; }
+      }
+      if (input) {
+        const host = input.closest('label') || input.parentElement || input;
+        ctClick(host);
+        if (!ctOptionChecked(input)) ctClick(input);
+        if (!ctOptionChecked(input)) allOk = false;
+        continue;
+      }
+      let hit = null;
+      for (const scope of scopes) {
+        const nodes = Array.from(scope.querySelectorAll('.ant-radio-wrapper, .ant-checkbox-wrapper, label, li, span'))
+          .filter((el) => ctVisible(el) && el.children.length === 0);
+        hit = nodes.find((el) => new RegExp(`^\\s*${letter}\\s*[.、．)）]`).test((el.textContent || '').trim()));
+        if (hit) break;
+      }
+      if (hit) ctClick(hit);
+      else allOk = false;
+    }
+    return allOk;
+  }
+
+  /** 点答题卡上的题号，切到指定题 */
+  function ctClickAnswerCard(num) {
+    const label = String(num);
+    const roots = Array.from(document.querySelectorAll(
+      '[class*="answer"], [class*="Answer"], [class*="sheet"], [class*="Sheet"], [class*="card"], [class*="Card"]'
+    ));
+    for (const root of roots) {
+      const nodes = Array.from(root.querySelectorAll('div, span, li, a, button'))
+        .filter((el) => ctVisible(el) && el.children.length === 0 && (el.textContent || '').trim() === label);
+      const hit = nodes.find((el) => {
+        const rect = el.getBoundingClientRect();
+        return rect.width >= 12 && rect.width <= 90 && rect.height >= 12;
+      });
+      if (hit) { ctClick(hit); return true; }
+    }
+    return false;
+  }
+
   async function ctExamLogic() {
     if (!ctOnSite()) return;
+    const startHref = location.href;
     const route = ctRoute();
     if (route.kind !== 'paper' || !route.examPaperId || !route.examinationId) return;
     const user = ctUser();
@@ -14539,6 +14631,7 @@ const XS_EXT = (() => {
       extLog(`出头：试卷共 ${questions.length} 道题，开始作答`, null);
       let done = 0;
       let skipped = 0;
+      const pending = [];
       for (let index = 0; index < questions.length; index += 1) {
         const q = questions[index];
         const typeId = ctToInt(q.QuestionType_ID, 0);
@@ -14575,14 +14668,49 @@ const XS_EXT = (() => {
         }
         const answers = Array.isArray(result.data.answer) ? result.data.answer : [result.data.answer];
         const letters = ctAnswerLetters(answers.join(''), options);
-        if (letters.length) {
-          extLog(`${rowText}：答案 ${letters.join('')}（请在页面上核对）`, 'success');
-        } else {
-          extLog(`${rowText}：答案 ${extText(answers.join('、')).slice(0, 60)}（请在页面上核对）`, 'warning');
-        }
+        pending.push({ index, letters, textAnswer: extText(answers.join('、')).slice(0, 60) });
         done += 1;
       }
-      extLog(`出头：作答提示完成，可作答 ${done} 题，跳过 ${skipped} 题；请人工核对后再交卷`, 'success');
+      if (!pending.length) {
+        extLog(`出头：没有可作答的题目（跳过 ${skipped} 题）`, 'warning');
+        return;
+      }
+      if (!EXT_CONF.autoFillExam) {
+        pending.forEach((item) => {
+          extLog(`出头 第${item.index + 1}题：答案 ${item.letters.length ? item.letters.join('') : item.textAnswer}`,
+            item.letters.length ? 'success' : 'warning');
+        });
+        extLog('出头：自动点选已关闭，请按上面的答案手动选择', 'warning');
+        return;
+      }
+      extLog(`出头：答案已就绪（${done} 题），开始自动点选；每题点完会核对，交卷仍需你手动确认`, null);
+      let filled = 0;
+      let manual = 0;
+      for (const item of pending) {
+        if (location.href !== startHref) {
+          extLog('出头：页面已切换，自动点选停止', 'warning');
+          break;
+        }
+        if (!item.letters.length) {
+          manual += 1;
+          extLog(`出头 第${item.index + 1}题：答案不是选项字母，请手动填 ${item.textAnswer}`, 'warning');
+          continue;
+        }
+        if (pending.length > 1) {
+          ctClickAnswerCard(item.index + 1);
+          await extSleep(260);
+        }
+        const ok = ctClickLetters(item.letters);
+        await extSleep(140);
+        if (ok) {
+          filled += 1;
+          extLog(`出头 第${item.index + 1}题：已选 ${item.letters.join('')}`, 'success');
+        } else {
+          manual += 1;
+          extLog(`出头 第${item.index + 1}题：自动点选未确认，请手动选 ${item.letters.join('')}`, 'warning');
+        }
+      }
+      extLog(`出头：自动点选完成，已选 ${filled} 题，需手动 ${manual} 题；请核对后手动交卷`, 'success');
     } catch (error) {
       extLog(`出头考试处理失败：${(error && error.message) || error}`, 'error');
     }
