@@ -17,8 +17,9 @@
 // @changelog    3. 智慧树新增「掌握度」面板：开始 / 继续、暂停、进度、题库导入导出、运行记录
 // @changelog    4. 设置新增「掌握度满分（智慧树）」开关；关闭后掌握度页仍走原来的答题流程
 // @changelog    5. 可用题库优先：先问题库和 AI，答不出来再按选项组合猜，尽量少消耗答题次数
-// @changelog    6. 修复：导出的题库文件中文乱码（补齐 BOM）、导入题库会覆盖别的标签页进度、中途换页后重复刷同一个知识点
-// @changelog    7. 以上改动只涉及智慧树，超星 / 青书 / 出头 不受影响
+// @changelog    6. 修复：智慧树面板里的「队列」「掌握度」页签点开是空白（面板不再依赖运行时模板编译）
+// @changelog    7. 修复：导出的题库文件中文乱码（补齐 BOM）、导入题库会覆盖别的标签页进度、中途换页后重复刷同一个知识点
+// @changelog    8. 以上改动只涉及智慧树，超星 / 青书 / 出头 不受影响
 // @changelog    v5.6.1 (2026-10-29)
 // @changelog    1. 智慧树答题补齐：掌握度页可自动翻页、每题等题干渲染完再解析、题干取不到时只看可见文字、作业页也能抓到试卷接口
 // @changelog    2. 智慧树弹题：弹窗出现就处理（不再等视频暂停）、遇到验证码先等、读不到页面答案时兜底作答、AI 智慧课补上弹题处理
@@ -15772,79 +15773,60 @@ const XS_EXT = (() => {
       const start = () => store.start();
       return { store, statusText, statusLabel, load, start };
     },
-    template: `
-      <div style="padding:14px;display:flex;flex-direction:column;gap:12px;height:100%;overflow:auto;color:var(--t-text);font-size:13px">
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <div style="font-size:15px;font-weight:600">课程队列</div>
-          <div style="color:var(--t-text3)">{{ statusText }}</div>
-        </div>
-
-        <div v-if="!store.hasQueue" style="display:flex;flex-direction:column;gap:10px">
-          <div style="color:var(--t-text3);line-height:1.7">
-            先在浏览器打开智慧树「在线学堂」学生首页，再点下面的按钮读取进行中的课程；勾选的顺序就是自动学习的顺序。
-          </div>
-          <button
-            @click="load"
-            :disabled="store.loadingCandidates"
-            style="align-self:flex-start;padding:6px 14px;border-radius:6px;border:1px solid var(--t-primary-border);background:var(--t-primary-bg);color:var(--t-primary);cursor:pointer"
-          >{{ store.loadingCandidates ? "读取中.." : "读取进行中的课程" }}</button>
-          <div v-if="store.candidateError" style="color:var(--t-warning);line-height:1.6">{{ store.candidateError }}</div>
-          <div v-if="store.candidates.length" style="display:flex;flex-direction:column;gap:6px">
-            <label
-              v-for="course in store.candidates"
-              :key="course.key"
-              style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid var(--t-border);border-radius:6px;background:var(--t-surface2);cursor:pointer"
-            >
-              <input
-                type="checkbox"
-                :checked="store.selectedKeys.includes(course.key)"
-                @change="store.toggleCandidate(course.key)"
-                style="margin-top:3px"
-              >
-              <span style="display:flex;flex-direction:column;gap:2px">
-                <span style="color:var(--t-text)">{{ course.name }}</span>
-                <span v-if="course.desc" style="color:var(--t-text3);font-size:12px">{{ course.desc }}</span>
-              </span>
-            </label>
-          </div>
-          <button
-            v-if="store.selectedKeys.length"
-            @click="start"
-            style="align-self:flex-start;padding:6px 14px;border-radius:6px;border:1px solid var(--t-primary);background:var(--t-primary);color:#fff;cursor:pointer"
-          >开始学习（已选 {{ store.selectedKeys.length }} 门）</button>
-        </div>
-
-        <div v-else style="display:flex;flex-direction:column;gap:10px">
-          <div style="color:var(--t-text3)">已完成 {{ store.finishedCount }} / {{ store.items.length }} 门</div>
-          <div style="display:flex;flex-direction:column;gap:6px">
-            <div
-              v-for="(item, index) in store.items"
-              :key="item.key"
-              style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--t-border);border-radius:6px;background:var(--t-surface2)"
-            >
-              <span style="color:var(--t-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ index + 1 }}. {{ item.name }}</span>
-              <span style="color:var(--t-text3);flex:none">{{ statusLabel(item) }}</span>
-            </div>
-          </div>
-          <div style="display:flex;gap:8px">
-            <button
-              v-if="store.status === 'running'"
-              @click="store.pause()"
-              style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer"
-            >暂停</button>
-            <button
-              v-if="store.status === 'paused'"
-              @click="store.resume()"
-              style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-primary);background:var(--t-primary);color:#fff;cursor:pointer"
-            >继续</button>
-            <button
-              @click="store.clear()"
-              style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer"
-            >清空队列</button>
-          </div>
-        </div>
-      </div>
-    `
+    // 用渲染函数而不是模板字符串：油猴沙箱里 new Function 编译出来的代码看不到 Vue 变量
+    render() {
+      const h = vue.h;
+      const store = this.store;
+      const statusText = this.statusText;
+      const plain = { padding: "5px 12px", borderRadius: "6px", border: "1px solid var(--t-border2)", background: "var(--t-surface)", color: "var(--t-text)", cursor: "pointer" };
+      const primary = Object.assign({}, plain, { border: "1px solid var(--t-primary)", background: "var(--t-primary)", color: "#fff" });
+      const soft = { alignSelf: "flex-start", padding: "6px 14px", borderRadius: "6px", border: "1px solid var(--t-primary-border)", background: "var(--t-primary-bg)", color: "var(--t-primary)", cursor: "pointer" };
+      const row = (style, children) => h("div", { style }, children);
+      const children = [
+        row({ display: "flex", alignItems: "center", justifyContent: "space-between" }, [
+          h("div", { style: { fontSize: "15px", fontWeight: 600 } }, "课程队列"),
+          h("div", { style: { color: "var(--t-text3)" } }, statusText)
+        ])
+      ];
+      if (!store.hasQueue) {
+        const loadButton = h("button", { onClick: this.load, disabled: store.loadingCandidates, style: soft }, store.loadingCandidates ? "读取中.." : "读取进行中的课程");
+        const list = store.candidates.map((course) => h("label", {
+          key: course.key,
+          style: { display: "flex", alignItems: "flex-start", gap: "8px", padding: "8px 10px", border: "1px solid var(--t-border)", borderRadius: "6px", background: "var(--t-surface2)", cursor: "pointer" }
+        }, [
+          h("input", { type: "checkbox", checked: store.selectedKeys.includes(course.key), onChange: () => store.toggleCandidate(course.key), style: { marginTop: "3px" } }),
+          h("span", { style: { display: "flex", flexDirection: "column", gap: "2px" } }, [
+            h("span", { style: { color: "var(--t-text)" } }, course.name),
+            course.desc ? h("span", { style: { color: "var(--t-text3)", fontSize: "12px" } }, course.desc) : null
+          ])
+        ]));
+        children.push(row({ display: "flex", flexDirection: "column", gap: "10px" }, [
+          h("div", { style: { color: "var(--t-text3)", lineHeight: 1.7 } }, "先在浏览器打开智慧树「在线学堂」学生首页，再点下面的按钮读取进行中的课程；勾选的顺序就是自动学习的顺序。"),
+          loadButton,
+          store.candidateError ? h("div", { style: { color: "var(--t-warning)", lineHeight: 1.6 } }, store.candidateError) : null,
+          list.length ? row({ display: "flex", flexDirection: "column", gap: "6px" }, list) : null,
+          store.selectedKeys.length ? h("button", { onClick: this.start, style: Object.assign({}, soft, { border: "1px solid var(--t-primary)", background: "var(--t-primary)", color: "#fff" }) }, `开始学习（已选 ${store.selectedKeys.length} 门）`) : null
+        ]));
+      } else {
+        const items = store.items.map((item, index) => h("div", {
+          key: item.key,
+          style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", padding: "8px 10px", border: "1px solid var(--t-border)", borderRadius: "6px", background: "var(--t-surface2)" }
+        }, [
+          h("span", { style: { color: "var(--t-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, `${index + 1}. ${item.name}`),
+          h("span", { style: { color: "var(--t-text3)", flex: "none" } }, this.statusLabel(item))
+        ]));
+        children.push(row({ display: "flex", flexDirection: "column", gap: "10px" }, [
+          h("div", { style: { color: "var(--t-text3)" } }, `已完成 ${store.finishedCount} / ${store.items.length} 门`),
+          row({ display: "flex", flexDirection: "column", gap: "6px" }, items),
+          row({ display: "flex", gap: "8px" }, [
+            store.status === "running" ? h("button", { onClick: () => store.pause(), style: plain }, "暂停") : null,
+            store.status === "paused" ? h("button", { onClick: () => store.resume(), style: primary }, "继续") : null,
+            h("button", { onClick: () => store.clear(), style: plain }, "清空队列")
+          ])
+        ]));
+      }
+      return row({ padding: "14px", display: "flex", flexDirection: "column", gap: "12px", height: "100%", overflow: "auto", color: "var(--t-text)", fontSize: "13px" }, children);
+    }
   };
   // ===== 智慧树掌握度满分 =====
   // 参照「知到智慧树掌握度满分助手」的作答思路移植：
@@ -17631,163 +17613,135 @@ const XS_EXT = (() => {
         const reset = () => resetReview();
         return { store, onFile, start, reset };
       },
-      template: `
-        <div style="padding:14px;display:flex;flex-direction:column;gap:12px;height:100%;overflow:auto;color:var(--t-text);font-size:13px">
-          <div style="display:flex;align-items:center;justify-content:space-between">
-            <div style="font-size:15px;font-weight:600">掌握度满分</div>
-            <div style="color:var(--t-text3)">{{ store.statusText }}</div>
-          </div>
+      // 用渲染函数而不是模板字符串：油猴沙箱里 new Function 编译出来的代码看不到 Vue 变量
+      render() {
+        const h = vue.h;
+        const store = this.store;
+        const locked = store.status === "running" || store.status === "starting";
+        const smallText = { color: "var(--t-text3)", fontSize: "12px", lineHeight: 1.6 };
+        const selectStyle = { flex: 1, maxWidth: "200px", padding: "4px 8px", borderRadius: "6px", border: "1px solid var(--t-border2)", background: "var(--t-surface2)", color: "var(--t-text)" };
+        const buttonStyle = { padding: "5px 12px", borderRadius: "6px", border: "1px solid var(--t-border2)", background: "var(--t-surface)", color: "var(--t-text)", cursor: "pointer" };
+        const primaryButton = Object.assign({}, buttonStyle, { border: "1px solid var(--t-primary)", background: "var(--t-primary)", color: "#fff" });
+        const labeled = (label, control) => h("label", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" } }, [h("span", { style: { color: "var(--t-text3)" } }, label), control]);
+        const parts = [
+          h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } }, [
+            h("div", { style: { fontSize: "15px", fontWeight: 600 } }, "掌握度满分"),
+            h("div", { style: { color: "var(--t-text3)" } }, store.statusText)
+          ])
+        ];
+        if (!store.courseId) {
+          parts.push(h("div", { style: { color: "var(--t-text3)", lineHeight: 1.7 } }, "请先打开智慧树的课程掌握度页面（热力图），再回到这里开始。"));
+        } else {
+          const info = [
+            h("div", { style: { color: "var(--t-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, store.courseName)
+          ];
+          if (store.activeName) info.push(h("div", { style: { color: "var(--t-text3)", fontSize: "12px" } }, `当前知识点：${store.activeName}`));
+          const percent = store.progress ? store.progress.percent : 0;
+          info.push(h("div", { style: { display: "flex", alignItems: "center", gap: "10px" } }, [
+            h("div", { style: { flex: 1, height: "6px", borderRadius: "3px", background: "var(--t-border)", overflow: "hidden" } }, [
+              h("div", { style: { width: `${percent}%`, height: "100%", background: "var(--t-primary)", transition: "width .3s" } })
+            ]),
+            h("div", { style: { color: "var(--t-text)", fontVariantNumeric: "tabular-nums" } }, store.percentText)
+          ]));
+          info.push(h("div", { style: { color: "var(--t-text3)", fontSize: "12px" } }, store.remainText));
+          if (store.reviewStats) {
+            info.push(h("div", { style: { color: "var(--t-text3)", fontSize: "12px" } }, `本轮新增 ${store.reviewStats.added} · 复核 ${store.reviewStats.verified} · 纠正 ${store.reviewStats.corrected} · 未定 ${store.reviewStats.unresolved}`));
+          }
+          parts.push(h("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } }, info));
 
-          <div v-if="!store.courseId" style="color:var(--t-text3);line-height:1.7">
-            请先打开智慧树的课程掌握度页面（热力图），再回到这里开始。
-          </div>
+          const actions = [
+            locked
+              ? h("button", { onClick: () => store.pause(), style: { padding: "5px 14px", borderRadius: "6px", border: "1px solid var(--t-border2)", background: "var(--t-surface)", color: "var(--t-text)", cursor: "pointer" } }, store.status === "starting" ? "取消启动" : "暂停")
+              : h("button", { onClick: this.start, style: { padding: "5px 14px", borderRadius: "6px", border: "1px solid var(--t-primary)", background: "var(--t-primary)", color: "#fff", cursor: "pointer" } }, "开始 / 继续")
+          ];
+          if (store.activity === "bank") actions.push(h("button", { onClick: this.reset, style: buttonStyle }, "开始新一轮"));
+          parts.push(h("div", { style: { display: "flex", gap: "8px" } }, actions));
 
-          <template v-else>
-            <div style="display:flex;flex-direction:column;gap:6px">
-              <div style="color:var(--t-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ store.courseName }}</div>
-              <div v-if="store.activeName" style="color:var(--t-text3);font-size:12px">当前知识点：{{ store.activeName }}</div>
-              <div style="display:flex;align-items:center;gap:10px">
-                <div style="flex:1;height:6px;border-radius:3px;background:var(--t-border);overflow:hidden">
-                  <div :style="{ width: (store.progress ? store.progress.percent : 0) + '%', height: '100%', background: 'var(--t-primary)', transition: 'width .3s' }"></div>
-                </div>
-                <div style="color:var(--t-text);font-variant-numeric:tabular-nums">{{ store.percentText }}</div>
-              </div>
-              <div style="color:var(--t-text3);font-size:12px">{{ store.remainText }}</div>
-              <div v-if="store.reviewStats" style="color:var(--t-text3);font-size:12px">
-                本轮新增 {{ store.reviewStats.added }} · 复核 {{ store.reviewStats.verified }} · 纠正 {{ store.reviewStats.corrected }} · 未定 {{ store.reviewStats.unresolved }}
-              </div>
-            </div>
+          parts.push(h("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } }, [
+            labeled("模式", h("select", {
+              value: store.activity,
+              disabled: locked,
+              onChange: (event) => store.setActivity(event.target.value),
+              style: selectStyle
+            }, [h("option", { value: "practice" }, "满分练习"), h("option", { value: "bank" }, "题库完善")])),
+            h("div", { style: { color: "var(--t-text3)", fontSize: "12px", lineHeight: 1.6 } }, store.activity === "bank" ? "每个知识点都实际答一轮，不拿旧的满分顶替，用来补充题库。" : "跳过免考和已 100% 的知识点，其余答到全对为止。")
+          ]));
 
-            <div style="display:flex;gap:8px">
-              <button
-                v-if="store.status !== 'running' && store.status !== 'starting'"
-                @click="start"
-                style="padding:5px 14px;border-radius:6px;border:1px solid var(--t-primary);background:var(--t-primary);color:#fff;cursor:pointer"
-              >开始 / 继续</button>
-              <button
-                v-else
-                @click="store.pause()"
-                style="padding:5px 14px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer"
-              >{{ store.status === 'starting' ? '取消启动' : '暂停' }}</button>
-              <button
-                v-if="store.activity === 'bank'"
-                @click="reset"
-                style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer"
-              >开始新一轮</button>
-            </div>
+          parts.push(h("div", { style: { display: "flex", gap: "10px", alignItems: "center" } }, [
+            h("label", { style: { flex: 1, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" } }, [
+              h("span", { style: { color: "var(--t-text3)" } }, "范围"),
+              h("select", {
+                value: store.mode,
+                disabled: locked,
+                onChange: (event) => store.setMode(event.target.value),
+                style: Object.assign({}, selectStyle, { maxWidth: "140px" })
+              }, [h("option", { value: "all" }, "全部知识点"), h("option", { value: "current" }, "仅当前知识点")])
+            ]),
+            h("label", { style: { display: "flex", alignItems: "center", gap: "6px", color: "var(--t-text3)" } }, [
+              "间隔",
+              h("input", {
+                type: "number",
+                min: 0,
+                max: 5000,
+                step: 50,
+                value: store.delay,
+                disabled: locked,
+                onChange: (event) => store.setDelay(event.target.value),
+                style: { width: "70px", padding: "3px 6px", borderRadius: "6px", border: "1px solid var(--t-border2)", background: "var(--t-surface2)", color: "var(--t-text)" }
+              }),
+              h("span", null, "毫秒")
+            ])
+          ]));
+          if (store.mode === "current") {
+            parts.push(h("div", { style: smallText }, "手动进入一个知识点后再点开始，这个知识点全对就停；不会自动往下一个走。"));
+          }
 
-            <div style="display:flex;flex-direction:column;gap:6px">
-              <label style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-                <span style="color:var(--t-text3)">模式</span>
-                <select
-                  :value="store.activity"
-                  @change="store.setActivity($event.target.value)"
-                  :disabled="store.status === 'running' || store.status === 'starting'"
-                  style="flex:1;max-width:200px;padding:4px 8px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface2);color:var(--t-text)"
-                >
-                  <option value="practice">满分练习</option>
-                  <option value="bank">题库完善</option>
-                </select>
-              </label>
-              <div style="color:var(--t-text3);font-size:12px;line-height:1.6">
-                {{ store.activity === 'bank' ? '每个知识点都实际答一轮，不拿旧的满分顶替，用来补充题库。' : '跳过免考和已 100% 的知识点，其余答到全对为止。' }}
-              </div>
-            </div>
+          const bank = [
+            labeled("题库课程", h("select", {
+              value: store.exportCourse,
+              onChange: (event) => store.setExportCourse(event.target.value),
+              style: selectStyle
+            }, store.courses.map((course) => h("option", { key: course.id, value: course.id }, course.name || course.id)))),
+            h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } }, [
+              h("span", null, `已确认答案 ${store.bankCount} 题`),
+              h("span", { style: { color: "var(--t-text3)", fontSize: "12px" } }, `导入候选 ${store.importedCount} 题`)
+            ]),
+            h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } }, [
+              h("button", { onClick: () => store.exportBank(), style: buttonStyle }, "导出题库"),
+              h("button", { onClick: () => store.exportExcluded(), style: buttonStyle }, "导出未入库清单"),
+              h("button", { onClick: () => store.exportRecords(), style: buttonStyle }, "导出记录"),
+              h("label", { style: Object.assign({}, buttonStyle, { display: "inline-block" }) }, [
+                "导入题库",
+                h("input", { type: "file", accept: ".txt,.json", style: { display: "none" }, onChange: this.onFile })
+              ]),
+              h("button", {
+                onClick: () => store.clearImportBank(),
+                style: { padding: "5px 12px", borderRadius: "6px", border: "1px solid var(--t-border)", background: "transparent", color: "var(--t-text3)", cursor: "pointer" }
+              }, "清除导入库")
+            ])
+          ];
+          if (store.importPreview) {
+            bank.push(h("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } }, [
+              h("div", { style: { whiteSpace: "pre-wrap", color: "var(--t-text3)", fontSize: "12px", lineHeight: 1.6, maxHeight: "120px", overflow: "auto" } }, store.importPreview),
+              h("div", { style: { display: "flex", gap: "8px" } }, [
+                h("button", { disabled: !store.importReady, onClick: () => store.confirmImport(), style: primaryButton }, "确认导入"),
+                h("button", { onClick: () => store.cancelImport(), style: buttonStyle }, "取消预览")
+              ])
+            ]));
+          }
+          parts.push(h("div", { style: { borderTop: "1px solid var(--t-border)", paddingTop: "10px", display: "flex", flexDirection: "column", gap: "8px" } }, bank));
 
-            <div style="display:flex;gap:10px;align-items:center">
-              <label style="flex:1;display:flex;align-items:center;justify-content:space-between;gap:8px">
-                <span style="color:var(--t-text3)">范围</span>
-                <select
-                  :value="store.mode"
-                  @change="store.setMode($event.target.value)"
-                  :disabled="store.status === 'running' || store.status === 'starting'"
-                  style="flex:1;max-width:140px;padding:4px 8px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface2);color:var(--t-text)"
-                >
-                  <option value="all">全部知识点</option>
-                  <option value="current">仅当前知识点</option>
-                </select>
-              </label>
-              <label style="display:flex;align-items:center;gap:6px;color:var(--t-text3)">
-                间隔
-                <input
-                  type="number"
-                  min="0"
-                  max="5000"
-                  step="50"
-                  :value="store.delay"
-                  @change="store.setDelay($event.target.value)"
-                  :disabled="store.status === 'running' || store.status === 'starting'"
-                  style="width:70px;padding:3px 6px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface2);color:var(--t-text)"
-                >
-                <span>毫秒</span>
-              </label>
-            </div>
-            <div v-if="store.mode === 'current'" style="color:var(--t-text3);font-size:12px;line-height:1.6">
-              手动进入一个知识点后再点开始，这个知识点全对就停；不会自动往下一个走。
-            </div>
-
-            <div style="border-top:1px solid var(--t-border);padding-top:10px;display:flex;flex-direction:column;gap:8px">
-              <label style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-                <span style="color:var(--t-text3)">题库课程</span>
-                <select
-                  :value="store.exportCourse"
-                  @change="store.setExportCourse($event.target.value)"
-                  style="flex:1;max-width:200px;padding:4px 8px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface2);color:var(--t-text)"
-                >
-                  <option v-for="course in store.courses" :key="course.id" :value="course.id">{{ course.name || course.id }}</option>
-                </select>
-              </label>
-              <div style="display:flex;align-items:center;justify-content:space-between">
-                <span>已确认答案 {{ store.bankCount }} 题</span>
-                <span style="color:var(--t-text3);font-size:12px">导入候选 {{ store.importedCount }} 题</span>
-              </div>
-              <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <button
-                  @click="store.exportBank()"
-                  style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer"
-                >导出题库</button>
-                <button
-                  @click="store.exportExcluded()"
-                  style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer"
-                >导出未入库清单</button>
-                <button
-                  @click="store.exportRecords()"
-                  style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer"
-                >导出记录</button>
-                <label style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer">
-                  导入题库
-                  <input type="file" accept=".txt,.json" style="display:none" @change="onFile">
-                </label>
-                <button
-                  @click="store.clearImportBank()"
-                  style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border);background:transparent;color:var(--t-text3);cursor:pointer"
-                >清除导入库</button>
-              </div>
-              <div v-if="store.importPreview" style="display:flex;flex-direction:column;gap:6px">
-                <div style="white-space:pre-wrap;color:var(--t-text3);font-size:12px;line-height:1.6;max-height:120px;overflow:auto">{{ store.importPreview }}</div>
-                <div style="display:flex;gap:8px">
-                  <button
-                    :disabled="!store.importReady"
-                    @click="store.confirmImport()"
-                    style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-primary);background:var(--t-primary);color:#fff;cursor:pointer"
-                  >确认导入</button>
-                  <button
-                    @click="store.cancelImport()"
-                    style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer"
-                  >取消预览</button>
-                </div>
-              </div>
-            </div>
-
-            <div style="border-top:1px solid var(--t-border);padding-top:10px;display:flex;flex-direction:column;gap:4px">
-              <div style="color:var(--t-text3);font-size:12px">运行记录</div>
-              <div style="white-space:pre-wrap;font-size:12px;line-height:1.6;color:var(--t-text3);max-height:180px;overflow:auto;font-family:var(--t-mono, monospace)">
-                {{ store.logs.length ? store.logs.slice(-12).join('\\n') : '暂无记录' }}
-              </div>
-            </div>
-          </template>
-        </div>
-      `
+          parts.push(h("div", { style: { borderTop: "1px solid var(--t-border)", paddingTop: "10px", display: "flex", flexDirection: "column", gap: "4px" } }, [
+            h("div", { style: { color: "var(--t-text3)", fontSize: "12px" } }, "运行记录"),
+            h("div", {
+              style: { whiteSpace: "pre-wrap", fontSize: "12px", lineHeight: 1.6, color: "var(--t-text3)", maxHeight: "180px", overflow: "auto", fontFamily: "var(--t-mono, monospace)" }
+            }, store.logs.length ? store.logs.slice(-12).join("\n") : "暂无记录")
+          ]));
+        }
+        return h("div", {
+          style: { padding: "14px", display: "flex", flexDirection: "column", gap: "12px", height: "100%", overflow: "auto", color: "var(--t-text)", fontSize: "13px" }
+        }, parts);
+      }
     };
 
     // ---------- 对外入口 ----------
