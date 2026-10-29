@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通学神助手｜超星·智慧树·知到·青书·出头全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试｜网课助手
 // @namespace    IPYIWEI
-// @version      5.6.0
+// @version      5.6.1
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @author       IPYIWEI
@@ -11,6 +11,12 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.6.1 (2026-10-29)
+// @changelog    1. 智慧树答题补齐：掌握度页可自动翻页、每题等题干渲染完再解析、题干取不到时只看可见文字、作业页也能抓到试卷接口
+// @changelog    2. 智慧树弹题：弹窗出现就处理（不再等视频暂停）、遇到验证码先等、读不到页面答案时兜底作答、AI 智慧课补上弹题处理
+// @changelog    3. 新增「视频助手」「答题助手」两个开关（仅智慧树），关掉后进对应页面不自动开始
+// @changelog    4. 新增课程队列：在「队列」页勾选课程，按顺序一门门刷完自动切课
+// @changelog    5. 以上改动只涉及智慧树，超星 / 青书 / 出头 不受影响
 // @changelog    v5.6.0 (2026-10-28)
 // @changelog    1. 新增「青书学堂」支持：课件学习时长接口上报、作业自动作答（默认只保存不交卷）
 // @changelog    2. 新增「出头科技」支持：章节学习时长上报、考试自动作答并逐题核对（交卷需手动）
@@ -159,6 +165,8 @@
 // @grant        GM_getValue
 // @grant        GM_info
 // @grant        GM_setValue
+// @grant        GM_addValueChangeListener
+// @grant        GM_removeValueChangeListener
 // @grant        GM_xmlhttpRequest
 // @grant        GM_openInTab
 // @grant        GM.openInTab
@@ -1990,6 +1998,18 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               value: true,
               type: "switch",
               tips: "开启后每30分钟检查：前台空闲或视频持续30分钟无进展时刷新；正常播放、答题、后台时不刷新；关闭立即停止定时器"
+            },
+            assistVideo: {
+              text: "视频助手（智慧树）",
+              value: true,
+              type: "switch",
+              tips: "只影响智慧树：关闭后进入学习页不会自动播放视频/切章节；答题助手打开后才会开始答题"
+            },
+            assistAnswer: {
+              text: "答题助手（智慧树）",
+              value: true,
+              type: "switch",
+              tips: "只影响智慧树：关闭后进入作业/考试页不会自动作答，可手动点开"
             }
           },
           examConfig: {
@@ -10756,6 +10776,99 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       fetchHook(type, () => handleFetchHook());
     });
   };
+  // 智慧树课中弹题：三种页面（旧版视频页、AI 智慧课、新共享课）共用同一套弹窗结构和 Vue 数据
+  const zhsPageDocument = () => (_unsafeWindow && _unsafeWindow.document) || document;
+  const zhsWaitForYidun = async (log) => {
+    if (!document.querySelector(".yidun_popup")) return true;
+    log.insertLog("检测到验证码，请完成验证后继续..", "warning");
+    const startTime = Date.now();
+    while (document.querySelector(".yidun_popup")) {
+      if (Date.now() - startTime > 5 * 60 * 1e3) {
+        log.insertLog("等待验证码完成超时，请手动刷新页面后继续..", "warning");
+        return false;
+      }
+      await sleep(1);
+    }
+    log.insertLog("验证码已完成，继续学习..");
+    return true;
+  };
+  const zhsGetTopicVm = () => {
+    var _a, _b;
+    const dialog = zhsPageDocument().querySelector("#playTopic-dialog");
+    return ((_b = (_a = dialog == null ? void 0 : dialog.__vue__) == null ? void 0 : _a.$parent) == null ? void 0 : _b.$parent) || null;
+  };
+  const zhsHasTopicDialog = () => {
+    const dialog = document.querySelector("#playTopic-dialog");
+    if (!dialog) return false;
+    const vm = zhsGetTopicVm();
+    if (vm && vm.testDialog) return true;
+    // 拿不到 Vue 实例时看弹窗是否真的显示着
+    const rect = dialog.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+  // 直接从页面 Vue 实例里读答案（答案本来就下发在前端数据里，不用猜）
+  const zhsAnswerTopicByVm = async (log) => {
+    var _a, _b, _c;
+    const vm = zhsGetTopicVm();
+    if (!(vm == null ? void 0 : vm.testDialog)) return false;
+    const question = (_b = (_a = vm.topicInfo) == null ? void 0 : _a.lessonTestQuestionUseInterfaceDtos) == null ? void 0 : _b[0];
+    const options = (_c = question == null ? void 0 : question.testQuestion) == null ? void 0 : _c.questionOptions;
+    const answers = question == null ? void 0 : question.answerUs;
+    log.insertLog("检测到弹题测验，尝试自动作答..");
+    const captchaPassed = await zhsWaitForYidun(log);
+    if (!captchaPassed) return false;
+    let count = 0;
+    if (options && answers && typeof vm.topicClickQot === "function") {
+      for (const option of options) {
+        if (answers.indexOf(option.sortUs) === -1) continue;
+        await sleep(0.8);
+        vm.topicClickQot(option);
+        count++;
+      }
+    }
+    await sleep(Math.max(2, 5 - count * 0.8));
+    vm.testDialog = false;
+    if (count) {
+      log.insertLog(`弹题已自动作答完成（${count}题），继续播放视频`);
+    } else {
+      log.insertLog("未读取到弹题答案，已关闭弹窗", "warning");
+    }
+    return true;
+  };
+  // 读不到 Vue 数据时的兜底：逐页随机点一个选项再关窗，至少能把视频放下去
+  const zhsHandleTopicDialogByDom = async (log) => {
+    var _a, _b;
+    const pages = Array.from(document.querySelectorAll("#playTopic-dialog .el-pager .number"));
+    if (!pages.length) return false;
+    log.insertLog("检测到弹题测验，正在处理..");
+    try {
+      for (const page of pages) {
+        if (!page.isConnected) continue;
+        if (!page.classList.contains("active")) {
+          page.click();
+          await sleep(0.5);
+        }
+        const options = Array.from(document.querySelectorAll("#playTopic-dialog ul .topic-item"));
+        if (!options.length) continue;
+        const captchaPassed = await zhsWaitForYidun(log);
+        if (!captchaPassed) return false;
+        const index = Math.floor(Math.random() * options.length);
+        await sleep(1);
+        const target = document.querySelector(
+          `#playTopic-dialog .topic .radio ul > li:nth-child(${index + 1})`
+        );
+        (_a = target || options[index]) == null ? void 0 : _a.click();
+        await sleep(1);
+      }
+      await sleep(1);
+      (_b = document.querySelector("#playTopic-dialog .close-btn, #playTopic-dialog .btn")) == null ? void 0 : _b.click();
+      log.insertLog("弹题测验已关闭");
+      return true;
+    } catch (error) {
+      log.insertLog(`弹题测验处理失败: ${error.message || "未知错误"}`, "warning");
+      return false;
+    }
+  };
   const videoStudyLogic = () => {
     const log = useLogStore();
     const setting = useSettingStore();
@@ -10908,6 +11021,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         return;
       }
       log.insertLog("检测到弹题测验，尝试自动作答..");
+      // 弹题前可能弹验证码，等用户过验证再继续，别硬点
+      const captchaPassed = await zhsWaitForYidun(log);
+      if (!captchaPassed) {
+        isAnsweringQuiz = false;
+        return;
+      }
       return new Promise((resolve) => {
         const timeout = setTimeout(() => {
           window.removeEventListener("message", handler);
@@ -10917,7 +11036,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           setTimeout(playVideo, 1e3);
           resolve();
         }, 2e4);
-        const handler = (e) => {
+        const handler = async (e) => {
           var _a2;
           if (((_a2 = e.data) == null ? void 0 : _a2.type) !== "ABC_ZHS_QUIZ_RESULT") return;
           clearTimeout(timeout);
@@ -10926,10 +11045,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             log.insertLog(`弹题已自动作答完成（${e.data.count}题），继续播放视频`);
           } else {
             log.insertLog(
-              `弹题自动作答失败${e.data.error ? ": " + e.data.error : ""}，关闭弹窗..`,
+              `弹题自动作答失败${e.data.error ? ": " + e.data.error : ""}，改用页面兜底作答..`,
               "warning"
             );
-            closeQuizDialog();
+            // 读不到页面数据时逐页随机点一个，保证视频不被弹窗卡住
+            const domHandled = await zhsHandleTopicDialogByDom(log);
+            if (!domHandled) closeQuizDialog();
           }
           isAnsweringQuiz = false;
           setTimeout(playVideo, 1e3);
@@ -10999,6 +11120,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         await sleep(5);
         initVideoTask();
       } else {
+        reportCourseResult("done", "视频章节全部完成");
         log.insertLog("所有章节视频已完成！");
         clearPollInterval();
       }
@@ -11020,7 +11142,13 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           return;
         }
         const video = document.querySelector("#vjs_container_html5_api");
-        if ((video == null ? void 0 : video.paused) && !video.ended && !isAnsweringQuiz) {
+        if (isAnsweringQuiz) return;
+        // 弹题只要出现就处理，不再依赖「视频刚好停在暂停状态」这个条件
+        if (zhsHasTopicDialog()) {
+          handlePopupQuiz();
+          return;
+        }
+        if ((video == null ? void 0 : video.paused) && !video.ended) {
           handleMidwayDialogs();
         }
       }, 2e3);
@@ -11304,6 +11432,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         await sleep(5);
         initResources();
       } else {
+        reportCourseResult("done", "学习资源全部完成");
         log.insertLog("所有章节已完成！");
       }
     };
@@ -11370,6 +11499,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     let resourceItems = [];
     let currentResourceType = "";
     let isStopped = false;
+    let quizTimer = null;
+    let isAnsweringQuiz = false;
     let chapterObserver = null;
     let resourceObserver = null;
     const waitFor = (selector, timeout = 1e4) => {
@@ -11459,6 +11590,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     };
     const onVideoPause = () => {
       if (!videoEl || videoEl.ended) return;
+      // 弹题弹窗开着时不要抢着播放，答完自然会继续
+      if (isAnsweringQuiz || zhsHasTopicDialog()) return;
       log.insertLog("视频被暂停，尝试恢复..");
       setTimeout(() => {
         if (videoEl && !videoEl.ended && videoEl.paused) {
@@ -11466,6 +11599,26 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           });
         }
       }, 2e3);
+    };
+    // AI 智慧课的弹题和旧版视频页是同一套弹窗，这里单独轮询，不依赖视频暂停事件
+    const watchPopupQuiz = () => {
+      if (quizTimer) return;
+      quizTimer = setInterval(async () => {
+        if (isAnsweringQuiz || !zhsHasTopicDialog()) return;
+        isAnsweringQuiz = true;
+        try {
+          const answered = await zhsAnswerTopicByVm(log);
+          if (!answered) await zhsHandleTopicDialogByDom(log);
+        } catch (e) {
+          log.insertLog(`弹题处理异常: ${e.message}`, "warning");
+        } finally {
+          isAnsweringQuiz = false;
+          if (videoEl && videoEl.paused && !videoEl.ended) {
+            videoEl.play().catch(() => {
+            });
+          }
+        }
+      }, 3e3);
     };
     const processVideo = async () => {
       var _a, _b;
@@ -11654,6 +11807,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         next.click();
         next.scrollIntoView({ behavior: "smooth" });
       } else {
+        reportCourseResult("done", "章节全部完成");
         log.insertLog("所有章节已完成！");
       }
     };
@@ -11769,6 +11923,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       setting.tabIndex = "1";
       await sleep(6);
       watchUrlChange();
+      watchPopupQuiz();
       await initAll();
     };
     start();
@@ -12099,6 +12254,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       if (runId !== currentRunId) return;
       const next = getNextSection();
       if (!next) {
+        reportCourseResult("done", "必学章节全部完成");
         log.insertLog("所有必学章节已完成！");
         return;
       }
@@ -12159,6 +12315,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     let isSwitching = false;
     let isHandlingQuiz = false;
     let visibilityWarned = false;
+    let isAllFinished = false;
     const waitFor = (target, timeout = 1e4, interval = 300) => {
       return new Promise((resolve, reject) => {
         const startTime = Date.now();
@@ -12236,6 +12393,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         }
         const options = Array.from(dialog.querySelectorAll(".options .option"));
         if (options.length) {
+          // 随堂练习也可能弹验证码，等用户过完再点
+          const captchaPassed = await zhsWaitForYidun(log);
+          if (!captchaPassed) return;
           const option = options[Math.floor(Math.random() * options.length)];
           await clickEl(option);
           await sleep(1);
@@ -12292,6 +12452,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     };
     const nextChapter = async () => {
       if (isSwitching) return;
+      if (isAllFinished) return;
       if (!setting.config.basicConfig.autoChangeChapter.value) {
         log.insertLog(
           "自动切换章节未开启，前往<span class='module'>设置</span>模块中更改",
@@ -12303,7 +12464,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       cleanupVideo();
       const next = getNextChapter();
       if (!next) {
+        // 记住已经刷完，避免每 2 秒重复检查、重复打印同一句日志
+        isAllFinished = true;
+        reportCourseResult("done", "章节视频全部完成");
         log.insertLog("所有章节视频已完成！");
+        if (finishTimer) clearInterval(finishTimer);
+        finishTimer = null;
         isSwitching = false;
         return;
       }
@@ -12442,7 +12608,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       root: ".questionContent",
       type: ".questionName",
       title: ".questionName .centent-pre",
-      options: ".radio-view li.clearfix, .checkbox-views label.el-checkbox, .fillAnswer"
+      options: ".radio-view li.clearfix, .checkbox-views label.el-checkbox, .fillAnswer",
+      // 最后一题时按钮仍在，只是多了 noNext 类；以前没写翻页按钮，这页只答第一题就收工
+      nextButton: () => {
+        const button = document.querySelector(".pre-next .next-topic");
+        return button && !button.classList.contains("noNext") ? button : null;
+      }
     },
     {
       name: "AI掌握度",
@@ -12739,6 +12910,18 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       }
       return null;
     };
+    // 翻页后题干是异步渲染的，等标题出现再解析，避免解析到空题面
+    // 图片题没有文字标题，题目区里出现图片也算就绪
+    const waitForQuestionTitle = async (profile2, timeout = 1e4) => {
+      var _a2;
+      const startTime = Date.now();
+      while (Date.now() - startTime < timeout) {
+        const root = document.querySelector(profile2.root);
+        if (root && cleanText((_a2 = queryOneSafe(root, profile2.title)) == null ? void 0 : _a2.textContent)) return;
+        if (root && root.querySelector && root.querySelector("img")) return;
+        await sleep(0.3);
+      }
+    };
     const parseQuestions = (profile2) => {
       const roots = Array.from(document.querySelectorAll(profile2.root));
       return roots.map((root) => {
@@ -12763,7 +12946,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         if (!title && titleHasImg) title = "[图片题]";
         if (!title) {
           const optionTextSet = new Set(optionsText.map((option) => normalize(option)));
-          title = queryAllSafe(root, "div, p, span").map((el) => cleanText(el.textContent)).filter((text) => text.length > 4).filter((text) => !optionTextSet.has(normalize(text))).filter(
+          title = queryAllSafe(root, "div, p, span").filter((el) => el.getClientRects().length > 0).map((el) => cleanText(el.textContent)).filter((text) => text.length > 4).filter((text) => !optionTextSet.has(normalize(text))).filter(
             (text) => !TYPE_TEXT_MAP.some(
               ({ keywords }) => keywords.some((keyword) => text === keyword || text === `${keyword}题`)
             )
@@ -13166,6 +13349,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     let emptyTries = 0;
     const handleCurrentPage = async () => {
       var _a2;
+      await waitForQuestionTitle(profile);
       let rawQuestions = parseQuestions(profile);
       if (answerSheetQuestions.length) {
         const apiQuestion = answerSheetQuestions[questions.length];
@@ -13266,6 +13450,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     log.insertLog(
       `答题完毕,正确率为${questionStore.accuracy}%,详情请前往<span class='module'>答题</span>模块查看..`
     );
+    // 智慧树作业/考试脚本从不代替交卷，提醒一句，免得以为已经交掉了
+    log.insertLog("已填完全部题目，请核对答案后手动提交", "warning");
     setTimeout(() => {
       setting.tabIndex = "1";
     }, 2e3);
@@ -13447,6 +13633,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       cleanupVideo();
       const next = getNextItem(profile);
       if (!next) {
+        reportCourseResult("done", "章节视频全部完成");
         log.insertLog("所有章节视频已完成！");
         isSwitching = false;
         return;
@@ -13816,6 +14003,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       await closeMasteryDialog();
       const next = getNextChapter();
       if (!next) {
+        reportCourseResult("done", "章节视频全部完成");
         log.insertLog("所有章节视频已完成！");
         isSwitching = false;
         return;
@@ -14985,29 +15173,897 @@ const XS_EXT = (() => {
   return { qsRoutes, ctRoutes, qsOnSite, ctOnSite };
 })();
 
+  // ===== 智慧树课程队列 =====
+  // 目标：在「队列」里勾几门课，刷完一门自动进下一门。
+  // 状态存 GM，多个标签页共用一份；同一时刻只有一个页面真正在推进队列。
+  const QUEUE_STORAGE_PREFIX = "xsCourseQueue:";
+  const QUEUE_HEARTBEAT_SECONDS = 5;
+  const QUEUE_LOCK_STALE_MS = 30e3;
+  const QUEUE_WATCHDOG_SECONDS = 30;
+  const QUEUE_IDLE_TIMEOUT_MS = 30 * 60e3;
+  const QUEUE_SWITCH_DELAY_SECONDS = 3;
+  const QUEUE_ORPHAN_CHECK_SECONDS = 20;
+  const QUEUE_STRUCTURE_FAILURE_LIMIT = 2;
+  const QUEUE_PROGRESS_THROTTLE_MS = 10e3;
+  const QUEUE_RESULT_STATUS = { done: "done", stuck: "skipped", locked: "skipped", error: "failed" };
+  const QUEUE_PAGE_ID = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const queueStorageKey = (platform) => `${QUEUE_STORAGE_PREFIX}${platform}`;
+  const queueReadValue = (key, fallback) => {
+    try {
+      if (typeof _GM_getValue === "function") return _GM_getValue(key, fallback);
+      const raw = window.localStorage.getItem(key);
+      return raw === null ? fallback : raw;
+    } catch (e) {
+      return fallback;
+    }
+  };
+  const queueWriteValue = (key, value) => {
+    try {
+      if (typeof _GM_setValue === "function") {
+        _GM_setValue(key, value);
+        return;
+      }
+      window.localStorage.setItem(key, value);
+    } catch (e) {
+    }
+  };
+  const createEmptyQueueState = () => ({
+    status: "idle",
+    items: [],
+    currentKey: null,
+    ownerId: null,
+    heartbeat: 0,
+    structureFailures: 0,
+    updatedAt: 0
+  });
+  const parseQueueState = (raw) => {
+    const empty = createEmptyQueueState();
+    if (!raw) return empty;
+    try {
+      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (!parsed || typeof parsed !== "object") return empty;
+      return {
+        ...empty,
+        ...parsed,
+        items: Array.isArray(parsed.items) ? parsed.items : []
+      };
+    } catch (e) {
+      return empty;
+    }
+  };
+  const loadQueueState = (platform) => parseQueueState(queueReadValue(queueStorageKey(platform), ""));
+  const saveQueueState = (platform, state) => {
+    queueWriteValue(queueStorageKey(platform), JSON.stringify(state));
+  };
+  // 另一个页面改了队列（开始/暂停/换课）时同步过来
+  const watchQueueState = (platform, callback) => {
+    if (typeof GM_addValueChangeListener !== "function") return () => {
+    };
+    const listenerId = GM_addValueChangeListener(
+      queueStorageKey(platform),
+      (_name, _oldValue, newValue, remote) => {
+        if (remote) callback(parseQueueState(newValue));
+      }
+    );
+    return () => {
+      if (typeof GM_removeValueChangeListener === "function") {
+        GM_removeValueChangeListener(listenerId);
+      }
+    };
+  };
+  let activeQueueEngine = null;
+  // 学习逻辑刷完一门课时调用，告诉队列这门课的结论
+  const reportCourseResult = (result, reason = "") => {
+    activeQueueEngine?.report(result, reason);
+  };
+  const reportCourseProgress = () => {
+    activeQueueEngine?.reportProgress();
+  };
+  class CourseQueueEngine {
+    constructor(adapter, options) {
+      this.pageId = QUEUE_PAGE_ID;
+      this.heartbeatTimer = null;
+      this.watchdogTimer = null;
+      this.lastProgressSavedAt = 0;
+      this.navigating = false;
+      this.spaWatching = false;
+      this.adapter = adapter;
+      this.logger = options.logger;
+      this.onChange = options.onChange;
+      this.state = loadQueueState(adapter.platform);
+      watchQueueState(adapter.platform, (state) => {
+        this.state = state;
+        if (!this.isOwner()) this.stopTimers();
+        this.onChange(this.snapshot());
+      });
+      window.addEventListener("beforeunload", () => this.releaseOwnership());
+    }
+    getState() {
+      return this.snapshot();
+    }
+    isOwner() {
+      return this.state.ownerId === this.pageId;
+    }
+    isOwnedByOtherPage() {
+      const { ownerId, heartbeat } = this.state;
+      return Boolean(ownerId) && ownerId !== this.pageId && !this.isLockStale(heartbeat);
+    }
+    getCurrentItem() {
+      const { currentKey, items } = this.state;
+      return items.find((item) => item.key === currentKey) || null;
+    }
+    // 每次页面加载调用一次，按当前页面角色决定队列下一步
+    async onPageLoad() {
+      this.state = loadQueueState(this.adapter.platform);
+      this.onChange(this.snapshot());
+      if (this.adapter.isSpa) this.watchSpaNavigation();
+      if (this.state.status !== "running") return;
+      const currentUrl = location.href;
+      const role = this.adapter.resolvePageRole(currentUrl);
+      const current = this.getCurrentItem();
+      if (this.isOwnedByOtherPage()) {
+        this.logger("课程队列正在其他页面运行中");
+        return;
+      }
+      if (!current) {
+        this.claimOwnership();
+        await this.advance();
+        return;
+      }
+      const isQueuePage = (role === "courseHome" || role === "study") && this.adapter.getCourseKeyFromUrl(currentUrl) === current.key;
+      if (isQueuePage) {
+        this.claimOwnership();
+        await this.handleQueuePage(role, current);
+        return;
+      }
+      this.scheduleOrphanCheck();
+    }
+    start(candidates) {
+      if (!this.checkBlockers()) return false;
+      if (!candidates.length) {
+        this.logger("请先勾选要加入队列的课程", "warning");
+        return false;
+      }
+      this.update((state) => {
+        Object.assign(state, createEmptyQueueState(), {
+          status: "running",
+          items: candidates.map((candidate) => ({
+            ...candidate,
+            status: "pending",
+            reason: "",
+            startedAt: 0,
+            lastProgressAt: 0
+          }))
+        });
+      });
+      this.claimOwnership();
+      this.logger(`课程队列已开始，共 ${candidates.length} 门课程`);
+      void this.advance();
+      return true;
+    }
+    pause(reason = "课程队列已暂停", type = null) {
+      this.stopTimers();
+      this.update((state) => {
+        state.status = "paused";
+        state.ownerId = null;
+      });
+      this.logger(reason, type);
+    }
+    resume() {
+      if (this.state.status !== "paused") return false;
+      if (!this.checkBlockers()) return false;
+      this.update((state) => {
+        state.status = "running";
+        state.structureFailures = 0;
+      });
+      this.claimOwnership();
+      this.logger("课程队列已继续");
+      const current = this.getCurrentItem();
+      if (!current) {
+        void this.advance();
+        return true;
+      }
+      const currentUrl = location.href;
+      const role = this.adapter.resolvePageRole(currentUrl);
+      if (this.adapter.getCourseKeyFromUrl(currentUrl) === current.key && role !== "other") {
+        void this.handleQueuePage(role, current);
+      } else {
+        void this.navigateTo(current.entryUrl);
+      }
+      return true;
+    }
+    // 只允许移出还没开始的课程，正在学的和已有结论的保留，免得打断流程
+    removeItem(key) {
+      const target = this.state.items.find((item) => item.key === key);
+      if (!target || target.status !== "pending") return false;
+      let removed = false;
+      this.update((state) => {
+        const index = state.items.findIndex((item) => item.key === key && item.status === "pending");
+        if (index === -1) return;
+        state.items.splice(index, 1);
+        removed = true;
+        if (!state.items.length) Object.assign(state, createEmptyQueueState());
+      });
+      if (removed) this.logger(`已将「${target.name}」移出课程队列`);
+      return removed;
+    }
+    clear() {
+      this.stopTimers();
+      this.update((state) => {
+        Object.assign(state, createEmptyQueueState());
+      });
+      this.logger("课程队列已清空");
+    }
+    // 只在当前页面就是队列课程时才认这个结论
+    report(result, reason = "") {
+      if (!this.isOwner() || this.state.status !== "running") return;
+      const current = this.getCurrentItem();
+      if (!current) return;
+      if (this.adapter.getCourseKeyFromUrl(location.href) !== current.key) return;
+      void this.finishCurrent(QUEUE_RESULT_STATUS[result], reason);
+    }
+    reportProgress() {
+      if (!this.isOwner() || this.state.status !== "running") return;
+      const now = Date.now();
+      if (now - this.lastProgressSavedAt < QUEUE_PROGRESS_THROTTLE_MS) return;
+      this.lastProgressSavedAt = now;
+      this.update((state) => {
+        const item = state.items.find((course) => course.key === state.currentKey);
+        if (item) item.lastProgressAt = now;
+      });
+    }
+    async handleQueuePage(role, current) {
+      if (role === "study") {
+        this.startWatchdog();
+        return;
+      }
+      if (role !== "courseHome") return;
+      let result;
+      try {
+        result = await this.adapter.enterStudy(current);
+      } catch (error) {
+        result = { type: "failed", reason: "进入学习页时出现异常" };
+      }
+      if (!this.isOwner() || this.state.status !== "running") return;
+      if (result.type === "navigate") {
+        this.logger(result.label ? `进入未完成章节：${result.label}` : "正在进入学习页面..");
+        await this.navigateTo(result.url);
+      } else if (result.type === "finished") {
+        await this.finishCurrent("done", result.reason);
+      } else {
+        await this.finishCurrent("failed", result.reason, Boolean(result.structural));
+      }
+    }
+    async finishCurrent(status, reason = "", structural = false) {
+      const current = this.getCurrentItem();
+      if (!current) return;
+      let structureFailures = 0;
+      this.update((state) => {
+        const item = state.items.find((course) => course.key === current.key);
+        if (item) {
+          item.status = status;
+          item.reason = reason;
+        }
+        state.structureFailures = structural ? state.structureFailures + 1 : 0;
+        structureFailures = state.structureFailures;
+      });
+      const statusText = { done: "已完成", skipped: "已跳过", failed: "处理失败" }[status];
+      this.logger(
+        `队列课程「${current.name}」${statusText}${reason ? `：${reason}` : ""}`,
+        status === "done" ? null : "warning"
+      );
+      if (structureFailures >= QUEUE_STRUCTURE_FAILURE_LIMIT) {
+        this.pause("连续多门课程都读不到页面数据，平台页面可能已改版，队列已暂停", "warning");
+        return;
+      }
+      await this.advance();
+    }
+    async advance() {
+      if (!this.isOwner() || this.state.status !== "running") return;
+      const next = this.state.items.find((item) => item.status === "pending");
+      if (!next) {
+        this.stopTimers();
+        const summary = this.summarize();
+        this.update((state) => {
+          state.status = "finished";
+          state.currentKey = null;
+          state.ownerId = null;
+        });
+        this.logger(`课程队列已全部处理完毕。${summary}`);
+        return;
+      }
+      const now = Date.now();
+      this.update((state) => {
+        const item = state.items.find((course) => course.key === next.key);
+        if (!item) return;
+        item.status = "running";
+        item.startedAt = now;
+        item.lastProgressAt = now;
+        state.currentKey = item.key;
+      });
+      const index = this.state.items.findIndex((item) => item.key === next.key) + 1;
+      this.logger(`即将开始队列课程（${index}/${this.state.items.length}）：${next.name}`);
+      await this.navigateTo(next.entryUrl);
+    }
+    async navigateTo(targetUrl) {
+      if (this.navigating) return;
+      this.navigating = true;
+      await sleep(QUEUE_SWITCH_DELAY_SECONDS);
+      if (!this.isOwner() || this.state.status !== "running") {
+        this.navigating = false;
+        return;
+      }
+      this.stopTimers();
+      this.releaseOwnership();
+      this.adapter.navigate(targetUrl);
+    }
+    // 学习页一直在放视频就持续记进度；30 分钟没动静才算这门课卡住
+    startWatchdog() {
+      if (this.watchdogTimer) return;
+      this.watchdogTimer = setInterval(() => {
+        if (!this.isOwner() || this.state.status !== "running") {
+          this.stopTimers();
+          return;
+        }
+        if (this.adapter.isActivelyStudying()) {
+          this.reportProgress();
+          return;
+        }
+        const current = this.getCurrentItem();
+        if (!current) return;
+        if (Date.now() - current.lastProgressAt > QUEUE_IDLE_TIMEOUT_MS) {
+          void this.finishCurrent("skipped", "超过 30 分钟没有学习进度");
+        }
+      }, QUEUE_WATCHDOG_SECONDS * 1e3);
+    }
+    claimOwnership() {
+      this.update((state) => {
+        state.ownerId = this.pageId;
+        state.heartbeat = Date.now();
+      });
+      if (this.heartbeatTimer) return;
+      this.heartbeatTimer = setInterval(() => {
+        if (!this.isOwner()) {
+          this.stopTimers();
+          return;
+        }
+        this.update((state) => {
+          state.heartbeat = Date.now();
+        });
+      }, QUEUE_HEARTBEAT_SECONDS * 1e3);
+    }
+    releaseOwnership() {
+      if (!this.isOwner()) return;
+      this.update((state) => {
+        state.ownerId = null;
+      });
+    }
+    scheduleOrphanCheck() {
+      setTimeout(() => {
+        this.state = loadQueueState(this.adapter.platform);
+        if (this.state.status !== "running") return;
+        if (this.state.ownerId && !this.isLockStale(this.state.heartbeat)) return;
+        this.pause("检测到已离开队列中的课程页面，队列已暂停，可在「队列」里点继续", "warning");
+      }, QUEUE_ORPHAN_CHECK_SECONDS * 1e3);
+    }
+    watchSpaNavigation() {
+      if (this.spaWatching) return;
+      this.spaWatching = true;
+      let lastUrl = location.href;
+      setInterval(() => {
+        if (location.href === lastUrl) return;
+        lastUrl = location.href;
+        this.stopTimers();
+        void this.onPageLoad();
+      }, 1e3);
+    }
+    checkBlockers() {
+      const blockers = this.adapter.getStartBlockers();
+      blockers.forEach((text) => this.logger(text, "warning"));
+      return blockers.length === 0;
+    }
+    summarize() {
+      const count = (status) => this.state.items.filter((item) => item.status === status).length;
+      const parts = [`完成 ${count("done")} 门`];
+      if (count("skipped")) parts.push(`跳过 ${count("skipped")} 门`);
+      if (count("failed")) parts.push(`失败 ${count("failed")} 门`);
+      return parts.join("，");
+    }
+    isLockStale(heartbeat) {
+      return Date.now() - heartbeat > QUEUE_LOCK_STALE_MS;
+    }
+    stopTimers() {
+      if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+      if (this.watchdogTimer) clearInterval(this.watchdogTimer);
+      this.heartbeatTimer = null;
+      this.watchdogTimer = null;
+    }
+    // 其他页面可能刚写过队列，改之前先读最新一份，避免覆盖
+    update(mutator) {
+      const latest = loadQueueState(this.adapter.platform);
+      mutator(latest);
+      latest.updatedAt = Date.now();
+      this.state = latest;
+      saveQueueState(this.adapter.platform, latest);
+      this.onChange(this.snapshot());
+    }
+    snapshot() {
+      return JSON.parse(JSON.stringify(this.state));
+    }
+  }
+  class BasicCourseQueueAdapter {
+    constructor() {
+      this.isSpa = false;
+    }
+    getStartBlockers() {
+      return [];
+    }
+    isActivelyStudying() {
+      return false;
+    }
+    navigate(targetUrl) {
+      const topWindow = (_unsafeWindow && _unsafeWindow.top) || window.top;
+      topWindow.location.href = targetUrl;
+    }
+    readParam(targetUrl, ...names) {
+      try {
+        const params = new URL(targetUrl, location.href).searchParams;
+        const lowerNames = names.map((name) => name.toLowerCase());
+        for (const [key, value] of params) {
+          if (lowerNames.includes(key.toLowerCase()) && value) return value;
+        }
+      } catch (e) {
+      }
+      return null;
+    }
+  }
+  const ZHS_QUEUE_CONFIG = {
+    courseList: {
+      host: "onlineweb.zhihuishu.com",
+      pagePath: "/onlinestuh5",
+      pageUrl: "https://onlineweb.zhihuishu.com/onlinestuh5",
+      componentName: "courseList",
+      pageSize: 50,
+      maxPages: 10,
+      // 进行中的共享课
+      shareStatus: 0,
+      // 「智慧课程」板块的进行中标签
+      smartStatus: 3
+    },
+    study: {
+      courseParam: "recruitAndCourseId",
+      fallbackUrl: "https://studyvideoh5.zhihuishu.com/stuStudy?recruitAndCourseId="
+    },
+    // 智慧课程：主页 /singleCourse/{模块}/{courseId}/{classId}，学习页 /learnPage/{courseId}/{nodeUid}/{classId}
+    smart: {
+      hosts: ["ai-smart-course-student-pro.zhihuishu.com", "smartcoursestudent.zhihuishu.com"],
+      homePrefix: "/singleCourse/",
+      studyPrefix: "/learnPage/",
+      knowledgeItem: ".item-content",
+      knowledgeProgress: ".progress-num"
+    },
+    resolveTimeout: 6,
+    smartHomeTimeout: 20
+  };
+  const queueParseUrl = (targetUrl) => {
+    try {
+      return new URL(targetUrl, location.href);
+    } catch (e) {
+      return null;
+    }
+  };
+  const queueIsSmartUrl = (parsed) => Boolean(parsed) && ZHS_QUEUE_CONFIG.smart.hosts.includes(parsed.hostname);
+  const queueParsePercent = (text) => {
+    const value = parseInt(String(text ?? "").replace(/[^\d]/g, ""), 10);
+    return Number.isNaN(value) ? null : value;
+  };
+  // 课程列表接口的参数由平台加密，只能借页面里课程列表组件自己的请求方法
+  const queueFindVueComponent = (name) => {
+    const pageDocument = (_unsafeWindow && _unsafeWindow.document) || document;
+    for (const el of pageDocument.querySelectorAll("*")) {
+      const vm = el.__vue__;
+      if (vm?.$options?.name === name) return vm;
+    }
+    return null;
+  };
+  class ZhsCourseQueueAdapter extends BasicCourseQueueAdapter {
+    constructor() {
+      super();
+      this.platform = "zhs";
+      this.platformName = "智慧树";
+      this.isSpa = true;
+    }
+    // 共享课从课程列表直接进学习页；智慧课程要先进课程主页挑未完成的知识点
+    resolvePageRole(targetUrl) {
+      const parsed = queueParseUrl(targetUrl);
+      if (!parsed) return "other";
+      const list = ZHS_QUEUE_CONFIG.courseList;
+      const smart = ZHS_QUEUE_CONFIG.smart;
+      if (parsed.hostname === list.host && parsed.pathname.startsWith(list.pagePath)) return "courseList";
+      if (queueIsSmartUrl(parsed)) {
+        if (!this.getCourseKeyFromUrl(targetUrl)) return "other";
+        if (parsed.pathname.startsWith(smart.studyPrefix)) return "study";
+        if (parsed.pathname.startsWith(smart.homePrefix)) return "courseHome";
+        return "other";
+      }
+      return this.getCourseKeyFromUrl(targetUrl) ? "study" : "other";
+    }
+    getCourseKeyFromUrl(targetUrl) {
+      const parsed = queueParseUrl(targetUrl);
+      if (queueIsSmartUrl(parsed)) {
+        const segments = parsed.pathname.split("/").filter(Boolean);
+        const prefix = `/${segments[0]}/`;
+        if (prefix === ZHS_QUEUE_CONFIG.smart.studyPrefix) return segments[1] || null;
+        if (prefix === ZHS_QUEUE_CONFIG.smart.homePrefix) return segments[2] || null;
+        return null;
+      }
+      return this.readParam(targetUrl, ZHS_QUEUE_CONFIG.study.courseParam) || null;
+    }
+    getStartBlockers() {
+      const setting = useSettingStore();
+      const blockers = [];
+      if (!setting.config.basicConfig.assistVideo.value) blockers.push("课程队列需要先打开「视频助手（智慧树）」");
+      if (!setting.config.basicConfig.autoChangeChapter.value) blockers.push("课程队列需要开启「自动切换章节」");
+      return blockers;
+    }
+    isActivelyStudying() {
+      return Array.from(document.querySelectorAll("video, audio")).some((media) => !media.paused && !media.ended);
+    }
+    async fetchCourseList() {
+      const list = ZHS_QUEUE_CONFIG.courseList;
+      if (this.resolvePageRole(location.href) !== "courseList") {
+        return { courses: [], error: `请先打开智慧树在线学堂学生首页（${list.pageUrl}）再读取课程列表` };
+      }
+      const vm = await this.waitForCourseListComponent();
+      if (!vm?.$api) return { courses: [], error: "未找到课程列表组件，平台页面可能已更新" };
+      const sources = [
+        { name: "共享课", load: () => this.loadShareCourses(vm) },
+        { name: "智慧课程", load: () => this.loadSmartCourses(vm) }
+      ];
+      const courses = [];
+      const loadedSources = [];
+      const errors = [];
+      const seen = new Set();
+      for (const source of sources) {
+        let sourceCourses;
+        try {
+          sourceCourses = await source.load();
+        } catch (error) {
+          errors.push(`${source.name}读取失败：${error.message}`);
+          continue;
+        }
+        if (sourceCourses.length) loadedSources.push(source.name);
+        for (const course of sourceCourses) {
+          if (seen.has(course.key)) continue;
+          seen.add(course.key);
+          courses.push(course);
+        }
+      }
+      if (!courses.length) {
+        return { courses: [], error: errors.join("；") || "没有进行中的共享课或智慧课程" };
+      }
+      return { courses, source: loadedSources.join("、") };
+    }
+    async enterStudy(item) {
+      if (!queueIsSmartUrl(queueParseUrl(item.entryUrl))) return { type: "navigate", url: item.entryUrl };
+      return this.enterSmartStudy();
+    }
+    // 知识点卡片没有跳转地址，只能点了让平台自己路由到学习页
+    async enterSmartStudy() {
+      const timeout = ZHS_QUEUE_CONFIG.smartHomeTimeout;
+      const smart = ZHS_QUEUE_CONFIG.smart;
+      let items = [];
+      for (let i = 0; i < timeout * 2; i++) {
+        items = Array.from(document.querySelectorAll(smart.knowledgeItem));
+        if (items.length) break;
+        await sleep(0.5);
+      }
+      if (!items.length) return { type: "failed", reason: "未读取到课程知识点列表", structural: true };
+      const target = items.find((item) => {
+        const percent = queueParsePercent(item.querySelector(smart.knowledgeProgress)?.textContent);
+        return percent === null || percent < 100;
+      });
+      if (!target) return { type: "finished", reason: "全部知识点学习进度已达 100%" };
+      const label = target.innerText.split("\n")[0].trim();
+      target.click();
+      for (let i = 0; i < timeout * 2; i++) {
+        if (location.pathname.startsWith(smart.studyPrefix)) return { type: "navigate", url: location.href, label };
+        await sleep(0.5);
+      }
+      return { type: "failed", reason: "点击知识点后未进入学习页" };
+    }
+    async waitForCourseListComponent() {
+      for (let i = 0; i < 20; i++) {
+        const vm = queueFindVueComponent(ZHS_QUEUE_CONFIG.courseList.componentName);
+        if (vm) return vm;
+        await sleep(0.5);
+      }
+      return null;
+    }
+    async loadShareCourses(vm) {
+      if (typeof vm.$api.queryShareCourseInfo !== "function") throw new Error("平台接口已变更");
+      const rawCourses = await this.fetchShareCourses(vm);
+      const courses = [];
+      for (const course of rawCourses) {
+        if (!course.secret) continue;
+        const resolvedUrl = await this.resolveEntryUrl(vm, course);
+        const entryUrl = resolvedUrl || ZHS_QUEUE_CONFIG.study.fallbackUrl + course.secret;
+        courses.push({
+          key: this.getCourseKeyFromUrl(entryUrl) || course.secret,
+          name: course.courseName || `课程 ${course.courseId}`,
+          desc: [course.teacherName, course.schoolName, course.progress && `进度 ${course.progress}`].filter(Boolean).join(" · "),
+          cover: course.courseImg || "",
+          entryUrl,
+          meta: {
+            type: "share",
+            courseId: String(course.courseId ?? ""),
+            recruitId: String(course.recruitId ?? "")
+          }
+        });
+      }
+      return courses;
+    }
+    async fetchShareCourses(vm) {
+      const list = ZHS_QUEUE_CONFIG.courseList;
+      const courses = [];
+      for (let pageNo = 1; pageNo <= list.maxPages; pageNo++) {
+        const response = await vm.$api.queryShareCourseInfo({ status: list.shareStatus, pageNo, pageSize: list.pageSize });
+        if (response?.code !== 200) throw new Error(response?.message || `接口返回异常（${response?.code ?? "无响应"}）`);
+        const pageCourses = response.result?.courseOpenDtos || [];
+        courses.push(...pageCourses);
+        const total = Number(response.result?.totalCount) || 0;
+        if (!pageCourses.length || courses.length >= total) break;
+      }
+      return courses;
+    }
+    async loadSmartCourses(vm) {
+      if (typeof vm.$api.getAiCourseList !== "function") throw new Error("平台接口已变更");
+      const response = await vm.$api.getAiCourseList({ status: ZHS_QUEUE_CONFIG.courseList.smartStatus });
+      if (Number(response?.status) !== 200) throw new Error(response?.msg || `接口返回异常（${response?.status ?? "无响应"}）`);
+      const courses = [];
+      for (const course of response.rt || []) {
+        const entryUrl = course.linkUrl;
+        const key = entryUrl && this.getCourseKeyFromUrl(entryUrl);
+        if (!key) continue;
+        courses.push({
+          key,
+          name: course.courseName || `课程 ${course.courseId}`,
+          desc: ["智慧课程", course.teacherUserName, course.schoolName, course.schedule != null && `进度 ${course.schedule}%`].filter(Boolean).join(" · "),
+          cover: course.imgUrl || "",
+          entryUrl,
+          meta: {
+            type: "smart",
+            courseId: String(course.courseId ?? ""),
+            classId: String(course.classId ?? "")
+          }
+        });
+      }
+      return courses;
+    }
+    // 学习页地址由平台按课程状态动态算，借平台自己的跳转方法，拦下这次跳转拿到地址
+    resolveEntryUrl(vm, course) {
+      const navigation = _unsafeWindow && _unsafeWindow.navigation;
+      if (!navigation?.addEventListener || typeof vm.goCourse !== "function") return Promise.resolve("");
+      return new Promise((resolve) => {
+        let timer = null;
+        const finish = (targetUrl) => {
+          clearTimeout(timer);
+          navigation.removeEventListener("navigate", onNavigate);
+          resolve(targetUrl);
+        };
+        const onNavigate = (event) => {
+          if (!event.cancelable) return;
+          event.preventDefault();
+          finish(event.destination?.url || "");
+        };
+        navigation.addEventListener("navigate", onNavigate);
+        timer = setTimeout(() => finish(""), ZHS_QUEUE_CONFIG.resolveTimeout * 1e3);
+        try {
+          vm.goCourse(course, 1);
+        } catch (error) {
+          finish("");
+        }
+      });
+    }
+  }
+  const zhsCourseQueueAdapter = new ZhsCourseQueueAdapter();
+  const useCourseQueueStore = pinia.defineStore("courseQueue", {
+    state: () => ({
+      enabled: false,
+      platformName: "",
+      status: "idle",
+      items: [],
+      currentKey: null,
+      runningElsewhere: false,
+      candidates: [],
+      selectedKeys: [],
+      loadingCandidates: false,
+      candidateError: "",
+      candidateSource: ""
+    }),
+    getters: {
+      currentItem: (state) => state.items.find((item) => item.key === state.currentKey) || null,
+      finishedCount: (state) => state.items.filter((item) => item.status !== "pending" && item.status !== "running").length,
+      hasQueue: (state) => state.items.length > 0
+    },
+    actions: {
+      init(adapter) {
+        if (this.enabled) return;
+        const log = useLogStore();
+        const engine = new CourseQueueEngine(adapter, {
+          logger: (text, type = null) => log.insertLog(text, type),
+          onChange: (queueState) => this.applyState(queueState)
+        });
+        activeQueueEngine = engine;
+        this.enabled = true;
+        this.platformName = adapter.platformName;
+        this.applyState(engine.getState());
+        engine.onPageLoad();
+      },
+      applyState(queueState) {
+        this.status = queueState.status;
+        this.items = queueState.items;
+        this.currentKey = queueState.currentKey;
+        this.runningElsewhere = Boolean(activeQueueEngine?.isOwnedByOtherPage());
+      },
+      async loadCandidates() {
+        if (!activeQueueEngine || this.loadingCandidates) return;
+        this.loadingCandidates = true;
+        this.candidateError = "";
+        try {
+          const { courses, error, source } = await activeQueueEngine.adapter.fetchCourseList();
+          this.candidates = courses;
+          this.candidateSource = source || "";
+          this.candidateError = error || "";
+          this.selectedKeys = this.selectedKeys.filter((key) => courses.some((course) => course.key === key));
+        } finally {
+          this.loadingCandidates = false;
+        }
+      },
+      // 勾选顺序就是队列里的先后顺序
+      toggleCandidate(key) {
+        this.selectedKeys = this.selectedKeys.includes(key) ? this.selectedKeys.filter((item) => item !== key) : [...this.selectedKeys, key];
+      },
+      clearSelection() {
+        this.selectedKeys = [];
+      },
+      start() {
+        const selected = this.selectedKeys.map((key) => this.candidates.find((course) => course.key === key)).filter(Boolean);
+        return activeQueueEngine?.start(selected) ?? false;
+      },
+      pause() {
+        activeQueueEngine?.pause();
+      },
+      resume() {
+        activeQueueEngine?.resume();
+      },
+      removeItem(key) {
+        return activeQueueEngine?.removeItem(key) ?? false;
+      },
+      clear() {
+        activeQueueEngine?.clear();
+      }
+    }
+  });
+  // 队列界面：读取进行中的课程 → 勾选 → 开始，之后由脚本按顺序一门门刷
+  const CourseQueuePanel = {
+    name: "CourseQueuePanel",
+    setup() {
+      const store = useCourseQueueStore();
+      const statusText = vue.computed(() => ({
+        idle: "未开始",
+        running: "运行中",
+        paused: "已暂停",
+        finished: "已结束"
+      }[store.status] || "未开始"));
+      const statusLabel = (item) => ({
+        pending: "等待中",
+        running: "学习中",
+        done: "已完成",
+        skipped: "已跳过",
+        failed: "处理失败"
+      }[item.status] || "等待中");
+      const load = () => store.loadCandidates();
+      const start = () => store.start();
+      return { store, statusText, statusLabel, load, start };
+    },
+    template: `
+      <div style="padding:14px;display:flex;flex-direction:column;gap:12px;height:100%;overflow:auto;color:var(--t-text);font-size:13px">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div style="font-size:15px;font-weight:600">课程队列</div>
+          <div style="color:var(--t-text3)">{{ statusText }}</div>
+        </div>
+
+        <div v-if="!store.hasQueue" style="display:flex;flex-direction:column;gap:10px">
+          <div style="color:var(--t-text3);line-height:1.7">
+            先在浏览器打开智慧树「在线学堂」学生首页，再点下面的按钮读取进行中的课程；勾选的顺序就是自动学习的顺序。
+          </div>
+          <button
+            @click="load"
+            :disabled="store.loadingCandidates"
+            style="align-self:flex-start;padding:6px 14px;border-radius:6px;border:1px solid var(--t-primary-border);background:var(--t-primary-bg);color:var(--t-primary);cursor:pointer"
+          >{{ store.loadingCandidates ? "读取中.." : "读取进行中的课程" }}</button>
+          <div v-if="store.candidateError" style="color:var(--t-warning);line-height:1.6">{{ store.candidateError }}</div>
+          <div v-if="store.candidates.length" style="display:flex;flex-direction:column;gap:6px">
+            <label
+              v-for="course in store.candidates"
+              :key="course.key"
+              style="display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid var(--t-border);border-radius:6px;background:var(--t-surface2);cursor:pointer"
+            >
+              <input
+                type="checkbox"
+                :checked="store.selectedKeys.includes(course.key)"
+                @change="store.toggleCandidate(course.key)"
+                style="margin-top:3px"
+              >
+              <span style="display:flex;flex-direction:column;gap:2px">
+                <span style="color:var(--t-text)">{{ course.name }}</span>
+                <span v-if="course.desc" style="color:var(--t-text3);font-size:12px">{{ course.desc }}</span>
+              </span>
+            </label>
+          </div>
+          <button
+            v-if="store.selectedKeys.length"
+            @click="start"
+            style="align-self:flex-start;padding:6px 14px;border-radius:6px;border:1px solid var(--t-primary);background:var(--t-primary);color:#fff;cursor:pointer"
+          >开始学习（已选 {{ store.selectedKeys.length }} 门）</button>
+        </div>
+
+        <div v-else style="display:flex;flex-direction:column;gap:10px">
+          <div style="color:var(--t-text3)">已完成 {{ store.finishedCount }} / {{ store.items.length }} 门</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div
+              v-for="(item, index) in store.items"
+              :key="item.key"
+              style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid var(--t-border);border-radius:6px;background:var(--t-surface2)"
+            >
+              <span style="color:var(--t-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ index + 1 }}. {{ item.name }}</span>
+              <span style="color:var(--t-text3);flex:none">{{ statusLabel(item) }}</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button
+              v-if="store.status === 'running'"
+              @click="store.pause()"
+              style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer"
+            >暂停</button>
+            <button
+              v-if="store.status === 'paused'"
+              @click="store.resume()"
+              style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-primary);background:var(--t-primary);color:#fff;cursor:pointer"
+            >继续</button>
+            <button
+              @click="store.clear()"
+              style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer"
+            >清空队列</button>
+          </div>
+        </div>
+      </div>
+    `
+  };
   const zhsRoutes = {
     match: [
-      { keyword: "/studyvideoh5.zhihuishu.com", tab: "1", logic: videoStudyLogic },
-      { keyword: "ai-smart-course-student-pro.zhihuishu.com/learnPage", tab: "1", logic: smartStudyLogic },
-      { keyword: "ai-smart-course-student-pro.zhihuishu.com/singleCourse", tab: "1", logic: smartStudyLogic },
-      { keyword: "smartcoursestudent.zhihuishu.com/learnPage", tab: "1", logic: smartStudyLogic },
-      { keyword: "smartcoursestudent.zhihuishu.com/singleCourse", tab: "1", logic: smartStudyLogic },
-      { keyword: "studyplush5.zhihuishu.com", tab: "1", logic: studyPlusLogic },
-      { keyword: "studywisdomh5.zhihuishu.com/study/index", tab: "1", logic: studyPlusLogic },
-      { keyword: "smartcourseexam.zhihuishu.com/ReviewExam", tab: "1", logic: smartAnswerLogic },
-      { keyword: "studentexamcomh5.zhihuishu.com/studentReviewTestOrExam", tab: "1", logic: smartAnswerLogic },
-      { keyword: "fusioncourseh5.zhihuishu.com/exam", tab: "1", logic: smartAnswerLogic },
-      { keyword: "studywisdomh5.zhihuishu.com/exam", tab: "1", logic: smartAnswerLogic },
-      { keyword: "wisdom-mooc.zhihuishu.com/exam", tab: "1", logic: smartAnswerLogic },
-      { keyword: "examloop.zhihuishu.com/exam", tab: "1", logic: smartAnswerLogic },
-      { keyword: "zhihuishu.com/atHomeworkExam/stu/homeworkQ/exerciseList", tab: "1", logic: smartAnswerLogic },
-      { keyword: "zhihuishu.com/atHomeworkExam/stu/examQ/examexercise", tab: "1", logic: smartAnswerLogic },
-      { keyword: "zhihuishu.com/aidedteaching/sourceLearning", tab: "1", logic: specialStudyLogic },
-      { keyword: "hike-teaching-center.polymas.com/stu-hike/agent-course-hike/ai-course-center", tab: "1", logic: specialStudyLogic },
-      { keyword: "tools-hike/studentStudyResource", tab: "1", logic: specialStudyLogic },
-      { keyword: "fusioncourseh5.zhihuishu.com", tab: "1", logic: aiSmartLogic },
-      { keyword: "zhihuishu.com/learnPage", tab: "1", logic: learnPageLogic },
-      { keyword: "wisdom-mooc.zhihuishu.com/study/index", tab: "1", logic: wisdomStudyLogic },
+      { keyword: "/studyvideoh5.zhihuishu.com", tab: "1", logic: videoStudyLogic, assist: "video" },
+      { keyword: "ai-smart-course-student-pro.zhihuishu.com/learnPage", tab: "1", logic: smartStudyLogic, assist: "video" },
+      { keyword: "ai-smart-course-student-pro.zhihuishu.com/singleCourse", tab: "1", logic: smartStudyLogic, assist: "video" },
+      { keyword: "smartcoursestudent.zhihuishu.com/learnPage", tab: "1", logic: smartStudyLogic, assist: "video" },
+      { keyword: "smartcoursestudent.zhihuishu.com/singleCourse", tab: "1", logic: smartStudyLogic, assist: "video" },
+      { keyword: "studyplush5.zhihuishu.com", tab: "1", logic: studyPlusLogic, assist: "video" },
+      { keyword: "studywisdomh5.zhihuishu.com/study/index", tab: "1", logic: studyPlusLogic, assist: "video" },
+      { keyword: "smartcourseexam.zhihuishu.com/ReviewExam", tab: "1", logic: smartAnswerLogic, assist: "answer" },
+      { keyword: "studentexamcomh5.zhihuishu.com/studentReviewTestOrExam", tab: "1", logic: smartAnswerLogic, assist: "answer" },
+      { keyword: "fusioncourseh5.zhihuishu.com/exam", tab: "1", logic: smartAnswerLogic, assist: "answer" },
+      { keyword: "studywisdomh5.zhihuishu.com/exam", tab: "1", logic: smartAnswerLogic, assist: "answer" },
+      { keyword: "wisdom-mooc.zhihuishu.com/exam", tab: "1", logic: smartAnswerLogic, assist: "answer" },
+      { keyword: "examloop.zhihuishu.com/exam", tab: "1", logic: smartAnswerLogic, assist: "answer" },
+      { keyword: "zhihuishu.com/atHomeworkExam/stu/homeworkQ/exerciseList", tab: "1", logic: smartAnswerLogic, assist: "answer" },
+      { keyword: "zhihuishu.com/atHomeworkExam/stu/examQ/examexercise", tab: "1", logic: smartAnswerLogic, assist: "answer" },
+      { keyword: "zhihuishu.com/aidedteaching/sourceLearning", tab: "1", logic: specialStudyLogic, assist: "video" },
+      { keyword: "hike-teaching-center.polymas.com/stu-hike/agent-course-hike/ai-course-center", tab: "1", logic: specialStudyLogic, assist: "video" },
+      { keyword: "tools-hike/studentStudyResource", tab: "1", logic: specialStudyLogic, assist: "video" },
+      { keyword: "fusioncourseh5.zhihuishu.com", tab: "1", logic: aiSmartLogic, assist: "video" },
+      { keyword: "zhihuishu.com/learnPage", tab: "1", logic: learnPageLogic, assist: "video" },
+      { keyword: "wisdom-mooc.zhihuishu.com/study/index", tab: "1", logic: wisdomStudyLogic, assist: "video" },
       { keyword: "/webExamList?", tab: "0" },
       { keyword: "/stuExamWeb.html", tab: "1", logic: autoAnswerLogic }
     ],
@@ -15061,7 +16117,8 @@ const XS_EXT = (() => {
           name: "智慧树",
           domains: ["zhihuishu.com", "polymas.com"],
           routes: zhsRoutes,
-          showAi: false
+          showAi: false,
+          queueAdapter: zhsCourseQueueAdapter
         },
         {
           key: "qs",
@@ -15088,6 +16145,11 @@ const XS_EXT = (() => {
           tab: "◉ 首页",
           component: ScriptHome
         },
+        ...(currentPlatform?.queueAdapter ? [{
+          key: "queue",
+          tab: "◫ 队列",
+          component: CourseQueuePanel
+        }] : []),
         {
           key: "1",
           tab: "▤ 日志",
@@ -15171,6 +16233,9 @@ const XS_EXT = (() => {
           isShow.value = false;
           return;
         }
+        if (currentPlatform?.queueAdapter) {
+          useCourseQueueStore().init(currentPlatform.queueAdapter);
+        }
         fetchBasicInfo().then((res) => {
           console.log("fetchBasicInfo", res);
           if (res.code) {
@@ -15198,7 +16263,36 @@ const XS_EXT = (() => {
             catch (error) { log.insertLog("当前操作失败：" + (error.message || error), "warning"); }
             finally { routeRunning = false; }
           };
-          runRouteLogic();
+          // 助手开关只管智慧树：路由上带 assist 的页面，开关关着就先挂起，等用户打开再开始
+          const assistKind = route.assist || "";
+          const assistLabel = assistKind === "video" ? "视频助手" : "答题助手";
+          const assistValue = () => assistKind === "video"
+            ? setting.config.basicConfig.assistVideo.value
+            : setting.config.basicConfig.assistAnswer.value;
+          if (assistKind) {
+            vue.watch(assistValue, (enabled) => {
+              if (enabled) return;
+              log.insertLog(`${assistLabel}已关闭，当前页面不再开始新任务`, "warning");
+              if (assistKind === "video") {
+                document.querySelectorAll("video, audio").forEach((media) => media.pause());
+              }
+            });
+          }
+          const startRoute = async () => {
+            if (assistKind && !assistValue()) {
+              log.insertLog(`${assistLabel}未开启，开启后将自动开始当前页面的任务`, "warning");
+              await new Promise((resolve) => {
+                const stop = vue.watch(assistValue, (enabled) => {
+                  if (!enabled) return;
+                  stop();
+                  resolve();
+                });
+              });
+              log.insertLog(`${assistLabel}已开启，开始执行当前页面的任务`);
+            }
+            runRouteLogic();
+          };
+          startRoute();
           if ([cxHomeworkLogic, cxExamLogic, enterCxExamPreviewLogic].includes(route.logic)) {
             vue.watch(() => setting.config.basicConfig.autoAnswer.value, enabled => { if (enabled) runRouteLogic(); });
           }
@@ -16008,9 +17102,9 @@ const XS_EXT = (() => {
       if (url.includes("studyvideoh5.zhihuishu.com")) {
         hookError();
       }
-      if (/(studywisdomh5|wisdom-mooc|examloop|smartcourseexam|studentexamcomh5|fusioncourseh5)\.zhihuishu\.com\/(exam|ReviewExam|studentReviewTestOrExam)/.test(url)) {
-        installAnswerSheetHook();
-      }
+      // 作业页（atHomeworkExam）也会拉同一份试卷接口，只在几个考试域名上装钩子会漏抓，
+      // 全站装一次，没命中接口就什么都不做，代价可以忽略
+      installAnswerSheetHook();
     }
     const timer = setInterval(() => {
       if (document.readyState === "complete") {
