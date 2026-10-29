@@ -16470,6 +16470,7 @@ const XS_EXT = (() => {
       getters: {
         statusText: (state) => ({
           idle: "未开始",
+          starting: "启动中",
           running: "运行中",
           paused: "已暂停",
           finished: "已完成"
@@ -16589,6 +16590,7 @@ const XS_EXT = (() => {
     let checksCourse = "";
     let metadataRoute = "";
     let metadataSince = Date.now();
+    let nameScanned = false;
     let stagedImport = null;
     let importBusy = false;
     let stepTimer = null;
@@ -16766,9 +16768,13 @@ const XS_EXT = (() => {
       if (location.href !== metadataRoute) {
         metadataRoute = location.href;
         metadataSince = Date.now();
+        nameScanned = false;
       }
-      if (id && dbCourse === id && pageKind() === "mastery" && Date.now() - metadataSince >= 1000) {
+      // 扫全页找课程名很吃性能（每个元素都要算样式和位置），每页只做一次，且限制元素数量
+      if (id && dbCourse === id && !nameScanned && Date.now() - metadataSince >= 1000 && pageKind() === "mastery") {
+        nameScanned = true;
         const candidates = qa("body *")
+          .slice(0, 1500)
           .filter((el) => el.children.length < 4 && el.textContent.length < 180 && visible(el))
           .map((el) => textOf(el))
           .filter((text) => extractCourseName(text))
@@ -17654,7 +17660,7 @@ const XS_EXT = (() => {
 
             <div style="display:flex;gap:8px">
               <button
-                v-if="store.status !== 'running'"
+                v-if="store.status !== 'running' && store.status !== 'starting'"
                 @click="start"
                 style="padding:5px 14px;border-radius:6px;border:1px solid var(--t-primary);background:var(--t-primary);color:#fff;cursor:pointer"
               >开始 / 继续</button>
@@ -17662,7 +17668,7 @@ const XS_EXT = (() => {
                 v-else
                 @click="store.pause()"
                 style="padding:5px 14px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer"
-              >暂停</button>
+              >{{ store.status === 'starting' ? '取消启动' : '暂停' }}</button>
               <button
                 v-if="store.activity === 'bank'"
                 @click="reset"
@@ -17676,6 +17682,7 @@ const XS_EXT = (() => {
                 <select
                   :value="store.activity"
                   @change="store.setActivity($event.target.value)"
+                  :disabled="store.status === 'running' || store.status === 'starting'"
                   style="flex:1;max-width:200px;padding:4px 8px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface2);color:var(--t-text)"
                 >
                   <option value="practice">满分练习</option>
@@ -17693,6 +17700,7 @@ const XS_EXT = (() => {
                 <select
                   :value="store.mode"
                   @change="store.setMode($event.target.value)"
+                  :disabled="store.status === 'running' || store.status === 'starting'"
                   style="flex:1;max-width:140px;padding:4px 8px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface2);color:var(--t-text)"
                 >
                   <option value="all">全部知识点</option>
@@ -17708,6 +17716,7 @@ const XS_EXT = (() => {
                   step="50"
                   :value="store.delay"
                   @change="store.setDelay($event.target.value)"
+                  :disabled="store.status === 'running' || store.status === 'starting'"
                   style="width:70px;padding:3px 6px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface2);color:var(--t-text)"
                 >
                 <span>毫秒</span>
@@ -17877,6 +17886,25 @@ const XS_EXT = (() => {
     defaultRoute: {
       show: true,
       tab: "0"
+    }
+  };
+  // 面板内容兜底：某个页签渲染出错时显示原因，不再整块空白
+  const PanelBoundary = {
+    name: "PanelBoundary",
+    data: () => ({ error: "" }),
+    errorCaptured(error) {
+      this.error = String((error && error.message) || error || "未知错误");
+      try {
+        console.error("[学神助手] 面板渲染出错", error);
+      } catch (ignore) {
+      }
+      return false;
+    },
+    render() {
+      if (this.error) {
+        return vue.h("div", { class: "tab-content", style: "padding:14px;font-size:12px;line-height:1.7;color:var(--t-text);white-space:pre-wrap;word-break:break-all" }, ["面板渲染出错：" + this.error]);
+      }
+      return vue.h("div", { style: "display:contents" }, this.$slots.default ? this.$slots.default() : []);
     }
   };
   const _hoisted_1$1 = { class: "box-content" };
@@ -18236,12 +18264,16 @@ const XS_EXT = (() => {
             ]),
             _: 1
           }, 8, ["activeKey"]),
-          currentContent.value ? (vue.openBlock(), vue.createBlock(vue.resolveDynamicComponent(currentContent.value.component), {
-            key: 0,
-            class: "tab-content",
-            onAutoRefreshPage: autoRefreshPage,
-            onChangeTab: changeTabIndex
-          }, null, 32)) : vue.createCommentVNode("", true)
+          currentContent.value ? (vue.openBlock(), vue.createBlock(PanelBoundary, { key: 0 }, {
+            default: vue.withCtx(() => [
+              (vue.openBlock(), vue.createBlock(vue.resolveDynamicComponent(currentContent.value.component), {
+                class: "tab-content",
+                onAutoRefreshPage: autoRefreshPage,
+                onChangeTab: changeTabIndex
+              }, null, 32))
+            ]),
+            _: 1
+          })) : vue.createCommentVNode("", true)
         ]);
       };
     }
@@ -18887,6 +18919,8 @@ const XS_EXT = (() => {
         const style = document.createElement("style");
         style.textContent = pendingCSS;
         shadow.appendChild(style);
+        // 记住这块样式，后面页面新注入的样式都会追加到它后面，需要把它挪回最后，否则同权重会被页面样式盖掉
+        shadow.__xsPanelCss = style;
         delete globalThis.__abcCSS;
       }
     }, observeHeadStyles = function(shadow) {
@@ -18898,6 +18932,7 @@ const XS_EXT = (() => {
         const clone = node.cloneNode(true);
         clone.dataset.abcIgnore = "true";
         shadow.appendChild(clone);
+        if (shadow.__xsPanelCss) shadow.appendChild(shadow.__xsPanelCss);
         clonedMap.set(node, clone);
         new MutationObserver(() => {
           clone.textContent = node.textContent;
