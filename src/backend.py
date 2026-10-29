@@ -102,6 +102,11 @@ ANSWER_TIME_BUDGET = 180
 # 40 秒是实测折中：总预算 180 秒内至少能试 4 个模型；原来 60 秒时前 3 个慢模型就能把预算吃光，
 # 剩下 8 个兜底模型直接拿到「超出整体时间预算」。
 MAX_MODEL_BUDGET = 40
+# 图片题单独放宽预算：带图请求要先上传图片，模型还得识图，思考型模型经常要几十秒才吐答案。
+# 之前和纯文本共用 40 秒，模型正要出结果就被掐断，日志里就是「几个模型全在 40 秒内无响应」。
+# 前端请求超时和 nginx 都是 300 秒，240 秒整体预算仍留足余量。
+VISION_TIME_BUDGET = 240
+MAX_VISION_MODEL_BUDGET = 75
 DASHBOARD_CACHE = {"time": 0, "data": None}
 DASHBOARD_CACHE_SECONDS = 5
 # 官网直营营收口径：代理商充值（plan_type='dist_recharge'）是压在平台的预存款、属于负债，
@@ -3561,6 +3566,12 @@ def do_openai_compatible_chat(messages, model, api_key, base_url, time_budget=No
         return [{"role": "user", "content": "\n".join(m["content"] for m in messages)}]
     # 超时类错误（上游慢/网络抖动）逐次放宽超时，并在重试前退避等待
     attempt_timeouts = [40, 55, 70]
+    if time_budget is not None:
+        # 调用方给的 time_budget 就是这个模型能用的全部时间，首试直接给满。
+        # 模型是「整段生成完才返回」，思考型模型和带图题本来就要几十秒；
+        # 原来首试固定 40 秒，调用方就算给了 75 秒预算也用不上，模型还在出结果就被我们掐断。
+        # 超时是直接 return 不重试的，后面两次只服务 400 这类秒回的降级重试。
+        attempt_timeouts = [time_budget, time_budget, time_budget]
     for attempt, (msgs, use_temp, use_max_tokens, label) in enumerate([
         (messages, True, True, "标准请求"),
         # 第2次：去掉 system 消息，合并到 user 中（部分提供商不支持 system role）
@@ -4298,7 +4309,9 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
     errors = []
     error_logs = []  # 失败的模型日志，待确定最终成功模型后统一补记
     final_model = ""
-    deadline = time.time() + ANSWER_TIME_BUDGET
+    # 图片题用更宽的整体预算（见 VISION_TIME_BUDGET 注释）
+    total_budget = VISION_TIME_BUDGET if need_vision else ANSWER_TIME_BUDGET
+    deadline = time.time() + total_budget
 
     # 每道题仅准备一次图片，避免切换模型时重新下载全部图片。
     try:
@@ -4310,10 +4323,11 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
         attempt_start = time.time()
         remaining = max(deadline - time.time(), 0)
         if remaining <= 5:
-            print(f"[自动模型] 整体时间预算({ANSWER_TIME_BUDGET}s)即将耗尽，跳过剩余模型", flush=True)
+            print(f"[自动模型] 整体时间预算({total_budget}s)即将耗尽，跳过剩余模型", flush=True)
             break
         try:
-            answer, err, tokens = call_provider_chat(question, model_name, provider_info, time_budget=min(MAX_MODEL_BUDGET, remaining), prepared_messages=prepared_messages)
+            model_budget = MAX_VISION_MODEL_BUDGET if need_vision else MAX_MODEL_BUDGET
+            answer, err, tokens = call_provider_chat(question, model_name, provider_info, time_budget=min(model_budget, remaining), prepared_messages=prepared_messages)
         except Exception as e:
             err = str(e)
             answer = None
@@ -4367,7 +4381,7 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
     # 所有模型都失败
     last = ordered[-1] if ordered else (None, None, "", "")
     if need_vision:
-        err_msg = "本题包含图片，所有支持图片的模型均失败（超时/不可用），未降级到纯文本模型；" + "；".join(errors[-5:])
+        err_msg = "本题包含图片，所有支持图片的模型均失败（超时/不可用），未降级到纯文本模型，可稍后重试本题；" + "；".join(errors[-5:])
     else:
         err_msg = "自动模型全部尝试失败；" + "；".join(errors[-5:])
     return None, err_msg, last[2], last[0]
