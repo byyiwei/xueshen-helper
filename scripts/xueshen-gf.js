@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通学神助手｜超星·智慧树·知到·青书·出头全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试｜网课助手
 // @namespace    IPYIWEI
-// @version      5.6.1
+// @version      5.6.2
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @author       IPYIWEI
@@ -11,6 +11,13 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.6.2 (2026-10-29)
+// @changelog    1. 新增「掌握度满分」（智慧树）：按知识点逐个进入练习，答对记住答案、答错换下一组选项重答，一直刷到 100%
+// @changelog    2. 掌握度答案按课程存在本地：可导出 / 导入纯文字题库，也能导出未入库清单
+// @changelog    3. 智慧树新增「掌握度」面板：开始 / 继续、暂停、进度、题库导入导出、运行记录
+// @changelog    4. 设置新增「掌握度满分（智慧树）」开关；关闭后掌握度页仍走原来的答题流程
+// @changelog    5. 可用题库优先：先问题库和 AI，答不出来再按选项组合猜，尽量少消耗答题次数
+// @changelog    6. 以上改动只涉及智慧树，超星 / 青书 / 出头 不受影响
 // @changelog    v5.6.1 (2026-10-29)
 // @changelog    1. 智慧树答题补齐：掌握度页可自动翻页、每题等题干渲染完再解析、题干取不到时只看可见文字、作业页也能抓到试卷接口
 // @changelog    2. 智慧树弹题：弹窗出现就处理（不再等视频暂停）、遇到验证码先等、读不到页面答案时兜底作答、AI 智慧课补上弹题处理
@@ -2011,6 +2018,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               value: true,
               type: "switch",
               tips: "只影响智慧树：关闭后进入作业/考试页不会自动作答，可手动点开"
+            },
+            masteryFull: {
+              text: "掌握度满分（智慧树）",
+              value: true,
+              type: "switch",
+              tips: "开启后智慧树掌握度页面会多出「掌握度」页，点开始就按知识点刷到 100%、记住答案并可导出题库；关闭则这些页面走原来的答题流程"
             }
           },
           examConfig: {
@@ -15837,6 +15850,1865 @@ const XS_EXT = (() => {
       </div>
     `
   };
+  // ===== 智慧树掌握度满分 =====
+  // 参照「知到智慧树掌握度满分助手」的作答思路移植：
+  // 在掌握度热力图里逐个知识点进入练习，答对记住答案，答错换下一组选项重答，
+  // 直到知识点达到 100%；答案按课程存在本地，可导出 / 导入题库。
+  // 只接管智慧树掌握度页面，超星 / 青书 / 出头 不受影响。
+  const zhsMastery = (() => {
+    const STORAGE_PREFIX = "xsMastery:";
+    const SETTINGS_KEY = STORAGE_PREFIX + "settings";
+    const COURSES_KEY = STORAGE_PREFIX + "courses";
+    const COURSE_KEY = (id) => STORAGE_PREFIX + "course:" + id;
+    const SESSION_KEY = "xsMastery:run";
+    const SESSION_TTL_MS = 10 * 60e3;
+    const SELECTORS = {
+      cards: ".mastery-content-right .chunk-list .item-box",
+      cardName: ".item-box-name",
+      popover: ".mastery-box-custom-popover",
+      questions: ".exam .exam-item, .exam-preview .exam-item",
+      title: ".quest-title .option-name",
+      type: ".quest-type",
+      options: "label.el-radio, label.el-checkbox",
+      answerCards: ".exam .answer-card .list .item",
+      submit: ".exam .header .submit",
+      retry: ".exam-preview .header .submit",
+      pointAnalysis: ".point .line1-count-link"
+    };
+    const DEFAULT_SETTINGS = {
+      activity: "practice",
+      mode: "all",
+      ignoreAnswers: false,
+      delay: 200,
+      maxRounds: 512,
+      importMatch: "loose"
+    };
+
+    // ---------- 本地存储 ----------
+    const readJson = (key, fallback) => {
+      try {
+        const raw = typeof _GM_getValue === "function" ? _GM_getValue(key, "") : window.localStorage.getItem(key);
+        if (!raw) return fallback;
+        return typeof raw === "string" ? JSON.parse(raw) : raw;
+      } catch (error) {
+        return fallback;
+      }
+    };
+    const writeJson = (key, value) => {
+      try {
+        const text = JSON.stringify(value);
+        if (typeof _GM_setValue === "function") {
+          _GM_setValue(key, text);
+          return true;
+        }
+        window.localStorage.setItem(key, text);
+        return true;
+      } catch (error) {
+        return false;
+      }
+    };
+    const settings = Object.assign({}, DEFAULT_SETTINGS, readJson(SETTINGS_KEY, {}) || {});
+    if (!["practice", "bank"].includes(settings.activity)) settings.activity = "practice";
+    if (!["all", "current"].includes(settings.mode)) settings.mode = "all";
+    if (!["loose", "strict"].includes(settings.importMatch)) settings.importMatch = "loose";
+    const saveSettings = () => writeJson(SETTINGS_KEY, settings);
+    const improving = () => settings.activity === "bank";
+    const coldReview = () => improving() && db && db.review && db.review.ignoreAnswers === true;
+
+    // ---------- 纯算法 ----------
+    const normalize = (value) => String(value == null ? "" : value).normalize("NFKC").replace(/\s+/g, " ").trim();
+    const canonical = (values) => [...values].sort();
+    const same = (a, b) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
+    function combinations(tokens, multiple) {
+      if (!tokens.length || tokens.length > 12) throw new Error("选项数量不支持（范围 1～12）");
+      const sorted = canonical(tokens);
+      if (new Set(sorted).size !== sorted.length) throw new Error("选项无法唯一识别");
+      if (!multiple) return sorted.map((token) => [token]);
+      const result = [];
+      function collect(start, size, chosen) {
+        if (!size) {
+          result.push(chosen);
+          return;
+        }
+        for (let i = start; i <= sorted.length - size; i++) collect(i + 1, size - 1, [...chosen, sorted[i]]);
+      }
+      // 先枚举真正的多选组合，再把单项垫在最后，覆盖所有非空子集
+      for (let size = 2; size <= sorted.length; size++) collect(0, size, []);
+      collect(0, 1, []);
+      return result;
+    }
+    function questionKey(scope, question) {
+      return JSON.stringify([scope, question.type, question.title, canonical(question.options.map((option) => option.token))]);
+    }
+    function binomial(n, k) {
+      let value = 1;
+      for (let i = 1; i <= k; i++) value = value * (n - i + 1) / i;
+      return value;
+    }
+    function answerModel(records) {
+      const model = {};
+      const seen = new Set();
+      for (const [key, record] of Object.entries(records || {})) {
+        if (record.type !== "多选题" || !record.correct || !record.correct.length) continue;
+        let parts;
+        try {
+          parts = JSON.parse(key);
+        } catch (error) {
+          continue;
+        }
+        const options = parts && parts[3];
+        if (!Array.isArray(options) || options.length < 1 || options.length > 12 || new Set(options).size !== options.length) continue;
+        if (new Set(record.correct).size !== record.correct.length || !record.correct.every((token) => options.includes(token))) continue;
+        const identity = JSON.stringify([parts[1], parts[2], canonical(options)]);
+        if (seen.has(identity)) continue;
+        seen.add(identity);
+        const counts = model[options.length] || (model[options.length] = {});
+        counts[record.correct.length] = (counts[record.correct.length] || 0) + 1;
+      }
+      return model;
+    }
+    function rankedCombinations(question, model = {}) {
+      const candidates = combinations(question.options.map((option) => option.token), question.multiple);
+      const n = question.options.length;
+      if (!question.multiple) return candidates;
+      // 冷启动按常见正确项数量排个先后，课程里确认过的题逐步覆盖这个先验
+      const prior = n === 5 ? { 2: 1, 3: 28, 4: 16, 5: 1 } : {};
+      const priorTotal = Object.values(prior).reduce((sum, count) => sum + count, 0);
+      const counts = Object.assign({}, model[n] || {});
+      for (const [size, count] of Object.entries(prior)) counts[size] = (counts[size] || 0) + 20 * count / priorTotal;
+      if (Object.values(counts).reduce((sum, count) => sum + count, 0) < 12) return candidates;
+      const score = (choice) => (counts[choice.length] || 0) / binomial(n, choice.length) + 1 / (2 ** n - 1);
+      return candidates
+        .map((choice, index) => ({ choice, index, score: score(choice) }))
+        .sort((a, b) => b.score - a.score || a.index - b.index)
+        .map((item) => item.choice);
+    }
+    function parseMasteryRate(value) {
+      const text = normalize(value);
+      if (!/^\d+(?:\.\d+)?\s*%?$/.test(text)) throw new Error("掌握度百分比无法识别，请检查知识点弹窗");
+      const rate = Number(text.replace("%", "").trim());
+      if (rate < 0 || rate > 100) throw new Error("掌握度百分比超出范围");
+      return rate;
+    }
+    function masteryProgress(colors, rates = []) {
+      const total = colors.length;
+      const exempt = colors.filter((color) => color === "blue").length;
+      const eligible = total - exempt;
+      let perfect = 0;
+      let verified = 0;
+      colors.forEach((color, index) => {
+        if (color === "blue") return;
+        const rate = rates[index];
+        if (typeof rate === "number" && Number.isFinite(rate) && rate >= 0 && rate <= 100) {
+          verified++;
+          if (rate === 100) perfect++;
+        }
+      });
+      return {
+        total,
+        exempt,
+        eligible,
+        perfect,
+        verified,
+        unchecked: eligible - verified,
+        remaining: eligible - perfect,
+        percent: eligible ? Math.round(1000 * perfect / eligible) / 10 : total ? 100 : 0
+      };
+    }
+    function nextAnswer(record, question, model, preferred = []) {
+      const candidates = rankedCombinations(question, model);
+      if (record.correct && record.correct.length) {
+        if (!candidates.some((choice) => same(choice, record.correct))) throw new Error("已知答案与当前选项不一致");
+        return record.correct;
+      }
+      const candidateKeys = new Set(candidates.map((choice) => JSON.stringify(canonical(choice))));
+      const eligible = preferred.filter((choice) => Array.isArray(choice) && candidateKeys.has(JSON.stringify(canonical(choice))));
+      const choice = [...eligible, ...candidates].find((candidate) => !(record.wrong || []).some((wrong) => same(wrong, candidate)));
+      if (!choice) throw new Error("所有组合均被判错，已暂停；请检查题目、批改或其他脚本干扰");
+      return choice;
+    }
+    function remember(record, choice, correct) {
+      if (!choice.length) throw new Error("批改题目没有已选答案，不能记录");
+      if (correct) {
+        record.correct = canonical(choice);
+        record.wrong = (record.wrong || []).filter((wrong) => !same(wrong, choice));
+      } else {
+        if (record.correct && same(record.correct, choice)) delete record.correct;
+        record.wrong = record.wrong || [];
+        if (!record.wrong.some((wrong) => same(wrong, choice))) record.wrong.push(canonical(choice));
+      }
+    }
+    function newReview(ignoreAnswers = false, id = `${Date.now()}-${Math.random().toString(36).slice(2)}`) {
+      return {
+        id,
+        startedAt: new Date().toISOString(),
+        ignoreAnswers,
+        completed: [],
+        items: {},
+        trials: {},
+        rounds: {},
+        activeCard: "",
+        readyScope: "",
+        finishedAt: null
+      };
+    }
+    function questionIdentity(question) {
+      return JSON.stringify([question.type, question.title, canonical(question.options.map((option) => option.token))]);
+    }
+    function reviewProgress(review, eligible) {
+      const completed = new Set((review && review.completed) || []).size;
+      const entries = Object.values((review && review.items) || {});
+      return {
+        completed,
+        eligible,
+        percent: eligible ? Math.round(1000 * Math.min(completed, eligible) / eligible) / 10 : 0,
+        added: entries.filter((item) => item.correct && !item.hadAnswer).length,
+        verified: entries.filter((item) => item.correct && item.hadAnswer && !item.changed).length,
+        corrected: entries.filter((item) => item.correct && item.changed).length,
+        unresolved: entries.filter((item) => !item.correct).length
+      };
+    }
+    function trackReview(review, question, record, choice, correct, imported = false) {
+      const identity = questionIdentity(question);
+      const item = review.items[identity] || (review.items[identity] = { hadAnswer: Boolean(record.correct && record.correct.length), changed: false, correct: false });
+      if (!correct && (imported || (record.correct && same(record.correct, choice)))) item.changed = true;
+      item.correct = correct;
+      if (review.ignoreAnswers) remember(review.trials[identity] || (review.trials[identity] = { wrong: [] }), choice, correct);
+    }
+    function reconcileFeedback(records, question, choice, correct) {
+      // 同一道题在不同知识点出现时，用这次批改同步修正旧记录；不做模糊覆盖
+      const identity = questionIdentity(question);
+      for (const [key, record] of Object.entries(records)) {
+        let parts;
+        try {
+          parts = JSON.parse(key);
+        } catch (error) {
+          continue;
+        }
+        if (!Array.isArray(parts) || !Array.isArray(parts[3])) continue;
+        if (JSON.stringify(parts.slice(1)) !== identity) continue;
+        remember(record, choice, correct);
+      }
+    }
+    function masteryURL(currentURL) {
+      const current = new URL(currentURL);
+      const course = current.searchParams.get("recruitAndCourseId");
+      if (!course || !/^https?:$/.test(current.protocol)) throw new Error("无法识别本课程热力图地址");
+      const target = new URL("/study/mastery", current.origin);
+      target.searchParams.set("recruitAndCourseId", course);
+      return target.href;
+    }
+    function identifyPage(currentURL, markers) {
+      if (markers.analysis) return "analysis";
+      if (markers.exam) return "exam";
+      if (markers.point) return "point";
+      if (markers.mastery) return "mastery";
+      const url = new URL(currentURL);
+      const path = url.pathname.replace(/\/+$/, "");
+      return ["/examAnalysis", "/exam", "/study/mastery"].includes(path) || path.startsWith("/pointOfMastery/") ? "loading" : "unknown";
+    }
+    function extractCourseName(label) {
+      const match = normalize(label).match(/^课程名称\s*[:：]\s*(.+)$/);
+      return match ? match[1].split(/[|｜]/)[0].trim() : "";
+    }
+    const matchText = (value) => normalize(value).toLowerCase().replace(/[\p{P}\p{Z}\s]/gu, "");
+    function truthToken(value) {
+      const text = normalize(value).toLowerCase();
+      if (/^(对|正确|是|真|true|t|√|✓|1)$/.test(text)) return "true";
+      if (/^(错|错误|不正确|否|假|false|f|×|✗|0)$/.test(text)) return "false";
+      return null;
+    }
+    function textSimilarity(a, b) {
+      a = matchText(a);
+      b = matchText(b);
+      if (!a || !b) return 0;
+      if (a === b) return 1;
+      if (Math.min(a.length, b.length) < 4) return 0;
+      const grams = (value) => {
+        const counts = new Map();
+        for (let i = 0; i < value.length - 1; i++) {
+          const pair = value.slice(i, i + 2);
+          counts.set(pair, (counts.get(pair) || 0) + 1);
+        }
+        return counts;
+      };
+      const left = grams(a);
+      const right = grams(b);
+      let overlap = 0;
+      for (const [pair, count] of left) overlap += Math.min(count, right.get(pair) || 0);
+      return 2 * overlap / (a.length + b.length - 2);
+    }
+    function importedItem(type, title, options, answers) {
+      title = normalize(title);
+      if (!["单选题", "多选题", "判断题"].includes(type) || !title) throw new Error("题型或题干缺失");
+      options = options.map(normalize);
+      if (type === "判断题") {
+        options = options.length ? options.map((option) => truthToken(option) || option) : ["true", "false"];
+        answers = answers.map((answer) => answer.map((option) => truthToken(option) || normalize(option)));
+      } else {
+        answers = answers.map((answer) => answer.map(normalize));
+      }
+      if (!options.length || options.length > 12 || options.some((option) => !option) || new Set(options).size !== options.length) throw new Error("选项缺失、重复或超过12项");
+      if (!answers.length || answers.some((answer) => !answer.length || (type !== "多选题" && answer.length !== 1) || new Set(answer).size !== answer.length || !answer.every((value) => options.includes(value)))) throw new Error("答案缺失或不能唯一对应选项");
+      const unique = [...new Map(answers.map((answer) => [JSON.stringify(canonical(answer)), canonical(answer)])).values()];
+      return { type, title, options, answers: unique };
+    }
+    function parseTextBank(text) {
+      const lines = String(text).replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").split("\n");
+      const blocks = [];
+      let block;
+      for (const raw of lines) {
+        const line = raw.trim();
+        const typed = line.match(/^(?:\d{1,6}\s*[.、．)）]\s*)?[【\[(（]\s*(单选题?|多选题?|判断题?)\s*[】\])）]\s*(.*)$/);
+        const numbered = !typed && line.match(/^\d{1,6}\s*[.、．]\s*(?!\d)(.+)$/);
+        if (typed || numbered) {
+          if (blocks.length >= 20000) throw new Error("单次最多识别20000道题，请拆分题库");
+          block = { type: typed ? typed[1].replace(/题?$/, "题") : "", lines: [typed ? typed[2] : numbered[1]], number: blocks.length + 1 };
+          blocks.push(block);
+        } else if (block && line) block.lines.push(line);
+      }
+      const items = [];
+      const excluded = [];
+      for (const entry of blocks) {
+        try {
+          let body = [...entry.lines];
+          let answer = "";
+          const explicit = body.findIndex((line) => /^(?:参考答案|正确答案|答案)\s*[:：]/.test(line));
+          if (explicit >= 0) {
+            answer = body[explicit].replace(/^(?:参考答案|正确答案|答案)\s*[:：]\s*/, "");
+            body = body.slice(0, explicit);
+          }
+          const optionPattern = /^([A-La-l])\s*[.、．:：)）]\s*(.*)$/;
+          const optionStart = body.findIndex((line) => optionPattern.test(line));
+          let title;
+          let options = [];
+          const labels = [];
+          if (optionStart >= 0) {
+            title = body.slice(0, optionStart).join(" ");
+            if (!answer) {
+              if (optionPattern.test(body[body.length - 1])) throw new Error("没有答案行");
+              answer = body.pop();
+            }
+            for (const line of body.slice(optionStart)) {
+              const option = line.match(optionPattern);
+              if (option) {
+                labels.push(option[1].toUpperCase());
+                options.push(option[2]);
+              } else {
+                options[options.length - 1] += " " + line;
+              }
+            }
+            if (new Set(labels).size !== labels.length) throw new Error("选项字母重复");
+          } else {
+            if (!answer) answer = body.pop();
+            title = body.join(" ");
+          }
+          answer = normalize(answer);
+          let choice;
+          const exact = options.filter((option) => normalize(option) === answer);
+          if (exact.length === 1) choice = exact;
+          else if (labels.length && /^[A-La-l\s,，;；、|]+$/.test(answer)) {
+            const letters = answer.toUpperCase().replace(/[\s,，;；、|]/g, "").split("");
+            if (!letters.every((letter) => labels.includes(letter))) throw new Error("答案字母不在选项中");
+            choice = letters.map((letter) => options[labels.indexOf(letter)]);
+          } else choice = answer.split(/[;；]/).map(normalize);
+          if (choice.length === 1 && !exact.length && /[,，、|]/.test(answer)) {
+            const parts = answer.split(/[,，、|]/).map(normalize);
+            if (parts.every((part) => options.some((option) => normalize(option) === part))) choice = parts;
+          }
+          const type = entry.type || (!options.length && truthToken(answer) ? "判断题" : choice.length > 1 ? "多选题" : "单选题");
+          items.push(importedItem(type, title, options, [choice]));
+        } catch (error) {
+          excluded.push({ number: entry.number, title: entry.lines[0] || "", reason: error.message });
+        }
+      }
+      if (!blocks.length) throw new Error("未识别到题目。请使用“1.【单选题】题干”或“1.题干”开头，每个选项和答案各占一行");
+      return { items, excluded, detected: blocks.length };
+    }
+    function parseJSONBank(text) {
+      const data = JSON.parse(String(text).replace(/^\uFEFF/, ""));
+      const records = (data && data.records && data.records.questions) || (data && data.questions);
+      if (!records || typeof records !== "object" || Array.isArray(records)) throw new Error("JSON不是本脚本导出的记录或题库格式");
+      const entries = Object.entries(records);
+      if (entries.length > 20000) throw new Error("单次最多识别20000道题，请拆分题库");
+      const items = [];
+      const excluded = [];
+      for (const [key, record] of entries) {
+        try {
+          if (!record || typeof record !== "object") throw new Error("题目记录无效");
+          let parts;
+          try {
+            parts = JSON.parse(key);
+          } catch (error) {
+            parts = [];
+          }
+          const sourceOptions = record.latestOptions || record.options || (parts && parts[3]) || [];
+          const options = sourceOptions.map((option) => typeof option === "string" ? { token: option, content: option } : option);
+          const tokens = record.correctAnswerTokens || record.correct;
+          if (!Array.isArray(tokens) || !tokens.length) throw new Error("没有已确认答案");
+          const choice = tokens.map((token) => {
+            const matches = options.filter((option) => option && option.token === token);
+            if (matches.length !== 1) throw new Error("答案与选项不一致");
+            return matches[0].content != null ? matches[0].content : matches[0].token;
+          });
+          items.push(importedItem(record.type || (parts && parts[1]), record.title || (parts && parts[2]), options.map((option) => (option ? option.content != null ? option.content : option.token : "")), [choice]));
+        } catch (error) {
+          excluded.push({ number: excluded.length + items.length + 1, title: (record && record.title) || "", reason: error.message });
+        }
+      }
+      return { items, excluded, detected: entries.length };
+    }
+    function parseBankFile(text, filename = "") {
+      return /\.json$/i.test(filename) || /^[\s\uFEFF]*\{/.test(text) ? parseJSONBank(text) : parseTextBank(text);
+    }
+    function mergeImported(existing, incoming) {
+      const map = new Map();
+      let added = 0;
+      let duplicates = 0;
+      let addedAnswers = 0;
+      for (const [batch, items] of [existing || [], incoming].entries()) {
+        for (const raw of items) {
+          const item = importedItem(raw.type, raw.title, raw.options, raw.answers);
+          const key = JSON.stringify([item.type, item.title, canonical(item.options)]);
+          if (!map.has(key)) {
+            map.set(key, Object.assign({}, item, { answers: [] }));
+            if (batch === 1) added++;
+          }
+          const target = map.get(key);
+          for (const answer of item.answers) {
+            if (target.answers.some((previous) => same(previous, answer))) {
+              if (batch === 1) duplicates++;
+            } else {
+              target.answers.push(answer);
+              if (batch === 1) addedAnswers++;
+            }
+          }
+        }
+      }
+      if (map.size > 20000) throw new Error("合并后超过20000道题，请分到不同课程或先清除导入题库");
+      const items = [...map.values()];
+      return { items, added, addedAnswers, duplicates, conflicts: items.filter((item) => item.answers.length > 1).length };
+    }
+    function importedCandidates(items, question, mode = "loose") {
+      const live = question.options.map((option) => ({
+        token: option.token,
+        text: question.type === "判断题" ? truthToken(option.content != null ? option.content : option.token) || normalize(option.content != null ? option.content : option.token) : normalize(option.content != null ? option.content : option.token)
+      }));
+      const matches = [];
+      for (const item of items || []) {
+        if (item.type !== question.type) continue;
+        let score;
+        if (mode === "strict") {
+          if (normalize(item.title) !== normalize(question.title) || !same(item.options.map(normalize), live.map((option) => option.text))) continue;
+          score = 2;
+        } else {
+          if (/\[图片:/.test(item.title + question.title) && normalize(item.title) !== normalize(question.title)) continue;
+          score = textSimilarity(item.title, question.title);
+          if (score < 0.8) continue;
+        }
+        for (const answer of item.answers) {
+          const mapped = [];
+          let valid = true;
+          for (const value of answer) {
+            let options = live.filter((option) => mode === "strict" || /\[图片:/.test(value + option.text) ? option.text === normalize(value) : matchText(option.text) === matchText(value));
+            if (!options.length && mode !== "strict" && !/\[图片:/.test(value)) {
+              const ranked = live.filter((option) => !/\[图片:/.test(option.text)).map((option) => ({ option, similarity: textSimilarity(value, option.text) })).sort((a, b) => b.similarity - a.similarity);
+              if (ranked[0] && ranked[0].similarity >= 0.85 && ranked[0].similarity - ((ranked[1] && ranked[1].similarity) || 0) >= 0.08) options = [ranked[0].option];
+            }
+            if (options.length !== 1) {
+              valid = false;
+              break;
+            }
+            mapped.push(options[0].token);
+          }
+          if (valid && new Set(mapped).size === mapped.length && (question.multiple || mapped.length === 1)) matches.push({ choice: canonical(mapped), score });
+        }
+      }
+      return [...new Map(matches.sort((a, b) => b.score - a.score).map((item) => [JSON.stringify(item.choice), item.choice])).values()];
+    }
+    function questionBankFromRecords(records) {
+      const bank = { questions: {} };
+      for (const [key, record] of Object.entries(records || {})) {
+        let parts;
+        try {
+          parts = JSON.parse(key);
+        } catch (error) {
+          continue;
+        }
+        if (!parts || !Array.isArray(parts[3])) continue;
+        const [knowledgeScope, type, title, tokens] = parts;
+        bank.questions[key] = {
+          type: record.type || type,
+          title: record.title || title,
+          scope: knowledgeScope,
+          knowledgeTitle: record.knowledgeTitle || "",
+          multiple: type === "多选题",
+          latestOptions: record.options || tokens.map((token) => ({ token, content: token, images: [] })),
+          correctAnswerTokens: record.correct && record.correct.length ? canonical(record.correct) : null
+        };
+      }
+      return bank;
+    }
+    function formatTextBank(bank) {
+      const line = (value) => String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+      const contentOf = (option) => {
+        let content = line(option.content != null ? option.content : option.token);
+        if (content === option.token) content = content.replace(/\s+\[ID:[^\]]*\]$/, "");
+        const images = (option.images || []).map((image) => image.src).filter(Boolean);
+        if (images.length && !content.includes("[图片:")) content += ` [图片:${images.join("|")}]`;
+        return content;
+      };
+      const groups = new Map();
+      let skipped = 0;
+      let duplicates = 0;
+      let conflicts = 0;
+      let unconfirmed = 0;
+      let incomplete = 0;
+      const excluded = [];
+      const exclude = (key, question, reason) => {
+        skipped++;
+        if (reason === "unconfirmed") unconfirmed++;
+        else incomplete++;
+        excluded.push(Object.assign({ key }, question, { reason }));
+      };
+      for (const [key, question] of Object.entries(bank.questions || {})) {
+        const options = question.latestOptions || [];
+        const tokens = question.correctAnswerTokens;
+        if (!question.title || !["单选题", "多选题", "判断题"].includes(question.type) || !Array.isArray(options) || !options.length || options.some((option) => !option || typeof option.token !== "string" || !option.token)) {
+          exclude(key, question, "incomplete");
+          continue;
+        }
+        if (tokens === null || tokens === void 0 || (Array.isArray(tokens) && !tokens.length)) {
+          exclude(key, question, "unconfirmed");
+          continue;
+        }
+        if (!Array.isArray(tokens) || (!question.multiple && tokens.length !== 1) || new Set(tokens).size !== tokens.length || new Set(options.map((option) => option.token)).size !== options.length || !tokens.every((token) => options.some((option) => option.token === token))) {
+          exclude(key, question, "incomplete");
+          continue;
+        }
+        const contents = options.map(contentOf);
+        let answers = options.filter((option) => tokens.includes(option.token)).map(contentOf);
+        if (contents.some((content) => !content)) {
+          exclude(key, question, "incomplete");
+          continue;
+        }
+        let answer = answers.join(";");
+        if (question.type === "判断题") {
+          if (/^(对|正确|是|真|true|t|√|✓|1)$/i.test(normalize(answer))) answer = "true";
+          else if (/^(错|错误|不正确|否|假|false|f|×|✗|0)$/i.test(normalize(answer))) answer = "false";
+        }
+        const identity = JSON.stringify([question.type, normalize(question.title), canonical(contents)]);
+        const signature = question.type === "判断题" ? answer : JSON.stringify(canonical(answers));
+        if (groups.has(identity)) {
+          const previous = groups.get(identity);
+          if (previous.signature !== signature) previous.conflict = true;
+          else duplicates++;
+          continue;
+        }
+        groups.set(identity, { type: question.type, title: line(question.title), contents, answer, signature, key, question });
+      }
+      const blocks = [];
+      for (const item of groups.values()) {
+        if (item.conflict) {
+          conflicts++;
+          excluded.push(Object.assign({ key: item.key }, item.question, { reason: "conflict" }));
+          continue;
+        }
+        const lines = [`${blocks.length + 1}.【${item.type}】${item.title}`];
+        if (item.type !== "判断题") lines.push(...item.contents.map((content, index) => `${String.fromCharCode(65 + index)}.${content}`));
+        lines.push(item.answer);
+        blocks.push(lines.join("\r\n"));
+      }
+      return {
+        text: blocks.length ? blocks.join("\r\n\r\n") + "\r\n" : "",
+        exported: blocks.length,
+        skipped,
+        duplicates,
+        conflicts,
+        unconfirmed,
+        incomplete,
+        excluded
+      };
+    }
+    function formatExcludedBankReport(bank) {
+      const reasons = { unconfirmed: "尚未取得本题判对答案", incomplete: "题干、选项或答案匹配数据异常", conflict: "同题已确认答案互相冲突" };
+      const blocks = bank.excluded.map((question, index) => {
+        const lines = [
+          `${index + 1}.【${question.type || "未知题型"}】${question.title || "题干缺失"}`,
+          `未入库原因：${reasons[question.reason]}`,
+          `知识点：${question.knowledgeTitle || question.scope || "未知"}`
+        ];
+        if (Array.isArray(question.latestOptions)) lines.push(...question.latestOptions.map((option, position) => `${String.fromCharCode(65 + position)}.${(option && option.content) || (option && option.token) || "选项内容缺失"}`));
+        return lines.join("\r\n");
+      });
+      return `未入库题目清单\r\n已入库 ${bank.exported} 题；未确认答案 ${bank.unconfirmed} 题；数据异常 ${bank.incomplete} 题；答案冲突 ${bank.conflicts} 组。\r\n以下题目未写入正式题库；这份清单供排查，不要导入搜题软件作为答案。\r\n\r\n${blocks.join("\r\n\r\n")}\r\n`;
+    }
+
+    // ---------- UI 状态 ----------
+    const useMasteryStore = pinia.defineStore("zhsMastery", {
+      state: () => ({
+        visible: false,
+        status: "idle",
+        message: "未开始",
+        courseId: "",
+        courseName: "",
+        activeName: "",
+        activity: settings.activity,
+        mode: settings.mode,
+        ignoreAnswers: settings.ignoreAnswers,
+        importMatch: settings.importMatch,
+        logs: [],
+        progress: null,
+        reviewStats: null,
+        bankCount: 0,
+        wrongCount: 0,
+        importedCount: 0,
+        courses: [],
+        exportCourse: "",
+        importPreview: "",
+        importReady: false,
+        canStart: false,
+        pageKind: "unknown"
+      }),
+      getters: {
+        statusText: (state) => ({
+          idle: "未开始",
+          running: "运行中",
+          paused: "已暂停",
+          finished: "已完成"
+        }[state.status] || "未开始"),
+        percentText: (state) => state.progress ? `${state.progress.percent}%` : "—",
+        remainText: (state) => state.progress ? `已满分 ${state.progress.perfect} / 可练 ${state.progress.eligible}，免考 ${state.progress.exempt}，剩余 ${state.progress.remaining}` : "等待核实掌握度"
+      },
+      actions: {
+        start() {
+          moduleStart(false);
+        },
+        pause() {
+          moduleStop("已手动暂停");
+        },
+        setActivity(value) {
+          if (running || starting) return;
+          settings.activity = value === "bank" ? "bank" : "practice";
+          saveSettings();
+          syncState();
+          refreshProgress();
+        },
+        setMode(value) {
+          if (running || starting) return;
+          settings.mode = value === "current" ? "current" : "all";
+          saveSettings();
+          syncState();
+        },
+        setIgnoreAnswers(value) {
+          if (running || starting) return;
+          settings.ignoreAnswers = !!value;
+          saveSettings();
+          if (db && db.review) {
+            db.review.ignoreAnswers = settings.ignoreAnswers;
+            save();
+          }
+          syncState();
+        },
+        setImportMatch(value) {
+          if (running || starting) return;
+          settings.importMatch = value === "strict" ? "strict" : "loose";
+          saveSettings();
+          syncState();
+        },
+        refresh() {
+          refreshProgress();
+        },
+        setExportCourse(id) {
+          this.exportCourse = id;
+          refreshImportSummary();
+        },
+        exportBank() {
+          exportBankFile();
+        },
+        exportExcluded() {
+          exportExcludedFile();
+        },
+        importFile(file) {
+          previewBankFile(file);
+        },
+        confirmImport() {
+          changeImportedBank(false);
+        },
+        clearImport() {
+          changeImportedBank(true);
+        }
+      }
+    });
+    const masteryStore = () => {
+      try {
+        return useMasteryStore();
+      } catch (error) {
+        return null;
+      }
+    };
+
+    // ---------- 运行时状态 ----------
+    let db = null;
+    let dbCourse = "";
+    let running = false;
+    let starting = false;
+    let busy = false;
+    let navigating = false;
+    let generation = 0;
+    let releaseLock = null;
+    let runCourse = "";
+    let lastRoute = "";
+    let routeSince = Date.now();
+    let routeReady = false;
+    let statusMessage = "待启动";
+    let activeName = "";
+    let selectedCard = "";
+    let checks = null;
+    let checksCourse = "";
+    let metadataRoute = "";
+    let metadataSince = Date.now();
+    let stagedImport = null;
+    let importBusy = false;
+    let stepTimer = null;
+    let everStarted = false;
+    let refreshTimer = null;
+    let candidateSignature = "";
+    const candidateCache = new Map();
+    const backendCache = new Map();
+
+    const q = (selector, root = document) => root.querySelector(selector);
+    const qa = (selector, root = document) => [...root.querySelectorAll(selector)];
+    const textOf = (el) => normalize(el && el.textContent);
+    const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    function visible(el, viewport = false) {
+      if (!el || !el.isConnected) return false;
+      for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0 || node.getAttribute("aria-hidden") === "true") return false;
+      }
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && (!viewport || (rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth));
+    }
+    const shown = (selector) => qa(selector).find((el) => visible(el));
+    const courseId = () => new URL(location.href).searchParams.get("recruitAndCourseId") || "";
+    function scope() {
+      const url = new URL(location.href);
+      const knowledge = url.searchParams.get("knowledgeId") || (url.pathname.startsWith("/pointOfMastery/") ? url.pathname.split("/")[4] : "");
+      if (!courseId() || !knowledge) throw new Error("无法识别课程或知识点，请从掌握度热力图进入");
+      return `${courseId()}|${knowledge}`;
+    }
+    function pageKind() {
+      return identifyPage(location.href, {
+        analysis: Boolean(q(".exam-preview .exam-item .question-result")),
+        exam: Boolean(q(".exam .exam-item .quest-title")),
+        point: qa(".point .line1-count-total-num").length === 2,
+        mastery: Boolean(q(SELECTORS.cards))
+      });
+    }
+
+    // ---------- 日志 ----------
+    function log(message, course) {
+      statusMessage = message;
+      const line = `${new Date().toLocaleTimeString("zh-CN", { hour12: false })} ${message}`;
+      const store = masteryStore();
+      if (store) {
+        store.logs.push(line);
+        if (store.logs.length > 60) store.logs.splice(0, store.logs.length - 60);
+        store.message = message;
+      }
+      try {
+        useLogStore().insertLog(message);
+      } catch (error) {
+      }
+      console.info("[掌握度满分]", message);
+    }
+
+    // ---------- 记录存取 ----------
+    function registerCourse(id, name = "") {
+      const courses = readJson(COURSES_KEY, {}) || {};
+      const previous = courses[id];
+      const next = { id, name: name || (previous && previous.name) || "" };
+      if (!previous || previous.id !== id || previous.name !== next.name) {
+        courses[id] = next;
+        writeJson(COURSES_KEY, courses);
+      }
+      return next;
+    }
+    function loadDB(course) {
+      if (!course) throw new Error("请打开课程页面");
+      if (dbCourse === course && db) return;
+      db = readJson(COURSE_KEY(course), { version: 1, questions: {}, rounds: {}, pending: null });
+      if (!db || db.version !== 1 || !db.questions || !db.rounds) throw new Error("本地记录格式异常，请导出后清除记录");
+      dbCourse = course;
+      const known = registerCourse(course, db.course && db.course.id === course ? db.course.name : "");
+      if (!db.course || db.course.name !== known.name) db.course = known;
+    }
+    function save() {
+      if (!db || !dbCourse) return;
+      const latest = readJson(COURSE_KEY(dbCourse), null);
+      if (latest && latest.imported) {
+        db.imported = latest.imported;
+        db.importRevision = latest.importRevision;
+      }
+      writeJson(COURSE_KEY(dbCourse), db);
+    }
+    function preferredFor(question) {
+      if (coldReview()) return [];
+      const signature = JSON.stringify([dbCourse, (db && db.importRevision) || 0, settings.importMatch]);
+      if (candidateSignature !== signature) {
+        candidateSignature = signature;
+        candidateCache.clear();
+      }
+      const key = questionKey(scope(), question);
+      if (!candidateCache.has(key)) candidateCache.set(key, importedCandidates(db.imported, question, settings.importMatch));
+      return candidateCache.get(key);
+    }
+    function currentModel() {
+      if (!coldReview()) return answerModel(db.questions);
+      const trials = Object.fromEntries(Object.entries(db.review.trials).map(([identity, record]) => {
+        const parts = JSON.parse(identity);
+        return [JSON.stringify(["review", ...parts]), Object.assign({}, record, { type: parts[0] })];
+      }));
+      return answerModel(trials);
+    }
+    const answerRecord = (question, record) => coldReview() ? (db.review.trials[questionIdentity(question)] || (db.review.trials[questionIdentity(question)] = { wrong: [] })) : record;
+
+    // ---------- 掌握度缓存（同一次运行内） ----------
+    function loadMasteryChecks(course) {
+      if (checksCourse === course && checks) return checks;
+      checksCourse = course;
+      try {
+        checks = JSON.parse(window.sessionStorage.getItem(STORAGE_PREFIX + "checks:" + course) || "null");
+      } catch (error) {
+        checks = null;
+      }
+      if (!checks || checks.version !== 1 || !checks.entries || typeof checks.entries !== "object") checks = { version: 1, entries: {} };
+      return checks;
+    }
+    function saveMasteryChecks() {
+      try {
+        window.sessionStorage.setItem(STORAGE_PREFIX + "checks:" + checksCourse, JSON.stringify(checks));
+      } catch (error) {
+      }
+    }
+    function cardColor(card) {
+      return ["blue", "green", "gray", "origin", "pink"].find((color) => card.classList.contains(color)) || "unknown";
+    }
+    function cardIdentity(card, index = qa(SELECTORS.cards).indexOf(card)) {
+      const section = textOf(q(".mastery-name", card.closest(".mastery-content")));
+      return JSON.stringify([courseId(), section, textOf(q(SELECTORS.cardName, card)), index]);
+    }
+    function checkedRate(card, index) {
+      const entry = loadMasteryChecks(courseId()).entries[cardIdentity(card, index)];
+      return entry && entry.color === cardColor(card) && typeof entry.rate === "number" && entry.rate >= 0 && entry.rate <= 100 ? entry.rate : null;
+    }
+    function recordMasteryRate(key, rate, color) {
+      loadMasteryChecks(courseId()).entries[key] = { rate, color };
+      saveMasteryChecks();
+    }
+
+    // ---------- 面板数据 ----------
+    function syncState() {
+      const store = masteryStore();
+      if (!store) return;
+      store.activity = settings.activity;
+      store.mode = settings.mode;
+      store.ignoreAnswers = settings.ignoreAnswers;
+      store.importMatch = settings.importMatch;
+      store.status = running ? "running" : starting ? "starting" : store.status === "finished" ? "finished" : everStarted ? "paused" : "idle";
+      store.canStart = !running && !starting && Boolean(courseId());
+    }
+    function refreshCourses() {
+      const store = masteryStore();
+      if (!store) return;
+      const id = courseId();
+      if (location.href !== metadataRoute) {
+        metadataRoute = location.href;
+        metadataSince = Date.now();
+      }
+      if (id && dbCourse === id && pageKind() === "mastery" && Date.now() - metadataSince >= 1000) {
+        const candidates = qa("body *")
+          .filter((el) => el.children.length < 4 && el.textContent.length < 180 && visible(el))
+          .map((el) => textOf(el))
+          .filter((text) => extractCourseName(text))
+          .sort((a, b) => a.length - b.length);
+        const name = candidates.length ? extractCourseName(candidates[0]) : "";
+        const course = registerCourse(id, name);
+        if (JSON.stringify(db.course) !== JSON.stringify(course)) {
+          db.course = course;
+          if (running) save();
+        }
+      }
+      const courses = readJson(COURSES_KEY, {}) || {};
+      const current = courses[id] || { id, name: "" };
+      store.courseId = id;
+      store.courseName = id ? current.name || "课程名称待识别" : "当前未打开课程";
+      store.courses = Object.values(courses);
+      if (!store.exportCourse) store.exportCourse = id;
+      store.pageKind = pageKind();
+      refreshImportSummary();
+    }
+    function refreshProgress() {
+      const store = masteryStore();
+      if (!store || !courseId()) return;
+      try {
+        loadDB(courseId());
+        if (!running && !starting && !busy && !importBusy && dbCourse) {
+          const latest = readJson(COURSE_KEY(dbCourse), null);
+          if (latest && latest.version === 1 && latest.questions && latest.rounds) db = latest;
+        }
+        refreshCourses();
+        const cards = qa(SELECTORS.cards);
+        if (cards.length) {
+          const colors = cards.map(cardColor);
+          const snapshot = masteryProgress(colors, cards.map(checkedRate));
+          if (JSON.stringify(db.progress) !== JSON.stringify(snapshot)) {
+            db.progress = snapshot;
+            if (running) save();
+          }
+        }
+        store.progress = db.progress && db.progress.perfect !== void 0 ? db.progress : null;
+        if (improving() && store.progress) {
+          const stats = reviewProgress(db.review, store.progress.eligible);
+          store.reviewStats = stats;
+          store.progress = Object.assign({}, store.progress, {
+            perfect: stats.completed,
+            percent: stats.percent,
+            remaining: Math.max(0, stats.eligible - stats.completed),
+            unchecked: 0
+          });
+        } else {
+          store.reviewStats = null;
+        }
+        const records = Object.values(db.questions || {});
+        store.bankCount = records.filter((record) => record.correct && record.correct.length).length;
+        store.wrongCount = records.filter((record) => !record.correct || !record.correct.length).length;
+        store.importedCount = (db.imported || []).length;
+      } catch (error) {
+        store.progress = null;
+        store.message = `记录读取失败：${error.message}`;
+      }
+    }
+    function refreshImportSummary() {
+      const store = masteryStore();
+      if (!store) return;
+      const id = store.exportCourse || courseId();
+      if (!id) {
+        store.importedCount = 0;
+        return;
+      }
+      const records = readJson(COURSE_KEY(id), null);
+      store.importedCount = (records && records.imported ? records.imported.length : 0);
+    }
+
+    // ---------- 题库导入导出 ----------
+    function exportSource() {
+      const store = masteryStore();
+      const id = (store && store.exportCourse) || courseId();
+      if (!id) throw new Error("没有可导出的课程记录");
+      const records = readJson(COURSE_KEY(id), null);
+      if (!records || !records.questions || !records.rounds) throw new Error("所选课程没有有效记录");
+      const course = (readJson(COURSES_KEY, {}) || {})[id] || { id, name: "" };
+      return { course, records };
+    }
+    function download(filename, data, mime = "application/json;charset=utf-8") {
+      const url = URL.createObjectURL(new Blob([data], { type: mime }));
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }
+    const safeName = (value) => String(value || "").replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").replace(/[.\s]+$/, "").slice(0, 80);
+    function exportBankFile() {
+      try {
+        const { course, records } = exportSource();
+        const bank = formatTextBank(questionBankFromRecords(records.questions));
+        if (!bank.text) throw new Error("还没有确认过的题，暂时没有可导出的题库");
+        const at = new Date().toISOString().slice(0, 10);
+        download(`${safeName("题库")}-${safeName(course.name) || "未识别课程"}-${at}.txt`, bank.text, "text/plain;charset=utf-8");
+        log(`已导出题库 ${bank.exported} 题（未确认 ${bank.unconfirmed}、数据异常 ${bank.incomplete}、冲突 ${bank.conflicts}）`);
+      } catch (error) {
+        log(`导出失败：${error.message}`);
+      }
+    }
+    function exportExcludedFile() {
+      try {
+        const { course, records } = exportSource();
+        const bank = formatTextBank(questionBankFromRecords(records.questions));
+        if (!bank.excluded.length) {
+          log("没有未入库的题目");
+          return;
+        }
+        const at = new Date().toISOString().slice(0, 10);
+        download(`${safeName("未入库题目")}-${safeName(course.name) || "未识别课程"}-${at}.txt`, formatExcludedBankReport(bank), "text/plain;charset=utf-8");
+        log(`已导出未入库清单 ${bank.excluded.length} 条`);
+      } catch (error) {
+        log(`导出失败：${error.message}`);
+      }
+    }
+    async function previewBankFile(file) {
+      const store = masteryStore();
+      if (!file || !store) return;
+      if (running || starting || busy || importBusy) {
+        log("请先暂停，待当前操作结束后再导入题库");
+        return;
+      }
+      const id = store.exportCourse || courseId();
+      if (!id) {
+        log("请先打开课程，再选择导入目标");
+        return;
+      }
+      stagedImport = null;
+      store.importPreview = "";
+      store.importReady = false;
+      importBusy = true;
+      try {
+        if (file.size > 20 * 1024 * 1024) throw new Error("题库文件超过20 MB，请拆分后导入");
+        const buffer = await file.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let text;
+        if (bytes[0] === 0xff && bytes[1] === 0xfe) text = new TextDecoder("utf-16le", { fatal: true }).decode(buffer);
+        else if (bytes[0] === 0xfe && bytes[1] === 0xff) text = new TextDecoder("utf-16be", { fatal: true }).decode(buffer);
+        else {
+          try {
+            text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+          } catch (error) {
+            text = new TextDecoder("gb18030", { fatal: true }).decode(buffer);
+          }
+        }
+        const parsed = parseBankFile(text, file.name);
+        const records = readJson(COURSE_KEY(id), { version: 1, questions: {}, rounds: {}, pending: null });
+        const merged = mergeImported(records.imported, parsed.items);
+        const course = (readJson(COURSES_KEY, {}) || {})[id] || { id, name: "" };
+        stagedImport = { id, parsed, filename: file.name };
+        store.importPreview = `目标课程：${course.name || id}\n文件：${file.name}\n识别 ${parsed.detected} 题，可用 ${parsed.items.length} 题，无法识别 ${parsed.excluded.length} 题\n新增 ${merged.added} 题 / ${merged.addedAnswers} 个候选答案，重复 ${merged.duplicates} 个，合并后冲突 ${merged.conflicts} 组`;
+        store.importReady = parsed.items.length > 0;
+        log(`题库预览已准备：可用 ${parsed.items.length} 题，核对后点「确认导入」`);
+      } catch (error) {
+        store.importPreview = `读取题库失败：${error.message}`;
+        log(`读取题库失败：${error.message}`);
+      } finally {
+        importBusy = false;
+      }
+    }
+    async function changeImportedBank(clear = false) {
+      const store = masteryStore();
+      if (!store) return;
+      if (running || starting || busy || importBusy) {
+        log("请先暂停，待当前操作结束后再修改导入题库");
+        return;
+      }
+      const id = store.exportCourse || courseId();
+      if (!id || (!clear && (!stagedImport || stagedImport.id !== id))) {
+        log("目标课程已改变，请重新选择题库文件");
+        return;
+      }
+      const course = (readJson(COURSES_KEY, {}) || {})[id] || { id, name: "" };
+      const incoming = clear ? [] : stagedImport.parsed.items;
+      importBusy = true;
+      try {
+        const records = readJson(COURSE_KEY(id), { version: 1, questions: {}, rounds: {}, pending: null });
+        const merged = mergeImported(clear ? [] : records.imported, incoming);
+        records.imported = merged.items;
+        records.importRevision = (Number(records.importRevision) || 0) + 1;
+        writeJson(COURSE_KEY(id), records);
+        if (dbCourse === id) db = records;
+        registerCourse(id, course.name);
+        candidateCache.clear();
+        stagedImport = null;
+        store.importPreview = "";
+        store.importReady = false;
+        log(clear ? `[${course.name || id}] 导入候选已清除，已确认答案保留` : `[${course.name || id}] 已合并导入：新增 ${merged.added} 题、${merged.addedAnswers} 个候选答案`);
+      } catch (error) {
+        log(`题库修改失败：${error.message}`);
+      } finally {
+        importBusy = false;
+        refreshImportSummary();
+      }
+    }
+
+    // ---------- 页面守卫 ----------
+    function challenge() {
+      return qa('iframe[src*="captcha"], iframe[src*="turing.captcha"], .yidun_popup, .geetest_panel, .tcaptcha-transform, [id*="captcha"][role="dialog"]').find((el) => visible(el, true));
+    }
+    function dialogs() {
+      const matches = qa(".el-message-box, .el-dialog, [role=\"dialog\"]").filter((el) => visible(el));
+      return matches.filter((el) => !matches.some((other) => other !== el && el.contains(other)));
+    }
+    function guard(ctx, navigation = false, allowDialog = false) {
+      if (!running || ctx.generation !== generation) throw new Error("操作已取消");
+      if (courseId() !== runCourse) throw new Error("课程已改变，请重新开始");
+      if (!navigation && location.href !== ctx.url) throw new Error("页面已改变，已停止当前操作");
+      if (challenge()) throw new Error("页面出现需要手动处理的提示，请检查后点击继续");
+      if (!allowDialog && dialogs().length) throw new Error("出现弹窗，请手动处理后点击继续");
+    }
+    async function pauseMs(ms, ctx, navigation = false, allowDialog = false) {
+      const end = Date.now() + ms;
+      do {
+        guard(ctx, navigation, allowDialog);
+        await sleepMs(Math.min(100, Math.max(0, end - Date.now())));
+      } while (Date.now() < end);
+      guard(ctx, navigation, allowDialog);
+    }
+    async function waitFor(fn, ctx, timeout = 20000, navigation = false, allowDialog = false) {
+      const end = Date.now() + timeout;
+      do {
+        guard(ctx, navigation, allowDialog);
+        const result = fn();
+        if (result) return result;
+        await pauseMs(120, ctx, navigation, allowDialog);
+      } while (Date.now() < end);
+      throw new Error("等待页面响应超时，已暂停；请检查页面后继续");
+    }
+    async function click(el, ctx, allowDialog = false) {
+      guard(ctx, false, allowDialog);
+      if (!el || !visible(el) || el.disabled || el.classList.contains("disabled") || el.getAttribute("aria-disabled") === "true") throw new Error("按钮不存在、不可见或不可点击");
+      el.scrollIntoView({ block: "center", inline: "nearest" });
+      await pauseMs(settings.delay, ctx, false, allowDialog);
+      guard(ctx, false, allowDialog);
+      if (!el.isConnected) throw new Error("页面元素已刷新，请继续重试");
+      el.click();
+    }
+    async function navigateClick(el, ctx, expectedPage) {
+      await click(el, ctx);
+      await waitFor(() => location.href !== ctx.url && expectedPage.includes(pageKind()), ctx, 25000, true);
+      await pauseMs(settings.delay, ctx, true);
+    }
+
+    // ---------- 题目读取 ----------
+    function mediaKey(el) {
+      return qa("img", el).map((img) => img.getAttribute("src") || img.getAttribute("data-src") || img.getAttribute("alt") || "").join("|");
+    }
+    function readQuestion(el, index) {
+      const titleEl = q(SELECTORS.title, el);
+      const title = textOf(titleEl) + (titleEl && mediaKey(titleEl) ? ` [图片:${mediaKey(titleEl)}]` : "");
+      const type = textOf(q(SELECTORS.type, el));
+      if (!title || !/^(单选题|多选题|判断题)$/.test(type)) throw new Error(`第 ${index + 1} 题题型或题干不支持：${type || "未知"}`);
+      const labels = qa(SELECTORS.options, el);
+      const base = labels.map((label) => textOf(q(".preStyle", label)) || textOf(label).replace(/^[A-Z][.、．]\s*/i, ""));
+      const options = labels.map((label, i) => {
+        const input = q("input", label);
+        const content = `${base[i]}${mediaKey(label) ? " [图片:" + mediaKey(label) + "]" : ""}`;
+        const duplicate = base.filter((value) => value === base[i]).length > 1;
+        const token = content + (duplicate ? ` [ID:${(input && input.value) || ""}]` : "");
+        if (!input || !content || (duplicate && !input.value)) throw new Error(`第 ${index + 1} 题选项无法识别`);
+        return {
+          label,
+          input,
+          token,
+          letter: String.fromCharCode(65 + i),
+          content: base[i],
+          inputValue: input.value,
+          images: qa("img", label).map((img) => ({ src: img.getAttribute("src") || img.getAttribute("data-src") || "", alt: img.getAttribute("alt") || "" }))
+        };
+      });
+      const multiple = type === "多选题";
+      if (options.some((option) => option.input.type !== (multiple ? "checkbox" : "radio"))) throw new Error("题型与选项控件不一致");
+      combinations(options.map((option) => option.token), multiple);
+      const number = Number((textOf(q(".option-index", el)).match(/\d+/) || [])[0]) || index + 1;
+      return { el, title, type, multiple, options, number };
+    }
+    const selectedChoice = (question) => question.options.filter((option) => option.input.checked).map((option) => option.token);
+    function questions() {
+      const roots = qa(SELECTORS.questions);
+      if (!roots.length) throw new Error("没有识别到题目，请等待加载后继续");
+      return roots.map(readQuestion);
+    }
+    const answerLabel = (question, choice) => question.options.filter((option) => choice.includes(option.token)).map((option) => option.letter).join("");
+
+    // ---------- 题库 / AI 先答 ----------
+    function mapBackendAnswer(question, answers) {
+      const picked = [];
+      const list = typeof normalizeLocalBackendAnswers === "function" ? normalizeLocalBackendAnswers(answers) : [].concat(answers || []);
+      for (const raw of list) {
+        const text = String(raw == null ? "" : raw).trim();
+        if (!text) continue;
+        if (/^[A-Za-z]{1,8}$/.test(text)) {
+          const letters = text.toUpperCase().split("");
+          const mapped = letters.map((letter) => question.options[letter.charCodeAt(0) - 65]);
+          if (mapped.every(Boolean)) {
+            mapped.forEach((option) => picked.push(option.token));
+            continue;
+          }
+        }
+        let hit = question.options.find((option) => option.content === text);
+        if (!hit) hit = question.options.find((option) => normalize(option.content) === normalize(text));
+        if (!hit) hit = question.options.find((option) => option.content && (option.content.includes(text) || text.includes(option.content)));
+        if (!hit) return null;
+        picked.push(hit.token);
+      }
+      const unique = [...new Set(picked)];
+      if (!unique.length) return null;
+      if (!question.multiple && unique.length !== 1) return null;
+      return canonical(unique);
+    }
+    async function backendChoice(question, trial) {
+      let token = "";
+      try {
+        token = useSettingStore().config.basicConfig.token.value || "";
+      } catch (error) {
+        token = "";
+      }
+      if (!token) return null;
+      const identity = questionIdentity(question);
+      let choice = backendCache.get(identity);
+      if (choice === void 0) {
+        let result = null;
+        try {
+          result = await callLocalBackendAnswer({
+            title: question.title,
+            optionsText: question.options.map((option) => option.content),
+            type: QUESTION_TYPE_CODE_MAP[question.type] || question.type,
+            element: question.el,
+            refer: location.href
+          });
+        } catch (error) {
+          result = null;
+        }
+        choice = result && result.code === 1 && result.data && Array.isArray(result.data.answer) ? mapBackendAnswer(question, result.data.answer) : null;
+        backendCache.set(identity, choice);
+      }
+      if (!choice) return null;
+      if ((trial.wrong || []).some((wrong) => same(wrong, choice))) return null;
+      return choice;
+    }
+
+    // ---------- 各页面处理 ----------
+    async function finishKnowledge(ctx) {
+      guard(ctx);
+      const target = masteryURL(ctx.url);
+      if (selectedCard) recordMasteryRate(selectedCard, 100, "green");
+      if (improving()) {
+        const card = db.review.activeCard || selectedCard;
+        if (!card) throw new Error("本轮知识点身份缺失，请回到热力图后继续");
+        if (!db.review.completed.includes(card)) db.review.completed.push(card);
+        db.review.activeCard = "";
+        db.review.readyScope = "";
+      }
+      save();
+      if (!improving() && settings.mode === "current") {
+        stopMastery("当前知识点已全部答对，返回热力图并停止");
+        location.assign(target);
+        return;
+      }
+      saveRun();
+      log(`${activeName} 本轮全部答对，跳转热力图继续下一项`);
+      goHome(target);
+    }
+    function goHome(target) {
+      navigating = true;
+      const attempt = generation;
+      location.assign(target);
+      setTimeout(() => {
+        if (navigating && running && generation === attempt) log("正在等待热力图载入；若页面仍未变化，请刷新，或暂停后重试");
+      }, 25000);
+    }
+    async function handleExam(ctx) {
+      const quiz = questions();
+      const cards = qa(SELECTORS.answerCards);
+      if (cards.length !== quiz.length) throw new Error("题目数量与答题卡不一致，暂停等待页面完整加载");
+      activeName = textOf(q(".exam .nodename"));
+      const knowledge = scope();
+      const rounds = improving() ? db.review.rounds : db.rounds;
+      if ((rounds[knowledge] || 0) >= settings.maxRounds) throw new Error(`此知识点已达到 ${settings.maxRounds} 轮，请检查记录后调整上限`);
+      const model = currentModel();
+      const plan = [];
+      for (const item of quiz) {
+        const { key, record } = recordFor(item);
+        const preferred = preferredFor(item);
+        const trial = answerRecord(item, record);
+        let choice = null;
+        let source = "尝试";
+        if (trial.correct && trial.correct.length) {
+          choice = nextAnswer(trial, item, model, preferred);
+          source = "沿用正确答案";
+        } else {
+          const backend = await backendChoice(item, trial);
+          if (backend) {
+            choice = backend;
+            source = "题库/AI";
+          } else {
+            choice = nextAnswer(trial, item, model, preferred);
+            source = preferred.some((candidate) => same(candidate, choice)) ? "题库候选" : "尝试";
+          }
+        }
+        plan.push({ q: item, key, choice, known: Boolean(trial.correct && trial.correct.length), imported: source === "题库候选", source });
+      }
+      // 填答可以中断；只有所有题目的实际勾选状态符合计划才会提交
+      for (let index = 0; index < plan.length; index++) {
+        const item = plan[index];
+        if (!visible(item.q.el)) {
+          const card = cards.find((node) => Number(textOf(node)) === item.q.number);
+          await click(card, ctx);
+          await waitFor(() => visible(item.q.el), ctx);
+        }
+        log(`第 ${index + 1}/${plan.length} 题：${item.source} ${answerLabel(item.q, item.choice)}`);
+        for (const option of item.q.options) {
+          const want = item.choice.includes(option.token);
+          if ((item.q.multiple && option.input.checked !== want) || (!item.q.multiple && want && !option.input.checked)) {
+            if (option.input.disabled) throw new Error("选项不可编辑，请确认当前是答题页");
+            await click(option.label, ctx);
+            await waitFor(() => option.input.checked === want, ctx, 3000);
+          }
+        }
+        if (!same(selectedChoice(item.q), item.choice)) throw new Error(`第 ${index + 1} 题选择未生效，可能有其他脚本修改答案`);
+      }
+      await pauseMs(settings.delay, ctx);
+      if (plan.some((item) => !same(selectedChoice(item.q), item.choice))) throw new Error("提交前答案被改变，请关闭其他自动答题脚本后继续");
+      db.pending = {
+        scope: knowledge,
+        title: activeName,
+        entries: plan.map(({ key, choice, imported }) => ({ key, choice, imported })),
+        at: Date.now(),
+        reviewId: improving() ? db.review.id : null
+      };
+      save();
+      log(`本轮已作答 ${plan.length} 题，准备提交（第 ${(db.rounds[knowledge] || 0) + 1} 轮）`);
+      await click(q(SELECTORS.submit), ctx);
+      const end = Date.now() + 25000;
+      const accepted = new WeakSet();
+      while (Date.now() < end) {
+        guard(ctx, true, true);
+        if (location.href !== ctx.url && ["point", "analysis"].includes(pageKind())) {
+          db.rounds[knowledge] = (db.rounds[knowledge] || 0) + 1;
+          if (improving()) db.review.rounds[knowledge] = (db.review.rounds[knowledge] || 0) + 1;
+          save();
+          await pauseMs(settings.delay, ctx, true);
+          return;
+        }
+        for (const dialog of dialogs()) {
+          if (accepted.has(dialog)) continue;
+          const message = textOf(dialog);
+          if (/未[作答回答]|未完成|漏答|验证码/.test(message)) throw new Error("提交提示有未作答题目或验证，请手动检查");
+          if (/次数|已用完|上限|无法继续|不足/.test(message)) throw new Error("平台提示答题次数受限，已暂停");
+          if (!/(确认提交|确定.{0,6}提交|是否.{0,6}提交|提交后|交卷|提交.{0,6}[？?])/.test(message)) throw new Error("出现未识别的提交弹窗，请手动处理后继续");
+          const confirm = qa("button", dialog).find((button) => /^(确定|确认|提交|确认提交|确定提交)$/.test(textOf(button)));
+          if (!confirm) throw new Error("未识别提交确认按钮");
+          accepted.add(dialog);
+          await click(confirm, ctx, true);
+        }
+        await pauseMs(150, ctx, true, true);
+      }
+      throw new Error("提交没有返回批改结果；已暂停，避免重复提交");
+    }
+    function recordFor(question) {
+      const key = questionKey(scope(), question);
+      const record = db.questions[key] || (db.questions[key] = { title: question.title, type: question.type, wrong: [] });
+      record.options = question.options.map((option, index) => ({
+        token: option.token,
+        content: option.content,
+        letter: option.letter || String.fromCharCode(65 + index),
+        index: index + 1,
+        inputValue: option.inputValue,
+        images: (option.images || []).map((image) => Object.assign({}, image))
+      }));
+      record.knowledgeTitle = activeName;
+      return { key, record };
+    }
+    async function handleAnalysis(ctx) {
+      if (improving() && !db.pending) {
+        if (db.review.readyScope === scope()) await finishKnowledge(ctx);
+        else await navigateClick(q(SELECTORS.retry), ctx, ["exam"]);
+        return;
+      }
+      if (improving() && db.pending.reviewId !== db.review.id) throw new Error("存在上一轮未处理的答卷，请从热力图开始新一轮");
+      const quiz = questions();
+      activeName = textOf(q(".exam-preview .nodename"));
+      const outcomes = quiz.map((item) => {
+        const result = q(".question-result", item.el);
+        const message = textOf(result);
+        const correct = /回答正确/.test(message) ? true : /回答错误/.test(message) ? false : null;
+        if (correct === null) throw new Error("批改尚未完成，或反馈格式改变，请等待后继续");
+        const choice = selectedChoice(item);
+        if (!choice.length || (!item.multiple && choice.length !== 1)) throw new Error("解析页没有有效的已选答案");
+        const { key, record } = recordFor(item);
+        return { q: item, key, record, choice, correct, message };
+      });
+      if (db.pending) {
+        if (db.pending.scope !== scope()) throw new Error("批改知识点与待提交记录不同，请返回原知识点继续");
+        if (db.pending.entries.length !== outcomes.length || outcomes.some((outcome) => {
+          const entry = db.pending.entries.find((node) => node.key === outcome.key);
+          return !entry || !same(entry.choice, outcome.choice);
+        })) throw new Error("批改答案与本轮提交记录不一致，请检查其他脚本或是否查看了旧记录");
+      }
+      outcomes.forEach((outcome) => {
+        if (improving()) trackReview(db.review, outcome.q, outcome.record, outcome.choice, outcome.correct, (db.pending && db.pending.entries.find((entry) => entry.key === outcome.key) || {}).imported);
+        reconcileFeedback(db.questions, outcome.q, outcome.choice, outcome.correct);
+      });
+      const count = outcomes.filter((outcome) => outcome.correct).length;
+      if (improving()) db.review.readyScope = count === outcomes.length ? scope() : "";
+      db.pending = null;
+      save();
+      log(`已记住批改结果：${count}/${outcomes.length} 正确`);
+      if (count === outcomes.length) {
+        await finishKnowledge(ctx);
+      } else {
+        const model = currentModel();
+        outcomes.forEach((outcome) => nextAnswer(answerRecord(outcome.q, outcome.record), outcome.q, model, preferredFor(outcome.q)));
+        await navigateClick(q(SELECTORS.retry), ctx, ["exam"]);
+      }
+    }
+    async function handlePoint(ctx) {
+      activeName = textOf(q(".point .backup-title"));
+      const counts = qa(".point .line1-count-total-num").map((el) => Number(textOf(el)));
+      if (counts.length !== 2 || !Number.isInteger(counts[0]) || counts[0] <= 0 || !Number.isInteger(counts[1]) || counts[1] < 0 || counts[1] > counts[0]) throw new Error("结果页题数未加载或没有练习题");
+      if (db.pending && db.pending.scope === scope()) {
+        await navigateClick(q(SELECTORS.pointAnalysis), ctx, ["analysis"]);
+        return;
+      }
+      if (counts[1] === counts[0] && (!improving() || db.review.readyScope === scope())) {
+        await finishKnowledge(ctx);
+      } else await navigateClick(q(SELECTORS.pointAnalysis), ctx, ["analysis"]);
+    }
+    function associatedPopover(card) {
+      const name = q(SELECTORS.cardName, card);
+      const ids = ((name && name.getAttribute("aria-describedby")) || "").split(/\s+/);
+      const linked = ids.map((id) => document.getElementById(id)).find((el) => el && el.matches(SELECTORS.popover));
+      if (linked) return linked;
+      const matches = qa(SELECTORS.popover).filter((el) => textOf(q("strong.name", el)) === textOf(name));
+      return matches.length === 1 ? matches[0] : null;
+    }
+    async function openPopover(card, ctx) {
+      const name = q(SELECTORS.cardName, card);
+      if (!name) throw new Error("知识点名称未识别");
+      card.scrollIntoView({ block: "center" });
+      await pauseMs(settings.delay, ctx);
+      const rect = name.getBoundingClientRect();
+      for (const type of ["pointerenter", "mouseenter", "mouseover", "mousemove"]) {
+        guard(ctx);
+        const EventClass = type.startsWith("pointer") ? PointerEvent : MouseEvent;
+        name.dispatchEvent(new EventClass(type, { bubbles: type !== "mouseenter" && type !== "pointerenter", clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 }));
+      }
+      return waitFor(() => {
+        const popover = associatedPopover(card);
+        return popover && visible(popover) && textOf(q("strong.name", popover)) === textOf(name) ? popover : null;
+      }, ctx, 5000);
+    }
+    async function handleMastery(ctx) {
+      if (!improving() && settings.mode === "current") {
+        stopMastery("当前知识点模式：请手动进入一个知识点后继续");
+        return;
+      }
+      const cards = qa(SELECTORS.cards);
+      if (!cards.length) throw new Error("热力图知识点尚未加载，请等待后继续");
+      let target;
+      let targetIndex;
+      for (const [index, card] of cards.entries()) {
+        const color = cardColor(card);
+        if (color === "blue") continue;
+        if (color === "unknown") throw new Error("热力图出现未知颜色状态");
+        let rate = checkedRate(card, index);
+        if (rate === null) {
+          log(`核实掌握度 ${index + 1}/${cards.length}：${textOf(q(SELECTORS.cardName, card))}`);
+          const popover = await openPopover(card, ctx);
+          rate = parseMasteryRate(textOf(q(".text > span", popover)));
+          recordMasteryRate(cardIdentity(card, index), rate, color);
+        }
+        const needed = improving() ? !db.review.completed.includes(cardIdentity(card, index)) : rate !== 100;
+        if (needed && !target) {
+          target = card;
+          targetIndex = index;
+        }
+      }
+      if (!target) {
+        if (improving()) {
+          db.review.finishedAt = new Date().toISOString();
+          save();
+        }
+        refreshProgress();
+        stopMastery(improving() ? "本轮题库完善已完成，可导出题库；开始新一轮可继续收集新题" : "所有非免考知识点已确认100%掌握度，任务完成");
+        return;
+      }
+      selectedCard = cardIdentity(target, targetIndex);
+      activeName = textOf(q(SELECTORS.cardName, target));
+      log(`进入知识点：${activeName}`);
+      const popover = await openPopover(target, ctx);
+      const rate = parseMasteryRate(textOf(q(".text > span", popover)));
+      recordMasteryRate(selectedCard, rate, cardColor(target));
+      if (!improving() && rate === 100) {
+        log(`${activeName} 已100%，跳过`);
+        return;
+      }
+      if (improving()) {
+        db.review.activeCard = selectedCard;
+        db.review.readyScope = "";
+        save();
+      }
+      const button = qa("button", popover).find((el) => textOf(el) === "提升掌握度");
+      await navigateClick(button, ctx, ["exam", "point", "analysis"]);
+    }
+    async function step() {
+      if (!running || busy || navigating) return;
+      if (location.href !== lastRoute) {
+        lastRoute = location.href;
+        routeSince = Date.now();
+        routeReady = false;
+      }
+      if (Date.now() - routeSince < 1000) return;
+      busy = true;
+      const ctx = { generation, url: location.href };
+      try {
+        guard(ctx);
+        const kind = pageKind();
+        if (kind === "unknown" || kind === "loading") {
+          if (Date.now() - routeSince < 25000) return;
+          throw new Error("当前页面不是掌握度练习，或加载超时，请返回热力图");
+        }
+        if (!routeReady) {
+          await pauseMs(1000, ctx);
+          routeReady = true;
+        }
+        loadDB(runCourse);
+        if (kind === "exam") await handleExam(ctx);
+        else if (kind === "analysis") await handleAnalysis(ctx);
+        else if (kind === "point") await handlePoint(ctx);
+        else await handleMastery(ctx);
+      } catch (error) {
+        if (ctx.generation === generation && running) stopMastery(error.message || String(error));
+      } finally {
+        busy = false;
+        syncState();
+      }
+    }
+
+    // ---------- 启动 / 暂停 ----------
+    function saveRun() {
+      try {
+        window.sessionStorage.setItem(SESSION_KEY, JSON.stringify({ course: runCourse, activity: settings.activity, mode: settings.mode, at: Date.now() }));
+      } catch (error) {
+      }
+    }
+    function clearRun() {
+      try {
+        window.sessionStorage.removeItem(SESSION_KEY);
+      } catch (error) {
+      }
+    }
+    function resumeMarker() {
+      try {
+        const raw = window.sessionStorage.getItem(SESSION_KEY);
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        if (!data || !data.course || Date.now() - data.at > SESSION_TTL_MS) return null;
+        if (data.course !== courseId()) return null;
+        return data;
+      } catch (error) {
+        return null;
+      }
+    }
+    async function moduleStart(resume = false) {
+      if (running || starting || busy || importBusy) return;
+      const requestedCourse = courseId();
+      if (!requestedCourse || pageKind() === "unknown") {
+        log(`请打开掌握度热力图或知识点练习页面（当前路径：${location.pathname}）`);
+        return;
+      }
+      starting = true;
+      syncState();
+      const attempt = ++generation;
+      log("等待热力图知识点列表或练习题目加载…");
+      try {
+        const deadline = Date.now() + 30000;
+        while (starting && attempt === generation) {
+          if (courseId() !== requestedCourse) {
+            stopMastery("课程已改变，请在当前课程重新开始");
+            return;
+          }
+          const kind = pageKind();
+          if (kind !== "loading" && kind !== "unknown") break;
+          if (Date.now() >= deadline) {
+            stopMastery("课程页面加载超时，请确认知识点列表或题目已显示后继续");
+            return;
+          }
+          await sleepMs(200);
+        }
+        if (!starting || attempt !== generation) return;
+        runCourse = requestedCourse;
+        const lock = await acquireLock(requestedCourse, attempt);
+        if (!lock) return;
+        dbCourse = "";
+        loadDB(runCourse);
+        if (improving()) {
+          db.review = db.review || newReview(settings.ignoreAnswers);
+          if (db.review.finishedAt) {
+            starting = false;
+            releaseLock && releaseLock();
+            releaseLock = null;
+            log("本轮已完成，请点「开始新一轮」继续完善题库");
+            return;
+          }
+          save();
+        }
+        loadMasteryChecks(runCourse);
+        if (resume !== true) {
+          checks = { version: 1, entries: {} };
+          saveMasteryChecks();
+        }
+        selectedCard = improving() ? db.review.activeCard : "";
+        running = true;
+        starting = false;
+        everStarted = true;
+        generation++;
+        lastRoute = location.href;
+        routeSince = Date.now();
+        routeReady = false;
+        saveRun();
+        if (stepTimer) clearInterval(stepTimer);
+        stepTimer = setInterval(() => {
+          step();
+        }, 800);
+        if (improving() && !selectedCard && pageKind() !== "mastery") {
+          log("返回热力图，建立本轮知识点列表");
+          goHome(masteryURL(location.href));
+        } else {
+          log(pageKind() === "mastery" ? "已识别热力图，开始处理下一知识点" : "已识别练习页面，逐题尝试并保存批改结果");
+        }
+        refreshProgress();
+        syncState();
+      } catch (error) {
+        if (attempt === generation || running) stopMastery(`启动失败：${error.message}`);
+      }
+    }
+    function acquireLock(course, attempt) {
+      return new Promise((resolve) => {
+        if (!navigator.locks) {
+          resolve(true);
+          return;
+        }
+        navigator.locks.request(STORAGE_PREFIX + "lock:" + course, { ifAvailable: true }, (lock) => {
+          return new Promise((holdRelease) => {
+            if (!starting || attempt !== generation) {
+              resolve(false);
+              holdRelease();
+              return;
+            }
+            if (!lock) {
+              starting = false;
+              syncState();
+              log("此课程已有另一个标签页在运行，请先暂停它");
+              resolve(false);
+              return;
+            }
+            releaseLock = holdRelease;
+            resolve(true);
+          });
+        }).catch(() => resolve(attempt === generation));
+      });
+    }
+    function stopMastery(reason = "已手动暂停") {
+      navigating = false;
+      running = false;
+      starting = false;
+      generation++;
+      if (stepTimer) {
+        clearInterval(stepTimer);
+        stepTimer = null;
+      }
+      clearRun();
+      if (releaseLock) {
+        releaseLock();
+        releaseLock = null;
+      }
+      const store = masteryStore();
+      if (store) {
+        store.status = reason.includes("完成") || reason.includes("任务完成") ? "finished" : "paused";
+      }
+      log(reason);
+      syncState();
+      refreshProgress();
+    }
+    function resetReview() {
+      const id = courseId();
+      if (!id || running || starting) return;
+      dbCourse = "";
+      loadDB(id);
+      db.review = newReview(settings.ignoreAnswers);
+      db.pending = null;
+      save();
+      log("已开始新一轮题库完善");
+      moduleStart(false);
+    }
+
+    // ---------- 面板 ----------
+    const MasteryPanel = {
+      name: "MasteryPanel",
+      setup() {
+        const store = useMasteryStore();
+        const onFile = (event) => {
+          const file = event.target.files && event.target.files[0];
+          if (file) store.importFile(file);
+          event.target.value = "";
+        };
+        const start = () => store.start();
+        const reset = () => resetReview();
+        return { store, onFile, start, reset };
+      },
+      template: `
+        <div style="padding:14px;display:flex;flex-direction:column;gap:12px;height:100%;overflow:auto;color:var(--t-text);font-size:13px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div style="font-size:15px;font-weight:600">掌握度满分</div>
+            <div style="color:var(--t-text3)">{{ store.statusText }}</div>
+          </div>
+
+          <div v-if="!store.courseId" style="color:var(--t-text3);line-height:1.7">
+            请先打开智慧树的课程掌握度页面（热力图），再回到这里开始。
+          </div>
+
+          <template v-else>
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <div style="color:var(--t-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ store.courseName }}</div>
+              <div v-if="store.activeName" style="color:var(--t-text3);font-size:12px">当前知识点：{{ store.activeName }}</div>
+              <div style="display:flex;align-items:center;gap:10px">
+                <div style="flex:1;height:6px;border-radius:3px;background:var(--t-border);overflow:hidden">
+                  <div :style="{ width: (store.progress ? store.progress.percent : 0) + '%', height: '100%', background: 'var(--t-primary)', transition: 'width .3s' }"></div>
+                </div>
+                <div style="color:var(--t-text);font-variant-numeric:tabular-nums">{{ store.percentText }}</div>
+              </div>
+              <div style="color:var(--t-text3);font-size:12px">{{ store.remainText }}</div>
+              <div v-if="store.reviewStats" style="color:var(--t-text3);font-size:12px">
+                本轮新增 {{ store.reviewStats.added }} · 复核 {{ store.reviewStats.verified }} · 纠正 {{ store.reviewStats.corrected }} · 未定 {{ store.reviewStats.unresolved }}
+              </div>
+            </div>
+
+            <div style="display:flex;gap:8px">
+              <button
+                v-if="store.status !== 'running'"
+                @click="start"
+                style="padding:5px 14px;border-radius:6px;border:1px solid var(--t-primary);background:var(--t-primary);color:#fff;cursor:pointer"
+              >开始 / 继续</button>
+              <button
+                v-else
+                @click="store.pause()"
+                style="padding:5px 14px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer"
+              >暂停</button>
+              <button
+                v-if="store.activity === 'bank'"
+                @click="reset"
+                style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer"
+              >开始新一轮</button>
+            </div>
+
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <label style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                <span style="color:var(--t-text3)">模式</span>
+                <select
+                  :value="store.activity"
+                  @change="store.setActivity($event.target.value)"
+                  style="flex:1;max-width:200px;padding:4px 8px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface2);color:var(--t-text)"
+                >
+                  <option value="practice">满分练习</option>
+                  <option value="bank">题库完善</option>
+                </select>
+              </label>
+              <div style="color:var(--t-text3);font-size:12px;line-height:1.6">
+                {{ store.activity === 'bank' ? '每个知识点都实际答一轮，不拿旧的满分顶替，用来补充题库。' : '跳过免考和已 100% 的知识点，其余答到全对为止。' }}
+              </div>
+            </div>
+
+            <div style="border-top:1px solid var(--t-border);padding-top:10px;display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <span>已确认答案 {{ store.bankCount }} 题</span>
+                <span style="color:var(--t-text3);font-size:12px">导入候选 {{ store.importedCount }} 题</span>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button
+                  @click="store.exportBank()"
+                  style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer"
+                >导出题库</button>
+                <button
+                  @click="store.exportExcluded()"
+                  style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer"
+                >导出未入库清单</button>
+                <label style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer">
+                  导入题库
+                  <input type="file" accept=".txt,.json" style="display:none" @change="onFile">
+                </label>
+              </div>
+              <div v-if="store.importPreview" style="display:flex;flex-direction:column;gap:6px">
+                <div style="white-space:pre-wrap;color:var(--t-text3);font-size:12px;line-height:1.6;max-height:120px;overflow:auto">{{ store.importPreview }}</div>
+                <div style="display:flex;gap:8px">
+                  <button
+                    :disabled="!store.importReady"
+                    @click="store.confirmImport()"
+                    style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-primary);background:var(--t-primary);color:#fff;cursor:pointer"
+                  >确认导入</button>
+                  <button
+                    @click="store.clearImport()"
+                    style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer"
+                  >清除导入</button>
+                </div>
+              </div>
+            </div>
+
+            <div style="border-top:1px solid var(--t-border);padding-top:10px;display:flex;flex-direction:column;gap:4px">
+              <div style="color:var(--t-text3);font-size:12px">运行记录</div>
+              <div style="white-space:pre-wrap;font-size:12px;line-height:1.6;color:var(--t-text3);max-height:180px;overflow:auto;font-family:var(--t-mono, monospace)">
+                {{ store.logs.length ? store.logs.slice(-12).join('\\n') : '暂无记录' }}
+              </div>
+            </div>
+          </template>
+        </div>
+      `
+    };
+
+    // ---------- 对外入口 ----------
+    async function logic() {
+      let enabled = true;
+      try {
+        enabled = useSettingStore().config.basicConfig.masteryFull.value;
+      } catch (error) {
+        enabled = true;
+      }
+      if (!enabled) {
+        await smartAnswerLogic();
+        return;
+      }
+      // 给页面一点时间渲染，再判断是不是掌握度页面
+      const deadline = Date.now() + 6000;
+      let kind = pageKind();
+      while ((kind === "loading" || kind === "unknown") && Date.now() < deadline) {
+        await sleepMs(300);
+        kind = pageKind();
+      }
+      if (kind === "loading" || kind === "unknown") {
+        await smartAnswerLogic();
+        return;
+      }
+      const store = masteryStore();
+      if (store) {
+        store.visible = true;
+        syncState();
+      }
+      refreshProgress();
+      if (!refreshTimer) {
+        refreshTimer = setInterval(() => {
+          try {
+            refreshProgress();
+            syncState();
+          } catch (error) {
+          }
+        }, 1500);
+      }
+      const marker = resumeMarker();
+      if (marker) {
+        if (marker.activity) settings.activity = marker.activity;
+        await moduleStart(true);
+      } else if (store) {
+        store.message = "点「开始 / 继续」按知识点刷满分";
+        log("已识别到掌握度页面，点「掌握度」页的「开始」即可自动刷满分");
+      }
+    }
+
+    return {
+      logic,
+      useStore: useMasteryStore,
+      Panel: MasteryPanel,
+      resetReview
+    };
+  })();
+
   const zhsRoutes = {
     match: [
       { keyword: "/studyvideoh5.zhihuishu.com", tab: "1", logic: videoStudyLogic, assist: "video" },
@@ -15849,7 +17721,11 @@ const XS_EXT = (() => {
       { keyword: "smartcourseexam.zhihuishu.com/ReviewExam", tab: "1", logic: smartAnswerLogic, assist: "answer" },
       { keyword: "studentexamcomh5.zhihuishu.com/studentReviewTestOrExam", tab: "1", logic: smartAnswerLogic, assist: "answer" },
       { keyword: "fusioncourseh5.zhihuishu.com/exam", tab: "1", logic: smartAnswerLogic, assist: "answer" },
-      { keyword: "studywisdomh5.zhihuishu.com/exam", tab: "1", logic: smartAnswerLogic, assist: "answer" },
+      // 掌握度练习：热力图 / 知识点 / 解析页都交给掌握度满分模块，页面上点「开始」才动手
+      { keyword: "studywisdomh5.zhihuishu.com/study/mastery", tab: "mastery", logic: () => zhsMastery.logic() },
+      { keyword: "studywisdomh5.zhihuishu.com/pointOfMastery", tab: "mastery", logic: () => zhsMastery.logic() },
+      { keyword: "studywisdomh5.zhihuishu.com/examAnalysis", tab: "mastery", logic: () => zhsMastery.logic() },
+      { keyword: "studywisdomh5.zhihuishu.com/exam", tab: "mastery", logic: () => zhsMastery.logic() },
       { keyword: "wisdom-mooc.zhihuishu.com/exam", tab: "1", logic: smartAnswerLogic, assist: "answer" },
       { keyword: "examloop.zhihuishu.com/exam", tab: "1", logic: smartAnswerLogic, assist: "answer" },
       { keyword: "zhihuishu.com/atHomeworkExam/stu/homeworkQ/exerciseList", tab: "1", logic: smartAnswerLogic, assist: "answer" },
@@ -15945,6 +17821,11 @@ const XS_EXT = (() => {
           key: "queue",
           tab: "◫ 队列",
           component: CourseQueuePanel
+        }] : []),
+        ...(currentPlatform?.key === "zhs" ? [{
+          key: "mastery",
+          tab: "◑ 掌握度",
+          component: zhsMastery.Panel
         }] : []),
         {
           key: "1",

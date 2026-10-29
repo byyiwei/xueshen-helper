@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "5.6.1",
+    "version": "5.6.2",
     "download_url": "https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js",
-    "changelog": "v5.6.1 智慧树专项增强：作业考试题面识别更稳、弹题出现即处理并支持验证码等待、新增视频/答题助手开关、新增课程队列自动切课"
+    "changelog": "v5.6.2 智慧树掌握度专项：新增掌握度满分（按知识点刷到 100%、记住答案、导出导入题库）、智慧树新增掌握度面板"
   },
   "xueshen-gf": {
-    "version": "5.6.1",
+    "version": "5.6.2",
     "download_url": "https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js",
-    "changelog": "v5.6.1 智慧树专项增强：作业考试题面识别更稳、弹题出现即处理并支持验证码等待、新增视频/答题助手开关、新增课程队列自动切课"
+    "changelog": "v5.6.2 智慧树掌握度专项：新增掌握度满分（按知识点刷到 100%、记住答案、导出导入题库）、智慧树新增掌握度面板"
   }
 }
