@@ -104,9 +104,10 @@ ANSWER_TIME_BUDGET = 180
 MAX_MODEL_BUDGET = 40
 # 图片题单独放宽预算：带图请求要先上传图片，模型还得识图，思考型模型经常要几十秒才吐答案。
 # 之前和纯文本共用 40 秒，模型正要出结果就被掐断，日志里就是「几个模型全在 40 秒内无响应」。
-# 前端请求超时和 nginx 都是 300 秒，240 秒整体预算仍留足余量。
-VISION_TIME_BUDGET = 240
-MAX_VISION_MODEL_BUDGET = 75
+# 75 秒实测仍不够：思考型模型光推理就要一分钟以上，单模型给到 120 秒；
+# 整体 270 秒能完整试两个模型。上限受 nginx 与脚本请求超时 300 秒约束，再往上要同时调这两处。
+VISION_TIME_BUDGET = 270
+MAX_VISION_MODEL_BUDGET = 120
 DASHBOARD_CACHE = {"time": 0, "data": None}
 DASHBOARD_CACHE_SECONDS = 5
 # 官网直营营收口径：代理商充值（plan_type='dist_recharge'）是压在平台的预存款、属于负债，
