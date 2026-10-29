@@ -17,7 +17,8 @@
 // @changelog    3. 智慧树新增「掌握度」面板：开始 / 继续、暂停、进度、题库导入导出、运行记录
 // @changelog    4. 设置新增「掌握度满分（智慧树）」开关；关闭后掌握度页仍走原来的答题流程
 // @changelog    5. 可用题库优先：先问题库和 AI，答不出来再按选项组合猜，尽量少消耗答题次数
-// @changelog    6. 以上改动只涉及智慧树，超星 / 青书 / 出头 不受影响
+// @changelog    6. 修复：导出的题库文件中文乱码（补齐 BOM）、导入题库会覆盖别的标签页进度、中途换页后重复刷同一个知识点
+// @changelog    7. 以上改动只涉及智慧树，超星 / 青书 / 出头 不受影响
 // @changelog    v5.6.1 (2026-10-29)
 // @changelog    1. 智慧树答题补齐：掌握度页可自动翻页、每题等题干渲染完再解析、题干取不到时只看可见文字、作业页也能抓到试卷接口
 // @changelog    2. 智慧树弹题：弹窗出现就处理（不再等视频暂停）、遇到验证码先等、读不到页面答案时兜底作答、AI 智慧课补上弹题处理
@@ -15880,7 +15881,7 @@ const XS_EXT = (() => {
       mode: "all",
       ignoreAnswers: false,
       delay: 200,
-      maxRounds: 512,
+      maxRounds: 4096,
       importMatch: "loose"
     };
 
@@ -16457,6 +16458,7 @@ const XS_EXT = (() => {
         mode: settings.mode,
         ignoreAnswers: settings.ignoreAnswers,
         importMatch: settings.importMatch,
+        delay: settings.delay,
         logs: [],
         progress: null,
         reviewStats: null,
@@ -16510,6 +16512,17 @@ const XS_EXT = (() => {
           }
           syncState();
         },
+        setDelay(value) {
+          if (running || starting) return;
+          const ms = Number(value);
+          if (!Number.isFinite(ms) || ms < 0 || ms > 5000) return;
+          settings.delay = Math.round(ms);
+          saveSettings();
+          syncState();
+        },
+        exportRecords() {
+          exportRecordsFile();
+        },
         setImportMatch(value) {
           if (running || starting) return;
           settings.importMatch = value === "strict" ? "strict" : "loose";
@@ -16520,7 +16533,12 @@ const XS_EXT = (() => {
           refreshProgress();
         },
         setExportCourse(id) {
+          if (this.exportCourse === id) return;
           this.exportCourse = id;
+          // 换了目标课程，之前预览过的题库文件就不能再用来导入了
+          stagedImport = null;
+          this.importPreview = "";
+          this.importReady = false;
           refreshImportSummary();
         },
         exportBank() {
@@ -16535,7 +16553,15 @@ const XS_EXT = (() => {
         confirmImport() {
           changeImportedBank(false);
         },
-        clearImport() {
+        cancelImport() {
+          stagedImport = null;
+          this.importPreview = "";
+          this.importReady = false;
+        },
+        clearImportBank() {
+          const id = this.exportCourse || courseId();
+          if (!id) return;
+          if (!window.confirm("确认清除该课程已导入的候选题库？已确认的答案不受影响。")) return;
           changeImportedBank(true);
         }
       }
@@ -16573,6 +16599,7 @@ const XS_EXT = (() => {
     let stepTimer = null;
     let everStarted = false;
     let refreshTimer = null;
+    let pagehideHooked = false;
     let candidateSignature = "";
     const candidateCache = new Map();
     const backendCache = new Map();
@@ -16592,6 +16619,20 @@ const XS_EXT = (() => {
     }
     const shown = (selector) => qa(selector).find((el) => visible(el));
     const courseId = () => new URL(location.href).searchParams.get("recruitAndCourseId") || "";
+    const DONE_KEY = (id) => STORAGE_PREFIX + "done:" + id;
+    function readDoneName() {
+      try {
+        return window.sessionStorage.getItem(DONE_KEY(courseId()));
+      } catch (error) {
+        return null;
+      }
+    }
+    function clearDoneName() {
+      try {
+        window.sessionStorage.removeItem(DONE_KEY(courseId()));
+      } catch (error) {
+      }
+    }
     function scope() {
       const url = new URL(location.href);
       const knowledge = url.searchParams.get("knowledgeId") || (url.pathname.startsWith("/pointOfMastery/") ? url.pathname.split("/")[4] : "");
@@ -16709,6 +16750,9 @@ const XS_EXT = (() => {
     }
 
     // ---------- 面板数据 ----------
+    const assignIfChanged = (store, key, value) => {
+      if (JSON.stringify(store[key]) !== JSON.stringify(value)) store[key] = value;
+    };
     function syncState() {
       const store = masteryStore();
       if (!store) return;
@@ -16716,6 +16760,7 @@ const XS_EXT = (() => {
       store.mode = settings.mode;
       store.ignoreAnswers = settings.ignoreAnswers;
       store.importMatch = settings.importMatch;
+      if (store.delay !== settings.delay) store.delay = settings.delay;
       store.status = running ? "running" : starting ? "starting" : store.status === "finished" ? "finished" : everStarted ? "paused" : "idle";
       store.canStart = !running && !starting && Boolean(courseId());
     }
@@ -16744,7 +16789,7 @@ const XS_EXT = (() => {
       const current = courses[id] || { id, name: "" };
       store.courseId = id;
       store.courseName = id ? current.name || "课程名称待识别" : "当前未打开课程";
-      store.courses = Object.values(courses);
+      assignIfChanged(store, "courses", Object.values(courses));
       if (!store.exportCourse) store.exportCourse = id;
       store.pageKind = pageKind();
       refreshImportSummary();
@@ -16768,23 +16813,24 @@ const XS_EXT = (() => {
             if (running) save();
           }
         }
-        store.progress = db.progress && db.progress.perfect !== void 0 ? db.progress : null;
-        if (improving() && store.progress) {
-          const stats = reviewProgress(db.review, store.progress.eligible);
-          store.reviewStats = stats;
-          store.progress = Object.assign({}, store.progress, {
+        let progress = db.progress && db.progress.perfect !== void 0 ? db.progress : null;
+        let stats = null;
+        if (improving() && progress) {
+          stats = reviewProgress(db.review, progress.eligible);
+          progress = Object.assign({}, progress, {
             perfect: stats.completed,
             percent: stats.percent,
             remaining: Math.max(0, stats.eligible - stats.completed),
             unchecked: 0
           });
-        } else {
-          store.reviewStats = null;
         }
+        assignIfChanged(store, "progress", progress);
+        assignIfChanged(store, "reviewStats", stats);
         const records = Object.values(db.questions || {});
         store.bankCount = records.filter((record) => record.correct && record.correct.length).length;
         store.wrongCount = records.filter((record) => !record.correct || !record.correct.length).length;
-        store.importedCount = (db.imported || []).length;
+        // 导入候选数和（换过课程时的）题数按「题库课程」下拉框选的那门算
+        refreshImportSummary();
       } catch (error) {
         store.progress = null;
         store.message = `记录读取失败：${error.message}`;
@@ -16800,6 +16846,11 @@ const XS_EXT = (() => {
       }
       const records = readJson(COURSE_KEY(id), null);
       store.importedCount = (records && records.imported ? records.imported.length : 0);
+      if (records && records.questions && id !== dbCourse) {
+        // 看的不是当前页面这门课时，题数按所选课程的记录算，别拿当前课程的顶替
+        const list = Object.values(records.questions);
+        store.bankCount = list.filter((record) => record.correct && record.correct.length).length;
+      }
     }
 
     // ---------- 题库导入导出 ----------
@@ -16827,7 +16878,7 @@ const XS_EXT = (() => {
         const bank = formatTextBank(questionBankFromRecords(records.questions));
         if (!bank.text) throw new Error("还没有确认过的题，暂时没有可导出的题库");
         const at = new Date().toISOString().slice(0, 10);
-        download(`${safeName("题库")}-${safeName(course.name) || "未识别课程"}-${at}.txt`, bank.text, "text/plain;charset=utf-8");
+        download(`${safeName("智慧树纯文字题库")}-${safeName(course.name) || "未识别课程"}-${at}.txt`, "\uFEFF" + bank.text, "text/plain;charset=utf-8");
         log(`已导出题库 ${bank.exported} 题（未确认 ${bank.unconfirmed}、数据异常 ${bank.incomplete}、冲突 ${bank.conflicts}）`);
       } catch (error) {
         log(`导出失败：${error.message}`);
@@ -16842,8 +16893,18 @@ const XS_EXT = (() => {
           return;
         }
         const at = new Date().toISOString().slice(0, 10);
-        download(`${safeName("未入库题目")}-${safeName(course.name) || "未识别课程"}-${at}.txt`, formatExcludedBankReport(bank), "text/plain;charset=utf-8");
+        download(`${safeName("智慧树未入库题目")}-${safeName(course.name) || "未识别课程"}-${at}.txt`, "\uFEFF" + formatExcludedBankReport(bank), "text/plain;charset=utf-8");
         log(`已导出未入库清单 ${bank.excluded.length} 条`);
+      } catch (error) {
+        log(`导出失败：${error.message}`);
+      }
+    }
+    function exportRecordsFile() {
+      try {
+        const { course, records } = exportSource();
+        const at = new Date().toISOString();
+        download(`${safeName("智慧树练习记录")}-${safeName(course.name) || "未识别课程"}-${at.slice(0, 10)}.json`, JSON.stringify({ version: 1, course, exportedAt: at, records }, null, 2));
+        log("已导出运行记录 JSON");
       } catch (error) {
         log(`导出失败：${error.message}`);
       }
@@ -16883,7 +16944,8 @@ const XS_EXT = (() => {
         const merged = mergeImported(records.imported, parsed.items);
         const course = (readJson(COURSES_KEY, {}) || {})[id] || { id, name: "" };
         stagedImport = { id, parsed, filename: file.name };
-        store.importPreview = `目标课程：${course.name || id}\n文件：${file.name}\n识别 ${parsed.detected} 题，可用 ${parsed.items.length} 题，无法识别 ${parsed.excluded.length} 题\n新增 ${merged.added} 题 / ${merged.addedAnswers} 个候选答案，重复 ${merged.duplicates} 个，合并后冲突 ${merged.conflicts} 组`;
+        const sample = parsed.items.slice(0, 3).map((item, index) => `${index + 1}.【${item.type}】${item.title}\n候选：${item.answers.map((answer) => answer.join(";")).join(" / ")}`).join("\n\n");
+        store.importPreview = `目标课程：${course.name || id}\n文件：${file.name}\n识别 ${parsed.detected} 题，可用 ${parsed.items.length} 题，无法识别 ${parsed.excluded.length} 题\n新增 ${merged.added} 题 / ${merged.addedAnswers} 个候选答案，重复 ${merged.duplicates} 个，合并后冲突 ${merged.conflicts} 组` + (sample ? `\n\n${sample}` : "");
         store.importReady = parsed.items.length > 0;
         log(`题库预览已准备：可用 ${parsed.items.length} 题，核对后点「确认导入」`);
       } catch (error) {
@@ -16909,14 +16971,23 @@ const XS_EXT = (() => {
       const incoming = clear ? [] : stagedImport.parsed.items;
       importBusy = true;
       try {
-        const records = readJson(COURSE_KEY(id), { version: 1, questions: {}, rounds: {}, pending: null });
-        const merged = mergeImported(clear ? [] : records.imported, incoming);
-        records.imported = merged.items;
-        records.importRevision = (Number(records.importRevision) || 0) + 1;
-        writeJson(COURSE_KEY(id), records);
-        if (dbCourse === id) db = records;
-        registerCourse(id, course.name);
-        candidateCache.clear();
+        const applyImport = () => {
+          const records = readJson(COURSE_KEY(id), { version: 1, questions: {}, rounds: {}, pending: null });
+          const merged = mergeImported(clear ? [] : records.imported, incoming);
+          records.imported = merged.items;
+          records.importRevision = (Number(records.importRevision) || 0) + 1;
+          writeJson(COURSE_KEY(id), records);
+          if (dbCourse === id) db = records;
+          registerCourse(id, course.name);
+          candidateCache.clear();
+          return merged;
+        };
+        const merged = navigator.locks
+          ? await navigator.locks.request(STORAGE_PREFIX + "lock:" + id, { ifAvailable: true }, (lock) => {
+            if (!lock) throw new Error("该课程正在其他标签页运行，请先暂停后再导入");
+            return applyImport();
+          })
+          : applyImport();
         stagedImport = null;
         store.importPreview = "";
         store.importReady = false;
@@ -17080,6 +17151,13 @@ const XS_EXT = (() => {
       guard(ctx);
       const target = masteryURL(ctx.url);
       if (selectedCard) recordMasteryRate(selectedCard, 100, "green");
+      if (!selectedCard && activeName) {
+        // 答题过程中换过页面，卡片身份丢了：先按知识点名字记下来，回到热力图再回填成 100%
+        try {
+          window.sessionStorage.setItem(DONE_KEY(runCourse || courseId()), activeName);
+        } catch (error) {
+        }
+      }
       if (improving()) {
         const card = db.review.activeCard || selectedCard;
         if (!card) throw new Error("本轮知识点身份缺失，请回到热力图后继续");
@@ -17293,6 +17371,12 @@ const XS_EXT = (() => {
       }
       const cards = qa(SELECTORS.cards);
       if (!cards.length) throw new Error("热力图知识点尚未加载，请等待后继续");
+      const doneName = readDoneName();
+      if (doneName) {
+        const index = cards.findIndex((card) => textOf(q(SELECTORS.cardName, card)) === doneName);
+        if (index >= 0) recordMasteryRate(cardIdentity(cards[index], index), 100, cardColor(cards[index]));
+        clearDoneName();
+      }
       let target;
       let targetIndex;
       for (const [index, card] of cards.entries()) {
@@ -17501,6 +17585,7 @@ const XS_EXT = (() => {
       navigating = false;
       running = false;
       starting = false;
+      selectedCard = "";
       generation++;
       if (stepTimer) {
         clearInterval(stepTimer);
@@ -17607,7 +17692,47 @@ const XS_EXT = (() => {
               </div>
             </div>
 
+            <div style="display:flex;gap:10px;align-items:center">
+              <label style="flex:1;display:flex;align-items:center;justify-content:space-between;gap:8px">
+                <span style="color:var(--t-text3)">范围</span>
+                <select
+                  :value="store.mode"
+                  @change="store.setMode($event.target.value)"
+                  style="flex:1;max-width:140px;padding:4px 8px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface2);color:var(--t-text)"
+                >
+                  <option value="all">全部知识点</option>
+                  <option value="current">仅当前知识点</option>
+                </select>
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;color:var(--t-text3)">
+                间隔
+                <input
+                  type="number"
+                  min="0"
+                  max="5000"
+                  step="50"
+                  :value="store.delay"
+                  @change="store.setDelay($event.target.value)"
+                  style="width:70px;padding:3px 6px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface2);color:var(--t-text)"
+                >
+                <span>毫秒</span>
+              </label>
+            </div>
+            <div v-if="store.mode === 'current'" style="color:var(--t-text3);font-size:12px;line-height:1.6">
+              手动进入一个知识点后再点开始，这个知识点全对就停；不会自动往下一个走。
+            </div>
+
             <div style="border-top:1px solid var(--t-border);padding-top:10px;display:flex;flex-direction:column;gap:8px">
+              <label style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+                <span style="color:var(--t-text3)">题库课程</span>
+                <select
+                  :value="store.exportCourse"
+                  @change="store.setExportCourse($event.target.value)"
+                  style="flex:1;max-width:200px;padding:4px 8px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface2);color:var(--t-text)"
+                >
+                  <option v-for="course in store.courses" :key="course.id" :value="course.id">{{ course.name || course.id }}</option>
+                </select>
+              </label>
               <div style="display:flex;align-items:center;justify-content:space-between">
                 <span>已确认答案 {{ store.bankCount }} 题</span>
                 <span style="color:var(--t-text3);font-size:12px">导入候选 {{ store.importedCount }} 题</span>
@@ -17621,10 +17746,18 @@ const XS_EXT = (() => {
                   @click="store.exportExcluded()"
                   style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer"
                 >导出未入库清单</button>
+                <button
+                  @click="store.exportRecords()"
+                  style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer"
+                >导出记录</button>
                 <label style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer">
                   导入题库
                   <input type="file" accept=".txt,.json" style="display:none" @change="onFile">
                 </label>
+                <button
+                  @click="store.clearImportBank()"
+                  style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border);background:transparent;color:var(--t-text3);cursor:pointer"
+                >清除导入库</button>
               </div>
               <div v-if="store.importPreview" style="display:flex;flex-direction:column;gap:6px">
                 <div style="white-space:pre-wrap;color:var(--t-text3);font-size:12px;line-height:1.6;max-height:120px;overflow:auto">{{ store.importPreview }}</div>
@@ -17635,9 +17768,9 @@ const XS_EXT = (() => {
                     style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-primary);background:var(--t-primary);color:#fff;cursor:pointer"
                   >确认导入</button>
                   <button
-                    @click="store.clearImport()"
+                    @click="store.cancelImport()"
                     style="padding:5px 12px;border-radius:6px;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);cursor:pointer"
-                  >清除导入</button>
+                  >取消预览</button>
                 </div>
               </div>
             </div>
@@ -17666,7 +17799,8 @@ const XS_EXT = (() => {
         return;
       }
       // 给页面一点时间渲染，再判断是不是掌握度页面
-      const deadline = Date.now() + 6000;
+      const pendingRun = resumeMarker();
+      const deadline = Date.now() + (pendingRun ? 30000 : 6000);
       let kind = pageKind();
       while ((kind === "loading" || kind === "unknown") && Date.now() < deadline) {
         await sleepMs(300);
@@ -17682,6 +17816,12 @@ const XS_EXT = (() => {
         syncState();
       }
       refreshProgress();
+      if (!pagehideHooked) {
+        pagehideHooked = true;
+        window.addEventListener("pagehide", () => {
+          if (releaseLock) releaseLock();
+        });
+      }
       if (!refreshTimer) {
         refreshTimer = setInterval(() => {
           try {
@@ -17691,7 +17831,7 @@ const XS_EXT = (() => {
           }
         }, 1500);
       }
-      const marker = resumeMarker();
+      const marker = pendingRun;
       if (marker) {
         if (marker.activity) settings.activity = marker.activity;
         await moduleStart(true);
