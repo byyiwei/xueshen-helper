@@ -3120,7 +3120,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       + "&model_mode=auto"
       + "&match_mode=" + getQuestionMatchMode()
       + (extra && extra.skipBank ? "&skip_bank=1" : "");
-    await sleep(setting.config.basicConfig.reqIntervalTime.value);
+    const _interval = Number(extra && extra.interval);
+    await sleep(Number.isFinite(_interval) && _interval >= 0 ? _interval : setting.config.basicConfig.reqIntervalTime.value);
     const result = await new Promise((resolve) => {
       GM_xmlhttpRequest({
         url: LOCAL_BACKEND_ANSWER_URL + "?v=xs-5.0",
@@ -17278,7 +17279,7 @@ const XS_EXT = (() => {
         guard(ctx, navigation, allowDialog);
         const result = fn();
         if (result) return result;
-        await pauseMs(120, ctx, navigation, allowDialog);
+        await pauseMs(80, ctx, navigation, allowDialog);
       } while (Date.now() < end);
       throw new Error("等待页面响应超时，已暂停；请检查页面后继续");
     }
@@ -17364,7 +17365,7 @@ const XS_EXT = (() => {
       if (!question.multiple && unique.length !== 1) return null;
       return canonical(unique);
     }
-    async function backendChoice(question, trial) {
+    async function backendChoice(question, trial, options = {}) {
       let token = "";
       try {
         token = useSettingStore().config.basicConfig.token.value || "";
@@ -17383,7 +17384,7 @@ const XS_EXT = (() => {
             type: QUESTION_TYPE_CODE_MAP[question.type] || question.type,
             element: question.el,
             refer: location.href
-          });
+          }, options);
         } catch (error) {
           result = null;
         }
@@ -17442,26 +17443,41 @@ const XS_EXT = (() => {
       if ((rounds[knowledge] || 0) >= settings.maxRounds) throw new Error(`此知识点已达到 ${settings.maxRounds} 轮，请检查记录后调整上限`);
       const model = currentModel();
       const plan = [];
-      for (const item of quiz) {
+      const entries = quiz.map((item) => {
         const { key, record } = recordFor(item);
-        const preferred = preferredFor(item);
-        const trial = answerRecord(item, record);
+        return { item, key, preferred: preferredFor(item), trial: answerRecord(item, record) };
+      });
+      // 需要问后端的题并发预取：最多 3 题同时发、每题错开 0.5 秒，不再一题一题排队等
+      const fetched = new Array(entries.length).fill(null);
+      let cursor = 0;
+      const prefetch = async () => {
+        while (cursor < entries.length) {
+          const index = cursor++;
+          const entry = entries[index];
+          if (!(entry.trial.correct && entry.trial.correct.length)) {
+            fetched[index] = await backendChoice(entry.item, entry.trial, { interval: 0.5 });
+          }
+          await sleepMs(250);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(3, entries.length) }, prefetch));
+      for (let index = 0; index < entries.length; index++) {
+        const entry = entries[index];
+        const item = entry.item;
+        const trial = entry.trial;
         let choice = null;
         let source = "尝试";
         if (trial.correct && trial.correct.length) {
-          choice = nextAnswer(trial, item, model, preferred);
+          choice = nextAnswer(trial, item, model, entry.preferred);
           source = "沿用正确答案";
+        } else if (fetched[index]) {
+          choice = fetched[index];
+          source = "题库/AI";
         } else {
-          const backend = await backendChoice(item, trial);
-          if (backend) {
-            choice = backend;
-            source = "题库/AI";
-          } else {
-            choice = nextAnswer(trial, item, model, preferred);
-            source = preferred.some((candidate) => same(candidate, choice)) ? "题库候选" : "尝试";
-          }
+          choice = nextAnswer(trial, item, model, entry.preferred);
+          source = entry.preferred.some((candidate) => same(candidate, choice)) ? "题库候选" : "尝试";
         }
-        plan.push({ q: item, key, choice, known: Boolean(trial.correct && trial.correct.length), imported: source === "题库候选", source });
+        plan.push({ q: item, key: entry.key, choice, known: Boolean(trial.correct && trial.correct.length), imported: source === "题库候选", source });
       }
       // 填答可以中断；只有所有题目的实际勾选状态符合计划才会提交
       for (let index = 0; index < plan.length; index++) {
@@ -17516,7 +17532,7 @@ const XS_EXT = (() => {
           accepted.add(dialog);
           await click(confirm, ctx, true);
         }
-        await pauseMs(150, ctx, true, true);
+        await pauseMs(100, ctx, true, true);
       }
       throw new Error("提交没有返回批改结果；已暂停，避免重复提交");
     }
