@@ -5,9 +5,9 @@
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @author       IPYIWEI
-// @keywords     学习通,超星,chaoxing,智慧树,知到,zhihuishu,青书,青书学堂,qingshuxuetang,出头,出头科技,superchutou,雨课堂,yuketang,云班课,mosoteach,智慧职教,icve,职教云,国家开放大学,ouchn,国开,中国大学MOOC,icourse163,慕课,U校园,unipus,学堂在线,xuetangx,绎通云,ytccr,山东专技,treewises,西财在线,swufe,网课,自动刷课,视频倍速,题库,搜题,AI答题,作业,考试
-// @description  超星学习通/智慧树(知到)/青书学堂/出头科技/雨课堂/云班课/智慧职教/国家开放大学/中国大学MOOC/U校园/学堂在线/绎通云/山东专技/西财在线自动学习助手｜DeepSeek AI智能辅助学习｜视频倍速学习｜自动切换任务点｜作业考试全自动｜字体加密解析｜海量题库每日更新｜网课答案
-// @description:zh-CN 超星学习通/智慧树(知到)/青书学堂/出头科技/雨课堂/云班课/智慧职教/国家开放大学/中国大学MOOC/U校园/学堂在线/绎通云/山东专技/西财在线自动学习助手｜DeepSeek AI智能辅助学习｜视频倍速学习｜自动切换任务点｜作业考试全自动｜字体加密解析｜海量题库每日更新｜网课答案
+// @keywords     学神助手,网课助手,网课脚本,刷课,自动刷课,刷课脚本,视频倍速,题库,搜题,AI答题,作业,考试,网课答案,学习通,超星,学习通助手,chaoxing,chaoxing.com,智慧树,知到,智慧树助手,zhihuishu,zhihuishu.com,青书,青书学堂,qingshuxuetang,qingshuxuetang.com,出头,出头科技,superchutou,superchutou.com,雨课堂,雨课堂助手,yuketang,yuketang.cn,云班课,云班课助手,mosoteach,mosoteach.cn,智慧职教,职教云,智慧职教云,icve,icve.com.cn,国家开放大学,国开,国开在线,ouchn,ouchn.cn,中国大学MOOC,中国大学mooc,慕课,icourse163,icourse163.org,U校园,U校园助手,unipus,unipus.cn,学堂在线,学堂在线助手,xuetangx,xuetangx.com,绎通云,绎通,ytccr,ytccr.com,山东专技,山东专技教育,treewises,treewises.com,西财在线,西南财经大学,swufe,swufe-online.com
+// @description  学神助手（网课助手）：超星学习通/智慧树(知到)/青书学堂/出头科技/雨课堂/云班课/智慧职教/国家开放大学/中国大学MOOC/U校园/学堂在线/绎通云/山东专技/西财在线自动学习助手｜DeepSeek AI智能辅助学习｜视频倍速学习｜自动切换任务点｜作业考试全自动｜字体加密解析｜海量题库每日更新｜网课答案
+// @description:zh-CN 学神助手（网课助手）：超星学习通/智慧树(知到)/青书学堂/出头科技/雨课堂/云班课/智慧职教/国家开放大学/中国大学MOOC/U校园/学堂在线/绎通云/山东专技/西财在线自动学习助手｜DeepSeek AI智能辅助学习｜视频倍速学习｜自动切换任务点｜作业考试全自动｜字体加密解析｜海量题库每日更新｜网课答案
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
