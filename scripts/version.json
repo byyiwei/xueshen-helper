@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "5.6.3",
+    "version": "5.6.4",
     "download_url": "https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js",
-    "changelog": "v5.6.3 新增雨课堂、云班课、智慧职教、国家开放大学、中国大学MOOC、U校园、学堂在线、绎通云、山东专技、西财在线 10 个平台的视频助手"
+    "changelog": "v5.6.4 新平台新增自动答题：单选多选判断填空简答都能填，只填答案不自动提交"
   },
   "xueshen-gf": {
-    "version": "5.6.3",
+    "version": "5.6.4",
     "download_url": "https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js",
-    "changelog": "v5.6.3 新增雨课堂、云班课、智慧职教、国家开放大学、中国大学MOOC、U校园、学堂在线、绎通云、山东专技、西财在线 10 个平台的视频助手"
+    "changelog": "v5.6.4 新平台新增自动答题：单选多选判断填空简答都能填，只填答案不自动提交"
   }
 }

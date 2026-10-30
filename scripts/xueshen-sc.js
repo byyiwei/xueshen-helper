@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通学神助手｜超星·智慧树·知到·青书·出头·雨课堂·云班课·智慧职教·国开·MOOC·U校园·学堂在线全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试｜网课助手
 // @namespace    IPYIWEI
-// @version      5.6.3
+// @version      5.6.4
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @author       IPYIWEI
@@ -11,6 +11,12 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.6.4 (2026-10-30)
+// @changelog    1. 新平台新增「自动答题」：进入作业或考试页点扫描，脚本抓题、后端给答案、自动填到选项上
+// @changelog    2. 单选、多选、判断、填空、简答都能处理，题目在 iframe 里也能抓到
+// @changelog    3. 只自动填答案，不替你点提交；答完自己检查再交卷
+// @changelog    4. 识别不到题目时点「诊断」，把页面结构写进日志，方便按真实页面补适配
+// @changelog    5. 超星 / 智慧树 / 青书 / 出头 的答题页原样保留，逻辑一行未改
 // @changelog    v5.6.3 (2026-10-30)
 // @changelog    1. 新增 10 个平台：雨课堂、云班课、智慧职教（含 AI 版 / 2 版）、国家开放大学（含 syxy 版）、中国大学 MOOC、U 校园、学堂在线、绎通云、山东专技、西财在线
 // @changelog    2. 视频助手：进入课程页自动播放、播完自动点下一节、文档页自动向下滚动，播放器在 iframe 里也能找到
@@ -18381,8 +18387,473 @@ const XS_EXT = (() => {
 
   // 新增平台共用同一套路由：在这些站点的任何页面都显示面板，
   // 进页面后由设置里的「视频助手」开关决定是否自动开始
+  // ===== 新平台通用答题：脚本负责抓题和填答案，答案由后端接口给 =====
+  // 不写死各平台的 class：靠页面结构特征找题目，平台改版后一般还能用；
+  // 找不到题目时把页面结构记进日志，方便按真实页面补选择器
+  const xsQuiz = (() => {
+    const TEXT = (el) => String((el && (el.innerText || el.textContent)) || "").replace(/\s+/g, " ").trim();
+    const LETTER_RE = /^\s*([A-H])\s*[.、,，:：)）]\s*/;
+    const letterOf = (text) => {
+      const m = String(text || "").match(LETTER_RE);
+      return m ? m[1] : "";
+    };
+    const stripLetter = (text) => String(text || "").replace(LETTER_RE, "").trim();
+    const norm = (s) => String(s || "").replace(/[\s　"“”'‘’]/g, "").toLowerCase();
+
+    // 同源 iframe 也要扫：不少平台的答题区在 iframe 里
+    const collectDocuments = (root, depth) => {
+      root = root || document;
+      depth = depth || 0;
+      const docs = [root];
+      if (depth >= 6) return docs;
+      let frames = [];
+      try { frames = Array.from(root.querySelectorAll("iframe")); } catch (_) {}
+      for (const frame of frames) {
+        let inner = null;
+        try { inner = frame.contentDocument; } catch (_) { inner = null; }
+        if (inner && inner.body) docs.push(...collectDocuments(inner, depth + 1));
+      }
+      return docs;
+    };
+
+    // 同一题的控件归成一组：radio 按 name，checkbox 按共同父级
+    const groupControls = (controls) => {
+      const groups = [];
+      const byName = new Map();
+      const rest = [];
+      for (const input of controls) {
+        if (input.type === "radio" && input.name) {
+          if (!byName.has(input.name)) {
+            const group = { controls: [], type: "radio", name: input.name };
+            byName.set(input.name, group);
+            groups.push(group);
+          }
+          byName.get(input.name).controls.push(input);
+        } else {
+          rest.push(input);
+        }
+      }
+      for (const input of rest) {
+        let host = input.parentElement;
+        let target = null;
+        for (let i = 0; i < 6 && host; i++, host = host.parentElement) {
+          if (host.querySelectorAll('input[type="checkbox"]').length > 1) { target = host; break; }
+        }
+        if (!target) target = input.parentElement;
+        let group = groups.find((x) => x.host === target);
+        if (!group) { group = { controls: [], type: "checkbox", host: target }; groups.push(group); }
+        group.controls.push(input);
+      }
+      return groups;
+    };
+
+    // 题目块 = 包含全部选项控件的最近祖先，再往上找带题干的那层
+    const resolveBlock = (group) => {
+      const first = group.controls[0];
+      let container = first.parentElement;
+      for (let i = 0; i < 10 && container; i++, container = container.parentElement) {
+        if (group.controls.every((c) => container.contains(c))) break;
+      }
+      if (!container) container = first.parentElement;
+      const baseText = TEXT(container);
+      let best = container;
+      let up = container.parentElement;
+      for (let i = 0; i < 4 && up; i++, up = up.parentElement) {
+        if (up === document.body || up === document.documentElement) break;
+        const extra = TEXT(up).length - baseText.length;
+        if (extra >= 6) { best = up; break; }
+        if (extra > 0) best = up;
+      }
+      return best;
+    };
+
+    const collectOptions = (controls) => controls.map((input) => {
+      const label = input.closest("label") || input.parentElement;
+      let text = "";
+      if (label) {
+        const clone = label.cloneNode(true);
+        clone.querySelectorAll("input, textarea, select").forEach((node) => node.remove());
+        text = TEXT(clone);
+      }
+      if (!text) text = TEXT(input.nextElementSibling);
+      return { el: label || input, input, text, letter: letterOf(text) };
+    });
+
+    // 没有 input 的选项块（前端框架常直接渲染 div 当选项）
+    const findClickOptions = (scope) => {
+      const SELECTORS = [
+        '[class*="option"]', '[class*="Option"]', '[class*="opt"]', '[class*="Opt"]',
+        '[class*="choice"]', '[class*="Choice"]', '[class*="answer-item"]'
+      ];
+      for (const sel of SELECTORS) {
+        const nodes = Array.from(scope.querySelectorAll(sel)).filter((el) => {
+          if (el.querySelector(sel)) return false;
+          const text = TEXT(el);
+          return text.length >= 2 && text.length <= 300 && /^\s*[A-H]\s*[.、,，:：)）]/.test(text);
+        });
+        const byParent = new Map();
+        for (const node of nodes) {
+          const parent = node.parentElement;
+          if (!byParent.has(parent)) byParent.set(parent, []);
+          byParent.get(parent).push(node);
+        }
+        for (const list of byParent.values()) if (list.length >= 2) return list;
+      }
+      return [];
+    };
+
+    const clickBlockOf = (list) => {
+      const baseText = TEXT(list[0].parentElement);
+      let up = list[0].parentElement;
+      let best = up;
+      for (let i = 0; i < 4 && up; i++, up = up.parentElement) {
+        if (up === document.body || up === document.documentElement) break;
+        const extra = TEXT(up).length - baseText.length;
+        if (extra >= 6) { best = up; break; }
+        if (extra > 0) best = up;
+      }
+      return best;
+    };
+
+    const blockOrder = (a, b) => {
+      const pos = a.el.compareDocumentPosition(b.el);
+      if (pos & 4) return -1;
+      if (pos & 2) return 1;
+      return 0;
+    };
+
+    // 扫描当前页面（含 iframe），返回题目块
+    const findBlocks = (scope) => {
+      scope = scope || document;
+      const blocks = [];
+      const controls = Array.from(scope.querySelectorAll('input[type="radio"], input[type="checkbox"]'))
+        .filter((el) => !el.disabled);
+      for (const group of groupControls(controls)) {
+        blocks.push({
+          el: resolveBlock(group),
+          kind: "choice",
+          type: group.type === "radio" ? "单选" : "多选",
+          options: collectOptions(group.controls),
+          controls: group.controls,
+          inputs: [],
+          title: ""
+        });
+      }
+      const clickOpts = findClickOptions(scope);
+      if (clickOpts.length) {
+        const blockEl = clickBlockOf(clickOpts);
+        const overlapped = blocks.some((b) => b.el === blockEl || b.el.contains(blockEl) || blockEl.contains(b.el));
+        if (!overlapped) {
+          blocks.push({
+            el: blockEl,
+            kind: "click",
+            type: "单选",
+            options: clickOpts.map((el) => ({ el, input: null, text: TEXT(el), letter: letterOf(TEXT(el)) })),
+            controls: [],
+            inputs: [],
+            title: ""
+          });
+        }
+      }
+      // 填空、简答：不属于任何选择题块的输入框
+      const textInputs = Array.from(scope.querySelectorAll('input[type="text"], input:not([type]), textarea'))
+        .filter((el) => !el.disabled && !el.readOnly)
+        .filter((el) => !blocks.some((b) => b.el.contains(el)));
+      const seen = new Set();
+      for (const input of textInputs) {
+        let host = input.parentElement;
+        for (let i = 0; i < 5 && host; i++, host = host.parentElement) {
+          if (TEXT(host).length >= 8) break;
+        }
+        const blockEl = host || input.parentElement;
+        if (seen.has(blockEl)) continue;
+        seen.add(blockEl);
+        const group = textInputs.filter((item) => blockEl.contains(item));
+        blocks.push({
+          el: blockEl,
+          kind: "input",
+          type: group.some((item) => item.tagName === "TEXTAREA") ? "简答" : "填空",
+          options: [],
+          controls: [],
+          inputs: group,
+          title: ""
+        });
+      }
+      // 题干：去掉选项和控件后的文字
+      for (const block of blocks) {
+        if (block.title) continue;
+        const clone = block.el.cloneNode(true);
+        clone.querySelectorAll("input, textarea, select, button").forEach((node) => node.remove());
+        let raw = TEXT(clone);
+        if (block.options.length) {
+          const firstText = stripLetter(block.options[0].text);
+          const at = firstText ? raw.indexOf(firstText) : -1;
+          if (at > 0) raw = raw.slice(0, at);
+        }
+        raw = raw.replace(/\s*[A-H]\s*[.、,，:：)）]\s*$/, "");
+        block.title = raw.replace(/\s+/g, " ").trim().slice(0, 300);
+        if (block.kind === "click") block.type = /多选|多项选择|不定项/.test(block.title) ? "多选" : "单选";
+        else if (block.type === "单选" && /多选|多项选择|不定项/.test(block.title)) block.type = "多选";
+      }
+      return blocks.sort(blockOrder);
+    };
+
+    // 答案匹配选项：先按字母，再按文字包含，避免选项文字有前后缀时匹配不上
+    const isLetterAnswer = (a) => /^[A-H]$/i.test(String(a).trim());
+    const pickOptions = (block, answer) => {
+      const answers = Array.isArray(answer) ? answer : [answer];
+      const picked = [];
+      for (const item of answers) {
+        const raw = String(item == null ? "" : item).trim();
+        if (!raw) continue;
+        if (isLetterAnswer(raw)) {
+          const hit = block.options.find((o) => String(o.letter).toUpperCase() === raw.toUpperCase());
+          if (hit) { picked.push(hit); continue; }
+        }
+        const target = norm(raw);
+        if (!target) continue;
+        const hits = block.options.filter((o) => {
+          const text = norm(o.text);
+          const body = norm(stripLetter(o.text));
+          return text.includes(target) || target.includes(body) || (body.length >= 4 && target.includes(body));
+        });
+        if (hits.length) {
+          hits.sort((x, y) => stripLetter(x.text).length - stripLetter(y.text).length);
+          picked.push(hits[0]);
+        }
+      }
+      return picked.filter((value, index, arr) => arr.indexOf(value) === index);
+    };
+
+    const fill = (block, answer) => {
+      if (!block) return { ok: false, reason: "没有题目块" };
+      if (block.kind === "input") {
+        const list = Array.isArray(answer) ? answer : [answer];
+        let count = 0;
+        block.inputs.forEach((input, index) => {
+          const value = String(list[index] == null ? "" : list[index]).trim();
+          if (!value) return;
+          input.focus();
+          input.value = value;
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+          count++;
+        });
+        return { ok: count > 0, filled: count };
+      }
+      const picked = pickOptions(block, answer);
+      if (!picked.length) return { ok: false, reason: "答案没匹配到选项" };
+      if (block.type === "单选") picked.splice(1);
+      picked.forEach((opt) => {
+        try { (opt.input || opt.el).click(); } catch (_) {}
+      });
+      return { ok: true, filled: picked.length, letters: picked.map((o) => o.letter) };
+    };
+
+    const isAnswered = (block) => {
+      if (!block) return false;
+      if (block.kind === "input") return block.inputs.some((input) => String(input.value || "").trim());
+      if (block.controls.length) return block.controls.some((input) => input.checked);
+      return block.options.some((opt) => /(^|[\s-])(active|selected|checked|is-checked|choose|chosen)([\s-]|$)/i.test(String(opt.el.className || "")));
+    };
+
+    const registry = [];
+    const state = vue.reactive({
+      scanning: false,
+      running: false,
+      total: 0,
+      done: 0,
+      items: [],
+      logs: []
+    });
+
+    const log = (text) => {
+      state.logs.unshift({ at: Date.now(), text: String(text) });
+      if (state.logs.length > 30) state.logs.length = 30;
+    };
+
+    // 扫一遍页面，题目有变化才更新列表
+    const scan = (silent) => {
+      state.scanning = true;
+      try {
+        const blocks = [];
+        for (const doc of collectDocuments()) {
+          try { blocks.push(...findBlocks(doc)); } catch (_) {}
+        }
+        const usable = blocks.filter((block) => (block.options && block.options.length >= 2) || (block.inputs && block.inputs.length));
+        state.total = usable.length;
+        if (!silent) {
+          if (usable.length) log(`当前页面识别到 ${usable.length} 道题`);
+          else log("没有识别到题目：请确认已经进入作业或考试页面");
+        }
+        // 题目节点单独放，不塞进响应式数据里，避免 Vue 去代理整棵 DOM
+        registry.length = 0;
+        registry.push(...usable);
+        state.items = usable.map((block, index) => ({
+          index,
+          title: block.title || `第 ${index + 1} 题`,
+          type: block.type,
+          answer: "",
+          status: isAnswered(block) ? "done" : "pending",
+          msg: ""
+        }));
+        return usable;
+      } finally {
+        state.scanning = false;
+      }
+    };
+
+    // 整条替换，确保列表一定重渲染
+    const setItem = (index, patch) => {
+      const next = state.items.slice();
+      if (!next[index]) return;
+      next[index] = Object.assign({}, next[index], patch);
+      state.items = next;
+    };
+
+    const toQuestion = (block) => ({
+      title: block.title || "",
+      optionsText: (block.options || []).map((opt) => stripLetter(opt.text)),
+      type: block.kind === "input"
+        ? (block.type === "简答" ? "简答题" : "填空题")
+        : (block.type === "多选" ? "多选题" : "单选题"),
+      refer: location.href
+    });
+
+    // 逐题取答案并填上；默认不点提交
+    const start = async () => {
+      if (state.running) return;
+      const usable = scan(true);
+      if (!usable.length) {
+        log("没有识别到题目，先打开作业或考试页面再试");
+        return;
+      }
+      state.running = true;
+      state.done = 0;
+      log(`开始作答，共 ${usable.length} 道题`);
+      for (const item of state.items.slice()) {
+        if (!state.running) break;
+        if (item.status === "done") { state.done++; continue; }
+        const block = registry[item.index];
+        if (!block) continue;
+        setItem(item.index, { status: "running" });
+        try {
+          const question = toQuestion(block);
+          let res = await getAccurateAnswer(question);
+          let answer = res && res.data && res.data.answer;
+          if (!Array.isArray(answer) || !answer.length) {
+            res = await getAIAnswer(question);
+            answer = res && res.data && res.data.answer;
+          }
+          if (!Array.isArray(answer) || !answer.length) {
+            setItem(item.index, { status: "fail", msg: (res && res.msg) || "未搜到答案" });
+            log(`第 ${item.index + 1} 题未搜到答案`);
+            continue;
+          }
+          const filled = fill(block, answer);
+          if (filled.ok) {
+            setItem(item.index, { status: "done", answer: answer.join(" "), msg: `已填 ${filled.filled} 项` });
+            log(`第 ${item.index + 1} 题已作答：${answer.join(" ")}`);
+          } else {
+            setItem(item.index, { status: "fail", answer: answer.join(" "), msg: filled.reason || "填写失败" });
+            log(`第 ${item.index + 1} 题 ${filled.reason || "填写失败"}`);
+          }
+          state.done++;
+        } catch (e) {
+          setItem(item.index, { status: "fail", msg: String((e && e.message) || e).slice(0, 80) });
+          log(`第 ${item.index + 1} 题出错`);
+        }
+        // sleep 的单位是秒，这里每题之间停 1 秒，给页面留出更新时间
+        await sleep(1);
+      }
+      state.running = false;
+      log("本轮作答结束，请检查后手动提交");
+    };
+
+    const stop = () => {
+      state.running = false;
+      log("已停止");
+    };
+
+    // 页面结构变了、识别不到题时，把关键结构打进日志
+    const inspect = () => {
+      try {
+        const docs = collectDocuments();
+        const radios = docs.reduce((n, doc) => n + doc.querySelectorAll('input[type="radio"], input[type="checkbox"]').length, 0);
+        const inputs = docs.reduce((n, doc) => n + doc.querySelectorAll("input, textarea").length, 0);
+        const buttons = docs.reduce((n, doc) => n + doc.querySelectorAll("button, [role='button']").length, 0);
+        log(`页面结构：选项控件 ${radios} 个，输入框 ${inputs} 个，按钮 ${buttons} 个，共 ${docs.length} 个文档`);
+      } catch (e) {
+        log("读取页面结构失败");
+      }
+    };
+
+    const Panel = {
+      name: "XsQuizPanel",
+      setup() {
+        return { state, start, stop, scan: () => scan(false), inspect };
+      },
+      render() {
+        const h = vue.h;
+        const state = this.state;
+        const plain = { padding: "5px 12px", borderRadius: "6px", border: "1px solid var(--t-border2)", background: "var(--t-surface)", color: "var(--t-text)", cursor: "pointer" };
+        const primary = Object.assign({}, plain, { border: "1px solid var(--t-primary)", background: "var(--t-primary)", color: "#fff" });
+        const statusColor = { pending: "var(--t-text3)", running: "var(--t-primary)", done: "var(--t-success, #12b76a)", fail: "var(--t-danger, #d92d20)" };
+        const statusText = { pending: "待答", running: "作答中", done: "已答", fail: "失败" };
+        const rows = state.items.map((item) => h("div", {
+          key: item.index,
+          style: { display: "flex", gap: "8px", padding: "6px 0", borderBottom: "1px dashed var(--t-border)" }
+        }, [
+          h("span", { style: { flex: "0 0 34px", color: statusColor[item.status] || "var(--t-text3)", fontSize: "12px" } }, statusText[item.status] || ""),
+          h("div", { style: { flex: "1", minWidth: 0 } }, [
+            h("div", { style: { color: "var(--t-text)", fontSize: "12.5px", lineHeight: 1.6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, item.title),
+            item.answer ? h("div", { style: { color: "var(--t-primary)", fontSize: "12px" } }, item.answer) : null,
+            item.msg ? h("div", { style: { color: "var(--t-text3)", fontSize: "11.5px" } }, item.msg) : null
+          ])
+        ]));
+        const logs = state.logs.slice(0, 8).map((item, index) => h("div", { key: index, style: { color: "var(--t-text3)", fontSize: "11.5px", lineHeight: 1.7 } }, item.text));
+        return h("div", { style: { display: "flex", flexDirection: "column", gap: "10px" } }, [
+          h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } }, [
+            h("div", { style: { fontSize: "15px", fontWeight: 600 } }, "自动答题"),
+            h("div", { style: { color: "var(--t-text3)", fontSize: "12px" } },
+              state.total ? `识别到 ${state.total} 题，已完成 ${state.done}` : "未识别到题目")
+          ]),
+          h("div", { style: { color: "var(--t-text3)", fontSize: "12px", lineHeight: 1.7 } },
+            "进入作业或考试页面后点「扫描题目」。答案由你的题库和 AI 提供，只自动填答案，不会替你点提交，检查完自己提交。"),
+          h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } }, [
+            h("button", { onClick: this.scan, disabled: state.scanning, style: plain }, state.scanning ? "扫描中" : "扫描题目"),
+            h("button", { onClick: this.start, disabled: state.running || !state.total, style: primary }, state.running ? "正在作答" : "开始答题"),
+            state.running ? h("button", { onClick: this.stop, style: plain }, "停止") : null,
+            h("button", { onClick: this.inspect, style: plain }, "诊断")
+          ]),
+          rows.length ? h("div", { style: { display: "flex", flexDirection: "column" } }, rows) : null,
+          logs.length ? h("div", { style: { display: "flex", flexDirection: "column", gap: "2px", paddingTop: "4px" } }, logs) : null
+        ]);
+      }
+    };
+
+    // 进入页面后自动扫一次，隔几秒再扫，页面异步渲染也能跟上
+    let booted = false;
+    const boot = () => {
+      if (booted) return;
+      booted = true;
+      setTimeout(() => { try { scan(true); } catch (_) {} }, 2500);
+      setTimeout(() => { try { scan(true); } catch (_) {} }, 6000);
+    };
+
+    return { state, scan, start, stop, inspect, Panel, boot, findBlocks, fill };
+  })();
+
   const xsWatchRoutes = {
-    match: [{ keyword: "", tab: "0", logic: () => xsWatch.autoStart() }],
+    match: [{
+      keyword: "",
+      tab: "0",
+      logic: () => {
+        xsWatch.autoStart();
+        // 作业、考试页先扫一遍有没有题目，有就显示在「答题」页
+        xsQuiz.boot();
+      }
+    }],
     defaultRoute: { show: true, tab: "0" }
   };
   const platformConfigs = [
@@ -18586,11 +19057,12 @@ const XS_EXT = (() => {
           tab: "◑ 掌握度",
           component: zhsMastery.Panel
         }] : []),
-        ...(currentPlatform?.watchSite ? [] : [{
+        {
           key: "2",
           tab: "◈ 答题",
-          component: _sfc_main$7
-        }]),
+          // 新平台用通用答题面板（抓题 + 填答案），旧平台仍用原来的题目列表
+          component: currentPlatform?.watchSite ? xsQuiz.Panel : _sfc_main$7
+        },
         {
           key: "3",
           tab: "◎ 搜题",
