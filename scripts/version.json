@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.0.2",
+    "version": "6.0.3",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.0.2 智慧树「掌握度」合并进「答题」，答题页顶部可切换；AI 随堂练习按题库答案作答、多选题不再漏选；「立即更新」改走脚本安装页；更新地址换到自己的服务器"
+    "changelog": "v6.0.3 修复脚本自动切页签抢走「设置/搜题/记录」的问题；智慧树答题页按当前页面自动显示答题或掌握度"
   },
   "xueshen-gf": {
-    "version": "6.0.2",
+    "version": "6.0.3",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.0.2 智慧树「掌握度」合并进「答题」，答题页顶部可切换；AI 随堂练习按题库答案作答、多选题不再漏选；「立即更新」改走脚本安装页；更新地址换到自己的服务器"
+    "changelog": "v6.0.3 修复脚本自动切页签抢走「设置/搜题/记录」的问题；智慧树答题页按当前页面自动显示答题或掌握度"
   }
 }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学神助手·网课助手 - 全平台刷课脚本｜免费搜题｜网课题库
 // @namespace    IPYIWEI
-// @version      6.0.2
+// @version      6.0.3
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -11,6 +11,9 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v6.0.3 (2026-10-30)
+// @changelog    1. 修复：脚本自动切页签时会把你正在看的「设置 / 搜题 / 记录」抢走，现在只有停在首页或日志时才自动切
+// @changelog    2. 智慧树答题页按当前页面自动换内容：答题、考试、测验页显示答题，掌握度页显示掌握度，不再固定放切换按钮
 // @changelog    v6.0.2 (2026-10-30)
 // @changelog    1. 智慧树「掌握度」合并进「答题」：答题页顶部多了「答题 / 掌握度满分」切换，菜单栏少一个重复项
 // @changelog    2. 「立即更新」现在会打开脚本安装地址，油猴 / 脚本猫直接弹更新页，不再跳到一串源码
@@ -1921,6 +1924,13 @@
   // 哪些平台有哪些能力：设置页按当前平台过滤，没这个功能的平台不显示对应设置
   const ANSWER_PLATFORM_KEYS = ["cx", "zhs", "qs", "ct"];
   const WATCH_PLATFORM_KEYS = ["ykt", "mskt", "icve", "ouchn", "mooc", "uschool", "xtzx", "ytccr", "sdzj", "xczx"];
+  // 自动切换页签时，别抢用户手动点开的页签（设置、搜题、记录、队列）
+  const AUTO_TAB_KEYS = ["0", "1"];
+  const autoSetTab = (settingStore, key) => {
+    try {
+      if (settingStore && AUTO_TAB_KEYS.includes(String(settingStore.tabIndex))) settingStore.tabIndex = key;
+    } catch (_) {}
+  };
   const useSettingStore = pinia.defineStore("setting", {
     state: () => {
       const scriptInfo = getScriptInfo();
@@ -8140,7 +8150,7 @@
             `成功解析到${this.questions.length}个题目，开始答题..`
           );
           setTimeout(() => {
-            _that.setting.tabIndex = "2";
+            autoSetTab(_that.setting, "2");
           }, 1e3);
           const { answerMode } = this.setting.config.basicConfig;
           const mode = answerMode.value;
@@ -8248,7 +8258,7 @@
             "warning"
           );
         setTimeout(() => {
-          _that.setting.tabIndex = "1";
+          autoSetTab(_that.setting, "1");
         }, 2e3);
         reportAnswerSummary("cx-" + this.type, this.questions);
         if (this.questions.length === 0) return Promise.resolve("0");
@@ -8625,7 +8635,7 @@
             `异常题型:type:${question.type}，请联系客服..`,
             "warning"
           );
-          this.setting.tabIndex = "1";
+          autoSetTab(this.setting, "1");
           return false;
         }
         return filled;
@@ -10283,7 +10293,7 @@
             `成功解析到${this.questions.length}个题目，开始答题..`
           );
           setTimeout(() => {
-            _that.setting.tabIndex = "2";
+            autoSetTab(_that.setting, "2");
           }, 1e3);
           const { answerMode } = this.setting.config.basicConfig;
           const mode = answerMode.value;
@@ -10422,7 +10432,7 @@
             "warning"
           );
         setTimeout(() => {
-          _that.setting.tabIndex = "1";
+          autoSetTab(_that.setting, "1");
         }, 2e3);
         reportAnswerSummary("zhs-web", this.questions);
         return Promise.resolve(
@@ -11093,7 +11103,7 @@
     const start = async () => {
       var _a;
       log.insertLog("进入智慧树视频学习页面，脚本开始工作..");
-      setting.tabIndex = "1";
+      autoSetTab(setting, "1");
       injectQuizHelper();
       await sleep(5);
       const noteClose = document.querySelector(".dialog-read .iconguanbi");
@@ -11393,7 +11403,7 @@
     };
     const start = async () => {
       log.insertLog("进入智慧树新版学习页面，脚本开始工作..");
-      setting.tabIndex = "1";
+      autoSetTab(setting, "1");
       await sleep(6);
       const noteDialog = document.querySelector(".read-note-dialog");
       if (noteDialog && getComputedStyle(noteDialog).display !== "none") {
@@ -11842,7 +11852,7 @@
     };
     const start = async () => {
       log.insertLog("进入智慧树AI智慧课学习页面，脚本开始工作..");
-      setting.tabIndex = "1";
+      autoSetTab(setting, "1");
       await sleep(6);
       watchUrlChange();
       watchPopupQuiz();
@@ -12210,7 +12220,7 @@
     };
     const start = async () => {
       log.insertLog("进入智慧树新形态课程学习页面，脚本开始工作..");
-      setting.tabIndex = "1";
+      autoSetTab(setting, "1");
       if (location.href.includes("/singleCourse")) {
         log.insertLog("请点击任意章节开始学习，进入学习页后将自动处理..", "warning");
         return;
@@ -12419,7 +12429,7 @@
     };
     const start = async () => {
       log.insertLog(`进入智慧树新共享课学习页面（${getCourseName()}），脚本开始工作..`);
-      setting.tabIndex = "1";
+      autoSetTab(setting, "1");
       await sleep(5);
       try {
         await waitFor(".child-main", 2e4);
@@ -13252,7 +13262,7 @@
       return;
     }
     log.insertLog(`进入${profile.name}页面，脚本开始工作..`);
-    setting.tabIndex = "1";
+    autoSetTab(setting, "1");
     questionStore.accuracy = -1;
     await ((_a = profile.beforeParse) == null ? void 0 : _a.call(profile));
     const answerSheetQuestions = profile.useAnswerSheet ? await waitForAnswerSheetQuestions() : [];
@@ -13335,7 +13345,7 @@
       }
       return true;
     };
-    setting.tabIndex = "2";
+    autoSetTab(setting, "2");
     await sleep(1 + Math.random() * 2);
     let previousTitle = "";
     let parsedOnce = false;
@@ -13375,7 +13385,7 @@
     // 智慧树作业/考试脚本从不代替交卷，提醒一句，免得以为已经交掉了
     log.insertLog("已填完全部题目，请核对答案后手动提交", "warning");
     setTimeout(() => {
-      setting.tabIndex = "1";
+      autoSetTab(setting, "1");
     }, 2e3);
   };
   const specialStudyLogic = () => {
@@ -13582,7 +13592,7 @@
       }, 1e3);
     };
     const start = async () => {
-      setting.tabIndex = "1";
+      autoSetTab(setting, "1");
       if (location.href.includes("ai-course-center") || !location.href.includes("resource") && location.href.includes("tools-hike")) {
         log.insertLog("请手动进入具体学习资源页面，进入后将自动处理..", "warning");
         return;
@@ -14065,7 +14075,7 @@
     };
     const start = async () => {
       log.insertLog(`进入智慧树新智慧学习页面（${getCourseName()}），脚本开始工作..`);
-      setting.tabIndex = "1";
+      autoSetTab(setting, "1");
       await sleep(5);
       try {
         await waitFor(".video-play", 2e4);
@@ -19422,39 +19432,32 @@ const XS_EXT = (() => {
         (item) => item.domains.some((domain) => hostname === domain || hostname.endsWith("." + domain))
       ) ?? null;
       const settingTabKey = "4";
-      // 智慧树的「答题」和「掌握度满分」原来是两个页签，功能重复，合并成一页用按钮切换
+      // 智慧树的「答题」和「掌握度满分」本质是同一件事，合并成一个页签：
+      // 页面在答题 / 考试 / 测验就显示答题，停在掌握度相关页面才显示掌握度，不额外放切换按钮
+      const isZhsMasteryPage = () => {
+        try {
+          return /studywisdomh5\.zhihuishu\.com\/(study\/mastery|pointOfMastery|examAnalysis|exam)/i.test(window.location.href);
+        } catch (_) {
+          return false;
+        }
+      };
       const ZhiHuiShuAnswerPanel = {
         setup() {
-          const mode = vue.ref("answer");
-          return { mode };
+          const masteryMode = vue.ref(isZhsMasteryPage());
+          let timer = null;
+          vue.onMounted(() => {
+            timer = setInterval(() => {
+              masteryMode.value = isZhsMasteryPage();
+            }, 1200);
+          });
+          vue.onUnmounted(() => {
+            if (timer) clearInterval(timer);
+          });
+          return { masteryMode };
         },
         render() {
           const h = vue.h;
-          const mode = this.mode;
-          const btn = (key, text) => {
-            const active = mode === key;
-            return h("button", {
-              onClick: () => {
-                this.mode = key;
-              },
-              style: {
-                padding: "4px 14px",
-                borderRadius: "6px",
-                cursor: "pointer",
-                fontSize: "12.5px",
-                border: "1px solid " + (active ? "var(--t-primary)" : "var(--t-border2)"),
-                background: active ? "var(--t-primary)" : "var(--t-surface)",
-                color: active ? "#fff" : "var(--t-text2)"
-              }
-            }, text);
-          };
-          return h("div", { style: { display: "flex", flexDirection: "column", gap: "10px" } }, [
-            h("div", { style: { display: "flex", gap: "8px", alignItems: "center" } }, [
-              btn("answer", "答题"),
-              btn("mastery", "掌握度满分")
-            ]),
-            h(mode === "mastery" ? zhsMastery.Panel : _sfc_main$7)
-          ]);
+          return h(this.masteryMode ? zhsMastery.Panel : _sfc_main$7);
         }
       };
       const contentMap = [
@@ -19941,7 +19944,7 @@ const XS_EXT = (() => {
       };
       const handleBackendMenuClick = ({ key }) => {
         if (key === "log") {
-          setting.tabIndex = "1";
+          autoSetTab(setting, "1");
           return;
         }
         if (key === "record") {
