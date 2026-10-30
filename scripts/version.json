@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.0.1",
-    "download_url": "https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js",
-    "changelog": "v6.0.1 智慧树新版作业页修复：答完一题自动点下一题并等新题出来继续，不用再刷新页面；上一版内容：新平台自动答题、云班课/绎通云/国开/西财在线精确识别、脚本更名「学神助手·网课助手｜全平台自动刷课」"
+    "version": "6.0.2",
+    "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
+    "changelog": "v6.0.2 智慧树「掌握度」合并进「答题」，答题页顶部可切换；「立即更新」改为打开脚本安装页，油猴直接弹更新；更新地址换到自己的服务器"
   },
   "xueshen-gf": {
-    "version": "6.0.1",
-    "download_url": "https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js",
-    "changelog": "v6.0.1 智慧树新版作业页修复：答完一题自动点下一题并等新题出来继续，不用再刷新页面；上一版内容：新平台自动答题、云班课/绎通云/国开/西财在线精确识别、脚本更名「学神助手·网课助手｜全平台自动刷课」"
+    "version": "6.0.2",
+    "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
+    "changelog": "v6.0.2 智慧树「掌握度」合并进「答题」，答题页顶部可切换；「立即更新」改为打开脚本安装页，油猴直接弹更新；更新地址换到自己的服务器"
   }
 }

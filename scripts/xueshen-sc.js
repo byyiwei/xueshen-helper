@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         学神助手·网课助手 - 全平台刷课脚本｜免费搜题｜网课题库
 // @namespace    IPYIWEI
-// @version      6.0.1
-// @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
-// @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
+// @version      6.0.2
+// @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
+// @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
 // @keywords     学神助手,网课助手,网课脚本,刷课,自动刷课,刷课脚本,视频倍速,题库,搜题,AI答题,作业,考试,网课答案,学习通,超星,学习通助手,chaoxing,chaoxing.com,智慧树,知到,智慧树助手,zhihuishu,zhihuishu.com,青书,青书学堂,qingshuxuetang,qingshuxuetang.com,出头,出头科技,superchutou,superchutou.com,雨课堂,雨课堂助手,yuketang,yuketang.cn,云班课,云班课助手,mosoteach,mosoteach.cn,智慧职教,职教云,智慧职教云,icve,icve.com.cn,国家开放大学,国开,国开在线,ouchn,ouchn.cn,中国大学MOOC,中国大学mooc,慕课,icourse163,icourse163.org,U校园,U校园助手,unipus,unipus.cn,学堂在线,学堂在线助手,xuetangx,xuetangx.com,绎通云,绎通,ytccr,ytccr.com,山东专技,山东专技教育,treewises,treewises.com,西财在线,西南财经大学,swufe,swufe-online.com
 // @description  学神助手（网课助手）：超星学习通/智慧树(知到)/青书学堂/出头科技/雨课堂/云班课/智慧职教/国家开放大学/中国大学MOOC/U校园/学堂在线/绎通云/山东专技/西财在线自动学习助手｜DeepSeek AI智能辅助学习｜视频倍速学习｜自动切换任务点｜作业考试全自动｜字体加密解析｜海量题库每日更新｜网课答案
@@ -11,6 +11,10 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v6.0.2 (2026-10-30)
+// @changelog    1. 智慧树「掌握度」合并进「答题」：答题页顶部多了「答题 / 掌握度满分」切换，菜单栏少一个重复项
+// @changelog    2. 「立即更新」现在会打开脚本安装地址，油猴 / 脚本猫直接弹更新页，不再跳到一串源码
+// @changelog    3. 脚本更新地址换到自己的服务器，国内访问更快，不用再连 GitHub
 // @changelog    v6.0.1 (2026-10-30)
 // @changelog    v6.0.0 (2026-10-30)
 // @changelog    1. 智慧树新版作业页修复：以前答完一题得刷新页面才能接着答，现在答完自动点「下一题」、等新题出来继续
@@ -2067,7 +2071,7 @@
               value: true,
               type: "switch",
               platforms: ["zhs"],
-              tips: "开启后掌握度页面会多出「掌握度」页，点开始就按知识点刷到 100%、记住答案并可导出题库；关闭则这些页面走原来的答题流程"
+              tips: "开启后「答题」页会多一个「掌握度满分」切换，点开始就按知识点刷到 100%、记住答案并可导出题库；关闭则这些页面走原来的答题流程"
             },
             watchAssist: {
               text: "视频助手",
@@ -17943,7 +17947,7 @@ const XS_EXT = (() => {
         await moduleStart(true);
       } else if (store) {
         store.message = "点「开始 / 继续」按知识点刷满分";
-        log("已识别到掌握度页面，点「掌握度」页的「开始」即可自动刷满分");
+        log("已识别到掌握度页面，切到「答题」页的「掌握度满分」点「开始」即可自动刷满分");
       }
     }
 
@@ -17968,10 +17972,10 @@ const XS_EXT = (() => {
       { keyword: "studentexamcomh5.zhihuishu.com/studentReviewTestOrExam", tab: "1", logic: smartAnswerLogic, assist: "answer" },
       { keyword: "fusioncourseh5.zhihuishu.com/exam", tab: "1", logic: smartAnswerLogic, assist: "answer" },
       // 掌握度练习：热力图 / 知识点 / 解析页都交给掌握度满分模块，页面上点「开始」才动手
-      { keyword: "studywisdomh5.zhihuishu.com/study/mastery", tab: "mastery", logic: () => zhsMastery.logic() },
-      { keyword: "studywisdomh5.zhihuishu.com/pointOfMastery", tab: "mastery", logic: () => zhsMastery.logic() },
-      { keyword: "studywisdomh5.zhihuishu.com/examAnalysis", tab: "mastery", logic: () => zhsMastery.logic() },
-      { keyword: "studywisdomh5.zhihuishu.com/exam", tab: "mastery", logic: () => zhsMastery.logic() },
+      { keyword: "studywisdomh5.zhihuishu.com/study/mastery", tab: "2", logic: () => zhsMastery.logic() },
+      { keyword: "studywisdomh5.zhihuishu.com/pointOfMastery", tab: "2", logic: () => zhsMastery.logic() },
+      { keyword: "studywisdomh5.zhihuishu.com/examAnalysis", tab: "2", logic: () => zhsMastery.logic() },
+      { keyword: "studywisdomh5.zhihuishu.com/exam", tab: "2", logic: () => zhsMastery.logic() },
       { keyword: "wisdom-mooc.zhihuishu.com/exam", tab: "1", logic: smartAnswerLogic, assist: "answer" },
       { keyword: "examloop.zhihuishu.com/exam", tab: "1", logic: smartAnswerLogic, assist: "answer" },
       { keyword: "zhihuishu.com/atHomeworkExam/stu/homeworkQ/exerciseList", tab: "1", logic: smartAnswerLogic, assist: "answer" },
@@ -19314,6 +19318,41 @@ const XS_EXT = (() => {
         (item) => item.domains.some((domain) => hostname === domain || hostname.endsWith("." + domain))
       ) ?? null;
       const settingTabKey = "4";
+      // 智慧树的「答题」和「掌握度满分」原来是两个页签，功能重复，合并成一页用按钮切换
+      const ZhiHuiShuAnswerPanel = {
+        setup() {
+          const mode = vue.ref("answer");
+          return { mode };
+        },
+        render() {
+          const h = vue.h;
+          const mode = this.mode;
+          const btn = (key, text) => {
+            const active = mode === key;
+            return h("button", {
+              onClick: () => {
+                this.mode = key;
+              },
+              style: {
+                padding: "4px 14px",
+                borderRadius: "6px",
+                cursor: "pointer",
+                fontSize: "12.5px",
+                border: "1px solid " + (active ? "var(--t-primary)" : "var(--t-border2)"),
+                background: active ? "var(--t-primary)" : "var(--t-surface)",
+                color: active ? "#fff" : "var(--t-text2)"
+              }
+            }, text);
+          };
+          return h("div", { style: { display: "flex", flexDirection: "column", gap: "10px" } }, [
+            h("div", { style: { display: "flex", gap: "8px", alignItems: "center" } }, [
+              btn("answer", "答题"),
+              btn("mastery", "掌握度满分")
+            ]),
+            h(mode === "mastery" ? zhsMastery.Panel : _sfc_main$7)
+          ]);
+        }
+      };
       const contentMap = [
         {
           key: "0",
@@ -19335,16 +19374,17 @@ const XS_EXT = (() => {
           tab: "◫ 队列",
           component: CourseQueuePanel
         }] : []),
-        ...(currentPlatform?.key === "zhs" ? [{
-          key: "mastery",
-          tab: "◑ 掌握度",
-          component: zhsMastery.Panel
-        }] : []),
+
         {
           key: "2",
           tab: "◈ 答题",
-          // 新平台用通用答题面板（抓题 + 填答案），旧平台仍用原来的题目列表
-          component: currentPlatform?.watchSite ? xsQuiz.Panel : _sfc_main$7
+          // 新平台用通用答题面板（抓题 + 填答案），旧平台仍用原来的题目列表；
+          // 智慧树在原来答题页里加一个「掌握度满分」切换，不再单独占页签
+          component: currentPlatform?.watchSite
+            ? xsQuiz.Panel
+            : currentPlatform?.key === "zhs"
+              ? ZhiHuiShuAnswerPanel
+              : _sfc_main$7
         },
         {
           key: "3",
