@@ -18552,9 +18552,46 @@ const XS_EXT = (() => {
         optionText: [".f-richEditorText"],
         blanks: ["textarea"],
         captcha: ""
+      },
+      // 职教云（zjy2.icve.com.cn 等）
+      {
+        id: "zjy",
+        domains: ["icve.com.cn"],
+        roots: [".subjectDet"],
+        title: ["h2, h3, h4, h5, h6", ".titleTest span"],
+        type: [],
+        options: [".optionList div", ".tkInput .el-input", ".tkInput .el-textarea"],
+        optionText: [],
+        blanks: ['.tkInput input[type="text"]', ".tkInput textarea"],
+        captcha: ""
+      },
+      // 智慧职教（老版）
+      {
+        id: "icve-a",
+        domains: ["icve.com.cn"],
+        roots: [".q_content"],
+        title: [".divQuestionTitle", '[name="fillblankTitle"]'],
+        type: [],
+        options: [".questionOptions .q_option", ".questionOptions .answerOption", ".answerOption"],
+        optionText: [],
+        blanks: [".fillblank_input input"],
+        captcha: ""
+      },
+      // 智慧职教（新版，Element 风格）
+      {
+        id: "icve-b",
+        domains: ["icve.com.cn"],
+        roots: [".content-item"],
+        title: [".questions-content [class*=title-content]"],
+        type: [],
+        options: ["label[class*='group-item']"],
+        optionText: [],
+        blanks: [".ivu-input-wrapper input"],
+        captcha: ""
       }
     ];
-    const profileForHost = (host) => PROFILES.find((p) => p.domains.some((d) => host === d || host.endsWith("." + d)));
+    // 同一个域名下可能有几套页面结构，依次尝试
+    const profilesForHost = (host) => PROFILES.filter((p) => p.domains.some((d) => host === d || host.endsWith("." + d)));
 
     const pickText = (el, selectors) => {
       for (const sel of selectors || []) {
@@ -18622,8 +18659,7 @@ const XS_EXT = (() => {
       scope = scope || document;
       // 先按平台精确选择器找，找不到再走通用结构识别
       const host = (scope.location && scope.location.hostname) || location.hostname;
-      const profile = profileForHost(host);
-      if (profile) {
+      for (const profile of profilesForHost(host)) {
         try {
           const exact = findBlocksByProfile(scope, profile);
           if (exact.length) return exact;
@@ -18764,9 +18800,15 @@ const XS_EXT = (() => {
       picked.forEach((opt) => {
         try { (opt.input || opt.el).click(); } catch (_) {}
       });
-      // 回读：点完真的选中了才算填上，选不中就别报成功
+      // 回读：点完真的选中了才算填上；有些平台要整行点，点不动就再点一次整行
       let checkedCount = 0;
       if (block.controls.length) checkedCount = block.controls.filter((input) => input.checked).length;
+      if (block.controls.length && checkedCount === 0) {
+        picked.forEach((opt) => {
+          try { opt.el.click(); } catch (_) {}
+        });
+        checkedCount = block.controls.filter((input) => input.checked).length;
+      }
       if (block.controls.length && checkedCount === 0) {
         return { ok: false, reason: "点了选项但页面没反应，可能要点整行选项", unmatched: matched.unmatched };
       }
