@@ -17405,6 +17405,59 @@ const XS_EXT = (() => {
       return choice;
     }
 
+    // 整页题库批量查询：一次请求把题库里已有的答案全部取回，没命中的题再逐题问 AI
+    async function batchBankAnswers(list) {
+      let token = "";
+      try {
+        token = useSettingStore().config.basicConfig.token.value || "";
+      } catch (error) {
+        token = "";
+      }
+      if (!token || !list.length) return [];
+      const answers = new Array(list.length).fill(null);
+      const CHUNK = 20;
+      for (let start = 0; start < list.length; start += CHUNK) {
+        const slice = list.slice(start, start + CHUNK);
+        const payload = JSON.stringify(slice.map((question) => ({
+          question: question.title || "",
+          options: question.options.map((option) => option.content),
+          type: QUESTION_TYPE_CODE_MAP[question.type] || question.type,
+          refer: location.href
+        })));
+        const result = await new Promise((resolve) => {
+          GM_xmlhttpRequest({
+            url: LOCAL_BACKEND_ANSWER_URL + "/bank?v=xs-6",
+            method: "POST",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+              Authorization: "Bearer " + token
+            },
+            data: "questions=" + encodeURIComponent(payload) + "&match_mode=auto",
+            timeout: 60000,
+            onload: (response) => {
+              try {
+                resolve(JSON.parse(response.responseText || "{}"));
+              } catch (error) {
+                resolve(null);
+              }
+            },
+            onerror: () => resolve(null),
+            ontimeout: () => resolve(null)
+          });
+        });
+        if (!result || result.code !== 200 || !result.data || !Array.isArray(result.data.items)) continue;
+        if (result.data.profile) updateUserInfoFromProfile(result.data.profile);
+        for (const entry of result.data.items) {
+          const index = Number(entry && entry.index);
+          if (!Number.isInteger(index) || index < 0 || index >= slice.length) continue;
+          if (!entry.answer) continue;
+          const mapped = mapBackendAnswer(slice[index], [entry.answer]);
+          if (mapped && mapped.length) answers[start + index] = mapped;
+        }
+      }
+      return answers;
+    }
+
     // ---------- 各页面处理 ----------
     async function finishKnowledge(ctx) {
       guard(ctx);
@@ -17452,26 +17505,51 @@ const XS_EXT = (() => {
       if ((rounds[knowledge] || 0) >= settings.maxRounds) throw new Error(`此知识点已达到 ${settings.maxRounds} 轮，请检查记录后调整上限`);
       const model = currentModel();
       const plan = [];
-      for (const item of quiz) {
+      const entries = quiz.map((item) => {
         const { key, record } = recordFor(item);
-        const preferred = preferredFor(item);
-        const trial = answerRecord(item, record);
+        return { key, item, preferred: preferredFor(item), trial: answerRecord(item, record) };
+      });
+      // 先用一次批量请求取回题库里已有的答案，题库没命中的题再逐题问 AI（保持原来的准确率）
+      const pending = entries.map((entry, index) => index).filter((index) => !(entries[index].trial.correct && entries[index].trial.correct.length));
+      let batchAnswers = [];
+      if (pending.length) {
+        try {
+          batchAnswers = await batchBankAnswers(pending.map((index) => entries[index].item));
+        } catch (error) {
+          batchAnswers = [];
+        }
+      }
+      const bankPicked = new Map();
+      pending.forEach((entryIndex, position) => {
+        const mapped = batchAnswers[position];
+        if (mapped && mapped.length) {
+          bankPicked.set(entryIndex, mapped);
+          backendCache.set(questionIdentity(entries[entryIndex].item), mapped);
+        }
+      });
+      for (let index = 0; index < entries.length; index++) {
+        const entry = entries[index];
+        const item = entry.item;
+        const trial = entry.trial;
         let choice = null;
         let source = "尝试";
         if (trial.correct && trial.correct.length) {
-          choice = nextAnswer(trial, item, model, preferred);
+          choice = nextAnswer(trial, item, model, entry.preferred);
           source = "沿用正确答案";
+        } else if (bankPicked.has(index)) {
+          choice = bankPicked.get(index);
+          source = "题库/AI";
         } else {
           const backend = await backendChoice(item, trial);
           if (backend) {
             choice = backend;
             source = "题库/AI";
           } else {
-            choice = nextAnswer(trial, item, model, preferred);
-            source = preferred.some((candidate) => same(candidate, choice)) ? "题库候选" : "尝试";
+            choice = nextAnswer(trial, item, model, entry.preferred);
+            source = entry.preferred.some((candidate) => same(candidate, choice)) ? "题库候选" : "尝试";
           }
         }
-        plan.push({ q: item, key, choice, known: Boolean(trial.correct && trial.correct.length), imported: source === "题库候选", source });
+        plan.push({ q: item, key: entry.key, choice, known: Boolean(trial.correct && trial.correct.length), imported: source === "题库候选", source });
       }
       // 填答可以中断；只有所有题目的实际勾选状态符合计划才会提交
       for (let index = 0; index < plan.length; index++) {

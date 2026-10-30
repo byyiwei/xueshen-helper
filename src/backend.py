@@ -1063,15 +1063,22 @@ WEB_SEARCH_DAILY_LIMIT = 30
 # 请求体上限：题库工具用 base64 传文件/图片，别让一次超大请求顶爆 2G 内存
 MAX_REQUEST_BODY_BYTES = 16 * 1024 * 1024
 
-def check_api_rate(client_ip, path, max_count=30, window_sec=60):
-    """通用 API 限流：每个 IP 在 window_sec 秒内对同一 path 最多 max_count 次"""
+def check_api_rate(client_ip, path, max_count=30, window_sec=60, cost=1):
+    """通用 API 限流：每个 IP 在 window_sec 秒内对同一 path 最多 max_count 次。
+
+    cost 用于批量接口：一次请求带多道题时按题数占用额度，避免绕开限流。
+    """
+    try:
+        cost = max(1, int(cost or 1))
+    except Exception:
+        cost = 1
     key = f"{client_ip}:{path}"
     now = time.time()
     bucket = _API_RATE_BUCKETS.get(key)
     if not bucket or now - bucket["window_start"] > window_sec:
-        _API_RATE_BUCKETS[key] = {"count": 1, "window_start": now}
+        _API_RATE_BUCKETS[key] = {"count": cost, "window_start": now}
         return True, 0
-    bucket["count"] += 1
+    bucket["count"] += cost
     if bucket["count"] > max_count:
         retry = int(window_sec - (now - bucket["window_start"]))
         return False, max(retry, 1)
@@ -10716,6 +10723,106 @@ class Handler(BaseHTTPRequestHandler):
                         "duration_ms": int((time.time() - start_ts) * 1000),
                         "client_ip": self.client_address[0] if self.client_address else ""
                     })
+
+        # ========== 整页题库批量查询（掌握度/答题页一次请求多题，只回题库答案） ==========
+        elif path == "/api/v1/cx/bank":
+            start_ts = time.time()
+            try:
+                params = parse_qs(body)
+                raw_questions = params.get("questions", [""])[0]
+                try:
+                    payload_list = json.loads(raw_questions or "[]")
+                except Exception:
+                    payload_list = []
+                if not isinstance(payload_list, list) or not payload_list:
+                    self._send_json(400, {"code": 400, "msg": "缺少 questions 参数"})
+                    return
+                if len(payload_list) > 20:
+                    self._send_json(400, {"code": 400, "msg": "一次最多查询 20 道题"})
+                    return
+                ok_rate, retry_rate = check_api_rate(self._client_ip(), "/api/v1/cx/bank", 30, 60, cost=len(payload_list))
+                if not ok_rate:
+                    self._send_json(429, {"code": 429, "msg": f"请求过于频繁，请 {retry_rate} 秒后再试"}, {"Retry-After": str(retry_rate)})
+                    return
+                user = self._get_user_from_token()
+                if not user:
+                    self._send_json(401, {"code": 401, "msg": "请先登录后再使用模型搜题"})
+                    return
+                ent = db.get_user_entitlement(user["username"])
+                if ent and ent.get("is_banned"):
+                    self._send_json(403, {"code": 403, "msg": "账号已被封禁：" + (ent.get("ban_reason") or "请联系管理员")})
+                    return
+                items = []
+                quota_err = ""
+                for idx, entry in enumerate(payload_list):
+                    if isinstance(entry, dict):
+                        question = str(entry.get("question") or "")
+                    else:
+                        question = str(entry or "")
+                    question = question[:20000]
+                    if not question.strip():
+                        items.append({"index": idx, "answer": None, "bank": False, "status": "empty"})
+                        continue
+                    if quota_err:
+                        items.append({"index": idx, "answer": None, "bank": False, "status": "quota", "msg": quota_err})
+                        continue
+                    try:
+                        bank_row, question_hash, bank_method, bank_duration = get_question_bank_match(question)
+                        if not bank_row:
+                            similar_row, similar_hash, similar_score, similar_duration = get_question_bank_similar(question)
+                            if similar_row:
+                                bank_row, question_hash = similar_row, similar_hash
+                                bank_method = "similar"
+                                bank_duration = similar_duration
+                        if not bank_row:
+                            items.append({"index": idx, "answer": None, "bank": False, "status": "miss"})
+                            continue
+                        answer = normalize_ai_answer(question, bank_row.get("answer", ""))
+                        if not answer or _is_truncated_multi_answer(question, answer) or _is_garbage_bank_answer(answer, question):
+                            items.append({"index": idx, "answer": None, "bank": False, "status": "bad"})
+                            continue
+                        question_key = make_matching_key(question)
+                        _bank_info = parse_question_payload(question)
+                        enqueue_bank_log({
+                            "username": user.get("username", ""),
+                            "question_hash": question_hash,
+                            "question_text": _bank_info.get("question_text", question)[:500],
+                            "question_type": _bank_info.get("question_type", ""),
+                            "options_text": " | ".join(_bank_info.get("options", [])),
+                            "matched": True,
+                            "matched_hash": bank_row.get("question_hash", ""),
+                            "match_method": bank_method or "none",
+                            "duration_ms": int(bank_duration or 0),
+                            "client_ip": self.client_address[0] if self.client_address else ""
+                        })
+                        ok_quota, quota_msg, ent_after = consume_answer_quota(user["username"], question_hash, question_key)
+                        if not ok_quota:
+                            quota_err = quota_msg
+                            items.append({"index": idx, "answer": None, "bank": True, "status": "quota", "msg": quota_msg})
+                            continue
+                        items.append({
+                            "index": idx,
+                            "answer": answer,
+                            "bank": True,
+                            "status": "ok",
+                            "msg": quota_msg,
+                            "model": bank_row.get("source_model") or "题库"
+                        })
+                    except Exception as item_err:
+                        print(f"[批量题库] 第 {idx + 1} 题处理失败: {item_err}", flush=True)
+                        items.append({"index": idx, "answer": None, "bank": False, "status": "error", "msg": str(item_err)})
+                profile_after = build_user_profile(user["username"])
+                hit = sum(1 for item in items if item.get("answer"))
+                print(f"[批量题库] user={user.get('username', '')} 题数={len(items)} 命中={hit} 耗时={int((time.time() - start_ts) * 1000)}ms", flush=True)
+                self._send_json(200, {"code": 200, "msg": quota_err, "data": {
+                    "items": items,
+                    "hit": hit,
+                    "profile": profile_after,
+                    "remainCount": 999999 if profile_after and profile_after.get("active_member") else int((profile_after or {}).get("points_balance") or 0)
+                }})
+            except Exception as e:
+                print(f"[批量题库] 异常: {e}", flush=True)
+                self._send_json(500, {"code": 500, "msg": str(e)})
 
         # ========== AI Agent 决策接口 ==========
         elif path == "/api/agent/decide":
