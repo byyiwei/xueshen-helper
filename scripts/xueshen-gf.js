@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学神助手·网课助手 - 全平台刷课脚本｜免费搜题｜网课题库
 // @namespace    IPYIWEI
-// @version      6.0.0
+// @version      6.0.1
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @author       IPYIWEI
@@ -11,6 +11,9 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v6.0.1 (2026-10-30)
+// @changelog    1. 智慧树新版作业页修复：以前答完一题得刷新页面才能接着答，现在答完自动点「下一题」、等新题出来继续
+// @changelog    2. 页面按钮结构变了也能找到「下一题」（按文字找），找不到也不再中断整个答题流程
 // @changelog    v6.0.0 (2026-10-30)
 // @changelog    1. 新平台新增「自动答题」：进入作业或考试页点扫描，脚本抓题、后端给答案、自动填到选项上
 // @changelog    2. 单选、多选、判断、填空、简答都能处理，题目在 iframe 里也能抓到
@@ -10284,6 +10287,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           }, 1e3);
           const { answerMode } = this.setting.config.basicConfig;
           const mode = answerMode.value;
+          // 一屏一题：页面渲染的题目节点比接口题目少，切题后必须等新题渲染出来
+          const nodeCount = this._document ? this._document.querySelectorAll(".subject_node").length : 0;
+          const pagedMode = nodeCount > 0 && nodeCount < this.questions.length;
           for (const [index, question] of this.questions.entries()) {
             this.questionStore.currentQuestionIndex = index;
             let fillFailed = false;
@@ -10381,11 +10387,31 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               }
             }
             if (!fillFailed && this.type == "zy") {
-              const nextBtn = this._document.querySelectorAll(
+              // 新版页面可能没有 switch-btn-box，原来直接取 [0].innerText 会抛错并中断整个答题流程，
+              // 表现就是「答完第一题就不动了」。这里改成：先按原结构找，找不到再按按钮文字找「下一题」。
+              let nextBtn = this._document.querySelector(
                 "div.switch-btn-box > button:nth-child(2) > span"
-              )[0];
-              if (nextBtn.innerText === "下一题") {
+              );
+              if (!nextBtn || (nextBtn.innerText || nextBtn.textContent || "").trim() !== "下一题") {
+                nextBtn = Array.from(this._document.querySelectorAll("button, span, a")).find(
+                  (el) => el.children.length === 0 && (el.textContent || "").trim() === "下一题"
+                );
+              }
+              if (nextBtn && (nextBtn.innerText || nextBtn.textContent || "").trim() === "下一题") {
+                const visibleNode = () => Array.from(this._document.querySelectorAll(".subject_node")).find((n) => {
+                  const rect = n.getBoundingClientRect();
+                  return rect.width > 0 && rect.height > 0;
+                });
+                const prevText = pagedMode ? ((visibleNode() || {}).innerText || "") : "";
                 nextBtn.click();
+                // 一屏一题：等新题真的渲染出来再处理下一道，否则还会点到上一题的选项上
+                if (pagedMode) {
+                  for (let wait = 0; wait < 20; wait++) {
+                    await sleep(0.3);
+                    const node = visibleNode();
+                    if (node && node.innerText && node.innerText !== prevText) break;
+                  }
+                }
               }
             }
           }
@@ -10412,7 +10438,26 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       __publicField(this, "fillQuestion", (question, index) => {
         let isSelected = false;
         if (!this._window) return;
-        const optionsDOM = document.querySelectorAll(".subject_node")[index].querySelectorAll(".node_detail");
+        // 智慧树新版作业页一屏只渲染一道题，按题目序号取节点会取空，导致第二题起答不上、
+        // 只能刷新页面才恢复。节点总数少于题目总数时，改为取「当前屏幕上那道题」
+        // （和 OCS 每轮重新抓当前题的做法一致），并按文本记住答过的题，避免重复点。
+        const allNodes = Array.from(document.querySelectorAll(".subject_node"));
+        const total = (this.questions && this.questions.length) || 0;
+        const paged = total > 0 && allNodes.length > 0 && allNodes.length < total;
+        let subjectNode = allNodes[index];
+        if (paged) {
+          const normNode = (n) => this.removeHtml(n.innerHTML).replace(/\s+/g, "").slice(0, 40);
+          const done = this.__answeredNodes || (this.__answeredNodes = new Set());
+          const visible = allNodes.filter((n) => {
+            const rect = n.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          });
+          const pool = visible.length ? visible : allNodes;
+          subjectNode = pool.find((n) => !done.has(normNode(n))) || pool[pool.length - 1];
+          done.add(normNode(subjectNode));
+        }
+        if (!subjectNode) return false;
+        const optionsDOM = subjectNode.querySelectorAll(".node_detail");
         const normalizeOptText = (str) => String(str ?? "").replace(/^[A-Z][.、．]\s*/i, "").replace(/\s+/g, "").replace(/[^\p{L}\p{N}√×]/gu, "").toLowerCase();
         if (question.type === "单选题" || question.type === "多选题" || /多选|X型|不定项/.test(question.type || "")) {
           // 先把命中的选项序号收齐再去点，避免同一选项被点两次（多选题再点一次会取消勾选，
