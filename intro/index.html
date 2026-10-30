@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>学神助手 - 免费搜题 · 网课题库 · 刷课脚本</title>
-<meta name="description" content="学神助手：覆盖学习通、智慧树等网课平台的免费搜题工具。在线题库直查、不扣题数，每天 30 次免费；配套刷课脚本支持自动答题、倍速播放与 AI 兜底作答。">
-<meta name="keywords" content="免费搜题,网课答案,题库搜索,学习通答案,智慧树答案,在线搜题,网课题库,学神助手">
+<title>学神助手 - 学习通/智慧树/雨课堂/云班课刷课脚本 · 免费搜题 · 网课题库</title>
+<meta name="description" content="学神助手：覆盖学习通、智慧树、雨课堂、云班课、智慧职教、国家开放大学、中国大学MOOC、U校园、学堂在线等 14 个网课平台的免费搜题工具。在线题库直查、不扣题数，每天 30 次免费；配套刷课脚本支持自动刷课、倍速播放、自动答题与 AI 兜底作答。">
+<meta name="keywords" content="免费搜题,网课答案,题库搜索,学习通答案,智慧树答案,雨课堂答案,云班课答案,智慧职教答案,中国大学MOOC答案,学堂在线答案,在线搜题,网课题库,学神助手,刷课脚本,学习通刷课,智慧树刷课,雨课堂刷课,云班课刷课,智慧职教刷课,学堂在线刷课,国家开放大学刷课,U校园刷课,超星刷课,chaoxing,zhihuishu,yuketang,mosoteach,icve,ouchn,icourse163,unipus,xuetangx">
 <link rel="icon" href="/static/icon.jpg" type="image/x-icon">
 <link rel="shortcut icon" href="/static/icon.jpg" type="image/x-icon">
 <style>
@@ -575,6 +575,30 @@
   .install-tip .tip-icon { color: var(--brand); margin-top: 2px; }
   .install-tip p { margin: 0; font-size: 12.5px; color: #1e3a8a; line-height: 1.7; }
 
+  .plat-panel {
+    margin-top: 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--bg);
+    padding: 18px 20px;
+  }
+  .plat-panel h3 { margin: 0 0 4px; font-size: 14px; font-weight: 700; color: var(--ink); }
+  .plat-panel p { margin: 0 0 13px; font-size: 12.5px; color: var(--muted); line-height: 1.7; }
+  .plat-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .plat-chip {
+    display: inline-flex; align-items: baseline; gap: 6px;
+    font-size: 12.5px; color: var(--ink-2);
+    background: var(--bg-soft);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 5px 11px;
+    white-space: nowrap;
+  }
+  .plat-chip em { font-style: normal; font-size: 11px; color: var(--muted-2); }
+  @media (max-width: 640px) {
+    .plat-panel { padding: 15px 16px; }
+  }
+
   /* ============ 频道 ============ */
   .channel-card {
     background: #0f172a;
@@ -808,7 +832,7 @@
     <div class="hero-copy">
       <div class="eyebrow"><span class="pulse"></span>题库持续更新 · 已收录 <b id="bankTotalBadge">—</b> 道题</div>
       <h1>输入题目<br><em>秒出答案</em></h1>
-      <p class="hero-sub">覆盖学习通、智慧树等网课平台题库。登录即可<b>免费搜索</b>，命中题库直出答案，<b>不扣题数</b>，每天 30 次。</p>
+      <p class="hero-sub">覆盖学习通、智慧树、雨课堂、云班课、智慧职教、中国大学MOOC、学堂在线等 14 个网课平台题库。登录即可<b>免费搜索</b>，命中题库直出答案，<b>不扣题数</b>，每天 30 次。</p>
       <div class="hero-stats">
         <div><b id="bankTotal">—</b><span>题库题目总数</span></div>
         <div><b>30</b><span>次 / 天 免费额度</span></div>
@@ -960,9 +984,30 @@
       </ol>
     </div>
 
+    <div class="plat-panel">
+      <h3>支持平台</h3>
+      <p>以下 14 个平台的课程页都会自动挂上悬浮球：进入视频页自动播放、播完自动翻下一节，文档页自动向下滚动。超星、智慧树、青书、出头另支持自动答题。</p>
+      <div class="plat-chips">
+        <span class="plat-chip">超星学习通 <em>chaoxing.com</em></span>
+        <span class="plat-chip">智慧树 / 知到 <em>zhihuishu.com</em></span>
+        <span class="plat-chip">青书学堂 <em>qingshuxuetang.com</em></span>
+        <span class="plat-chip">出头科技 <em>superchutou.com</em></span>
+        <span class="plat-chip">雨课堂 <em>yuketang.cn</em></span>
+        <span class="plat-chip">云班课 <em>mosoteach.cn</em></span>
+        <span class="plat-chip">智慧职教 <em>icve.com.cn</em></span>
+        <span class="plat-chip">国家开放大学 <em>ouchn.cn</em></span>
+        <span class="plat-chip">中国大学MOOC <em>icourse163.org</em></span>
+        <span class="plat-chip">U校园 <em>unipus.cn</em></span>
+        <span class="plat-chip">学堂在线 <em>xuetangx.com</em></span>
+        <span class="plat-chip">绎通云 <em>ytccr.com</em></span>
+        <span class="plat-chip">山东专技 <em>treewises.com</em></span>
+        <span class="plat-chip">西财在线 <em>swufe-online.com</em></span>
+      </div>
+    </div>
+
     <div class="install-tip">
       <span class="tip-icon"><svg class="ico"><use href="#i-bolt"></use></svg></span>
-      <p>安装后打开超星 / 智慧树课程页，左上角出现学神悬浮球即成功。切后台时脚本会尝试静音保活，电脑休眠仍会中断。两个版本功能一致，按自己的管理器选一份即可。</p>
+      <p>安装后打开下面任一平台的课程页，左上角出现学神悬浮球即成功。切后台时脚本会尝试静音保活，电脑休眠仍会中断。两个版本功能一致，按自己的管理器选一份即可。</p>
     </div>
   </div>
 </section>
