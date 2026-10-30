@@ -17383,8 +17383,17 @@ const XS_EXT = (() => {
         } catch (error) {
           result = null;
         }
-        choice = result && result.code === 1 && result.data && Array.isArray(result.data.answer) ? mapBackendAnswer(question, result.data.answer) : null;
-        backendCache.set(identity, choice);
+        if (result && result.code === 1 && result.data && Array.isArray(result.data.answer)) {
+          choice = mapBackendAnswer(question, result.data.answer);
+          backendCache.set(identity, choice);
+        } else if (result && result.code === -1004) {
+          // 服务器明确回复「没有答案」：本轮不再重复问
+          choice = null;
+          backendCache.set(identity, choice);
+        } else {
+          // 网络失败、限流、未登录等：不缓存，稍后可重试，避免一次抖动就被当成没有答案去猜
+          choice = null;
+        }
       }
       if (!choice) return null;
       if ((trial.wrong || []).some((wrong) => same(wrong, choice))) return null;
@@ -17438,41 +17447,26 @@ const XS_EXT = (() => {
       if ((rounds[knowledge] || 0) >= settings.maxRounds) throw new Error(`此知识点已达到 ${settings.maxRounds} 轮，请检查记录后调整上限`);
       const model = currentModel();
       const plan = [];
-      const entries = quiz.map((item) => {
+      for (const item of quiz) {
         const { key, record } = recordFor(item);
-        return { item, key, preferred: preferredFor(item), trial: answerRecord(item, record) };
-      });
-      // 需要问后端的题并发预取：最多 3 题同时发、每题错开 0.5 秒，不再一题一题排队等
-      const fetched = new Array(entries.length).fill(null);
-      let cursor = 0;
-      const prefetch = async () => {
-        while (cursor < entries.length) {
-          const index = cursor++;
-          const entry = entries[index];
-          if (!(entry.trial.correct && entry.trial.correct.length)) {
-            fetched[index] = await backendChoice(entry.item, entry.trial, { interval: 0.5 });
-          }
-          await sleepMs(250);
-        }
-      };
-      await Promise.all(Array.from({ length: Math.min(3, entries.length) }, prefetch));
-      for (let index = 0; index < entries.length; index++) {
-        const entry = entries[index];
-        const item = entry.item;
-        const trial = entry.trial;
+        const preferred = preferredFor(item);
+        const trial = answerRecord(item, record);
         let choice = null;
         let source = "尝试";
         if (trial.correct && trial.correct.length) {
-          choice = nextAnswer(trial, item, model, entry.preferred);
+          choice = nextAnswer(trial, item, model, preferred);
           source = "沿用正确答案";
-        } else if (fetched[index]) {
-          choice = fetched[index];
-          source = "题库/AI";
         } else {
-          choice = nextAnswer(trial, item, model, entry.preferred);
-          source = entry.preferred.some((candidate) => same(candidate, choice)) ? "题库候选" : "尝试";
+          const backend = await backendChoice(item, trial);
+          if (backend) {
+            choice = backend;
+            source = "题库/AI";
+          } else {
+            choice = nextAnswer(trial, item, model, preferred);
+            source = preferred.some((candidate) => same(candidate, choice)) ? "题库候选" : "尝试";
+          }
         }
-        plan.push({ q: item, key: entry.key, choice, known: Boolean(trial.correct && trial.correct.length), imported: source === "题库候选", source });
+        plan.push({ q: item, key, choice, known: Boolean(trial.correct && trial.correct.length), imported: source === "题库候选", source });
       }
       // 填答可以中断；只有所有题目的实际勾选状态符合计划才会提交
       for (let index = 0; index < plan.length; index++) {
