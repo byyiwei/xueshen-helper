@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         学神助手·网课助手｜学习通·超星·智慧树·雨课堂·云班课·学堂在线 自动刷课｜作业考试答题｜视频倍速｜题库搜题
+// @name         学神助手·网课助手｜全平台网课自动刷课｜学习通·超星·智慧树·雨课堂·云班课·学堂在线｜作业考试答题｜视频倍速｜题库搜题
 // @namespace    IPYIWEI
 // @version      5.6.4
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
