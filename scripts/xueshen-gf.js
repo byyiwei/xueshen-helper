@@ -17,6 +17,7 @@
 // @changelog    3. 只自动填答案，不替你点提交；答完自己检查再交卷
 // @changelog    4. 识别不到题目时点「诊断」，把页面结构写进日志，方便按真实页面补适配
 // @changelog    5. 超星 / 智慧树 / 青书 / 出头 的答题页原样保留，逻辑一行未改
+// @changelog    6. 雨课堂、中国大学MOOC 按真实页面结构精确识别题目，识别不到时自动退回通用识别
 // @changelog    v5.6.3 (2026-10-30)
 // @changelog    1. 新增 10 个平台：雨课堂、云班课、智慧职教（含 AI 版 / 2 版）、国家开放大学（含 syxy 版）、中国大学 MOOC、U 校园、学堂在线、绎通云、山东专技、西财在线
 // @changelog    2. 视频助手：进入课程页自动播放、播完自动点下一节、文档页自动向下滚动，播放器在 iframe 里也能找到
@@ -18404,6 +18405,12 @@ const XS_EXT = (() => {
     };
     const stripLetter = (text) => String(text || "").replace(LETTER_RE, "").trim();
     const norm = (s) => String(s || "").replace(/[\s　"“”'‘’]/g, "").toLowerCase();
+    const judgeNorm = (s) => {
+      const t = String(s || "").trim();
+      if (/^(对|正确|是|√|t|true)$/i.test(t)) return "对";
+      if (/^(错|错误|否|×|f|false)$/i.test(t)) return "错";
+      return "";
+    };
 
     // 同源 iframe 也要扫：不少平台的答题区在 iframe 里
     const collectDocuments = (root, depth) => {
@@ -18527,9 +18534,106 @@ const XS_EXT = (() => {
       return 0;
     };
 
+    // 各平台精确选择器：参考 OCS 网课助手公开的结构整理，能对上就用它，对不上再退回通用识别
+    const PROFILES = [
+      {
+        id: "ykt",
+        domains: ["yuketang.cn"],
+        roots: [".container-problem .subject-item"],
+        title: [".problem-body"],
+        type: [".item-type"],
+        options: ['ul[class*="list-unstyled"] li label'],
+        optionText: [".radioText", ".checkboxText"],
+        blanks: ['input.blank-item-dynamic', 'input[placeholder="输入答案"]', "textarea"],
+        captcha: "#homework-automation-risk-challenge"
+      },
+      {
+        id: "mooc",
+        domains: ["icourse163.org"],
+        roots: [".u-questionItem", "[class*=questionBody]"],
+        title: [".j-title .j-richTxt", "[class*=questionInfo]"],
+        type: [],
+        options: [".choices li", "[class*=index-module__optionBody]"],
+        optionText: [".f-richEditorText"],
+        blanks: ["textarea"],
+        captcha: ""
+      }
+    ];
+    const profileForHost = (host) => PROFILES.find((p) => p.domains.some((d) => host === d || host.endsWith("." + d)));
+
+    const pickText = (el, selectors) => {
+      for (const sel of selectors || []) {
+        const node = el.querySelector(sel);
+        if (node && TEXT(node)) return TEXT(node);
+      }
+      return "";
+    };
+
+    // 按平台选择器抓题；抓不到返回空数组，交给通用识别
+    const findBlocksByProfile = (scope, profile) => {
+      const roots = Array.from(scope.querySelectorAll(profile.roots.join(",")));
+      if (!roots.length) return [];
+      const blocks = [];
+      for (const root of roots) {
+        const options = [];
+        Array.from(root.querySelectorAll(profile.options.join(","))).forEach((el, index) => {
+          const input = el.querySelector('input[type="radio"], input[type="checkbox"]');
+          let text = pickText(el, profile.optionText);
+          // 判断题接口常把选项值设成 true / false，没有文字时用对错兜底
+          if (!text && input && (input.value === "true" || input.value === "false")) {
+            text = input.value === "true" ? "对" : "错";
+          }
+          if (!text) {
+            const clone = el.cloneNode(true);
+            clone.querySelectorAll("input, textarea, select, img").forEach((node) => node.remove());
+            text = TEXT(clone);
+          }
+          if (!text) return;
+          // 选项没有 A/B/C 前缀时按顺序补，题库给字母答案也能对上
+          options.push({ el, input, text, letter: letterOf(text) || String.fromCharCode(65 + index) });
+        });
+        const blanks = [];
+        for (const sel of profile.blanks || []) {
+          for (const el of Array.from(root.querySelectorAll(sel))) {
+            if (!el.disabled && !el.readOnly && !blanks.includes(el)) blanks.push(el);
+          }
+        }
+        if (!options.length && !blanks.length) continue;
+        options.sort((a, b) => {
+          const pos = a.el.compareDocumentPosition(b.el);
+          return pos & 4 ? -1 : pos & 2 ? 1 : 0;
+        });
+        const typeText = pickText(root, profile.type);
+        let type = options.length ? "单选" : "填空";
+        if (/多选|多项选择|不定项/.test(typeText)) type = "多选";
+        else if (/判断/.test(typeText)) type = "判断";
+        else if (/填空|简答|问答|论述/.test(typeText)) type = "填空";
+        if (options.some((o) => o.input && o.input.type === "checkbox")) type = "多选";
+        blocks.push({
+          el: root,
+          kind: options.length ? "choice" : "input",
+          type,
+          options,
+          controls: options.map((o) => o.input).filter(Boolean),
+          inputs: blanks,
+          title: (pickText(root, profile.title) || TEXT(root)).replace(/\s+/g, " ").slice(0, 300)
+        });
+      }
+      return blocks;
+    };
+
     // 扫描当前页面（含 iframe），返回题目块
     const findBlocks = (scope) => {
       scope = scope || document;
+      // 先按平台精确选择器找，找不到再走通用结构识别
+      const host = (scope.location && scope.location.hostname) || location.hostname;
+      const profile = profileForHost(host);
+      if (profile) {
+        try {
+          const exact = findBlocksByProfile(scope, profile);
+          if (exact.length) return exact;
+        } catch (_) {}
+      }
       const blocks = [];
       const controls = Array.from(scope.querySelectorAll('input[type="radio"], input[type="checkbox"]'))
         .filter((el) => !el.disabled);
@@ -18624,6 +18728,8 @@ const XS_EXT = (() => {
         const hits = block.options.filter((o) => {
           const text = norm(o.text);
           const body = norm(stripLetter(o.text));
+          // 判断题的同义写法：对/正确/√/T 与 错/错误/×/F 互相认
+          if (judgeNorm(raw) && judgeNorm(raw) === judgeNorm(body)) return true;
           return text.includes(target) || target.includes(body) || (body.length >= 4 && target.includes(body));
         });
         if (hits.length) {
@@ -18659,7 +18765,7 @@ const XS_EXT = (() => {
       const matched = pickOptions(block, answer);
       const picked = matched.picked.slice();
       if (!picked.length) return { ok: false, reason: "答案没匹配到任何选项", unmatched: matched.unmatched };
-      if (block.type === "单选") picked.splice(1);
+      if (block.type === "单选" || block.type === "判断") picked.splice(1);
       picked.forEach((opt) => {
         try { (opt.input || opt.el).click(); } catch (_) {}
       });
