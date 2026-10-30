@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学习通学神助手｜超星·智慧树·知到·青书·出头全能学习助手｜学神助手｜AI智能辅助学习｜自动刷课｜视频倍速｜作业考试｜网课助手
 // @namespace    IPYIWEI
-// @version      5.6.2
+// @version      5.6.3
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js
 // @author       IPYIWEI
@@ -11,6 +11,11 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v5.6.3 (2026-10-30)
+// @changelog    1. 新增 10 个平台：雨课堂、云班课、智慧职教（含 AI 版 / 2 版）、国家开放大学（含 syxy 版）、中国大学 MOOC、U 校园、学堂在线、绎通云、山东专技、西财在线
+// @changelog    2. 新平台共用「视频」页签：自动播放、自动倍速、播完自动点下一节、文档页自动向下滚动，播放器在 iframe 里也能找到
+// @changelog    3. 新平台暂不显示「答题」页（还没有做这些平台的抓题作答），「搜题」「记录」照常可用
+// @changelog    4. 超星 / 智慧树 / 青书 / 出头 的逻辑一行未改，原有页面行为不变
 // @changelog    v5.6.2 (2026-10-29)
 // @changelog    1. 新增「掌握度满分」（智慧树）：按知识点逐个进入练习，答对记住答案、答错换下一组选项重答，一直刷到 100%
 // @changelog    2. 掌握度答案按课程存在本地：可导出 / 导入纯文字题库，也能导出未入库清单
@@ -145,6 +150,16 @@
 // @match        *://*.o-learn.cn/*
 // @match        *://*.qingshuxuetang.com/*
 // @match        *://*.web2.superchutou.com/*
+// @match        *://*.yuketang.cn/*
+// @match        *://*.mosoteach.cn/*
+// @match        *://*.icve.com.cn/*
+// @match        *://*.ouchn.cn/*
+// @match        *://*.icourse163.org/*
+// @match        *://*.unipus.cn/*
+// @match        *://*.xuetangx.com/*
+// @match        *://*.ytccr.com/*
+// @match        *://*.treewises.com/*
+// @match        *://*.swufe-online.com/*
 // @require      https://xs.openget.cn/libs/vue/3.4.31/vue.global.prod.js
 // @require      https://xs.openget.cn/libs/vue-demi/0.14.7/index.iife.js
 // @require      data:application/javascript,window.Vue%3DVue%3B
@@ -17879,6 +17894,511 @@ const XS_EXT = (() => {
       tab: "0"
     }
   };
+  // ===== 通用视频助手：新增平台共用的自动播放 / 自动翻页 =====
+  // 只在雨课堂、云班课、智慧职教、国家开放大学、中国大学MOOC、U校园、学堂在线、
+  // 绎通云、山东专技、西财在线 这些平台上生效；超星 / 智慧树 / 青书 / 出头 不经过这里
+  const XS_WATCH_STORAGE_KEY = "xsWatch:prefs";
+  const xsWatchDefaults = () => ({ speed: 1.5, autoNext: true, autoScroll: true, autoRun: false, segments: 0 });
+  const xsWatchReadPrefs = () => {
+    try {
+      const raw = typeof _GM_getValue === "function" ? _GM_getValue(XS_WATCH_STORAGE_KEY, "") : window.localStorage.getItem(XS_WATCH_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return Object.assign(xsWatchDefaults(), parsed && typeof parsed === "object" ? parsed : {});
+    } catch (e) {
+      return xsWatchDefaults();
+    }
+  };
+  const xsWatchWritePrefs = (prefs) => {
+    try {
+      const text = JSON.stringify(prefs);
+      if (typeof _GM_setValue === "function") _GM_setValue(XS_WATCH_STORAGE_KEY, text);
+      else window.localStorage.setItem(XS_WATCH_STORAGE_KEY, text);
+    } catch (e) {
+    }
+  };
+  // 各平台的页面特征。verified 表示按钮选择器来自公开实现、有据可依；
+  // 其余按页面常见结构写，第一次用如果点不动，把课程页地址发过来再调。
+  const XS_WATCH_PROFILES = [
+    {
+      id: "ykt",
+      name: "雨课堂",
+      test: (host) => /(^|\.)yuketang\.cn$/.test(host),
+      play: [".xt_video_bit_play_btn", ".xt_video_player_common_icon", ".xt_video_player_play_btn"],
+      next: [".btn-next", ".next-btn"],
+      verified: true
+    },
+    {
+      id: "mskt",
+      name: "云班课",
+      test: (host) => /(^|\.)mosoteach\.cn$/.test(host),
+      play: [".vjs-big-play-button", ".plyr__control--overlaid", "[class*=big-play]"],
+      next: ["[class*=next]:not([disabled])", ".ant-pagination-next button"],
+      verified: false
+    },
+    {
+      id: "icve-ai",
+      name: "智慧职教 AI",
+      test: (host) => host === "ai.icve.com.cn",
+      play: [".el-message-box .el-button--primary", "[class*=play-btn]", "[class*=video-play]"],
+      next: [".next .el-link--inner", "[class*=next]:not([disabled])"],
+      verified: true
+    },
+    {
+      id: "icve2",
+      name: "智慧职教",
+      test: (host) => host === "zjy2.icve.com.cn" || host === "zyk.icve.com.cn",
+      play: [".el-message-box .el-button--primary", "[class*=play-btn]"],
+      next: [".next .el-link--inner", "[class*=next]:not([disabled])"],
+      verified: true
+    },
+    {
+      id: "icve",
+      name: "智慧职教",
+      test: (host) => /(^|\.)icve\.com\.cn$/.test(host),
+      play: [".coursespace.screen-player-btn-icon.icon-play-sp-fill", ".screen-player-btn-icon.icon-play-sp-fill", "[class*=play]"],
+      next: [".item_done_pos", ".btn-next"],
+      verified: true
+    },
+    {
+      id: "ouchn-syxy",
+      name: "国家开放大学",
+      test: (host) => /(^|\.)syxy\.ouchn\.cn$/.test(host),
+      play: [".vjs-big-play-button", ".vjs-play-control.vjs-paused", ".vjs-poster"],
+      next: ["[class*=newgk-next]", "a.newgk-prenext"],
+      nextText: "下一页",
+      doc: true,
+      verified: true
+    },
+    {
+      id: "ouchn",
+      name: "国家开放大学",
+      test: (host) => /(^|\.)ouchn\.cn$/.test(host),
+      play: [".mvp-fonts-play", "[class*=play]"],
+      next: [".next-btn"],
+      doc: true,
+      verified: true
+    },
+    {
+      id: "mooc",
+      name: "中国大学MOOC",
+      test: (host) => /(^|\.)icourse163\.org$/.test(host),
+      play: [".vjs-big-play-button", ".prism-big-play-btn", "[class*=big-play]"],
+      next: ["[class*=next]:not([disabled])"],
+      verified: false
+    },
+    {
+      id: "uschool",
+      name: "U 校园",
+      test: (host) => /(^|\.)unipus\.cn$/.test(host),
+      play: ["[class*=play]", ".vjs-big-play-button"],
+      next: ["[class*=next]:not([disabled])"],
+      verified: false
+    },
+    {
+      id: "xtzx",
+      name: "学堂在线",
+      test: (host) => /(^|\.)xuetangx\.com$/.test(host),
+      play: ["[class*=play]"],
+      next: [".next", "[class*=next]:not([disabled])"],
+      verified: true
+    },
+    {
+      id: "ytccr",
+      name: "绎通云",
+      test: (host) => /(^|\.)ytccr\.com$/.test(host),
+      play: ["[class*=play]", ".vjs-big-play-button"],
+      next: ["[class*=next]:not([disabled])"],
+      verified: false
+    },
+    {
+      id: "sdzj",
+      name: "山东专技",
+      test: (host) => /(^|\.)treewises\.com$/.test(host),
+      play: ["#replaybtn", ".bplayer-play-btn"],
+      next: [".btn-next"],
+      quizPopup: true,
+      verified: true
+    },
+    {
+      id: "xczx",
+      name: "西财在线",
+      test: (host) => /(^|\.)swufe-online\.com$/.test(host),
+      play: [".screen-player-btn-icon.icon-play-sp-fill", "[class*=play]"],
+      next: [".btn-next"],
+      verified: true
+    }
+  ];
+  const xsWatchProfileFor = (hostname) => XS_WATCH_PROFILES.find((profile) => profile.test(hostname || location.hostname)) || null;
+  const xsWatchSupported = () => Boolean(xsWatchProfileFor(location.hostname));
+  const xsWatch = (() => {
+    const prefs = vue.reactive(xsWatchReadPrefs());
+    const state = vue.reactive({
+      running: false,
+      status: "空闲",
+      page: "",
+      media: "",
+      progress: "",
+      segments: Number(prefs.segments) || 0,
+      logs: []
+    });
+    let timer = null;
+    let tickBusy = false;
+    let originalHasFocus = null;
+    // 点过「下一节」后先等页面换掉视频，避免同一节被反复点
+    const advanceGuard = { at: 0, href: "", src: "" };
+    const log = (text) => {
+      const line = `${(/* @__PURE__ */ new Date()).toLocaleTimeString()}  ${text}`;
+      state.logs.unshift(line);
+      if (state.logs.length > 20) state.logs.length = 20;
+      try {
+        useLogStore().insertLog(text);
+      } catch (e) {
+      }
+    };
+    // 同一套逻辑要能穿透同源 iframe（智慧职教、西财在线把播放器放在 iframe 里）
+    const collectDocuments = () => {
+      const list = [document];
+      const seen = /* @__PURE__ */ new Set([document]);
+      for (let i = 0; i < list.length && list.length < 8; i++) {
+        let frames = [];
+        try {
+          frames = Array.from(list[i].querySelectorAll("iframe"));
+        } catch (e) {
+          frames = [];
+        }
+        for (const frame of frames) {
+          let inner = null;
+          try {
+            inner = frame.contentDocument;
+          } catch (e) {
+            inner = null;
+          }
+          if (inner && !seen.has(inner)) {
+            seen.add(inner);
+            list.push(inner);
+          }
+        }
+      }
+      return list;
+    };
+    const queryAll = (selector) => {
+      const found = [];
+      for (const doc of collectDocuments()) {
+        try {
+          found.push(...doc.querySelectorAll(selector));
+        } catch (e) {
+        }
+      }
+      return found;
+    };
+    const isVisible = (el) => {
+      if (!el || !el.isConnected) return false;
+      const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+      if (rect && (rect.width < 2 || rect.height < 2)) return false;
+      const style = window.getComputedStyle ? window.getComputedStyle(el) : null;
+      return !style || (style.display !== "none" && style.visibility !== "hidden");
+    };
+    const clickFirst = (selectors) => {
+      for (const selector of selectors || []) {
+        for (const el of queryAll(selector)) {
+          if (!isVisible(el)) continue;
+          try {
+            el.click();
+            return el;
+          } catch (e) {
+          }
+        }
+      }
+      return null;
+    };
+    const textOf = (el) => String((el && (el.innerText || el.textContent)) || "").replace(/\s+/g, "").trim();
+    const findVideo = () => {
+      // 有些播放器刚插入时尺寸还是 0，只要拿到了时长就当作有效视频
+      const videos = queryAll("video").filter((video) => isVisible(video) || Number(video.duration) > 0);
+      if (!videos.length) return null;
+      return videos.find((video) => !video.paused) || videos[0];
+    };
+    const setSpeed = (video, speed) => {
+      if (!video || !speed) return;
+      try {
+        if (Math.abs(video.playbackRate - speed) > 0.01) video.playbackRate = speed;
+      } catch (e) {
+      }
+    };
+    const safePlay = (video) => {
+      try {
+        const result = video.play();
+        if (result && result.catch) result.catch(() => {
+        });
+      } catch (e) {
+      }
+    };
+    const formatTime = (seconds) => {
+      const value = Math.max(0, Math.floor(Number(seconds) || 0));
+      const min = String(Math.floor(value / 60)).padStart(2, "0");
+      const sec = String(value % 60).padStart(2, "0");
+      return `${min}:${sec}`;
+    };
+    // 山东专技这类平台会在播放中弹一道验证题，随便选一个提交才能继续播
+    let lastQuizAt = 0;
+    const handleQuizPopup = (profile) => {
+      if (!profile || !profile.quizPopup) return false;
+      // 提交后弹窗要过一会儿才消失，这段时间别再重复点
+      if (Date.now() - lastQuizAt < 6e3) return false;
+      const options = queryAll(".ccQuestion li");
+      if (options.length) {
+        try {
+          options[Math.floor(Math.random() * options.length)].click();
+          clickFirst(["#ccQuestionSubmit"]);
+          lastQuizAt = Date.now();
+          log("弹窗验证题已作答");
+        } catch (e) {
+        }
+        return true;
+      }
+      const playerOptions = queryAll(".bplayer-question-content .option-item");
+      if (playerOptions.length && playerOptions[0].style && playerOptions[0].style.display !== "none") {
+        try {
+          playerOptions[Math.floor(Math.random() * playerOptions.length)].click();
+          clickFirst([".commit.bplayer-btn"]);
+          lastQuizAt = Date.now();
+          log("播放器弹窗题已作答");
+        } catch (e) {
+        }
+        return true;
+      }
+      return false;
+    };
+    const scrollDocument = async () => {
+      const el = document.scrollingElement || document.documentElement;
+      if (!el) return;
+      const step = Math.max(120, Math.floor(window.innerHeight * 0.5));
+      window.scrollBy(0, step);
+      await sleep(600);
+      if (el.scrollTop + window.innerHeight >= el.scrollHeight - 4) {
+        await sleep(2500);
+      }
+    };
+    const start = (profile) => {
+      const active = profile || xsWatchProfileFor(location.hostname);
+      if (!active) {
+        log("当前网站不在通用视频助手的支持范围内");
+        return false;
+      }
+      if (timer) clearInterval(timer);
+      timer = null;
+      state.running = true;
+      state.status = "运行中";
+      prefs.autoRun = true;
+      xsWatchWritePrefs(prefs);
+      if (originalHasFocus === null) {
+        originalHasFocus = document.hasFocus;
+        try {
+          document.hasFocus = () => true;
+        } catch (e) {
+        }
+      }
+      log(`${active.name}：视频助手已启动，倍速 ${prefs.speed}x`);
+      timer = setInterval(() => {
+        void tick(active);
+      }, 1e3);
+      void tick(active);
+      return true;
+    };
+    const stop = (reason) => {
+      if (timer) clearInterval(timer);
+      timer = null;
+      state.running = false;
+      state.status = reason || "已暂停";
+      prefs.autoRun = false;
+      xsWatchWritePrefs(prefs);
+      if (originalHasFocus !== null) {
+        try {
+          document.hasFocus = originalHasFocus;
+        } catch (e) {
+        }
+        originalHasFocus = null;
+      }
+      log(reason || "视频助手已暂停");
+    };
+    const clickNext = (profile) => {
+      for (const selector of profile.next || []) {
+        for (const el of queryAll(selector)) {
+          if (!isVisible(el)) continue;
+          if (profile.nextText && textOf(el) !== profile.nextText) continue;
+          try {
+            el.click();
+            return el;
+          } catch (e) {
+          }
+        }
+      }
+      return null;
+    };
+    const tick = async (profile) => {
+      if (!state.running || tickBusy) return;
+      tickBusy = true;
+      try {
+        if (!document.body) return;
+        state.page = location.pathname || "/";
+        if (handleQuizPopup(profile)) return;
+        const video = findVideo();
+        if (!video) {
+          state.progress = "";
+          if (prefs.autoScroll && profile.doc) {
+            state.media = "文档页：正在向下滚动";
+            await scrollDocument();
+          } else {
+            state.media = "当前页面没有视频";
+          }
+          return;
+        }
+        state.media = "视频";
+        const duration = Number(video.duration) || 0;
+        const current = Number(video.currentTime) || 0;
+        state.progress = duration > 0 ? `${formatTime(current)} / ${formatTime(duration)}（${Math.floor(current / duration * 100)}%）` : "";
+        if (!video.muted) {
+          try {
+            video.muted = true;
+          } catch (e) {
+          }
+        }
+        setSpeed(video, Number(prefs.speed) || 1.5);
+        const finished = video.ended || (duration > 0 && current >= duration - 0.8);
+        if (finished) {
+          if (!prefs.autoNext) {
+            state.status = "本节已播完（自动翻页已关闭）";
+            return;
+          }
+          state.progress = "本节已播完，正在切换";
+          const videoSrc = String(video.currentSrc || video.src || "");
+          const pageChanged = location.href !== advanceGuard.href || videoSrc !== advanceGuard.src;
+          if (!pageChanged && Date.now() - advanceGuard.at < 1e4) {
+            state.status = "等待下一页加载";
+            return;
+          }
+          const clicked = clickNext(profile);
+          if (!clicked) {
+            stop("没有找到下一节按钮，已停止");
+            return;
+          }
+          advanceGuard.at = Date.now();
+          advanceGuard.href = location.href;
+          advanceGuard.src = videoSrc;
+          state.segments += 1;
+          prefs.segments = state.segments;
+          xsWatchWritePrefs(prefs);
+          log(`第 ${state.segments} 节播完，已点下一节`);
+          return;
+        }
+        if (video.paused) {
+          clickFirst(profile.play || []);
+          safePlay(video);
+        }
+        state.status = "运行中";
+      } catch (error) {
+        log(`运行出错：${error && error.message ? error.message : error}`);
+      } finally {
+        tickBusy = false;
+      }
+    };
+    const XsWatchPanel = {
+      name: "XsWatchPanel",
+      setup() {
+        const profile = xsWatchProfileFor(location.hostname);
+        const startHere = () => {
+          if (state.running) stop("已暂停");
+          else start(profile);
+        };
+        const changeSpeed = (value) => {
+          prefs.speed = Math.min(4, Math.max(0.5, Number(value) || 1.5));
+          xsWatchWritePrefs(prefs);
+        };
+        const toggleAutoNext = (checked) => {
+          prefs.autoNext = Boolean(checked);
+          xsWatchWritePrefs(prefs);
+        };
+        const toggleAutoScroll = (checked) => {
+          prefs.autoScroll = Boolean(checked);
+          xsWatchWritePrefs(prefs);
+        };
+        return { state, prefs, profile, startHere, changeSpeed, toggleAutoNext, toggleAutoScroll };
+      },
+      render() {
+        const h = vue.h;
+        const profile = this.profile;
+        const state = this.state;
+        const prefs = this.prefs;
+        if (!profile) {
+          return h("div", { class: "tab-content", style: { padding: "14px", fontSize: "13px", color: "var(--t-text)" } }, "当前网站不在通用视频助手的支持范围内");
+        }
+        const row = { display: "flex", alignItems: "center", gap: "8px" };
+        const label = { color: "var(--t-text3)", minWidth: "64px" };
+        const value = { color: "var(--t-text)", wordBreak: "break-all" };
+        const button = (text, onClick, primary) => h("button", {
+          onClick,
+          style: {
+            padding: "5px 14px",
+            fontSize: "12px",
+            borderRadius: "4px",
+            cursor: "pointer",
+            border: `1px solid ${primary ? "var(--t-primary)" : "var(--t-border)"}`,
+            background: primary ? "var(--t-primary)" : "transparent",
+            color: primary ? "#fff" : "var(--t-text)"
+          }
+        }, text);
+        const checkboxRow = (text, checked, onChange) => h("label", { style: Object.assign({}, row, { color: "var(--t-text3)", fontSize: "12px" }) }, [
+          h("input", { type: "checkbox", checked, onChange: (event) => onChange(event.target.checked) }),
+          h("span", null, text)
+        ]);
+        const infoRow = (name, text) => h("div", { style: row }, [
+          h("span", { style: label }, name),
+          h("span", { style: value }, text)
+        ]);
+        return h("div", {
+          class: "tab-content",
+          style: { padding: "14px", display: "flex", flexDirection: "column", gap: "12px", height: "100%", overflow: "auto", color: "var(--t-text)", fontSize: "13px" }
+        }, [
+          h("div", { style: Object.assign({}, row, { justifyContent: "space-between" }) }, [
+            h("div", { style: Object.assign({}, row, { fontWeight: "600" }) }, [
+              profile.name,
+              h("span", { style: { color: state.running ? "var(--t-primary)" : "var(--t-text3)", fontWeight: "400" } }, `· ${state.status}`)
+            ]),
+            button(state.running ? "暂停" : "开始", () => this.startHere(), !state.running)
+          ]),
+          profile.verified ? null : h("div", { style: { color: "var(--t-warning)", fontSize: "12px", lineHeight: "1.6" } }, "这个平台是第一次接入，还没在真实账号上验证过。点「开始」后如果没反应，把课程页面地址发我，我按页面结构再调。"),
+          infoRow("当前页面", `${location.hostname}${state.page}`),
+          infoRow("播放状态", state.media || "等待页面加载"),
+          state.progress ? infoRow("进度", state.progress) : null,
+          infoRow("已播完", `${state.segments} 节`),
+          h("div", { style: row }, [
+            h("span", { style: label }, "倍速"),
+            h("input", {
+              type: "number",
+              min: 0.5,
+              max: 4,
+              step: 0.5,
+              value: prefs.speed,
+              onChange: (event) => this.changeSpeed(event.target.value),
+              style: { width: "90px", padding: "3px 6px", border: "1px solid var(--t-border)", borderRadius: "4px", background: "transparent", color: "var(--t-text)" }
+            }),
+            h("span", { style: { color: "var(--t-text3)", fontSize: "12px" } }, "0.5 到 4 倍，平台有检测时请调低")
+          ]),
+          checkboxRow("播完自动点下一节", prefs.autoNext, (checked) => this.toggleAutoNext(checked)),
+          checkboxRow("文档页（PPT/PDF）自动向下滚动", prefs.autoScroll, (checked) => this.toggleAutoScroll(checked)),
+          h("div", { style: { borderTop: "1px solid var(--t-border)", paddingTop: "8px" } }, [
+            h("div", { style: { color: "var(--t-text3)", fontSize: "12px", marginBottom: "6px" } }, "运行日志"),
+            h("div", { style: { display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--t-text3)", lineHeight: "1.6" } }, state.logs.length ? state.logs.map((line, index) => h("div", { key: index }, line)) : [h("div", null, "还没有日志")])
+          ])
+        ]);
+      }
+    };
+    return { prefs, state, start, stop, tick, profileFor: xsWatchProfileFor, supported: xsWatchSupported, Panel: XsWatchPanel, autoStart: () => {
+      const profile = xsWatchProfileFor(location.hostname);
+      if (profile && prefs.autoRun) start(profile);
+    } };
+  })();
+
   // 面板内容兜底：某个页签渲染出错时显示原因，不再整块空白
   const PanelBoundary = {
     name: "PanelBoundary",
@@ -17910,6 +18430,12 @@ const XS_EXT = (() => {
       const url2 = window.location.href;
       const hostname = window.location.hostname;
       const messageStore = useMessageStore();
+      // 新增平台共用同一套路由：在这些站点的任何页面都显示面板，
+      // 进页面后只有用户上次点过「开始」时才会自动启动视频助手
+      const xsWatchRoutes = {
+        match: [{ keyword: "", tab: "watch", logic: () => xsWatch.autoStart() }],
+        defaultRoute: { show: true, tab: "watch" }
+      };
       const platformConfigs = [
         {
           key: "cx",
@@ -17959,6 +18485,87 @@ const XS_EXT = (() => {
           domains: ["web2.superchutou.com"],
           routes: XS_EXT.ctRoutes,
           showAi: true
+        },
+        // ===== 以下平台走通用视频助手：只做视频/文档进度，不抓题作答 =====
+        {
+          key: "ykt",
+          name: "雨课堂",
+          domains: ["yuketang.cn"],
+          routes: xsWatchRoutes,
+          showAi: false,
+          watchSite: true
+        },
+        {
+          key: "mskt",
+          name: "云班课",
+          domains: ["mosoteach.cn"],
+          routes: xsWatchRoutes,
+          showAi: false,
+          watchSite: true
+        },
+        {
+          key: "icve",
+          name: "智慧职教",
+          domains: ["icve.com.cn"],
+          routes: xsWatchRoutes,
+          showAi: false,
+          watchSite: true
+        },
+        {
+          key: "ouchn",
+          name: "国家开放大学",
+          domains: ["ouchn.cn"],
+          routes: xsWatchRoutes,
+          showAi: false,
+          watchSite: true
+        },
+        {
+          key: "mooc",
+          name: "中国大学MOOC",
+          domains: ["icourse163.org"],
+          routes: xsWatchRoutes,
+          showAi: false,
+          watchSite: true
+        },
+        {
+          key: "uschool",
+          name: "U 校园",
+          domains: ["unipus.cn"],
+          routes: xsWatchRoutes,
+          showAi: false,
+          watchSite: true
+        },
+        {
+          key: "xtzx",
+          name: "学堂在线",
+          domains: ["xuetangx.com"],
+          routes: xsWatchRoutes,
+          showAi: false,
+          watchSite: true
+        },
+        {
+          key: "ytccr",
+          name: "绎通云",
+          domains: ["ytccr.com"],
+          routes: xsWatchRoutes,
+          showAi: false,
+          watchSite: true
+        },
+        {
+          key: "sdzj",
+          name: "山东专技",
+          domains: ["treewises.com"],
+          routes: xsWatchRoutes,
+          showAi: false,
+          watchSite: true
+        },
+        {
+          key: "xczx",
+          name: "西财在线",
+          domains: ["swufe-online.com"],
+          routes: xsWatchRoutes,
+          showAi: false,
+          watchSite: true
         }
       ];
       const currentPlatform = platformConfigs.find(
@@ -17981,6 +18588,11 @@ const XS_EXT = (() => {
           tab: "▣ 记录",
           component: _sfc_main$3
         },
+        ...(currentPlatform?.watchSite ? [{
+          key: "watch",
+          tab: "▷ 视频",
+          component: xsWatch.Panel
+        }] : []),
         ...(currentPlatform?.queueAdapter ? [{
           key: "queue",
           tab: "◫ 队列",
@@ -17991,11 +18603,11 @@ const XS_EXT = (() => {
           tab: "◑ 掌握度",
           component: zhsMastery.Panel
         }] : []),
-        {
+        ...(currentPlatform?.watchSite ? [] : [{
           key: "2",
           tab: "◈ 答题",
           component: _sfc_main$7
-        },
+        }]),
         {
           key: "3",
           tab: "◎ 搜题",
