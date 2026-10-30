@@ -18,6 +18,7 @@
 // @changelog    4. 识别不到题目时点「诊断」，把页面结构写进日志，方便按真实页面补适配
 // @changelog    5. 超星 / 智慧树 / 青书 / 出头 的答题页原样保留，逻辑一行未改
 // @changelog    6. 雨课堂、中国大学MOOC 按真实页面结构精确识别题目，识别不到时自动退回通用识别
+// @changelog    7. 云班课、绎通云、国家开放大学、西财在线同样按真实页面结构识别；电大考试站 ouchn.edu.cn 也纳入
 // @changelog    v5.6.3 (2026-10-30)
 // @changelog    1. 新增 10 个平台：雨课堂、云班课、智慧职教（含 AI 版 / 2 版）、国家开放大学（含 syxy 版）、中国大学 MOOC、U 校园、学堂在线、绎通云、山东专技、西财在线
 // @changelog    2. 视频助手：进入课程页自动播放、播完自动点下一节、文档页自动向下滚动，播放器在 iframe 里也能找到
@@ -163,6 +164,7 @@
 // @match        *://*.mosoteach.cn/*
 // @match        *://*.icve.com.cn/*
 // @match        *://*.ouchn.cn/*
+// @match        *://*.ouchn.edu.cn/*
 // @match        *://*.icourse163.org/*
 // @match        *://*.unipus.cn/*
 // @match        *://*.xuetangx.com/*
@@ -18020,7 +18022,7 @@ const XS_EXT = (() => {
     {
       id: "ouchn",
       name: "国家开放大学",
-      test: (host) => /(^|\.)ouchn\.cn$/.test(host),
+      test: (host) => /(^|\.)ouchn\.(cn|edu\.cn)$/.test(host),
       play: [".mvp-fonts-play", "[class*=play]"],
       next: [".next-btn"],
       doc: true,
@@ -18588,6 +18590,54 @@ const XS_EXT = (() => {
         optionText: [],
         blanks: [".ivu-input-wrapper input"],
         captcha: ""
+      },
+      // 云班课（新版 topic-subject，旧版 t-subject）
+      {
+        id: "mosoteach",
+        domains: ["mosoteach.cn"],
+        roots: [".pt-10.d-flex.list-item", ".topic-item"],
+        title: [".topic-subject", ".t-subject"],
+        type: [".v-chip__content", ".t-type"],
+        options: [".topic-answer-align", "label.d-flex.align-center", ".t-option.t-item label", ".t-judge.t-item label"],
+        optionText: ["[class*='opt-content']", ".topic-answer-align"],
+        blanks: ["textarea", 'input[type="text"]'],
+        captcha: ""
+      },
+      // 绎通云
+      {
+        id: "ytccr",
+        domains: ["ytccr.com"],
+        roots: [".border-item"],
+        title: [".title.qa-title", ".qa-title"],
+        type: [".qtype", ".question-box .tag"],
+        options: [".opts-list .opt-title-cnt", ".opts-list li"],
+        optionText: [],
+        blanks: ["textarea", 'input[type="text"]'],
+        captcha: ""
+      },
+      // 国家开放大学（学习网老版 + 电大考试站）
+      {
+        id: "ouchn-lms",
+        domains: ["ouchn.cn", "ouchn.edu.cn"],
+        roots: ["li.subject", ".everyQuest"],
+        title: [".summary-title .subject-description", ".topicTitle"],
+        type: [".subject-point > span", ".question-box .tag"],
+        options: [".subject-options li .option-content", ".optionList .topicTitle", ".optionList li"],
+        optionText: [],
+        blanks: ["textarea", 'input[type="text"]'],
+        captcha: ""
+      },
+      // 西财在线
+      {
+        id: "xczx",
+        domains: ["swufe-online.com"],
+        roots: [".test_item_theme", ".timu_title"],
+        title: [".timu_title"],
+        type: [],
+        options: ["ul > li", ".question-item-opt"],
+        optionText: [],
+        blanks: ["textarea", 'input[type="text"]'],
+        captcha: ""
       }
     ];
     // 同一个域名下可能有几套页面结构，依次尝试
@@ -19121,7 +19171,7 @@ const XS_EXT = (() => {
     {
       key: "ouchn",
       name: "国家开放大学",
-      domains: ["ouchn.cn"],
+      domains: ["ouchn.cn", "ouchn.edu.cn"],
       routes: xsWatchRoutes,
       showAi: false,
       watchSite: true
