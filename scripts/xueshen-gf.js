@@ -18605,15 +18605,19 @@ const XS_EXT = (() => {
 
     // 答案匹配选项：先按字母，再按文字包含，避免选项文字有前后缀时匹配不上
     const isLetterAnswer = (a) => /^[A-H]$/i.test(String(a).trim());
+    // 匹配不上的答案单独返回，由调用方标出来，绝不硬凑一个选项
     const pickOptions = (block, answer) => {
       const answers = Array.isArray(answer) ? answer : [answer];
       const picked = [];
+      const unmatched = [];
       for (const item of answers) {
         const raw = String(item == null ? "" : item).trim();
         if (!raw) continue;
         if (isLetterAnswer(raw)) {
           const hit = block.options.find((o) => String(o.letter).toUpperCase() === raw.toUpperCase());
           if (hit) { picked.push(hit); continue; }
+          unmatched.push(raw);
+          continue;
         }
         const target = norm(raw);
         if (!target) continue;
@@ -18623,11 +18627,16 @@ const XS_EXT = (() => {
           return text.includes(target) || target.includes(body) || (body.length >= 4 && target.includes(body));
         });
         if (hits.length) {
+          // 多个选项都包含答案文字时优先取完全相同的，其次取最短的，避免把长选项当答案
+          const exact = hits.find((o) => norm(stripLetter(o.text)) === target);
+          if (exact) { picked.push(exact); continue; }
           hits.sort((x, y) => stripLetter(x.text).length - stripLetter(y.text).length);
           picked.push(hits[0]);
+        } else {
+          unmatched.push(raw);
         }
       }
-      return picked.filter((value, index, arr) => arr.indexOf(value) === index);
+      return { picked: picked.filter((value, index, arr) => arr.indexOf(value) === index), unmatched };
     };
 
     const fill = (block, answer) => {
@@ -18644,15 +18653,29 @@ const XS_EXT = (() => {
           input.dispatchEvent(new Event("change", { bubbles: true }));
           count++;
         });
-        return { ok: count > 0, filled: count };
+        const missing = Math.max(0, block.inputs.length - list.filter((x) => String(x == null ? "" : x).trim()).length);
+        return { ok: count > 0, filled: count, missing };
       }
-      const picked = pickOptions(block, answer);
-      if (!picked.length) return { ok: false, reason: "答案没匹配到选项" };
+      const matched = pickOptions(block, answer);
+      const picked = matched.picked.slice();
+      if (!picked.length) return { ok: false, reason: "答案没匹配到任何选项", unmatched: matched.unmatched };
       if (block.type === "单选") picked.splice(1);
       picked.forEach((opt) => {
         try { (opt.input || opt.el).click(); } catch (_) {}
       });
-      return { ok: true, filled: picked.length, letters: picked.map((o) => o.letter) };
+      // 回读：点完真的选中了才算填上，选不中就别报成功
+      let checkedCount = 0;
+      if (block.controls.length) checkedCount = block.controls.filter((input) => input.checked).length;
+      if (block.controls.length && checkedCount === 0) {
+        return { ok: false, reason: "点了选项但页面没反应，可能要点整行选项", unmatched: matched.unmatched };
+      }
+      return {
+        ok: true,
+        filled: picked.length,
+        letters: picked.map((o) => o.letter),
+        unmatched: matched.unmatched,
+        extraDropped: matched.picked.length > picked.length ? matched.picked.length - picked.length : 0
+      };
     };
 
     const isAnswered = (block) => {
@@ -18679,6 +18702,8 @@ const XS_EXT = (() => {
 
     // 扫一遍页面，题目有变化才更新列表
     const scan = (silent) => {
+      // 答题过程中不要重建列表，否则会把手里的进度和已答结果冲掉
+      if (state.running) return [];
       state.scanning = true;
       try {
         const blocks = [];
@@ -18756,9 +18781,20 @@ const XS_EXT = (() => {
             continue;
           }
           const filled = fill(block, answer);
+          const fromAI = !!(res && res.data && res.data.src === "ai");
           if (filled.ok) {
-            setItem(item.index, { status: "done", answer: answer.join(" "), msg: `已填 ${filled.filled} 项` });
-            log(`第 ${item.index + 1} 题已作答：${answer.join(" ")}`);
+            const notes = [];
+            if (filled.unmatched && filled.unmatched.length) notes.push(`有 ${filled.unmatched.length} 个答案没对上选项`);
+            if (filled.missing) notes.push(`还有 ${filled.missing} 个空没有答案`);
+            if (filled.extraDropped) notes.push("题目是单选，多余的答案没填");
+            if (fromAI) notes.push("这条是 AI 作答，建议核对");
+            const needCheck = notes.length > 0;
+            setItem(item.index, {
+              status: needCheck ? "warn" : "done",
+              answer: answer.join(" "),
+              msg: needCheck ? notes.join("；") : `已填 ${filled.filled} 项`
+            });
+            log(`第 ${item.index + 1} 题${needCheck ? "已填，需核对" : "已作答"}：${answer.join(" ")}`);
           } else {
             setItem(item.index, { status: "fail", answer: answer.join(" "), msg: filled.reason || "填写失败" });
             log(`第 ${item.index + 1} 题 ${filled.reason || "填写失败"}`);
@@ -18803,8 +18839,11 @@ const XS_EXT = (() => {
         const state = this.state;
         const plain = { padding: "5px 12px", borderRadius: "6px", border: "1px solid var(--t-border2)", background: "var(--t-surface)", color: "var(--t-text)", cursor: "pointer" };
         const primary = Object.assign({}, plain, { border: "1px solid var(--t-primary)", background: "var(--t-primary)", color: "#fff" });
-        const statusColor = { pending: "var(--t-text3)", running: "var(--t-primary)", done: "var(--t-success, #12b76a)", fail: "var(--t-danger, #d92d20)" };
-        const statusText = { pending: "待答", running: "作答中", done: "已答", fail: "失败" };
+        const statusColor = {
+          pending: "var(--t-text3)", running: "var(--t-primary)",
+          done: "var(--t-success, #12b76a)", warn: "var(--t-warning, #dc6803)", fail: "var(--t-danger, #d92d20)"
+        };
+        const statusText = { pending: "待答", running: "作答中", done: "已答", warn: "核对", fail: "失败" };
         const rows = state.items.map((item) => h("div", {
           key: item.index,
           style: { display: "flex", gap: "8px", padding: "6px 0", borderBottom: "1px dashed var(--t-border)" }
