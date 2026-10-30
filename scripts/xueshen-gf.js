@@ -16451,6 +16451,9 @@ const XS_EXT = (() => {
         exportCourse: "",
         importPreview: "",
         importReady: false,
+        bankPending: 0,
+        bankBroken: 0,
+        bankConflicts: 0,
         canStart: false,
         pageKind: "unknown"
       }),
@@ -16580,6 +16583,7 @@ const XS_EXT = (() => {
     let nameScanned = false;
     let stagedImport = null;
     let importBusy = false;
+    let bankQualitySignature = "";
     let stepTimer = null;
     let everStarted = false;
     let refreshTimer = null;
@@ -16830,14 +16834,29 @@ const XS_EXT = (() => {
       const id = store.exportCourse || courseId();
       if (!id) {
         store.importedCount = 0;
+        store.bankPending = 0;
+        store.bankBroken = 0;
+        store.bankConflicts = 0;
         return;
       }
       const records = readJson(COURSE_KEY(id), null);
       store.importedCount = (records && records.imported ? records.imported.length : 0);
-      if (records && records.questions && id !== dbCourse) {
+      const questions = (records && records.questions) || null;
+      if (questions && id !== dbCourse) {
         // 看的不是当前页面这门课时，题数按所选课程的记录算，别拿当前课程的顶替
-        const list = Object.values(records.questions);
+        const list = Object.values(questions);
         store.bankCount = list.filter((record) => record.correct && record.correct.length).length;
+      }
+      // 题库质量（待确认 / 数据异常 / 答案冲突）：只在内容真的变了时重算，别每次刷新都跑一遍全量
+      const sample = questions ? Object.keys(questions).length : 0;
+      const weight = questions ? Object.values(questions).reduce((sum, record) => sum + ((record.correct || []).length + (record.wrong || []).length), 0) : 0;
+      const signature = `${id}|${sample}|${weight}|${store.importedCount}|${(records && records.importRevision) || 0}`;
+      if (signature !== bankQualitySignature) {
+        bankQualitySignature = signature;
+        const bank = formatTextBank(questionBankFromRecords(questions || {}));
+        store.bankPending = bank.unconfirmed;
+        store.bankBroken = bank.incomplete;
+        store.bankConflicts = bank.conflicts;
       }
     }
 
@@ -17701,16 +17720,34 @@ const XS_EXT = (() => {
             parts.push(h("div", { style: smallText }, "手动进入一个知识点后再点开始，这个知识点全对就停；不会自动往下一个走。"));
           }
 
+          parts.push(h("label", { style: { display: "flex", alignItems: "center", gap: "8px", color: "var(--t-text3)" } }, [
+            h("input", {
+              type: "checkbox",
+              checked: store.ignoreAnswers,
+              disabled: locked,
+              onChange: (event) => store.setIgnoreAnswers(event.target.checked)
+            }),
+            h("span", null, "忽略已确认答案（重新核实本题）"),
+            h("span", { style: { color: "var(--t-text4, var(--t-text3))", fontSize: "12px" } }, "题库换过、答案可疑时勾上")
+          ]));
+
           const bank = [
             labeled("题库课程", h("select", {
               value: store.exportCourse,
               onChange: (event) => store.setExportCourse(event.target.value),
               style: selectStyle
             }, store.courses.map((course) => h("option", { key: course.id, value: course.id }, course.name || course.id)))),
+            labeled("导入匹配", h("select", {
+              value: store.importMatch,
+              disabled: locked,
+              onChange: (event) => store.setImportMatch(event.target.value),
+              style: Object.assign({}, selectStyle, { maxWidth: "140px" })
+            }, [h("option", { value: "loose" }, "宽松（推荐）"), h("option", { value: "strict" }, "严格")])),
             h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } }, [
               h("span", null, `已确认答案 ${store.bankCount} 题`),
               h("span", { style: { color: "var(--t-text3)", fontSize: "12px" } }, `导入候选 ${store.importedCount} 题`)
             ]),
+            h("div", { style: { color: "var(--t-text3)", fontSize: "12px" } }, `待确认 ${store.bankPending} · 数据异常 ${store.bankBroken} · 答案冲突 ${store.bankConflicts} 组`),
             h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } }, [
               h("button", { onClick: () => store.exportBank(), style: buttonStyle }, "导出题库"),
               h("button", { onClick: () => store.exportExcluded(), style: buttonStyle }, "导出未入库清单"),
@@ -17939,16 +17976,6 @@ const XS_EXT = (() => {
           tab: "◉ 首页",
           component: ScriptHome
         },
-        ...(currentPlatform?.queueAdapter ? [{
-          key: "queue",
-          tab: "◫ 队列",
-          component: CourseQueuePanel
-        }] : []),
-        ...(currentPlatform?.key === "zhs" ? [{
-          key: "mastery",
-          tab: "◑ 掌握度",
-          component: zhsMastery.Panel
-        }] : []),
         {
           key: "1",
           tab: "▤ 日志",
@@ -17959,6 +17986,16 @@ const XS_EXT = (() => {
           tab: "▣ 记录",
           component: _sfc_main$3
         },
+        ...(currentPlatform?.queueAdapter ? [{
+          key: "queue",
+          tab: "◫ 队列",
+          component: CourseQueuePanel
+        }] : []),
+        ...(currentPlatform?.key === "zhs" ? [{
+          key: "mastery",
+          tab: "◑ 掌握度",
+          component: zhsMastery.Panel
+        }] : []),
         {
           key: "2",
           tab: "◈ 答题",
