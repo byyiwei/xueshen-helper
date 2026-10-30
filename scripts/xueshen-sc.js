@@ -15,6 +15,7 @@
 // @changelog    1. 智慧树「掌握度」合并进「答题」：答题页顶部多了「答题 / 掌握度满分」切换，菜单栏少一个重复项
 // @changelog    2. 「立即更新」现在会打开脚本安装地址，油猴 / 脚本猫直接弹更新页，不再跳到一串源码
 // @changelog    3. 脚本更新地址换到自己的服务器，国内访问更快，不用再连 GitHub
+// @changelog    4. 智慧树 AI 随堂练习改为按题库答案作答，多选题也会全部选上（原来是随机点一个，多选永远选不全）
 // @changelog    v6.0.1 (2026-10-30)
 // @changelog    v6.0.0 (2026-10-30)
 // @changelog    1. 智慧树新版作业页修复：以前答完一题得刷新页面才能接着答，现在答完自动点「下一题」、等新题出来继续
@@ -13776,21 +13777,124 @@
       );
       return true;
     };
+    // AI 随堂练习：选项是自绘组件，点击后选中态可能落在 class / input / aria 上，逐个位置都查一遍
+    const isQuizOptionPicked = (el) => {
+      if (!el) return false;
+      const input = el.querySelector('input[type="radio"], input[type="checkbox"]');
+      if (input && input.checked) return true;
+      if (el.getAttribute("aria-checked") === "true") return true;
+      return /(^|\s)(active|checked|selected|is-checked|is-active|el-radio__input--checked|el-checkbox__input--checked)(\s|$)/.test(el.className || "");
+    };
+    const normQuizAnswer = (s) => String(s || "").replace(/^[A-Za-z][.、．):：]\s*/, "").replace(/[（()）。，,、\s]/g, "").toLowerCase();
+    const pickQuizOptionIndexes = (answers, optionTexts, type) => {
+      const result = new Set();
+      const texts = optionTexts.map(normQuizAnswer);
+      const judgeIndex = (v) => {
+        const s = String(v || "").trim();
+        if (/^(对|正确|是|√|T|true|A)$/i.test(s)) return 0;
+        if (/^(错|错误|否|×|F|false|B)$/i.test(s)) return 1;
+        return -1;
+      };
+      if (type === "判断题") {
+        const j = judgeIndex(answers[0]);
+        if (j >= 0 && j < optionTexts.length) result.add(j);
+        return Array.from(result);
+      }
+      for (const answer of answers) {
+        const a = String(answer || "").trim();
+        if (!a) continue;
+        if (/^[A-Za-z]{1,8}$/.test(a)) {
+          a.toUpperCase().split("").forEach((ch) => {
+            const i = ch.charCodeAt(0) - 65;
+            if (i >= 0 && i < optionTexts.length) result.add(i);
+          });
+          continue;
+        }
+        const prefixed = a.match(/^([A-Za-z])[.、．)）:：]\s*(.+)$/);
+        if (prefixed) {
+          const i = prefixed[1].toUpperCase().charCodeAt(0) - 65;
+          if (i >= 0 && i < optionTexts.length) result.add(i);
+          continue;
+        }
+        const n = normQuizAnswer(a);
+        if (!n) continue;
+        const hit = texts.findIndex((t) => t && (t === n || t.includes(n) || n.includes(t)));
+        if (hit >= 0) result.add(hit);
+      }
+      return Array.from(result);
+    };
+    // 先点选项本身，没反应再点整行（自绘组件常把点击绑在外层 label 上）
+    const clickQuizOption = async (el) => {
+      if (!el) return;
+      await clickNativeFirst(el);
+      if (!isQuizOptionPicked(el)) {
+        const row = el.closest("label, li, .item-row, .option-row") || el.parentElement;
+        if (row && row !== el) await clickNativeFirst(row);
+      }
+    };
     const handleQuizDialog = async () => {
       if (isHandlingQuiz) return;
       const dialog = document.querySelector(".ai-class-exercise-dialog");
       if (!dialog) return;
       isHandlingQuiz = true;
       try {
-        const options = Array.from(dialog.querySelectorAll(".ques-list .item .option"));
-        log.insertLog(`检测到随堂练习弹窗`);
-        if (options.length) {
+        const items = Array.from(dialog.querySelectorAll(".ques-list .item"));
+        const optionsAll = Array.from(dialog.querySelectorAll(".ques-list .item .option"));
+        log.insertLog(`检测到随堂练习弹窗${items.length > 1 ? `（${items.length} 题）` : ""}`);
+        if (optionsAll.length) {
           const captchaPassed = await waitForCaptcha();
           if (!captchaPassed) return;
-          const optionIndex = Math.floor(Math.random() * options.length);
-          const option = options[optionIndex];
-          await clickNativeFirst(option);
-          await sleep(1);
+          const targets = items.length ? items : [dialog];
+          let answered = 0;
+          for (const item of targets) {
+            const options = Array.from(item.querySelectorAll(".option"));
+            if (!options.length) continue;
+            const optionTexts = options.map((el) => (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim());
+            const fullText = (item.innerText || item.textContent || "").replace(/\s+/g, " ").trim();
+            // 题干 = 整题文字去掉选项文字，避免把选项混进题目去搜答案
+            let title = fullText;
+            optionTexts.forEach((t) => {
+              if (t) title = title.replace(t, " ");
+            });
+            title = title.replace(/\s+/g, " ").trim();
+            const isMulti = /多选|多项选择|不定项/.test(fullText);
+            const type = isMulti ? "多选题" : /判断/.test(fullText) ? "判断题" : "单选题";
+            let picked = [];
+            try {
+              const data = await getAccurateAnswer({ title, options: optionTexts, type, workType: "zhs" });
+              if (data && data.code === 1 && Array.isArray(data.data.answer)) {
+                picked = pickQuizOptionIndexes(data.data.answer, optionTexts, type);
+              }
+            } catch (_) {}
+            if (!picked.length) {
+              // 实在查不到才随机点一个，至少不卡住视频
+              picked = [Math.floor(Math.random() * options.length)];
+              log.insertLog("这道随堂练习没查到答案，先随机选一个占位", "warning", 4);
+            } else {
+              answered++;
+            }
+            const pickedSet = new Set(picked);
+            const order = Array.from(pickedSet).sort((a, b) => a - b);
+            const list = isMulti ? order : [order[0]];
+            for (const idx of list) {
+              const el = options[idx];
+              if (!el) continue;
+              await clickQuizOption(el);
+              await sleep(0.25);
+            }
+            // 多选题补点：没点上的再点整行一次，避免只选上一个
+            if (isMulti) {
+              for (const idx of order) {
+                const el = options[idx];
+                if (el && !isQuizOptionPicked(el)) {
+                  const row = el.closest("label, li, .item-row, .option-row") || el.parentElement;
+                  if (row && row !== el) await clickNativeFirst(row);
+                }
+              }
+            }
+            await sleep(0.3);
+          }
+          if (answered) log.insertLog(`随堂练习已按题库答案作答（${answered} 题）`);
         }
         const submitBtn = dialog.querySelector(".el-dialog__footer .el-button.btn");
         if (submitBtn) {
