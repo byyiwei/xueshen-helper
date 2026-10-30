@@ -17606,7 +17606,7 @@ const XS_EXT = (() => {
       return waitFor(() => {
         const popover = associatedPopover(card);
         return popover && visible(popover) && textOf(q("strong.name", popover)) === textOf(name) ? popover : null;
-      }, ctx, 5000);
+      }, ctx, 3500);
     }
     async function handleMastery(ctx) {
       if (!improving() && settings.mode === "current") {
@@ -17685,7 +17685,7 @@ const XS_EXT = (() => {
           throw new Error("当前页面不是掌握度练习，或加载超时，请返回热力图");
         }
         if (!routeReady) {
-          await pauseMs(1000, ctx);
+          await pauseMs(600, ctx);
           routeReady = true;
         }
         loadDB(runCourse);
@@ -17786,7 +17786,7 @@ const XS_EXT = (() => {
         if (stepTimer) clearInterval(stepTimer);
         stepTimer = setInterval(() => {
           step();
-        }, 800);
+        }, 350);
         if (improving() && !selectedCard && pageKind() !== "mastery") {
           log("返回热力图，建立本轮知识点列表");
           goHome(masteryURL(location.href));
