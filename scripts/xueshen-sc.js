@@ -13,9 +13,10 @@
 // @license      Proprietary
 // @changelog    v5.6.3 (2026-10-30)
 // @changelog    1. 新增 10 个平台：雨课堂、云班课、智慧职教（含 AI 版 / 2 版）、国家开放大学（含 syxy 版）、中国大学 MOOC、U 校园、学堂在线、绎通云、山东专技、西财在线
-// @changelog    2. 新平台共用「视频」页签：自动播放、自动倍速、播完自动点下一节、文档页自动向下滚动，播放器在 iframe 里也能找到
+// @changelog    2. 新平台共用「视频」页签：自动播放、播完自动点下一节、文档页自动向下滚动，播放器在 iframe 里也能找到
 // @changelog    3. 新平台暂不显示「答题」页（还没有做这些平台的抓题作答），「搜题」「记录」照常可用
-// @changelog    4. 超星 / 智慧树 / 青书 / 出头 的逻辑一行未改，原有页面行为不变
+// @changelog    4. 倍速和翻页直接复用「设置」里的「视频倍速」「自动切换章节」，设置里新增「视频助手（新增平台）」开关；视频页只显示状态和日志，不再重复放一份开关
+// @changelog    5. 超星 / 智慧树 / 青书 / 出头 的逻辑一行未改，原有页面行为不变
 // @changelog    v5.6.2 (2026-10-29)
 // @changelog    1. 新增「掌握度满分」（智慧树）：按知识点逐个进入练习，答对记住答案、答错换下一组选项重答，一直刷到 100%
 // @changelog    2. 掌握度答案按课程存在本地：可导出 / 导入纯文字题库，也能导出未入库清单
@@ -2038,6 +2039,12 @@
               value: true,
               type: "switch",
               tips: "开启后智慧树掌握度页面会多出「掌握度」页，点开始就按知识点刷到 100%、记住答案并可导出题库；关闭则这些页面走原来的答题流程"
+            },
+            watchAssist: {
+              text: "视频助手（新增平台）",
+              value: true,
+              type: "switch",
+              tips: "只影响雨课堂、云班课、智慧职教、国家开放大学、中国大学MOOC、U校园、学堂在线、绎通云、山东专技、西财在线：开启后进入课程页自动播放视频。倍速沿用上面的「视频倍速」，播完翻页沿用「自动切换章节」"
             }
           },
           examConfig: {
@@ -2532,7 +2539,7 @@
         return `${value}%`;
       };
       const closeAllAuto = () => {
-        const hasAnyEnabled = setting.config.basicConfig.autoSubmit.value || setting.config.basicConfig.autoChangeChapter.value || setting.config.basicConfig.skipFinishedChapter.value || setting.config.basicConfig.autoAnswer.value || setting.config.examConfig.autoSubmit.value || setting.config.basicConfig.autoRefresh.value;
+        const hasAnyEnabled = setting.config.basicConfig.autoSubmit.value || setting.config.basicConfig.autoChangeChapter.value || setting.config.basicConfig.skipFinishedChapter.value || setting.config.basicConfig.autoAnswer.value || setting.config.examConfig.autoSubmit.value || setting.config.basicConfig.autoRefresh.value || setting.config.basicConfig.watchAssist.value;
         const newState = !hasAnyEnabled;
         setting.config.basicConfig.autoSubmit.value = newState;
         setting.config.basicConfig.autoChangeChapter.value = newState;
@@ -2540,6 +2547,7 @@
         setting.config.basicConfig.autoAnswer.value = newState;
         setting.config.examConfig.autoSubmit.value = newState;
         setting.config.basicConfig.autoRefresh.value = newState;
+        setting.config.basicConfig.watchAssist.value = newState;
       };
       return (_ctx, _cache) => {
         const _component_a_slider = vue.resolveComponent("a-slider");
@@ -18030,6 +18038,23 @@ const XS_EXT = (() => {
   ];
   const xsWatchProfileFor = (hostname) => XS_WATCH_PROFILES.find((profile) => profile.test(hostname || location.hostname)) || null;
   const xsWatchSupported = () => Boolean(xsWatchProfileFor(location.hostname));
+  // 倍速、自动翻页、开关都直接用「设置」里的现成项，视频页不再单独放一份
+  const readWatchSettings = () => {
+    const fallback = { speed: 1.5, autoNext: true, autoScroll: true, enabled: true };
+    try {
+      const basic = useSettingStore().config.basicConfig;
+      const speed = Number(basic.videoPlayrate && basic.videoPlayrate.value) || 1.5;
+      const autoNext = basic.autoChangeChapter ? !!basic.autoChangeChapter.value : true;
+      return {
+        speed: Math.min(4, Math.max(0.5, speed)),
+        autoNext,
+        autoScroll: autoNext,
+        enabled: basic.watchAssist ? !!basic.watchAssist.value : true
+      };
+    } catch (e) {
+      return fallback;
+    }
+  };
   const xsWatch = (() => {
     const prefs = vue.reactive(xsWatchReadPrefs());
     const state = vue.reactive({
@@ -18185,6 +18210,11 @@ const XS_EXT = (() => {
         log("当前网站不在通用视频助手的支持范围内");
         return false;
       }
+      const settings = readWatchSettings();
+      if (!settings.enabled) {
+        log("设置里的「视频助手（新增平台）」是关闭状态，先到设置中打开");
+        return false;
+      }
       if (timer) clearInterval(timer);
       timer = null;
       state.running = true;
@@ -18198,7 +18228,7 @@ const XS_EXT = (() => {
         } catch (e) {
         }
       }
-      log(`${active.name}：视频助手已启动，倍速 ${prefs.speed}x`);
+      log(`${active.name}：视频助手已启动，倍速 ${settings.speed}x`);
       timer = setInterval(() => {
         void tick(active);
       }, 1e3);
@@ -18240,12 +18270,17 @@ const XS_EXT = (() => {
       tickBusy = true;
       try {
         if (!document.body) return;
+        const settings = readWatchSettings();
+        if (!settings.enabled) {
+          stop("设置里的「视频助手（新增平台）」已关闭");
+          return;
+        }
         state.page = location.pathname || "/";
         if (handleQuizPopup(profile)) return;
         const video = findVideo();
         if (!video) {
           state.progress = "";
-          if (prefs.autoScroll && profile.doc) {
+          if (settings.autoScroll && profile.doc) {
             state.media = "文档页：正在向下滚动";
             await scrollDocument();
           } else {
@@ -18263,10 +18298,10 @@ const XS_EXT = (() => {
           } catch (e) {
           }
         }
-        setSpeed(video, Number(prefs.speed) || 1.5);
+        setSpeed(video, settings.speed);
         const finished = video.ended || (duration > 0 && current >= duration - 0.8);
         if (finished) {
-          if (!prefs.autoNext) {
+          if (!settings.autoNext) {
             state.status = "本节已播完（自动翻页已关闭）";
             return;
           }
@@ -18306,29 +18341,24 @@ const XS_EXT = (() => {
       name: "XsWatchPanel",
       setup() {
         const profile = xsWatchProfileFor(location.hostname);
+        const setting = useSettingStore();
+        const basic = setting.config.basicConfig;
         const startHere = () => {
           if (state.running) stop("已暂停");
           else start(profile);
         };
-        const changeSpeed = (value) => {
-          prefs.speed = Math.min(4, Math.max(0.5, Number(value) || 1.5));
-          xsWatchWritePrefs(prefs);
-        };
-        const toggleAutoNext = (checked) => {
-          prefs.autoNext = Boolean(checked);
-          xsWatchWritePrefs(prefs);
-        };
-        const toggleAutoScroll = (checked) => {
-          prefs.autoScroll = Boolean(checked);
-          xsWatchWritePrefs(prefs);
-        };
-        return { state, prefs, profile, startHere, changeSpeed, toggleAutoNext, toggleAutoScroll };
+        // 这些值都来自「设置」页，视频页只读展示，不重复放一份开关
+        const speed = vue.computed(() => Math.min(4, Math.max(0.5, Number(basic.videoPlayrate.value) || 1.5)));
+        const autoNext = vue.computed(() => !!basic.autoChangeChapter.value);
+        const enabled = vue.computed(() => basic.watchAssist ? !!basic.watchAssist.value : true);
+        return { state, profile, speed, autoNext, enabled, startHere };
       },
       render() {
         const h = vue.h;
         const profile = this.profile;
         const state = this.state;
-        const prefs = this.prefs;
+        const speed = this.speed;
+        const autoNext = this.autoNext;
         if (!profile) {
           return h("div", { class: "tab-content", style: { padding: "14px", fontSize: "13px", color: "var(--t-text)" } }, "当前网站不在通用视频助手的支持范围内");
         }
@@ -18347,10 +18377,6 @@ const XS_EXT = (() => {
             color: primary ? "#fff" : "var(--t-text)"
           }
         }, text);
-        const checkboxRow = (text, checked, onChange) => h("label", { style: Object.assign({}, row, { color: "var(--t-text3)", fontSize: "12px" }) }, [
-          h("input", { type: "checkbox", checked, onChange: (event) => onChange(event.target.checked) }),
-          h("span", null, text)
-        ]);
         const infoRow = (name, text) => h("div", { style: row }, [
           h("span", { style: label }, name),
           h("span", { style: value }, text)
@@ -18371,21 +18397,9 @@ const XS_EXT = (() => {
           infoRow("播放状态", state.media || "等待页面加载"),
           state.progress ? infoRow("进度", state.progress) : null,
           infoRow("已播完", `${state.segments} 节`),
-          h("div", { style: row }, [
-            h("span", { style: label }, "倍速"),
-            h("input", {
-              type: "number",
-              min: 0.5,
-              max: 4,
-              step: 0.5,
-              value: prefs.speed,
-              onChange: (event) => this.changeSpeed(event.target.value),
-              style: { width: "90px", padding: "3px 6px", border: "1px solid var(--t-border)", borderRadius: "4px", background: "transparent", color: "var(--t-text)" }
-            }),
-            h("span", { style: { color: "var(--t-text3)", fontSize: "12px" } }, "0.5 到 4 倍，平台有检测时请调低")
-          ]),
-          checkboxRow("播完自动点下一节", prefs.autoNext, (checked) => this.toggleAutoNext(checked)),
-          checkboxRow("文档页（PPT/PDF）自动向下滚动", prefs.autoScroll, (checked) => this.toggleAutoScroll(checked)),
+          infoRow("倍速", `${speed}x　在「设置 → 视频倍速」里改`),
+          infoRow("自动翻页", autoNext ? "开启（播完点下一节，文档页自动滚动）" : "关闭（在「设置 → 自动切换章节」里开启）"),
+          this.enabled ? null : h("div", { style: { color: "var(--t-warning)", fontSize: "12px", lineHeight: "1.6" } }, "「设置 → 视频助手（新增平台）」当前是关闭状态，打开后才会自动播放"),
           h("div", { style: { borderTop: "1px solid var(--t-border)", paddingTop: "8px" } }, [
             h("div", { style: { color: "var(--t-text3)", fontSize: "12px", marginBottom: "6px" } }, "运行日志"),
             h("div", { style: { display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--t-text3)", lineHeight: "1.6" } }, state.logs.length ? state.logs.map((line, index) => h("div", { key: index }, line)) : [h("div", null, "还没有日志")])
