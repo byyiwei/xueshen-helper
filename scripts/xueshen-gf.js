@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学神助手·网课助手｜全平台自动刷课｜学习通·超星·智慧树·雨课堂·云班课·智慧职教｜自动答题·视频倍速·题库搜题
 // @namespace    IPYIWEI
-// @version      5.6.4
+// @version      6.0.0
 // @updateURL    https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @downloadURL  https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js
 // @author       IPYIWEI
@@ -11,7 +11,7 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
-// @changelog    v5.6.4 (2026-10-30)
+// @changelog    v6.0.0 (2026-10-30)
 // @changelog    1. 新平台新增「自动答题」：进入作业或考试页点扫描，脚本抓题、后端给答案、自动填到选项上
 // @changelog    2. 单选、多选、判断、填空、简答都能处理，题目在 iframe 里也能抓到
 // @changelog    3. 只自动填答案，不替你点提交；答完自己检查再交卷
@@ -19,6 +19,7 @@
 // @changelog    5. 超星 / 智慧树 / 青书 / 出头 的答题页原样保留，逻辑一行未改
 // @changelog    6. 雨课堂、中国大学MOOC 按真实页面结构精确识别题目，识别不到时自动退回通用识别
 // @changelog    7. 云班课、绎通云、国家开放大学、西财在线同样按真实页面结构识别；电大考试站 ouchn.edu.cn 也纳入
+// @changelog    8. 脚本更名「学神助手·网课助手｜全平台自动刷课」，14 个平台的名称、简称和网址都写进关键词，搜哪个平台都能出来
 // @changelog    v5.6.3 (2026-10-30)
 // @changelog    1. 新增 10 个平台：雨课堂、云班课、智慧职教（含 AI 版 / 2 版）、国家开放大学（含 syxy 版）、中国大学 MOOC、U 校园、学堂在线、绎通云、山东专技、西财在线
 // @changelog    2. 视频助手：进入课程页自动播放、播完自动点下一节、文档页自动向下滚动，播放器在 iframe 里也能找到

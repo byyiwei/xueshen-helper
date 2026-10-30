@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "5.6.4",
+    "version": "6.0.0",
     "download_url": "https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-sc.js",
-    "changelog": "v5.6.4 新平台新增自动答题：单选多选判断填空简答都能填，只填答案不自动提交"
+    "changelog": "v6.0.0 新平台新增自动答题：单选多选判断填空简答都能填，只填答案不自动提交；云班课、绎通云、国开、西财在线按真实页面精确识别；脚本更名「学神助手·网课助手｜全平台自动刷课」"
   },
   "xueshen-gf": {
-    "version": "5.6.4",
+    "version": "6.0.0",
     "download_url": "https://raw.githubusercontent.com/byyiwei/xueshen-helper/main/scripts/xueshen-gf.js",
-    "changelog": "v5.6.4 新平台新增自动答题：单选多选判断填空简答都能填，只填答案不自动提交"
+    "changelog": "v6.0.0 新平台新增自动答题：单选多选判断填空简答都能填，只填答案不自动提交；云班课、绎通云、国开、西财在线按真实页面精确识别；脚本更名「学神助手·网课助手｜全平台自动刷课」"
   }
 }
