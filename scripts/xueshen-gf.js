@@ -13,10 +13,11 @@
 // @license      Proprietary
 // @changelog    v5.6.3 (2026-10-30)
 // @changelog    1. 新增 10 个平台：雨课堂、云班课、智慧职教（含 AI 版 / 2 版）、国家开放大学（含 syxy 版）、中国大学 MOOC、U 校园、学堂在线、绎通云、山东专技、西财在线
-// @changelog    2. 新平台共用「视频」页签：自动播放、播完自动点下一节、文档页自动向下滚动，播放器在 iframe 里也能找到
-// @changelog    3. 新平台暂不显示「答题」页（还没有做这些平台的抓题作答），「搜题」「记录」照常可用
-// @changelog    4. 倍速和翻页直接复用「设置」里的「视频倍速」「自动切换章节」，设置里新增「视频助手（新增平台）」开关；视频页只显示状态和日志，不再重复放一份开关
-// @changelog    5. 超星 / 智慧树 / 青书 / 出头 的逻辑一行未改，原有页面行为不变
+// @changelog    2. 视频助手：进入课程页自动播放、播完自动点下一节、文档页自动向下滚动，播放器在 iframe 里也能找到
+// @changelog    3. 新平台不显示「答题」页签（还没有做这些平台的抓题作答），「搜题」「记录」照常可用
+// @changelog    4. 不再单独放「视频」页签，倍速和翻页直接复用「设置」里的「视频倍速」「自动切换章节」，新平台在设置里多一个「视频助手」开关
+// @changelog    5. 设置项按平台显示：当前平台没有的功能不出现，名称里不再带「（智慧树）」「（新增平台）」这类后缀
+// @changelog    6. 超星 / 智慧树 / 青书 / 出头 的逻辑一行未改，原有页面行为不变
 // @changelog    v5.6.2 (2026-10-29)
 // @changelog    1. 新增「掌握度满分」（智慧树）：按知识点逐个进入练习，答对记住答案、答错换下一组选项重答，一直刷到 100%
 // @changelog    2. 掌握度答案按课程存在本地：可导出 / 导入纯文字题库，也能导出未入库清单
@@ -1902,6 +1903,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     }
     return result;
   }
+  // 哪些平台有哪些能力：设置页按当前平台过滤，没这个功能的平台不显示对应设置
+  const ANSWER_PLATFORM_KEYS = ["cx", "zhs", "qs", "ct"];
+  const WATCH_PLATFORM_KEYS = ["ykt", "mskt", "icve", "ouchn", "mooc", "uschool", "xtzx", "ytccr", "sdzj", "xczx"];
   const useSettingStore = pinia.defineStore("setting", {
     state: () => {
       const scriptInfo = getScriptInfo();
@@ -1941,6 +1945,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             },
             answerMode: {
               text: "答题模式",
+              platforms: ANSWER_PLATFORM_KEYS,
               value: "questionBankAndAI",
               type: "select",
               tips: "纯题库：仅题库搜索；纯AI：仅AI答题；题库+AI：题库优先，无结果时AI答题",
@@ -1952,6 +1957,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             },
             matchMode: {
               text: "题库匹配方式",
+              platforms: ANSWER_PLATFORM_KEYS,
               value: "auto",
               type: "select",
               tips: "自动：题库里有相似题时，按题面/选项相似度自动选最匹配的一条作答；手动：遇到相似题不自动作答，留空由你自行选择（作业入口会列出候选题）",
@@ -1962,6 +1968,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             },
             manualWaitMode: {
               text: "手动选择的处理",
+              platforms: ANSWER_PLATFORM_KEYS,
               value: "wait",
               type: "select",
               tips: "仅「手动选择」时生效。等待：遇到相似题就停下来，等你选完再继续答后面的题、再提交；跳过：不等待，该题留空、本轮不自动提交，等你事后自己处理",
@@ -1982,6 +1989,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             },
             reqIntervalTime: {
               text: "搜题间隔（秒）",
+              platforms: ANSWER_PLATFORM_KEYS,
               value: 2,
               type: "input-number",
               min: 1,
@@ -1991,12 +1999,14 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             },
             accuracy: {
               text: "正确率",
+              platforms: ANSWER_PLATFORM_KEYS,
               value: 80,
               type: "slider",
               tips: "作业、测验、考试满足设定的正确率才会提交，不满足自动保存,建议80%"
             },
             autoSubmit: {
               text: "章节、作业自动提交",
+              platforms: ANSWER_PLATFORM_KEYS,
               value: true,
               type: "switch",
               tips: "（建议开启）开启后，满足正确率则自动提交作业、章节，手动答题时建议关闭此功能"
@@ -2009,45 +2019,52 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             },
             skipFinishedChapter: {
               text: "跳过已完成章节",
+              platforms: ANSWER_PLATFORM_KEYS,
               value: true,
               type: "switch",
               tips: "（建议开启）自动切章时优先跳到目录里未完成的章节，减少空跳"
             },
             autoAnswer: {
               text: "自动答题",
+              platforms: ANSWER_PLATFORM_KEYS,
               value: true,
               type: "switch",
               tips: "手动答题时，建议关闭，学习时，建议开启"
             },
             autoRefresh: {
               text: "定时刷新（防卡死）",
+              platforms: ANSWER_PLATFORM_KEYS,
               value: true,
               type: "switch",
               tips: "开启后每30分钟检查：前台空闲或视频持续30分钟无进展时刷新；正常播放、答题、后台时不刷新；关闭立即停止定时器"
             },
             assistVideo: {
-              text: "视频助手（智慧树）",
+              text: "视频助手",
               value: true,
               type: "switch",
-              tips: "只影响智慧树：关闭后进入学习页不会自动播放视频/切章节；答题助手打开后才会开始答题"
+              platforms: ["zhs"],
+              tips: "关闭后进入学习页不会自动播放视频、不会自动切章节；答题助手打开后才会开始答题"
             },
             assistAnswer: {
-              text: "答题助手（智慧树）",
+              text: "答题助手",
               value: true,
               type: "switch",
-              tips: "只影响智慧树：关闭后进入作业/考试页不会自动作答，可手动点开"
+              platforms: ["zhs"],
+              tips: "关闭后进入作业/考试页不会自动作答，可手动点开"
             },
             masteryFull: {
-              text: "掌握度满分（智慧树）",
+              text: "掌握度满分",
               value: true,
               type: "switch",
-              tips: "开启后智慧树掌握度页面会多出「掌握度」页，点开始就按知识点刷到 100%、记住答案并可导出题库；关闭则这些页面走原来的答题流程"
+              platforms: ["zhs"],
+              tips: "开启后掌握度页面会多出「掌握度」页，点开始就按知识点刷到 100%、记住答案并可导出题库；关闭则这些页面走原来的答题流程"
             },
             watchAssist: {
-              text: "视频助手（新增平台）",
+              text: "视频助手",
               value: true,
               type: "switch",
-              tips: "只影响雨课堂、云班课、智慧职教、国家开放大学、中国大学MOOC、U校园、学堂在线、绎通云、山东专技、西财在线：开启后进入课程页自动播放视频。倍速沿用上面的「视频倍速」，播完翻页沿用「自动切换章节」"
+              platforms: WATCH_PLATFORM_KEYS,
+              tips: "开启后进入课程页自动播放视频；倍速用上面的「视频倍速」，播完自动翻页用「自动切换章节」"
             }
           },
           examConfig: {
@@ -2495,11 +2512,27 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       const setting = useSettingStore();
       const { shopLink } = pinia.storeToRefs(setting);
       const emit = __emit;
-      const configSections = vue.computed(() => [
-        { label: "基本设置", configs: setting.config.basicConfig, showRemainCount: true },
-        { label: "考试设置", configs: setting.config.examConfig },
-        { label: "超星设置", configs: setting.config.cxConfig }
-      ]);
+      // 只显示当前平台真正有的功能：答题类只在超星/智慧树/青书/出头出现，
+      // 视频类只在对应平台出现，名称里不再挂「（智慧树）」「（新增平台）」后缀
+      const configSections = vue.computed(() => {
+        const platformKey = resolvePlatformKey();
+        const pick = (group) => {
+          const result = {};
+          Object.entries(group || {}).forEach(([name, field]) => {
+            if (!field || typeof field !== "object") return;
+            if (Array.isArray(field.platforms) && !field.platforms.includes(platformKey)) return;
+            result[name] = field;
+          });
+          return result;
+        };
+        const isWatchSite = WATCH_PLATFORM_KEYS.includes(platformKey);
+        const sections = [
+          { label: "基本设置", configs: pick(setting.config.basicConfig), showRemainCount: true }
+        ];
+        if (!isWatchSite) sections.push({ label: "考试设置", configs: pick(setting.config.examConfig) });
+        if (platformKey === "cx") sections.push({ label: "超星设置", configs: pick(setting.config.cxConfig) });
+        return sections;
+      });
       const remainDisplay = vue.computed(() => {
         const ui = setting.userInfo;
         if (ui.activeMember && ui.memberUntil) {
@@ -18342,81 +18375,160 @@ const XS_EXT = (() => {
         tickBusy = false;
       }
     };
-    const XsWatchPanel = {
-      name: "XsWatchPanel",
-      setup() {
-        const profile = xsWatchProfileFor(location.hostname);
-        const setting = useSettingStore();
-        const basic = setting.config.basicConfig;
-        const startHere = () => {
-          if (state.running) stop("已暂停");
-          else start(profile);
-        };
-        // 这些值都来自「设置」页，视频页只读展示，不重复放一份开关
-        const speed = vue.computed(() => Math.min(4, Math.max(0.5, Number(basic.videoPlayrate.value) || 1.5)));
-        const autoNext = vue.computed(() => !!basic.autoChangeChapter.value);
-        const enabled = vue.computed(() => basic.watchAssist ? !!basic.watchAssist.value : true);
-        return { state, profile, speed, autoNext, enabled, startHere };
-      },
-      render() {
-        const h = vue.h;
-        const profile = this.profile;
-        const state = this.state;
-        const speed = this.speed;
-        const autoNext = this.autoNext;
-        if (!profile) {
-          return h("div", { class: "tab-content", style: { padding: "14px", fontSize: "13px", color: "var(--t-text)" } }, "当前网站不在通用视频助手的支持范围内");
-        }
-        const row = { display: "flex", alignItems: "center", gap: "8px" };
-        const label = { color: "var(--t-text3)", minWidth: "64px" };
-        const value = { color: "var(--t-text)", wordBreak: "break-all" };
-        const button = (text, onClick, primary) => h("button", {
-          onClick,
-          style: {
-            padding: "5px 14px",
-            fontSize: "12px",
-            borderRadius: "4px",
-            cursor: "pointer",
-            border: `1px solid ${primary ? "var(--t-primary)" : "var(--t-border)"}`,
-            background: primary ? "var(--t-primary)" : "transparent",
-            color: primary ? "#fff" : "var(--t-text)"
-          }
-        }, text);
-        const infoRow = (name, text) => h("div", { style: row }, [
-          h("span", { style: label }, name),
-          h("span", { style: value }, text)
-        ]);
-        return h("div", {
-          class: "tab-content",
-          style: { padding: "14px", display: "flex", flexDirection: "column", gap: "12px", height: "100%", overflow: "auto", color: "var(--t-text)", fontSize: "13px" }
-        }, [
-          h("div", { style: Object.assign({}, row, { justifyContent: "space-between" }) }, [
-            h("div", { style: Object.assign({}, row, { fontWeight: "600" }) }, [
-              profile.name,
-              h("span", { style: { color: state.running ? "var(--t-primary)" : "var(--t-text3)", fontWeight: "400" } }, `· ${state.status}`)
-            ]),
-            button(state.running ? "暂停" : "开始", () => this.startHere(), !state.running)
-          ]),
-          profile.verified ? null : h("div", { style: { color: "var(--t-warning)", fontSize: "12px", lineHeight: "1.6" } }, "这个平台是第一次接入，还没在真实账号上验证过。点「开始」后如果没反应，把课程页面地址发我，我按页面结构再调。"),
-          infoRow("当前页面", `${location.hostname}${state.page}`),
-          infoRow("播放状态", state.media || "等待页面加载"),
-          state.progress ? infoRow("进度", state.progress) : null,
-          infoRow("已播完", `${state.segments} 节`),
-          infoRow("倍速", `${speed}x　在「设置 → 视频倍速」里改`),
-          infoRow("自动翻页", autoNext ? "开启（播完点下一节，文档页自动滚动）" : "关闭（在「设置 → 自动切换章节」里开启）"),
-          this.enabled ? null : h("div", { style: { color: "var(--t-warning)", fontSize: "12px", lineHeight: "1.6" } }, "「设置 → 视频助手（新增平台）」当前是关闭状态，打开后才会自动播放"),
-          h("div", { style: { borderTop: "1px solid var(--t-border)", paddingTop: "8px" } }, [
-            h("div", { style: { color: "var(--t-text3)", fontSize: "12px", marginBottom: "6px" } }, "运行日志"),
-            h("div", { style: { display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", color: "var(--t-text3)", lineHeight: "1.6" } }, state.logs.length ? state.logs.map((line, index) => h("div", { key: index }, line)) : [h("div", null, "还没有日志")])
-          ])
-        ]);
-      }
-    };
-    return { prefs, state, start, stop, tick, profileFor: xsWatchProfileFor, supported: xsWatchSupported, Panel: XsWatchPanel, autoStart: () => {
+    return { prefs, state, start, stop, tick, profileFor: xsWatchProfileFor, supported: xsWatchSupported, autoStart: () => {
       const profile = xsWatchProfileFor(location.hostname);
-      if (profile && prefs.autoRun) start(profile);
+      if (!profile) return;
+      // 设置里的「视频助手」开着才自动开始，关掉后连进入页面都不动
+      if (!readWatchSettings().enabled) return;
+      start(profile);
     } };
   })();
+
+  // 新增平台共用同一套路由：在这些站点的任何页面都显示面板，
+  // 进页面后由设置里的「视频助手」开关决定是否自动开始
+  const xsWatchRoutes = {
+    match: [{ keyword: "", tab: "0", logic: () => xsWatch.autoStart() }],
+    defaultRoute: { show: true, tab: "0" }
+  };
+  const platformConfigs = [
+    {
+      key: "cx",
+      name: "超星学习通",
+      domains: [
+        "chaoxing.com",
+        "edu.cn",
+        "org.cn",
+        "xueyinonline.com",
+        "hnsyu.net",
+        "qutjxjy.cn",
+        "ynny.cn",
+        "hnvist.cn",
+        "fjlecb.cn",
+        "gdhkmooc.com",
+        "cugbonline.cn",
+        "zjelib.cn",
+        "cqrspx.cn",
+        "neauce.com",
+        "zhihui-yun.com",
+        "cqie.cn",
+        "ccqmxx.com",
+        "jxgmxy.com",
+        "sslibrary.com"
+      ],
+      routes: cxRoutes,
+      showAi: true
+    },
+    {
+      key: "zhs",
+      name: "智慧树",
+      domains: ["zhihuishu.com", "polymas.com"],
+      routes: zhsRoutes,
+      showAi: false,
+      queueAdapter: zhsCourseQueueAdapter
+    },
+    {
+      key: "qs",
+      name: "青书学堂",
+      domains: ["qingshuxuetang.com"],
+      routes: XS_EXT.qsRoutes,
+      showAi: true
+    },
+    {
+      key: "ct",
+      name: "出头科技",
+      domains: ["web2.superchutou.com"],
+      routes: XS_EXT.ctRoutes,
+      showAi: true
+    },
+    // ===== 以下平台走通用视频助手：只做视频/文档进度，不抓题作答 =====
+    {
+      key: "ykt",
+      name: "雨课堂",
+      domains: ["yuketang.cn"],
+      routes: xsWatchRoutes,
+      showAi: false,
+      watchSite: true
+    },
+    {
+      key: "mskt",
+      name: "云班课",
+      domains: ["mosoteach.cn"],
+      routes: xsWatchRoutes,
+      showAi: false,
+      watchSite: true
+    },
+    {
+      key: "icve",
+      name: "智慧职教",
+      domains: ["icve.com.cn"],
+      routes: xsWatchRoutes,
+      showAi: false,
+      watchSite: true
+    },
+    {
+      key: "ouchn",
+      name: "国家开放大学",
+      domains: ["ouchn.cn"],
+      routes: xsWatchRoutes,
+      showAi: false,
+      watchSite: true
+    },
+    {
+      key: "mooc",
+      name: "中国大学MOOC",
+      domains: ["icourse163.org"],
+      routes: xsWatchRoutes,
+      showAi: false,
+      watchSite: true
+    },
+    {
+      key: "uschool",
+      name: "U 校园",
+      domains: ["unipus.cn"],
+      routes: xsWatchRoutes,
+      showAi: false,
+      watchSite: true
+    },
+    {
+      key: "xtzx",
+      name: "学堂在线",
+      domains: ["xuetangx.com"],
+      routes: xsWatchRoutes,
+      showAi: false,
+      watchSite: true
+    },
+    {
+      key: "ytccr",
+      name: "绎通云",
+      domains: ["ytccr.com"],
+      routes: xsWatchRoutes,
+      showAi: false,
+      watchSite: true
+    },
+    {
+      key: "sdzj",
+      name: "山东专技",
+      domains: ["treewises.com"],
+      routes: xsWatchRoutes,
+      showAi: false,
+      watchSite: true
+    },
+    {
+      key: "xczx",
+      name: "西财在线",
+      domains: ["swufe-online.com"],
+      routes: xsWatchRoutes,
+      showAi: false,
+      watchSite: true
+    }
+  ];
+
+  // 设置页要按当前平台决定显示哪些项
+  function resolvePlatformKey(hostname) {
+    const host = hostname || (typeof location !== "undefined" ? location.hostname : "");
+    const found = platformConfigs.find((item) => item.domains.some((domain) => host === domain || host.endsWith("." + domain)));
+    return found ? found.key : null;
+  }
 
   // 面板内容兜底：某个页签渲染出错时显示原因，不再整块空白
   const PanelBoundary = {
@@ -18449,144 +18561,6 @@ const XS_EXT = (() => {
       const url2 = window.location.href;
       const hostname = window.location.hostname;
       const messageStore = useMessageStore();
-      // 新增平台共用同一套路由：在这些站点的任何页面都显示面板，
-      // 进页面后只有用户上次点过「开始」时才会自动启动视频助手
-      const xsWatchRoutes = {
-        match: [{ keyword: "", tab: "watch", logic: () => xsWatch.autoStart() }],
-        defaultRoute: { show: true, tab: "watch" }
-      };
-      const platformConfigs = [
-        {
-          key: "cx",
-          name: "超星学习通",
-          domains: [
-            "chaoxing.com",
-            "edu.cn",
-            "org.cn",
-            "xueyinonline.com",
-            "hnsyu.net",
-            "qutjxjy.cn",
-            "ynny.cn",
-            "hnvist.cn",
-            "fjlecb.cn",
-            "gdhkmooc.com",
-            "cugbonline.cn",
-            "zjelib.cn",
-            "cqrspx.cn",
-            "neauce.com",
-            "zhihui-yun.com",
-            "cqie.cn",
-            "ccqmxx.com",
-            "jxgmxy.com",
-            "sslibrary.com"
-          ],
-          routes: cxRoutes,
-          showAi: true
-        },
-        {
-          key: "zhs",
-          name: "智慧树",
-          domains: ["zhihuishu.com", "polymas.com"],
-          routes: zhsRoutes,
-          showAi: false,
-          queueAdapter: zhsCourseQueueAdapter
-        },
-        {
-          key: "qs",
-          name: "青书学堂",
-          domains: ["qingshuxuetang.com"],
-          routes: XS_EXT.qsRoutes,
-          showAi: true
-        },
-        {
-          key: "ct",
-          name: "出头科技",
-          domains: ["web2.superchutou.com"],
-          routes: XS_EXT.ctRoutes,
-          showAi: true
-        },
-        // ===== 以下平台走通用视频助手：只做视频/文档进度，不抓题作答 =====
-        {
-          key: "ykt",
-          name: "雨课堂",
-          domains: ["yuketang.cn"],
-          routes: xsWatchRoutes,
-          showAi: false,
-          watchSite: true
-        },
-        {
-          key: "mskt",
-          name: "云班课",
-          domains: ["mosoteach.cn"],
-          routes: xsWatchRoutes,
-          showAi: false,
-          watchSite: true
-        },
-        {
-          key: "icve",
-          name: "智慧职教",
-          domains: ["icve.com.cn"],
-          routes: xsWatchRoutes,
-          showAi: false,
-          watchSite: true
-        },
-        {
-          key: "ouchn",
-          name: "国家开放大学",
-          domains: ["ouchn.cn"],
-          routes: xsWatchRoutes,
-          showAi: false,
-          watchSite: true
-        },
-        {
-          key: "mooc",
-          name: "中国大学MOOC",
-          domains: ["icourse163.org"],
-          routes: xsWatchRoutes,
-          showAi: false,
-          watchSite: true
-        },
-        {
-          key: "uschool",
-          name: "U 校园",
-          domains: ["unipus.cn"],
-          routes: xsWatchRoutes,
-          showAi: false,
-          watchSite: true
-        },
-        {
-          key: "xtzx",
-          name: "学堂在线",
-          domains: ["xuetangx.com"],
-          routes: xsWatchRoutes,
-          showAi: false,
-          watchSite: true
-        },
-        {
-          key: "ytccr",
-          name: "绎通云",
-          domains: ["ytccr.com"],
-          routes: xsWatchRoutes,
-          showAi: false,
-          watchSite: true
-        },
-        {
-          key: "sdzj",
-          name: "山东专技",
-          domains: ["treewises.com"],
-          routes: xsWatchRoutes,
-          showAi: false,
-          watchSite: true
-        },
-        {
-          key: "xczx",
-          name: "西财在线",
-          domains: ["swufe-online.com"],
-          routes: xsWatchRoutes,
-          showAi: false,
-          watchSite: true
-        }
-      ];
       const currentPlatform = platformConfigs.find(
         (item) => item.domains.some((domain) => hostname === domain || hostname.endsWith("." + domain))
       ) ?? null;
@@ -18607,11 +18581,6 @@ const XS_EXT = (() => {
           tab: "▣ 记录",
           component: _sfc_main$3
         },
-        ...(currentPlatform?.watchSite ? [{
-          key: "watch",
-          tab: "▷ 视频",
-          component: xsWatch.Panel
-        }] : []),
         ...(currentPlatform?.queueAdapter ? [{
           key: "queue",
           tab: "◫ 队列",
