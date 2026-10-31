@@ -6063,6 +6063,13 @@ await loadPlans();
             const planName = btn.dataset.plan;
             const price = btn.dataset.price;
             if (!orderNo) return;
+            // 退款风控提示：先让用户知道规则，再进入金额核算
+            if (!confirm('申请退款前请确认：\n' +
+                '退款金额会按实际使用情况折算，已使用部分不予退还。\n' +
+                '短时间多次退款、恶意退款或利用退款规则的情况，会被风控识别并限制账号，之后将无法继续使用本服务。\n\n' +
+                '确认继续申请退款？')) {
+                return;
+            }
             const token = localStorage.getItem(TOKEN_KEY);
             // 先取退款预览，让用户看清能退多少、用掉多少、怎么折算
             setBusy(btn, true, '计算中...');
