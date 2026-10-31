@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.0.5",
+    "version": "6.0.6",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.0.5 脚本更名为「超星学习通｜知到智慧树 免费网课助手」，提升学习通、超星、智慧树搜索曝光，功能不变"
+    "changelog": "v6.0.6 脚本描述补充「刷课脚本、学习通刷课、免费搜题、网课答案」等搜索关键词，功能不变"
   },
   "xueshen-gf": {
-    "version": "6.0.5",
+    "version": "6.0.6",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.0.5 脚本更名为「超星学习通｜知到智慧树 免费网课助手」，提升学习通、超星、智慧树搜索曝光，功能不变"
+    "changelog": "v6.0.6 脚本描述补充「刷课脚本、学习通刷课、免费搜题、网课答案」等搜索关键词，功能不变"
   }
 }
