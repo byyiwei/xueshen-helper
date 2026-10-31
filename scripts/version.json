@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.0.4",
+    "version": "6.0.5",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.0.4 记录页可按题目关键词搜索；设置/答题面板高度收紧；智慧树掌握度答题提速；题库批量预取，命中直接作答、未命中照常走 AI"
+    "changelog": "v6.0.5 脚本更名为「超星学习通｜知到智慧树 免费网课助手」，提升学习通、超星、智慧树搜索曝光，功能不变"
   },
   "xueshen-gf": {
-    "version": "6.0.4",
+    "version": "6.0.5",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.0.4 记录页可按题目关键词搜索；设置/答题面板高度收紧；智慧树掌握度答题提速；题库批量预取，命中直接作答、未命中照常走 AI"
+    "changelog": "v6.0.5 脚本更名为「超星学习通｜知到智慧树 免费网课助手」，提升学习通、超星、智慧树搜索曝光，功能不变"
   }
 }

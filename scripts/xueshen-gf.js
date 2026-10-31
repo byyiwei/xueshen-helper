@@ -1,16 +1,18 @@
 // ==UserScript==
-// @name         学神助手·网课助手 - 全平台刷课脚本｜免费搜题｜网课题库
+// @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.4
+// @version      6.0.5
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
-// @keywords     学神助手,网课助手,网课脚本,刷课,自动刷课,刷课脚本,视频倍速,题库,搜题,AI答题,作业,考试,网课答案,学习通,超星,学习通助手,chaoxing,chaoxing.com,智慧树,知到,智慧树助手,zhihuishu,zhihuishu.com,青书,青书学堂,qingshuxuetang,qingshuxuetang.com,出头,出头科技,superchutou,superchutou.com,雨课堂,雨课堂助手,yuketang,yuketang.cn,云班课,云班课助手,mosoteach,mosoteach.cn,智慧职教,职教云,智慧职教云,icve,icve.com.cn,国家开放大学,国开,国开在线,ouchn,ouchn.cn,中国大学MOOC,中国大学mooc,慕课,icourse163,icourse163.org,U校园,U校园助手,unipus,unipus.cn,学堂在线,学堂在线助手,xuetangx,xuetangx.com,绎通云,绎通,ytccr,ytccr.com,山东专技,山东专技教育,treewises,treewises.com,西财在线,西南财经大学,swufe,swufe-online.com
-// @description  学神助手（网课助手）：超星学习通/智慧树(知到)/青书学堂/出头科技/雨课堂/云班课/智慧职教/国家开放大学/中国大学MOOC/U校园/学堂在线/绎通云/山东专技/西财在线自动学习助手｜DeepSeek AI智能辅助学习｜视频倍速学习｜自动切换任务点｜作业考试全自动｜字体加密解析｜海量题库每日更新｜网课答案
-// @description:zh-CN 学神助手（网课助手）：超星学习通/智慧树(知到)/青书学堂/出头科技/雨课堂/云班课/智慧职教/国家开放大学/中国大学MOOC/U校园/学堂在线/绎通云/山东专技/西财在线自动学习助手｜DeepSeek AI智能辅助学习｜视频倍速学习｜自动切换任务点｜作业考试全自动｜字体加密解析｜海量题库每日更新｜网课答案
+// @keywords     超星学习通,知到智慧树,学习通,超星,学习通助手,chaoxing,chaoxing.com,智慧树,知到,智慧树助手,zhihuishu,zhihuishu.com,免费刷课,免费搜题,免费答题,学神助手,网课助手,网课脚本,刷课,自动刷课,刷课脚本,视频倍速,题库,搜题,AI答题,作业,考试,网课答案,青书,青书学堂,qingshuxuetang,qingshuxuetang.com,出头,出头科技,superchutou,superchutou.com,雨课堂,雨课堂助手,yuketang,yuketang.cn,云班课,云班课助手,mosoteach,mosoteach.cn,智慧职教,职教云,智慧职教云,icve,icve.com.cn,国家开放大学,国开,国开在线,ouchn,ouchn.cn,中国大学MOOC,中国大学mooc,慕课,icourse163,icourse163.org,U校园,U校园助手,unipus,unipus.cn,学堂在线,学堂在线助手,xuetangx,xuetangx.com,绎通云,绎通,ytccr,ytccr.com,山东专技,山东专技教育,treewises,treewises.com,西财在线,西南财经大学,swufe,swufe-online.com
+// @description  超星学习通、知到智慧树（智慧树）免费网课助手：免费刷课、自动答题、视频倍速、自动切换任务点，海量题库每日更新｜同时支持青书学堂/出头科技/雨课堂/云班课/智慧职教/国家开放大学/中国大学MOOC/U校园/学堂在线/绎通云/山东专技/西财在线｜DeepSeek AI 智能辅助学习｜字体加密解析｜网课答案
+// @description:zh-CN 超星学习通、知到智慧树（智慧树）免费网课助手：免费刷课、自动答题、视频倍速、自动切换任务点，海量题库每日更新｜同时支持青书学堂/出头科技/雨课堂/云班课/智慧职教/国家开放大学/中国大学MOOC/U校园/学堂在线/绎通云/山东专技/西财在线｜DeepSeek AI 智能辅助学习｜字体加密解析｜网课答案
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v6.0.5 (2026-10-31)
+// @changelog    1. 脚本更名为「超星学习通｜知到智慧树 免费网课助手」，提升学习通、超星、智慧树搜索曝光，功能不变
 // @changelog    v6.0.4 (2026-10-31)
 // @changelog    1. 设置页、答题页的面板高度收紧，内容多时在面板里滚动，不再把窗口撑得很高
 // @changelog    2. 智慧树「掌握度」答题提速：点击、等待、翻页的节奏都压紧了，同一页答完更快
