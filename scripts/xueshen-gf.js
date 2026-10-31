@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.7
+// @version      6.0.8
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
@@ -11,6 +11,12 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @antifeature payment 部分高级功能需付费（AI 答题额度、自有模型）
+// @original-author enncy
+// @original-license MIT
+// @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.8 (2026-10-31)
+// @changelog    1. 补充付费功能标注（@antifeature payment）与开源引用声明（@original-*）
 // @changelog    v6.0.7 (2026-10-31)
 // @changelog    1. 版本号与脚本猫版对齐，无功能变化
 // @changelog    v6.0.6 (2026-10-31)

@@ -110,6 +110,11 @@
 
 ## 🔄 更新日志
 
+### v6.0.8 (2026-10-31)
+
+- 油猴版与脚本猫版统一补充 `@antifeature payment` 付费功能标注
+- 两个版本都补充 OCS 开源引用声明 `@original-author`、`@original-license`、`@original-script`
+
 ### v6.0.7 (2026-10-31)
 
 - 按脚本猫规则补充 `@antifeature payment` 付费功能标注

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.7
+// @version      6.0.8
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -15,6 +15,8 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.8 (2026-10-31)
+// @changelog    1. 与油猴版对齐版本号，无功能变化
 // @changelog    v6.0.7 (2026-10-31)
 // @changelog    1. 按脚本猫规则补充付费功能标注（@antifeature payment）与开源引用声明（@original-*）
 // @changelog    2. 精简 @keywords，去掉堆砌的关键词
