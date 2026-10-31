@@ -88,12 +88,23 @@ PORT = 8360
 # 密码重置 token 临时存储 {token: email}
 RESET_TOKENS = {}
 
+# 自有模型「测试连接」限流：{username: 上次测试时间戳}。测试会真实调用用户自己的模型接口，
+# 连点既占服务线程又会消耗用户自己的模型额度。
+CUSTOM_MODEL_TEST_LAST = {}
+CUSTOM_MODEL_TEST_INTERVAL = 10
+
 # 自动模型失败冷却：404/模型不存在的模型短时间内跳过，避免每题都浪费一次失败调用
 MODEL_FAIL_COOLDOWN = {}
 MODEL_FAIL_COOLDOWN_SECONDS = 600
 # 429 限流冷却：{model_name: expire_timestamp}
 MODEL_429_COOLDOWN = {}
 MODEL_429_DEFAULT_SECONDS = 60  # 默认冷却60秒
+# 超时冷却：{model_name: expire_timestamp}
+# 单模型超时通常是上游拥堵或网络抖动。冷却期内跳过该模型、冷却结束自动回到候选池，
+# 避免每道题都在同一个慢模型上把整体时间预算耗光。时长比 404 短，恢复更快。
+MODEL_TIMEOUT_COOLDOWN = {}
+MODEL_TIMEOUT_COOLDOWN_SECONDS = 120
+
 # 运行时标记不支图片的模型（API返回400 "does not support image"），避免后续图片题继续选它
 MODEL_NON_VISION = set()
 # 自动答题整体时间预算（秒）：含多模型切换，需小于前端请求超时与 nginx proxy_read_timeout
@@ -4285,17 +4296,22 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
     # 过滤掉冷却中的模型（包括404冷却、429限流冷却、token限额耗尽）
     active = []
     cooling_429 = []  # 429冷却中的模型，记录(模型, 剩余秒)
+    cooling_timeout = []  # 超时冷却中的模型，记录(模型, 剩余秒)
     skipped_404 = []
     skipped_token = []
     for item in candidates:
         model_name = item[2]
         until_404 = MODEL_FAIL_COOLDOWN.get(model_name, 0)
         until_429 = MODEL_429_COOLDOWN.get(model_name, 0)
+        until_timeout = MODEL_TIMEOUT_COOLDOWN.get(model_name, 0)
         if until_404 and until_404 > now:
             skipped_404.append(model_name)
             continue
         if until_429 and until_429 > now:
             cooling_429.append((model_name, int(until_429 - now)))
+            continue
+        if until_timeout and until_timeout > now:
+            cooling_timeout.append((model_name, int(until_timeout - now)))
             continue
         if is_model_token_exhausted(model_name):
             skipped_token.append(model_name)
@@ -4305,11 +4321,15 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
         print(f"[自动模型] 404冷却跳过: {', '.join(sorted(set(skipped_404)))}", flush=True)
     if cooling_429:
         print(f"[自动模型] 429限流冷却中: {', '.join(f'{m}({s}s)' for m,s in cooling_429)}", flush=True)
+    if cooling_timeout:
+        print(f"[自动模型] 超时冷却中: {', '.join(f'{m}({s}s)' for m,s in cooling_timeout)}", flush=True)
     if skipped_token:
         print(f"[自动模型] Token限额耗尽: {', '.join(sorted(set(skipped_token)))}", flush=True)
     if not active:
         if cooling_429:
             return None, "所有模型429限流冷却中，请稍后重试", "", ""
+        if cooling_timeout:
+            return None, "所有模型超时冷却中，请稍后重试", "", ""
         return None, "所有模型均不可用（404冷却中）", "", ""
     # 按权重排序，串行依次尝试，权重高的优先调用；再按提供商轮询打散避免单家霸占
     ordered = provider_round_robin_rest(weighted_pick(active))
@@ -4342,6 +4362,7 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
         if answer:
             MODEL_FAIL_COOLDOWN.pop(model_name, None)
             MODEL_429_COOLDOWN.pop(model_name, None)
+            MODEL_TIMEOUT_COOLDOWN.pop(model_name, None)
             record_model_token_usage(model_name, tokens)
             final_model = model_name
             break
@@ -4372,8 +4393,11 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
                     MODEL_NON_VISION.add(model_name)
                     print(f"[自动模型] 模型 {model_name} 不支持图片，已标记为非视觉模型", flush=True)
                 errors.append(f"{model_name}: {err}")
-            # 超时类错误：上游慢/网络抖动，切换下一个模型前退避等待，避免连续打击同一网络
-            if "timed out" in err.lower() or "timeout" in err.lower():
+            # 超时类错误：上游慢/网络抖动。记入超时冷却池，冷却期内不再选它；
+            # 切换下一个模型前短暂退避，避免连续打击同一网络。
+            if is_timeout_error(err):
+                MODEL_TIMEOUT_COOLDOWN[model_name] = time.time() + MODEL_TIMEOUT_COOLDOWN_SECONDS
+                print(f"[自动模型] 模型 {model_name} 超时，冷却 {MODEL_TIMEOUT_COOLDOWN_SECONDS}s 后再试", flush=True)
                 time.sleep(min(3, max(deadline - time.time(), 0)))
 
     # 补记失败模型日志，标注最后成功调用的模型（全部失败则为空）
@@ -4548,6 +4572,17 @@ def upstream_429_wait(err):
             pass
     return wait, re.sub(r"\s+", " ", detail).strip()[:160]
 
+
+def is_timeout_error(err):
+    """判断是否超时类错误（上游慢/网络抖动）。
+
+    适配层对超时给出的文案既有英文 'timed out'/'timeout'，也有中文 '超时'，
+    这里统一识别，供冷却池和退避逻辑共用。
+    """
+    low = str(err or "").lower()
+    return "timed out" in low or "timeout" in low or "超时" in low
+
+
 def grade_model_test(answer, err, elapsed_ms, tokens, want_vision, color_name="", color_keys=()):
     """把一次「⚡ 测试」的结果整理成接口返回体。识图按颜色词命中判分，颜色每发随机，瞎猜蒙不中。"""
     if answer:
@@ -4671,6 +4706,8 @@ def call_agent_llm(messages):
         if MODEL_429_COOLDOWN.get(model_name, 0) > now:
             cooling_429.append((model_name, int(MODEL_429_COOLDOWN[model_name] - now)))
             continue
+        if MODEL_TIMEOUT_COOLDOWN.get(model_name, 0) > now:
+            continue
         if is_model_token_exhausted(model_name):
             continue
         active.append(item)
@@ -4681,7 +4718,7 @@ def call_agent_llm(messages):
         print(f"[Agent] 所有模型429限流，等待 {min_wait}s 后重试", flush=True)
         time.sleep(min_wait + 1)
         now = time.time()
-        active = [item for item in candidates if MODEL_429_COOLDOWN.get(item[2], 0) <= now and MODEL_FAIL_COOLDOWN.get(item[2], 0) <= now and not is_model_token_exhausted(item[2])]
+        active = [item for item in candidates if MODEL_429_COOLDOWN.get(item[2], 0) <= now and MODEL_FAIL_COOLDOWN.get(item[2], 0) <= now and MODEL_TIMEOUT_COOLDOWN.get(item[2], 0) <= now and not is_model_token_exhausted(item[2])]
         if not active:
             return None, "Agent 所有模型429限流冷却后仍无可用模型", "", ""
         ordered = weighted_pick(active)
@@ -4694,6 +4731,7 @@ def call_agent_llm(messages):
         if answer:
             MODEL_FAIL_COOLDOWN.pop(model_name, None)
             MODEL_429_COOLDOWN.pop(model_name, None)
+            MODEL_TIMEOUT_COOLDOWN.pop(model_name, None)
             record_model_token_usage(model_name, tokens)
             return answer, None, model_name, provider_name
         if err:
@@ -4706,6 +4744,9 @@ def call_agent_llm(messages):
             if "HTTP 404" in err or "model is not found" in err.lower() or ("模型" in err and "不存在" in err):
                 MODEL_FAIL_COOLDOWN[model_name] = time.time() + MODEL_FAIL_COOLDOWN_SECONDS
                 print(f"[Agent] 模型不可用，进入冷却 {MODEL_FAIL_COOLDOWN_SECONDS}s: {model_name}", flush=True)
+            elif is_timeout_error(err):
+                MODEL_TIMEOUT_COOLDOWN[model_name] = time.time() + MODEL_TIMEOUT_COOLDOWN_SECONDS
+                print(f"[Agent] 模型 {model_name} 超时，冷却 {MODEL_TIMEOUT_COOLDOWN_SECONDS}s 后再试", flush=True)
             errors.append(f"{model_name}: {err}")
     return None, "Agent 所有模型尝试失败: " + "; ".join(errors[-3:]), "", ""
 
@@ -7759,6 +7800,61 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        # ===== 自有模型测试连接 POST =====
+        elif path == "/api/custom-model/test":
+            # 用户中心「测试连接」：用当前填写（不一定已保存）的配置发一句最短的话，
+            # 只验证「协议 + Base URL + 模型 ID + API Key」这四项能不能真的通。
+            # 未开通也允许测试，方便用户在购买前先确认自己的模型可用。
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "未登录或 Token 已过期"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                protocol = (data.get("protocol") or "openai").strip()
+                base_url = (data.get("base_url") or "").strip()
+                api_key = (data.get("api_key") or "").strip()
+                model = (data.get("model") or "").strip()
+                if protocol not in ("openai", "claude", "gemini"):
+                    self._send_json(200, {"code": 200, "success": False, "msg": "请选择协议类型"})
+                    return
+                if not base_url or not model or not api_key:
+                    self._send_json(200, {"code": 200, "success": False,
+                                          "msg": "请先填写 Base URL、模型 ID 和 API Key 再测试"})
+                    return
+                parsed_url = urlparse(base_url)
+                if parsed_url.scheme not in ("http", "https") or not parsed_url.netloc:
+                    self._send_json(200, {"code": 200, "success": False,
+                                          "msg": "Base URL 需以 http:// 或 https:// 开头，并包含域名"})
+                    return
+                # 常见填错：密钥填进了模型 ID，上游会拿这个密钥当模型名请求，报错看不懂
+                if re.match(r"^(ak|sk|api)[-_]", model, re.I) and len(model) >= 20:
+                    self._send_json(200, {"code": 200, "success": False,
+                                          "msg": "模型 ID 框里填的像是密钥：请把密钥填到「API Key」，模型 ID 填如 deepseek-chat"})
+                    return
+                username = user.get("username") or ""
+                now_ts = time.time()
+                last_ts = CUSTOM_MODEL_TEST_LAST.get(username, 0)
+                if now_ts - last_ts < CUSTOM_MODEL_TEST_INTERVAL:
+                    wait_sec = int(CUSTOM_MODEL_TEST_INTERVAL - (now_ts - last_ts)) + 1
+                    self._send_json(200, {"code": 200, "success": False,
+                                          "msg": f"操作太快，请 {wait_sec} 秒后再测试"})
+                    return
+                CUSTOM_MODEL_TEST_LAST[username] = now_ts
+                provider_info = {"protocol": protocol, "base_url": base_url, "api_key": api_key}
+                messages = [{"role": "user", "content": "请回复两个字：你好"}]
+                print(f"[自有模型测试] user={username}, protocol={protocol}, model={model}, base_url={base_url}", flush=True)
+                t0 = time.time()
+                answer, err, tokens = call_llm_lightweight(messages, model, provider_info, timeout=20)
+                elapsed_ms = int((time.time() - t0) * 1000)
+                print(f"[自有模型测试] 耗时={elapsed_ms}ms, ok={bool(answer)}, err={err}", flush=True)
+                result = grade_model_test(answer, err, elapsed_ms, tokens, False)
+                if result.get("success"):
+                    result["msg"] = f"测试通过，模型正常回复（{elapsed_ms}ms）"
+                self._send_json(200, result)
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         # ===== 用户问题反馈 POST =====
         elif path == "/api/user/feedback":
             user = self._get_user_from_token()
@@ -9458,6 +9554,8 @@ class Handler(BaseHTTPRequestHandler):
                         continue
                     if MODEL_429_COOLDOWN.get(model_name, 0) > now:
                         continue
+                    if MODEL_TIMEOUT_COOLDOWN.get(model_name, 0) > now:
+                        continue
                     if is_model_token_exhausted(model_name):
                         continue
                     active.append(item)
@@ -9501,7 +9599,9 @@ class Handler(BaseHTTPRequestHandler):
                             used_model = model_name
                             tokens = tokens2
                             break
-                    # 超时或其他错误：继续尝试下一个备选模型
+                    # 超时记入冷却池，下次优先绕开；其余错误直接尝试下一个备选模型
+                    if is_timeout_error(err):
+                        MODEL_TIMEOUT_COOLDOWN[model_name] = time.time() + MODEL_TIMEOUT_COOLDOWN_SECONDS
                 if answer:
                     record_model_token_usage(used_model or model_name, tokens)
                     self._send_json(200, {"code": 200, "text": answer.strip()})
@@ -9560,6 +9660,8 @@ class Handler(BaseHTTPRequestHandler):
                         continue
                     if MODEL_429_COOLDOWN.get(model_name, 0) > now:
                         continue
+                    if MODEL_TIMEOUT_COOLDOWN.get(model_name, 0) > now:
+                        continue
                     if is_model_token_exhausted(model_name):
                         continue
                     active.append(item)
@@ -9591,6 +9693,8 @@ class Handler(BaseHTTPRequestHandler):
                             used_model = model_name
                             tokens = tokens2
                             break
+                    if is_timeout_error(err):
+                        MODEL_TIMEOUT_COOLDOWN[model_name] = time.time() + MODEL_TIMEOUT_COOLDOWN_SECONDS
                 if answer:
                     record_model_token_usage(used_model or model_name, tokens)
                     self._send_json(200, {"code": 200, "text": answer.strip()})
