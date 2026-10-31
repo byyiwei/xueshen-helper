@@ -2945,7 +2945,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                     <td style="padding:10px 8px;font-family:monospace;font-size:12px"><span class="order-link" title="在支付明细中查看该订单" @click="gotoPaymentByOrderNo(r.order_no)">{{r.order_no}}</span></td>
                     <td style="padding:10px 8px;font-family:monospace;font-size:12px">
                       <span v-if="r.channel_order_no" class="copy-cell" :title="'点击复制：'+r.channel_order_no" @click="copyText(r.channel_order_no, $event)">
-                        <span class="copy-cell-text order-link" style="color:var(--text2)" title="在支付明细中按渠道单号查看" @click.stop="gotoPaymentByOrderNo(r.channel_order_no)">{{r.channel_order_no}}</span>
+                        <span class="copy-cell-text" style="color:var(--text2)">{{r.channel_order_no}}</span>
                         <span class="copy-cell-btn" :class="{done:copiedKey===r.channel_order_no}">{{copiedKey===r.channel_order_no?'已复制':'复制'}}</span>
                       </span>
                       <span v-else style="color:var(--text3)">-</span>
