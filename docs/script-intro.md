@@ -110,6 +110,12 @@
 
 ## 🔄 更新日志
 
+### v6.0.7 (2026-10-31)
+
+- 按脚本猫规则补充 `@antifeature payment` 付费功能标注
+- 补充开源引用声明 `@original-author`、`@original-license`、`@original-script`
+- 精简 `@keywords`，去掉堆砌的关键词
+
 ### v6.0.6 (2026-10-31)
 
 - 脚本描述补充「刷课脚本、学习通刷课、免费搜题、网课答案」等搜索关键词，提升 Greasy Fork 搜索曝光，功能无变化

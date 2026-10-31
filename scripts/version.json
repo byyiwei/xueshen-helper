@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.0.6",
+    "version": "6.0.7",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.0.6 脚本描述补充「刷课脚本、学习通刷课、免费搜题、网课答案」等搜索关键词，功能不变"
+    "changelog": "v6.0.7 按脚本猫规则补充付费功能标注与开源引用声明，精简关键词"
   },
   "xueshen-gf": {
-    "version": "6.0.6",
+    "version": "6.0.7",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.0.6 脚本描述补充「刷课脚本、学习通刷课、免费搜题、网课答案」等搜索关键词，功能不变"
+    "changelog": "v6.0.7 版本号与脚本猫版对齐，无功能变化"
   }
 }

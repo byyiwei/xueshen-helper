@@ -60,7 +60,12 @@ def drift(a, b):
     字体表装载适配器（Greasy Fork 不能带 @resource）和各自读自己那条 version.json 记录是注定不同的；
     命中 WARN_DIFF 的行只报警。"""
     ca, cb = Counter(a), Counter(b)
-    known = ("__TTF_TABLE__", "__TTF2_TABLE__", "data['xueshen-")
+    known = (
+        "__TTF_TABLE__", "__TTF2_TABLE__", "data['xueshen-",
+        # 脚本猫版要按平台规则补 @antifeature / @original-*，并精简 @keywords；
+        # 更新日志两边各自描述本次改动，版本号由 check_versions 单独校验。
+        "@keywords", "@antifeature", "@original-", "@changelog",
+    )
 
     def bucket(xs):
         xs = [x for x in xs if not any(t in x for t in known)]

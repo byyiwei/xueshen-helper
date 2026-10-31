@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.6
+// @version      6.0.7
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
@@ -11,6 +11,8 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v6.0.7 (2026-10-31)
+// @changelog    1. 版本号与脚本猫版对齐，无功能变化
 // @changelog    v6.0.6 (2026-10-31)
 // @changelog    1. 脚本描述补充「刷课脚本、学习通刷课、免费搜题、网课答案」等搜索关键词，功能不变
 // @changelog    v6.0.5 (2026-10-31)
