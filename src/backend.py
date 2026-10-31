@@ -6347,6 +6347,23 @@ class Handler(BaseHTTPRequestHandler):
             self._send_file(200, XUESHEN_GF_FILE, "application/javascript; charset=utf-8", disposition='attachment; filename="xueshen-gf.js"')
         elif path == "/xueshen-sc.js":
             self._send_file(200, XUESHEN_SC_FILE, "application/javascript; charset=utf-8", disposition='attachment; filename="xueshen-sc.js"')
+        elif path == "/sitemap.xml":
+            self._send_file(200, os.path.join(BASE_DIR, "intro", "platforms", "sitemap.xml"), "application/xml; charset=utf-8")
+        elif path == "/robots.txt":
+            self._send_file(200, os.path.join(BASE_DIR, "intro", "platforms", "robots.txt"), "text/plain; charset=utf-8")
+        elif path in ("/script", "/script/"):
+            self._send_file(200, os.path.join(BASE_DIR, "intro", "platforms", "index.html"), "text/html; charset=utf-8")
+        elif path.startswith("/script/"):
+            # 平台专题页（长尾搜索落地页），只允许字母数字和短横线，杜绝路径穿越
+            slug = path[len("/script/"):].strip("/")
+            if not slug or not slug.replace("-", "").isascii() or not slug.replace("-", "").isalnum():
+                self._send_json(404, {"code": 404, "msg": "not found"})
+                return
+            page_file = os.path.join(BASE_DIR, "intro", "platforms", slug + ".html")
+            if os.path.isfile(page_file):
+                self._send_file(200, page_file, "text/html; charset=utf-8")
+            else:
+                self._send_json(404, {"code": 404, "msg": "not found"})
         elif path.startswith("/static/") or path.startswith("/libs/"):
             # 安全：防止路径穿越攻击（如 /static/../database.py）
             requested = os.path.normpath(os.path.join(BASE_DIR, path.lstrip("/")))

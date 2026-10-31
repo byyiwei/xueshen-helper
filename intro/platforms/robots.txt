@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /user
+Disallow: /distributor
+
+Sitemap: https://xs.openget.cn/sitemap.xml

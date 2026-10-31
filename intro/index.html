@@ -595,6 +595,8 @@
     white-space: nowrap;
   }
   .plat-chip em { font-style: normal; font-size: 11px; color: var(--muted-2); }
+  a.plat-chip { transition: border-color .15s, color .15s; }
+  a.plat-chip:hover { border-color: rgba(47, 107, 255, .4); color: var(--brand); }
   @media (max-width: 640px) {
     .plat-panel { padding: 15px 16px; }
   }
@@ -816,6 +818,7 @@
       <a class="nav-link" href="#search">在线搜题</a>
       <a class="nav-link" href="#bank">题库精选</a>
       <a class="nav-link" href="#install">安装脚本</a>
+      <a class="nav-link" href="/script/">支持平台</a>
       <a class="nav-link" href="#faq">常见问题</a>
     </div>
     <div class="nav-right" id="navRight">
@@ -986,22 +989,22 @@
 
     <div class="plat-panel">
       <h3>支持平台</h3>
-      <p>以下 14 个平台的课程页都会自动挂上悬浮球：进入视频页自动播放、播完自动翻下一节，文档页自动向下滚动。超星、智慧树、青书、出头另支持自动答题。</p>
+      <p>以下 14 个平台的课程页都会自动挂上悬浮球：进入视频页自动播放、播完自动翻下一节，文档页自动向下滚动。超星、智慧树、青书、出头另支持自动答题，点平台名可看该平台的使用说明。</p>
       <div class="plat-chips">
-        <span class="plat-chip">超星学习通 <em>chaoxing.com</em></span>
-        <span class="plat-chip">智慧树 / 知到 <em>zhihuishu.com</em></span>
-        <span class="plat-chip">青书学堂 <em>qingshuxuetang.com</em></span>
-        <span class="plat-chip">出头科技 <em>superchutou.com</em></span>
-        <span class="plat-chip">雨课堂 <em>yuketang.cn</em></span>
-        <span class="plat-chip">云班课 <em>mosoteach.cn</em></span>
-        <span class="plat-chip">智慧职教 <em>icve.com.cn</em></span>
-        <span class="plat-chip">国家开放大学 <em>ouchn.cn</em></span>
-        <span class="plat-chip">中国大学MOOC <em>icourse163.org</em></span>
-        <span class="plat-chip">U校园 <em>unipus.cn</em></span>
-        <span class="plat-chip">学堂在线 <em>xuetangx.com</em></span>
-        <span class="plat-chip">绎通云 <em>ytccr.com</em></span>
-        <span class="plat-chip">山东专技 <em>treewises.com</em></span>
-        <span class="plat-chip">西财在线 <em>swufe-online.com</em></span>
+        <a class="plat-chip" href="/script/chaoxing">超星学习通 <em>chaoxing.com</em></a>
+        <a class="plat-chip" href="/script/zhihuishu">智慧树 / 知到 <em>zhihuishu.com</em></a>
+        <a class="plat-chip" href="/script/qingshuxuetang">青书学堂 <em>qingshuxuetang.com</em></a>
+        <a class="plat-chip" href="/script/chutou">出头科技 <em>superchutou.com</em></a>
+        <a class="plat-chip" href="/script/yuketang">雨课堂 <em>yuketang.cn</em></a>
+        <a class="plat-chip" href="/script/mosoteach">云班课 <em>mosoteach.cn</em></a>
+        <a class="plat-chip" href="/script/icve">智慧职教 <em>icve.com.cn</em></a>
+        <a class="plat-chip" href="/script/ouchn">国家开放大学 <em>ouchn.cn</em></a>
+        <a class="plat-chip" href="/script/icourse163">中国大学MOOC <em>icourse163.org</em></a>
+        <a class="plat-chip" href="/script/unipus">U校园 <em>unipus.cn</em></a>
+        <a class="plat-chip" href="/script/xuetangx">学堂在线 <em>xuetangx.com</em></a>
+        <a class="plat-chip" href="/script/ytccr">绎通云 <em>ytccr.com</em></a>
+        <a class="plat-chip" href="/script/treewises">山东专技 <em>treewises.com</em></a>
+        <a class="plat-chip" href="/script/swufe">西财在线 <em>swufe-online.com</em></a>
       </div>
     </div>
 
@@ -1075,6 +1078,7 @@
         <a href="#search">在线搜题</a>
         <a href="#bank">题库精选</a>
         <a href="#install">安装脚本</a>
+        <a href="/script/">支持平台</a>
         <a href="/user">用户中心</a>
       </div>
       <div class="footer-col">
