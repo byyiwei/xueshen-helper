@@ -886,6 +886,19 @@
         }
         .backend-model-tip.active { display: block; }
         .model-custom-box.hidden { display: none; }
+        .cm-self-tip {
+            margin-bottom: 14px; padding: 12px 14px;
+            border-radius: var(--c-radius-sm);
+            background: var(--c-info-soft);
+            border: 1px solid rgba(14, 165, 233, .25);
+            font-size: 12.5px; line-height: 1.7; color: var(--c-text-2);
+        }
+        .cm-self-tip b { display: block; margin-bottom: 3px; font-size: 13px; color: var(--c-text); }
+        .cm-test-row { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+        .cm-test-result { flex: 1 1 220px; min-width: 200px; font-size: 12.5px; line-height: 1.6; word-break: break-word; }
+        .cm-test-result.pending { color: var(--c-text-3); }
+        .cm-test-result.ok { color: var(--c-success); }
+        .cm-test-result.err { color: var(--c-danger); }
 
         /* ===================== 脚本设置开关 ===================== */
         .form-grid { display: grid; grid-template-columns: repeat(2, minmax(220px, 1fr)); gap: 14px; }
@@ -3746,6 +3759,10 @@
                             当前选择的是自动模型，将直接使用后端后台配置的模型池，不需要填写 Base URL、模型 ID 或 API Key。
                         </div>
                         <div class="model-custom-box" id="customModelBox">
+                            <div class="cm-self-tip">
+                                <b>自有模型需要你自己准备 AI 服务</b>
+                                接口地址、模型和额度都由你自己的 AI 服务商提供，平台不代付模型费用。购买开通前，请先填好下面四项并点「测试连接」，确认模型能正常回复再开通，避免开通后才发现配置用不了。
+                            </div>
                             <div class="form-grid">
                                 <div>
                                     <label>协议</label>
@@ -3770,6 +3787,10 @@
                                         <span class="pwd-toggle" data-target="ucCustomApiKey">显示</span>
                                     </div>
                                 </div>
+                            </div>
+                            <div class="cm-test-row">
+                                <button class="btn primary-outline" id="testCustomModelBtn" type="button">测试连接</button>
+                                <span class="cm-test-result" id="testCustomModelResult"></span>
                             </div>
                         </div>
                         <button class="primary" id="saveModelPanelBtn">保存模型设置</button>
@@ -5297,6 +5318,40 @@ await loadPlans();
                 setBusy(this, false);
             }
         };
+        function renderCustomModelTestResult(text, state) {
+            const el = $('testCustomModelResult');
+            if (!el) return;
+            el.className = 'cm-test-result' + (state ? ' ' + state : '');
+            el.textContent = text || '';
+        }
+        async function testCustomModelConnection() {
+            const btn = $('testCustomModelBtn');
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) { renderCustomModelTestResult('请先登录后再测试', 'err'); return; }
+            // 测试用当前输入框的值，不必先保存，方便购买前先验证
+            const payload = {
+                protocol: $('ucCustomProtocol').value || 'openai',
+                base_url: $('ucCustomBaseUrl').value.trim(),
+                model: $('ucCustomModel').value.trim(),
+                api_key: $('ucCustomApiKey').value.trim()
+            };
+            if (!payload.base_url || !payload.model || !payload.api_key) {
+                renderCustomModelTestResult('请先填写 Base URL、模型 ID 和 API Key', 'err');
+                return;
+            }
+            setBusy(btn, true, '测试中...');
+            renderCustomModelTestResult('正在连接模型，一般几秒内出结果...', 'pending');
+            try {
+                const res = await post('/api/custom-model/test', payload, token);
+                if (res.code === 200 && res.success) renderCustomModelTestResult(res.msg || '测试通过，模型可用', 'ok');
+                else renderCustomModelTestResult(res.msg || '测试失败，请检查配置', 'err');
+            } catch (_) {
+                renderCustomModelTestResult('测试请求失败，请检查网络后重试', 'err');
+            } finally {
+                setBusy(btn, false);
+            }
+        }
+        $('testCustomModelBtn').onclick = testCustomModelConnection;
         $('saveModelPanelBtn').onclick = async function () {
             const isCustom = $('ucModelCustom').checked;
             if (isCustom && _cmConfig) {
