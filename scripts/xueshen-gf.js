@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         学神助手·网课助手 - 全平台刷课脚本｜免费搜题｜网课题库
 // @namespace    IPYIWEI
-// @version      6.0.3
+// @version      6.0.4
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
@@ -11,6 +11,11 @@
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
 // @license      Proprietary
+// @changelog    v6.0.4 (2026-10-31)
+// @changelog    1. 设置页、答题页的面板高度收紧，内容多时在面板里滚动，不再把窗口撑得很高
+// @changelog    2. 智慧树「掌握度」答题提速：点击、等待、翻页的节奏都压紧了，同一页答完更快
+// @changelog    3. 开始答题前批量取题库答案，一次最多 20 题：题库里有的直接作答，没有的照常问 AI，速度更快、准确率不变
+// @changelog    4. 六套主题配色统一，首页按钮去掉紫色渐变
 // @changelog    v6.0.3 (2026-10-30)
 // @changelog    1. 修复：脚本自动切页签时会把你正在看的「设置 / 搜题 / 记录」抢走，现在只有停在首页或日志时才自动切
 // @changelog    2. 智慧树答题页按当前页面自动换内容：答题、考试、测验页显示答题，掌握度页显示掌握度，不再固定放切换按钮
