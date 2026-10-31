@@ -3837,15 +3837,17 @@ def get_enabled_providers():
             result.append((name, info))
     return result
 
-def get_enabled_model_candidates(need_vision=False, prefer_non_vision=True):
+def get_enabled_model_candidates(need_vision=False):
     """获取启用的模型候选。
 
     - need_vision=True: 只返回支持图片(vision)的模型（图片题）
-    - need_vision=False: 优先返回非 vision 模型（纯文本题，控制成本）；
-      若一个非 vision 模型都没有，则回退到 vision 模型
+    - need_vision=False: 返回全部可用模型。以前这里会把「支持图片」的模型整体排除，
+      导致后台给很多模型设了 100 的权重，普通题却永远轮不到它们，实际只反复调用
+      少数几个非 vision 模型。现在权重就是权重，所有模型按权重一起参与。
     - 过了「到期日期」的模型不进候选，不管额度有没有用完
     """
     def _collect(only_vision):
+        # only_vision: True=只要视觉模型；False=只要纯文本模型；None=不看视觉属性
         result = []
         for pname, pinfo in get_enabled_providers():
             if not pinfo.get("base_url"):
@@ -3863,19 +3865,15 @@ def get_enabled_model_candidates(need_vision=False, prefer_non_vision=True):
                 if weight <= 0:
                     continue
                 is_vision = m.get("vision") is True or m.get("vision") == 1 or str(m.get("vision")).lower() in ("1", "true", "yes", "on")
-                if only_vision and (not is_vision or m.get("value") in MODEL_NON_VISION):
+                if only_vision is True and (not is_vision or m.get("value") in MODEL_NON_VISION):
                     continue
-                if not only_vision and is_vision and prefer_non_vision:
+                if only_vision is False and is_vision:
                     continue
                 result.append((pname, pinfo, m.get("value"), weight))
         return result
     if need_vision:
-        return _collect(only_vision=True)
-    candidates = _collect(only_vision=False)
-    if candidates:
-        return candidates
-    # 没有任何非 vision 模型，回退到 vision 模型
-    return _collect(only_vision=True)
+        return _collect(True)
+    return _collect(None)
 
 def weighted_pick(candidates):
     """按权重随机选择一个候选模型，返回排序后的列表（选中的排第一）"""
