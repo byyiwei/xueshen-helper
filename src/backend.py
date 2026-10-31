@@ -3651,14 +3651,14 @@ def do_openai_compatible_chat(messages, model, api_key, base_url, time_budget=No
                         pass
                 return None, f"__429__:{cooldown}:{err_msg}", 0
             # 400 错误：内容审核类错误不重试，其他错误降级重试
-            if e.code == 400 and attempt < 2:
-                # DeepSeek 内容审核错误，重试也没用，直接返回
-                if "Output data may contain" in err_msg or "content_filter" in err_msg.lower():
-                    return None, f"内容审核拦截(模型:{model}): AI 生成的回复可能包含敏感内容，请手动编辑回复", 0
-                # 模型不支持图片，重试也不会成功，直接返回让上层切换模型
-                if "not support image" in err_msg.lower() or "does not support image" in err_msg.lower() or "multimodal" in err_msg.lower() and "not support" in err_msg.lower():
-                    return None, f"API HTTP 400 (模型:{model}): This model does not support image", 0
-                continue
+            if e.code == 400:
+                if is_content_blocked_error(err_msg):
+                    return None, f"内容审核拦截(模型:{model}): 上游拒绝回答本题（涉及敏感内容），已跳过该服务商", 0
+                if attempt < 2:
+                    # 模型不支持图片，重试也不会成功，直接返回让上层切换模型
+                    if "not support image" in err_msg.lower() or "does not support image" in err_msg.lower() or "multimodal" in err_msg.lower() and "not support" in err_msg.lower():
+                        return None, f"API HTTP 400 (模型:{model}): This model does not support image", 0
+                    continue
             return None, f"API HTTP {e.code} (模型:{model}): {err_msg}", 0
         except Exception as e:
             _is_timeout = isinstance(e, (TimeoutError, socket.timeout)) or (
@@ -4337,6 +4337,9 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
     errors = []
     error_logs = []  # 失败的模型日志，待确定最终成功模型后统一补记
     final_model = ""
+    # 本题命中内容审核的服务商：{provider_name: 首个命中的模型}。同一家审核策略一致，
+    # 换同家其它模型大概率还是被拒，记下来后整家跳过，直接换下一位服务商。
+    blocked_providers = {}
     # 图片题用更宽的整体预算（见 VISION_TIME_BUDGET 注释）
     total_budget = VISION_TIME_BUDGET if need_vision else ANSWER_TIME_BUDGET
     deadline = time.time() + total_budget
@@ -4347,6 +4350,9 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
     except Exception as exc:
         return None, str(exc), "", ""
     for provider_name, provider_info, model_name, weight in ordered:
+        if provider_name in blocked_providers:
+            print(f"[自动模型] 服务商 {provider_name} 本题已被内容审核拦截，跳过其余模型", flush=True)
+            continue
         print(f"[自动模型] 尝试 provider={provider_name}, model={model_name}, weight={weight}", flush=True)
         attempt_start = time.time()
         remaining = max(deadline - time.time(), 0)
@@ -4392,7 +4398,14 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
                 if "not support image" in err.lower() or "does not support image" in err.lower():
                     MODEL_NON_VISION.add(model_name)
                     print(f"[自动模型] 模型 {model_name} 不支持图片，已标记为非视觉模型", flush=True)
-                errors.append(f"{model_name}: {err}")
+                if is_content_blocked_error(err):
+                    # 内容审核是题目本身触发的问题，不是模型坏了：不写冷却池，只跳过本题该服务商的
+                    # 其余模型，避免一个敏感题目把正常服务商也冷却掉、影响后面的普通题目。
+                    blocked_providers.setdefault(provider_name, model_name)
+                    errors.append(f"{provider_name}（{model_name}）: 内容审核拦截，已跳过该服务商其余模型")
+                    print(f"[自动模型] {provider_name} 命中内容审核，整家跳过（首个模型 {model_name}）", flush=True)
+                else:
+                    errors.append(f"{model_name}: {err}")
             # 超时类错误：上游慢/网络抖动。记入超时冷却池，冷却期内不再选它；
             # 切换下一个模型前短暂退避，避免连续打击同一网络。
             if is_timeout_error(err):
@@ -4583,6 +4596,31 @@ def is_timeout_error(err):
     return "timed out" in low or "timeout" in low or "超时" in low
 
 
+# 内容审核/合规拦截的典型文案。各家的说法不一样：讯飞星火是「根据相关法律法规…」，
+# DeepSeek/通义是「inappropriate content」或 content_filter，Gemini 是 safety system。
+# 命中后不要在同服务商继续换模型：同一家的审核策略一致，换模型大概率还是被拒，
+# 直接整家跳过、换到别的服务商才有意义。
+CONTENT_BLOCK_MARKERS = (
+    "根据相关法律法规",
+    "内容审核",
+    "内容不合规",
+    "敏感内容",
+    "违规内容",
+    "inappropriate content",
+    "unsafe content",
+    "content_filter",
+    "content policy",
+    "content moderation",
+    "safety",
+)
+
+
+def is_content_blocked_error(err):
+    """判断是否被上游内容审核/合规策略拦截（不是模型故障，也不是超时）。"""
+    low = str(err or "").lower()
+    return any(marker in low for marker in CONTENT_BLOCK_MARKERS)
+
+
 def grade_model_test(answer, err, elapsed_ms, tokens, want_vision, color_name="", color_keys=()):
     """把一次「⚡ 测试」的结果整理成接口返回体。识图按颜色词命中判分，颜色每发随机，瞎猜蒙不中。"""
     if answer:
@@ -4725,7 +4763,11 @@ def call_agent_llm(messages):
     else:
         return None, "Agent 所有模型均不可用（404冷却中或Token限额耗尽）", "", ""
     errors = []
+    blocked_providers = {}  # 本题命中内容审核的服务商，跳过其剩余模型
     for provider_name, provider_info, model_name, weight in ordered:
+        if provider_name in blocked_providers:
+            print(f"[Agent] 服务商 {provider_name} 本题已被内容审核拦截，跳过其余模型", flush=True)
+            continue
         print(f"[Agent] 尝试 provider={provider_name}, model={model_name}, weight={weight}", flush=True)
         answer, err, tokens = call_provider_chat_with_messages(messages, model_name, provider_info)
         if answer:
@@ -4747,7 +4789,13 @@ def call_agent_llm(messages):
             elif is_timeout_error(err):
                 MODEL_TIMEOUT_COOLDOWN[model_name] = time.time() + MODEL_TIMEOUT_COOLDOWN_SECONDS
                 print(f"[Agent] 模型 {model_name} 超时，冷却 {MODEL_TIMEOUT_COOLDOWN_SECONDS}s 后再试", flush=True)
-            errors.append(f"{model_name}: {err}")
+            if is_content_blocked_error(err):
+                # 审核拦截是题目内容问题，不写冷却池，只跳过本题该服务商的其余模型
+                blocked_providers.setdefault(provider_name, model_name)
+                errors.append(f"{provider_name}（{model_name}）: 内容审核拦截，已跳过该服务商其余模型")
+                print(f"[Agent] {provider_name} 命中内容审核，整家跳过（首个模型 {model_name}）", flush=True)
+            else:
+                errors.append(f"{model_name}: {err}")
     return None, "Agent 所有模型尝试失败: " + "; ".join(errors[-3:]), "", ""
 
 
