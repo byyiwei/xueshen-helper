@@ -1845,7 +1845,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                 <div class="form-group"><label>API Key</label><input type="password" v-model="entry.info.api_key" placeholder="sk-xxxxxxxx"></div>
                 <div class="form-group"><label>Base URL</label><input v-model="entry.info.base_url" placeholder="https://api.xxx.com/v1"></div>
               </div>
-              <div class="models-title">模型列表 <span style="font-size:12px;color:var(--text3);font-weight:400">权重越高被调用概率越大（默认100），普通题和图片题都按权重随机；权重设为 0 = 关闭该模型（不参与自动调用与兜底）。「支持图片」只决定图片题能不能用它，勾了也照样参与普通题。每日/总额 Token 限额为 0 表示不限制，总额超过后自动停用。到期日期留空为永久有效；填了则到期日当天仍可调用，次日零点起不再调用。改完后须点「保存配置」才会生效。</span></div>
+              <div class="models-title">模型列表 <span style="font-size:12px;color:var(--text3);font-weight:400">权重越高被调用概率越大（默认100）；文字题只在未勾选「支持图片」的模型中按权重随机，图片题只在勾选了「支持图片」的模型中随机；权重设为 0 = 关闭该模型（不参与自动调用与兜底）。每日/总额 Token 限额为 0 表示不限制，总额超过后自动停用。到期日期留空为永久有效；填了则到期日当天仍可调用，次日零点起不再调用。改完后须点「保存配置」才会生效。</span></div>
               <div style="display:flex;gap:8px;padding:0 4px 6px;font-size:11px;color:var(--text3);font-weight:600;letter-spacing:.3px;align-items:center;flex-wrap:wrap">
                 <div style="flex:1 1 170px;min-width:0">模型ID</div>
                 <div style="flex:1 1 170px;min-width:0">显示名称</div>
