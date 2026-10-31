@@ -4545,7 +4545,14 @@
             } catch (_) {}
         }
         function renderCustomModelBuy() {
-            if (!_cmConfig) { $('customModelBuy').style.display = 'none'; $('customModelHint').style.display = 'none'; $('customModelPayBtn').style.display = 'none'; return; }
+            // 自动模型模式下不展示自有模型的开通提示与购买按钮，避免把「去购买」误推给不用自有模型的人
+            const isCustomMode = $('ucModelCustom').checked;
+            if (!_cmConfig || !isCustomMode) {
+                $('customModelBuy').style.display = 'none';
+                $('customModelHint').style.display = 'none';
+                $('customModelPayBtn').style.display = 'none';
+                return;
+            }
             $('customModelBuy').style.display = 'none';
             const enabled = _cmConfig.enabled;
             const price = Number(_cmConfig.price || 0);
