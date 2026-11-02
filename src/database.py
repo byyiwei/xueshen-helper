@@ -6944,11 +6944,17 @@ class Database:
 
     def referral_stats(self):
         """管理员统计：top10 邀请人 + 总佣金 + 提现统计"""
+        # 邀请人数与返利必须分开聚合：直接 join 会让每个邀请人按「邀请人数 × 佣金笔数」
+        # 复制行，人数和金额都会被成倍放大。
         top10 = self.fetchall(
-            "SELECT r.inviter_username AS username, COUNT(*) AS invited_count, "
-            "COALESCE(SUM(CASE WHEN c.status != 'refunded' THEN c.commission_amount ELSE 0 END),0) AS total_commission "
-            "FROM referrals r LEFT JOIN commission_logs c ON r.inviter_username = c.inviter "
-            "GROUP BY r.inviter_username ORDER BY invited_count DESC LIMIT 10"
+            "SELECT r.inviter_username AS username, r.invited_count AS invited_count, "
+            "COALESCE(c.total_commission, 0) AS total_commission "
+            "FROM (SELECT inviter_username, COUNT(DISTINCT invitee_username) AS invited_count "
+            "      FROM referrals GROUP BY inviter_username) r "
+            "LEFT JOIN (SELECT inviter, "
+            "                  SUM(CASE WHEN status != 'refunded' THEN commission_amount ELSE 0 END) AS total_commission "
+            "           FROM commission_logs GROUP BY inviter) c ON c.inviter = r.inviter_username "
+            "ORDER BY invited_count DESC, total_commission DESC LIMIT 10"
         )
         for r in (top10 or []):
             r["invited_count"] = int(r.get("invited_count") or 0)
@@ -7149,14 +7155,18 @@ class Database:
             self.settle_pending_commissions(r["inviter_username"])
         rows = self.fetchall(
             f"""SELECT r.inviter_username AS username,
-                       COUNT(*) AS invited_count,
-                       COALESCE(SUM(CASE WHEN c.status != 'refunded' THEN c.commission_amount ELSE 0 END), 0) AS total_commission,
-                       COALESCE(SUM(CASE WHEN c.status = 'paid' THEN c.commission_amount ELSE 0 END), 0) AS paid_commission,
-                       COALESCE(SUM(CASE WHEN c.status = 'pending' THEN c.commission_amount ELSE 0 END), 0) AS pending_commission
-                FROM referrals r
-                LEFT JOIN commission_logs c ON c.inviter = r.inviter_username
-                GROUP BY r.inviter_username
-                ORDER BY invited_count DESC
+                       r.invited_count AS invited_count,
+                       COALESCE(c.total_commission, 0) AS total_commission,
+                       COALESCE(c.paid_commission, 0) AS paid_commission,
+                       COALESCE(c.pending_commission, 0) AS pending_commission
+                FROM (SELECT inviter_username, COUNT(DISTINCT invitee_username) AS invited_count
+                      FROM referrals GROUP BY inviter_username) r
+                LEFT JOIN (SELECT inviter,
+                                  SUM(CASE WHEN status != 'refunded' THEN commission_amount ELSE 0 END) AS total_commission,
+                                  SUM(CASE WHEN status = 'paid' THEN commission_amount ELSE 0 END) AS paid_commission,
+                                  SUM(CASE WHEN status = 'pending' THEN commission_amount ELSE 0 END) AS pending_commission
+                           FROM commission_logs GROUP BY inviter) c ON c.inviter = r.inviter_username
+                ORDER BY invited_count DESC, total_commission DESC
                 LIMIT {ph} OFFSET {ph}""",
             (per_page, offset)
         )
