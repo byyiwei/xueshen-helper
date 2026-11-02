@@ -93,17 +93,65 @@ RESET_TOKENS = {}
 CUSTOM_MODEL_TEST_LAST = {}
 CUSTOM_MODEL_TEST_INTERVAL = 10
 
-# 自动模型失败冷却：404/模型不存在的模型短时间内跳过，避免每题都浪费一次失败调用
+# 三个冷却池的键统一是 (服务商, 模型名)，不是单独的模型名。
+# 后台有多组「同名模型挂在不同服务商」的配置（如 deepseek-v4-flash 同时在 sensenova2 和
+# sensenova-6.7-flash-lite 下），只按模型名记账会让一家 429 把另一家正常的同名模型一起停掉，
+# 日志里就会出现同一个模型名同时冷却、候选池一下子少一半的情况。
 MODEL_FAIL_COOLDOWN = {}
 MODEL_FAIL_COOLDOWN_SECONDS = 600
-# 429 限流冷却：{model_name: expire_timestamp}
+# 429 限流冷却：{(服务商, 模型): expire_timestamp}
 MODEL_429_COOLDOWN = {}
-MODEL_429_DEFAULT_SECONDS = 60  # 默认冷却60秒
-# 超时冷却：{model_name: expire_timestamp}
+MODEL_429_DEFAULT_SECONDS = 30  # 上游没给 Retry-After 时默认 30 秒
+MODEL_429_MAX_SECONDS = 120  # 上游 Retry-After 再长也只按 120 秒封顶，避免长期空出一个模型位
+# 超时冷却：{(服务商, 模型): expire_timestamp}
 # 单模型超时通常是上游拥堵或网络抖动。冷却期内跳过该模型、冷却结束自动回到候选池，
 # 避免每道题都在同一个慢模型上把整体时间预算耗光。时长比 404 短，恢复更快。
 MODEL_TIMEOUT_COOLDOWN = {}
 MODEL_TIMEOUT_COOLDOWN_SECONDS = 120
+
+
+def cooldown_key(provider_name, model_name):
+    """冷却池的记账键：服务商 + 模型。"""
+    return (str(provider_name or ""), str(model_name or ""))
+
+
+def set_cooldown(pool, provider_name, model_name, seconds):
+    pool[cooldown_key(provider_name, model_name)] = time.time() + seconds
+
+
+def clear_model_cooldowns(provider_name, model_name):
+    """模型调用成功后清空它的三个冷却池。"""
+    key = cooldown_key(provider_name, model_name)
+    MODEL_FAIL_COOLDOWN.pop(key, None)
+    MODEL_429_COOLDOWN.pop(key, None)
+    MODEL_TIMEOUT_COOLDOWN.pop(key, None)
+
+
+def split_model_candidates(candidates, now=None):
+    """按冷却状态切分候选模型，返回 (可用, 429冷却, 超时冷却, 404跳过, 限额跳过)。
+
+    冷却中的列表元素是 (服务商/模型 标签, 剩余秒)，日志和等待逻辑都用得上。
+    """
+    now = time.time() if now is None else now
+    active, cooling_429, cooling_timeout, skipped_404, skipped_token = [], [], [], [], []
+    for item in candidates:
+        provider_name, model_name = item[0], item[2]
+        label = f"{provider_name}/{model_name}"
+        key = cooldown_key(provider_name, model_name)
+        until_404 = MODEL_FAIL_COOLDOWN.get(key, 0)
+        until_429 = MODEL_429_COOLDOWN.get(key, 0)
+        until_timeout = MODEL_TIMEOUT_COOLDOWN.get(key, 0)
+        if until_404 > now:
+            skipped_404.append(label)
+        elif until_429 > now:
+            cooling_429.append((label, int(until_429 - now)))
+        elif until_timeout > now:
+            cooling_timeout.append((label, int(until_timeout - now)))
+        elif is_model_token_exhausted(model_name):
+            skipped_token.append(label)
+        else:
+            active.append(item)
+    return active, cooling_429, cooling_timeout, skipped_404, skipped_token
 
 # 运行时标记不支图片的模型（API返回400 "does not support image"），避免后续图片题继续选它
 MODEL_NON_VISION = set()
@@ -3601,7 +3649,9 @@ def do_openai_compatible_chat(messages, model, api_key, base_url, time_budget=No
         if time_budget is not None:
             remaining = time_budget - (time.time() - _budget_start)
             if remaining <= 0:
-                return None, "API 请求超时（超出整体时间预算）", 0
+                # 这是「题目的整体预算用完了」，不是这个模型慢或者坏了。用单独哨兵标出来，
+                # 上层不能据此把它写进超时冷却池，否则前面模型吃光预算会让后面的模型被误伤。
+                return None, "__budget__:整体时间预算耗尽，该模型未获得完整尝试时间", 0
             attempt_timeout = min(attempt_timeouts[attempt], remaining)
         else:
             attempt_timeout = attempt_timeouts[attempt]
@@ -3646,7 +3696,7 @@ def do_openai_compatible_chat(messages, model, api_key, base_url, time_budget=No
                 cooldown = MODEL_429_DEFAULT_SECONDS
                 if retry_after:
                     try:
-                        cooldown = min(int(retry_after), 300)
+                        cooldown = min(int(retry_after), MODEL_429_MAX_SECONDS)
                     except:
                         pass
                 return None, f"__429__:{cooldown}:{err_msg}", 0
@@ -4294,30 +4344,9 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
             return None, "本题包含图片，需要支持图片(多模态)的模型，但当前没有可用多模态模型，请在管理后台为模型勾选\"支持图片\"", "", ""
         return None, "没有可自动选择的 AI 模型", "", ""
     now = time.time()
-    # 过滤掉冷却中的模型（包括404冷却、429限流冷却、token限额耗尽）
-    active = []
-    cooling_429 = []  # 429冷却中的模型，记录(模型, 剩余秒)
-    cooling_timeout = []  # 超时冷却中的模型，记录(模型, 剩余秒)
-    skipped_404 = []
-    skipped_token = []
-    for item in candidates:
-        model_name = item[2]
-        until_404 = MODEL_FAIL_COOLDOWN.get(model_name, 0)
-        until_429 = MODEL_429_COOLDOWN.get(model_name, 0)
-        until_timeout = MODEL_TIMEOUT_COOLDOWN.get(model_name, 0)
-        if until_404 and until_404 > now:
-            skipped_404.append(model_name)
-            continue
-        if until_429 and until_429 > now:
-            cooling_429.append((model_name, int(until_429 - now)))
-            continue
-        if until_timeout and until_timeout > now:
-            cooling_timeout.append((model_name, int(until_timeout - now)))
-            continue
-        if is_model_token_exhausted(model_name):
-            skipped_token.append(model_name)
-            continue
-        active.append(item)
+    # 过滤掉冷却中的模型（包括404冷却、429限流冷却、token限额耗尽）。
+    # 冷却按 (服务商, 模型) 记账，同名模型挂在不同服务商下互不牵连。
+    active, cooling_429, cooling_timeout, skipped_404, skipped_token = split_model_candidates(candidates, now)
     if skipped_404:
         print(f"[自动模型] 404冷却跳过: {', '.join(sorted(set(skipped_404)))}", flush=True)
     if cooling_429:
@@ -4326,6 +4355,19 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
         print(f"[自动模型] 超时冷却中: {', '.join(f'{m}({s}s)' for m,s in cooling_timeout)}", flush=True)
     if skipped_token:
         print(f"[自动模型] Token限额耗尽: {', '.join(sorted(set(skipped_token)))}", flush=True)
+    # 图片题用更宽的整体预算（见 VISION_TIME_BUDGET 注释）
+    total_budget = VISION_TIME_BUDGET if need_vision else ANSWER_TIME_BUDGET
+    started_at = time.time()
+    deadline = started_at + total_budget
+    if not active:
+        # 全部在冷却：如果最早的一个很快到期（≤20 秒），等它一下再重新挑，
+        # 别让一道题因为「冷却还剩 5 秒」直接失败。
+        waits = [s for _, s in cooling_429 + cooling_timeout if s > 0]
+        nearest = min(waits) if waits else 0
+        if nearest and nearest <= 20 and deadline - time.time() > nearest + 30:
+            print(f"[自动模型] 全部冷却中，最近的 {nearest}s 后到期，等待后重试", flush=True)
+            time.sleep(nearest + 1)
+            active, cooling_429, cooling_timeout, skipped_404, skipped_token = split_model_candidates(candidates)
     if not active:
         if cooling_429:
             return None, "所有模型429限流冷却中，请稍后重试", "", ""
@@ -4341,9 +4383,9 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
     # 本题命中内容审核的服务商：{provider_name: 首个命中的模型}。同一家审核策略一致，
     # 换同家其它模型大概率还是被拒，记下来后整家跳过，直接换下一位服务商。
     blocked_providers = {}
-    # 图片题用更宽的整体预算（见 VISION_TIME_BUDGET 注释）
-    total_budget = VISION_TIME_BUDGET if need_vision else ANSWER_TIME_BUDGET
-    deadline = time.time() + total_budget
+    # 只有给足尝试时间的超时才记冷却；剩余预算被前面的模型吃掉、
+    # 只来得及跑十几秒就超时的，不算这个模型的问题。
+    fair_attempt_seconds = 90 if need_vision else 30
 
     # 每道题仅准备一次图片，避免切换模型时重新下载全部图片。
     try:
@@ -4360,24 +4402,29 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
         if remaining <= 5:
             print(f"[自动模型] 整体时间预算({total_budget}s)即将耗尽，跳过剩余模型", flush=True)
             break
+        model_budget = MAX_VISION_MODEL_BUDGET if need_vision else MAX_MODEL_BUDGET
+        attempt_budget = min(model_budget, remaining)
         try:
-            model_budget = MAX_VISION_MODEL_BUDGET if need_vision else MAX_MODEL_BUDGET
-            answer, err, tokens = call_provider_chat(question, model_name, provider_info, time_budget=min(model_budget, remaining), prepared_messages=prepared_messages)
+            answer, err, tokens = call_provider_chat(question, model_name, provider_info, time_budget=attempt_budget, prepared_messages=prepared_messages)
         except Exception as e:
             err = str(e)
             answer = None
         if answer:
-            MODEL_FAIL_COOLDOWN.pop(model_name, None)
-            MODEL_429_COOLDOWN.pop(model_name, None)
-            MODEL_TIMEOUT_COOLDOWN.pop(model_name, None)
+            clear_model_cooldowns(provider_name, model_name)
             record_model_token_usage(model_name, tokens)
             final_model = model_name
             break
         elif err:
+            if str(err).startswith("__budget__:"):
+                # 整题预算已经用完，后面的模型就算调用也会被同样掐断。直接收手，
+                # 不把这当成模型故障写冷却池。
+                print("[自动模型] 整体时间预算耗尽，停止尝试剩余模型", flush=True)
+                errors.append("整体时间预算用完，本题未答完")
+                break
             cooldown_sec, _429_detail = upstream_429_wait(err)
             if cooldown_sec is not None:
-                MODEL_429_COOLDOWN[model_name] = time.time() + cooldown_sec
-                print(f"[自动模型] 模型 {model_name} 触发429限流，冷却 {cooldown_sec}s", flush=True)
+                set_cooldown(MODEL_429_COOLDOWN, provider_name, model_name, cooldown_sec)
+                print(f"[自动模型] 模型 {provider_name}/{model_name} 触发429限流，冷却 {cooldown_sec}s", flush=True)
                 # 这条会拼进给用户的 err_msg，绝不能放哨兵原文
                 errors.append(f"{model_name}: 上游限流（429），已冷却 {cooldown_sec}s")
             else:
@@ -4394,8 +4441,8 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
                     "final_model": ""
                 })
                 if "HTTP 404" in err or "model is not found" in err.lower() or "模型" in err and "不存在" in err:
-                    MODEL_FAIL_COOLDOWN[model_name] = time.time() + MODEL_FAIL_COOLDOWN_SECONDS
-                    print(f"[自动模型] 模型不可用，进入冷却 {MODEL_FAIL_COOLDOWN_SECONDS}s: {model_name}，原因：{err}", flush=True)
+                    set_cooldown(MODEL_FAIL_COOLDOWN, provider_name, model_name, MODEL_FAIL_COOLDOWN_SECONDS)
+                    print(f"[自动模型] 模型不可用，进入冷却 {MODEL_FAIL_COOLDOWN_SECONDS}s: {provider_name}/{model_name}，原因：{err}", flush=True)
                 if "not support image" in err.lower() or "does not support image" in err.lower():
                     MODEL_NON_VISION.add(model_name)
                     print(f"[自动模型] 模型 {model_name} 不支持图片，已标记为非视觉模型", flush=True)
@@ -4409,9 +4456,14 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
                     errors.append(f"{model_name}: {err}")
             # 超时类错误：上游慢/网络抖动。记入超时冷却池，冷却期内不再选它；
             # 切换下一个模型前短暂退避，避免连续打击同一网络。
+            # 只有给足预算（attempt_budget）的超时才记账：剩余预算被前面的模型吃掉、
+            # 只跑了十几秒就超时的，是这个模型没排到足够时间，不是它本身不行。
             if is_timeout_error(err):
-                MODEL_TIMEOUT_COOLDOWN[model_name] = time.time() + MODEL_TIMEOUT_COOLDOWN_SECONDS
-                print(f"[自动模型] 模型 {model_name} 超时，冷却 {MODEL_TIMEOUT_COOLDOWN_SECONDS}s 后再试", flush=True)
+                if attempt_budget >= fair_attempt_seconds:
+                    set_cooldown(MODEL_TIMEOUT_COOLDOWN, provider_name, model_name, MODEL_TIMEOUT_COOLDOWN_SECONDS)
+                    print(f"[自动模型] 模型 {provider_name}/{model_name} 超时，冷却 {MODEL_TIMEOUT_COOLDOWN_SECONDS}s 后再试", flush=True)
+                else:
+                    print(f"[自动模型] 模型 {provider_name}/{model_name} 只分到 {int(attempt_budget)}s 预算就超时，不计冷却", flush=True)
                 time.sleep(min(3, max(deadline - time.time(), 0)))
 
     # 补记失败模型日志，标注最后成功调用的模型（全部失败则为空）
@@ -4591,9 +4643,12 @@ def is_timeout_error(err):
     """判断是否超时类错误（上游慢/网络抖动）。
 
     适配层对超时给出的文案既有英文 'timed out'/'timeout'，也有中文 '超时'，
-    这里统一识别，供冷却池和退避逻辑共用。
+    这里统一识别，供冷却池和退避逻辑共用。整体预算耗尽（__budget__ 哨兵）不算，
+    那是调用方没给够时间，不是模型的问题。
     """
     low = str(err or "").lower()
+    if low.startswith("__budget__:"):
+        return False
     return "timed out" in low or "timeout" in low or "超时" in low
 
 
@@ -4736,31 +4791,19 @@ def call_agent_llm(messages):
     if not candidates:
         return None, "没有可用的 AI 模型，请先在管理后台配置并启用至少一个 AI 提供商", "", ""
     now = time.time()
-    active = []
-    cooling_429 = []
-    for item in candidates:
-        model_name = item[2]
-        if MODEL_FAIL_COOLDOWN.get(model_name, 0) > now:
-            continue
-        if MODEL_429_COOLDOWN.get(model_name, 0) > now:
-            cooling_429.append((model_name, int(MODEL_429_COOLDOWN[model_name] - now)))
-            continue
-        if MODEL_TIMEOUT_COOLDOWN.get(model_name, 0) > now:
-            continue
-        if is_model_token_exhausted(model_name):
-            continue
-        active.append(item)
+    active, cooling_429, cooling_timeout, _s404, _stok = split_model_candidates(candidates, now)
     if active:
         ordered = weighted_pick(active)
     elif cooling_429:
         min_wait = min(s for _, s in cooling_429)
         print(f"[Agent] 所有模型429限流，等待 {min_wait}s 后重试", flush=True)
         time.sleep(min_wait + 1)
-        now = time.time()
-        active = [item for item in candidates if MODEL_429_COOLDOWN.get(item[2], 0) <= now and MODEL_FAIL_COOLDOWN.get(item[2], 0) <= now and MODEL_TIMEOUT_COOLDOWN.get(item[2], 0) <= now and not is_model_token_exhausted(item[2])]
+        active, cooling_429, cooling_timeout, _s404, _stok = split_model_candidates(candidates)
         if not active:
             return None, "Agent 所有模型429限流冷却后仍无可用模型", "", ""
         ordered = weighted_pick(active)
+    elif cooling_timeout:
+        return None, "Agent 所有模型超时冷却中，请稍后重试", "", ""
     else:
         return None, "Agent 所有模型均不可用（404冷却中或Token限额耗尽）", "", ""
     errors = []
@@ -4772,24 +4815,22 @@ def call_agent_llm(messages):
         print(f"[Agent] 尝试 provider={provider_name}, model={model_name}, weight={weight}", flush=True)
         answer, err, tokens = call_provider_chat_with_messages(messages, model_name, provider_info)
         if answer:
-            MODEL_FAIL_COOLDOWN.pop(model_name, None)
-            MODEL_429_COOLDOWN.pop(model_name, None)
-            MODEL_TIMEOUT_COOLDOWN.pop(model_name, None)
+            clear_model_cooldowns(provider_name, model_name)
             record_model_token_usage(model_name, tokens)
             return answer, None, model_name, provider_name
         if err:
             cooldown_sec, _ = upstream_429_wait(err)
             if cooldown_sec is not None:
-                MODEL_429_COOLDOWN[model_name] = time.time() + cooldown_sec
-                print(f"[Agent] 模型 {model_name} 触发429限流，冷却 {cooldown_sec}s", flush=True)
+                set_cooldown(MODEL_429_COOLDOWN, provider_name, model_name, cooldown_sec)
+                print(f"[Agent] 模型 {provider_name}/{model_name} 触发429限流，冷却 {cooldown_sec}s", flush=True)
                 errors.append(f"{model_name}: 429限流(冷却{cooldown_sec}s)")
                 continue
             if "HTTP 404" in err or "model is not found" in err.lower() or ("模型" in err and "不存在" in err):
-                MODEL_FAIL_COOLDOWN[model_name] = time.time() + MODEL_FAIL_COOLDOWN_SECONDS
-                print(f"[Agent] 模型不可用，进入冷却 {MODEL_FAIL_COOLDOWN_SECONDS}s: {model_name}", flush=True)
+                set_cooldown(MODEL_FAIL_COOLDOWN, provider_name, model_name, MODEL_FAIL_COOLDOWN_SECONDS)
+                print(f"[Agent] 模型不可用，进入冷却 {MODEL_FAIL_COOLDOWN_SECONDS}s: {provider_name}/{model_name}", flush=True)
             elif is_timeout_error(err):
-                MODEL_TIMEOUT_COOLDOWN[model_name] = time.time() + MODEL_TIMEOUT_COOLDOWN_SECONDS
-                print(f"[Agent] 模型 {model_name} 超时，冷却 {MODEL_TIMEOUT_COOLDOWN_SECONDS}s 后再试", flush=True)
+                set_cooldown(MODEL_TIMEOUT_COOLDOWN, provider_name, model_name, MODEL_TIMEOUT_COOLDOWN_SECONDS)
+                print(f"[Agent] 模型 {provider_name}/{model_name} 超时，冷却 {MODEL_TIMEOUT_COOLDOWN_SECONDS}s 后再试", flush=True)
             if is_content_blocked_error(err):
                 # 审核拦截是题目内容问题，不写冷却池，只跳过本题该服务商的其余模型
                 blocked_providers.setdefault(provider_name, model_name)
@@ -9612,19 +9653,8 @@ class Handler(BaseHTTPRequestHandler):
                 
                 # 跳过冷却中的模型，优先选非推理模型（文本润色不需要推理）
                 now = time.time()
-                active = []
                 reasoning_models = {"deepseek-reasoner", "deepseek-r1", "o1", "o3", "o4-mini", "deepseek-v4-flash"}
-                for item in candidates:
-                    model_name = item[2]
-                    if MODEL_FAIL_COOLDOWN.get(model_name, 0) > now:
-                        continue
-                    if MODEL_429_COOLDOWN.get(model_name, 0) > now:
-                        continue
-                    if MODEL_TIMEOUT_COOLDOWN.get(model_name, 0) > now:
-                        continue
-                    if is_model_token_exhausted(model_name):
-                        continue
-                    active.append(item)
+                active, _c429, _cto, _s404, _stok = split_model_candidates(candidates, now)
                 
                 if not active:
                     self._send_json(500, {"code": 500, "msg": "AI 模型暂时不可用，请稍后重试"})
@@ -9667,7 +9697,7 @@ class Handler(BaseHTTPRequestHandler):
                             break
                     # 超时记入冷却池，下次优先绕开；其余错误直接尝试下一个备选模型
                     if is_timeout_error(err):
-                        MODEL_TIMEOUT_COOLDOWN[model_name] = time.time() + MODEL_TIMEOUT_COOLDOWN_SECONDS
+                        set_cooldown(MODEL_TIMEOUT_COOLDOWN, provider_name, model_name, MODEL_TIMEOUT_COOLDOWN_SECONDS)
                 if answer:
                     record_model_token_usage(used_model or model_name, tokens)
                     self._send_json(200, {"code": 200, "text": answer.strip()})
@@ -9719,18 +9749,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 now = time.time()
                 reasoning_models = {"deepseek-reasoner", "deepseek-r1", "o1", "o3", "o4-mini", "deepseek-v4-flash"}
-                active = []
-                for item in candidates:
-                    model_name = item[2]
-                    if MODEL_FAIL_COOLDOWN.get(model_name, 0) > now:
-                        continue
-                    if MODEL_429_COOLDOWN.get(model_name, 0) > now:
-                        continue
-                    if MODEL_TIMEOUT_COOLDOWN.get(model_name, 0) > now:
-                        continue
-                    if is_model_token_exhausted(model_name):
-                        continue
-                    active.append(item)
+                active, _c429, _cto, _s404, _stok = split_model_candidates(candidates, now)
                 if not active:
                     self._send_json(500, {"code": 500, "msg": "AI 模型暂时不可用，请稍后重试"})
                     return
@@ -9760,7 +9779,7 @@ class Handler(BaseHTTPRequestHandler):
                             tokens = tokens2
                             break
                     if is_timeout_error(err):
-                        MODEL_TIMEOUT_COOLDOWN[model_name] = time.time() + MODEL_TIMEOUT_COOLDOWN_SECONDS
+                        set_cooldown(MODEL_TIMEOUT_COOLDOWN, provider_name, model_name, MODEL_TIMEOUT_COOLDOWN_SECONDS)
                 if answer:
                     record_model_token_usage(used_model or model_name, tokens)
                     self._send_json(200, {"code": 200, "text": answer.strip()})
