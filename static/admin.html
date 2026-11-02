@@ -6059,6 +6059,26 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                   <div style="flex:1;text-align:right">
                     <div style="font-size:11px;color:#10b981;margin-bottom:3px">{{feedbackDetail.username}} · {{String(feedbackDetail.created_at||'').replace('T',' ').substring(0,16)}}</div>
                     <div style="display:inline-block;padding:10px 14px;background:rgba(16,185,129,.1);border-radius:14px 4px 14px 14px;font-size:13px;color:var(--text);line-height:1.6;white-space:pre-wrap;text-align:left;max-width:85%">{{feedbackDetail.content}}</div>
+                    <div v-if="feedbackDetail.attachments && feedbackDetail.attachments.length" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;justify-content:flex-end">
+                      <div v-for="at in feedbackDetail.attachments" :key="at.id">
+                        <template v-if="at.is_image && at.url">
+                          <a :href="at.url" target="_blank" rel="noopener noreferrer"><img :src="at.url" :alt="at.filename" loading="lazy" style="display:block;width:140px;max-width:100%;height:auto;border-radius:10px;border:1px solid var(--border);background:var(--bg2)"></a>
+                          <div style="display:flex;gap:10px;margin-top:4px;font-size:11.5px;justify-content:flex-end">
+                            <a href="javascript:;" style="color:var(--accent2);font-weight:600;text-decoration:none" @click.prevent="copyAdminFbImage(at)">复制图片</a>
+                            <a href="javascript:;" style="color:var(--accent2);font-weight:600;text-decoration:none" @click.prevent="downloadAdminFbAttachment(at)">下载</a>
+                          </div>
+                        </template>
+                        <template v-else>
+                          <div style="display:inline-flex;align-items:center;gap:6px;max-width:220px;padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--bg2);font-size:12px;color:var(--text2)">
+                            <svg class="ui-icon xs"><use href="#i-file-text"></use></svg>
+                            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{at.filename}}</span>
+                          </div>
+                          <div style="margin-top:4px;font-size:11.5px;text-align:right">
+                            <a href="javascript:;" style="color:var(--accent2);font-weight:600;text-decoration:none" @click.prevent="downloadAdminFbAttachment(at)">下载（{{adminFbSize(at.size)}}）</a>
+                          </div>
+                        </template>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <!-- 旧数据兼容 -->
@@ -6074,7 +6094,27 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                   <div :style="{flex:'0 0 32px',height:'32px',borderRadius:'50%',background:rp.sender==='admin'?'linear-gradient(135deg,#3b82f6,#2563eb)':'linear-gradient(135deg,#10b981,#059669)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:'12px',fontWeight:'600'}">{{rp.sender==='admin'?'管':(feedbackDetail.username||'').charAt(0).toUpperCase()}}</div>
                   <div :style="{flex:'1',textAlign:rp.sender==='admin'?'left':'right'}">
                     <div :style="{fontSize:'11px',color:rp.sender==='admin'?'#3b82f6':'#10b981',marginBottom:'3px'}">{{rp.sender==='admin'?'管理员':feedbackDetail.username}} · {{String(rp.created_at||'').replace('T',' ').substring(0,16)}}</div>
-                    <div :style="{display:'inline-block',padding:'10px 14px',background:rp.sender==='admin'?'rgba(59,130,246,.1)':'rgba(16,185,129,.1)',borderRadius:rp.sender==='admin'?'4px 14px 14px 14px':'14px 4px 14px 14px',fontSize:'13px',color:'var(--text)',lineHeight:'1.6',whiteSpace:'pre-wrap',maxWidth:'85%',textAlign:'left'}">{{rp.content}}</div>
+                    <div v-if="rp.content" :style="{display:'inline-block',padding:'10px 14px',background:rp.sender==='admin'?'rgba(59,130,246,.1)':'rgba(16,185,129,.1)',borderRadius:rp.sender==='admin'?'4px 14px 14px 14px':'14px 4px 14px 14px',fontSize:'13px',color:'var(--text)',lineHeight:'1.6',whiteSpace:'pre-wrap',maxWidth:'85%',textAlign:'left'}">{{rp.content}}</div>
+                    <div v-if="rp.attachments && rp.attachments.length" :style="{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'8px',justifyContent:rp.sender==='admin'?'flex-start':'flex-end'}">
+                      <div v-for="at in rp.attachments" :key="at.id">
+                        <template v-if="at.is_image && at.url">
+                          <a :href="at.url" target="_blank" rel="noopener noreferrer"><img :src="at.url" :alt="at.filename" loading="lazy" style="display:block;width:140px;max-width:100%;height:auto;border-radius:10px;border:1px solid var(--border);background:var(--bg2)"></a>
+                          <div style="display:flex;gap:10px;margin-top:4px;font-size:11.5px">
+                            <a href="javascript:;" style="color:var(--accent2);font-weight:600;text-decoration:none" @click.prevent="copyAdminFbImage(at)">复制图片</a>
+                            <a href="javascript:;" style="color:var(--accent2);font-weight:600;text-decoration:none" @click.prevent="downloadAdminFbAttachment(at)">下载</a>
+                          </div>
+                        </template>
+                        <template v-else>
+                          <div style="display:inline-flex;align-items:center;gap:6px;max-width:220px;padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--bg2);font-size:12px;color:var(--text2)">
+                            <svg class="ui-icon xs"><use href="#i-file-text"></use></svg>
+                            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{at.filename}}</span>
+                          </div>
+                          <div style="margin-top:4px;font-size:11.5px">
+                            <a href="javascript:;" style="color:var(--accent2);font-weight:600;text-decoration:none" @click.prevent="downloadAdminFbAttachment(at)">下载（{{adminFbSize(at.size)}}）</a>
+                          </div>
+                        </template>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -6087,7 +6127,22 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                     <span v-else style="display:inline-flex;align-items:center;gap:4px;"><svg class="ui-icon xs"><use href="#i-sparkles"></use></svg> AI优化</span>
                   </button>
                 </div>
-                <textarea v-model="feedbackReplyText" rows="3" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;resize:vertical;line-height:1.6" placeholder="输入回复内容..."></textarea>
+                <div v-if="fbAttachList.length" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+                  <div v-for="(at,i) in fbAttachList" :key="at.id" style="display:inline-flex;align-items:center;gap:6px;max-width:240px;padding:6px 8px 6px 9px;border:1px solid var(--border);border-radius:8px;background:var(--bg2);font-size:12px;color:var(--text2)">
+                    <svg class="ui-icon xs"><use :href="at.is_image?'#i-image':'#i-file-text'"></use></svg>
+                    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{at.filename}}</span>
+                    <span style="color:var(--text3);flex:0 0 auto">{{adminFbSize(at.size)}}</span>
+                    <button type="button" style="border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0 2px;display:inline-flex" title="移除" @click="removeAdminFbAttachment(i)"><svg class="ui-icon xs"><use href="#i-x"></use></svg></button>
+                  </div>
+                </div>
+                <textarea v-model="feedbackReplyText" rows="3" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;resize:vertical;line-height:1.6" placeholder="输入回复内容..." @paste="onAdminFbPaste"></textarea>
+                <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
+                  <label style="display:inline-flex;align-items:center;gap:5px;padding:4px 0;font-size:12.5px;font-weight:600;color:var(--text2);cursor:pointer">
+                    <svg class="ui-icon sm"><use href="#i-file-text"></use></svg> 图片/附件
+                    <input type="file" multiple style="display:none" @change="onAdminFbFiles">
+                  </label>
+                  <span style="font-size:11.5px;color:var(--text3)">{{ fbUploadingCount>0 ? ('正在上传 '+fbUploadingCount+' 个...') : '支持粘贴截图' }}</span>
+                </div>
               </div>
               <div v-else style="padding:12px;background:var(--bg2);border-radius:10px;text-align:center;color:var(--text3);font-size:13px">该反馈已关闭，如需重新处理请修改状态</div>
             </div>
@@ -8234,6 +8289,10 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     const feedbackDetail=ref(null);
     const feedbackReplyText=ref('');
     const aiPolishing=ref(false);
+    const fbAttachList=ref([]);
+    const fbUploadingCount=ref(0);
+    const FB_ATTACH_MAX_FILES=6;
+    const FB_ATTACH_MAX_BYTES=15*1024*1024;
     const testingModel=ref('');
     const testingNewProvider=ref(false);
     const modelTestResults=reactive({});
@@ -8882,22 +8941,106 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         if(d.code===200){
           feedbackDetail.value=d.feedback;
           feedbackReplyText.value='';
+          fbAttachList.value=[];
+          fbUploadingCount.value=0;
         }
       }catch(_){}
     }
+    function adminFbSize(bytes){
+      const n=Number(bytes)||0;
+      if(n<1024)return n+' B';
+      if(n<1024*1024)return (n/1024).toFixed(1)+' KB';
+      return (n/1024/1024).toFixed(1)+' MB';
+    }
+    async function uploadAdminFbFile(file){
+      if(!feedbackDetail.value)return;
+      if(!file||!file.size){showMsg('文件是空的','error');return;}
+      if(file.size>FB_ATTACH_MAX_BYTES){showMsg('单个文件不能超过 15MB','error');return;}
+      if(fbAttachList.value.length+fbUploadingCount.value>=FB_ATTACH_MAX_FILES){showMsg('一次最多 '+FB_ATTACH_MAX_FILES+' 个附件','error');return;}
+      const name=file.name||('粘贴图片-'+Date.now()+'.png');
+      fbUploadingCount.value++;
+      try{
+        const res=await safeFetch('/admin/feedback/attachment',{
+          method:'POST',
+          headers:{
+            'Authorization':token.value,
+            'Content-Type':file.type||'application/octet-stream',
+            'X-Feedback-Id':String(feedbackDetail.value.id),
+            'X-File-Name':encodeURIComponent(name)
+          },
+          body:file
+        });
+        const d=await res.json().catch(()=>({}));
+        if(d.code===200&&d.attachment)fbAttachList.value.push(d.attachment);
+        else showMsg(d.msg||'附件上传失败','error');
+      }catch(_){showMsg('网络错误，附件上传失败','error');}
+      fbUploadingCount.value--;
+    }
+    async function onAdminFbFiles(e){
+      const files=Array.from(e.target.files||[]);
+      e.target.value='';
+      for(const f of files)await uploadAdminFbFile(f);
+    }
+    function onAdminFbPaste(e){
+      if(!feedbackDetail.value||feedbackDetail.value.status==='closed')return;
+      const items=(e.clipboardData&&e.clipboardData.items)||[];
+      const files=[];
+      for(const it of items){
+        if(it.kind==='file'){const f=it.getAsFile();if(f)files.push(f);}
+      }
+      if(!files.length)return;
+      e.preventDefault();
+      files.forEach(f=>uploadAdminFbFile(f));
+    }
+    function removeAdminFbAttachment(i){
+      fbAttachList.value.splice(i,1);
+    }
+    async function downloadAdminFbAttachment(at){
+      if(!at)return;
+      try{
+        const res=await safeFetch('/admin/feedback/attachment/'+at.id+'/download',{headers:{'Authorization':token.value}});
+        if(!res.ok){
+          let m='下载失败';
+          try{const d=await res.json();m=d.msg||m;}catch(_){}
+          showMsg(m,'error');return;
+        }
+        const blob=await res.blob();
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement('a');
+        a.href=url;a.download=at.filename||'附件';
+        document.body.appendChild(a);a.click();a.remove();
+        setTimeout(()=>URL.revokeObjectURL(url),5000);
+      }catch(_){showMsg('网络错误，下载失败','error');}
+    }
+    async function copyAdminFbImage(at){
+      if(!at||!at.url){showMsg('图片地址不可用','error');return;}
+      try{
+        const res=await fetch(at.url);
+        if(!res.ok)throw new Error('fetch failed');
+        const blob=await res.blob();
+        await navigator.clipboard.write([new ClipboardItem({[blob.type||'image/png']:blob})]);
+        showMsg('图片已复制，可直接粘贴','success');
+      }catch(_){
+        try{await navigator.clipboard.writeText(at.url);showMsg('浏览器不允许直接复制图片，已复制图片链接','success');}
+        catch(__){showMsg('复制失败，请右键图片复制','error');}
+      }
+    }
     async function replyFeedback(){
       if(!feedbackDetail.value)return;
-      if(!feedbackReplyText.value.trim()){showMsg('请输入回复内容','error');return;}
+      if(!feedbackReplyText.value.trim()&&!fbAttachList.value.length){showMsg('请输入回复内容或添加附件','error');return;}
+      if(fbUploadingCount.value>0){showMsg('附件还在上传，请稍等','error');return;}
       try{
         const res=await safeFetch('/admin/feedback/reply',{
           method:'POST',
           headers:{'Content-Type':'application/json','Authorization':token.value},
-          body:JSON.stringify({id:feedbackDetail.value.id,reply_text:feedbackReplyText.value.trim()})
+          body:JSON.stringify({id:feedbackDetail.value.id,reply_text:feedbackReplyText.value.trim(),attachment_ids:fbAttachList.value.map(a=>a.id)})
         });
         const d=await res.json();
         if(d.code===200){
           showMsg('回复成功，邮件已发送','success');
           feedbackDetail.value=null;
+          feedbackReplyText.value='';
+          fbAttachList.value=[];
           loadFeedbackList();
         }else{showMsg(d.msg||'回复失败','error');}
       }catch(_){showMsg('网络错误','error');}
@@ -9441,6 +9584,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       fxRev,fxRevStart,fxRevEnd,loadFxRevenue,setFxRevRange,fxRevQuick,fxRevRangeLabel,fxRevMoney,fxRevDriftText,fxRevMax,fxRevY,fxRevBarX,fxRevBarW,fxRevTick,fxRevGoto,
        feedbackList,feedbackFilter,feedbackPage,feedbackTotalPages,feedbackTotal,feedbackPendingCount,feedbackDetail,feedbackReplyText,
         loadFeedbackList,feedbackSearch,viewFeedbackDetail,replyFeedback,updateFeedbackStatus,feedbackPrev,feedbackNext,
+    fbAttachList,fbUploadingCount,onAdminFbFiles,onAdminFbPaste,removeAdminFbAttachment,downloadAdminFbAttachment,copyAdminFbImage,adminFbSize,
     feedbackAutoCloseDays,loadFeedbackAutoClose,saveFeedbackAutoClose,cardPayLabel,
     feedbackNotifyEnabled,loadFeedbackNotify,saveFeedbackNotify,
    aiPolishing,aiPolishReply,testingModel,testingNewProvider,testModel,testNewProvider,modelTestResults,newProviderTestResult,

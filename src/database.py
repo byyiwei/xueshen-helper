@@ -846,6 +846,29 @@ class Database:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
 
+        # 反馈附件表：文件字节存中控对象存储，这里只记元数据
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS feedback_attachments (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                feedback_id INT NOT NULL COMMENT '关联反馈ID',
+                reply_id INT DEFAULT NULL COMMENT '关联回复ID；上传后还没发送时为空',
+                uploader VARCHAR(50) NOT NULL DEFAULT '' COMMENT '上传者用户名',
+                role VARCHAR(10) NOT NULL DEFAULT 'user' COMMENT '上传者角色: user/admin',
+                object_id BIGINT DEFAULT 0 COMMENT '中控对象ID',
+                bucket VARCHAR(128) DEFAULT '' COMMENT '存储桶',
+                cos_key VARCHAR(512) DEFAULT '' COMMENT '对象键',
+                filename VARCHAR(255) NOT NULL DEFAULT '' COMMENT '原始文件名',
+                mime VARCHAR(128) DEFAULT '' COMMENT '文件类型',
+                size BIGINT DEFAULT 0 COMMENT '字节数',
+                sha256 CHAR(64) DEFAULT '' COMMENT '内容指纹',
+                status VARCHAR(16) NOT NULL DEFAULT 'ready' COMMENT 'ready/removed',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_fa_feedback (feedback_id),
+                INDEX idx_fa_reply (reply_id),
+                INDEX idx_fa_created (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
         # ===== 用户收款信息 =====
         self.execute("""
             CREATE TABLE IF NOT EXISTS user_payment_info (
@@ -4598,6 +4621,107 @@ class Database:
             f"SELECT * FROM feedback_replies WHERE feedback_id={ph} ORDER BY id ASC",
             (feedback_id,)
         ) or []
+
+    def add_feedback_reply_with_id(self, feedback_id, sender, content):
+        """添加对话记录并返回新记录ID（附件要挂到这条回复上，必须拿到ID）"""
+        ph = _ph()
+        conn = self._new_mysql_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"INSERT INTO feedback_replies (feedback_id, sender, content) VALUES ({ph},{ph},{ph})",
+                (feedback_id, sender, content)
+            )
+            conn.commit()
+            return int(getattr(cursor, "lastrowid", 0) or 0)
+        finally:
+            conn.close()
+
+    def add_feedback_attachment(self, feedback_id, uploader, role, object_id, bucket,
+                                cos_key, filename, mime, size, sha256):
+        """登记一个已上传到中控对象存储的附件（此时还未挂到某条回复）"""
+        ph = _ph()
+        conn = self._new_mysql_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"INSERT INTO feedback_attachments "
+                f"(feedback_id, uploader, role, object_id, bucket, cos_key, filename, mime, size, sha256) "
+                f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})",
+                (feedback_id, uploader, role, int(object_id or 0), bucket or "", cos_key or "",
+                 filename or "", mime or "", int(size or 0), sha256 or "")
+            )
+            conn.commit()
+            att_id = int(getattr(cursor, "lastrowid", 0) or 0)
+        finally:
+            conn.close()
+        if not att_id:
+            return None
+        return self.get_feedback_attachment(att_id)
+
+    def get_feedback_attachment(self, att_id):
+        ph = _ph()
+        return self.fetchone(
+            f"SELECT * FROM feedback_attachments WHERE id={ph} AND status='ready'",
+            (att_id,)
+        )
+
+    def count_feedback_attachments(self, feedback_id):
+        ph = _ph()
+        row = self.fetchone(
+            f"SELECT COUNT(*) AS cnt FROM feedback_attachments WHERE feedback_id={ph} AND status='ready'",
+            (feedback_id,)
+        ) or {}
+        return int(row.get("cnt") or 0)
+
+    def list_feedback_attachments(self, feedback_id):
+        ph = _ph()
+        return self.fetchall(
+            f"SELECT * FROM feedback_attachments WHERE feedback_id={ph} AND status='ready' ORDER BY id ASC",
+            (feedback_id,)
+        ) or []
+
+    def link_feedback_attachments(self, att_ids, feedback_id, reply_id, role):
+        """把本轮上传的附件挂到刚发出的回复上；只认本反馈、本角色、还没挂过的行"""
+        ids = []
+        for x in att_ids or []:
+            try:
+                ids.append(int(x))
+            except (TypeError, ValueError):
+                continue
+        if not ids:
+            return 0
+        ph = _ph()
+        marks = ",".join([ph] * len(ids))
+        self.execute(
+            f"UPDATE feedback_attachments SET reply_id={ph} "
+            f"WHERE feedback_id={ph} AND role={ph} AND (reply_id IS NULL OR reply_id=0) AND id IN ({marks})",
+            [int(reply_id), int(feedback_id), role] + ids
+        )
+        return len(ids)
+
+    def list_stale_feedback_attachments(self, hours=48):
+        """上传后一直没发送的附件（占着对象存储，定期清掉）"""
+        ph = _ph()
+        return self.fetchall(
+            f"SELECT * FROM feedback_attachments WHERE status='ready' "
+            f"AND (reply_id IS NULL OR reply_id=0) AND created_at < DATE_SUB(NOW(), INTERVAL {ph} HOUR)",
+            (int(hours),)
+        ) or []
+
+    def delete_feedback_attachments(self, att_ids):
+        ids = []
+        for x in att_ids or []:
+            try:
+                ids.append(int(x))
+            except (TypeError, ValueError):
+                continue
+        if not ids:
+            return 0
+        ph = _ph()
+        marks = ",".join([ph] * len(ids))
+        self.execute(f"DELETE FROM feedback_attachments WHERE id IN ({marks})", ids)
+        return len(ids)
 
     def auto_close_expired_feedback(self, days=7):
         """自动关闭超时的已回复反馈（超过N天无新对话）"""

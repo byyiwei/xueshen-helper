@@ -969,6 +969,277 @@ def do_hub_chat(messages, model, provider_info=None, timeout=None):
             return None, "中控网关请求异常: %s" % str(e), 0
 
 
+# ==================== 中控对象存储（反馈附件） ====================
+# 全部走 hub-v1 签名；appSecret 只在服务端。文件字节由本服务直接 PUT 到 COS，不经中控。
+HUB_MEDIA_SIGN_UPLOAD = "/open/media/sign-upload"
+HUB_MEDIA_COMPLETE = "/open/media/complete"
+HUB_MEDIA_SIGN_READ = "/open/media/sign-read"
+HUB_MEDIA_REMOVE = "/open/media/remove"
+FEEDBACK_ATTACHMENT_MAX_BYTES = 15 * 1024 * 1024   # 单个附件上限
+FEEDBACK_ATTACHMENT_MAX_FILES = 6                  # 一次消息最多几个附件
+FEEDBACK_ATTACHMENT_MAX_TOTAL = 300                # 单个反馈累计上限，防囤积
+FEEDBACK_ATTACHMENT_BLOCKED_EXT = {
+    ".html", ".htm", ".xhtml", ".shtml", ".svg", ".js", ".mjs", ".exe", ".bat",
+    ".cmd", ".com", ".scr", ".msi", ".sh", ".php", ".jsp", ".asp", ".aspx", ".jar",
+}
+_media_url_cache = {}          # object_id -> (签名URL, 过期时间)
+_media_url_lock = threading.Lock()
+_fb_upload_hits = {}           # 用户名 -> [时间戳]
+_fb_upload_lock = threading.Lock()
+
+
+def _hub_media_post(target, payload, timeout=25):
+    """带 hub-v1 签名 POST 到中控对象存储接口。返回 (ok, data_or_msg)。"""
+    app_key, app_secret, base_url = _captcha_hub_creds()
+    if not app_secret:
+        return False, "服务端未配置中控密钥（环境变量 HUB_APP_SECRET），无法使用附件存储"
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    headers = _hub_sign_headers("POST", target, body, app_key, app_secret)
+    headers["Content-Type"] = "application/json"
+    url = base_url.rstrip("/") + target
+    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+        try:
+            data = json.loads(raw.decode("utf-8") or "{}")
+        except Exception:
+            return False, "中控返回内容无法解析"
+        if isinstance(data, dict) and data.get("error"):
+            err = data.get("error")
+            msg = err.get("message") if isinstance(err, dict) else str(err)
+            return False, "中控存储返回错误：" + str(msg or err)
+        return True, data
+    except urllib.error.HTTPError as e:
+        try:
+            body_text = e.read().decode("utf-8", errors="replace")
+            err = json.loads(body_text) if body_text else {}
+        except Exception:
+            err = {}
+        msg = ""
+        if isinstance(err, dict):
+            msg = err.get("message") or ""
+            if not msg and isinstance(err.get("error"), dict):
+                msg = err["error"].get("message") or ""
+        if e.code == 403:
+            return False, "应用未开启「存储」能力，请到中控应用详情的能力开关里打开（HTTP 403）"
+        if e.code == 409:
+            return False, "同名的文件已存在且内容不同，请换个文件名再试"
+        return False, msg or ("中控存储拒绝（HTTP %d）" % e.code)
+    except Exception as e:
+        return False, "无法连接中控存储：" + str(e)
+
+
+def _hub_media_pick_url(data):
+    if not isinstance(data, dict):
+        return ""
+    for key in ("url", "downloadUrl", "signedUrl", "readUrl", "src", "link"):
+        v = data.get(key)
+        if isinstance(v, str) and v.startswith("http"):
+            return v
+    for v in data.values():
+        if isinstance(v, str) and v.startswith("http"):
+            return v
+    return ""
+
+
+def hub_media_upload(data_bytes, mime, filename):
+    """签发 → 直传 COS → complete 三步走完。返回 (meta, err)。
+
+    直传用的 headers 原样使用中控返回的那份，绝不改写（签名锁死了 content-type/length）。
+    中控判定 exists=true 时说明云上已有同一份内容，PUT 与 complete 都跳过。
+    """
+    sha = hashlib.sha256(data_bytes).hexdigest()
+    ok, res = _hub_media_post(HUB_MEDIA_SIGN_UPLOAD, {
+        "mime": mime or "application/octet-stream",
+        "size": len(data_bytes),
+        "filename": filename or "",
+        "sha256": sha,
+        "overwrite": False,
+        "expires": 300,
+    }, timeout=20)
+    if not ok:
+        return None, res
+    if not isinstance(res, dict):
+        return None, "中控存储返回内容异常"
+    try:
+        object_id = int(res.get("objectId") or 0)
+    except (TypeError, ValueError):
+        object_id = 0
+    if not object_id:
+        return None, "中控存储未返回对象ID"
+
+    if not res.get("exists"):
+        upload_url = res.get("uploadUrl") or ""
+        if not upload_url:
+            return None, "中控存储未返回直传地址"
+        method = str(res.get("method") or "PUT").upper()
+        put_headers = dict(res.get("headers") or {})
+        req = urllib.request.Request(upload_url, data=data_bytes, headers=put_headers, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                resp.read()
+        except urllib.error.HTTPError as e:
+            print("[反馈附件] 直传 COS 失败 HTTP %d: %s" % (e.code, str(e)[:200]), flush=True)
+            return None, "文件上传到云存储失败（HTTP %d），请重试" % e.code
+        except Exception as e:
+            print("[反馈附件] 直传 COS 异常: %s" % str(e)[:200], flush=True)
+            return None, "文件上传到云存储失败，请重试"
+        cok, cres = _hub_media_post(HUB_MEDIA_COMPLETE, {"objectId": object_id, "sha256": sha}, timeout=30)
+        if not cok:
+            return None, "上传完成对账失败：" + str(cres)
+
+    return {
+        "object_id": object_id,
+        "bucket": res.get("bucket") or "",
+        "cos_key": res.get("cosKey") or "",
+        "mime": mime or "application/octet-stream",
+        "filename": filename or "",
+        "size": len(data_bytes),
+        "sha256": sha,
+    }, None
+
+
+def hub_media_read_url(object_id, expires=900):
+    """取对象的限时读取地址（私有桶返回签名 URL，公共桶返回直链）。带内存缓存。"""
+    try:
+        object_id = int(object_id or 0)
+    except (TypeError, ValueError):
+        object_id = 0
+    if not object_id:
+        return None, "对象ID无效"
+    now = time.time()
+    with _media_url_lock:
+        cached = _media_url_cache.get(object_id)
+        if cached and cached[1] > now + 60:
+            return cached[0], None
+    ok, res = _hub_media_post(HUB_MEDIA_SIGN_READ, {"objectId": object_id, "expires": int(expires)}, timeout=20)
+    if not ok:
+        return None, res
+    url = _hub_media_pick_url(res)
+    if not url:
+        return None, "中控存储未返回读取地址"
+    with _media_url_lock:
+        if len(_media_url_cache) > 5000:
+            for k, v in list(_media_url_cache.items()):
+                if v[1] <= now:
+                    _media_url_cache.pop(k, None)
+        _media_url_cache[object_id] = (url, now + int(expires) - 60)
+    return url, None
+
+
+def hub_media_remove(object_id):
+    """尽力删除对象（只标删，中控清理任务过宽限期才真删）。"""
+    try:
+        _hub_media_post(HUB_MEDIA_REMOVE, {"objectId": int(object_id)}, timeout=15)
+    except Exception:
+        pass
+
+
+def _feedback_upload_rate_limited(username, limit=40, window=3600):
+    now = time.time()
+    key = username or "?"
+    with _fb_upload_lock:
+        hits = [t for t in _fb_upload_hits.get(key, []) if now - t < window]
+        if len(hits) >= limit:
+            _fb_upload_hits[key] = hits
+            return True
+        hits.append(now)
+        _fb_upload_hits[key] = hits
+        if len(_fb_upload_hits) > 5000:
+            for k in list(_fb_upload_hits.keys()):
+                if not _fb_upload_hits[k] or _fb_upload_hits[k][-1] < now - window:
+                    _fb_upload_hits.pop(k, None)
+    return False
+
+
+def _feedback_attachment_public(att, with_url=True):
+    """给前端的附件信息。图片带一份签名 URL 方便直接展示。"""
+    mime = (att.get("mime") or "").lower()
+    item = {
+        "id": int(att.get("id") or 0),
+        "filename": att.get("filename") or "附件",
+        "mime": mime,
+        "size": int(att.get("size") or 0),
+        "is_image": mime.startswith("image/"),
+        "url": "",
+    }
+    if with_url and item["is_image"]:
+        try:
+            url, _ = hub_media_read_url(int(att.get("object_id") or 0), 900)
+        except Exception:
+            url = None
+        item["url"] = url or ""
+    return item
+
+
+def _decorate_feedback_attachments(fb):
+    """把附件按「挂在哪条回复上」分组塞进反馈对象。"""
+    try:
+        rows = db.list_feedback_attachments(int(fb.get("id") or 0))
+    except Exception:
+        rows = []
+    by_reply = {}
+    root = []
+    for a in rows:
+        item = _feedback_attachment_public(a, with_url=True)
+        try:
+            rid = int(a.get("reply_id") or 0)
+        except (TypeError, ValueError):
+            rid = 0
+        if rid:
+            by_reply.setdefault(rid, []).append(item)
+        else:
+            root.append(item)
+    fb["attachments"] = root
+    for rp in fb.get("replies") or []:
+        rp["attachments"] = by_reply.get(int(rp.get("id") or 0), [])
+    return fb
+
+
+def _valid_feedback_attachment_ids(fb_id, role, raw_ids):
+    """只保留本反馈、本角色、还没挂到回复上的附件ID（防串号）。"""
+    wanted = []
+    for x in raw_ids or []:
+        try:
+            x = int(x)
+        except (TypeError, ValueError):
+            continue
+        if x and x not in wanted:
+            wanted.append(x)
+    if not wanted:
+        return []
+    rows = db.list_feedback_attachments(int(fb_id))
+    allowed = set()
+    for r in rows:
+        if (r.get("role") or "") != role:
+            continue
+        try:
+            if int(r.get("reply_id") or 0):
+                continue
+        except (TypeError, ValueError):
+            continue
+        allowed.add(int(r.get("id") or 0))
+    return [x for x in wanted if x in allowed][:FEEDBACK_ATTACHMENT_MAX_FILES]
+
+
+def _cleanup_stale_feedback_attachments():
+    """清掉上传后一直没发送的附件（超过 48 小时），尽力调中控删除对象。"""
+    try:
+        rows = db.list_stale_feedback_attachments(48)
+        if not rows:
+            return
+        ids = []
+        for r in rows:
+            ids.append(int(r.get("id") or 0))
+            oid = int(r.get("object_id") or 0)
+            if oid:
+                threading.Thread(target=hub_media_remove, args=(oid,), daemon=True).start()
+        db.delete_feedback_attachments(ids)
+        print("[反馈附件] 清理未发送附件 %d 个" % len(ids), flush=True)
+    except Exception as e:
+        print("[反馈附件] 清理未发送附件失败: %s" % e, flush=True)
+
 
 def _sso_html_escape(text):
     return (str(text).replace("&", "&amp;").replace("<", "&lt;")
@@ -5848,6 +6119,197 @@ class Handler(BaseHTTPRequestHandler):
             return json.dumps({"_too_large": length})
         return self.rfile.read(length).decode("utf-8")
 
+    def _read_raw_body(self, max_bytes):
+        """读取原始字节（附件上传用）。超限返回 None，并让本次连接直接关闭。"""
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+        except Exception:
+            length = 0
+        if length <= 0:
+            self._send_json(400, {"code": 400, "msg": "没有收到文件内容"})
+            return None
+        if length > max_bytes:
+            self.close_connection = True
+            self._send_json(413, {"code": 413,
+                                  "msg": "单个文件不能超过 %d MB" % (max_bytes // (1024 * 1024))},
+                            {"Connection": "close"})
+            return None
+        chunks = []
+        remaining = length
+        while remaining > 0:
+            chunk = self.rfile.read(min(remaining, 256 * 1024))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        if remaining > 0:
+            self.close_connection = True
+            self._send_json(400, {"code": 400, "msg": "文件上传中断，请重试"},
+                            {"Connection": "close"})
+            return None
+        return b"".join(chunks)
+
+    def _feedback_attachment_name(self):
+        raw = self.headers.get("X-File-Name") or ""
+        try:
+            name = urllib.parse.unquote(raw)
+        except Exception:
+            name = raw
+        name = name.replace("\\", "/").split("/")[-1]
+        name = re.sub(r"[\x00-\x1f\x7f]", "", name).strip()
+        return (name or "附件")[:120]
+
+    def _feedback_attachment_upload(self, path):
+        """用户/管理员上传反馈附件：本服务签名后把字节直传 COS，再 complete 对账。"""
+        def fail(msg, code=400):
+            # 还没读请求体就返回，必须断开连接，避免剩余字节污染下一条请求
+            self.close_connection = True
+            self._send_json(code, {"code": code, "msg": msg}, {"Connection": "close"})
+
+        is_admin = path.startswith("/admin/")
+        if is_admin:
+            if not self._check_admin():
+                fail("未登录或 Token 失效", 403)
+                return
+            uploader = "admin"
+            role = "admin"
+        else:
+            user = self._get_user_from_token()
+            if not user:
+                fail("请先登录", 401)
+                return
+            uploader = user["username"]
+            role = "user"
+
+        try:
+            fid = int(self.headers.get("X-Feedback-Id") or 0)
+        except (TypeError, ValueError):
+            fid = 0
+        if not fid:
+            fail("缺少反馈ID")
+            return
+        fb = db.get_feedback_by_id(fid)
+        if not fb:
+            fail("反馈不存在", 404)
+            return
+        if not is_admin:
+            if fb.get("username") != uploader:
+                fail("无权操作此反馈", 403)
+                return
+            if fb.get("status") == "closed":
+                fail("该反馈已关闭，无法上传附件")
+                return
+
+        if _feedback_upload_rate_limited(uploader):
+            fail("上传太频繁了，请稍后再试", 429)
+            return
+        try:
+            if int(fb.get("id") or 0) and db.count_feedback_attachments(fid) >= FEEDBACK_ATTACHMENT_MAX_TOTAL:
+                fail("这个反馈的附件已经很多了，请新开一条反馈")
+                return
+        except Exception:
+            pass
+
+        filename = self._feedback_attachment_name()
+        ext = os.path.splitext(filename)[1].lower()
+        if ext in FEEDBACK_ATTACHMENT_BLOCKED_EXT:
+            fail("不支持上传 %s 类型的文件" % ext)
+            return
+
+        content_type = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+        if content_type in ("text/html", "application/xhtml+xml", "image/svg+xml",
+                            "application/javascript", "text/javascript", "application/x-javascript"):
+            fail("不支持上传这种类型的文件")
+            return
+        if not content_type:
+            content_type = "application/octet-stream"
+
+        data = self._read_raw_body(FEEDBACK_ATTACHMENT_MAX_BYTES)
+        if data is None:
+            return
+        if not data:
+            fail("文件是空的")
+            return
+
+        meta, err = hub_media_upload(data, content_type, filename)
+        if not meta:
+            fail(err or "上传失败", 502)
+            return
+        try:
+            row = db.add_feedback_attachment(
+                fid, uploader, role, meta["object_id"], meta["bucket"], meta["cos_key"],
+                filename, meta["mime"], meta["size"], meta["sha256"]
+            )
+        except Exception as e:
+            hub_media_remove(meta["object_id"])
+            fail("保存附件记录失败：" + str(e), 500)
+            return
+
+        if os.environ.get("XS_FEEDBACK_ATTACH_DEBUG"):
+            print("[反馈附件] 已上传 fid=%s role=%s object=%s size=%d" %
+                  (fid, role, meta["object_id"], meta["size"]), flush=True)
+        threading.Thread(target=_cleanup_stale_feedback_attachments, daemon=True).start()
+        self._send_json(200, {"code": 200, "msg": "上传成功",
+                              "attachment": _feedback_attachment_public(row, with_url=True)})
+
+    def _feedback_attachment_download(self, att_id, path):
+        """附件下载：服务端先换签名 URL，再把字节原样转发给浏览器（带正确文件名）。"""
+        is_admin = path.startswith("/admin/")
+        if is_admin:
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+        else:
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "请先登录"})
+                return
+        att = db.get_feedback_attachment(att_id)
+        if not att:
+            self._send_json(404, {"code": 404, "msg": "附件不存在或已删除"})
+            return
+        if not is_admin:
+            fb = db.get_feedback_by_id(int(att.get("feedback_id") or 0))
+            if not fb or fb.get("username") != user["username"]:
+                self._send_json(403, {"code": 403, "msg": "无权下载此附件"})
+                return
+        url, err = hub_media_read_url(int(att.get("object_id") or 0), 1800)
+        if not url:
+            self._send_json(502, {"code": 502, "msg": err or "附件暂时无法下载，请稍后重试"})
+            return
+        filename = att.get("filename") or "附件"
+        ascii_ext = os.path.splitext(filename)[1]
+        ascii_ext = re.sub(r"[^A-Za-z0-9.]", "", ascii_ext)[:10] or ""
+        ascii_name = "attachment" + ascii_ext
+        disposition = "attachment; filename=\"%s\"; filename*=UTF-8''%s" % (
+            ascii_name, quote(filename, safe=""))
+        req = urllib.request.Request(url, headers={"User-Agent": "XS-Feedback/1.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                length = resp.headers.get("Content-Length")
+                self.send_response(200)
+                self.send_header("Content-Type", att.get("mime") or "application/octet-stream")
+                if length and str(length).isdigit():
+                    self.send_header("Content-Length", length)
+                self.send_header("Content-Disposition", disposition)
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.send_header("Cache-Control", "private, max-age=600")
+                self.send_header("Access-Control-Allow-Origin", self._allow_origin())
+                self.end_headers()
+                while True:
+                    chunk = resp.read(64 * 1024)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+            pass
+        except Exception as e:
+            print("[反馈附件] 下载转发失败 id=%s: %s" % (att_id, str(e)[:200]), flush=True)
+            try:
+                self._send_json(502, {"code": 502, "msg": "附件暂时无法下载，请稍后重试"})
+            except Exception:
+                pass
+
     def _get_user_from_token(self):
         """从请求头解析用户 Token"""
         auth = self.headers.get("Authorization", "")
@@ -6689,7 +7151,16 @@ class Handler(BaseHTTPRequestHandler):
                 for rp in replies:
                     rp["created_at"] = str(rp.get("created_at") or "")
                 r["replies"] = replies
+                _decorate_feedback_attachments(r)
             self._send_json(200, {"code": 200, "feedback": feedback})
+
+        elif path.startswith("/api/user/feedback/attachment/"):
+            parts = [p for p in path.split("/") if p]
+            # /api/user/feedback/attachment/<id>/download
+            if len(parts) == 6 and parts[4].isdigit() and parts[5] == "download":
+                self._feedback_attachment_download(int(parts[4]), path)
+            else:
+                self._send_json(404, {"code": 404, "msg": "接口不存在"})
 
         elif path == "/api/payment/methods":
             try:
@@ -7477,7 +7948,7 @@ class Handler(BaseHTTPRequestHandler):
                     last = replies[-1]
                     r["last_reply_at"] = str(last.get("created_at") or "")
                     r["last_reply_sender"] = last.get("sender") or ""
-                    r["last_reply_content"] = (last.get("content") or "")[:80]
+                    r["last_reply_content"] = (last.get("content") or "[附件]")[:80]
                 else:
                     r["last_reply_at"] = ""
                     r["last_reply_sender"] = ""
@@ -7492,6 +7963,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {"code": 200, "days": db.get_feedback_auto_close_days()})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path.startswith("/admin/feedback/attachment/"):
+            parts = [p for p in path.split("/") if p]
+            # /admin/feedback/attachment/<id>/download
+            if len(parts) == 5 and parts[3].isdigit() and parts[4] == "download":
+                self._feedback_attachment_download(int(parts[3]), path)
+            else:
+                self._send_json(404, {"code": 404, "msg": "接口不存在"})
 
         elif path.startswith("/admin/feedback/"):
             if not self._check_admin():
@@ -7511,6 +7990,7 @@ class Handler(BaseHTTPRequestHandler):
             for rp in replies:
                 rp["created_at"] = str(rp.get("created_at") or "")
             fb["replies"] = replies
+            _decorate_feedback_attachments(fb)
             self._send_json(200, {"code": 200, "feedback": fb})
 
         # ==================== 邮件模板管理（GET） ====================
@@ -7686,6 +8166,10 @@ class Handler(BaseHTTPRequestHandler):
         global PROVIDERS
         parsed = urlparse(self.path)
         path = parsed.path
+        # 附件是原始字节，必须在 _read_body（会按 UTF-8 解码）之前接走
+        if path in ("/api/user/feedback/attachment", "/admin/feedback/attachment"):
+            self._feedback_attachment_upload(path)
+            return
         body = self._read_body()
 
         if path == "/api/slider-captcha/verify":
@@ -8095,7 +8579,14 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(body or "{}")
                 feedback_id = int(data.get("feedback_id") or 0)
                 content = (data.get("content") or "").strip()
-                if not feedback_id or not content:
+                raw_att_ids = data.get("attachment_ids") or []
+                if not isinstance(raw_att_ids, list):
+                    raw_att_ids = []
+                if len(raw_att_ids) > FEEDBACK_ATTACHMENT_MAX_FILES:
+                    self._send_json(400, {"code": 400,
+                                          "msg": "一次最多发送 %d 个附件" % FEEDBACK_ATTACHMENT_MAX_FILES})
+                    return
+                if not feedback_id or (not content and not raw_att_ids):
                     self._send_json(400, {"code": 400, "msg": "反馈ID和内容不能为空"})
                     return
                 if len(content) > 5000:
@@ -8108,9 +8599,16 @@ class Handler(BaseHTTPRequestHandler):
                 if fb.get("status") == "closed":
                     self._send_json(400, {"code": 400, "msg": "该反馈已关闭，无法继续回复"})
                     return
-                db.add_feedback_reply(feedback_id, "user", content)
+                att_ids = _valid_feedback_attachment_ids(feedback_id, "user", raw_att_ids)
+                if raw_att_ids and not att_ids:
+                    self._send_json(400, {"code": 400, "msg": "附件已失效，请重新上传后再发送"})
+                    return
+                reply_id = db.add_feedback_reply_with_id(feedback_id, "user", content)
+                if att_ids:
+                    db.link_feedback_attachments(att_ids, feedback_id, reply_id, "user")
                 db.update_feedback_status(feedback_id, "processing")
-                threading.Thread(target=_send_feedback_notify, args=(feedback_id, "reply", fb.get("username",""), fb.get("category",""), fb.get("title",""), content), daemon=True).start()
+                notify_text = content or ("发送了 %d 个附件" % len(att_ids))
+                threading.Thread(target=_send_feedback_notify, args=(feedback_id, "reply", fb.get("username",""), fb.get("category",""), fb.get("title",""), notify_text), daemon=True).start()
                 self._send_json(200, {"code": 200, "msg": "回复成功"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -9689,13 +10187,26 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(body or "{}")
                 fid = int(data.get("id") or 0)
                 reply_text = (data.get("reply_text") or "").strip()
-                if not fid or not reply_text:
+                raw_att_ids = data.get("attachment_ids") or []
+                if not isinstance(raw_att_ids, list):
+                    raw_att_ids = []
+                if len(raw_att_ids) > FEEDBACK_ATTACHMENT_MAX_FILES:
+                    self._send_json(400, {"code": 400,
+                                          "msg": "一次最多发送 %d 个附件" % FEEDBACK_ATTACHMENT_MAX_FILES})
+                    return
+                if not fid or (not reply_text and not raw_att_ids):
                     self._send_json(400, {"code": 400, "msg": "反馈ID和回复内容不能为空"})
                     return
                 fb = db.get_feedback_by_id(fid)
                 if not fb:
                     self._send_json(404, {"code": 404, "msg": "反馈不存在"})
                     return
+                att_ids = _valid_feedback_attachment_ids(fid, "admin", raw_att_ids)
+                if raw_att_ids and not att_ids:
+                    self._send_json(400, {"code": 400, "msg": "附件已失效，请重新上传后再回复"})
+                    return
+                if not reply_text and att_ids:
+                    reply_text = "管理员上传了附件，请到用户中心查看。"
                 # 发送邮件（使用 feedback_reply 模板，模板不存在时用 fallback）
                 user_email = fb.get("email") or ""
                 if not user_email:
@@ -9729,7 +10240,9 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 # 保存回复（兼容旧字段 + 新对话表）
                 db.reply_feedback(fid, reply_text)
-                db.add_feedback_reply(fid, "admin", reply_text)
+                reply_id = db.add_feedback_reply_with_id(fid, "admin", reply_text)
+                if att_ids:
+                    db.link_feedback_attachments(att_ids, fid, reply_id, "admin")
                 self._send_json(200, {"code": 200, "msg": "回复成功，邮件已发送"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})

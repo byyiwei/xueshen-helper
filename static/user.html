@@ -1180,6 +1180,99 @@
             border: 1px solid var(--c-brand-ring);
             border-radius: 14px 4px 14px 14px;
         }
+        /* 反馈附件 */
+        .fb-attach-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .fb-attach-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            max-width: 240px;
+            padding: 6px 8px 6px 9px;
+            border: 1px solid var(--c-border);
+            background: var(--c-surface);
+            border-radius: 8px;
+            font-size: 12px;
+            color: var(--c-text-2);
+        }
+        .fb-attach-chip-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .fb-attach-chip-del {
+            border: none;
+            background: transparent;
+            color: var(--c-text-3);
+            cursor: pointer;
+            padding: 0 2px;
+            line-height: 1;
+            display: inline-flex;
+        }
+        .fb-attach-chip-del:hover { color: #ef4444; }
+        .fb-attach-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .fb-msg-row.user .fb-attach-list { justify-content: flex-end; }
+        .fb-attach-img {
+            display: block;
+            width: 148px;
+            max-width: 100%;
+            height: auto;
+            border-radius: 10px;
+            border: 1px solid var(--c-border);
+            background: var(--c-surface-2);
+            cursor: zoom-in;
+        }
+        .fb-attach-file {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            max-width: 220px;
+            padding: 8px 10px;
+            border-radius: 9px;
+            border: 1px solid var(--c-border);
+            background: var(--c-surface);
+            color: var(--c-text-2);
+            font-size: 12px;
+        }
+        .fb-attach-file-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .fb-attach-meta {
+            font-size: 11px;
+            color: var(--c-text-3);
+            margin-top: 3px;
+        }
+        .fb-attach-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 4px;
+        }
+        .fb-attach-action {
+            border: none;
+            background: transparent;
+            color: var(--c-brand);
+            cursor: pointer;
+            padding: 0;
+            font-size: 11.5px;
+            font-weight: 600;
+        }
+        .fb-attach-action:hover { text-decoration: underline; }
+        .fb-attach-tip {
+            font-size: 11.5px;
+            color: var(--c-text-3);
+            white-space: nowrap;
+        }
         .global-toast {
             position: fixed;
             top: 24px;
@@ -3538,8 +3631,16 @@
                                 </div>
                                 <div id="fbChatBody"></div>
                                 <div id="fbChatReplyArea" style="margin-top:14px;border-top:1px solid var(--c-border);padding-top:14px">
+                                    <div id="fbChatAttachBar" class="fb-attach-bar" style="display:none"></div>
                                     <textarea id="fbChatInput" rows="3" maxlength="2000" placeholder="输入追问内容，管理员将继续跟进..." style="width:100%;font-size:13px;resize:vertical;line-height:1.5;box-sizing:border-box"></textarea>
-                                    <div style="display:flex;justify-content:flex-end;margin-top:10px">
+                                    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px">
+                                        <div style="display:flex;align-items:center;gap:8px;min-width:0">
+                                            <button type="button" id="fbChatAttachBtn" class="fb-attach-action" style="display:inline-flex;align-items:center;gap:5px;color:var(--c-text-2);font-size:12.5px">
+                                                <svg class="ui-icon sm" viewBox="0 0 24 24"><use href="#i-upload"></use></svg> 图片/附件
+                                            </button>
+                                            <input type="file" id="fbChatFileInput" multiple style="display:none">
+                                            <span id="fbChatAttachTip" class="fb-attach-tip">支持粘贴截图</span>
+                                        </div>
                                         <button type="button" id="fbChatSend" class="primary" style="width:auto;padding:0 22px;height:36px;min-height:36px;font-size:13px;display:inline-flex;align-items:center;gap:6px">
                                             <svg class="ui-icon sm" viewBox="0 0 24 24"><use href="#i-send"></use></svg> 发送追问
                                         </button>
@@ -5663,6 +5764,10 @@ await loadPlans();
         let fbFilterDays = 0; // 默认展示全部，避免超过7天的历史反馈被误判为丢失
         let fbSearchKeyword = '';
         let fbCurrentChat = null;
+        let fbPendingAttachments = [];
+        let fbUploadingCount = 0;
+        const FB_ATTACH_MAX_FILES = 6;
+        const FB_ATTACH_MAX_BYTES = 15 * 1024 * 1024;
 
         function parseFbTime(str) {
             if (!str) return 0;
@@ -5731,7 +5836,14 @@ await loadPlans();
                 const lastReply = replies.length ? replies[replies.length - 1] : null;
                 const lastTime = lastReply ? (lastReply.created_at || '').replace('T', ' ').substring(0, 16) : time;
                 const lastSender = lastReply ? (lastReply.sender === 'admin' ? '管理员' : '我') : (f.admin_reply ? '管理员' : '');
-                const preview = lastReply ? lastReply.content.substring(0, 50) : (f.admin_reply ? f.admin_reply.substring(0, 50) : (f.content || '').substring(0, 50));
+                let preview;
+                if (lastReply) {
+                    const rc = lastReply.content || '';
+                    const ac = (lastReply.attachments || []).length;
+                    preview = rc ? rc.substring(0, 50) : (ac ? '[附件]' : '');
+                } else {
+                    preview = f.admin_reply ? f.admin_reply.substring(0, 50) : (f.content || '').substring(0, 50);
+                }
                 const isUnread = (f.status === 'resolved' || (lastReply && lastReply.sender === 'admin'));
                 const unreadDot = isUnread ? '<span class="fb-unread-dot"></span>' : '';
                 const isSelected = fbCurrentChat && fbCurrentChat.id === f.id;
@@ -5761,6 +5873,10 @@ await loadPlans();
             const f = fbList.find(x => x.id === fid);
             if (!f) return;
             fbCurrentChat = f;
+            fbPendingAttachments = [];
+            fbUploadingCount = 0;
+            fbSetPendingBar();
+            fbUpdateAttachTip();
 
             // 高亮选中项
             document.querySelectorAll('#fbList .fb-list-item').forEach(item => {
@@ -5790,6 +5906,9 @@ await loadPlans();
 
         function closeFbChat() {
             fbCurrentChat = null;
+            fbPendingAttachments = [];
+            fbUploadingCount = 0;
+            fbSetPendingBar();
             document.querySelectorAll('#fbList .fb-list-item').forEach(item => item.classList.remove('active'));
             if ($('fbChatView')) $('fbChatView').style.display = 'none';
             if ($('fbSubmitCard')) $('fbSubmitCard').style.display = 'block';
@@ -5803,7 +5922,7 @@ await loadPlans();
             let html = '';
             // 初始反馈（用户消息，右侧）
             const time0 = (f.created_at || '').replace('T', ' ').substring(0, 16);
-            html += fbChatBubble('user', f.content, time0);
+            html += fbChatBubble('user', f.content, time0, f.attachments);
             // 旧数据兼容：有 admin_reply 但 replies 为空
             if (f.admin_reply && replies.length === 0) {
                 const tr = (f.replied_at || '').replace('T', ' ').substring(0, 16);
@@ -5812,7 +5931,7 @@ await loadPlans();
             // 对话记录
             replies.forEach(rp => {
                 const t = (rp.created_at || '').replace('T', ' ').substring(0, 16);
-                html += fbChatBubble(rp.sender, rp.content, t);
+                html += fbChatBubble(rp.sender, rp.content, t, rp.attachments);
             });
             if (f.status === 'closed' && !replies.length && !f.admin_reply) {
                 html += '<div style="text-align:center;color:var(--c-text-3);font-size:12px;padding:12px">该反馈已关闭</div>';
@@ -5821,7 +5940,40 @@ await loadPlans();
             setTimeout(() => { body.scrollTop = body.scrollHeight; }, 30);
         }
 
-        function fbChatBubble(sender, content, time) {
+        function fbFormatSize(bytes) {
+            const n = Number(bytes) || 0;
+            if (n < 1024) return n + ' B';
+            if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+            return (n / 1024 / 1024).toFixed(1) + ' MB';
+        }
+
+        function fbAttachmentsHtml(atts) {
+            if (!Array.isArray(atts) || !atts.length) return '';
+            const items = atts.map(a => {
+                const name = escapeHtml(a.filename || '附件');
+                const size = fbFormatSize(a.size);
+                if (a.is_image && a.url) {
+                    return `<div>
+                        <a href="${escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer"><img class="fb-attach-img" src="${escapeHtml(a.url)}" alt="${name}" loading="lazy"></a>
+                        <div class="fb-attach-actions">
+                            <button type="button" class="fb-attach-action" data-fb-copy-img="${a.id}" data-url="${escapeHtml(a.url)}">复制图片</button>
+                            <button type="button" class="fb-attach-action" data-fb-dl="${a.id}" data-name="${name}">下载</button>
+                        </div>
+                    </div>`;
+                }
+                return `<div>
+                    <div class="fb-attach-file">
+                        <svg class="ui-icon sm" viewBox="0 0 24 24"><use href="#i-file-text"></use></svg>
+                        <span class="fb-attach-file-name" title="${name}">${name}</span>
+                    </div>
+                    <div class="fb-attach-meta">${size}</div>
+                    <div class="fb-attach-actions"><button type="button" class="fb-attach-action" data-fb-dl="${a.id}" data-name="${name}">下载</button></div>
+                </div>`;
+            }).join('');
+            return `<div class="fb-attach-list">${items}</div>`;
+        }
+
+        function fbChatBubble(sender, content, time, attachments) {
             const isAdmin = sender === 'admin';
             const avatar = isAdmin
                 ? `<div class="fb-avatar admin" title="管理员"><svg class="ui-icon sm"><use href="#i-shield"></use></svg></div>`
@@ -5829,15 +5981,175 @@ await loadPlans();
             const label = isAdmin ? '管理员 · ' + time : time + ' · 我';
             const labelClass = isAdmin ? 'fb-sender-label admin' : 'fb-sender-label user';
             const bubbleClass = isAdmin ? 'fb-bubble admin' : 'fb-bubble user';
+            const bubble = content ? `<div class="${bubbleClass}">${escapeHtml(content)}</div>` : '';
 
             return `<div class="fb-msg-row ${isAdmin ? 'admin' : 'user'}">
                 ${avatar}
                 <div class="fb-msg-content" style="flex:1;min-width:0">
                     <div class="${labelClass}">${label}</div>
-                    <div class="${bubbleClass}">${escapeHtml(content)}</div>
+                    ${bubble}
+                    ${fbAttachmentsHtml(attachments)}
                 </div>
             </div>`;
         }
+
+        function fbUpdateAttachTip() {
+            const tip = $('fbChatAttachTip');
+            if (!tip) return;
+            tip.textContent = fbUploadingCount > 0 ? `正在上传 ${fbUploadingCount} 个...` : '支持粘贴截图';
+        }
+
+        function fbSetPendingBar() {
+            const bar = $('fbChatAttachBar');
+            if (!bar) return;
+            if (!fbPendingAttachments.length) {
+                bar.style.display = 'none';
+                bar.innerHTML = '';
+                return;
+            }
+            bar.style.display = 'flex';
+            bar.innerHTML = fbPendingAttachments.map((a, i) => {
+                const name = escapeHtml(a.filename || '附件');
+                const icon = a.is_image ? 'i-image' : 'i-file-text';
+                return `<div class="fb-attach-chip">
+                    <svg class="ui-icon sm" viewBox="0 0 24 24"><use href="#${icon}"></use></svg>
+                    <span class="fb-attach-chip-name" title="${name}">${name}</span>
+                    <span style="color:var(--c-text-3)">${fbFormatSize(a.size)}</span>
+                    <button type="button" class="fb-attach-chip-del" data-fb-remove="${i}" title="移除">
+                        <svg class="ui-icon xs" viewBox="0 0 24 24"><use href="#i-x"></use></svg>
+                    </button>
+                </div>`;
+            }).join('');
+        }
+
+        async function fbUploadFile(file) {
+            if (!fbCurrentChat) return;
+            if (fbCurrentChat.status === 'closed') return showToast('该反馈已关闭，无法上传附件', true);
+            if (!file || !file.size) return showToast('文件是空的', true);
+            if (file.size > FB_ATTACH_MAX_BYTES) return showToast('单个文件不能超过 15MB', true);
+            if (fbPendingAttachments.length + fbUploadingCount >= FB_ATTACH_MAX_FILES) {
+                return showToast(`一次最多发送 ${FB_ATTACH_MAX_FILES} 个附件`, true);
+            }
+            const name = file.name || ('粘贴图片-' + Date.now() + '.png');
+            const token = localStorage.getItem(TOKEN_KEY);
+            fbUploadingCount += 1;
+            fbUpdateAttachTip();
+            try {
+                const res = await fetch('/api/user/feedback/attachment', {
+                    method: 'POST',
+                    headers: {
+                        Authorization: 'Bearer ' + token,
+                        'Content-Type': file.type || 'application/octet-stream',
+                        'X-Feedback-Id': String(fbCurrentChat.id),
+                        'X-File-Name': encodeURIComponent(name)
+                    },
+                    body: file
+                });
+                const d = await res.json().catch(() => ({}));
+                if (d.code === 200 && d.attachment) {
+                    fbPendingAttachments.push(d.attachment);
+                    fbSetPendingBar();
+                } else {
+                    showToast(d.msg || '附件上传失败', true);
+                }
+            } catch (_) {
+                showToast('网络错误，附件上传失败', true);
+            }
+            fbUploadingCount -= 1;
+            fbUpdateAttachTip();
+        }
+
+        async function fbDownloadAttachment(id, filename) {
+            try {
+                const token = localStorage.getItem(TOKEN_KEY);
+                const res = await fetch('/api/user/feedback/attachment/' + id + '/download', {
+                    headers: { Authorization: 'Bearer ' + token }
+                });
+                if (!res.ok) {
+                    let m = '下载失败';
+                    try { const d = await res.json(); m = d.msg || m; } catch (_) {}
+                    showToast(m, true);
+                    return;
+                }
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename || '附件';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+            } catch (_) {
+                showToast('网络错误，下载失败', true);
+            }
+        }
+
+        async function fbCopyImage(url) {
+            if (!url) return showToast('图片地址不可用', true);
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('fetch failed');
+                const blob = await res.blob();
+                const type = blob.type || 'image/png';
+                await navigator.clipboard.write([new ClipboardItem({ [type]: blob })]);
+                showToast('图片已复制，可直接粘贴到聊天窗口');
+            } catch (_) {
+                try {
+                    await navigator.clipboard.writeText(url);
+                    showToast('浏览器不允许直接复制图片，已复制图片链接');
+                } catch (__) {
+                    showToast('复制失败，请右键图片选择复制', true);
+                }
+            }
+        }
+
+        // 附件操作（复制图片 / 下载）
+        $('fbChatBody').addEventListener('click', function (e) {
+            const copyBtn = e.target.closest('[data-fb-copy-img]');
+            if (copyBtn) {
+                e.preventDefault();
+                fbCopyImage(copyBtn.dataset.url);
+                return;
+            }
+            const dlBtn = e.target.closest('[data-fb-dl]');
+            if (dlBtn) {
+                e.preventDefault();
+                fbDownloadAttachment(parseInt(dlBtn.dataset.fbDl), dlBtn.dataset.name);
+            }
+        });
+
+        // 待发送附件：移除
+        $('fbChatAttachBar').addEventListener('click', function (e) {
+            const btn = e.target.closest('[data-fb-remove]');
+            if (!btn) return;
+            fbPendingAttachments.splice(parseInt(btn.dataset.fbRemove), 1);
+            fbSetPendingBar();
+        });
+
+        // 选择文件上传
+        $('fbChatAttachBtn').addEventListener('click', function () { $('fbChatFileInput').click(); });
+        $('fbChatFileInput').addEventListener('change', async function () {
+            const files = Array.from(this.files || []);
+            this.value = '';
+            for (const f of files) await fbUploadFile(f);
+        });
+
+        // 粘贴截图/文件
+        $('fbChatView').addEventListener('paste', function (e) {
+            if (!fbCurrentChat || fbCurrentChat.status === 'closed') return;
+            const items = (e.clipboardData && e.clipboardData.items) || [];
+            const files = [];
+            for (const it of items) {
+                if (it.kind === 'file') {
+                    const f = it.getAsFile();
+                    if (f) files.push(f);
+                }
+            }
+            if (!files.length) return;
+            e.preventDefault();
+            files.forEach(f => fbUploadFile(f));
+        });
 
         // 聊天返回按钮
         $('fbChatBack').addEventListener('click', closeFbChat);
@@ -5867,18 +6179,25 @@ await loadPlans();
         $('fbChatSend').addEventListener('click', async function () {
             if (!fbCurrentChat) return;
             const content = $('fbChatInput').value.trim();
-            if (!content) return showToast('请输入追问内容', true);
+            if (!content && !fbPendingAttachments.length) return showToast('请输入追问内容或添加附件', true);
+            if (fbUploadingCount > 0) return showToast('附件还在上传，请稍等', true);
             setBusy(this, true, '发送中...');
             try {
                 const token = localStorage.getItem(TOKEN_KEY);
                 const res = await fetch('/api/user/feedback/reply', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-                    body: JSON.stringify({ feedback_id: fbCurrentChat.id, content })
+                    body: JSON.stringify({
+                        feedback_id: fbCurrentChat.id,
+                        content,
+                        attachment_ids: fbPendingAttachments.map(a => a.id)
+                    })
                 });
                 const d = await res.json().catch(() => ({}));
                 if (d.code === 200) {
                     $('fbChatInput').value = '';
+                    fbPendingAttachments = [];
+                    fbSetPendingBar();
                     showToast('追问发送成功！');
                     await loadFeedback();
                     openFbChat(fbCurrentChat.id);
