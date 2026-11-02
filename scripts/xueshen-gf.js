@@ -2076,13 +2076,6 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               type: "switch",
               tips: "手动答题时，建议关闭，学习时，建议开启"
             },
-            skipAnswered: {
-              text: "已答题不重复作答",
-              platforms: [...ANSWER_PLATFORM_KEYS, ...WATCH_PLATFORM_KEYS],
-              value: false,
-              type: "switch",
-              tips: "勾选后，页面上已经有答案的题不再自动作答（题库和 AI 都跳过），避免覆盖你手动修改的答案；换到新的作业或考试页仍会正常作答"
-            },
             autoRefresh: {
               text: "定时刷新（防卡死）",
               platforms: ANSWER_PLATFORM_KEYS,
@@ -8200,13 +8193,6 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           registerQuestionFillHook(this);
           for (const [index, question] of this.questions.entries()) {
             if (!this.setting.config.basicConfig.autoAnswer.value) break;
-            const skipAnswered = this.setting.config.basicConfig.skipAnswered;
-            if (skipAnswered && skipAnswered.value && this.isQuestionAnswered(question)) {
-              this.log.insertLog(`第${index + 1}题已有答案，已跳过（已答题不重复作答）`);
-              question.answer = { code: 1, answer: [], src: "existing" };
-              this.correctNum += 1;
-              continue;
-            }
             this.questionStore.currentQuestionIndex = index;
             if (mode !== "ai") {
               const answerData = await getAccurateAnswer(question);
@@ -8399,42 +8385,6 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           return Boolean(
             optionContainer.querySelector(".check_answer, .check_answer_dx")
           );
-        }
-        return false;
-      });
-      // 「已答题不重复作答」：只读页面当前选中态，不请求答案、不覆盖用户手改的答案
-      __publicField(this, "isQuestionAnswered", (question) => {
-        if (!question || !question.element) return false;
-        const type = String(question.type || "");
-        if (["0", "1", "3"].includes(type)) {
-          const options = question.options || {};
-          for (const key of Object.keys(options)) {
-            const optionElement = options[key];
-            if (optionElement && optionElement.nodeType === 1 && this.isChoiceOptionSelected(optionElement)) {
-              return true;
-            }
-          }
-          return false;
-        }
-        if (["2", "4", "5", "6"].includes(type)) {
-          const textarea = question.element.querySelector("textarea");
-          if (textarea && String(textarea.value || "").trim()) return true;
-          if (textarea) {
-            try {
-              const ueditor = this._window && this._window.UE && this._window.UE.getEditor(textarea.name);
-              const html = ueditor && ueditor.getContent && ueditor.getContent();
-              if (html && String(html).replace(/<[^>]+>/g, "").trim()) return true;
-            } catch (_) {
-            }
-          }
-          return false;
-        }
-        if (["14", "15"].includes(type)) {
-          const boxes = question.element.querySelectorAll(".filling_answer, .reading_answer");
-          return Array.from(boxes).some((box) => {
-            const inputs = box.querySelectorAll('input[type="radio"], input[type="checkbox"]');
-            return Array.from(inputs).some((input) => this.isChoiceInputChecked(input));
-          });
         }
         return false;
       });
@@ -10387,13 +10337,6 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           const nodeCount = this._document ? this._document.querySelectorAll(".subject_node").length : 0;
           const pagedMode = nodeCount > 0 && nodeCount < this.questions.length;
           for (const [index, question] of this.questions.entries()) {
-            const skipAnswered = this.setting.config.basicConfig.skipAnswered;
-            if (skipAnswered && skipAnswered.value && this.isQuestionAnswered(question)) {
-              this.log.insertLog(`第${index + 1}题已有答案，已跳过（已答题不重复作答）`);
-              question.answer = { code: 1, answer: [], src: "existing" };
-              this.correctNum += 1;
-              continue;
-            }
             this.questionStore.currentQuestionIndex = index;
             let fillFailed = false;
             let handled = false;
@@ -10537,17 +10480,6 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         if (!this._document) return [];
         this.addQuestions(this.questionStore.questionList);
         this.questionStore.questionList = this.questions;
-      });
-      // 「已答题不重复作答」：只认可靠的选中信号，读不到就按未作答处理，避免误跳过
-      __publicField(this, "isQuestionAnswered", (question) => {
-        const element = question && question.element;
-        if (!element || !element.querySelectorAll) return false;
-        const controls = element.querySelectorAll('input[type="radio"], input[type="checkbox"], input');
-        if (Array.from(controls).some((input) => input.checked || (input.getAttribute && input.getAttribute("checked") != null))) return true;
-        const selectedNodes = element.querySelectorAll('[aria-checked="true"], [aria-selected="true"]');
-        if (selectedNodes.length) return true;
-        const textInputs = element.querySelectorAll("textarea, input[type=\"text\"]");
-        return Array.from(textInputs).some((input) => String(input.value || "").trim());
       });
       __publicField(this, "fillQuestion", (question, index) => {
         let isSelected = false;
@@ -13038,19 +12970,6 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       const tokens = String(el.className || "").toLowerCase().split(/\s+/);
       return tokens.some((t) => t === "is-checked" || t === "ischecked" || t === "checked");
     };
-    // 「已答题不重复作答」：只读页面当前选中态，读不到就按未作答处理
-    const questionAnsweredOnPage = (question) => {
-      const optionEls = (question && question.optionEls) || [];
-      if (optionEls.some((el) => choiceOptionSelected(el))) return true;
-      const element = question && question.element;
-      if (element && element.querySelectorAll) {
-        const textInputs = element.querySelectorAll('textarea, input[type="text"]');
-        if (Array.from(textInputs).some((input) => String(input.value || "").trim())) return true;
-        const selectedNodes = element.querySelectorAll('[aria-checked="true"], [aria-selected="true"]');
-        if (selectedNodes.length) return true;
-      }
-      return false;
-    };
     const choiceOptionSig = (el) => {
       var _b;
       const inputs = el.querySelectorAll ? [...el.querySelectorAll('input[type="radio"], input[type="checkbox"]')] : [];
@@ -13452,13 +13371,6 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       log.insertLog(`当前页面解析到${pageQuestions.length}个题目..`);
       for (const question of pageQuestions) {
         const questionIndex = questions.indexOf(question);
-        const skipAnswered = setting.config.basicConfig.skipAnswered;
-        if (skipAnswered && skipAnswered.value && questionAnsweredOnPage(question)) {
-          log.insertLog(`第${questionIndex + 1}题已有答案，已跳过（已答题不重复作答）`);
-          question.answer = { code: 1, answer: [], src: "existing" };
-          correctNum += 1;
-          continue;
-        }
         questionStore.currentQuestionIndex = questionIndex;
         questionStore.questionList = [...questions];
         const filled = await searchAndFill(question);
@@ -14730,18 +14642,6 @@ const XS_EXT = (() => {
     return filled;
   }
 
-  // 「已答题不重复作答」：青书选项是原生 input，直接读选中态
-  function qsQuestionAnswered(question) {
-    const options = (question && question.options) || [];
-    if (options.some((opt) => opt.input && opt.input.checked)) return true;
-    const element = question && question.element;
-    if (element && element.querySelectorAll) {
-      const textInputs = element.querySelectorAll('textarea, input[type="text"]');
-      if (Array.from(textInputs).some((input) => String(input.value || "").trim())) return true;
-    }
-    return false;
-  }
-
   function qsBuildQuestionPayload(question) {
     return {
       title: question.stemHtml || question.stem,
@@ -14786,12 +14686,6 @@ const XS_EXT = (() => {
       }
       if (question.type !== '2' && question.type !== '4' && !question.options.length) {
         extLog(`${rowText}：没有选项，已跳过`, 'warning');
-        skipped += 1;
-        continue;
-      }
-      const skipAnswered = setting.config.basicConfig.skipAnswered;
-      if (skipAnswered && skipAnswered.value && qsQuestionAnswered(question)) {
-        extLog(`${rowText}：已有答案，已跳过（已答题不重复作答）`, null);
         skipped += 1;
         continue;
       }
@@ -15145,19 +15039,6 @@ const XS_EXT = (() => {
     return /checked|selected|active/i.test(cls);
   }
 
-  /** 「已答题不重复作答」：当前可见题目里已有选中项就跳过，避免覆盖用户手改 */
-  function ctQuestionAnswered() {
-    const scopes = [
-      document.querySelector('.question-content, .exam-question, [class*="questionContent"], [class*="QuestionContent"], .ant-card-body'),
-      document.body
-    ].filter(Boolean);
-    for (const scope of scopes) {
-      const inputs = Array.from(scope.querySelectorAll('input[type="radio"], input[type="checkbox"]')).filter(ctVisible);
-      if (inputs.some((input) => ctOptionChecked(input))) return true;
-    }
-    return false;
-  }
-
   /** 在当前题目范围内按选项字母点选，返回是否点中并确认 */
   function ctClickLetters(letters) {
     if (!letters || !letters.length) return false;
@@ -15324,11 +15205,6 @@ const XS_EXT = (() => {
         if (pending.length > 1) {
           ctClickAnswerCard(item.index + 1);
           await extSleep(260);
-        }
-        const skipAnswered = setting.config.basicConfig.skipAnswered;
-        if (skipAnswered && skipAnswered.value && ctQuestionAnswered()) {
-          extLog(`出头 第${item.index + 1}题：已有答案，已跳过（已答题不重复作答）`, null);
-          continue;
         }
         const ok = ctClickLetters(item.letters);
         await extSleep(140);
@@ -19364,16 +19240,10 @@ const XS_EXT = (() => {
       }
       state.running = true;
       state.done = 0;
-      let skipAnsweredOn = false;
-      try {
-        const skipAnswered = useSettingStore().config.basicConfig.skipAnswered;
-        skipAnsweredOn = !!(skipAnswered && skipAnswered.value);
-      } catch (_) {
-      }
-      log(`开始作答，共 ${usable.length} 道题${skipAnsweredOn ? "（已有答案的题会跳过）" : ""}`);
+      log(`开始作答，共 ${usable.length} 道题`);
       for (const item of state.items.slice()) {
         if (!state.running) break;
-        if (item.status === "done" && skipAnsweredOn) { state.done++; continue; }
+        if (item.status === "done") { state.done++; continue; }
         const block = registry[item.index];
         if (!block) continue;
         setItem(item.index, { status: "running" });
