@@ -109,6 +109,13 @@ MODEL_429_MAX_SECONDS = 120  # 上游 Retry-After 再长也只按 120 秒封顶�
 MODEL_TIMEOUT_COOLDOWN = {}
 MODEL_TIMEOUT_COOLDOWN_SECONDS = 120
 
+# 冷却池是多线程共享的：写冷却、后台读快照会并发发生，统一用这把锁。
+MODEL_COOLDOWN_LOCK = threading.Lock()
+# 供后台「冷却队列」页面展示：本次运行里每个模型最近一次进入冷却的时间、累计次数。
+MODEL_COOLDOWN_STARTED = {}
+MODEL_COOLDOWN_HITS = {}
+BACKEND_STARTED_AT = time.time()
+
 
 def cooldown_key(provider_name, model_name):
     """冷却池的记账键：服务商 + 模型。"""
@@ -116,15 +123,60 @@ def cooldown_key(provider_name, model_name):
 
 
 def set_cooldown(pool, provider_name, model_name, seconds):
-    pool[cooldown_key(provider_name, model_name)] = time.time() + seconds
+    key = cooldown_key(provider_name, model_name)
+    now = time.time()
+    with MODEL_COOLDOWN_LOCK:
+        pool[key] = now + seconds
+        MODEL_COOLDOWN_STARTED[key] = now
+        MODEL_COOLDOWN_HITS[key] = MODEL_COOLDOWN_HITS.get(key, 0) + 1
 
 
 def clear_model_cooldowns(provider_name, model_name):
     """模型调用成功后清空它的三个冷却池。"""
     key = cooldown_key(provider_name, model_name)
-    MODEL_FAIL_COOLDOWN.pop(key, None)
-    MODEL_429_COOLDOWN.pop(key, None)
-    MODEL_TIMEOUT_COOLDOWN.pop(key, None)
+    with MODEL_COOLDOWN_LOCK:
+        MODEL_FAIL_COOLDOWN.pop(key, None)
+        MODEL_429_COOLDOWN.pop(key, None)
+        MODEL_TIMEOUT_COOLDOWN.pop(key, None)
+        MODEL_COOLDOWN_STARTED.pop(key, None)
+
+
+def model_cooldown_snapshot(now=None):
+    """后台冷却队列用的快照：一个模型只出一行，原因取最晚恢复的那个池。
+
+    返回按剩余时间升序排列，最快恢复的排最前。
+    """
+    now = time.time() if now is None else now
+    best = {}
+    with MODEL_COOLDOWN_LOCK:
+        pools = (
+            ("fail", MODEL_FAIL_COOLDOWN),
+            ("429", MODEL_429_COOLDOWN),
+            ("timeout", MODEL_TIMEOUT_COOLDOWN),
+        )
+        started = dict(MODEL_COOLDOWN_STARTED)
+        hits = dict(MODEL_COOLDOWN_HITS)
+        for reason, pool in pools:
+            for key, until in list(pool.items()):
+                if until <= now:
+                    continue
+                provider, model = key if isinstance(key, tuple) and len(key) == 2 else ("", str(key))
+                cur = best.get(key)
+                if cur is None or until > cur["until"]:
+                    started_at = started.get(key) or 0
+                    best[key] = {
+                        "provider": provider,
+                        "model": model,
+                        "reason": reason,
+                        "until": until,
+                        "remaining": int(until - now),
+                        "total": max(1, int(until - started_at)) if started_at else int(until - now),
+                        "started_at": started_at,
+                        "hits": int(hits.get(key, 0)),
+                    }
+        total_hits = sum(hits.values())
+    items = sorted(best.values(), key=lambda x: (x["remaining"], x["provider"], x["model"]))
+    return items, total_hits
 
 
 def split_model_candidates(candidates, now=None):
@@ -133,14 +185,18 @@ def split_model_candidates(candidates, now=None):
     冷却中的列表元素是 (服务商/模型 标签, 剩余秒)，日志和等待逻辑都用得上。
     """
     now = time.time() if now is None else now
+    with MODEL_COOLDOWN_LOCK:
+        fail_pool = dict(MODEL_FAIL_COOLDOWN)
+        pool_429 = dict(MODEL_429_COOLDOWN)
+        timeout_pool = dict(MODEL_TIMEOUT_COOLDOWN)
     active, cooling_429, cooling_timeout, skipped_404, skipped_token = [], [], [], [], []
     for item in candidates:
         provider_name, model_name = item[0], item[2]
         label = f"{provider_name}/{model_name}"
         key = cooldown_key(provider_name, model_name)
-        until_404 = MODEL_FAIL_COOLDOWN.get(key, 0)
-        until_429 = MODEL_429_COOLDOWN.get(key, 0)
-        until_timeout = MODEL_TIMEOUT_COOLDOWN.get(key, 0)
+        until_404 = fail_pool.get(key, 0)
+        until_429 = pool_429.get(key, 0)
+        until_timeout = timeout_pool.get(key, 0)
         if until_404 > now:
             skipped_404.append(label)
         elif until_429 > now:
@@ -7048,6 +7104,32 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {"code": 200, "locks": locks})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/model-cooldowns":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                now = time.time()
+                items, total_hits = model_cooldown_snapshot(now)
+                for item in items:
+                    pinfo = PROVIDERS.get(item["provider"]) or {}
+                    item["provider_title"] = pinfo.get("title") or item["provider"]
+                    item["provider_enabled"] = bool(_provider_usable(pinfo))
+                self._send_json(200, {
+                    "code": 200,
+                    "now": now,
+                    "server_started_at": BACKEND_STARTED_AT,
+                    "total_hits": total_hits,
+                    "items": items,
+                    "config": {
+                        "fail": MODEL_FAIL_COOLDOWN_SECONDS,
+                        "sec429": MODEL_429_DEFAULT_SECONDS,
+                        "sec429_max": MODEL_429_MAX_SECONDS,
+                        "timeout": MODEL_TIMEOUT_COOLDOWN_SECONDS,
+                    },
+                })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/ai-logs":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -7313,6 +7395,17 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
             self._send_json(200, {"code": 200, "stats": db.referral_stats()})
+
+        elif path == "/admin/referral/commission-ledger":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            qs = parse_qs(parsed.query)
+            username = qs.get("username", [""])[0].strip()
+            if not username:
+                self._send_json(400, {"code": 400, "msg": "缺少 username 参数"})
+                return
+            self._send_json(200, {"code": 200, "data": db.get_commission_ledger(username)})
 
         elif path == "/admin/referral/details":
             if not self._check_admin():
@@ -8515,6 +8608,30 @@ class Handler(BaseHTTPRequestHandler):
                 if secret_in and secret_in != "********":
                     db.execute("UPDATE admin_config SET sso_app_secret=%s WHERE id=1", (secret_in.strip(),))
                 self._send_json(200, {"code": 200, "msg": "已保存"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/model-cooldowns/clear":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                provider = str(data.get("provider") or "").strip()
+                model = str(data.get("model") or "").strip()
+                if provider and model:
+                    clear_model_cooldowns(provider, model)
+                    msg = f"已解除 {provider}/{model} 的冷却"
+                    print(f"[冷却队列] 手动解除 {provider}/{model}", flush=True)
+                else:
+                    with MODEL_COOLDOWN_LOCK:
+                        MODEL_FAIL_COOLDOWN.clear()
+                        MODEL_429_COOLDOWN.clear()
+                        MODEL_TIMEOUT_COOLDOWN.clear()
+                        MODEL_COOLDOWN_STARTED.clear()
+                    msg = "已解除全部模型冷却"
+                    print("[冷却队列] 手动解除全部冷却", flush=True)
+                self._send_json(200, {"code": 200, "msg": msg})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 

@@ -1292,7 +1292,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
 
         <!-- 模型服务组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.models}">
-          <div class="menu-group-header dock-item" :class="{active:['ai-config','ai-logs'].includes(page)}" @click="expandedGroups.models=!expandedGroups.models">
+          <div class="menu-group-header dock-item" :class="{active:['ai-config','ai-logs','model-cooldown'].includes(page)}" @click="expandedGroups.models=!expandedGroups.models">
             <svg class="ui-icon sm"><use href="#i-cpu"></use></svg>模型服务
             <svg class="ui-icon xs arrow"><use href="#i-chevron-right"></use></svg>
           </div>
@@ -1302,6 +1302,9 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
             </div>
             <div class="menu-item" :class="{active:page==='ai-logs'}" @click="page='ai-logs';loadAiLogs()">
               <svg class="ui-icon sm"><use href="#i-activity"></use></svg>模型日志
+            </div>
+            <div class="menu-item" :class="{active:page==='model-cooldown'}" @click="page='model-cooldown'">
+              <svg class="ui-icon sm"><use href="#i-clock"></use></svg>冷却队列
             </div>
           </div>
         </div>
@@ -3893,6 +3896,102 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
       </template>
 
       <!-- AI Call Logs Page -->
+      <template v-if="page==='model-cooldown'">
+        <header class="main-header">
+          <h2>冷却队列</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index<breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="status-bar">
+            <span class="status-dot" :class="cooldownRows.length?'on':'off'"></span>
+            <span v-if="cooldownRows.length">当前 {{cooldownRows.length}} 个模型在冷却，按恢复先后排列</span>
+            <span v-else>模型池没有冷却，全部可调用</span>
+            <span style="margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+              <span style="font-size:12px;color:var(--text3)">每 3 秒自动刷新<span v-if="cooldownUpdatedAt"> · {{cooldownUpdatedAt}} 更新</span> · 本次运行触发 {{cooldownTotalHits}} 次</span>
+              <button class="btn btn-secondary btn-sm" @click="loadModelCooldowns(true)">刷新</button>
+              <button v-if="cooldownRows.length" class="btn btn-danger btn-sm" @click="clearAllCooldowns">全部解除</button>
+            </span>
+          </div>
+
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+            <div style="flex:1 1 150px;padding:14px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px">
+              <div style="font-size:12px;color:var(--text3)">冷却中</div>
+              <div style="font-size:24px;font-weight:700;margin-top:4px">{{cooldownRows.length}}<span style="font-size:12px;font-weight:400;color:var(--text3)"> 个模型</span></div>
+            </div>
+            <div style="flex:1 1 150px;padding:14px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px">
+              <div style="font-size:12px;color:var(--text3)">429 限流</div>
+              <div style="font-size:24px;font-weight:700;margin-top:4px;color:var(--warning)">{{cooldownCounts['429']||0}}<span style="font-size:12px;font-weight:400;color:var(--text3)"> 个</span></div>
+            </div>
+            <div style="flex:1 1 150px;padding:14px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px">
+              <div style="font-size:12px;color:var(--text3)">响应超时</div>
+              <div style="font-size:24px;font-weight:700;margin-top:4px;color:var(--accent2)">{{cooldownCounts.timeout||0}}<span style="font-size:12px;font-weight:400;color:var(--text3)"> 个</span></div>
+            </div>
+            <div style="flex:1 1 150px;padding:14px 16px;background:var(--bg2);border:1px solid var(--border);border-radius:10px">
+              <div style="font-size:12px;color:var(--text3)">模型不可用</div>
+              <div style="font-size:24px;font-weight:700;margin-top:4px;color:var(--danger)">{{cooldownCounts.fail||0}}<span style="font-size:12px;font-weight:400;color:var(--text3)"> 个</span></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h3>等待恢复</h3>
+              <span style="font-size:12px;color:var(--text3)">模型调用成功后会立即解除冷却</span>
+            </div>
+            <div class="card-body">
+              <div v-if="cooldownLoading&&!cooldownRows.length" style="text-align:center;color:var(--text3);padding:36px 0;font-size:13px">正在读取冷却状态...</div>
+              <div v-else-if="!cooldownRows.length" style="text-align:center;padding:40px 0">
+                <div style="font-size:15px;color:var(--text2)">现在没有模型在冷却</div>
+                <div style="font-size:12px;color:var(--text3);margin-top:6px">模型池满员待命，答题会按权重正常轮询</div>
+              </div>
+              <div v-else style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:860px">
+                  <thead>
+                    <tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left">
+                      <th style="padding:10px 8px;font-weight:600">服务商</th>
+                      <th style="padding:10px 8px;font-weight:600">模型</th>
+                      <th style="padding:10px 8px;font-weight:600">冷却原因</th>
+                      <th style="padding:10px 8px;font-weight:600">已冷却</th>
+                      <th style="padding:10px 8px;font-weight:600;width:230px">剩余</th>
+                      <th style="padding:10px 8px;font-weight:600;white-space:nowrap">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="it in cooldownRows" :key="it.provider+'|'+it.model" style="border-bottom:1px solid var(--border)">
+                      <td style="padding:10px 8px;white-space:nowrap">
+                        <div style="font-weight:600">{{it.provider_title}}</div>
+                        <div style="font-size:11px;color:var(--text3);margin-top:2px">{{it.provider}}</div>
+                      </td>
+                      <td style="padding:10px 8px;font-family:ui-monospace,Menlo,Consolas,monospace;word-break:break-all;color:var(--accent2)">{{it.model}}</td>
+                      <td style="padding:10px 8px;white-space:nowrap"><span :style="cooldownReasonStyle(it.reason)">{{cooldownReasonText(it.reason)}}</span></td>
+                      <td style="padding:10px 8px;color:var(--text3);font-size:12px;white-space:nowrap">{{cooldownElapsed(it)}}</td>
+                      <td style="padding:10px 8px">
+                        <div style="display:flex;align-items:center;gap:8px">
+                          <span style="font-variant-numeric:tabular-nums;font-weight:600;min-width:46px">{{cooldownRemainText(it)}}</span>
+                          <div style="flex:1;height:6px;background:var(--bg4);border-radius:3px;overflow:hidden;min-width:80px">
+                            <div :style="{width:it.pct+'%',height:'100%',background:cooldownBarColor(it.reason),borderRadius:'3px',transition:'width .9s linear'}"></div>
+                          </div>
+                        </div>
+                      </td>
+                      <td style="padding:10px 8px"><button class="btn btn-secondary btn-sm" @click="clearOneCooldown(it)">解除</button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:16px">
+            <div class="card-body" style="font-size:12px;line-height:1.9;color:var(--text2)">
+              <div style="font-weight:600;color:var(--text);margin-bottom:6px">冷却规则</div>
+              <div>429 限流：默认 30 秒；上游给了 Retry-After 就按它来，最长 120 秒。</div>
+              <div>响应超时：120 秒。模型不存在（404）：600 秒。</div>
+              <div>冷却按「服务商 + 模型」分别记录，同名模型挂在不同服务商下互不影响；调用成功后立即解除该模型的冷却。</div>
+              <div>数据存在服务内存里，重启后端会清空；手动解除只是提前恢复，上游仍在限流时会再次进入冷却。</div>
+            </div>
+          </div>
+        </div>
+      </template>
       <template v-if="page==='ai-logs'">
         <header class="main-header">
           <h2>模型调用日志</h2>
@@ -5289,6 +5388,16 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                   <div style="font-size:26px;font-weight:700;color:var(--warning)">¥{{Number(referralStats.pending_withdraw_total||0).toFixed(2)}}</div>
                   <div style="font-size:11px;color:var(--text3);margin-top:2px">{{referralStats.pending_withdraw_count||0}} 笔</div>
                 </div>
+                <div style="padding:16px 24px;background:var(--bg);border-radius:10px;text-align:center;min-width:130px">
+                  <div style="font-size:13px;color:var(--text3)">兑换题数</div>
+                  <div style="font-size:26px;font-weight:700;color:var(--accent2)">¥{{Number(referralStats.exchange_amount||0).toFixed(2)}}</div>
+                  <div style="font-size:11px;color:var(--text3);margin-top:2px">{{referralStats.exchange_points||0}} 题</div>
+                </div>
+                <div style="padding:16px 24px;background:var(--bg);border-radius:10px;text-align:center;min-width:150px">
+                  <div style="font-size:13px;color:var(--text3)">下单抵扣</div>
+                  <div style="font-size:26px;font-weight:700;color:var(--primary)">¥{{Number(referralStats.deduct_amount||0).toFixed(2)}}</div>
+                  <div style="font-size:11px;color:var(--text3);margin-top:2px">包月 ¥{{Number(referralStats.deduct_monthly||0).toFixed(2)}} · 题数 ¥{{Number(referralStats.deduct_points||0).toFixed(2)}}<span v-if="Number(referralStats.deduct_custom||0)>0"> · 自有模型 ¥{{Number(referralStats.deduct_custom).toFixed(2)}}</span></div>
+                </div>
               </div>
               <h4 style="margin:0 0 12px">推广用户排名（Top 10）</h4>
               <table class="data-table" style="width:100%;font-size:13px;border-collapse:collapse">
@@ -5296,7 +5405,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                 <tbody>
                   <tr v-if="!referralStats.top10||!referralStats.top10.length"><td colspan="5" style="padding:24px;text-align:center;color:var(--text3)">暂无数据</td></tr>
                   <tr v-for="(r,i) in referralStats.top10" :key="r.username" style="border-top:1px solid var(--border)">
-                    <td style="padding:8px 10px">{{i+1}}</td><td style="padding:8px 10px">{{r.username}}</td><td style="padding:8px 10px">{{r.invited_count}}</td><td style="padding:8px 10px;font-weight:600">¥{{Number(r.total_commission).toFixed(2)}}</td><td style="padding:8px 10px"><button class="btn btn-sm btn-secondary" @click="viewReferralDetail(r.username)">查看明细</button></td>
+                    <td style="padding:8px 10px">{{i+1}}</td><td style="padding:8px 10px">{{r.username}}</td><td style="padding:8px 10px">{{r.invited_count}}</td><td style="padding:8px 10px;font-weight:600">¥{{Number(r.total_commission).toFixed(2)}}</td><td style="padding:8px 10px"><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-sm btn-secondary" @click="viewReferralDetail(r.username)">查看明细</button><button class="btn btn-sm btn-secondary" @click="viewCommissionLedger(r.username)">佣金去向</button></div></td>
                   </tr>
                 </tbody>
               </table>
@@ -5309,7 +5418,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                 <thead><tr style="text-align:left;color:var(--text3)"><th style="padding:8px 10px">用户名</th><th style="padding:8px 10px">推广人数</th><th style="padding:8px 10px">累计返利</th><th style="padding:8px 10px">已结算</th><th style="padding:8px 10px">待结算</th><th style="padding:8px 10px">操作</th></tr></thead>
                 <tbody>
                   <tr v-for="r in referralAllList.list" :key="r.username" style="border-top:1px solid var(--border)">
-                    <td style="padding:8px 10px">{{r.username}}</td><td style="padding:8px 10px">{{r.invited_count}}</td><td style="padding:8px 10px;font-weight:600">¥{{Number(r.total_commission).toFixed(2)}}</td><td style="padding:8px 10px;color:var(--success)">¥{{Number(r.paid_commission).toFixed(2)}}</td><td style="padding:8px 10px;color:var(--warning)">¥{{Number(r.pending_commission).toFixed(2)}}</td><td style="padding:8px 10px"><button class="btn btn-sm btn-secondary" @click="viewReferralDetail(r.username)">查看明细</button></td>
+                    <td style="padding:8px 10px">{{r.username}}</td><td style="padding:8px 10px">{{r.invited_count}}</td><td style="padding:8px 10px;font-weight:600">¥{{Number(r.total_commission).toFixed(2)}}</td><td style="padding:8px 10px;color:var(--success)">¥{{Number(r.paid_commission).toFixed(2)}}</td><td style="padding:8px 10px;color:var(--warning)">¥{{Number(r.pending_commission).toFixed(2)}}</td><td style="padding:8px 10px"><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-sm btn-secondary" @click="viewReferralDetail(r.username)">查看明细</button><button class="btn btn-sm btn-secondary" @click="viewCommissionLedger(r.username)">佣金去向</button></div></td>
                   </tr>
                 </tbody>
               </table>
@@ -5348,6 +5457,62 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
               <span>总充值：¥{{referralDetailList.reduce((s,d)=>s+d.total_recharge,0).toFixed(2)}}</span>
               <span>总佣金：¥{{referralDetailList.reduce((s,d)=>s+d.commission_amount,0).toFixed(2)}}</span>
             </div>
+          </div>
+        </div>
+      </div>
+      <!-- 佣金去向弹窗 -->
+      <div v-if="commissionLedgerShow" style="position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px" @click.self="commissionLedgerShow=false">
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;max-width:980px;width:100%;max-height:84vh;display:flex;flex-direction:column;overflow:hidden">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)">
+            <h3 style="margin:0;font-size:16px">佣金去向 - {{commissionLedgerUser}}</h3>
+            <button class="btn btn-sm btn-secondary" @click="commissionLedgerShow=false">关闭</button>
+          </div>
+          <div style="overflow-y:auto;padding:16px 20px;flex:1">
+            <div v-if="commissionLedgerLoading" style="text-align:center;color:var(--text3);padding:40px 0;font-size:13px">正在读取佣金流水...</div>
+            <template v-else-if="commissionLedgerData">
+              <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">
+                <div style="flex:1 1 140px;padding:12px 14px;background:var(--bg);border-radius:10px">
+                  <div style="font-size:12px;color:var(--text3)">可提现余额</div>
+                  <div style="font-size:22px;font-weight:700;color:var(--success);margin-top:4px">¥{{Number(commissionLedgerData.balance||0).toFixed(2)}}</div>
+                  <div v-if="Number(commissionLedgerData.frozen||0)>0" style="font-size:11px;color:var(--warning);margin-top:2px">冻结中 ¥{{Number(commissionLedgerData.frozen).toFixed(2)}}</div>
+                </div>
+                <div style="flex:1 1 140px;padding:12px 14px;background:var(--bg);border-radius:10px">
+                  <div style="font-size:12px;color:var(--text3)">累计佣金</div>
+                  <div style="font-size:22px;font-weight:700;margin-top:4px">¥{{Number(commissionLedgerData.earned_total||0).toFixed(2)}}</div>
+                </div>
+                <div style="flex:1 1 140px;padding:12px 14px;background:var(--bg);border-radius:10px">
+                  <div style="font-size:12px;color:var(--text3)">已提现</div>
+                  <div style="font-size:22px;font-weight:700;color:var(--primary);margin-top:4px">¥{{Number(commissionLedgerData.withdraw_approved||0).toFixed(2)}}</div>
+                  <div v-if="Number(commissionLedgerData.withdraw_pending||0)>0" style="font-size:11px;color:var(--warning);margin-top:2px">待审核 ¥{{Number(commissionLedgerData.withdraw_pending).toFixed(2)}}</div>
+                </div>
+                <div style="flex:1 1 140px;padding:12px 14px;background:var(--bg);border-radius:10px">
+                  <div style="font-size:12px;color:var(--text3)">兑换题数</div>
+                  <div style="font-size:22px;font-weight:700;color:var(--accent2);margin-top:4px">¥{{Number(commissionLedgerData.exchange_amount||0).toFixed(2)}}</div>
+                  <div style="font-size:11px;color:var(--text3);margin-top:2px">{{commissionLedgerData.exchange_points||0}} 题</div>
+                </div>
+                <div style="flex:1 1 160px;padding:12px 14px;background:var(--bg);border-radius:10px">
+                  <div style="font-size:12px;color:var(--text3)">下单抵扣</div>
+                  <div style="font-size:22px;font-weight:700;color:var(--primary);margin-top:4px">¥{{Number(commissionLedgerData.deduct_amount||0).toFixed(2)}}</div>
+                  <div style="font-size:11px;color:var(--text3);margin-top:2px">包月 ¥{{Number(commissionLedgerData.deduct_monthly||0).toFixed(2)}} · 题数 ¥{{Number(commissionLedgerData.deduct_points||0).toFixed(2)}}<span v-if="Number(commissionLedgerData.deduct_other||0)>0"> · 其它 ¥{{Number(commissionLedgerData.deduct_other).toFixed(2)}}</span></div>
+                </div>
+              </div>
+              <div v-if="!commissionLedgerData.events||!commissionLedgerData.events.length" style="text-align:center;color:var(--text3);padding:36px 0;font-size:13px">这个推广人还没有使用过佣金：没有提现、兑换题数或下单抵扣记录</div>
+              <table v-else class="data-table" style="width:100%;font-size:13px;border-collapse:collapse">
+                <thead><tr style="text-align:left;color:var(--text3)"><th style="padding:8px 10px">时间</th><th style="padding:8px 10px">去向</th><th style="padding:8px 10px">金额</th><th style="padding:8px 10px">明细</th><th style="padding:8px 10px">状态</th></tr></thead>
+                <tbody>
+                  <tr v-for="(e,i) in commissionLedgerData.events" :key="i" style="border-top:1px solid var(--border)">
+                    <td style="padding:8px 10px;font-size:12px;color:var(--text3);white-space:nowrap">{{(e.at||'').replace('T',' ').slice(0,19)}}</td>
+                    <td style="padding:8px 10px;white-space:nowrap"><span :style="commissionTypeStyle(e.type)">{{commissionTypeText(e.type)}}</span></td>
+                    <td style="padding:8px 10px;font-weight:600;white-space:nowrap">¥{{Number(e.amount||0).toFixed(2)}}</td>
+                    <td style="padding:8px 10px;color:var(--text2);word-break:break-all">{{commissionEventDetail(e)}}</td>
+                    <td style="padding:8px 10px;white-space:nowrap"><span :style="{color:commissionStatusColor(e),fontSize:'12px',fontWeight:'600'}">{{commissionStatusText(e)}}</span><span v-if="e.reject_reason" style="color:var(--danger);font-size:11px;margin-left:4px">（{{e.reject_reason}}）</span></td>
+                  </tr>
+                </tbody>
+              </table>
+              <div style="margin-top:12px;font-size:12px;color:var(--text3);line-height:1.8">
+                提现：待审核 / 已打款 / 已驳回。兑换题数：已到账 / 处理中 / 失败。下单抵扣：已抵扣 / 冻结中（等用户付款）/ 已退回。
+              </div>
+            </template>
           </div>
         </div>
       </div>
@@ -6095,6 +6260,7 @@ createApp({
       'risk-control':[{label:'风控管理'}],
       'log-cleanup':[{label:'日志监控',group:'logs'},{label:'日志清理'}],
       'ai-config':[{label:'模型服务',group:'models'},{label:'模型配置'}],
+      'model-cooldown':[{label:'模型服务',group:'models'},{label:'冷却队列'}],
       'qq-bot':[{label:'系统配置',group:'config'},{label:'QQ频道机器人'}],
       'email-config':[{label:'系统配置',group:'config'},{label:'邮箱配置'}],
       'db-config':[{label:'系统配置',group:'config'},{label:'系统设置'}],
@@ -7994,7 +8160,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       card:{title:'卡密管理',icon:'i-key',items:[{page:'xianyu',label:'商品配置',icon:'i-store',load:loadXianyuConfig},{page:'card-keys',label:'卡密管理',icon:'i-key',load:loadCardKeys}]},
       distributor:{title:'代理商分销',icon:'i-flag',items:[{page:'distributor',label:'代理商',icon:'i-users',load:loadFxList},{page:'distributor-templates',label:'卡密模板',icon:'i-layers',load:()=>{loadFxOptions();loadFxTemplates();}},{page:'distributor-batches',label:'批次与卡密',icon:'i-package',load:()=>{loadFxOptions();loadFxBatches(1);}},{page:'distributor-withdrawals',label:'提现审核',icon:'i-wallet',load:()=>{loadFxOptions();loadFxWds(1);}},{page:'distributor-revenue',label:'收入统计',icon:'i-trending-up',load:loadFxRevenue},{page:'distributor-config',label:'分销配置',icon:'i-sliders',load:loadFxConfig}]},
       logs:{title:'日志监控',icon:'i-terminal',items:[{page:'script-logs',label:'脚本日志',icon:'i-terminal',load:loadScriptLogs},{page:'log-cleanup',label:'日志清理',icon:'i-trash-2',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'i-mail',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
-      models:{title:'模型服务',icon:'i-cpu',items:[{page:'ai-config',label:'模型配置',icon:'i-bot',load:loadConfig},{page:'ai-logs',label:'模型日志',icon:'i-activity',load:loadAiLogs}]},
+      models:{title:'模型服务',icon:'i-cpu',items:[{page:'ai-config',label:'模型配置',icon:'i-bot',load:loadConfig},{page:'ai-logs',label:'模型日志',icon:'i-activity',load:loadAiLogs},{page:'model-cooldown',label:'冷却队列',icon:'i-clock',load:()=>{}}]},
       config:{title:'系统配置',icon:'i-settings',items:[{page:'qq-bot',label:'QQ频道机器人',icon:'i-message-circle',load:loadQqBot},{page:'email-config',label:'邮箱配置',icon:'i-mail',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'sso-config',label:'单点登录',icon:'i-shield',load:loadSsoConfig},{page:'db-config',label:'系统设置',icon:'i-database',load:loadDbConfig}]}
     };
     function openMobileSubmenu(key,title,icon){
@@ -8008,7 +8174,11 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         expandedGroups.value[key]=!expandedGroups.value[key];
       }
     }
-    watch(page,(v)=>{mobileSidebarOpen.value=false;});
+    watch(page,(v)=>{
+      mobileSidebarOpen.value=false;
+      if(v==='model-cooldown')startCooldownPolling();
+      else stopCooldownPolling();
+    });
     window.addEventListener('resize',()=>{isMobile.value=window.innerWidth<=768;});
     // 支付明细
     const paymentOrders=ref([]);
@@ -8182,6 +8352,137 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         const d=await res.json();
         if(d.code===200){referralDetailList.value=d.details||[];}
       }catch(_){}
+    }
+
+
+    // ---------- 佣金去向 ----------
+    const commissionLedgerShow=ref(false);
+    const commissionLedgerUser=ref('');
+    const commissionLedgerLoading=ref(false);
+    const commissionLedgerData=ref(null);
+    async function viewCommissionLedger(username){
+      commissionLedgerUser.value=username;
+      commissionLedgerShow.value=true;
+      commissionLedgerLoading.value=true;
+      commissionLedgerData.value=null;
+      try{
+        const res=await safeFetch(`/admin/referral/commission-ledger?username=${encodeURIComponent(username)}`,{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200)commissionLedgerData.value=d.data||null;
+        else showMsg(d.msg||'读取佣金去向失败','error');
+      }catch(e){showMsg(e.message||'读取佣金去向失败','error');}
+      finally{commissionLedgerLoading.value=false;}
+    }
+    function commissionTypeText(t){return t==='withdraw'?'提现':t==='exchange'?'兑换题数':'下单抵扣';}
+    function commissionTypeStyle(t){
+      const map={
+        withdraw:{background:'rgba(96,165,250,.12)',color:'var(--accent2)',border:'1px solid rgba(96,165,250,.3)'},
+        exchange:{background:'rgba(34,197,94,.12)',color:'var(--success)',border:'1px solid rgba(34,197,94,.3)'},
+        checkout:{background:'rgba(245,158,11,.12)',color:'var(--warning)',border:'1px solid rgba(245,158,11,.3)'}
+      };
+      return Object.assign({display:'inline-block',padding:'2px 8px',borderRadius:'6px',fontSize:'12px',fontWeight:'600'},map[t]||{});
+    }
+    function commissionStatusText(e){
+      const map={pending:'待审核',approved:'已打款',rejected:'已驳回',done:'已到账',consumed:'已抵扣',locked:'冻结中',released:'已退回',failed:'失败'};
+      return map[e.status]||e.status||'-';
+    }
+    function commissionStatusColor(e){
+      if(['approved','done','consumed'].includes(e.status))return 'var(--success)';
+      if(['pending','locked'].includes(e.status))return 'var(--warning)';
+      if(['rejected','failed','released'].includes(e.status))return 'var(--danger)';
+      return 'var(--text3)';
+    }
+    function commissionEventDetail(e){
+      if(e.type==='withdraw')return e.detail||'-';
+      if(e.type==='exchange')return `兑换 ${e.points||0} 题`+(e.rate?`（${e.rate} 题/元）`:'');
+      const plan=e.plan_type==='monthly'?'包月':e.plan_type==='points'?'题数套餐':e.plan_type==='custom_model'?'自有模型':'套餐';
+      return `${plan}${e.plan_name?(' · '+e.plan_name):''}${e.order_no?(' · '+e.order_no):''}`;
+    }
+
+    // ---------- 模型冷却队列 ----------
+    const cooldownItems=ref([]);
+    const cooldownLoading=ref(false);
+    const cooldownUpdatedAt=ref('');
+    const cooldownTotalHits=ref(0);
+    const cooldownNow=ref(Date.now()/1000);
+    const cooldownOffset=ref(0);
+    const cooldownPollTimer=ref(null);
+    const cooldownTickTimer=ref(null);
+    const cooldownConfig=ref({fail:600,sec429:30,sec429_max:120,timeout:120});
+    const cooldownRows=computed(()=>{
+      const now=cooldownNow.value;
+      return cooldownItems.value.map(it=>{
+        const remain=Math.max(0,Number(it.until||0)-now);
+        const total=Math.max(1,Number(it.total||it.remaining||0));
+        const elapsed=it.started_at?Math.max(0,now-Number(it.started_at)):0;
+        return {...it,remain,total,elapsed,pct:Math.max(0,Math.min(100,remain/total*100))};
+      }).sort((a,b)=>a.remain-b.remain);
+    });
+    const cooldownCounts=computed(()=>{
+      const c={'429':0,timeout:0,fail:0};
+      cooldownItems.value.forEach(it=>{if(c[it.reason]===undefined)c[it.reason]=0;c[it.reason]+=1;});
+      return c;
+    });
+    async function loadModelCooldowns(showLoading){
+      if(!token.value)return;
+      if(showLoading)cooldownLoading.value=true;
+      try{
+        const res=await safeFetch('/admin/model-cooldowns',{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200){
+          cooldownItems.value=d.items||[];
+          cooldownTotalHits.value=Number(d.total_hits||0);
+          if(d.config)cooldownConfig.value=d.config;
+          cooldownOffset.value=Date.now()/1000-Number(d.now||Date.now()/1000);
+          cooldownNow.value=Date.now()/1000-cooldownOffset.value;
+          const t=new Date();
+          cooldownUpdatedAt.value=String(t.getHours()).padStart(2,'0')+':'+String(t.getMinutes()).padStart(2,'0')+':'+String(t.getSeconds()).padStart(2,'0');
+        }else if(showLoading){
+          showMsg(d.msg||'读取冷却队列失败','error');
+        }
+      }catch(e){if(showLoading)showMsg(e.message||'读取冷却队列失败','error');}
+      finally{if(showLoading)cooldownLoading.value=false;}
+    }
+    function stopCooldownPolling(){
+      if(cooldownPollTimer.value){clearInterval(cooldownPollTimer.value);cooldownPollTimer.value=null;}
+      if(cooldownTickTimer.value){clearInterval(cooldownTickTimer.value);cooldownTickTimer.value=null;}
+    }
+    function startCooldownPolling(){
+      stopCooldownPolling();
+      loadModelCooldowns(true);
+      cooldownTickTimer.value=setInterval(()=>{cooldownNow.value=Date.now()/1000-cooldownOffset.value;},1000);
+      cooldownPollTimer.value=setInterval(()=>{loadModelCooldowns(false);},3000);
+    }
+    async function clearOneCooldown(it){
+      if(!confirm(`确定解除「${it.provider_title} / ${it.model}」的冷却？\n解除后会马上重新参与轮询，上游仍在限流时可能再次冷却。`))return;
+      const d=await adminPost('/admin/model-cooldowns/clear',{provider:it.provider,model:it.model});
+      if(d){showMsg(d.msg||'已解除','success');loadModelCooldowns(false);}
+    }
+    async function clearAllCooldowns(){
+      if(!confirm('确定解除全部模型冷却？解除后会立刻重新参与轮询，上游仍限流时会再次进入冷却。'))return;
+      const d=await adminPost('/admin/model-cooldowns/clear',{});
+      if(d){showMsg(d.msg||'已解除','success');loadModelCooldowns(false);}
+    }
+    function cooldownReasonText(r){return r==='429'?'429 限流':r==='timeout'?'响应超时':'模型不可用';}
+    function cooldownReasonStyle(r){
+      const map={
+        '429':{background:'rgba(245,158,11,.12)',color:'var(--warning)',border:'1px solid rgba(245,158,11,.3)'},
+        timeout:{background:'rgba(96,165,250,.12)',color:'var(--accent2)',border:'1px solid rgba(96,165,250,.3)'},
+        fail:{background:'rgba(239,68,68,.12)',color:'var(--danger)',border:'1px solid rgba(239,68,68,.3)'}
+      };
+      return Object.assign({display:'inline-block',padding:'2px 8px',borderRadius:'6px',fontSize:'12px',fontWeight:'600'},map[r]||map.fail);
+    }
+    function cooldownBarColor(r){return r==='429'?'var(--warning)':r==='timeout'?'var(--accent2)':'var(--danger)';}
+    function cooldownRemainText(it){
+      const s=Math.ceil(it.remain);
+      if(s<=0)return '已恢复';
+      const m=Math.floor(s/60),ss=s%60;
+      return m?`${m}:${String(ss).padStart(2,'0')}`:`${ss}s`;
+    }
+    function cooldownElapsed(it){
+      const s=Math.floor(it.elapsed||0);
+      if(s<60)return `${s} 秒`;
+      return `${Math.floor(s/60)} 分 ${s%60} 秒`;
     }
 
     // ========== 支付明细 ==========
@@ -9107,6 +9408,11 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       referralTab,referralConfig,referralSaving,referralWithdrawals,referralWdFilter,referralWdSummary,referralStats,referralQrPreview,
       loadReferralConfig,saveReferralConfig,loadReferralWithdrawals,approveWithdrawal,rejectWithdrawal,loadReferralStats,
       referralAllList,loadAllReferrers,referralDetailShow,referralDetailUsername,referralDetailList,viewReferralDetail,
+      commissionLedgerShow,commissionLedgerUser,commissionLedgerLoading,commissionLedgerData,viewCommissionLedger,
+      commissionTypeText,commissionTypeStyle,commissionStatusText,commissionStatusColor,commissionEventDetail,
+      cooldownItems,cooldownLoading,cooldownUpdatedAt,cooldownTotalHits,cooldownNow,cooldownConfig,cooldownRows,cooldownCounts,
+      cooldownReasonText,cooldownReasonStyle,cooldownBarColor,cooldownRemainText,cooldownElapsed,
+      loadModelCooldowns,startCooldownPolling,stopCooldownPolling,clearOneCooldown,clearAllCooldowns,
       announceConfig,announceSaving,announcePolishing,loadAnnounceConfig,saveAnnounceConfig,aiPolishAnnounce,
       expandedGroups,isMobile,mobileSidebarOpen,mobileSubmenu,openMobileSubmenu,handleGroupClick,
        paymentOrders,paymentOrdersFilter,paymentOrdersSort,paymentOrdersPage,paymentOrdersPageSize,paymentOrdersTotal,paymentOrdersTotalPages,paymentOrdersSum,

@@ -6957,6 +6957,23 @@ class Database:
         # 提现统计
         wd_approved = self.fetchone("SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt FROM withdrawals WHERE status='approved'") or {}
         wd_pending = self.fetchone("SELECT COALESCE(SUM(amount),0) AS total, COUNT(*) AS cnt FROM withdrawals WHERE status='pending'") or {}
+        # 佣金去向：兑换题数、下单抵扣（按订单套餐拆分包月/题数/其它）
+        red = self.fetchone(
+            "SELECT "
+            "COALESCE(SUM(CASE WHEN kind='exchange' AND status='done' THEN amount ELSE 0 END),0) AS exchange_amount, "
+            "COALESCE(SUM(CASE WHEN kind='exchange' AND status='done' THEN points ELSE 0 END),0) AS exchange_points, "
+            "COALESCE(SUM(CASE WHEN kind='checkout' AND status='consumed' THEN amount ELSE 0 END),0) AS deduct_amount, "
+            "COALESCE(SUM(CASE WHEN kind='checkout' AND status='consumed' THEN 1 ELSE 0 END),0) AS deduct_count "
+            "FROM commission_redemptions"
+        ) or {}
+        red_plan = self.fetchone(
+            "SELECT "
+            "COALESCE(SUM(CASE WHEN po.plan_type='monthly' THEN cr.amount ELSE 0 END),0) AS deduct_monthly, "
+            "COALESCE(SUM(CASE WHEN po.plan_type='points' THEN cr.amount ELSE 0 END),0) AS deduct_points, "
+            "COALESCE(SUM(CASE WHEN po.plan_type='custom_model' THEN cr.amount ELSE 0 END),0) AS deduct_custom "
+            "FROM commission_redemptions cr LEFT JOIN payment_orders po ON po.order_no = cr.order_no "
+            "WHERE cr.kind='checkout' AND cr.status='consumed'"
+        ) or {}
         return {
             "top10": top10 or [],
             "total_commission": float(total.get("total") or 0),
@@ -6964,7 +6981,14 @@ class Database:
             "withdrawn_total": float(wd_approved.get("total") or 0),
             "withdrawn_count": int(wd_approved.get("cnt") or 0),
             "pending_withdraw_total": float(wd_pending.get("total") or 0),
-            "pending_withdraw_count": int(wd_pending.get("cnt") or 0)
+            "pending_withdraw_count": int(wd_pending.get("cnt") or 0),
+            "exchange_amount": float(red.get("exchange_amount") or 0),
+            "exchange_points": int(red.get("exchange_points") or 0),
+            "deduct_amount": float(red.get("deduct_amount") or 0),
+            "deduct_count": int(red.get("deduct_count") or 0),
+            "deduct_monthly": float(red_plan.get("deduct_monthly") or 0),
+            "deduct_points": float(red_plan.get("deduct_points") or 0),
+            "deduct_custom": float(red_plan.get("deduct_custom") or 0)
         }
 
     def withdrawal_summary(self):
@@ -7016,6 +7040,106 @@ class Database:
                 "order_amount": float(row.get("order_amount") or 0)
             })
         return result
+
+    def get_commission_ledger(self, username, limit=200):
+        """某个推广人的佣金去向：提现、兑换题数、下单抵扣（区分包月/题数/自有模型）。"""
+        ph = _ph()
+        limit = max(1, min(int(limit or 200), 500))
+        row = self.fetchone(f"SELECT commission_balance FROM users WHERE username = {ph}", (username,)) or {}
+        balance = float(_dec(row.get("commission_balance")).quantize(CENT))
+        frozen = float(self.commission_frozen(username))
+        earned_row = self.fetchone(
+            f"SELECT COALESCE(SUM(CASE WHEN status != 'refunded' THEN commission_amount ELSE 0 END),0) AS total "
+            f"FROM commission_logs WHERE inviter = {ph}", (username,)
+        ) or {}
+        withdrawals = self.fetchall(
+            f"SELECT id, amount, status, pay_method, pay_account, reject_reason, created_at, reviewed_at "
+            f"FROM withdrawals WHERE username = {ph} ORDER BY id DESC LIMIT {int(limit)}", (username,)
+        ) or []
+        redemptions = self.fetchall(
+            f"""SELECT cr.id, cr.kind, cr.order_no, cr.amount, cr.points, cr.rate, cr.status,
+                       cr.created_at, po.plan_type, po.plan_name
+                FROM commission_redemptions cr
+                LEFT JOIN payment_orders po ON po.order_no = cr.order_no
+                WHERE cr.username = {ph} ORDER BY cr.id DESC LIMIT {int(limit)}""", (username,)
+        ) or []
+        events = []
+        withdraw_approved = 0.0
+        withdraw_pending = 0.0
+        for w in withdrawals:
+            amount = float(_dec(w.get("amount")).quantize(CENT))
+            st = str(w.get("status") or "")
+            if st == "approved":
+                withdraw_approved += amount
+            elif st == "pending":
+                withdraw_pending += amount
+            detail = str(w.get("pay_method") or "")
+            if w.get("pay_account"):
+                detail = (detail + " " + str(w.get("pay_account"))).strip()
+            events.append({
+                "type": "withdraw",
+                "at": str(w.get("created_at") or ""),
+                "amount": amount,
+                "points": 0,
+                "status": st,
+                "detail": detail,
+                "order_no": "",
+                "plan_type": "",
+                "plan_name": "",
+                "rate": 0,
+                "reject_reason": w.get("reject_reason") or ""
+            })
+        exchange_amount = 0.0
+        exchange_points = 0
+        deduct_amount = 0.0
+        deduct_monthly = 0.0
+        deduct_points = 0.0
+        deduct_other = 0.0
+        for r in redemptions:
+            amount = float(_dec(r.get("amount")).quantize(CENT))
+            st = str(r.get("status") or "")
+            kind = str(r.get("kind") or "")
+            plan_type = str(r.get("plan_type") or "")
+            if kind == "exchange" and st == "done":
+                exchange_amount += amount
+                exchange_points += int(r.get("points") or 0)
+            if kind == "checkout" and st == "consumed":
+                deduct_amount += amount
+                if plan_type == "monthly":
+                    deduct_monthly += amount
+                elif plan_type == "points":
+                    deduct_points += amount
+                else:
+                    deduct_other += amount
+            events.append({
+                "type": "exchange" if kind == "exchange" else "checkout",
+                "at": str(r.get("created_at") or ""),
+                "amount": amount,
+                "points": int(r.get("points") or 0),
+                "status": st,
+                "detail": "",
+                "order_no": r.get("order_no") or "",
+                "plan_type": plan_type,
+                "plan_name": r.get("plan_name") or "",
+                "rate": float(_dec(r.get("rate"))),
+                "reject_reason": ""
+            })
+        events.sort(key=lambda e: e["at"], reverse=True)
+        return {
+            "username": username,
+            "balance": balance,
+            "frozen": frozen,
+            "earned_total": float(earned_row.get("total") or 0),
+            "withdraw_approved": withdraw_approved,
+            "withdraw_pending": withdraw_pending,
+            "exchange_amount": exchange_amount,
+            "exchange_points": exchange_points,
+            "deduct_amount": deduct_amount,
+            "deduct_monthly": deduct_monthly,
+            "deduct_points": deduct_points,
+            "deduct_other": deduct_other,
+            "events": events
+        }
 
     def get_all_referrers(self, page=1, per_page=20):
         """分页获取所有推广人及其推广统计"""
