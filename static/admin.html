@@ -6052,7 +6052,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
               <div style="font-size:13px;color:var(--text3);margin-bottom:8px">用户：{{feedbackDetail.username}} · {{String(feedbackDetail.created_at||'').replace('T',' ').substring(0,19)}}</div>
               <div style="font-weight:600;font-size:15px;margin-bottom:12px">{{feedbackDetail.title}}</div>
               <!-- 微信风格对话区 -->
-              <div style="max-height:350px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;margin-bottom:14px">
+              <div id="fbChatScrollBox" style="max-height:350px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;margin-bottom:14px">
                 <!-- 用户初始反馈（右侧） -->
                 <div style="display:flex;gap:8px;align-items:flex-start;flex-direction:row-reverse">
                   <div style="flex:0 0 32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#10b981,#059669);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600">{{(feedbackDetail.username||'').charAt(0).toUpperCase()}}</div>
@@ -6062,7 +6062,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                     <div v-if="feedbackDetail.attachments && feedbackDetail.attachments.length" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;justify-content:flex-end">
                       <div v-for="at in feedbackDetail.attachments" :key="at.id">
                         <template v-if="at.is_image && at.url">
-                          <a :href="at.url" target="_blank" rel="noopener noreferrer"><img :src="at.url" :alt="at.filename" loading="lazy" style="display:block;width:140px;max-width:100%;height:auto;border-radius:10px;border:1px solid var(--border);background:var(--bg2)"></a>
+                          <a :href="at.url" target="_blank" rel="noopener noreferrer"><img :src="at.url" :alt="at.filename" style="display:block;width:140px;max-width:100%;height:auto;border-radius:10px;border:1px solid var(--border);background:var(--bg2)"></a>
                           <div style="display:flex;gap:10px;margin-top:4px;font-size:11.5px;justify-content:flex-end">
                             <a href="javascript:;" style="color:var(--accent2);font-weight:600;text-decoration:none" @click.prevent="copyAdminFbImage(at)">复制图片</a>
                             <a href="javascript:;" style="color:var(--accent2);font-weight:600;text-decoration:none" @click.prevent="downloadAdminFbAttachment(at)">下载</a>
@@ -6098,7 +6098,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                     <div v-if="rp.attachments && rp.attachments.length" :style="{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'8px',justifyContent:rp.sender==='admin'?'flex-start':'flex-end'}">
                       <div v-for="at in rp.attachments" :key="at.id">
                         <template v-if="at.is_image && at.url">
-                          <a :href="at.url" target="_blank" rel="noopener noreferrer"><img :src="at.url" :alt="at.filename" loading="lazy" style="display:block;width:140px;max-width:100%;height:auto;border-radius:10px;border:1px solid var(--border);background:var(--bg2)"></a>
+                          <a :href="at.url" target="_blank" rel="noopener noreferrer"><img :src="at.url" :alt="at.filename" style="display:block;width:140px;max-width:100%;height:auto;border-radius:10px;border:1px solid var(--border);background:var(--bg2)"></a>
                           <div style="display:flex;gap:10px;margin-top:4px;font-size:11.5px">
                             <a href="javascript:;" style="color:var(--accent2);font-weight:600;text-decoration:none" @click.prevent="copyAdminFbImage(at)">复制图片</a>
                             <a href="javascript:;" style="color:var(--accent2);font-weight:600;text-decoration:none" @click.prevent="downloadAdminFbAttachment(at)">下载</a>
@@ -8934,6 +8934,17 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         else showMsg((res&&res.msg)||'保存失败','error');
       }catch(e){showMsg('保存失败: '+(e.message||e),'error');}
     }
+    function scrollFbChatToBottom(){
+      const go=function(){
+        const el=document.getElementById('fbChatScrollBox');
+        if(el)el.scrollTop=el.scrollHeight;
+      };
+      Vue.nextTick(function(){
+        go();
+        setTimeout(go,120);
+        setTimeout(go,450);
+      });
+    }
     async function viewFeedbackDetail(id){
       try{
         const res=await safeFetch('/admin/feedback/'+id,{headers:{'Authorization':token.value}});
@@ -8943,6 +8954,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
           feedbackReplyText.value='';
           fbAttachList.value=[];
           fbUploadingCount.value=0;
+          scrollFbChatToBottom();
         }
       }catch(_){}
     }

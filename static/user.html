@@ -5937,7 +5937,14 @@ await loadPlans();
                 html += '<div style="text-align:center;color:var(--c-text-3);font-size:12px;padding:12px">该反馈已关闭</div>';
             }
             body.innerHTML = html;
-            setTimeout(() => { body.scrollTop = body.scrollHeight; }, 30);
+            const toBottom = () => { body.scrollTop = body.scrollHeight; };
+            toBottom();
+            requestAnimationFrame(toBottom);
+            setTimeout(toBottom, 120);
+            setTimeout(toBottom, 450);
+            body.querySelectorAll('img').forEach(img => {
+                if (!img.complete) img.addEventListener('load', toBottom, { once: true });
+            });
         }
 
         function fbFormatSize(bytes) {
@@ -5954,7 +5961,7 @@ await loadPlans();
                 const size = fbFormatSize(a.size);
                 if (a.is_image && a.url) {
                     return `<div>
-                        <a href="${escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer"><img class="fb-attach-img" src="${escapeHtml(a.url)}" alt="${name}" loading="lazy"></a>
+                        <a href="${escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer"><img class="fb-attach-img" src="${escapeHtml(a.url)}" alt="${name}"></a>
                         <div class="fb-attach-actions">
                             <button type="button" class="fb-attach-action" data-fb-copy-img="${a.id}" data-url="${escapeHtml(a.url)}">复制图片</button>
                             <button type="button" class="fb-attach-action" data-fb-dl="${a.id}" data-name="${name}">下载</button>

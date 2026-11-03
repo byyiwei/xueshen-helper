@@ -979,8 +979,7 @@ FEEDBACK_ATTACHMENT_MAX_BYTES = 15 * 1024 * 1024   # 单个附件上限
 FEEDBACK_ATTACHMENT_MAX_FILES = 6                  # 一次消息最多几个附件
 FEEDBACK_ATTACHMENT_MAX_TOTAL = 300                # 单个反馈累计上限，防囤积
 FEEDBACK_ATTACHMENT_BLOCKED_EXT = {
-    ".html", ".htm", ".xhtml", ".shtml", ".svg", ".js", ".mjs", ".exe", ".bat",
-    ".cmd", ".com", ".scr", ".msi", ".sh", ".php", ".jsp", ".asp", ".aspx", ".jar",
+    ".exe", ".msi", ".bat", ".cmd", ".com", ".scr", ".pif", ".cpl",
 }
 _media_url_cache = {}          # object_id -> (签名URL, 过期时间)
 _media_url_lock = threading.Lock()
@@ -6163,6 +6162,12 @@ class Handler(BaseHTTPRequestHandler):
         """用户/管理员上传反馈附件：本服务签名后把字节直传 COS，再 complete 对账。"""
         def fail(msg, code=400):
             # 还没读请求体就返回，必须断开连接，避免剩余字节污染下一条请求
+            try:
+                print("[反馈附件] 上传拒绝 %s code=%s file=%r type=%r len=%s reason=%s" % (
+                    path, code, self._feedback_attachment_name(),
+                    self.headers.get("Content-Type"), self.headers.get("Content-Length"), msg), flush=True)
+            except Exception:
+                pass
             self.close_connection = True
             self._send_json(code, {"code": code, "msg": msg}, {"Connection": "close"})
 
@@ -6217,10 +6222,6 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         content_type = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
-        if content_type in ("text/html", "application/xhtml+xml", "image/svg+xml",
-                            "application/javascript", "text/javascript", "application/x-javascript"):
-            fail("不支持上传这种类型的文件")
-            return
         if not content_type:
             content_type = "application/octet-stream"
 
