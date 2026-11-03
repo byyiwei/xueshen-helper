@@ -8952,7 +8952,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         if(d.code===200){
           feedbackDetail.value=d.feedback;
           feedbackReplyText.value='';
-          fbAttachList.value=[];
+          fbAttachList.value=(d.feedback.pending_attachments||[]).filter(a=>a.role==='admin');
           fbUploadingCount.value=0;
           scrollFbChatToBottom();
         }

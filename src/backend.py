@@ -1160,6 +1160,7 @@ def _feedback_attachment_public(att, with_url=True):
         "filename": att.get("filename") or "附件",
         "mime": mime,
         "size": int(att.get("size") or 0),
+        "role": att.get("role") or "user",
         "is_image": mime.startswith("image/"),
         "url": "",
     }
@@ -1179,7 +1180,7 @@ def _decorate_feedback_attachments(fb):
     except Exception:
         rows = []
     by_reply = {}
-    root = []
+    pending = []
     for a in rows:
         item = _feedback_attachment_public(a, with_url=True)
         try:
@@ -1189,8 +1190,10 @@ def _decorate_feedback_attachments(fb):
         if rid:
             by_reply.setdefault(rid, []).append(item)
         else:
-            root.append(item)
-    fb["attachments"] = root
+            # 上传了但还没发送的：作为草稿还给前端，刷新页面也不会丢
+            pending.append(item)
+    fb["attachments"] = []
+    fb["pending_attachments"] = pending
     for rp in fb.get("replies") or []:
         rp["attachments"] = by_reply.get(int(rp.get("id") or 0), [])
     return fb

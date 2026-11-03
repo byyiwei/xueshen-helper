@@ -5873,7 +5873,8 @@ await loadPlans();
             const f = fbList.find(x => x.id === fid);
             if (!f) return;
             fbCurrentChat = f;
-            fbPendingAttachments = [];
+            // 之前上传但还没发送的附件，重新打开时继续留在待发送区
+            fbPendingAttachments = (f.pending_attachments || []).filter(a => (a.role || 'user') === 'user');
             fbUploadingCount = 0;
             fbSetPendingBar();
             fbUpdateAttachTip();
