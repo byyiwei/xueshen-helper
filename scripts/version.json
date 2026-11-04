@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.0.9",
+    "version": "6.0.10",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.0.9 手动选题的候选列表增加 AI 参考答案"
+    "changelog": "v6.0.10 修复「纯AI」仍会查题库、「纯题库」未命中仍会调用 AI 的问题"
   },
   "xueshen-gf": {
-    "version": "6.0.9",
+    "version": "6.0.10",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.0.9 手动选题的候选列表增加 AI 参考答案"
+    "changelog": "v6.0.10 修复「纯AI」仍会查题库、「纯题库」未命中仍会调用 AI 的问题"
   }
 }
