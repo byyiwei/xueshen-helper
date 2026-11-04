@@ -4666,7 +4666,7 @@ def record_model_token_usage(model_name, tokens):
     except Exception as e:
         print(f"[Token统计] 写入失败: {e}", flush=True)
 
-def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
+def ask_ai_auto(question, need_vision=False, username="", client_ip="", budget=0, log_errors=True):
     candidates = get_enabled_model_candidates(need_vision=need_vision)
     if not candidates:
         if need_vision:
@@ -4684,8 +4684,9 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
         print(f"[自动模型] 超时冷却中: {', '.join(f'{m}({s}s)' for m,s in cooling_timeout)}", flush=True)
     if skipped_token:
         print(f"[自动模型] Token限额耗尽: {', '.join(sorted(set(skipped_token)))}", flush=True)
-    # 图片题用更宽的整体预算（见 VISION_TIME_BUDGET 注释）
-    total_budget = VISION_TIME_BUDGET if need_vision else ANSWER_TIME_BUDGET
+    # 图片题用更宽的整体预算（见 VISION_TIME_BUDGET 注释）。
+    # budget 由调用方覆盖：手动选题只要一条参考答案，不能占满整题的 180 秒。
+    total_budget = budget if budget else (VISION_TIME_BUDGET if need_vision else ANSWER_TIME_BUDGET)
     started_at = time.time()
     deadline = started_at + total_budget
     if not active:
@@ -4757,18 +4758,21 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip=""):
                 # 这条会拼进给用户的 err_msg，绝不能放哨兵原文
                 errors.append(f"{model_name}: 上游限流（429），已冷却 {cooldown_sec}s")
             else:
-                error_logs.append({
-                    "provider_key": provider_name or "",
-                    "username": username,
-                    "model": model_name,
-                    "question": question,
-                    "answer": "",
-                    "status": "error",
-                    "error": err,
-                    "duration_ms": int((time.time() - attempt_start) * 1000),
-                    "client_ip": client_ip,
-                    "final_model": ""
-                })
+                # 手动选题顺带问一次 AI 时，失败的模型不单独记错误日志，
+                # 否则用户根本没点 AI 候选，统计里却多出一堆失败。
+                if log_errors:
+                    error_logs.append({
+                        "provider_key": provider_name or "",
+                        "username": username,
+                        "model": model_name,
+                        "question": question,
+                        "answer": "",
+                        "status": "error",
+                        "error": err,
+                        "duration_ms": int((time.time() - attempt_start) * 1000),
+                        "client_ip": client_ip,
+                        "final_model": ""
+                    })
                 if "HTTP 404" in err or "model is not found" in err.lower() or "模型" in err and "不存在" in err:
                     set_cooldown(MODEL_FAIL_COOLDOWN, provider_name, model_name, MODEL_FAIL_COOLDOWN_SECONDS)
                     print(f"[自动模型] 模型不可用，进入冷却 {MODEL_FAIL_COOLDOWN_SECONDS}s: {provider_name}/{model_name}，原因：{err}", flush=True)
@@ -11293,6 +11297,9 @@ class Handler(BaseHTTPRequestHandler):
                 model = params.get("model", [""])[0]
                 req_model_mode = params.get("model_mode", ["auto"])[0] or "auto"
                 skip_bank = str(params.get("skip_bank", ["0"])[0] or "0").strip().lower() in ("1", "true", "yes")
+                # 新脚本在手动选题时会带 1：除题库候选外，再实时问一次 AI，把答案也列进候选。
+                # 旧脚本不带这个参数，行为保持原样。
+                manual_ai = str(params.get("manual_ai", ["0"])[0] or "0").strip().lower() in ("1", "true", "yes")
                 # 题库匹配方式：auto=相似题按题面/选项相似度自动取最优；manual=相似题不自动作答，回传候选给脚本让用户挑
                 match_mode = str(params.get("match_mode", ["auto"])[0] or "auto").strip().lower()
                 if match_mode not in ("auto", "manual"):
@@ -11397,12 +11404,47 @@ class Handler(BaseHTTPRequestHandler):
                         provider_name = "question_bank"
                         resolved_model = "题库"
                         status = "manual_pick"
+                        manual_msg = "题库中有多道相似题，请手动选择"
+                        if manual_ai:
+                            # 用户要在候选里附带 AI 的答案：只借一条参考答案，不扣题数、不写缓存、
+                            # 不写题库，也不把这次失败算进模型错误日志。
+                            try:
+                                ai_vision = is_multimodal_question(question)
+                                ai_answer, _ai_err, ai_model, ai_provider = ask_ai_auto(
+                                    question,
+                                    need_vision=ai_vision,
+                                    username=user.get("username", ""),
+                                    client_ip=self.client_address[0] if self.client_address else "",
+                                    budget=50 if ai_vision else 35,
+                                    log_errors=False,
+                                )
+                                if ai_answer:
+                                    ai_norm = normalize_ai_answer(question, ai_answer)
+                                    if (ai_norm
+                                            and not _is_truncated_multi_answer(question, ai_norm)
+                                            and not _is_garbage_bank_answer(ai_norm, question)
+                                            and not any(str(c.get("answer") or "").strip() == ai_norm.strip() for c in items)):
+                                        items.append({
+                                            "question_hash": "",
+                                            "question": "由平台模型实时作答，供参考",
+                                            "type": _bank_info.get("question_type", ""),
+                                            "options": _bank_info.get("options", []),
+                                            "answer": ai_norm,
+                                            "score": None,
+                                            "source": "ai",
+                                            "model": ai_model or "",
+                                        })
+                                        manual_msg = "题库中有多道相似题，并已附上 AI 参考答案，请选择"
+                                        provider_name = ai_provider or provider_name
+                                        resolved_model = ai_model or resolved_model
+                            except Exception as exc:
+                                print(f"[题库相似题] AI 参考作答失败: {exc}", flush=True)
                         _bank_log["matched"] = False
                         _bank_log["match_method"] = "manual_pick"
                         enqueue_bank_log(_bank_log)
                         _bank_logged = True
                         profile_now = build_user_profile(user.get("username", ""))
-                        self._send_json(200, {"code": 200, "msg": "题库中有多道相似题，请手动选择", "data": {
+                        self._send_json(200, {"code": 200, "msg": manual_msg, "data": {
                             "answer": "",
                             "mode": "question_bank",
                             "bank": False,
