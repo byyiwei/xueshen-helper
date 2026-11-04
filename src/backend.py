@@ -4047,7 +4047,7 @@ def do_openai_compatible_chat(messages, model, api_key, base_url, time_budget=No
             if _is_timeout:
                 # 超时说明上游拥堵：同一个模型再降级重试，大概率还是超时，还会把剩余预算吃光，
                 # 让后面的兜底模型连试的机会都没有。直接返回，交给上层换模型。
-                return None, f"API 请求超时（{attempt_timeout}s 内无响应，模型:{model}）", 0
+                return None, f"API 请求超时（{attempt_timeout:.0f}s 内无响应，模型:{model}）", 0
             if attempt < 2:
                 continue
             return None, f"API 异常: {str(e)}", 0
