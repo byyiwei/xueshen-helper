@@ -2003,7 +2003,7 @@
               platforms: ANSWER_PLATFORM_KEYS,
               value: "auto",
               type: "select",
-              tips: "自动：题库里有相似题时，按题面/选项相似度自动选最匹配的一条作答；手动：遇到相似题不自动作答，留空由你自行选择（作业入口会列出候选题）",
+              tips: "自动：题库里有相似题时，按题面/选项相似度自动选最匹配的一条作答；手动：遇到相似题不自动作答，列出题库候选和 AI 参考答案，由你选择（作业入口里操作）",
               options: [
                 { value: "auto", label: "自动选最优" },
                 { value: "manual", label: "手动选择" }
@@ -2520,7 +2520,7 @@
                           onClick: ($event) => pickCandidate(index - 1, cand),
                           style: { "margin-top": "6px", "padding": "6px 8px", "border": "1px solid var(--t-border)", "border-radius": "6px", "cursor": "pointer", "background": "var(--t-surface)" }
                         }, [
-                          vue.createElementVNode("div", { style: { "font-weight": "600", "margin-bottom": "2px" } }, "候选" + (candIdx + 1) + "（相似度 " + vue.toDisplayString(cand.score) + "%）", 1),
+                          vue.createElementVNode("div", { style: { "font-weight": "600", "margin-bottom": "2px" } }, cand.source === "ai" ? "AI 参考答案" + (cand.model ? "（" + cand.model + "）" : "") : "候选" + (candIdx + 1) + "（相似度 " + vue.toDisplayString(cand.score) + "%）", 1),
                           vue.createElementVNode("div", { innerHTML: cand.question }, null, 8, ["innerHTML"]),
                           vue.createElementVNode("div", { innerHTML: "答案：" + vue.toDisplayString(cand.answer) }, null, 8, ["innerHTML"]),
                           vue.createElementVNode("div", { style: { "color": "var(--t-primary)", "margin-top": "2px" } }, "点击填入本题", 1)
@@ -3130,10 +3130,12 @@
     };
     if (images.length) { payloadObj.images = images; payloadObj.image_sources = imageSources; }
     const payload = JSON.stringify(payloadObj);
+    const _matchMode = getQuestionMatchMode();
     const data = "question=" + encodeURIComponent(payload)
       + "&u=" + encodeURIComponent(getCookieValue("_uid") || getCookieValue("UID") || "")
       + "&model_mode=auto"
-      + "&match_mode=" + getQuestionMatchMode()
+      + "&match_mode=" + _matchMode
+      + (_matchMode === "manual" ? "&manual_ai=1" : "")
       + (extra && extra.skipBank ? "&skip_bank=1" : "");
     const _interval = Number(extra && extra.interval);
     await sleep(Number.isFinite(_interval) && _interval >= 0 ? _interval : setting.config.basicConfig.reqIntervalTime.value);
