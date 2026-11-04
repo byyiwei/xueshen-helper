@@ -4016,7 +4016,8 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                 <select v-model="aiLogFilter.status">
                   <option value="">全部状态</option>
                   <option value="success">成功</option>
-                  <option value="error">失败</option>
+                  <option value="error">失败（未答出）</option>
+                  <option value="switched">已切换（已由其它模型答出）</option>
                   <option value="manual_pick">待手动选择</option>
                   <option value="insufficient_quota">余额不足</option>
                 </select>

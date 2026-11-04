@@ -4740,7 +4740,8 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip="", budget=0
             err = str(e)
             answer = None
         if answer:
-            clear_model_cooldowns(provider_name, model_name)
+            # 成功后不立刻解除冷却：同一模型并发调用时，一次成功会抹掉刚因超时写入的
+            # 冷却，下一个请求又会选到正在出问题的模型。冷却到期后自动回到候选池。
             record_model_token_usage(model_name, tokens)
             final_model = model_name
             break
@@ -5148,7 +5149,7 @@ def call_agent_llm(messages):
         print(f"[Agent] 尝试 provider={provider_name}, model={model_name}, weight={weight}", flush=True)
         answer, err, tokens = call_provider_chat_with_messages(messages, model_name, provider_info)
         if answer:
-            clear_model_cooldowns(provider_name, model_name)
+            # 同 ask_ai_auto：成功不清冷却，避免并发下抹掉刚写入的超时冷却。
             record_model_token_usage(model_name, tokens)
             return answer, None, model_name, provider_name
         if err:

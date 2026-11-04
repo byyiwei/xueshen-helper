@@ -5130,7 +5130,13 @@ class Database:
         if username:
             where.append(f"a.username = {ph}")
             params.append(username)
-        if status:
+        if status == "switched":
+            # 单模型失败、但已由其它模型答出：单独归类，不再混进「失败」。
+            where.append("a.status = 'error' AND COALESCE(a.final_model, '') <> ''")
+        elif status == "error":
+            # 「失败」只算整题没答出来的；换模型答出的走「已切换」。
+            where.append("a.status = 'error' AND COALESCE(a.final_model, '') = ''")
+        elif status:
             where.append(f"a.status = {ph}")
             params.append(status)
         if model:
