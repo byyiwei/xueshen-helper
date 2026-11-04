@@ -3138,8 +3138,9 @@
       + "&u=" + encodeURIComponent(getCookieValue("_uid") || getCookieValue("UID") || "")
       + "&model_mode=auto"
       + "&match_mode=" + _matchMode
-      + (_matchMode === "manual" ? "&manual_ai=1" : "")
-      + (extra && extra.skipBank ? "&skip_bank=1" : "");
+      + (_matchMode === "manual" && !(extra && extra.bankOnly) ? "&manual_ai=1" : "")
+      + (extra && extra.skipBank ? "&skip_bank=1" : "")
+      + (extra && extra.bankOnly ? "&bank_only=1" : "");
     const _interval = Number(extra && extra.interval);
     await sleep(Number.isFinite(_interval) && _interval >= 0 ? _interval : setting.config.basicConfig.reqIntervalTime.value);
     const result = await new Promise((resolve) => {
@@ -3250,6 +3251,20 @@
   };
   const getAIAnswer = async (question) => {
     return callLocalBackendAnswer(question, { skipBank: true });
+  };
+  // 纯题库：后端只查题库，未命中直接返回，不会再去问模型
+  const getQuestionBankAnswer = async (question) => {
+    return callLocalBackendAnswer(question, { bankOnly: true });
+  };
+  // 按用户选择的答题模式取答案，避免局部功能（随堂练习、第三方页面等）绕过设置
+  const getAnswerByMode = async (question) => {
+    let mode = "questionBankAndAI";
+    try {
+      mode = useSettingStore().config.basicConfig.answerMode.value;
+    } catch (_) {}
+    if (mode === "ai") return getAIAnswer(question);
+    if (mode === "questionBank") return getQuestionBankAnswer(question);
+    return getAccurateAnswer(question);
   };
   const _hoisted_1$4 = { class: "online-search-wrap" };
   const _hoisted_2$3 = { class: "tips" };
@@ -8196,7 +8211,7 @@
             if (!this.setting.config.basicConfig.autoAnswer.value) break;
             this.questionStore.currentQuestionIndex = index;
             if (mode !== "ai") {
-              const answerData = await getAccurateAnswer(question);
+              const answerData = mode === "questionBank" ? await getQuestionBankAnswer(question) : await getAccurateAnswer(question);
               if (!this.setting.config.basicConfig.autoAnswer.value) break;
               if (answerData.code === 1) {
                 question.answer = {
@@ -10342,7 +10357,7 @@
             let fillFailed = false;
             let handled = false;
             if (mode !== "ai") {
-              const answerData = await getAccurateAnswer(question);
+              const answerData = mode === "questionBank" ? await getQuestionBankAnswer(question) : await getAccurateAnswer(question);
               if (answerData.code === 1) {
                 if (answerData.data.multimatch) {
                   // 手动选择模式：题库有多道相似题，先不填，等用户自己挑
@@ -13221,7 +13236,7 @@
       let bankFilled = false;
       const apiQuestion = toApiQuestion(question);
       if (mode !== "ai") {
-        const answerData = await getAccurateAnswer(apiQuestion);
+        const answerData = mode === "questionBank" ? await getQuestionBankAnswer(apiQuestion) : await getAccurateAnswer(apiQuestion);
         if (answerData.code === 1 && answerData.data.multimatch) {
           // 手动选择模式：题库有多道相似题，交给用户挑，不自动填也不转 AI
           question.answer = { code: 0, answer: [], src: "pick", msg: "存在多道相似题，请先手动选择后再填写", candidates: answerData.data.candidates };
@@ -13908,7 +13923,7 @@
             const type = isMulti ? "多选题" : /判断/.test(fullText) ? "判断题" : "单选题";
             let picked = [];
             try {
-              const data = await getAccurateAnswer({ title, options: optionTexts, type, workType: "zhs" });
+              const data = await getAnswerByMode({ title, options: optionTexts, type, workType: "zhs" });
               if (data && data.code === 1 && Array.isArray(data.data.answer)) {
                 picked = pickQuizOptionIndexes(data.data.answer, optionTexts, type);
               }
@@ -14692,7 +14707,7 @@ const XS_EXT = (() => {
       }
       let result;
       try {
-        result = await getAccurateAnswer(qsBuildQuestionPayload(question));
+        result = await getAnswerByMode(qsBuildQuestionPayload(question));
       } catch (error) {
         extLog(`${rowText}：查询答案失败（${(error && error.message) || error}）`, 'error');
         skipped += 1;
@@ -15157,7 +15172,7 @@ const XS_EXT = (() => {
         }
         let result;
         try {
-          result = await getAccurateAnswer({
+          result = await getAnswerByMode({
             title,
             optionsText: options.map((opt) => opt.content),
             type,
@@ -17391,6 +17406,13 @@ const XS_EXT = (() => {
         token = "";
       }
       if (!token) return null;
+      // 跟随用户选择的答题模式：纯 AI 跳过题库，纯题库不转 AI
+      let askOptions = options;
+      try {
+        const mode = useSettingStore().config.basicConfig.answerMode.value;
+        if (mode === "ai") askOptions = { ...options, skipBank: true };
+        else if (mode === "questionBank") askOptions = { ...options, bankOnly: true };
+      } catch (error) {}
       const identity = questionIdentity(question);
       let choice = backendCache.get(identity);
       if (choice === void 0) {
@@ -17402,7 +17424,7 @@ const XS_EXT = (() => {
             type: QUESTION_TYPE_CODE_MAP[question.type] || question.type,
             element: question.el,
             refer: location.href
-          }, options);
+          }, askOptions);
         } catch (error) {
           result = null;
         }
@@ -17432,6 +17454,10 @@ const XS_EXT = (() => {
         token = "";
       }
       if (!token || !list.length) return [];
+      // 纯 AI 模式不做题库预取
+      try {
+        if (useSettingStore().config.basicConfig.answerMode.value === "ai") return [];
+      } catch (error) {}
       const answers = new Array(list.length).fill(null);
       const CHUNK = 20;
       for (let start = 0; start < list.length; start += CHUNK) {
@@ -19250,12 +19276,8 @@ const XS_EXT = (() => {
         setItem(item.index, { status: "running" });
         try {
           const question = toQuestion(block);
-          let res = await getAccurateAnswer(question);
-          let answer = res && res.data && res.data.answer;
-          if (!Array.isArray(answer) || !answer.length) {
-            res = await getAIAnswer(question);
-            answer = res && res.data && res.data.answer;
-          }
+          const res = await getAnswerByMode(question);
+          const answer = res && res.data && res.data.answer;
           if (!Array.isArray(answer) || !answer.length) {
             setItem(item.index, { status: "fail", msg: (res && res.msg) || "未搜到答案" });
             log(`第 ${item.index + 1} 题未搜到答案`);

@@ -11298,9 +11298,14 @@ class Handler(BaseHTTPRequestHandler):
                 model = params.get("model", [""])[0]
                 req_model_mode = params.get("model_mode", ["auto"])[0] or "auto"
                 skip_bank = str(params.get("skip_bank", ["0"])[0] or "0").strip().lower() in ("1", "true", "yes")
+                # 纯题库模式：只查题库，未命中直接返回；不调模型、不读 AI 缓存，也不扣题数。
+                bank_only = str(params.get("bank_only", ["0"])[0] or "0").strip().lower() in ("1", "true", "yes")
                 # 新脚本在手动选题时会带 1：除题库候选外，再实时问一次 AI，把答案也列进候选。
                 # 旧脚本不带这个参数，行为保持原样。
                 manual_ai = str(params.get("manual_ai", ["0"])[0] or "0").strip().lower() in ("1", "true", "yes")
+                if bank_only:
+                    # 纯题库模式不允许在候选里借 AI 参考答案
+                    manual_ai = False
                 # 题库匹配方式：auto=相似题按题面/选项相似度自动取最优；manual=相似题不自动作答，回传候选给脚本让用户挑
                 match_mode = str(params.get("match_mode", ["auto"])[0] or "auto").strip().lower()
                 if match_mode not in ("auto", "manual"):
@@ -11503,6 +11508,18 @@ class Handler(BaseHTTPRequestHandler):
                         return
                 if not _bank_logged:
                     enqueue_bank_log(_bank_log)
+                if bank_only:
+                    # 纯题库模式：题库没命中就到此为止，不再调用模型，也不产生扣费。
+                    print(f"[纯题库未命中] question={question[:60]}...", flush=True)
+                    profile_now = build_user_profile(user.get("username", ""))
+                    self._send_json(200, {"code": 200, "msg": "题库未命中", "data": {
+                        "answer": "",
+                        "mode": "question_bank",
+                        "bank": False,
+                        "profile": profile_now,
+                        "remainCount": 999999 if profile_now and profile_now.get("active_member") else int((profile_now or {}).get("points_balance") or 0)
+                    }})
+                    return
                 cache_key = make_ai_cache_key(question, model_mode, model, custom_cfg)
                 cached = get_ai_cache(cache_key)
                 if cached and not use_custom and not skip_bank:
