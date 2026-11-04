@@ -11392,6 +11392,11 @@ class Handler(BaseHTTPRequestHandler):
                     if len(ranked) > 1:
                         items = _build_match_candidates(question, ranked)
                         print(f"[题库相似题] 手动选择 user={user.get('username','')} 候选={len(items)} top={items[0].get('score')} question={question[:60]}...", flush=True)
+                        # 手动选择是正常的产品行为（等用户点候选），不是模型失败。
+                        # 单独记一个状态，后台日志才不会把它算进失败数、也不会显示成无模型调用的错误。
+                        provider_name = "question_bank"
+                        resolved_model = "题库"
+                        status = "manual_pick"
                         _bank_log["matched"] = False
                         _bank_log["match_method"] = "manual_pick"
                         enqueue_bank_log(_bank_log)
