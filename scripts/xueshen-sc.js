@@ -20200,19 +20200,19 @@ const XS_EXT = (() => {
           vue.h("em", { style: { fontStyle: "normal", color: "var(--t-text3)" } }, fmtSize(a.size))
         ]);
       };
-      const msgNode = (sender, content, time, atts) => {
+      const timeVal = (s) => {
+        const d = new Date(String(s || "").replace(" ", "T"));
+        return isNaN(d.getTime()) ? 0 : d.getTime();
+      };
+      const dividerNode = (time) => vue.h("div", { class: "xs-fb-divider" }, fmtTime(time));
+      const msgNode = (sender, content, atts) => {
         const isAdmin = sender === "admin";
         const body = [];
         if (content) body.push(vue.h("div", { class: "xs-fb-bubble" }, content));
         if (atts && atts.length) body.push(vue.h("div", { class: "xs-fb-atts" }, atts.map(attachNode)));
         return vue.h("div", { class: "xs-fb-msg " + (isAdmin ? "admin" : "user") }, [
           vue.h("div", { class: "xs-fb-avatar" }, isAdmin ? "管" : "我"),
-          vue.h("div", { class: "xs-fb-msg-body" }, [
-            vue.h("div", { class: "xs-fb-sender" }, [
-              vue.h("b", null, isAdmin ? "管理员" : "我"),
-              vue.h("span", null, fmtTime(time))
-            ])
-          ].concat(body))
+          vue.h("div", { class: "xs-fb-msg-body" }, body)
         ]);
       };
       const fileChips = () => {
@@ -20271,9 +20271,16 @@ const XS_EXT = (() => {
         const f = active.value;
         if (!f) return renderList();
         const nodes = [];
-        nodes.push(msgNode("user", f.content, f.created_at, f.attachments));
-        if (f.admin_reply && !(f.replies || []).length) nodes.push(msgNode("admin", f.admin_reply, f.replied_at, []));
-        (f.replies || []).forEach((rp) => nodes.push(msgNode(rp.sender, rp.content, rp.created_at, rp.attachments)));
+        let lastAt = 0;
+        const pushMsg = (sender, content, time, atts) => {
+          const at = timeVal(time);
+          if (!lastAt || !at || at - lastAt > 3 * 60 * 1000) nodes.push(dividerNode(time));
+          if (at) lastAt = at;
+          nodes.push(msgNode(sender, content, atts));
+        };
+        pushMsg("user", f.content, f.created_at, f.attachments);
+        if (f.admin_reply && !(f.replies || []).length) pushMsg("admin", f.admin_reply, f.replied_at, []);
+        (f.replies || []).forEach((rp) => pushMsg(rp.sender, rp.content, rp.created_at, rp.attachments));
         const chips = fileChips();
         const st = STATUS[f.status] || STATUS.pending;
         return vue.h("div", { class: "xs-fb", onPaste }, [
@@ -20292,9 +20299,10 @@ const XS_EXT = (() => {
                 value: replyText.value,
                 rows: 2,
                 maxlength: 2000,
-                placeholder: "输入追问内容，可直接粘贴截图",
+                placeholder: "输入追问内容，Enter 发送",
                 onInput: (e) => { replyText.value = e.target.value; },
-                style: { resize: "none", height: "54px", border: "none", padding: "0", background: "transparent" }
+                onKeydown: (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendReply(); } },
+                style: { resize: "none", height: "40px", border: "none", padding: "0", background: "transparent" }
               }),
               vue.h("div", { class: "xs-fb-composer-bar" }, [
                 vue.h("button", { class: "xs-fb-tool", onClick: pickFiles, disabled: busy.value, title: "添加图片或附件" }, "＋ 附件"),
@@ -20376,18 +20384,18 @@ const XS_EXT = (() => {
         ".xs-fb-preview{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
         ".xs-fb-time{flex:none;font-variant-numeric:tabular-nums}",
         ".xs-fb-chip{font-size:10px;line-height:16px;padding:0 6px;border-radius:999px;white-space:nowrap;flex:none;font-weight:500}",
-        ".xs-fb-chat{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding:2px 3px 4px 1px}",
-        ".xs-fb-msg{display:flex;gap:7px;max-width:100%}",
+        ".xs-fb-chat{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:6px 3px 2px 1px}",
+        ".xs-fb-divider{align-self:center;font-size:10px;line-height:16px;padding:1px 8px;border-radius:999px;background:var(--t-surface2);color:var(--t-text3);white-space:nowrap}",
+        ".xs-fb-msg{display:flex;gap:8px;max-width:100%;align-items:flex-start}",
         ".xs-fb-msg.user{flex-direction:row-reverse}",
-        ".xs-fb-avatar{flex:none;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:600;background:var(--t-surface2);color:var(--t-text2);border:1px solid var(--t-border)}",
+        ".xs-fb-avatar{flex:none;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;background:var(--t-surface2);color:var(--t-text2);border:1px solid var(--t-border)}",
         ".xs-fb-msg.user .xs-fb-avatar{background:var(--t-primary);border-color:var(--t-primary);color:#fff}",
-        ".xs-fb-msg-body{display:flex;flex-direction:column;gap:3px;min-width:0;max-width:calc(100% - 46px)}",
+        ".xs-fb-msg-body{display:flex;flex-direction:column;gap:4px;min-width:0;max-width:calc(100% - 62px)}",
         ".xs-fb-msg.user .xs-fb-msg-body{align-items:flex-end}",
-        ".xs-fb-sender{display:flex;align-items:center;gap:6px;font-size:10.5px;line-height:14px;color:var(--t-text3)}",
-        ".xs-fb-sender b{font-weight:600;color:var(--t-text2)}",
-        ".xs-fb-bubble{padding:7px 10px;border-radius:10px;line-height:1.55;font-size:12.5px;white-space:pre-wrap;word-break:break-word;border:1px solid var(--t-border);background:var(--t-surface)}",
-        ".xs-fb-msg.user .xs-fb-bubble{background:var(--t-primary-bg);border-color:var(--t-primary-border);border-top-right-radius:3px}",
-        ".xs-fb-msg.admin .xs-fb-bubble{border-top-left-radius:3px}",
+        
+        ".xs-fb-bubble{padding:7px 11px;border-radius:6px;line-height:1.55;font-size:12.5px;white-space:pre-wrap;word-break:break-word;border:1px solid var(--t-border);background:var(--t-surface)}",
+        ".xs-fb-msg.user .xs-fb-bubble{background:var(--t-primary);border-color:var(--t-primary);color:#fff;border-top-right-radius:2px}",
+        ".xs-fb-msg.admin .xs-fb-bubble{border-top-left-radius:2px}",
         ".xs-fb-atts{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}",
         ".xs-fb-att-img{max-width:150px;max-height:120px;border-radius:8px;border:1px solid var(--t-border);cursor:zoom-in;display:block}",
         ".xs-fb-att-file{display:inline-flex;align-items:center;gap:5px;max-width:210px;padding:5px 8px;border-radius:7px;border:1px solid var(--t-border);background:var(--t-surface);font-size:11.5px;color:var(--t-text2);cursor:pointer}",
@@ -20407,9 +20415,11 @@ const XS_EXT = (() => {
         ".xs-fb-link:hover{text-decoration:underline}",
         ".xs-fb-link:disabled{opacity:.55;cursor:default}",
         ".xs-fb-foot{flex:none;display:flex;align-items:center;gap:8px;border-top:1px solid var(--t-border);padding-top:6px}",
-        ".xs-fb-composer{flex:none;border:1px solid var(--t-border);background:var(--t-surface);border-radius:10px;padding:8px 10px 6px;transition:border-color .15s}",
+        ".xs-fb-composer{flex:none;border:1px solid var(--t-border);background:var(--t-surface);border-radius:9px;padding:6px 10px 5px;transition:border-color .15s}",
+        ".xs-fb-composer textarea{border:none!important;background:transparent!important;box-shadow:none!important;padding:2px 1px!important;height:40px!important;line-height:1.5;resize:none}",
+        ".xs-fb-composer textarea:focus{border:none!important;box-shadow:none!important}",
         ".xs-fb-composer:focus-within{border-color:var(--t-primary-border)}",
-        ".xs-fb-composer-bar{display:flex;align-items:center;gap:8px;margin-top:6px;padding-top:6px;border-top:1px solid var(--t-border)}",
+        ".xs-fb-composer-bar{display:flex;align-items:center;gap:8px;margin-top:2px;padding-top:5px;border-top:1px solid var(--t-border)}",
         ".xs-fb-tool{border:none;background:transparent;color:var(--t-text2);font-size:11.5px;cursor:pointer;padding:2px 4px;border-radius:5px;font-family:inherit}",
         ".xs-fb-tool:hover{color:var(--t-primary);background:var(--t-primary-bg)}",
         ".xs-fb-tool:disabled{opacity:.55;cursor:default}",
