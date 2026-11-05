@@ -20303,7 +20303,7 @@ const XS_EXT = (() => {
             vue.h("div", null, [
               vue.h("div", { class: "xs-fb-label" }, "反馈类型"),
               vue.h("select", { value: form.category, onChange: (e) => { form.category = e.target.value; } },
-                Object.keys(CATEGORY).map((k) => vue.h("option", { value: k }, CATEGORY[k])))
+                Object.keys(CATEGORY).map((k) => vue.h("option", { value: k, selected: form.category === k }, CATEGORY[k])))
             ]),
             vue.h("div", null, [
               vue.h("div", { class: "xs-fb-label" }, "问题标题"),
