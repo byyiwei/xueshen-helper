@@ -20182,12 +20182,33 @@ const XS_EXT = (() => {
           }
         });
       };
-      const chip = (text, color) => vue.h("span", { class: "xs-fb-chip", style: { background: color + "22", color } }, text);
-      const btn = (text, onClick, primary, disabled) => vue.h("button", {
+      const chip = (text, color) => vue.h("span", { class: "xs-fb-chip", style: { "--chip-c": color } }, text);
+      const ico = (name, size) => {
+        const paths = {
+          back: "M15 18l-6-6 6-6",
+          plus: "M12 5v14M5 12h14",
+          refresh: "M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6",
+          image: "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zM8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zM21 15l-5-5L5 21",
+          send: "M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z",
+          clip: "M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48",
+          file: "M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM13 2v7h7",
+          chat: "M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"
+        };
+        return vue.h("svg", {
+          class: "xs-fb-ico", width: size || 14, height: size || 14, viewBox: "0 0 24 24",
+          fill: "none", stroke: "currentColor", "stroke-width": "1.8",
+          "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true"
+        }, [vue.h("path", { d: paths[name] || "" })]);
+      };
+      const btn = (text, onClick, primary, disabled, icon) => vue.h("button", {
         class: "xs-fb-btn" + (primary ? " primary" : ""),
         onClick,
-        disabled: !!disabled
-      }, text);
+        disabled: !!disabled,
+        type: "button"
+      }, [icon ? ico(icon, 13) : null, vue.h("span", null, text)]);
+      const iconBtn = (name, onClick, title, disabled, size) => vue.h("button", {
+        class: "xs-fb-iconbtn", onClick, title: title || "", disabled: !!disabled, type: "button"
+      }, ico(name, size || 15));
       const attachImage = (a) => vue.h("img", {
         class: "xs-fb-att-img",
         src: a.url,
@@ -20216,9 +20237,9 @@ const XS_EXT = (() => {
       const attachNode = (a) => {
         if (a.is_image && a.url) return attachImage(a);
         return vue.h("span", { class: "xs-fb-att-file", title: a.filename || "附件", onClick: () => downloadAtt(a) }, [
-          "▣",
+          ico("file", 13),
           vue.h("span", null, a.filename || "附件"),
-          vue.h("em", { style: { fontStyle: "normal", color: "var(--t-text3)" } }, fmtSize(a.size))
+          vue.h("em", { style: { fontStyle: "normal", color: "var(--t-text3)", flex: "none" } }, fmtSize(a.size))
         ]);
       };
       const timeVal = (s) => {
@@ -20226,12 +20247,12 @@ const XS_EXT = (() => {
         return isNaN(d.getTime()) ? 0 : d.getTime();
       };
       const dividerNode = (time) => vue.h("div", { class: "xs-fb-divider" }, fmtTime(time));
-      const msgNode = (sender, content, atts) => {
+      const msgNode = (sender, content, atts, tight) => {
         const isAdmin = sender === "admin";
         const body = [];
         if (content) body.push(vue.h("div", { class: "xs-fb-bubble" }, content));
         if (atts && atts.length) body.push(vue.h("div", { class: "xs-fb-atts" }, atts.map(attachNode)));
-        return vue.h("div", { class: "xs-fb-msg " + (isAdmin ? "admin" : "user") }, [
+        return vue.h("div", { class: "xs-fb-msg " + (isAdmin ? "admin" : "user") + (tight ? " tight" : "") }, [
           vue.h("div", { class: "xs-fb-avatar" }, isAdmin ? "管" : "我"),
           vue.h("div", { class: "xs-fb-msg-body" }, body)
         ]);
@@ -20239,23 +20260,17 @@ const XS_EXT = (() => {
       const fileChips = () => {
         const chips = [];
         pending.value.forEach((a, i) => chips.push(vue.h("span", { class: "xs-fb-file-chip", title: a.filename || "附件" }, [
-          "▣",
+          ico("file", 12),
           vue.h("b", null, a.filename || "附件"),
-          vue.h("button", { class: "xs-fb-x", onClick: () => { const arr = pending.value.slice(); arr.splice(i, 1); pending.value = arr; } }, "×")
+          vue.h("button", { class: "xs-fb-x", type: "button", onClick: () => { const arr = pending.value.slice(); arr.splice(i, 1); pending.value = arr; } }, "×")
         ])));
         newFiles.value.forEach((f, i) => chips.push(vue.h("span", { class: "xs-fb-file-chip", title: f.name || "截图" }, [
-          "▣",
+          ico("file", 12),
           vue.h("b", null, f.name || ("粘贴图片-" + (i + 1))),
-          vue.h("button", { class: "xs-fb-x", onClick: () => removeNewFile(i) }, "×")
+          vue.h("button", { class: "xs-fb-x", type: "button", onClick: () => removeNewFile(i) }, "×")
         ])));
         return chips;
       };
-      const headNode = (title, withBack) => vue.h("div", { class: "xs-fb-head" }, [
-        withBack ? btn("← 返回", backToList) : null,
-        vue.h("div", { class: "xs-fb-title" }, title),
-        withBack ? null : btn(loading.value ? "刷新中" : "刷新", loadList, false, loading.value),
-        withBack ? null : btn("＋ 新反馈", showNew, true)
-      ]);
       const renderList = () => {
         const items = list.value.map((f) => {
           const st = STATUS[f.status] || STATUS.pending;
@@ -20268,24 +20283,30 @@ const XS_EXT = (() => {
           return vue.h("div", { class: "xs-fb-item", onClick: () => openTicket(f) }, [
             vue.h("div", { class: "xs-fb-item-top" }, [
               vue.h("span", { class: "xs-fb-item-title" }, f.title || "未命名反馈"),
-              chip(st[0], st[1])
+              vue.h("span", { class: "xs-fb-time" }, fmtTime(f.created_at))
             ]),
             vue.h("div", { class: "xs-fb-item-sub" }, [
               vue.h("span", { class: "xs-fb-type" }, CATEGORY[f.category] || "其他"),
               vue.h("span", { class: "xs-fb-preview" }, (last ? (last.sender === "admin" ? "管理员：" : "我：") : "") + preview),
-              vue.h("span", { class: "xs-fb-time" }, fmtTime(f.created_at))
+              vue.h("span", { class: "xs-fb-state", style: { "--chip-c": st[1] } }, st[0])
             ])
           ]);
         });
-        const empty = tokenNow()
-          ? (loading.value ? "加载中..." : "还没有反馈记录\n点右上角「新反馈」提交问题，可直接粘贴或上传截图")
-          : "还没有配置脚本密钥\n先在「设置」或账号面板登录用户中心";
+        const hasToken = !!tokenNow();
+        const empty = vue.h("div", { class: "xs-fb-empty", style: { flex: "1" } }, [
+          ico("chat", 36),
+          vue.h("div", null, hasToken
+            ? (loading.value ? "正在加载..." : "还没有反馈记录\n点右上角「新反馈」提交问题\n可直接粘贴或上传截图")
+            : "还没有配置脚本密钥\n先在「设置」或账号面板登录用户中心")
+        ]);
         return vue.h("div", { class: "xs-fb" }, [
-          headNode("问题反馈", false),
+          vue.h("div", { class: "xs-fb-head" }, [
+            vue.h("div", { class: "xs-fb-title left" }, "问题反馈"),
+            iconBtn("refresh", loadList, "刷新", loading.value),
+            btn("新反馈", showNew, true, false, "plus")
+          ]),
           notice.value ? vue.h("div", { class: "xs-fb-notice" }, notice.value) : null,
-          items.length
-            ? vue.h("div", { class: "xs-fb-list" }, items)
-            : vue.h("div", { class: "xs-fb-empty", style: { flex: "1" } }, empty)
+          items.length ? vue.h("div", { class: "xs-fb-list" }, items) : empty
         ]);
       };
       const renderChat = () => {
@@ -20293,11 +20314,16 @@ const XS_EXT = (() => {
         if (!f) return renderList();
         const nodes = [];
         let lastAt = 0;
+        let lastSender = "";
         const pushMsg = (sender, content, time, atts) => {
           const at = timeVal(time);
-          if (!lastAt || !at || at - lastAt > 3 * 60 * 1000) nodes.push(dividerNode(time));
+          if (!lastAt || !at || at - lastAt > 3 * 60 * 1000) {
+            nodes.push(dividerNode(time));
+            lastSender = "";
+          }
           if (at) lastAt = at;
-          nodes.push(msgNode(sender, content, atts));
+          nodes.push(msgNode(sender, content, atts, sender === lastSender));
+          lastSender = sender;
         };
         pushMsg("user", f.content, f.created_at, f.attachments);
         if (f.admin_reply && !(f.replies || []).length) pushMsg("admin", f.admin_reply, f.replied_at, []);
@@ -20306,7 +20332,7 @@ const XS_EXT = (() => {
         const st = STATUS[f.status] || STATUS.pending;
         return vue.h("div", { class: "xs-fb", onPaste }, [
           vue.h("div", { class: "xs-fb-head" }, [
-            btn("← 返回", backToList),
+            iconBtn("back", backToList, "返回列表"),
             vue.h("div", { class: "xs-fb-title" }, f.title || "反馈详情"),
             chip(st[0], st[1])
           ]),
@@ -20315,20 +20341,22 @@ const XS_EXT = (() => {
           f.status === "closed"
             ? vue.h("div", { class: "xs-fb-closed" }, "该反馈已关闭，有新问题请重新提交")
             : vue.h("div", { class: "xs-fb-composer" }, [
-              chips.length ? vue.h("div", { class: "xs-fb-files", style: { marginBottom: "6px" } }, chips) : null,
+              chips.length ? vue.h("div", { class: "xs-fb-files" }, chips) : null,
               vue.h("textarea", {
                 value: replyText.value,
                 rows: 2,
                 maxlength: 2000,
-                placeholder: "输入追问内容，Enter 发送",
+                placeholder: "输入追问内容…",
                 onInput: (e) => { replyText.value = e.target.value; },
                 onKeydown: (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendReply(); } },
-                style: { resize: "none", height: "40px", border: "none", padding: "0", background: "transparent" }
+                style: { resize: "none", height: "44px", border: "none", padding: "0", background: "transparent" }
               }),
               vue.h("div", { class: "xs-fb-composer-bar" }, [
-                vue.h("button", { class: "xs-fb-tool", onClick: pickFiles, disabled: busy.value, title: "添加图片或附件" }, "＋ 附件"),
-                vue.h("span", { class: "xs-fb-hint" }, uploading.value ? ("上传中 " + uploading.value + " 个...") : "可粘贴截图"),
-                btn(busy.value ? "发送中..." : "发送", sendReply, true, busy.value)
+                vue.h("button", { class: "xs-fb-tool", type: "button", onClick: pickFiles, disabled: busy.value, title: "添加图片或附件" }, [ico("clip", 14), vue.h("span", null, "附件")]),
+                vue.h("span", { class: "xs-fb-hint" }, uploading.value
+                  ? ("正在上传附件 " + uploading.value + " 个…")
+                  : "Enter 发送 · Shift+Enter 换行"),
+                btn(busy.value ? "发送中" : "发送", sendReply, true, busy.value, "send")
               ])
             ])
         ]);
@@ -20338,16 +20366,21 @@ const XS_EXT = (() => {
         const len = (form.content || "").length;
         return vue.h("div", { class: "xs-fb", onPaste }, [
           vue.h("div", { class: "xs-fb-head" }, [
-            btn("← 返回", backToList),
-            vue.h("div", { class: "xs-fb-title" }, "提交问题反馈")
+            iconBtn("back", backToList, "返回列表"),
+            vue.h("div", { class: "xs-fb-title" }, "提交问题反馈"),
+            vue.h("div", { class: "xs-fb-head-spacer" })
           ]),
           notice.value ? vue.h("div", { class: "xs-fb-notice" }, notice.value) : null,
           vue.h("div", { class: "xs-fb-body" }, [
             vue.h("div", { class: "xs-fb-form" }, [
               vue.h("div", { class: "xs-fb-field" }, [
                 vue.h("div", { class: "xs-fb-label" }, "反馈类型"),
-                vue.h("select", { value: form.category, onChange: (e) => { form.category = e.target.value; } },
-                  Object.keys(CATEGORY).map((k) => vue.h("option", { value: k, selected: form.category === k }, CATEGORY[k])))
+                vue.h("div", { class: "xs-fb-seg" },
+                  Object.keys(CATEGORY).map((k) => vue.h("button", {
+                    type: "button",
+                    class: "xs-fb-seg-item" + (form.category === k ? " on" : ""),
+                    onClick: () => { form.category = k; }
+                  }, CATEGORY[k])))
               ]),
               vue.h("div", { class: "xs-fb-field" }, [
                 vue.h("div", { class: "xs-fb-label" }, "问题标题"),
@@ -20363,96 +20396,112 @@ const XS_EXT = (() => {
                   maxlength: 2000,
                   placeholder: "问题现象、复现步骤或改进建议",
                   onInput: (e) => { form.content = e.target.value; },
-                  style: { height: "96px", resize: "none" }
+                  style: { height: "110px", resize: "none" }
                 })
               ])
             ]),
-            vue.h("div", { class: "xs-fb-drop" }, [
-              vue.h("div", { class: "xs-fb-drop-head" }, [
-                vue.h("span", { class: "xs-fb-label", style: { margin: "0" } }, "图片/附件（可选）"),
-                vue.h("span", { class: "xs-fb-hint" }, "最多 6 个，单个 15MB")
-              ]),
-              chips.length ? vue.h("div", { class: "xs-fb-files", style: { marginBottom: "6px" } }, chips) : null,
-              vue.h("div", { class: "xs-fb-drop-zone" }, [
-                vue.h("span", null, "粘贴截图，或"),
-                vue.h("button", { class: "xs-fb-link", type: "button", onClick: pickFiles, disabled: busy.value }, "选择文件")
-              ])
+            chips.length ? vue.h("div", { class: "xs-fb-files" }, chips) : null,
+            vue.h("button", { class: "xs-fb-drop", type: "button", onClick: pickFiles, disabled: busy.value }, [
+              ico("image", 20),
+              vue.h("span", { class: "xs-fb-drop-main" }, "点击选择文件，或直接粘贴截图"),
+              vue.h("span", { class: "xs-fb-drop-sub" }, "图片 / 附件 · 最多 6 个 · 单个 15MB")
             ])
           ]),
           vue.h("div", { class: "xs-fb-foot" }, [
-            vue.h("span", { class: "xs-fb-hint" }, uploading.value ? ("上传附件 " + uploading.value + "/" + newFiles.value.length) : "提交后可在这里继续对话"),
-            btn(busy.value ? "提交中..." : "提交反馈", submitNew, true, busy.value)
+            vue.h("span", { class: "xs-fb-hint" }, uploading.value ? ("正在上传附件 " + uploading.value + " 个…") : "提交后可在详情里继续追问"),
+            btn(busy.value ? "提交中" : "提交反馈", submitNew, true, busy.value)
           ])
         ]);
       };
       const CSS = [
-        ".xs-fb{display:flex!important;flex-direction:column!important;gap:8px;flex:1 1 auto;align-self:stretch;height:auto!important;min-height:420px;max-height:none!important;overflow:hidden;font-size:12.5px;color:var(--t-text)}",
+        ".xs-fb{display:flex!important;flex-direction:column!important;gap:0;flex:1 1 auto;align-self:stretch;height:auto!important;min-height:420px;max-height:none!important;overflow:hidden;font-size:12.5px;color:var(--t-text)}",
         ".xs-fb *{box-sizing:border-box}",
-        ".xs-fb-head{display:flex;align-items:center;gap:6px;flex:none;min-height:26px}",
-        ".xs-fb-title{flex:1;min-width:0;font-weight:700;font-size:13.5px;line-height:20px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
-        ".xs-fb-btn{height:26px;padding:0 10px;border-radius:6px;border:1px solid var(--t-border);background:var(--t-surface2);color:var(--t-text);font-size:12px;cursor:pointer;white-space:nowrap;transition:all .15s;font-family:inherit}",
+        ".xs-fb ::-webkit-scrollbar{width:6px;height:6px}",
+        ".xs-fb ::-webkit-scrollbar-thumb{background:var(--t-border2);border-radius:3px}",
+        ".xs-fb ::-webkit-scrollbar-track{background:transparent}",
+        ".xs-fb-head{display:flex;align-items:center;gap:7px;flex:none;min-height:41px;padding:7px 10px;border-bottom:1px solid var(--t-border);background:var(--t-surface)}",
+        ".xs-fb-title{flex:1;min-width:0;font-weight:600;font-size:13px;line-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}",
+        ".xs-fb-title.left{text-align:left;font-size:13.5px}",
+        ".xs-fb-head-spacer{flex:none;width:27px}",
+        ".xs-fb-ico{flex:none;display:block}",
+        ".xs-fb-btn{display:inline-flex;align-items:center;gap:5px;height:27px;padding:0 11px;border-radius:7px;border:1px solid var(--t-border);background:var(--t-surface);color:var(--t-text2);font-size:12px;font-weight:500;cursor:pointer;white-space:nowrap;transition:all .16s ease;font-family:inherit;user-select:none}",
         ".xs-fb-btn:hover{border-color:var(--t-primary-border);color:var(--t-primary);background:var(--t-primary-bg)}",
-        ".xs-fb-btn:disabled{opacity:.55;cursor:default}",
-        ".xs-fb-btn.primary{background:var(--t-primary);border-color:var(--t-primary);color:#fff}",
-        ".xs-fb-btn.primary:hover{background:var(--t-primary-2);color:#fff}",
-        ".xs-fb-list{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding:1px 3px 2px 1px}",
-        ".xs-fb-item{border:1px solid var(--t-border);background:var(--t-surface);border-radius:8px;padding:8px 10px;cursor:pointer;transition:border-color .15s,background .15s}",
-        ".xs-fb-item:hover{border-color:var(--t-primary-border);background:var(--t-primary-bg)}",
-        ".xs-fb-item-top{display:flex;align-items:center;gap:6px;min-width:0}",
+        ".xs-fb-btn:active{transform:scale(.96)}",
+        ".xs-fb-btn:disabled{opacity:.5;cursor:default;transform:none}",
+        ".xs-fb-btn.primary{background:var(--t-primary);border-color:var(--t-primary);color:#fff;box-shadow:0 1px 2px var(--t-shadow)}",
+        ".xs-fb-btn.primary:hover{background:var(--t-primary-2);border-color:var(--t-primary-2);color:#fff}",
+        ".xs-fb-btn.primary:disabled{background:var(--t-primary);border-color:var(--t-primary);color:#fff}",
+        ".xs-fb-iconbtn{display:inline-flex;align-items:center;justify-content:center;width:27px;height:27px;border-radius:7px;border:none;background:transparent;color:var(--t-text2);cursor:pointer;transition:all .16s ease;flex:none;padding:0}",
+        ".xs-fb-iconbtn:hover{background:var(--t-surface2);color:var(--t-text)}",
+        ".xs-fb-iconbtn:disabled{opacity:.5;cursor:default}",
+        ".xs-fb-chip{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;line-height:17px;padding:0 7px;border-radius:999px;border:1px solid var(--t-border);background:var(--t-surface);color:var(--t-text2);white-space:nowrap;flex:none;font-weight:500}",
+        ".xs-fb-chip::before{content:\"\";width:5px;height:5px;border-radius:50%;background:var(--chip-c,var(--t-text3))}",
+        ".xs-fb-list{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:7px;padding:10px;background:var(--t-bg)}",
+        ".xs-fb-item{border:1px solid var(--t-border);background:var(--t-surface);border-radius:10px;padding:9px 11px;cursor:pointer;transition:border-color .16s ease,box-shadow .16s ease}",
+        ".xs-fb-item:hover{border-color:var(--t-primary-border);box-shadow:0 2px 8px var(--t-shadow)}",
+        ".xs-fb-item-top{display:flex;align-items:baseline;gap:8px;min-width:0}",
         ".xs-fb-item-title{flex:1;min-width:0;font-size:12.5px;font-weight:600;line-height:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
-        ".xs-fb-item-sub{display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;color:var(--t-text3);min-width:0}",
-        ".xs-fb-type{flex:none;line-height:15px;padding:0 5px;border-radius:4px;background:var(--t-surface2);border:1px solid var(--t-border);color:var(--t-text2);font-size:10.5px}",
+        ".xs-fb-time{flex:none;font-size:10.5px;color:var(--t-text3);font-variant-numeric:tabular-nums}",
+        ".xs-fb-item-sub{display:flex;align-items:center;gap:6px;margin-top:3px;font-size:11px;color:var(--t-text3);min-width:0}",
+        ".xs-fb-type{flex:none;line-height:16px;padding:0 6px;border-radius:5px;background:var(--t-surface2);color:var(--t-text2);font-size:10px;font-weight:500}",
         ".xs-fb-preview{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
-        ".xs-fb-time{flex:none;font-variant-numeric:tabular-nums}",
-        ".xs-fb-chip{font-size:10px;line-height:16px;padding:0 6px;border-radius:999px;white-space:nowrap;flex:none;font-weight:500}",
-        ".xs-fb-chat{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:6px 3px 2px 1px}",
-        ".xs-fb-divider{align-self:center;font-size:10px;line-height:16px;padding:1px 8px;border-radius:999px;background:var(--t-surface2);color:var(--t-text3);white-space:nowrap}",
+        ".xs-fb-state{flex:none;display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:var(--t-text2);font-weight:500}",
+        ".xs-fb-state::before{content:\"\";width:5px;height:5px;border-radius:50%;background:var(--chip-c,var(--t-text3))}",
+        ".xs-fb-chat{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding:14px 12px 12px;background:var(--t-bg)}",
+        ".xs-fb-divider{align-self:center;font-size:10px;line-height:14px;color:var(--t-text3);white-space:nowrap;margin:-4px 0;letter-spacing:.3px}",
         ".xs-fb-msg{display:flex;gap:8px;max-width:100%;align-items:flex-start}",
         ".xs-fb-msg.user{flex-direction:row-reverse}",
-        ".xs-fb-avatar{flex:none;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;background:var(--t-surface2);color:var(--t-text2);border:1px solid var(--t-border)}",
+        ".xs-fb-msg.tight{margin-top:-8px}",
+        ".xs-fb-avatar{flex:none;width:27px;height:27px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:600;background:var(--t-primary-bg);color:var(--t-primary);border:1px solid var(--t-primary-border)}",
         ".xs-fb-msg.user .xs-fb-avatar{background:var(--t-primary);border-color:var(--t-primary);color:#fff}",
-        ".xs-fb-msg-body{display:flex;flex-direction:column;gap:4px;min-width:0;max-width:calc(100% - 62px)}",
+        ".xs-fb-msg-body{display:flex;flex-direction:column;gap:5px;min-width:0;max-width:calc(100% - 70px)}",
         ".xs-fb-msg.user .xs-fb-msg-body{align-items:flex-end}",
-        
-        ".xs-fb-bubble{padding:7px 11px;border-radius:6px;line-height:1.55;font-size:12.5px;white-space:pre-wrap;word-break:break-word;border:1px solid var(--t-border);background:var(--t-surface)}",
-        ".xs-fb-msg.user .xs-fb-bubble{background:var(--t-primary);border-color:var(--t-primary);color:#fff;border-top-right-radius:2px}",
-        ".xs-fb-msg.admin .xs-fb-bubble{border-top-left-radius:2px}",
-        ".xs-fb-atts{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}",
-        ".xs-fb-att-img{max-width:150px;max-height:120px;border-radius:8px;border:1px solid var(--t-border);cursor:zoom-in;display:block}",
-        ".xs-fb-att-file{display:inline-flex;align-items:center;gap:5px;max-width:210px;padding:5px 8px;border-radius:7px;border:1px solid var(--t-border);background:var(--t-surface);font-size:11.5px;color:var(--t-text2);cursor:pointer}",
+        ".xs-fb-bubble{padding:8px 12px;border-radius:11px;border-top-left-radius:4px;line-height:1.6;font-size:12.5px;white-space:pre-wrap;word-break:break-word;border:1px solid var(--t-border);background:var(--t-surface);box-shadow:0 1px 2px var(--t-shadow)}",
+        ".xs-fb-msg.user .xs-fb-bubble{background:var(--t-primary);border-color:var(--t-primary);color:#fff;border-top-left-radius:11px;border-top-right-radius:4px;box-shadow:0 1px 3px var(--t-shadow)}",
+        ".xs-fb-msg,.xs-fb-divider{animation:xs-fb-in .18s ease-out}",
+        "@keyframes xs-fb-in{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}",
+        ".xs-fb-atts{display:flex;flex-direction:column;gap:6px;margin-top:2px}",
+        ".xs-fb-att-img{max-width:180px;max-height:150px;border-radius:9px;border:1px solid var(--t-border);cursor:zoom-in;display:block;transition:filter .16s ease}",
+        ".xs-fb-att-img:hover{filter:brightness(.96)}",
+        ".xs-fb-att-file{display:inline-flex;align-items:center;gap:6px;max-width:210px;padding:6px 9px;border-radius:9px;border:1px solid var(--t-border);background:var(--t-surface);font-size:11px;color:var(--t-text2);cursor:pointer;transition:border-color .16s ease,color .16s ease}",
+        ".xs-fb-att-file:hover{border-color:var(--t-primary-border);color:var(--t-primary)}",
         ".xs-fb-att-file span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
-        ".xs-fb textarea,.xs-fb input,.xs-fb select{width:100%;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);border-radius:6px;font-size:12.5px;padding:7px 9px;font-family:inherit;outline:none;transition:border-color .15s,box-shadow .15s}",
-        ".xs-fb textarea:focus,.xs-fb input:focus,.xs-fb select:focus{border-color:var(--t-primary);box-shadow:0 0 0 2px var(--t-primary-bg)}",
-        ".xs-fb-body{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:2px}",
-        ".xs-fb-form{border:1px solid var(--t-border);background:var(--t-surface);border-radius:9px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}",
-        ".xs-fb-field{display:flex;flex-direction:column}",
-        ".xs-fb-label{font-size:11px;color:var(--t-text2);margin:0 0 5px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:6px}",
-        ".xs-fb-count{font-weight:400;color:var(--t-text3);font-variant-numeric:tabular-nums}",
-        ".xs-fb-drop{border:1px dashed var(--t-border2);border-radius:9px;padding:8px 11px;transition:border-color .15s,background .15s}",
-        ".xs-fb-drop:hover{border-color:var(--t-primary-border);background:var(--t-primary-bg)}",
-        ".xs-fb-drop-head{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:4px}",
-        ".xs-fb-drop-zone{display:flex;align-items:center;justify-content:center;gap:4px;font-size:11.5px;color:var(--t-text3);padding:1px 0 2px}",
-        ".xs-fb-link{border:none;background:transparent;color:var(--t-primary);font-size:11.5px;cursor:pointer;padding:0;font-family:inherit}",
-        ".xs-fb-link:hover{text-decoration:underline}",
-        ".xs-fb-link:disabled{opacity:.55;cursor:default}",
-        ".xs-fb-foot{flex:none;display:flex;align-items:center;gap:8px;border-top:1px solid var(--t-border);padding-top:6px}",
-        ".xs-fb-composer{flex:none;border:1px solid var(--t-border);background:var(--t-surface);border-radius:9px;padding:6px 10px 5px;transition:border-color .15s}",
-        ".xs-fb-composer textarea{border:none!important;background:transparent!important;box-shadow:none!important;padding:2px 1px!important;height:40px!important;line-height:1.5;resize:none}",
+        ".xs-fb textarea,.xs-fb input,.xs-fb select{width:100%;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);border-radius:8px;font-size:12.5px;padding:8px 10px;font-family:inherit;outline:none;transition:border-color .16s ease,box-shadow .16s ease;line-height:1.5}",
+        ".xs-fb textarea:focus,.xs-fb input:focus,.xs-fb select:focus{border-color:var(--t-primary);box-shadow:0 0 0 3px var(--t-primary-bg)}",
+        ".xs-fb textarea::placeholder,.xs-fb input::placeholder{color:var(--t-text3)}",
+        ".xs-fb-body{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:12px 10px;background:var(--t-bg)}",
+        ".xs-fb-form{border:1px solid var(--t-border);background:var(--t-surface);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:12px;box-shadow:0 1px 3px var(--t-shadow)}",
+        ".xs-fb-field{display:flex;flex-direction:column;gap:6px}",
+        ".xs-fb-label{font-size:11px;color:var(--t-text2);font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:6px}",
+        ".xs-fb-count{font-weight:400;color:var(--t-text3);font-variant-numeric:tabular-nums;font-size:10.5px}",
+        ".xs-fb-seg{display:flex;flex-wrap:wrap;gap:6px}",
+        ".xs-fb-seg-item{height:26px;padding:0 11px;border-radius:999px;border:1px solid var(--t-border);background:var(--t-surface);color:var(--t-text2);font-size:11.5px;cursor:pointer;transition:all .16s ease;font-family:inherit;user-select:none}",
+        ".xs-fb-seg-item:hover{border-color:var(--t-primary-border);color:var(--t-primary)}",
+        ".xs-fb-seg-item.on{background:var(--t-primary);border-color:var(--t-primary);color:#fff;font-weight:500}",
+        ".xs-fb-drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:100%;border:1px dashed var(--t-border2);border-radius:12px;padding:14px 10px;background:var(--t-surface);cursor:pointer;font-family:inherit;transition:border-color .16s ease,background .16s ease}",
+        ".xs-fb-drop:hover{border-color:var(--t-primary);color:var(--t-primary);background:var(--t-primary-bg)}",
+        ".xs-fb-drop:disabled{opacity:.55;cursor:default}",
+        ".xs-fb-drop-main{font-size:12px;font-weight:500;color:var(--t-text)}",
+        ".xs-fb-drop-sub{font-size:10.5px;color:var(--t-text3)}",
+        ".xs-fb-foot{flex:none;display:flex;align-items:center;gap:10px;border-top:1px solid var(--t-border);padding:9px 12px;background:var(--t-surface)}",
+        ".xs-fb-composer{flex:none;border-top:1px solid var(--t-border);background:var(--t-surface);padding:8px 10px;display:flex;flex-direction:column;gap:6px}",
+        ".xs-fb-composer textarea{border:none!important;background:transparent!important;box-shadow:none!important;padding:2px!important;height:44px!important;line-height:1.55;resize:none;border-radius:0!important}",
         ".xs-fb-composer textarea:focus{border:none!important;box-shadow:none!important}",
-        ".xs-fb-composer:focus-within{border-color:var(--t-primary-border)}",
-        ".xs-fb-composer-bar{display:flex;align-items:center;gap:8px;margin-top:2px;padding-top:5px;border-top:1px solid var(--t-border)}",
-        ".xs-fb-tool{border:none;background:transparent;color:var(--t-text2);font-size:11.5px;cursor:pointer;padding:2px 4px;border-radius:5px;font-family:inherit}",
+        ".xs-fb-composer-bar{display:flex;align-items:center;gap:8px}",
+        ".xs-fb-tool{display:inline-flex;align-items:center;gap:4px;border:none;background:transparent;color:var(--t-text2);font-size:11.5px;cursor:pointer;padding:4px 7px;border-radius:6px;font-family:inherit;transition:all .16s ease}",
         ".xs-fb-tool:hover{color:var(--t-primary);background:var(--t-primary-bg)}",
-        ".xs-fb-tool:disabled{opacity:.55;cursor:default}",
+        ".xs-fb-tool:disabled{opacity:.5;cursor:default}",
         ".xs-fb-hint{flex:1;font-size:10.5px;color:var(--t-text3);text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}",
         ".xs-fb-files{display:flex;flex-wrap:wrap;gap:6px}",
-        ".xs-fb-file-chip{display:inline-flex;align-items:center;gap:5px;max-width:190px;padding:3px 6px;border-radius:6px;border:1px solid var(--t-border);background:var(--t-surface2);font-size:11px;color:var(--t-text2)}",
+        ".xs-fb-file-chip{display:inline-flex;align-items:center;gap:5px;max-width:190px;padding:4px 8px;border-radius:7px;border:1px solid var(--t-border);background:var(--t-surface2);font-size:11px;color:var(--t-text2)}",
         ".xs-fb-file-chip b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
-        ".xs-fb-x{border:none;background:transparent;color:var(--t-text3);cursor:pointer;padding:0 2px;font-size:12px;line-height:1}",
+        ".xs-fb-x{border:none;background:transparent;color:var(--t-text3);cursor:pointer;padding:0 1px;font-size:13px;line-height:1;display:flex;align-items:center}",
         ".xs-fb-x:hover{color:var(--t-danger)}",
-        ".xs-fb-empty{padding:26px 10px;text-align:center;color:var(--t-text3);font-size:12px;line-height:1.8;white-space:pre-line}",
-        ".xs-fb-closed{flex:none;text-align:center;font-size:11px;color:var(--t-text3);border:1px dashed var(--t-border2);border-radius:8px;padding:8px}",
-        ".xs-fb-notice{flex:none;font-size:11.5px;color:var(--t-primary);background:var(--t-primary-bg);border:1px solid var(--t-primary-border);border-radius:6px;padding:5px 9px}"
+        ".xs-fb-empty{padding:40px 16px;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center;color:var(--t-text3);font-size:12px;line-height:1.8;white-space:pre-line}",
+        ".xs-fb-empty .xs-fb-ico{opacity:.35}",
+        ".xs-fb-closed{flex:none;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--t-text3);border-top:1px solid var(--t-border);padding:11px;background:var(--t-surface2)}",
+        ".xs-fb-notice{flex:none;margin:8px 10px 0;font-size:11.5px;color:var(--t-primary);background:var(--t-primary-bg);border:1px solid var(--t-primary-border);border-radius:8px;padding:6px 10px}",
+        "@media (prefers-reduced-motion:reduce){.xs-fb *{animation:none!important;transition:none!important}}"
       ].join("");
       vue.onMounted(() => {
         if (shadowRoot && !shadowRoot.querySelector("#xs-feedback-panel-css")) {
