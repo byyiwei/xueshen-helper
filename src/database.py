@@ -4544,12 +4544,19 @@ class Database:
 
     # ==================== 用户问题反馈 ====================
     def create_feedback(self, username, email, category, title, content):
+        """新建反馈，返回新反馈ID（提交时要拿到ID才能上传附件）"""
         ph = _ph()
-        self.execute(
-            f"INSERT INTO user_feedback (username, email, category, title, content) VALUES ({ph},{ph},{ph},{ph},{ph})",
-            (username, email, category, title, content)
-        )
-        return True
+        conn = self._new_mysql_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"INSERT INTO user_feedback (username, email, category, title, content) VALUES ({ph},{ph},{ph},{ph},{ph})",
+                (username, email, category, title, content)
+            )
+            conn.commit()
+            return int(getattr(cursor, "lastrowid", 0) or 0)
+        finally:
+            conn.close()
 
     def list_user_feedback(self, username, limit=20):
         ph = _ph()
@@ -4680,6 +4687,16 @@ class Database:
             f"SELECT * FROM feedback_attachments WHERE feedback_id={ph} AND status='ready' ORDER BY id ASC",
             (feedback_id,)
         ) or []
+
+    def mark_feedback_attachment_message(self, att_id):
+        """把附件挂到反馈的初始内容上（第一条消息）。reply_id 用 -1 表示初始消息，
+        这样它既不会被当成待发送草稿，也不会被 link_feedback_attachments 二次挂载。"""
+        ph = _ph()
+        self.execute(
+            f"UPDATE feedback_attachments SET reply_id=-1 WHERE id={ph} AND (reply_id IS NULL OR reply_id=0)",
+            (int(att_id),)
+        )
+        return True
 
     def link_feedback_attachments(self, att_ids, feedback_id, reply_id, role):
         """把本轮上传的附件挂到刚发出的回复上；只认本反馈、本角色、还没挂过的行"""

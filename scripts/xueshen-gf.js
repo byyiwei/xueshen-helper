@@ -2407,7 +2407,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       } = pinia.storeToRefs(setting);
       const emit = __emit;
       const goSetting = () => {
-        window.open(setting.shopLink || "https://xs.openget.cn/user?section=account", "_blank");
+        window.open(buildUserCenterUrl(setting.shopLink || "https://xs.openget.cn/user?section=account"), "_blank");
       };
       const tokenReady = vue.computed(() => {
         const remain = String(setting.userInfo.remainCount || "");
@@ -2650,9 +2650,13 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 vue.createElementVNode("span", _hoisted_3$3, [
                   vue.createVNode(vue.unref(BulbOutlined), { style: { "color": "#fff", "margin-right": "2px" } }),
                   vue.createElementVNode("a", {
-                    href: vue.unref(shopLink),
-                    target: "_blank"
-                  }, "点我登录用户中心获取密钥 ", 8, _hoisted_4$3)
+                    href: buildUserCenterUrl(vue.unref(shopLink)),
+                    target: "_blank",
+                    onClick: ($event) => {
+                      $event.preventDefault();
+                      window.open(buildUserCenterUrl(vue.unref(shopLink)), "_blank");
+                    }
+                  }, "点我登录用户中心获取密钥 ", 8, ["href", "onClick"])
                 ])
               ]),
               _cache[6] || (_cache[6] = vue.createElementVNode("li", null, "设置后进入章节测试，作业，考试页面即可自动答题", -1)),
@@ -2853,6 +2857,27 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     } catch (_) {
     }
     return "";
+  };
+  // 打开用户中心/套餐页时自动带上登录态，避免用户在网页里再登录一次。
+  // 只给自家域名带 token，渠道商城等外部链接保持原样。
+  const buildUserCenterUrl = (baseUrl) => {
+    const fallback = "https://xs.openget.cn/user?section=account";
+    let url;
+    try {
+      url = new URL(baseUrl || fallback, "https://xs.openget.cn");
+    } catch (_) {
+      return baseUrl || fallback;
+    }
+    if (url.hostname !== "xs.openget.cn") return url.toString();
+    const remembered = getRememberedLogin();
+    const token = remembered.token || getLocalBackendToken() || "";
+    if (!token) return url.toString();
+    url.searchParams.set("token", token);
+    const user = remembered.user;
+    if (user && typeof user === "object" && Object.keys(user).length) {
+      url.searchParams.set("user", JSON.stringify(user));
+    }
+    return url.toString();
   };
   // 题型归一化：平台给的题型常带修饰（如「多项选择题」「多选题(2分)」），
   // 统一成后端认识的规范名称，避免多选被当成单选、只答一项
@@ -3299,7 +3324,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       const isComposing = vue.ref(false);
       const emit = __emit;
       const goSetting = () => {
-        window.open(setting.shopLink || "https://xs.openget.cn/user?section=account", "_blank");
+        window.open(buildUserCenterUrl(setting.shopLink || "https://xs.openget.cn/user?section=account"), "_blank");
       };
       const tokenReady = vue.computed(() => {
         const remain = String(setting.userInfo.remainCount || "");
@@ -19654,6 +19679,11 @@ const XS_EXT = (() => {
           key: settingTabKey,
           tab: "◆ 设置",
           component: _sfc_main$6
+        },
+        {
+          key: "feedback",
+          tab: "✉ 反馈",
+          component: FeedbackPanel
         }
       ];
       const availableKeys = contentMap.map((item) => item.key);
@@ -19918,6 +19948,404 @@ const XS_EXT = (() => {
       };
     }
   };
+  // ===== 脚本内反馈中心：列表、对话、新建和附件都在面板里完成 =====
+  const FeedbackPanel = {
+    __name: "FeedbackPanel",
+    setup() {
+      const setting = useSettingStore();
+      const shadowRoot = vue.inject("shadowRoot", null);
+      const loading = vue.ref(false);
+      const busy = vue.ref(false);
+      const uploading = vue.ref(0);
+      const notice = vue.ref("");
+      const list = vue.ref([]);
+      const view = vue.ref("list");
+      const activeId = vue.ref(0);
+      const form = vue.reactive({ category: "bug", title: "", content: "" });
+      const newFiles = vue.ref([]);
+      const replyText = vue.ref("");
+      const pending = vue.ref([]);
+      const chatRef = vue.ref(null);
+      const CATEGORY = { bug: "Bug反馈", feature: "功能建议", payment: "支付问题", account: "账号问题", other: "其他" };
+      const STATUS = { pending: ["待处理", "#f59e0b"], processing: ["处理中", "#3b82f6"], resolved: ["已回复", "#10b981"], closed: ["已关闭", "#6b7280"] };
+      const tokenNow = () => {
+        try {
+          return setting.config.basicConfig.token.value || getLocalBackendToken() || getRememberedLogin().token || "";
+        } catch (_) {
+          return getLocalBackendToken() || getRememberedLogin().token || "";
+        }
+      };
+      const api = (path, data) => localBackendJson("https://xs.openget.cn" + path, data, tokenNow());
+      const active = vue.computed(() => list.value.find((x) => x.id === activeId.value) || null);
+      const fmtTime = (s) => String(s || "").replace("T", " ").substring(5, 16);
+      const fmtSize = (n) => {
+        n = Number(n) || 0;
+        if (n < 1024) return n + " B";
+        if (n < 1048576) return (n / 1024).toFixed(0) + " KB";
+        return (n / 1048576).toFixed(1) + " MB";
+      };
+      const flash = (text) => {
+        notice.value = text;
+        setTimeout(() => { if (notice.value === text) notice.value = ""; }, 4000);
+      };
+      const scrollChat = () => {
+        vue.nextTick(() => {
+          if (chatRef.value) chatRef.value.scrollTop = chatRef.value.scrollHeight;
+        });
+      };
+      const loadList = async () => {
+        if (!tokenNow()) { list.value = []; return; }
+        loading.value = true;
+        try {
+          const res = await api("/api/user/feedback");
+          if (res.code === 200) list.value = Array.isArray(res.feedback) ? res.feedback : [];
+          else flash(res.msg || "反馈加载失败");
+        } finally {
+          loading.value = false;
+        }
+      };
+      const openTicket = (f) => {
+        activeId.value = f.id;
+        pending.value = (f.pending_attachments || []).filter((a) => (a.role || "user") === "user");
+        replyText.value = "";
+        newFiles.value = [];
+        view.value = "chat";
+        scrollChat();
+      };
+      const backToList = () => {
+        view.value = "list";
+        activeId.value = 0;
+        pending.value = [];
+        newFiles.value = [];
+        replyText.value = "";
+        loadList();
+      };
+      const showNew = () => {
+        form.category = "bug";
+        form.title = "";
+        form.content = "";
+        newFiles.value = [];
+        view.value = "new";
+      };
+      const pickFiles = () => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.multiple = true;
+        input.onchange = () => addFiles(input.files);
+        input.click();
+      };
+      const addFiles = (files) => {
+        for (const f of Array.from(files || [])) {
+          if (!f || !f.size) continue;
+          if (f.size > 15 * 1024 * 1024) { flash("单个文件不能超过 15MB"); continue; }
+          if (newFiles.value.length + pending.value.length >= 6) { flash("最多 6 个附件"); break; }
+          newFiles.value.push(f);
+        }
+        newFiles.value = newFiles.value.slice();
+      };
+      const removeNewFile = (i) => {
+        const arr = newFiles.value.slice();
+        arr.splice(i, 1);
+        newFiles.value = arr;
+      };
+      const onPaste = (e) => {
+        const items = (e.clipboardData && e.clipboardData.items) || [];
+        const files = [];
+        for (const it of items) {
+          if (it.kind === "file") {
+            const f = it.getAsFile();
+            if (f) files.push(f);
+          }
+        }
+        if (files.length) {
+          e.preventDefault();
+          addFiles(files);
+        }
+      };
+      const uploadOne = (fid, file, asMessage) => new Promise((resolve) => {
+        const name = file.name || ("粘贴图片-" + Date.now() + ".png");
+        const headers = {
+          "Authorization": "Bearer " + tokenNow(),
+          "Content-Type": file.type || "application/octet-stream",
+          "X-Feedback-Id": String(fid),
+          "X-File-Name": encodeURIComponent(name)
+        };
+        if (asMessage) headers["X-Attach-Target"] = "message";
+        GM_xmlhttpRequest({
+          url: "https://xs.openget.cn/api/user/feedback/attachment",
+          method: "POST",
+          headers,
+          data: file,
+          timeout: 90000,
+          onload: (res) => {
+            try {
+              resolve(JSON.parse(res.responseText || "{}"));
+            } catch (_) {
+              resolve({ code: 500, msg: "上传响应解析失败" });
+            }
+          },
+          onerror: () => resolve({ code: 500, msg: "附件上传失败" }),
+          ontimeout: () => resolve({ code: 500, msg: "附件上传超时" })
+        });
+      });
+      const submitNew = async () => {
+        if (busy.value) return;
+        if (!form.title.trim()) return flash("请填写问题标题");
+        if (!form.content.trim()) return flash("请填写问题描述");
+        busy.value = true;
+        try {
+          const res = await api("/api/user/feedback", { category: form.category, title: form.title.trim(), content: form.content.trim() });
+          if (res.code !== 200) { flash(res.msg || "提交失败"); return; }
+          const fid = Number(res.feedback_id || 0);
+          let failed = 0;
+          if (fid && newFiles.value.length) {
+            for (let i = 0; i < newFiles.value.length; i++) {
+              uploading.value = i + 1;
+              const r = await uploadOne(fid, newFiles.value[i], true);
+              if (r.code !== 200) failed += 1;
+            }
+          }
+          uploading.value = 0;
+          newFiles.value = [];
+          await loadList();
+          const target = list.value.find((x) => x.id === fid);
+          if (target) openTicket(target);
+          else backToList();
+          flash(failed ? "已提交，" + failed + " 个附件上传失败" : "反馈提交成功");
+        } finally {
+          busy.value = false;
+          uploading.value = 0;
+        }
+      };
+      const sendReply = async () => {
+        if (!active.value || busy.value) return;
+        if (!replyText.value.trim() && !pending.value.length && !newFiles.value.length) return flash("请输入内容或添加附件");
+        busy.value = true;
+        try {
+          let failed = 0;
+          if (newFiles.value.length) {
+            for (let i = 0; i < newFiles.value.length; i++) {
+              uploading.value = i + 1;
+              const r = await uploadOne(active.value.id, newFiles.value[i], false);
+              if (r.code === 200 && r.attachment) pending.value.push(r.attachment);
+              else failed += 1;
+            }
+            newFiles.value = [];
+            uploading.value = 0;
+          }
+          if (!replyText.value.trim() && !pending.value.length) {
+            flash("附件没有上传成功，请重试");
+            return;
+          }
+          const res = await api("/api/user/feedback/reply", {
+            feedback_id: active.value.id,
+            content: replyText.value.trim(),
+            attachment_ids: pending.value.map((a) => a.id)
+          });
+          if (res.code === 200) {
+            replyText.value = "";
+            await loadList();
+            const target = list.value.find((x) => x.id === activeId.value);
+            if (target) openTicket(target);
+            flash(failed ? "已发送，" + failed + " 个附件没传上去" : "发送成功");
+          } else {
+            flash(res.msg || "发送失败");
+          }
+        } finally {
+          busy.value = false;
+          uploading.value = 0;
+        }
+      };
+      const downloadAtt = (a) => {
+        GM_xmlhttpRequest({
+          url: "https://xs.openget.cn/api/user/feedback/attachment/" + a.id + "/download",
+          method: "GET",
+          headers: { "Authorization": "Bearer " + tokenNow() },
+          responseType: "arraybuffer",
+          timeout: 60000,
+          onload: (res) => {
+            try {
+              const blob = new Blob([res.response], { type: a.mime || "application/octet-stream" });
+              const url = URL.createObjectURL(blob);
+              const el = document.createElement("a");
+              el.href = url;
+              el.download = a.filename || "附件";
+              document.body.appendChild(el);
+              el.click();
+              el.remove();
+              setTimeout(() => URL.revokeObjectURL(url), 30000);
+            } catch (_) {}
+          }
+        });
+      };
+      const chip = (text, color) => vue.h("span", { class: "xs-fb-chip", style: { background: color + "22", color } }, text);
+      const btn = (text, onClick, primary, disabled) => vue.h("button", {
+        class: "xs-fb-btn" + (primary ? " primary" : ""),
+        onClick,
+        disabled: !!disabled
+      }, text);
+      const attachNode = (a) => {
+        if (a.is_image && a.url) {
+          return vue.h("img", {
+            class: "xs-fb-att-img",
+            src: a.url,
+            alt: a.filename || "图片",
+            onClick: () => window.open(a.url, "_blank")
+          });
+        }
+        return vue.h("span", { class: "xs-fb-att-file", title: a.filename || "附件", onClick: () => downloadAtt(a) }, [
+          "▣",
+          vue.h("span", null, a.filename || "附件"),
+          vue.h("em", { style: { fontStyle: "normal", color: "var(--t-text3)" } }, fmtSize(a.size))
+        ]);
+      };
+      const msgNode = (sender, content, time, atts) => {
+        const isAdmin = sender === "admin";
+        const children = [vue.h("div", { class: "xs-fb-sender" }, (isAdmin ? "管理员" : "我") + " · " + fmtTime(time))];
+        if (content) children.push(vue.h("div", { class: "xs-fb-bubble" }, content));
+        if (atts && atts.length) children.push(vue.h("div", { class: "xs-fb-atts" }, atts.map(attachNode)));
+        return vue.h("div", { class: "xs-fb-msg " + (isAdmin ? "admin" : "user") }, children);
+      };
+      const fileChips = () => {
+        const chips = [];
+        pending.value.forEach((a, i) => chips.push(vue.h("span", { class: "xs-fb-file-chip", title: a.filename || "附件" }, [
+          "▣",
+          vue.h("b", null, a.filename || "附件"),
+          vue.h("button", { class: "xs-fb-x", onClick: () => { const arr = pending.value.slice(); arr.splice(i, 1); pending.value = arr; } }, "×")
+        ])));
+        newFiles.value.forEach((f, i) => chips.push(vue.h("span", { class: "xs-fb-file-chip", title: f.name || "截图" }, [
+          "▣",
+          vue.h("b", null, f.name || ("粘贴图片-" + (i + 1))),
+          vue.h("button", { class: "xs-fb-x", onClick: () => removeNewFile(i) }, "×")
+        ])));
+        return chips;
+      };
+      const headNode = (title, withBack) => vue.h("div", { class: "xs-fb-head" }, [
+        withBack ? btn("← 返回", backToList) : null,
+        vue.h("div", { class: "xs-fb-title" }, title),
+        withBack ? null : btn(loading.value ? "刷新中" : "刷新", loadList, false, loading.value),
+        withBack ? null : btn("＋ 新反馈", showNew, true)
+      ]);
+      const renderList = () => {
+        const items = list.value.map((f) => {
+          const st = STATUS[f.status] || STATUS.pending;
+          const replies = f.replies || [];
+          const last = replies.length ? replies[replies.length - 1] : null;
+          const preview = last
+            ? (last.content || ((last.attachments || []).length ? "[附件]" : ""))
+            : (f.content || "");
+          return vue.h("div", { class: "xs-fb-item", onClick: () => openTicket(f) }, [
+            vue.h("div", { class: "xs-fb-item-top" }, [
+              vue.h("span", { class: "xs-fb-item-title" }, f.title || "未命名反馈"),
+              chip(CATEGORY[f.category] || "其他", "#64748b"),
+              chip(st[0], st[1])
+            ]),
+            vue.h("div", { class: "xs-fb-meta" }, (last ? (last.sender === "admin" ? "管理员：" : "我：") : "") + String(preview || "").substring(0, 60)),
+            vue.h("div", { class: "xs-fb-meta", style: { marginTop: "2px" } }, fmtTime(f.created_at))
+          ]);
+        });
+        const empty = tokenNow()
+          ? (loading.value ? "加载中..." : "还没有反馈记录\n点右上角「新反馈」提交问题，可直接粘贴或上传截图")
+          : "还没有配置脚本密钥\n先在「设置」或账号面板登录用户中心";
+        return vue.h("div", { class: "xs-fb" }, [
+          headNode("问题反馈", false),
+          notice.value ? vue.h("div", { class: "xs-fb-notice" }, notice.value) : null,
+          items.length
+            ? vue.h("div", { class: "xs-fb-list" }, items)
+            : vue.h("div", { class: "xs-fb-empty", style: { flex: "1" } }, empty)
+        ]);
+      };
+      const renderChat = () => {
+        const f = active.value;
+        if (!f) return renderList();
+        const nodes = [];
+        nodes.push(msgNode("user", f.content, f.created_at, f.attachments));
+        if (f.admin_reply && !(f.replies || []).length) nodes.push(msgNode("admin", f.admin_reply, f.replied_at, []));
+        (f.replies || []).forEach((rp) => nodes.push(msgNode(rp.sender, rp.content, rp.created_at, rp.attachments)));
+        const chips = fileChips();
+        const st = STATUS[f.status] || STATUS.pending;
+        return vue.h("div", { class: "xs-fb", onPaste }, [
+          vue.h("div", { class: "xs-fb-head" }, [
+            btn("← 返回", backToList),
+            vue.h("div", { class: "xs-fb-title" }, f.title || "反馈详情"),
+            chip(st[0], st[1])
+          ]),
+          notice.value ? vue.h("div", { class: "xs-fb-notice" }, notice.value) : null,
+          vue.h("div", { class: "xs-fb-chat", ref: chatRef }, nodes),
+          f.status === "closed"
+            ? vue.h("div", { class: "xs-fb-empty" }, "该反馈已关闭，有新问题请重新提交")
+            : vue.h("div", { style: { display: "flex", flexDirection: "column", gap: "6px", borderTop: "1px solid var(--t-border)", paddingTop: "8px" } }, [
+              chips.length ? vue.h("div", { class: "xs-fb-files" }, chips) : null,
+              vue.h("textarea", {
+                value: replyText.value,
+                rows: 2,
+                placeholder: "输入追问内容，可直接粘贴截图",
+                onInput: (e) => { replyText.value = e.target.value; },
+                style: { resize: "none", height: "56px" }
+              }),
+              vue.h("div", { style: { display: "flex", alignItems: "center", gap: "6px" } }, [
+                btn("＋ 附件", pickFiles, false, busy.value),
+                vue.h("span", { style: { flex: "1", fontSize: "10.5px", color: "var(--t-text3)" } }, uploading.value ? ("上传中 " + uploading.value + " 个...") : "最多 6 个，单个 15MB"),
+                btn(busy.value ? "发送中..." : "发送", sendReply, true, busy.value)
+              ])
+            ])
+        ]);
+      };
+      const renderNew = () => {
+        const chips = fileChips();
+        return vue.h("div", { class: "xs-fb", onPaste }, [
+          vue.h("div", { class: "xs-fb-head" }, [
+            btn("← 返回", backToList),
+            vue.h("div", { class: "xs-fb-title" }, "提交问题反馈")
+          ]),
+          notice.value ? vue.h("div", { class: "xs-fb-notice" }, notice.value) : null,
+          vue.h("div", { style: { flex: "1", minHeight: "0", overflowY: "auto", display: "flex", flexDirection: "column", gap: "8px" } }, [
+            vue.h("div", null, [
+              vue.h("div", { class: "xs-fb-label" }, "反馈类型"),
+              vue.h("select", { value: form.category, onChange: (e) => { form.category = e.target.value; } },
+                Object.keys(CATEGORY).map((k) => vue.h("option", { value: k }, CATEGORY[k])))
+            ]),
+            vue.h("div", null, [
+              vue.h("div", { class: "xs-fb-label" }, "问题标题"),
+              vue.h("input", { value: form.title, maxlength: 100, placeholder: "一句话描述问题或建议", onInput: (e) => { form.title = e.target.value; } })
+            ]),
+            vue.h("div", { style: { flex: "1", minHeight: "120px", display: "flex", flexDirection: "column" } }, [
+              vue.h("div", { class: "xs-fb-label" }, "详细描述"),
+              vue.h("textarea", {
+                value: form.content,
+                maxlength: 2000,
+                placeholder: "问题现象、复现步骤或改进建议",
+                onInput: (e) => { form.content = e.target.value; },
+                style: { flex: "1", minHeight: "100px", resize: "none" }
+              })
+            ]),
+            vue.h("div", null, [
+              vue.h("div", { class: "xs-fb-label" }, "图片/附件（可选）"),
+              chips.length ? vue.h("div", { class: "xs-fb-files", style: { marginBottom: "6px" } }, chips) : null,
+              vue.h("div", { style: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" } }, [
+                btn("＋ 选择图片/附件", pickFiles, false, busy.value),
+                vue.h("span", { style: { fontSize: "10.5px", color: "var(--t-text3)" } }, "支持粘贴截图，最多 6 个")
+              ])
+            ])
+          ]),
+          vue.h("div", { style: { display: "flex", alignItems: "center", gap: "8px", borderTop: "1px solid var(--t-border)", paddingTop: "8px" } }, [
+            vue.h("span", { style: { flex: "1", fontSize: "10.5px", color: "var(--t-text3)" } }, uploading.value ? ("上传附件 " + uploading.value + "/" + newFiles.value.length) : ""),
+            btn(busy.value ? "提交中..." : "提交反馈", submitNew, true, busy.value)
+          ])
+        ]);
+      };
+      vue.onMounted(() => {
+        if (shadowRoot && !shadowRoot.querySelector("#xs-feedback-panel-css")) {
+          const style = document.createElement("style");
+          style.id = "xs-feedback-panel-css";
+          style.textContent = ".xs-fb{display:flex;flex-direction:column;gap:8px;height:540px;max-height:calc(100vh - 150px);font-size:12.5px;color:var(--t-text)}.xs-fb *{box-sizing:border-box}.xs-fb-head{display:flex;align-items:center;gap:6px;flex:none}.xs-fb-title{flex:1;min-width:0;font-weight:700;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.xs-fb-btn{height:26px;padding:0 10px;border-radius:6px;border:1px solid var(--t-border);background:var(--t-surface2);color:var(--t-text);font-size:12px;cursor:pointer;white-space:nowrap;transition:all .15s}.xs-fb-btn:hover{border-color:var(--t-primary-border);color:var(--t-primary);background:var(--t-primary-bg)}.xs-fb-btn:disabled{opacity:.55;cursor:default}.xs-fb-btn.primary{background:var(--t-primary);border-color:var(--t-primary);color:#fff}.xs-fb-btn.primary:hover{background:var(--t-primary-2);color:#fff}.xs-fb-list{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding-right:2px}.xs-fb-item{border:1px solid var(--t-border);background:var(--t-surface);border-radius:8px;padding:9px 10px;cursor:pointer;transition:all .15s}.xs-fb-item:hover{border-color:var(--t-primary-border);background:var(--t-primary-bg)}.xs-fb-item-top{display:flex;align-items:center;gap:6px}.xs-fb-item-title{flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.xs-fb-chip{font-size:10.5px;line-height:1.6;padding:0 6px;border-radius:999px;white-space:nowrap;flex:none}.xs-fb-meta{font-size:11px;color:var(--t-text3);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.xs-fb-chat{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:2px 2px 4px}.xs-fb-msg{display:flex;flex-direction:column;gap:3px;max-width:92%}.xs-fb-msg.user{align-self:flex-end;align-items:flex-end}.xs-fb-msg.admin{align-self:flex-start;align-items:flex-start}.xs-fb-sender{font-size:10.5px;color:var(--t-text3)}.xs-fb-bubble{padding:8px 10px;border-radius:10px;line-height:1.55;white-space:pre-wrap;word-break:break-word;border:1px solid var(--t-border);background:var(--t-surface)}.xs-fb-msg.user .xs-fb-bubble{background:var(--t-primary-bg);border-color:var(--t-primary-border);border-top-right-radius:3px}.xs-fb-msg.admin .xs-fb-bubble{border-top-left-radius:3px}.xs-fb-atts{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}.xs-fb-att-img{max-width:150px;max-height:120px;border-radius:8px;border:1px solid var(--t-border);cursor:zoom-in;display:block}.xs-fb-att-file{display:inline-flex;align-items:center;gap:5px;max-width:210px;padding:5px 8px;border-radius:7px;border:1px solid var(--t-border);background:var(--t-surface);font-size:11.5px;color:var(--t-text2);cursor:pointer}.xs-fb-att-file span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.xs-fb textarea,.xs-fb input,.xs-fb select{width:100%;border:1px solid var(--t-border2);background:var(--t-surface);color:var(--t-text);border-radius:6px;font-size:12.5px;padding:7px 9px;font-family:inherit;outline:none}.xs-fb textarea:focus,.xs-fb input:focus,.xs-fb select:focus{border-color:var(--t-primary);box-shadow:0 0 0 2px var(--t-primary-bg)}.xs-fb-files{display:flex;flex-wrap:wrap;gap:6px}.xs-fb-file-chip{display:inline-flex;align-items:center;gap:5px;max-width:190px;padding:3px 6px;border-radius:6px;border:1px solid var(--t-border);background:var(--t-surface2);font-size:11px;color:var(--t-text2)}.xs-fb-file-chip b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.xs-fb-x{border:none;background:transparent;color:var(--t-text3);cursor:pointer;padding:0 2px;font-size:12px;line-height:1}.xs-fb-x:hover{color:var(--t-danger)}.xs-fb-empty{padding:26px 10px;text-align:center;color:var(--t-text3);font-size:12px;line-height:1.8;white-space:pre-line}.xs-fb-notice{flex:none;font-size:11.5px;color:var(--t-primary);background:var(--t-primary-bg);border:1px solid var(--t-primary-border);border-radius:6px;padding:5px 9px}.xs-fb-label{font-size:11.5px;color:var(--t-text2);margin:2px 0 4px;font-weight:600}";
+          shadowRoot.appendChild(style);
+        }
+        loadList();
+      });
+      return () => view.value === "new" ? renderNew() : view.value === "chat" ? renderChat() : renderList();
+    }
+  };
   const _hoisted_1 = {
     key: 0,
     class: "message-container"
@@ -19940,27 +20368,17 @@ const XS_EXT = (() => {
       const rememberLogin = vue.ref(remembered.remember !== false);
       const isAutoLoggedIn = vue.ref(!!remembered.token);
       const openUserCenter = () => {
-        const token = (remembered && remembered.token) || "";
-        const user = (remembered && remembered.user) || "";
-        const userStr = typeof user === "string" ? user : JSON.stringify(user);
-        const url = token
-          ? `${LOCAL_USER_CENTER_URL}&token=${encodeURIComponent(token)}&user=${encodeURIComponent(userStr)}`
-          : setting.shopLink || LOCAL_USER_CENTER_URL;
-        window.open(url, "_blank");
+        const hasToken = !!(getRememberedLogin().token || getLocalBackendToken());
+        const base = hasToken ? LOCAL_USER_CENTER_URL : setting.shopLink || LOCAL_USER_CENTER_URL;
+        window.open(buildUserCenterUrl(base), "_blank");
       };
       const openPricing = () => {
-        const token = (remembered && remembered.token) || "";
-        const user = (remembered && remembered.user) || "";
-        const userStr = typeof user === "string" ? user : JSON.stringify(user);
         const baseUrl = __billHref;  // FX-CH:pricing-base-url
         if (!baseUrl) {
           cardMsg.value = "提示：" + __noShopTip;
           return;
         }
-        const url = token && !__DIST.shop  // FX-CH:pricing-login-param
-          ? `${baseUrl}&token=${encodeURIComponent(token)}&user=${encodeURIComponent(userStr)}`
-          : baseUrl;
-        window.open(url, "_blank");
+        window.open(buildUserCenterUrl(baseUrl), "_blank");  // FX-CH:pricing-login-param
       };
       const openRegister = () => {
         window.open("https://xs.openget.cn/register", "_blank");
@@ -19992,11 +20410,15 @@ const XS_EXT = (() => {
                 remember: true,
                 username: loginUser.value.trim(),
                 token: loginRes.token,
+                user: loginRes.user || {},
                 savedAt: Date.now()
               });
             } else {
               setRememberedLogin({ remember: false, username: loginUser.value.trim() });
             }
+            // 同步内存里的登录记忆，马上点「套餐/用户中心」也能直接免登录
+            remembered.token = loginRes.token;
+            remembered.user = loginRes.user || {};
             isAutoLoggedIn.value = true;
             loginMsg.value = "登录成功，已记住登录状态并同步密钥";
           } else {

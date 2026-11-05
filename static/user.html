@@ -3688,6 +3688,20 @@
                                         <textarea id="fbContent" rows="5" maxlength="2000" placeholder="请详细描述您遇到的问题现象、复现步骤或具体改进建议..." style="font-size:13.5px;resize:vertical;line-height:1.6;box-sizing:border-box"></textarea>
                                     </div>
                                     <div>
+                                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                                            <label style="font-weight:600;font-size:13px;margin:0">图片/附件</label>
+                                            <span style="color:var(--c-text-3);font-size:12px;font-weight:400">可选，最多 6 个，单个不超过 15MB</span>
+                                        </div>
+                                        <div id="fbSubmitAttachBar" class="fb-attach-bar" style="display:none;margin-bottom:8px"></div>
+                                        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                                            <button type="button" id="fbSubmitAttachBtn" style="display:inline-flex;align-items:center;gap:5px;color:var(--c-text-2);font-size:12.5px;border:1px solid var(--c-border);background:var(--c-surface);border-radius:8px;padding:7px 12px;cursor:pointer">
+                                                <svg class="ui-icon sm" viewBox="0 0 24 24"><use href="#i-upload"></use></svg> 选择图片/文件
+                                            </button>
+                                            <input type="file" id="fbSubmitFileInput" multiple style="display:none">
+                                            <span id="fbSubmitAttachTip" class="fb-attach-tip">也可以直接 Ctrl+V 粘贴截图</span>
+                                        </div>
+                                    </div>
+                                    <div>
                                         <button type="button" class="primary" id="fbSubmitBtn" style="width:auto;padding:0 28px;height:40px;min-height:40px;display:inline-flex;align-items:center;gap:6px">
                                             <svg class="ui-icon sm"><use href="#i-send"></use></svg> 提交反馈
                                         </button>
@@ -5768,6 +5782,8 @@ await loadPlans();
         let fbUploadingCount = 0;
         const FB_ATTACH_MAX_FILES = 6;
         const FB_ATTACH_MAX_BYTES = 15 * 1024 * 1024;
+        // 新建反馈时先暂存在内存里的文件，提交成功后再上传
+        let fbNewFiles = [];
 
         function parseFbTime(str) {
             if (!str) return 0;
@@ -6067,6 +6083,61 @@ await loadPlans();
             fbUpdateAttachTip();
         }
 
+        // ===== 新建反馈：先选好附件，提交成功后再上传到这条工单 =====
+        function fbSetNewFilesBar() {
+            const bar = $('fbSubmitAttachBar');
+            if (!bar) return;
+            if (!fbNewFiles.length) {
+                bar.style.display = 'none';
+                bar.innerHTML = '';
+            } else {
+                bar.style.display = 'flex';
+                bar.innerHTML = fbNewFiles.map((f, i) => {
+                    const name = escapeHtml(f.name || ('粘贴图片-' + (i + 1) + '.png'));
+                    const icon = (f.type || '').startsWith('image/') ? 'i-image' : 'i-file-text';
+                    return `<div class="fb-attach-chip">
+                        <svg class="ui-icon sm" viewBox="0 0 24 24"><use href="#${icon}"></use></svg>
+                        <span class="fb-attach-chip-name" title="${name}">${name}</span>
+                        <span style="color:var(--c-text-3)">${fbFormatSize(f.size)}</span>
+                        <button type="button" class="fb-attach-chip-del" data-fb-new-remove="${i}" title="移除">
+                            <svg class="ui-icon xs" viewBox="0 0 24 24"><use href="#i-x"></use></svg>
+                        </button>
+                    </div>`;
+                }).join('');
+            }
+            const tip = $('fbSubmitAttachTip');
+            if (tip) tip.textContent = fbNewFiles.length ? `已选 ${fbNewFiles.length} 个，提交后上传` : '也可以直接 Ctrl+V 粘贴截图';
+        }
+
+        function fbAddNewFiles(files) {
+            for (const file of Array.from(files || [])) {
+                if (!file || !file.size) { showToast('文件是空的', true); continue; }
+                if (file.size > FB_ATTACH_MAX_BYTES) { showToast('单个文件不能超过 15MB', true); continue; }
+                if (fbNewFiles.length >= FB_ATTACH_MAX_FILES) { showToast(`最多添加 ${FB_ATTACH_MAX_FILES} 个附件`, true); break; }
+                fbNewFiles.push(file);
+            }
+            fbSetNewFilesBar();
+        }
+
+        function fbUploadNewTicketFile(fid, file) {
+            const token = localStorage.getItem(TOKEN_KEY);
+            const name = file.name || ('粘贴图片-' + Date.now() + '.png');
+            return fetch('/api/user/feedback/attachment', {
+                method: 'POST',
+                headers: {
+                    Authorization: 'Bearer ' + token,
+                    'Content-Type': file.type || 'application/octet-stream',
+                    'X-Feedback-Id': String(fid),
+                    'X-File-Name': encodeURIComponent(name),
+                    'X-Attach-Target': 'message'
+                },
+                body: file
+            }).then(res => res.json().catch(() => ({}))).then(d => {
+                if (d.code !== 200) throw new Error(d.msg || '附件上传失败');
+                return d.attachment;
+            });
+        }
+
         async function fbDownloadAttachment(id, filename) {
             try {
                 const token = localStorage.getItem(TOKEN_KEY);
@@ -6142,6 +6213,41 @@ await loadPlans();
             this.value = '';
             for (const f of files) await fbUploadFile(f);
         });
+
+        // 新建反馈的附件：选择 / 移除 / 粘贴
+        if ($('fbSubmitAttachBtn')) {
+            $('fbSubmitAttachBtn').addEventListener('click', function () { $('fbSubmitFileInput').click(); });
+        }
+        if ($('fbSubmitFileInput')) {
+            $('fbSubmitFileInput').addEventListener('change', function () {
+                const files = Array.from(this.files || []);
+                this.value = '';
+                fbAddNewFiles(files);
+            });
+        }
+        if ($('fbSubmitAttachBar')) {
+            $('fbSubmitAttachBar').addEventListener('click', function (e) {
+                const btn = e.target.closest('[data-fb-new-remove]');
+                if (!btn) return;
+                const i = parseInt(btn.dataset.fbNewRemove);
+                if (i >= 0) { fbNewFiles.splice(i, 1); fbSetNewFilesBar(); }
+            });
+        }
+        if ($('fbSubmitCard')) {
+            $('fbSubmitCard').addEventListener('paste', function (e) {
+                const items = (e.clipboardData && e.clipboardData.items) || [];
+                const files = [];
+                for (const it of items) {
+                    if (it.kind === 'file') {
+                        const f = it.getAsFile();
+                        if (f) files.push(f);
+                    }
+                }
+                if (!files.length) return;
+                e.preventDefault();
+                fbAddNewFiles(files);
+            });
+        }
 
         // 粘贴截图/文件
         $('fbChatView').addEventListener('paste', function (e) {
@@ -6270,6 +6376,7 @@ await loadPlans();
             const content = $('fbContent').value.trim();
             if (!title) return showToast('请输入问题标题', true);
             if (!content) return showToast('请输入问题描述', true);
+            const files = fbNewFiles.slice();
             setBusy(this, true, '提交中...');
             try {
                 const token = localStorage.getItem(TOKEN_KEY);
@@ -6279,18 +6386,29 @@ await loadPlans();
                     body: JSON.stringify({ category, title, content })
                 });
                 const d = await res.json().catch(() => ({}));
-                if (d.code === 200) {
-                    $('fbTitle').value = '';
-                    $('fbContent').value = '';
-                    $('fbCharCount').textContent = '0/2000';
-                    showToast('反馈提交成功！');
-                    await loadFeedback();
-                    if (fbList.length > 0) {
-                        openFbChat(fbList[0].id);
-                    }
-                } else {
+                if (d.code !== 200) {
                     showToast(d.msg || '提交失败', true);
+                    setBusy(this, false);
+                    return;
                 }
+                const fid = Number(d.feedback_id || 0);
+                let failed = 0;
+                if (fid && files.length) {
+                    for (let i = 0; i < files.length; i++) {
+                        setBusy(this, true, `上传附件 ${i + 1}/${files.length}...`);
+                        try { await fbUploadNewTicketFile(fid, files[i]); } catch (_) { failed += 1; }
+                    }
+                }
+                $('fbTitle').value = '';
+                $('fbContent').value = '';
+                $('fbCharCount').textContent = '0/2000';
+                fbNewFiles = [];
+                fbSetNewFilesBar();
+                if (failed) showToast(`反馈已提交，${failed} 个附件上传失败，可在详情里重新添加`, true);
+                else showToast(files.length ? '反馈及附件提交成功！' : '反馈提交成功！');
+                await loadFeedback();
+                const target = fbList.find(x => x.id === fid) || fbList[0];
+                if (target) openFbChat(target.id);
             } catch (_) { showToast('网络错误，请稍后重试', true); }
             setBusy(this, false);
         };

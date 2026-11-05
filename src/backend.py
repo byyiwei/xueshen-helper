@@ -1180,6 +1180,7 @@ def _decorate_feedback_attachments(fb):
     except Exception:
         rows = []
     by_reply = {}
+    initial = []
     pending = []
     for a in rows:
         item = _feedback_attachment_public(a, with_url=True)
@@ -1187,12 +1188,15 @@ def _decorate_feedback_attachments(fb):
             rid = int(a.get("reply_id") or 0)
         except (TypeError, ValueError):
             rid = 0
-        if rid:
+        if rid == -1:
+            # 新建反馈时直接带的附件，属于第一条消息
+            initial.append(item)
+        elif rid:
             by_reply.setdefault(rid, []).append(item)
         else:
             # 上传了但还没发送的：作为草稿还给前端，刷新页面也不会丢
             pending.append(item)
-    fb["attachments"] = []
+    fb["attachments"] = initial
     fb["pending_attachments"] = pending
     for rp in fb.get("replies") or []:
         rp["attachments"] = by_reply.get(int(rp.get("id") or 0), [])
@@ -4690,19 +4694,23 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip="", budget=0
     started_at = time.time()
     deadline = started_at + total_budget
     if not active:
-        # 全部在冷却：如果最早的一个很快到期（≤20 秒），等它一下再重新挑，
-        # 别让一道题因为「冷却还剩 5 秒」直接失败。
+        # 全部在冷却：不要立刻失败。等到最近一个模型冷却结束再重新挑一次，
+        # 只有一个模型在限流时，用户看到的是「排队等了一下」，而不是「没有模型」。
         waits = [s for _, s in cooling_429 + cooling_timeout if s > 0]
         nearest = min(waits) if waits else 0
-        if nearest and nearest <= 20 and deadline - time.time() > nearest + 30:
-            print(f"[自动模型] 全部冷却中，最近的 {nearest}s 后到期，等待后重试", flush=True)
-            time.sleep(nearest + 1)
+        remaining = max(0, deadline - time.time())
+        if nearest and nearest + 5 < remaining:
+            wait = min(nearest + 1, max(0, remaining - 5))
+            print(f"[自动模型] 全部模型冷却中，最近 {nearest}s 后恢复，等待 {int(wait)}s 后重试", flush=True)
+            time.sleep(wait)
             active, cooling_429, cooling_timeout, skipped_404, skipped_token = split_model_candidates(candidates)
     if not active:
         if cooling_429:
-            return None, "所有模型429限流冷却中，请稍后重试", "", ""
+            nearest = min([s for _, s in cooling_429] or [0])
+            return None, f"所有模型都在限流冷却中，预计 {nearest} 秒后恢复，请稍后再试", "", ""
         if cooling_timeout:
-            return None, "所有模型超时冷却中，请稍后重试", "", ""
+            nearest = min([s for _, s in cooling_timeout] or [0])
+            return None, f"所有模型刚刚超时，正在冷却，预计 {nearest} 秒后恢复，请稍后再试", "", ""
         return None, "所有模型均不可用（404冷却中）", "", ""
     # 按权重排序，串行依次尝试，权重高的优先调用；再按提供商轮询打散避免单家霸占
     ordered = provider_round_robin_rest(weighted_pick(active))
@@ -4733,6 +4741,10 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip="", budget=0
             print(f"[自动模型] 整体时间预算({total_budget}s)即将耗尽，跳过剩余模型", flush=True)
             break
         model_budget = MAX_VISION_MODEL_BUDGET if need_vision else MAX_MODEL_BUDGET
+        if len(ordered) == 1:
+            # 只有一个可用模型时没有兜底可换，40 秒硬掐会让慢模型永远答不完。
+            # 把整题剩余预算都给它（整体仍受 ANSWER_TIME_BUDGET 约束）。
+            model_budget = remaining
         attempt_budget = min(model_budget, remaining)
         try:
             answer, err, tokens = call_provider_chat(question, model_name, provider_info, time_budget=attempt_budget, prepared_messages=prepared_messages)
@@ -6232,6 +6244,8 @@ class Handler(BaseHTTPRequestHandler):
         content_type = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
         if not content_type:
             content_type = "application/octet-stream"
+        # 新建反馈时上传的附件直接算作第一条消息；不传这个头就是待发送草稿
+        attach_target = (self.headers.get("X-Attach-Target") or "").strip().lower()
 
         data = self._read_raw_body(FEEDBACK_ATTACHMENT_MAX_BYTES)
         if data is None:
@@ -6253,6 +6267,13 @@ class Handler(BaseHTTPRequestHandler):
             hub_media_remove(meta["object_id"])
             fail("保存附件记录失败：" + str(e), 500)
             return
+        if attach_target == "message":
+            # 这条附件属于反馈的第一条消息，直接展示在正文下面，不当作待发送草稿
+            try:
+                db.mark_feedback_attachment_message(int(row.get("id") or 0))
+                row["reply_id"] = -1
+            except Exception as e:
+                print("[反馈附件] 挂到首条消息失败 att=%s err=%s" % (row.get("id"), e), flush=True)
 
         if os.environ.get("XS_FEEDBACK_ATTACH_DEBUG"):
             print("[反馈附件] 已上传 fid=%s role=%s object=%s size=%d" %
@@ -8572,9 +8593,9 @@ class Handler(BaseHTTPRequestHandler):
                 if category not in allowed_categories:
                     category = "other"
                 email = user.get("email") or ""
-                db.create_feedback(user["username"], email, category, title, content)
+                feedback_id = db.create_feedback(user["username"], email, category, title, content)
                 threading.Thread(target=_send_feedback_notify, args=(None, "new", user["username"], category, title, content), daemon=True).start()
-                self._send_json(200, {"code": 200, "msg": "提交成功"})
+                self._send_json(200, {"code": 200, "msg": "提交成功", "feedback_id": feedback_id})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
