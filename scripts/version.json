@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.0.10",
+    "version": "6.0.11",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.0.10 修复「纯AI」仍会查题库、「纯题库」未命中仍会调用 AI 的问题"
+    "changelog": "v6.0.11 新增脚本内「反馈」菜单，反馈支持截图附件，打开用户中心自动免登录"
   },
   "xueshen-gf": {
-    "version": "6.0.10",
+    "version": "6.0.11",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.0.10 修复「纯AI」仍会查题库、「纯题库」未命中仍会调用 AI 的问题"
+    "changelog": "v6.0.11 新增脚本内「反馈」菜单，反馈支持截图附件，打开用户中心自动免登录"
   }
 }

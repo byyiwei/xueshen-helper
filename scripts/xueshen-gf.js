@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.10
+// @version      6.0.11
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
@@ -15,6 +15,10 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.11 (2026-11-05)
+// @changelog    1. 新增「反馈」菜单：在脚本里就能提交反馈、查看工单、继续追问，支持和客服对话
+// @changelog    2. 反馈支持直接粘贴或上传截图/附件，提交时一起发送，附件显示在第一条消息下面
+// @changelog    3. 从脚本打开用户中心或套餐页自动带上登录状态，不再重复输入一次密码
 // @changelog    v6.0.10 (2026-11-04)
 // @changelog    1. 修复勾选「纯AI」后，随堂练习、青书、出头、通用答题面板、掌握度刷题仍会先查题库的问题；所有答题入口现在都按所选模式执行
 // @changelog    2. 修复勾选「纯题库」时题库未命中仍会调用 AI、消耗题数的问题；未命中直接提示，不扣题数
