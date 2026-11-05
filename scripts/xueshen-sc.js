@@ -20185,15 +20185,33 @@ const XS_EXT = (() => {
         onClick,
         disabled: !!disabled
       }, text);
-      const attachNode = (a) => {
-        if (a.is_image && a.url) {
-          return vue.h("img", {
-            class: "xs-fb-att-img",
-            src: a.url,
-            alt: a.filename || "图片",
-            onClick: () => window.open(a.url, "_blank")
+      const attachImage = (a) => vue.h("img", {
+        class: "xs-fb-att-img",
+        src: a.url,
+        alt: a.filename || "图片",
+        onClick: (e) => window.open(e.target.src, "_blank"),
+        onError: (e) => {
+          const img = e.target;
+          if (!img || img.dataset.xsFallback) return;
+          img.dataset.xsFallback = "1";
+          // 有些站点 CSP 会挡 CDN 直链，兜底走自己的下载接口转成 blob 再显示
+          GM_xmlhttpRequest({
+            url: "https://xs.openget.cn/api/user/feedback/attachment/" + a.id + "/download",
+            method: "GET",
+            headers: { "Authorization": "Bearer " + tokenNow() },
+            responseType: "arraybuffer",
+            timeout: 60000,
+            onload: (res) => {
+              try {
+                const blob = new Blob([res.response], { type: a.mime || "image/png" });
+                img.src = URL.createObjectURL(blob);
+              } catch (_) {}
+            }
           });
         }
+      });
+      const attachNode = (a) => {
+        if (a.is_image && a.url) return attachImage(a);
         return vue.h("span", { class: "xs-fb-att-file", title: a.filename || "附件", onClick: () => downloadAtt(a) }, [
           "▣",
           vue.h("span", null, a.filename || "附件"),
