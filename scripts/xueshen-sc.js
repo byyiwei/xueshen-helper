@@ -19683,7 +19683,7 @@ const XS_EXT = (() => {
         },
         {
           key: "feedback",
-          tab: "✉ 反馈",
+          tab: "◇ 反馈",
           component: FeedbackPanel
         }
       ];
