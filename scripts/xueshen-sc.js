@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.11
+// @version      6.0.12
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -15,6 +15,10 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.12 (2026-11-06)
+// @changelog    1. 图片题全面走 AI：题库不再收录和匹配图片题，答案更准；纯题库模式遇到图片题会提示「图片题必须设置成AI」
+// @changelog    2. AI 说「无法识别/无法确定」类兜底话术时不再当答案填进答题框，会提示未查到答案
+// @changelog    3. 反馈中心界面整体重做：列表、聊天、新建页更精致好用了
 // @changelog    v6.0.11 (2026-11-05)
 // @changelog    1. 新增「反馈」菜单：在脚本里就能提交反馈、查看工单、继续追问，支持和客服对话
 // @changelog    2. 反馈支持直接粘贴或上传截图/附件，提交时一起发送，附件显示在第一条消息下面
@@ -2971,7 +2975,6 @@
     }
     // 文本答案不再按分隔符拆分（选项内容可能包含任何标点），保留完整字符串由 fillChoice 子串匹配
     return _filterRefusalAnswers([text]);
-    return [text];
   };
   const getImgUrlKey = (url) => {
     const clean = String(url || "").split(/[?#]/)[0].replace(/\/+$/, "");
