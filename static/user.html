@@ -3136,6 +3136,7 @@
                 <a class="user-menu-item" href="/distributor" target="_blank"><span class="mi"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-store"></use></svg></span><span class="user-menu-label">代理商分销</span><svg class="ui-icon sm" viewBox="0 0 24 24" style="color:var(--c-text-3);margin-left:auto"><use href="#i-external-link"></use></svg></a>
                 <button class="user-menu-item" data-section="payment-info"><span class="mi"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-credit-card"></use></svg></span><span class="user-menu-label">收款信息</span></button>
                 <button class="user-menu-item" data-section="feedback"><span class="mi"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-message-square"></use></svg></span><span class="user-menu-label">问题反馈</span></button>
+                <button class="user-menu-item" data-section="adapt"><span class="mi"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-sliders"></use></svg></span><span class="user-menu-label">定制需求</span></button>
                 <button class="user-menu-item" id="sideLogoutBtn"><span class="mi"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-log-out"></use></svg></span><span class="user-menu-label">退出登录</span></button>
             </nav>
             <div class="user-side-foot">
@@ -3181,6 +3182,7 @@
                     <a class="mobile-nav-item" href="/distributor" target="_blank"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-store"></use></svg> 分销</a>
                     <button type="button" class="mobile-nav-item" data-section="payment-info"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-credit-card"></use></svg> 收款</button>
                     <button type="button" class="mobile-nav-item" data-section="feedback"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-message-square"></use></svg> 反馈</button>
+                    <button type="button" class="mobile-nav-item" data-section="adapt"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#i-sliders"></use></svg> 定制</button>
                 </div>
             </nav>
 
@@ -3707,6 +3709,92 @@
                                         </button>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 4.5 定制需求 Section -->
+                <section class="user-section" id="section-adapt">
+                    <div style="display:grid;grid-template-columns:1fr;gap:16px;max-width:860px">
+                        <div class="user-card">
+                            <div class="card-header-main" style="margin-bottom:6px">
+                                <div class="card-header-icon brand">
+                                    <svg class="ui-icon md" viewBox="0 0 24 24"><use href="#i-sliders"></use></svg>
+                                </div>
+                                <div class="card-header-text">
+                                    <h3>提交自动化需求</h3>
+                                    <span class="card-header-desc">说清在哪个网站、做什么操作，我们评估后开发上线，通过邮箱通知你</span>
+                                </div>
+                            </div>
+                            <div style="display:flex;flex-direction:column;gap:14px;margin-top:14px">
+                                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+                                    <div>
+                                        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:6px">网站名称 <em style="color:var(--c-danger,#ef4444);font-style:normal">*</em></label>
+                                        <input type="text" id="adaptSiteName" maxlength="128" placeholder="例如：XX大学继续教育学院" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:13.5px;border:1px solid var(--c-border);border-radius:8px;background:var(--c-bg,#fafbfc);color:var(--c-text);outline:none">
+                                    </div>
+                                    <div>
+                                        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:6px">网址（首页或登录页） <em style="color:var(--c-danger,#ef4444);font-style:normal">*</em></label>
+                                        <input type="text" id="adaptSiteUrl" maxlength="512" placeholder="https://xxx.edu.cn/login" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:13.5px;border:1px solid var(--c-border);border-radius:8px;background:var(--c-bg,#fafbfc);color:var(--c-text);outline:none">
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:6px">测试账号 <em style="color:var(--c-danger,#ef4444);font-style:normal">*</em>（不要用正在使用的账号）</label>
+                                    <div id="adaptAccounts" style="display:flex;flex-direction:column;gap:8px">
+                                        <div class="adapt-acc-row" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px">
+                                            <input type="text" maxlength="128" placeholder="账号" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:13.5px;border:1px solid var(--c-border);border-radius:8px;background:var(--c-bg,#fafbfc);color:var(--c-text);outline:none">
+                                            <input type="text" maxlength="128" placeholder="密码" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:13.5px;border:1px solid var(--c-border);border-radius:8px;background:var(--c-bg,#fafbfc);color:var(--c-text);outline:none">
+                                            <input type="text" maxlength="64" placeholder="备注（可空）" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:13.5px;border:1px solid var(--c-border);border-radius:8px;background:var(--c-bg,#fafbfc);color:var(--c-text);outline:none">
+                                            <button type="button" class="adapt-acc-del" title="删除这一组" style="border:1px solid var(--c-border);border-radius:8px;background:var(--c-surface);color:var(--c-text-3);cursor:pointer;width:34px;font-size:13px">✕</button>
+                                        </div>
+                                    </div>
+                                    <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
+                                        <button type="button" id="adaptAddAccBtn" style="background:none;border:none;padding:0;font-size:12.5px;font-weight:600;color:var(--c-brand);cursor:pointer">＋ 再加一组（最多 3 组）</button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:6px">自动化范围</label>
+                                    <textarea id="adaptScope" rows="3" maxlength="4000" placeholder="要具体到「在哪里、做什么」，例如：&#10;课程列表 → 进入每门课 → 播放全部未完成章节视频" style="width:100%;box-sizing:border-box;padding:10px 12px;font-size:13.5px;line-height:1.7;border:1px solid var(--c-border);border-radius:8px;background:var(--c-bg,#fafbfc);color:var(--c-text);outline:none;resize:vertical;font-family:inherit"></textarea>
+                                </div>
+                                <div>
+                                    <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:6px">操作步骤（怎么进去）</label>
+                                    <textarea id="adaptSteps" rows="3" maxlength="4000" placeholder="从登录到目标页面的路径，例如：&#10;打开首页 → 登录 → 进入学习中心 → 打开课程列表" style="width:100%;box-sizing:border-box;padding:10px 12px;font-size:13.5px;line-height:1.7;border:1px solid var(--c-border);border-radius:8px;background:var(--c-bg,#fafbfc);color:var(--c-text);outline:none;resize:vertical;font-family:inherit"></textarea>
+                                    <div style="font-size:12px;color:var(--c-text-3);margin-top:6px">「自动化范围」和「操作步骤」至少填一项，写得越具体越快上线。</div>
+                                </div>
+                                <div>
+                                    <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:6px">备注</label>
+                                    <textarea id="adaptRemark" rows="2" maxlength="2000" placeholder="账号数量、执行时间、特殊要求等" style="width:100%;box-sizing:border-box;padding:10px 12px;font-size:13.5px;line-height:1.7;border:1px solid var(--c-border);border-radius:8px;background:var(--c-bg,#fafbfc);color:var(--c-text);outline:none;resize:vertical;font-family:inherit"></textarea>
+                                </div>
+                                <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+                                    <div style="flex:1;min-width:220px">
+                                        <label style="display:block;font-size:12.5px;font-weight:600;color:var(--c-text-2);margin-bottom:6px">联系邮箱 <em style="color:var(--c-danger,#ef4444);font-style:normal">*</em></label>
+                                        <input type="email" id="adaptEmail" maxlength="128" placeholder="name@example.com" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:13.5px;border:1px solid var(--c-border);border-radius:8px;background:var(--c-bg,#fafbfc);color:var(--c-text);outline:none">
+                                    </div>
+                                    <label style="display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--c-text);cursor:pointer;margin-top:18px">
+                                        <input type="checkbox" id="adaptUrgent" style="width:15px;height:15px;accent-color:var(--c-brand)"> 比较急，希望优先安排
+                                    </label>
+                                </div>
+                                <div style="display:flex;align-items:center;gap:12px">
+                                    <button type="button" class="primary" id="adaptSubmitBtn" style="width:auto;padding:0 28px;height:40px;min-height:40px;display:inline-flex;align-items:center;gap:6px">
+                                        <svg class="ui-icon sm"><use href="#i-send"></use></svg> 提交需求
+                                    </button>
+                                    <span id="adaptMsg" style="font-size:13px;line-height:1.6"></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="user-card">
+                            <div class="card-header-main">
+                                <div class="card-header-icon brand">
+                                    <svg class="ui-icon md" viewBox="0 0 24 24"><use href="#i-inbox"></use></svg>
+                                </div>
+                                <div class="card-header-text">
+                                    <h3>我的需求记录</h3>
+                                    <span class="card-header-desc">查看已提交的自动化需求和处理状态</span>
+                                </div>
+                            </div>
+                            <div id="adaptList" style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+                                <div style="padding:24px 12px;text-align:center;color:var(--c-text-3);font-size:13px">暂无需求记录</div>
                             </div>
                         </div>
                     </div>
@@ -4481,6 +4569,7 @@
                 bank: ['题库工具', '在线搜题、拍照搜题、批量搜题、题库转换和私人题库。'],
                 promotion: ['推广返利', '邀请好友赚取现金佣金。'],
                 feedback: ['问题反馈', '提交问题或建议，我们通过邮件回复您。'],
+                adapt: ['定制需求', '提交想要的自动化需求，我们评估后开发上线。'],
                 'payment-info': ['收款信息', '设置退款收款方式，支付宝或微信。']
             };
             document.querySelectorAll('.user-section').forEach(v => v.classList.remove('active'));
@@ -4507,6 +4596,7 @@
             if (name === 'billing') { loadProfile(); loadPlans(); loadCustomModelConfig(); loadCommissionState(); }
             if (name === 'promotion') { loadPromotion(); ensureMoneySliders(); }
             if (name === 'feedback') loadFeedback();
+            if (name === 'adapt') loadAdaptRequests();
             if (name === 'payment-info') loadPaymentInfo();
         }
         function ensureMoneySliders() {
@@ -5811,6 +5901,101 @@ await loadPlans();
             } catch (_) {}
         }
 
+        /* ==================== 定制需求 ==================== */
+        const ADAPT_STATUS_MAP = {
+            pending: ['待评估', 'background:rgba(245,158,11,.12);color:#b45309'],
+            processing: ['开发中', 'background:rgba(37,99,235,.1);color:var(--c-brand)'],
+            done: ['已上线', 'background:rgba(22,163,74,.12);color:#16a34a'],
+            rejected: ['未通过', 'background:rgba(239,68,68,.1);color:#ef4444']
+        };
+        function adaptStatusBadge(status) {
+            const item = ADAPT_STATUS_MAP[status] || ADAPT_STATUS_MAP.pending;
+            return '<span style="font-size:11px;padding:2px 9px;border-radius:999px;font-weight:600;' + item[1] + '">' + item[0] + '</span>';
+        }
+        function escapeAdapt(s) {
+            return String(s == null ? '' : s)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+        async function loadAdaptRequests() {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) return;
+            try {
+                const res = await fetch('/api/user/adapt-request/list', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+                    body: JSON.stringify({ page: 1 })
+                });
+                const d = await res.json().catch(() => ({}));
+                const listEl = $('adaptList');
+                if (!listEl) return;
+                if (d.code !== 200) { listEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--c-text-3);font-size:13px">加载失败，请稍后重试</div>'; return; }
+                const rows = d.rows || [];
+                if (!rows.length) { listEl.innerHTML = '<div style="padding:24px 12px;text-align:center;color:var(--c-text-3);font-size:13px">暂无需求记录，提交后会显示在这里</div>'; return; }
+                listEl.innerHTML = rows.map(r => {
+                    const accCount = Array.isArray(r.accounts) ? r.accounts.length : 0;
+                    return '<div style="border:1px solid var(--c-border);border-radius:10px;padding:13px 15px">' +
+                        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+                            '<strong style="font-size:13.5px;color:var(--c-text)">' + escapeAdapt(r.site_name) + '</strong>' +
+                            adaptStatusBadge(r.status) +
+                            (r.urgent ? '<span style="font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600;background:rgba(239,68,68,.08);color:#ef4444">加急</span>' : '') +
+                            '<span style="margin-left:auto;font-size:12px;color:var(--c-text-3)">' + escapeAdapt(String(r.created_at || '').slice(0, 19)) + '</span>' +
+                        '</div>' +
+                        '<div style="margin-top:6px;font-size:12.5px;color:var(--c-text-2);word-break:break-all">' + escapeAdapt(r.site_url) + '</div>' +
+                        (r.scope ? '<div style="margin-top:6px;font-size:12.5px;color:var(--c-text-2);line-height:1.6">范围：' + escapeAdapt(r.scope).slice(0, 200) + '</div>' : '') +
+                        (r.steps ? '<div style="margin-top:4px;font-size:12.5px;color:var(--c-text-2);line-height:1.6">步骤：' + escapeAdapt(r.steps).slice(0, 200) + '</div>' : '') +
+                        (r.admin_note ? '<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:var(--c-surface-2,rgba(0,0,0,.03));font-size:12.5px;color:var(--c-text-2);line-height:1.6">官方备注：' + escapeAdapt(r.admin_note) + '</div>' : '') +
+                        '<div style="margin-top:6px;font-size:12px;color:var(--c-text-3)">测试账号 ' + accCount + ' 组' + (accCount ? '（已保密，仅用于开发调试）' : '') + '</div>' +
+                    '</div>';
+                }).join('');
+            } catch (_) {
+                const listEl = $('adaptList');
+                if (listEl) listEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--c-text-3);font-size:13px">加载失败，请稍后重试</div>';
+            }
+        }
+        function collectAdaptAccounts() {
+            const rows = [];
+            document.querySelectorAll('#adaptAccounts .adapt-acc-row').forEach(row => {
+                const inputs = row.querySelectorAll('input');
+                if (inputs.length >= 2) rows.push({ user: inputs[0].value.trim(), pwd: inputs[1].value.trim(), note: inputs[2] ? inputs[2].value.trim() : '' });
+            });
+            return rows.filter(a => a.user || a.pwd);
+        }
+        async function submitAdaptRequest() {
+            const token = localStorage.getItem(TOKEN_KEY);
+            const siteName = $('adaptSiteName').value.trim();
+            const siteUrl = $('adaptSiteUrl').value.trim();
+            const scope = $('adaptScope').value.trim();
+            const steps = $('adaptSteps').value.trim();
+            const remark = $('adaptRemark').value.trim();
+            const email = $('adaptEmail').value.trim();
+            const urgent = $('adaptUrgent').checked;
+            const accounts = collectAdaptAccounts();
+            const msgEl = $('adaptMsg');
+            const fail = (t) => { msgEl.textContent = t; msgEl.style.color = '#ef4444'; };
+            if (!siteName || !siteUrl) return fail('请填写网站名称和网址');
+            if (!/^https?:\/\//i.test(siteUrl)) return fail('网址需要以 http:// 或 https:// 开头');
+            if (!accounts.length) return fail('请至少填写一组测试账号');
+            if (!scope && !steps) return fail('「自动化范围」和「操作步骤」至少填一项');
+            if (!email) return fail('请填写联系邮箱');
+            const btn = $('adaptSubmitBtn');
+            btn.disabled = true;
+            const d = await post('/api/user/adapt-request', {
+                site_name: siteName, site_url: siteUrl, accounts: accounts,
+                scope: scope, steps: steps, remark: remark, email: email, urgent: urgent
+            }, token);
+            btn.disabled = false;
+            if (d.code === 200) {
+                msgEl.textContent = '提交成功，我们会尽快评估并通过邮箱联系你。';
+                msgEl.style.color = '#16a34a';
+                $('adaptSiteName').value = ''; $('adaptSiteUrl').value = '';
+                $('adaptScope').value = ''; $('adaptSteps').value = ''; $('adaptRemark').value = '';
+                loadAdaptRequests();
+            } else {
+                fail(d.msg || '提交失败，请稍后重试');
+            }
+        }
+
         function getFilteredFeedback() {
             let list = fbList;
             if (fbFilterStatus) list = list.filter(f => f.status === fbFilterStatus);
@@ -6288,6 +6473,30 @@ await loadPlans();
                 if (window.innerWidth <= 960 && $('fbSubmitCard')) $('fbSubmitCard').style.display = 'none';
             });
         }
+
+        // 定制需求
+        if ($('adaptSubmitBtn')) $('adaptSubmitBtn').addEventListener('click', submitAdaptRequest);
+        if ($('adaptAddAccBtn')) $('adaptAddAccBtn').addEventListener('click', function () {
+            const wrap = $('adaptAccounts');
+            const adaptWarn = (t) => { const el = $('adaptMsg'); el.textContent = t; el.style.color = '#ef4444'; };
+            if (wrap.querySelectorAll('.adapt-acc-row').length >= 3) { adaptWarn('最多 3 组测试账号'); return; }
+            const row = document.createElement('div');
+            row.className = 'adapt-acc-row';
+            row.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px';
+            row.innerHTML =
+                '<input type="text" maxlength="128" placeholder="账号" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:13.5px;border:1px solid var(--c-border);border-radius:8px;background:var(--c-bg,#fafbfc);color:var(--c-text);outline:none">' +
+                '<input type="text" maxlength="128" placeholder="密码" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:13.5px;border:1px solid var(--c-border);border-radius:8px;background:var(--c-bg,#fafbfc);color:var(--c-text);outline:none">' +
+                '<input type="text" maxlength="64" placeholder="备注（可空）" style="width:100%;box-sizing:border-box;padding:9px 12px;font-size:13.5px;border:1px solid var(--c-border);border-radius:8px;background:var(--c-bg,#fafbfc);color:var(--c-text);outline:none">' +
+                '<button type="button" class="adapt-acc-del" title="删除这一组" style="border:1px solid var(--c-border);border-radius:8px;background:var(--c-surface);color:var(--c-text-3);cursor:pointer;width:34px;font-size:13px">✕</button>';
+            wrap.appendChild(row);
+        });
+        if ($('adaptAccounts')) $('adaptAccounts').addEventListener('click', function (e) {
+            if (e.target.classList && e.target.classList.contains('adapt-acc-del')) {
+                const rows = $('adaptAccounts').querySelectorAll('.adapt-acc-row');
+                if (rows.length > 1) e.target.closest('.adapt-acc-row').remove();
+                else { const el = $('adaptMsg'); el.textContent = '至少保留一组账号，可以直接清空内容'; el.style.color = '#ef4444'; }
+            }
+        });
 
         // 聊天追问发送
         $('fbChatSend').addEventListener('click', async function () {

@@ -869,6 +869,30 @@ class Database:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
 
+        # ===== 自动化需求提交 =====
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS adapt_requests (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                username VARCHAR(50) DEFAULT '' COMMENT '提交用户（游客为空）',
+                contact VARCHAR(128) DEFAULT '' COMMENT '称呼/联系方式',
+                email VARCHAR(128) DEFAULT '' COMMENT '联系邮箱',
+                site_name VARCHAR(128) NOT NULL COMMENT '网站名称',
+                site_url VARCHAR(512) NOT NULL COMMENT '网站地址',
+                accounts TEXT COMMENT '测试账号 JSON 数组 [{user,pwd,note}]',
+                scope TEXT COMMENT '自动化范围',
+                steps TEXT COMMENT '操作步骤',
+                remark TEXT COMMENT '备注',
+                urgent TINYINT NOT NULL DEFAULT 0 COMMENT '是否加急',
+                status VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT 'pending/processing/done/rejected',
+                admin_note TEXT COMMENT '后台备注',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_ar_username (username),
+                INDEX idx_ar_status (status),
+                INDEX idx_ar_created (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
         # ===== 用户收款信息 =====
         self.execute("""
             CREATE TABLE IF NOT EXISTS user_payment_info (
@@ -4543,6 +4567,42 @@ class Database:
         }
 
     # ==================== 用户问题反馈 ====================
+    def create_adapt_request(self, data):
+        ph = _ph()
+        conn = self._new_mysql_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"""INSERT INTO adapt_requests
+                (username, contact, email, site_name, site_url, accounts, scope, steps, remark, urgent)
+                VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",
+                (data.get("username", ""), data.get("contact", ""), data.get("email", ""),
+                 data.get("site_name", ""), data.get("site_url", ""), data.get("accounts", ""),
+                 data.get("scope", ""), data.get("steps", ""), data.get("remark", ""),
+                 1 if data.get("urgent") else 0)
+            )
+            conn.commit()
+            return int(getattr(cursor, "lastrowid", 0) or 0)
+        finally:
+            conn.close()
+
+    def list_adapt_requests(self, username=None, page=1, page_size=20):
+        ph = _ph()
+        where = []
+        params = []
+        if username is not None:
+            where.append(f"username={ph}")
+            params.append(username)
+        where_clause = (" WHERE " + " AND ".join(where)) if where else ""
+        offset = (max(1, int(page)) - 1) * int(page_size)
+        total_row = self.fetchone(f"SELECT COUNT(*) AS cnt FROM adapt_requests{where_clause}", params) or {}
+        total = int(total_row.get("cnt") or 0)
+        rows = self.fetchall(
+            f"SELECT * FROM adapt_requests{where_clause} ORDER BY id DESC LIMIT {int(page_size)} OFFSET {offset}",
+            params
+        ) or []
+        return rows, total
+
     def create_feedback(self, username, email, category, title, content):
         """新建反馈，返回新反馈ID（提交时要拿到ID才能上传附件）"""
         ph = _ph()

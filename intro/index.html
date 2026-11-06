@@ -768,6 +768,71 @@
   }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+  /* ============ 定制需求 ============ */
+  .adapt-card {
+    max-width: 760px;
+    margin: 0 auto;
+    background: #fff;
+    border: 1px solid var(--line-2);
+    border-radius: 16px;
+    padding: 32px 36px;
+    box-shadow: 0 4px 24px rgba(15, 23, 42, .04);
+  }
+  .adapt-row { margin-bottom: 20px; }
+  .adapt-row:last-of-type { margin-bottom: 0; }
+  .adapt-label {
+    display: block;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 8px;
+  }
+  .adapt-label em { color: #ef4444; font-style: normal; }
+  .adapt-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 14px;
+    font-size: 14.5px;
+    font-family: inherit;
+    color: var(--ink);
+    background: #fafbfc;
+    border: 1px solid var(--line-2);
+    border-radius: 10px;
+    outline: none;
+    transition: border-color .15s, box-shadow .15s;
+    resize: vertical;
+  }
+  .adapt-input:focus { border-color: var(--brand, #2563eb); box-shadow: 0 0 0 3px rgba(37, 99, 235, .08); background: #fff; }
+  textarea.adapt-input { line-height: 1.7; }
+  .adapt-hint { font-size: 12.5px; color: #8a93a3; margin-top: 6px; line-height: 1.6; }
+  .adapt-accounts { display: flex; flex-direction: column; gap: 8px; }
+  .adapt-acc-row { display: flex; gap: 8px; }
+  .adapt-acc-row .adapt-input { flex: 1; min-width: 0; }
+  .adapt-link-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    margin-top: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--brand, #2563eb);
+    cursor: pointer;
+  }
+  .adapt-link-btn:hover { text-decoration: underline; }
+  .adapt-row-check { margin-top: 4px; }
+  .adapt-check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); cursor: pointer; }
+  .adapt-check input { width: 16px; height: 16px; accent-color: var(--brand, #2563eb); }
+  .adapt-actions { display: flex; gap: 12px; margin-top: 26px; }
+  .adapt-msg { margin-top: 14px; font-size: 13.5px; line-height: 1.7; display: none; }
+  .adapt-msg.ok { display: block; color: #16a34a; }
+  .adapt-msg.err { display: block; color: #ef4444; }
+
+  @media (max-width: 720px) {
+    .adapt-card { padding: 24px 18px; }
+    .adapt-acc-row { flex-direction: column; }
+    .adapt-actions { flex-direction: column; }
+  }
+
   /* ============ 响应式 ============ */
   @media (max-width: 1000px) {
     .hero-inner { grid-template-columns: 1fr; gap: 34px; }
@@ -837,6 +902,7 @@
       <a class="nav-link" href="#bank">题库精选</a>
       <a class="nav-link" href="#install">安装脚本</a>
       <a class="nav-link" href="/script/">支持平台</a>
+      <a class="nav-link" href="#adapt">定制需求</a>
       <a class="nav-link" href="#faq">常见问题</a>
     </div>
     <div class="nav-right" id="navRight">
@@ -1033,6 +1099,68 @@
   </div>
 </section>
 
+<!-- 定制需求 -->
+<section class="sec sec-soft" id="adapt">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="tag">定制需求</span>
+      <h2>想要的自动化，提交给我们做</h2>
+      <p>任何网课平台的操作需求都可以提：说清在哪个网站、做什么就够了。我们评估后开发上线，通过邮箱通知你。</p>
+    </div>
+    <div class="adapt-card">
+      <form id="adaptForm" onsubmit="return submitAdapt(event)">
+        <div class="adapt-row">
+          <label class="adapt-label">网站名称 <em>*</em></label>
+          <input class="adapt-input" type="text" id="adaptSiteName" maxlength="128" placeholder="例如：XX大学继续教育学院" required>
+        </div>
+        <div class="adapt-row">
+          <label class="adapt-label">网址 <em>*</em></label>
+          <input class="adapt-input" type="text" id="adaptSiteUrl" maxlength="512" placeholder="首页或登录页完整地址，例如 https://xxx.edu.cn/login" required>
+          <div class="adapt-hint">填首页或登录页，不要填需要登录后才能打开的内页。</div>
+        </div>
+        <div class="adapt-row">
+          <label class="adapt-label">测试账号 <em>*</em></label>
+          <div class="adapt-accounts" id="adaptAccounts">
+            <div class="adapt-acc-row">
+              <input class="adapt-input" type="text" maxlength="128" placeholder="账号">
+              <input class="adapt-input" type="text" maxlength="128" placeholder="密码">
+              <input class="adapt-input" type="text" maxlength="64" placeholder="备注（可空）">
+            </div>
+          </div>
+          <div class="adapt-hint">提供 1~3 个能正常登录的测试账号，不要用你正在使用的账号。多个账号可点「再加一组」。</div>
+          <button type="button" class="adapt-link-btn" onclick="addAdaptAccount()">再加一组</button>
+        </div>
+        <div class="adapt-row">
+          <label class="adapt-label">自动化范围</label>
+          <textarea class="adapt-input" id="adaptScope" rows="3" maxlength="4000" placeholder="要具体到「在哪里、做什么」，例如：&#10;课程列表 → 进入每门课 → 播放全部未完成章节视频"></textarea>
+        </div>
+        <div class="adapt-row">
+          <label class="adapt-label">操作步骤</label>
+          <textarea class="adapt-input" id="adaptSteps" rows="3" maxlength="4000" placeholder="从登录到目标页面的路径，例如：&#10;打开首页 → 登录 → 进入学习中心 → 打开课程列表"></textarea>
+          <div class="adapt-hint">「自动化范围」和「操作步骤」至少填一项，写得越具体越快上线。</div>
+        </div>
+        <div class="adapt-row">
+          <label class="adapt-label">备注</label>
+          <textarea class="adapt-input" id="adaptRemark" rows="2" maxlength="2000" placeholder="账号数量、执行时间、特殊要求等都可以写在这里"></textarea>
+        </div>
+        <div class="adapt-row">
+          <label class="adapt-label">联系邮箱 <em>*</em></label>
+          <input class="adapt-input" type="email" id="adaptEmail" maxlength="128" placeholder="name@example.com" required>
+          <div class="adapt-hint">开发进度和上线通知都会发到这个邮箱。已登录用户请填注册邮箱，方便我们对上账号。</div>
+        </div>
+        <div class="adapt-row adapt-row-check">
+          <label class="adapt-check"><input type="checkbox" id="adaptUrgent"> 比较急，希望优先安排</label>
+        </div>
+        <div class="adapt-actions">
+          <button type="submit" class="btn-lg primary" id="adaptSubmitBtn">提交需求</button>
+          <button type="button" class="btn-lg ghost" onclick="resetAdaptForm()">清空重填</button>
+        </div>
+        <div class="adapt-msg" id="adaptMsg"></div>
+      </form>
+    </div>
+  </div>
+</section>
+
 <!-- QQ 频道 -->
 <section class="sec sec-soft" id="channel">
   <div class="wrap">
@@ -1097,6 +1225,7 @@
         <a href="#bank">题库精选</a>
         <a href="#install">安装脚本</a>
         <a href="/script/">支持平台</a>
+        <a href="#adapt">定制需求</a>
         <a href="/user">用户中心</a>
       </div>
       <div class="footer-col">
@@ -1438,9 +1567,87 @@
     btn.textContent = open ? '收起答案' : '查看答案';
   };
 
+  /* ---------- 定制需求 ---------- */
+  window.addAdaptAccount = function () {
+    var wrap = document.getElementById('adaptAccounts');
+    var rows = wrap.querySelectorAll('.adapt-acc-row');
+    if (rows.length >= 3) { toast('最多 3 组测试账号'); return; }
+    var row = document.createElement('div');
+    row.className = 'adapt-acc-row';
+    row.innerHTML =
+      '<input class="adapt-input" type="text" maxlength="128" placeholder="账号">' +
+      '<input class="adapt-input" type="text" maxlength="128" placeholder="密码">' +
+      '<input class="adapt-input" type="text" maxlength="64" placeholder="备注（可空）">';
+    wrap.appendChild(row);
+  };
+
+  window.resetAdaptForm = function () {
+    document.getElementById('adaptForm').reset();
+    var wrap = document.getElementById('adaptAccounts');
+    wrap.innerHTML =
+      '<div class="adapt-acc-row">' +
+        '<input class="adapt-input" type="text" maxlength="128" placeholder="账号">' +
+        '<input class="adapt-input" type="text" maxlength="128" placeholder="密码">' +
+        '<input class="adapt-input" type="text" maxlength="64" placeholder="备注（可空）">' +
+      '</div>';
+    showAdaptMsg('', '');
+  };
+
+  function showAdaptMsg(text, cls) {
+    var el = document.getElementById('adaptMsg');
+    el.textContent = text;
+    el.className = 'adapt-msg' + (cls ? ' ' + cls : '');
+  }
+
+  window.submitAdapt = function (event) {
+    event.preventDefault();
+    var siteName = document.getElementById('adaptSiteName').value.trim();
+    var siteUrl = document.getElementById('adaptSiteUrl').value.trim();
+    var scope = document.getElementById('adaptScope').value.trim();
+    var steps = document.getElementById('adaptSteps').value.trim();
+    var remark = document.getElementById('adaptRemark').value.trim();
+    var email = document.getElementById('adaptEmail').value.trim();
+    var urgent = document.getElementById('adaptUrgent').checked;
+    var accounts = [];
+    document.querySelectorAll('#adaptAccounts .adapt-acc-row').forEach(function (row) {
+      var inputs = row.querySelectorAll('input');
+      accounts.push({ user: inputs[0].value.trim(), pwd: inputs[1].value.trim(), note: (inputs[2] ? inputs[2].value.trim() : '') });
+    });
+    accounts = accounts.filter(function (a) { return a.user || a.pwd; });
+    if (!siteName || !siteUrl) { showAdaptMsg('请填写网站名称和网址', 'err'); return false; }
+    if (!/^https?:\/\//i.test(siteUrl)) { showAdaptMsg('网址需要以 http:// 或 https:// 开头', 'err'); return false; }
+    if (!accounts.length) { showAdaptMsg('请至少填写一组测试账号', 'err'); return false; }
+    if (!scope && !steps) { showAdaptMsg('「自动化范围」和「操作步骤」至少填一项', 'err'); return false; }
+    if (!email) { showAdaptMsg('请填写联系邮箱', 'err'); return false; }
+    var token = getToken();
+    var headers = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = 'Bearer ' + token;
+    var btn = document.getElementById('adaptSubmitBtn');
+    btn.disabled = true;
+    fetch('/api/user/adapt-request', {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({
+        site_name: siteName, site_url: siteUrl, accounts: accounts,
+        scope: scope, steps: steps, remark: remark, email: email, urgent: urgent
+      })
+    }).then(function (res) { return res.json(); }).then(function (data) {
+      btn.disabled = false;
+      if (data && data.code === 200) {
+        showAdaptMsg('提交成功，我们会尽快评估并通过邮箱联系你。', 'ok');
+        toast('需求已提交');
+      } else {
+        showAdaptMsg((data && data.msg) || '提交失败，请稍后重试', 'err');
+      }
+    }).catch(function () {
+      btn.disabled = false;
+      showAdaptMsg('网络异常，请稍后重试', 'err');
+    });
+    return false;
+  };
+
   /* ---------- QQ 频道 ---------- */
-  window.copyChannelId = function (btn) {
-    var id = 'pd22434767';
+  window.copyChannelId = function (btn) {    var id = 'pd22434767';
     function done() {
       var old = btn.textContent;
       btn.textContent = '已复制';

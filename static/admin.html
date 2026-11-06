@@ -1311,7 +1311,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
 
         <!-- 推广运营组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.referral}">
-          <div class="menu-group-header dock-item" :class="{active:['referral','referral-withdrawals','feedback','announce'].includes(page)}" @click="expandedGroups.referral=!expandedGroups.referral">
+          <div class="menu-group-header dock-item" :class="{active:['referral','referral-withdrawals','feedback','adapt-requests','announce'].includes(page)}" @click="expandedGroups.referral=!expandedGroups.referral">
             <svg class="ui-icon sm"><use href="#i-award"></use></svg>推广运营
             <svg class="ui-icon xs arrow"><use href="#i-chevron-right"></use></svg>
           </div>
@@ -1324,6 +1324,9 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
             </div>
             <div class="menu-item" :class="{active:page==='feedback'}" @click="page='feedback';loadFeedbackList();loadFeedbackAutoClose();loadFeedbackNotify()">
               <svg class="ui-icon sm"><use href="#i-message-square"></use></svg>问题反馈
+            </div>
+            <div class="menu-item" :class="{active:page==='adapt-requests'}" @click="page='adapt-requests';loadAdaptRequests()">
+              <svg class="ui-icon sm"><use href="#i-inbox"></use></svg>定制需求
             </div>
             <div class="menu-item" :class="{active:page==='announce'}" @click="page='announce';loadAnnounceConfig()">
               <svg class="ui-icon sm"><use href="#i-bell"></use></svg>公告通知
@@ -6169,6 +6172,115 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
         </div>
       </template>
 
+      <!-- 定制需求管理 -->
+      <template v-if="page==='adapt-requests'">
+        <header class="main-header">
+          <h2>定制需求</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index<breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+
+          <div class="card">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+              <h3>用户提交的自动化需求</h3>
+              <div style="display:flex;gap:10px;align-items:center">
+                <select v-model="adaptFilter.status" class="form-control" style="padding:6px 10px;font-size:13px" @change="loadAdaptRequests()">
+                  <option value="">全部状态</option>
+                  <option value="pending">待评估</option>
+                  <option value="processing">开发中</option>
+                  <option value="done">已上线</option>
+                  <option value="rejected">未通过</option>
+                </select>
+                <button class="btn btn-secondary" style="padding:6px 14px" @click="loadAdaptRequests()">刷新</button>
+              </div>
+            </div>
+            <div class="card-body" style="padding:0;overflow-x:auto">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th style="width:60px">ID</th>
+                    <th>网站</th>
+                    <th style="width:110px">用户</th>
+                    <th style="width:90px">加急</th>
+                    <th style="width:90px">状态</th>
+                    <th style="width:150px">提交时间</th>
+                    <th style="width:90px">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="r in adaptList" :key="r.id" style="border-bottom:1px solid var(--border)">
+                    <td>{{r.id}}</td>
+                    <td>
+                      <div style="font-weight:600;font-size:13px">{{r.site_name}}</div>
+                      <div style="font-size:11.5px;color:var(--text3);max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{r.site_url}}</div>
+                    </td>
+                    <td style="font-size:12.5px">{{r.username||'游客'}}</td>
+                    <td><span v-if="r.urgent" style="font-size:11px;padding:2px 8px;border-radius:6px;background:rgba(239,68,68,.12);color:var(--danger,#ef4444);font-weight:600">加急</span><span v-else style="color:var(--text3)">-</span></td>
+                    <td>
+                      <span :style="{fontSize:'12px',padding:'2px 8px',borderRadius:'6px',background:r.status==='pending'?'rgba(245,158,11,.15)':r.status==='done'?'rgba(16,185,129,.15)':r.status==='rejected'?'rgba(239,68,68,.12)':'rgba(59,130,246,.15)',color:r.status==='pending'?'var(--warning)':r.status==='done'?'var(--success)':r.status==='rejected'?'var(--danger,#ef4444)':'var(--accent2)'}">{{r.status==='pending'?'待评估':r.status==='processing'?'开发中':r.status==='done'?'已上线':'未通过'}}</span>
+                    </td>
+                    <td style="font-size:12px;color:var(--text3)">{{String(r.created_at||'').replace('T',' ').substring(0,19)}}</td>
+                    <td><button class="btn btn-secondary" style="padding:4px 12px;font-size:12px" @click="openAdaptDetail(r)">详情</button></td>
+                  </tr>
+                  <tr v-if="adaptList.length===0">
+                    <td colspan="7" style="padding:30px;text-align:center;color:var(--text3)">暂无需求记录</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-top:1px solid var(--border)">
+              <div style="font-size:12px;color:var(--text3)">共 {{adaptTotal}} 条 · 每页 20 条</div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button class="btn btn-secondary" style="padding:4px 12px" :disabled="adaptPage<=1" @click="adaptPrev()">上一页</button>
+                <span style="font-size:13px">{{adaptPage}} / {{adaptTotalPages}}</span>
+                <button class="btn btn-secondary" style="padding:4px 12px" :disabled="adaptPage>=adaptTotalPages" @click="adaptNext()">下一页</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 需求详情弹窗 -->
+        <div v-if="adaptDetail" class="modal-overlay" @click.self="adaptDetail=null">
+          <div class="modal" style="max-width:640px">
+            <div class="modal-header" style="padding:0 0 14px 0;border-bottom:1px solid var(--border);margin-bottom:14px;">
+              <h3><svg class="ui-icon sm" style="margin-right:6px"><use href="#i-inbox"></use></svg>需求详情 #{{adaptDetail.id}}</h3>
+              <button class="btn-close" @click="adaptDetail=null" aria-label="关闭"><svg class="ui-icon sm"><use href="#i-x"></use></svg></button>
+            </div>
+            <div style="margin:12px 0;max-height:60vh;overflow-y:auto">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+                <span :style="{fontSize:'12px',padding:'2px 8px',borderRadius:'6px',background:adaptDetail.status==='pending'?'rgba(245,158,11,.15)':adaptDetail.status==='done'?'rgba(16,185,129,.15)':adaptDetail.status==='rejected'?'rgba(239,68,68,.12)':'rgba(59,130,246,.15)',color:adaptDetail.status==='pending'?'var(--warning)':adaptDetail.status==='done'?'var(--success)':adaptDetail.status==='rejected'?'var(--danger,#ef4444)':'var(--accent2)'}">{{adaptDetail.status==='pending'?'待评估':adaptDetail.status==='processing'?'开发中':adaptDetail.status==='done'?'已上线':'未通过'}}</span>
+                <span v-if="adaptDetail.urgent" style="font-size:12px;padding:2px 8px;border-radius:6px;background:rgba(239,68,68,.12);color:var(--danger,#ef4444);font-weight:600">加急</span>
+              </div>
+              <div style="font-size:13px;color:var(--text3);margin-bottom:10px">提交人：{{adaptDetail.username||'游客'}} · 联系方式：{{adaptDetail.contact||'未填'}} · 邮箱：{{adaptDetail.email}}</div>
+              <div style="margin-bottom:10px"><div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:3px">网站</div><div style="font-size:13.5px">{{adaptDetail.site_name}}</div><a :href="adaptDetail.site_url" target="_blank" rel="noopener" style="font-size:12.5px;color:var(--accent2);word-break:break-all">{{adaptDetail.site_url}}</a></div>
+              <div style="margin-bottom:10px" v-if="adaptDetail.scope"><div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:3px">自动化范围</div><div style="font-size:13px;line-height:1.7;white-space:pre-wrap">{{adaptDetail.scope}}</div></div>
+              <div style="margin-bottom:10px" v-if="adaptDetail.steps"><div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:3px">操作步骤</div><div style="font-size:13px;line-height:1.7;white-space:pre-wrap">{{adaptDetail.steps}}</div></div>
+              <div style="margin-bottom:10px" v-if="adaptDetail.remark"><div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:3px">备注</div><div style="font-size:13px;line-height:1.7;white-space:pre-wrap">{{adaptDetail.remark}}</div></div>
+              <div style="margin-bottom:10px"><div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:5px">测试账号（{{(adaptDetail.accounts||[]).length}} 组）</div>
+                <div v-for="(a,i) in (adaptDetail.accounts||[])" :key="i" style="display:flex;gap:8px;align-items:center;font-size:12.5px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:5px;background:var(--bg2)">
+                  <span style="color:var(--text3)">#{{i+1}}</span>
+                  <span style="font-family:monospace">{{a.user}}</span>
+                  <span style="font-family:monospace;color:var(--text2)">{{a.pwd}}</span>
+                  <span v-if="a.note" style="color:var(--text3);margin-left:auto">{{a.note}}</span>
+                  <button class="btn btn-secondary" style="padding:2px 8px;font-size:11px;margin-left:auto" @click="copyAdaptText(a.user)">复制账号</button>
+                </div>
+              </div>
+              <div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)">
+                <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:5px">后台备注（不展示给用户）</div>
+                <textarea v-model="adaptAdminNote" rows="2" style="width:100%;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;resize:vertical"></textarea>
+              </div>
+            </div>
+            <div class="modal-actions" style="flex-wrap:wrap;gap:8px">
+              <button class="btn btn-secondary" @click="adaptDetail=null">关闭</button>
+              <button class="btn btn-secondary" style="background:rgba(59,130,246,.12);color:var(--accent2)" @click="setAdaptStatus('processing')">标记开发中</button>
+              <button class="btn btn-secondary" style="background:rgba(16,185,129,.12);color:var(--success)" @click="setAdaptStatus('done')">标记已上线</button>
+              <button class="btn btn-secondary" style="background:rgba(239,68,68,.1);color:var(--danger,#ef4444)" @click="setAdaptStatus('rejected')">标记未通过</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
       <!-- 每日数据邮件（定时任务） -->
       <template v-if="page==='daily-report'">
         <header class="main-header">
@@ -8320,6 +8432,14 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     const feedbackTotalPages=ref(0);
     const feedbackTotal=ref(0);
     const feedbackPendingCount=ref(0);
+    // 定制需求
+    const adaptList=ref([]);
+    const adaptFilter=ref({status:''});
+    const adaptPage=ref(1);
+    const adaptTotal=ref(0);
+    const adaptTotalPages=ref(0);
+    const adaptDetail=ref(null);
+    const adaptAdminNote=ref('');
     const feedbackAutoCloseDays=ref(7);
     const cardPayLabel=ref('卡密');
     const feedbackDetail=ref(null);
@@ -8942,6 +9062,41 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       }catch(_){}
     }
     function feedbackSearch(){feedbackPage.value=1;loadFeedbackList();}
+    // ========== 定制需求 ==========
+    async function loadAdaptRequests(){
+      const params=new URLSearchParams({page:String(adaptPage.value),page_size:'20'});
+      try{
+        const res=await safeFetch('/admin/adapt-requests?'+params.toString(),{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200){
+          let rows=d.rows||[];
+          if(adaptFilter.value.status)rows=rows.filter(r=>r.status===adaptFilter.value.status);
+          adaptList.value=rows;
+          adaptTotal.value=d.total||0;
+          adaptTotalPages.value=Math.max(1,Math.ceil((d.total||0)/20));
+        }
+      }catch(_){}
+    }
+    function adaptPrev(){if(adaptPage.value>1){adaptPage.value--;loadAdaptRequests();}}
+    function adaptNext(){if(adaptPage.value<adaptTotalPages.value){adaptPage.value++;loadAdaptRequests();}}
+    function openAdaptDetail(r){adaptDetail.value=r;adaptAdminNote.value=r.admin_note||'';}
+    function copyAdaptText(t){
+      if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t||'').then(()=>showMsg('已复制'));return;}
+      const ta=document.createElement('textarea');ta.value=t||'';document.body.appendChild(ta);ta.select();
+      try{document.execCommand('copy');showMsg('已复制');}catch(_){showMsg('复制失败','error');}
+      document.body.removeChild(ta);
+    }
+    async function setAdaptStatus(status){
+      const r=adaptDetail.value;if(!r)return;
+      try{
+        const res=await adminPost('/admin/adapt-requests/status',{id:r.id,status:status,admin_note:adaptAdminNote.value});
+        if(res&&res.code===200){
+          showMsg('已更新状态');
+          adaptDetail.value=null;
+          loadAdaptRequests();
+        }else showMsg((res&&res.msg)||'更新失败','error');
+      }catch(e){showMsg('更新失败: '+(e.message||e),'error');}
+    }
     async function loadFeedbackAutoClose(){
       try{
         const res=await safeFetch('/admin/feedback-auto-close',{headers:{'Authorization':token.value}});
@@ -9636,6 +9791,8 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     fbAttachList,fbUploadingCount,onAdminFbFiles,onAdminFbPaste,removeAdminFbAttachment,downloadAdminFbAttachment,copyAdminFbImage,adminFbSize,
     feedbackAutoCloseDays,loadFeedbackAutoClose,saveFeedbackAutoClose,cardPayLabel,
     feedbackNotifyEnabled,loadFeedbackNotify,saveFeedbackNotify,
+    adaptList,adaptFilter,adaptPage,adaptTotal,adaptTotalPages,adaptDetail,adaptAdminNote,
+    loadAdaptRequests,adaptPrev,adaptNext,openAdaptDetail,setAdaptStatus,copyAdaptText,
    aiPolishing,aiPolishReply,testingModel,testingNewProvider,testModel,testNewProvider,modelTestResults,newProviderTestResult,
        dailyReportConfig,dailyReportPreview,loadDailyReport,saveDailyReport,sendDailyReportNow,previewDailyReport
     };

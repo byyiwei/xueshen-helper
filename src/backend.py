@@ -8139,6 +8139,50 @@ class Handler(BaseHTTPRequestHandler):
                     r["last_reply_content"] = ""
             self._send_json(200, {"code": 200, "data": result})
 
+        # ===== 后台查看自动化需求 =====
+        elif path == "/admin/adapt-requests":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                page = int(qs.get("page", ["1"])[0] or 1)
+                status = qs.get("status", [""])[0]
+                rows, total = db.list_adapt_requests(username=None, page=page, page_size=20)
+                if status:
+                    rows = [r for r in rows if r.get("status") == status]
+                    total = len(rows)
+                for r in rows:
+                    r["created_at"] = str(r.get("created_at") or "")
+                    try:
+                        r["accounts"] = json.loads(r.get("accounts") or "[]")
+                    except Exception:
+                        r["accounts"] = []
+                self._send_json(200, {"code": 200, "rows": rows, "total": total})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/adapt-requests/status":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                req_id = int(data.get("id") or 0)
+                status = (data.get("status") or "").strip()
+                admin_note = (data.get("admin_note") or "").strip()[:2000]
+                if not req_id or status not in {"pending", "processing", "done", "rejected"}:
+                    self._send_json(400, {"code": 400, "msg": "参数错误"})
+                    return
+                ph = _ph()
+                db.execute(
+                    f"UPDATE adapt_requests SET status={ph}, admin_note={ph} WHERE id={ph}",
+                    (status, admin_note, req_id)
+                )
+                self._send_json(200, {"code": 200, "msg": "已更新"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         elif path == "/admin/feedback-auto-close":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -8750,6 +8794,82 @@ class Handler(BaseHTTPRequestHandler):
                 feedback_id = db.create_feedback(user["username"], email, category, title, content)
                 threading.Thread(target=_send_feedback_notify, args=(None, "new", user["username"], category, title, content), daemon=True).start()
                 self._send_json(200, {"code": 200, "msg": "提交成功", "feedback_id": feedback_id})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        # ===== 自动化需求提交（登录用户与游客都可提交） =====
+        elif path == "/api/user/adapt-request":
+            user = self._get_user_from_token()
+            try:
+                data = json.loads(body or "{}")
+                contact = (data.get("contact") or "").strip()[:128]
+                email = (data.get("email") or "").strip()[:128]
+                site_name = (data.get("site_name") or "").strip()[:128]
+                site_url = (data.get("site_url") or "").strip()[:512]
+                scope = (data.get("scope") or "").strip()[:4000]
+                steps = (data.get("steps") or "").strip()[:4000]
+                remark = (data.get("remark") or "").strip()[:2000]
+                urgent = bool(data.get("urgent"))
+                if not site_name or not site_url:
+                    self._send_json(400, {"code": 400, "msg": "网站名称和网址不能为空"})
+                    return
+                if not re.match(r"^https?://", site_url, re.I):
+                    self._send_json(400, {"code": 400, "msg": "网址需要以 http:// 或 https:// 开头"})
+                    return
+                if not email or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+                    self._send_json(400, {"code": 400, "msg": "请填写有效的联系邮箱"})
+                    return
+                if not scope and not steps:
+                    self._send_json(400, {"code": 400, "msg": "自动化范围和操作步骤至少填一项"})
+                    return
+                accounts = data.get("accounts")
+                if not isinstance(accounts, list):
+                    accounts = []
+                clean_accounts = []
+                for acc in accounts[:5]:
+                    if not isinstance(acc, dict):
+                        continue
+                    acc_user = str(acc.get("user") or "").strip()[:128]
+                    acc_pwd = str(acc.get("pwd") or "").strip()[:128]
+                    acc_note = str(acc.get("note") or "").strip()[:64]
+                    if acc_user or acc_pwd:
+                        clean_accounts.append({"user": acc_user, "pwd": acc_pwd, "note": acc_note})
+                if not clean_accounts:
+                    self._send_json(400, {"code": 400, "msg": "请至少提供一组测试账号"})
+                    return
+                req_id = db.create_adapt_request({
+                    "username": (user or {}).get("username", ""),
+                    "contact": contact,
+                    "email": email,
+                    "site_name": site_name,
+                    "site_url": site_url,
+                    "accounts": json.dumps(clean_accounts, ensure_ascii=False),
+                    "scope": scope,
+                    "steps": steps,
+                    "remark": remark,
+                    "urgent": urgent
+                })
+                print(f"[自动化需求] 新提交 #{req_id} site={site_name} user={user['username'] if user else '游客'} urgent={urgent}", flush=True)
+                self._send_json(200, {"code": 200, "msg": "提交成功", "request_id": req_id})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/api/user/adapt-request/list":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "请先登录"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                page = max(1, int(data.get("page") or 1))
+                rows, total = db.list_adapt_requests(username=user["username"], page=page, page_size=20)
+                for r in rows:
+                    r["created_at"] = str(r.get("created_at") or "")
+                    try:
+                        r["accounts"] = json.loads(r.get("accounts") or "[]")
+                    except Exception:
+                        r["accounts"] = []
+                self._send_json(200, {"code": 200, "rows": rows, "total": total})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
