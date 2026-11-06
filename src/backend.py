@@ -5596,6 +5596,34 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
         WHERE created_at >= {ph} AND created_at < {ph}
     """
 
+    # 全口径活跃：答题（ai_call_logs）与脚本活动（script_event_logs，视频/直播/阅读都算）
+    # 两表合并去重。挂机活跃＝只有脚本日志、没有答题调用的用户；
+    # 付费活跃＝总活跃中会员在期/有题数余额/自有模型在期的用户。
+    active_sql = f"""
+        SELECT
+          COUNT(DISTINCT u) AS total_active,
+          COUNT(DISTINCT CASE WHEN u IN (SELECT DISTINCT username FROM script_event_logs
+                                WHERE created_at >= {ph} AND created_at < {ph}
+                                  AND COALESCE(username,'') <> '') AND
+                              u NOT IN (SELECT DISTINCT COALESCE(username,'') FROM ai_call_logs
+                                        WHERE created_at >= {ph} AND created_at < {ph}
+                                          AND COALESCE(username,'') <> '')
+                         THEN u END) AS idle_active,
+          COUNT(DISTINCT CASE WHEN u IN (
+                SELECT username FROM users WHERE
+                  (member_until IS NOT NULL AND member_until > NOW())
+                  OR points_balance > 0
+                  OR (custom_model_until IS NOT NULL AND custom_model_until > NOW())
+             ) THEN u END) AS paid_active
+        FROM (
+            SELECT DISTINCT username AS u FROM ai_call_logs
+            WHERE created_at >= {ph} AND created_at < {ph} AND COALESCE(username,'') <> ''
+            UNION
+            SELECT DISTINCT username AS u FROM script_event_logs
+            WHERE created_at >= {ph} AND created_at < {ph} AND COALESCE(username,'') <> ''
+        ) t
+    """
+
     trend_sql = """
         SELECT DATE(created_at) AS day,
                COUNT(*) AS total,
@@ -5647,6 +5675,8 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
         cursor = conn.cursor()
         cursor.execute(card_sql, (sd, ed_next, sd, ed_next))
         card_stats = cursor.fetchone() or {}
+        cursor.execute(active_sql, (sd, ed_next, sd, ed_next, sd, ed_next, sd, ed_next))
+        active_stats = cursor.fetchone() or {}
         cursor.execute(trend_sql, (sd, ed_next))
         trend_rows = cursor.fetchall()
         cursor.execute(model_sql, (sd, ed_next))
@@ -5690,7 +5720,10 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
     data = {
         "cards": {
             "users": int(card_stats.get("users") or 0),
-            "active": int(card_stats.get("active") or 0),
+            "active": int((active_stats.get("total_active") or 0)) or int(card_stats.get("active") or 0),
+            "active_answer": int(card_stats.get("active") or 0),
+            "active_idle": int(active_stats.get("idle_active") or 0),
+            "active_paid": int(active_stats.get("paid_active") or 0),
             "question_bank": int(card_stats.get("question_bank") or 0),
             "bank_new": int(card_stats.get("bank_new") or 0),
             "calls": int(card_stats.get("calls") or 0),

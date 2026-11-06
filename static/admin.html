@@ -1487,7 +1487,15 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
           </div>
           <div class="metric-grid">
             <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(96,165,250,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='user-mgmt';loadUsers();loadLoginLocks()"><div class="metric-label">用户数</div><div class="metric-value">{{dashboard.cards.users||0}}</div><div class="metric-sub">点击管理用户 →</div></div>
-            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(96,165,250,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='user-mgmt';loadUsers();loadLoginLocks()"><div class="metric-label">活跃数</div><div class="metric-value">{{dashboard.cards.active||0}}</div><div class="metric-sub">点击查看用户 →</div></div>
+            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(96,165,250,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='user-mgmt';loadUsers();loadLoginLocks()">
+              <div class="metric-label">活跃数</div>
+              <div class="metric-value">{{dashboard.cards.active||0}}</div>
+              <div class="metric-sub" style="display:flex;gap:8px;flex-wrap:wrap">
+                <span style="color:var(--accent2)" title="调过答题接口的用户">答题 {{dashboard.cards.active_answer||0}}</span>
+                <span style="color:var(--warning)" title="只有视频/直播/阅读等脚本活动、没答题的登录用户">挂机 {{dashboard.cards.active_idle||0}}</span>
+                <span style="color:var(--success)" title="会员在期/有题数余额/自有模型在期">付费 {{dashboard.cards.active_paid||0}}</span>
+              </div>
+            </div>
             <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(16,185,129,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='question-bank';loadQuestionBank()"><div class="metric-label">题库总数</div><div class="metric-value">{{dashboard.cards.question_bank||0}}</div><div class="metric-sub">区间新增 {{dashboard.cards.bank_new||0}} · 点击管理题库 →</div></div>
             <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(16,185,129,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='bank-logs';expandedGroups.questions=true;loadBankLogs()"><div class="metric-label">题库命中数</div><div class="metric-value" style="color:var(--success)">{{dashboard.cards.bank_hits||0}}</div><div class="metric-sub">点击查看日志 →</div></div>
             <div class="metric-card"><div class="metric-label">题库命中率</div><div class="metric-value" style="color:var(--accent2)">{{dashboard.cards.bank_hit_rate||0}}%</div><div class="metric-sub">占成功答题比例</div></div>
