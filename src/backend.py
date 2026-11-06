@@ -8162,27 +8162,6 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
-        elif path == "/admin/adapt-requests/status":
-            if not self._check_admin():
-                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
-                return
-            try:
-                data = json.loads(body or "{}")
-                req_id = int(data.get("id") or 0)
-                status = (data.get("status") or "").strip()
-                admin_note = (data.get("admin_note") or "").strip()[:2000]
-                if not req_id or status not in {"pending", "processing", "done", "rejected"}:
-                    self._send_json(400, {"code": 400, "msg": "参数错误"})
-                    return
-                ph = _ph()
-                db.execute(
-                    f"UPDATE adapt_requests SET status={ph}, admin_note={ph} WHERE id={ph}",
-                    (status, admin_note, req_id)
-                )
-                self._send_json(200, {"code": 200, "msg": "已更新"})
-            except Exception as e:
-                self._send_json(500, {"code": 500, "msg": str(e)})
-
         elif path == "/admin/feedback-auto-close":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -10746,6 +10725,28 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 db.update_feedback_status(fid, status)
                 self._send_json(200, {"code": 200, "msg": "状态更新成功"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        # 定制需求状态流转
+        elif path == "/admin/adapt-requests/status":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                req_id = int(data.get("id") or 0)
+                status = (data.get("status") or "").strip()
+                admin_note = (data.get("admin_note") or "").strip()[:2000]
+                if not req_id or status not in {"pending", "processing", "done", "rejected"}:
+                    self._send_json(400, {"code": 400, "msg": "参数错误"})
+                    return
+                ph = _ph()
+                db.execute(
+                    f"UPDATE adapt_requests SET status={ph}, admin_note={ph} WHERE id={ph}",
+                    (status, admin_note, req_id)
+                )
+                self._send_json(200, {"code": 200, "msg": "已更新"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
