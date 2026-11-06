@@ -3217,7 +3217,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 return;
               }
               const is200NoAnswer = obj.code === 200 && !(obj.data && obj.data.answer);
-              resolve({ code: -1004, data: { answer: [], remainCount: 0 }, msg: is200NoAnswer ? "未找到答案" : (obj.msg || "本地题库未命中") });
+              resolve({ code: -1004, data: { answer: [], remainCount: 0 }, msg: is200NoAnswer ? ((obj.data && obj.data.image_question) ? (obj.msg || "图片题必须设置成AI") : "未找到答案") : (obj.msg || "本地题库未命中") });
             }
           } catch (e) {
             resolve(handleError$1("本地后端响应解析失败"));

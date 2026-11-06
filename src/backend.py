@@ -3267,6 +3267,9 @@ def _ocr_daily_bump(username):
 
 def search_personal_bank(username, question, limit=3, min_score=0.55):
     """个人题库优先命中。用与公共题库同一套召回+重排，避免两套标准。"""
+    # 图片题不走个人题库（老版本可能导入过含图条目），与公共题库同一标准：一律走 AI
+    if is_multimodal_question(question):
+        return []
     info = parse_question_payload(question)
     q_norm = normalize_question_text(info.get("question_text", ""))
     if len(q_norm) < 4:
@@ -11208,12 +11211,31 @@ class Handler(BaseHTTPRequestHandler):
                 if len(items) > BANK_TOOL_IMPORT_LIMIT:
                     self._send_json(400, {"code": 400, "msg": f"单次最多导入 {BANK_TOOL_IMPORT_LIMIT} 道题"})
                     return
+                # 图片题不入库（老版本脚本导入的兜底）：题干或选项含 <img> 的条目直接跳过
+                _img_skipped = 0
+                _clean_items = []
+                for _it in items:
+                    _q = str((_it or {}).get("question") or "")
+                    _opts = [str(o) for o in ((_it or {}).get("options") or [])]
+                    if '<img' in _q.lower() or any('<img' in o.lower() for o in _opts):
+                        _img_skipped += 1
+                        continue
+                    _clean_items.append(_it)
+                if _img_skipped:
+                    print(f"[题库工具] 个人题库导入拦截图片题 {_img_skipped} 条", flush=True)
+                if not _clean_items:
+                    self._send_json(400, {"code": 400, "msg": "图片题已不再收录题库，请把答题模式设置成AI"})
+                    return
+                items = _clean_items
                 result = db.add_user_bank_items(user["username"], items, source=str(data.get("source") or "import")[:16])
                 total = db.count_user_bank(user["username"])
                 print(f"[题库工具] 个人题库导入 user={user['username']} 新增={result['added']} 更新={result['updated']} 跳过={result['skipped']}", flush=True)
+                _msg = f"已导入 {result['added']} 道" + (f"，更新 {result['updated']} 道" if result["updated"] else "") + (f"，跳过 {result['skipped']} 道（缺答案）" if result["skipped"] else "")
+                if _img_skipped:
+                    _msg += f"，另有 {_img_skipped} 道图片题未收录（图片题一律走AI）"
                 self._send_json(200, {
                     "code": 200,
-                    "msg": f"已导入 {result['added']} 道" + (f"，更新 {result['updated']} 道" if result["updated"] else "") + (f"，跳过 {result['skipped']} 道（缺答案）" if result["skipped"] else ""),
+                    "msg": _msg,
                     "data": dict(result, total=total)
                 })
             except Exception as e:
