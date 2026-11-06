@@ -4946,6 +4946,24 @@ class Database:
         params.append(offset)
         return self.fetchall(sql, tuple(params))
 
+    def count_answer_summaries(self, date_from="", date_to="", username=""):
+        """统计「一卷一报」小结条数，配合 list_answer_summaries 做分页。"""
+        ph = _ph()
+        where = [f"s.event_type = {ph}"]
+        params = ["answer_summary"]
+        if username:
+            where.append(f"s.username = {ph}")
+            params.append(username)
+        if date_from:
+            where.append(f"s.created_at >= {ph}")
+            params.append(date_from)
+        if date_to:
+            where.append(f"s.created_at <= {ph}")
+            params.append(date_to)
+        sql = "SELECT COUNT(*) AS c FROM script_event_logs s WHERE " + " AND ".join(where)
+        row = self.fetchone(sql, tuple(params))
+        return int(row.get("c") or 0) if row else 0
+
     def update_admin_email(self, cfg):
         ph = _ph()
         self.execute(

@@ -4429,27 +4429,32 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
             </div>
 
             <div class="card">
-              <div class="card-header"><h3>最近小结</h3><span>最新 20 条</span></div>
+              <div class="card-header"><h3>答题小结明细</h3><span v-if="answerRowsTotal">共 {{answerRowsTotal}} 条 · 第 {{answerRowsPage}}/{{Math.max(1,Math.ceil(answerRowsTotal/answerRowsPageSize))}} 页</span></div>
               <div class="card-body" style="overflow-x:auto">
                 <table class="data-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:820px">
-                  <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left"><th style="padding:8px">时间</th><th style="padding:8px">用户</th><th style="padding:8px">平台</th><th style="padding:8px">题目/填上</th><th style="padding:8px">填充率</th><th style="padding:8px">阈值</th><th style="padding:8px">没填上的题型</th><th style="padding:8px">脚本版</th></tr></thead>
+                  <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left"><th style="padding:8px">时间</th><th style="padding:8px">用户</th><th style="padding:8px">平台</th><th style="padding:8px">题目/填上</th><th style="padding:8px">填充率</th><th style="padding:8px">题库/AI</th><th style="padding:8px">没填上的题型</th><th style="padding:8px">脚本版</th></tr></thead>
                   <tbody>
-                    <tr v-for="(r,idx) in answerStats.recent" :key="r.time+idx" style="border-bottom:1px solid var(--border)">
+                    <tr v-for="(r,idx) in answerRows" :key="r.time+idx" style="border-bottom:1px solid var(--border)">
                       <td style="padding:8px;color:var(--text3);white-space:nowrap">{{r.time}}</td>
                       <td style="padding:8px">{{r.username||'-'}}</td>
                       <td style="padding:8px;color:var(--text2);white-space:nowrap">{{r.platform_name}}</td>
                       <td style="padding:8px">{{r.filled}} / {{r.total}}</td>
                       <td style="padding:8px;font-weight:700" :style="{color:r.fill_rate>=80?'#10b981':(r.fill_rate>=50?'#f59e0b':'#ef4444')}">{{r.fill_rate}}%</td>
-                      <td style="padding:8px;color:var(--text3)">{{r.threshold?r.threshold+'%':'-'}}</td>
+                      <td style="padding:8px;color:var(--text2)">{{r.bank}} / {{r.ai}}</td>
                       <td style="padding:8px;color:var(--text2)">
                         <span v-if="!r.unfilled_types.length" style="color:var(--text3)">-</span>
                         <span v-for="(t,ti) in r.unfilled_types" :key="ti" style="display:inline-block;margin:2px 4px 2px 0;padding:1px 6px;border-radius:6px;background:rgba(239,68,68,.12);color:#ef4444;font-size:11px">{{t}}</span>
                       </td>
                       <td style="padding:8px;color:var(--text3)">{{r.script_version||'-'}}</td>
                     </tr>
-                    <tr v-if="!answerStats.recent.length"><td colspan="8" style="padding:24px;text-align:center;color:var(--text3)">区间内没有上报过答题小结</td></tr>
+                    <tr v-if="answerRowsLoaded && !answerRows.length"><td colspan="8" style="padding:24px;text-align:center;color:var(--text3)">区间内没有上报过答题小结</td></tr>
                   </tbody>
                 </table>
+              </div>
+              <div class="card-body" style="display:flex;align-items:center;gap:10px;border-top:1px solid var(--border)">
+                <button class="btn btn-secondary btn-sm" :disabled="answerRowsPage<=1||answerRowsLoading" @click="loadAnswerRows(answerRowsPage-1)">上一页</button>
+                <button class="btn btn-secondary btn-sm" :disabled="answerRowsPage>=Math.ceil(answerRowsTotal/answerRowsPageSize)||answerRowsLoading" @click="loadAnswerRows(answerRowsPage+1)">下一页</button>
+                <span v-if="answerRowsLoading" style="color:var(--text3);font-size:12px">加载中...</span>
               </div>
             </div>
 
@@ -6497,6 +6502,23 @@ createApp({
     const answerStats=ref(null);
     const answerStatsLoading=ref(false);
     const answerStatsFilter=reactive({date_from:'',date_to:''});
+    const answerRows=ref([]);const answerRowsTotal=ref(0);const answerRowsPage=ref(1);const answerRowsPageSize=50;const answerRowsLoading=ref(false);const answerRowsLoaded=ref(false);
+    async function loadAnswerRows(page=1){
+      if(!token.value)return;
+      answerRowsLoading.value=true;
+      try{
+        const qs=new URLSearchParams();
+        if(answerStatsFilter.date_from)qs.set('date_from',answerStatsFilter.date_from);
+        if(answerStatsFilter.date_to)qs.set('date_to',answerStatsFilter.date_to);
+        qs.set('page',String(page));
+        const res=await safeFetch('/admin/answer-summary-rows?'+qs.toString(),{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){answerRows.value=(data.data&&data.data.items)||[];answerRowsTotal.value=(data.data&&data.data.total)||0;answerRowsPage.value=page;answerRowsLoaded.value=true;}
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'获取小结明细失败','error');
+      }catch(e){showMsg('获取小结明细失败: '+(e.message||e),'error',6000);}
+      finally{answerRowsLoading.value=false;}
+    }
     const userAnalysis=ref(null);
     const userAnalysisLoading=ref(false);
     const userAnalysisFilter=reactive({date_from:'',date_to:''});
@@ -6970,6 +6992,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         answerStatsFilter.date_to=fmtLocalDate(to);
       }
       if(answerStatsFilter.date_from>answerStatsFilter.date_to){showMsg("开始日期不能晚于结束日期","error");return;}
+      loadAnswerRows(1);
       answerStatsLoading.value=true;
       try{
         const qs=new URLSearchParams();
@@ -6990,6 +7013,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       answerStatsFilter.date_from=fmtLocalDate(from);
       answerStatsFilter.date_to=fmtLocalDate(to);
       loadAnswerStats();
+      loadAnswerRows(1);
     }
     // 折线只画有答题的那几天，横坐标仍按区间天数排，空白天留缺口而不是把曲线压扁
     function ansTrendRows(){
@@ -9552,6 +9576,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       bankLogs,bankLogLoading,bankLogFilter,bankLogTotal,expandedBankLogs,
       bankAnalysis,bankAnalysisLoading,bankAnalysisFilter,loadBankAnalysis,setBankAnalysisRange,
       answerStats,answerStatsLoading,answerStatsFilter,loadAnswerStats,setAnswerStatRange,ansTrendRows,ansTrendX,ansTrendY,ansTrendPoints,
+      answerRows,answerRowsTotal,answerRowsPage,answerRowsPageSize,answerRowsLoading,answerRowsLoaded,loadAnswerRows,
       userAnalysis,userAnalysisLoading,userAnalysisFilter,loadUserAnalysis,setUserAnalysisRange,pct,
       oldUserRechargeExpanded,oldUserRechargeDetails,oldUserRechargePage,oldUserRechargeTotal,oldUserRechargeTotalPages,oldUserRechargeSum,oldUserRechargeLoading,toggleOldUserRecharge,loadOldUserRechargeDetails,
       questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,deleteQuestionBankItem,bankTypeOptions,bankModelOptions,loadBankModels,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,ssoConfig,ssoSaving,showSsoSecret,ssoCallbackUrl,riskConfig,riskWhitelistText,riskUsers,riskScanning,riskSaving,

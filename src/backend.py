@@ -7762,6 +7762,76 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {"code": 200, "logs": logs})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/answer-summary-rows":
+            # 「最近小结」明细分页：日期区间内全部小结，每页最多 100 条
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                date_from = qs.get("date_from", [""])[0]
+                date_to = qs.get("date_to", [""])[0]
+                page = max(1, int(qs.get("page", ["1"])[0] or 1))
+                page_size = min(100, max(10, int(qs.get("page_size", ["50"])[0] or 50)))
+                if date_from or date_to:
+                    _dt.strptime(date_to or date_from, "%Y-%m-%d")
+                    _dt.strptime(date_from or date_to, "%Y-%m-%d")
+                total = db.count_answer_summaries(date_from=date_from + " 00:00:00" if date_from else "", date_to=date_to + " 23:59:59" if date_to else "")
+                rows = db.list_answer_summaries(
+                    date_from=date_from + " 00:00:00" if date_from else "",
+                    date_to=date_to + " 23:59:59" if date_to else "",
+                    limit=page_size, offset=(page - 1) * page_size
+                )
+                items = []
+                for row in rows:
+                    extra = row.get("extra_json")
+                    if isinstance(extra, str):
+                        try:
+                            extra = json.loads(extra or "{}")
+                        except Exception:
+                            continue
+                    if not isinstance(extra, dict):
+                        continue
+                    try:
+                        total_q = int(extra.get("total") or 0)
+                        filled = int(extra.get("filled") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if total_q <= 0 or filled > total_q:
+                        continue
+                    src = extra.get("src") if isinstance(extra.get("src"), dict) else {}
+                    platform = str(extra.get("platform") or "unknown")[:20]
+                    unfilled_names = []
+                    for entry in (extra.get("unanswered") or []):
+                        if not isinstance(entry, dict):
+                            continue
+                        qtype = str(entry.get("type") or "")[:20]
+                        reason = str(entry.get("reason") or "").strip()
+                        code = entry.get("code")
+                        if code == 402 or re.search(
+                            r"余额不足|题数不足|点数不足|insufficient.?quota|请到用户中心购买|请联系您的服务方",
+                            reason, re.I,
+                        ):
+                            continue
+                        unfilled_names.append(ANSWER_TYPE_NAMES.get(qtype, qtype or "未知"))
+                    items.append({
+                        "time": str(row.get("created_at") or "")[:19],
+                        "username": row.get("username") or "",
+                        "platform": platform,
+                        "platform_name": ANSWER_PLATFORM_NAMES.get(platform, platform),
+                        "total": total_q,
+                        "filled": filled,
+                        "fill_rate": _answer_pct(filled, total_q),
+                        "bank": max(0, int(src.get("bank") or 0)),
+                        "ai": max(0, int(src.get("ai") or 0)),
+                        "unfilled_types": unfilled_names[:10],
+                        "script_version": str(extra.get("script_version") or "")[:20]
+                    })
+                self._send_json(200, {"code": 200, "data": {"items": items, "total": total, "page": page, "page_size": page_size}})
+            except ValueError:
+                self._send_json(400, {"code": 400, "msg": "日期格式应为 YYYY-MM-DD"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/answer-stats":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
