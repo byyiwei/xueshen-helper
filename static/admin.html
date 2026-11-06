@@ -1326,7 +1326,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
               <svg class="ui-icon sm"><use href="#i-message-square"></use></svg>问题反馈
             </div>
             <div class="menu-item" :class="{active:page==='adapt-requests'}" @click="page='adapt-requests';loadAdaptRequests()">
-              <svg class="ui-icon sm"><use href="#i-inbox"></use></svg>定制需求
+              <svg class="ui-icon sm"><use href="#i-clipboard"></use></svg>定制需求
             </div>
             <div class="menu-item" :class="{active:page==='announce'}" @click="page='announce';loadAnnounceConfig()">
               <svg class="ui-icon sm"><use href="#i-bell"></use></svg>公告通知
@@ -6244,7 +6244,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
         <div v-if="adaptDetail" class="modal-overlay" @click.self="adaptDetail=null">
           <div class="modal" style="max-width:640px">
             <div class="modal-header" style="padding:0 0 14px 0;border-bottom:1px solid var(--border);margin-bottom:14px;">
-              <h3><svg class="ui-icon sm" style="margin-right:6px"><use href="#i-inbox"></use></svg>需求详情 #{{adaptDetail.id}}</h3>
+              <h3><svg class="ui-icon sm" style="margin-right:6px"><use href="#i-clipboard"></use></svg>需求详情 #{{adaptDetail.id}}</h3>
               <button class="btn-close" @click="adaptDetail=null" aria-label="关闭"><svg class="ui-icon sm"><use href="#i-x"></use></svg></button>
             </div>
             <div style="margin:12px 0;max-height:60vh;overflow-y:auto">
@@ -6273,9 +6273,9 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
             </div>
             <div class="modal-actions" style="flex-wrap:wrap;gap:8px">
               <button class="btn btn-secondary" @click="adaptDetail=null">关闭</button>
-              <button class="btn btn-secondary" style="background:rgba(59,130,246,.12);color:var(--accent2)" @click="setAdaptStatus('processing')">标记开发中</button>
-              <button class="btn btn-secondary" style="background:rgba(16,185,129,.12);color:var(--success)" @click="setAdaptStatus('done')">标记已上线</button>
-              <button class="btn btn-secondary" style="background:rgba(239,68,68,.1);color:var(--danger,#ef4444)" @click="setAdaptStatus('rejected')">标记未通过</button>
+              <button class="btn" style="background:#3b82f6;color:#fff" @click="setAdaptStatus('processing')">标记开发中</button>
+              <button class="btn" style="background:#10b981;color:#fff" @click="setAdaptStatus('done')">标记已上线</button>
+              <button class="btn" style="background:#ef4444;color:#fff" @click="setAdaptStatus('rejected')">标记未通过</button>
             </div>
           </div>
         </div>
