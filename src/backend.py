@@ -3054,6 +3054,11 @@ def is_test_question_for_bank(question):
 
 def get_question_bank_match(question):
     _t0 = time.time()
+    # 图片题不查题库：图片题一律走 AI（is_image 记录已清空，历史数据也不允许再命中）
+    if is_multimodal_question(question):
+        info = parse_question_payload(question)
+        print(f"[题库匹配] 图片题跳过题库 type={info.get('question_type', '')}，直接走AI", flush=True)
+        return None, make_matching_key(question), None, (time.time() - _t0) * 1000
     info = parse_question_payload(question)
     current_type = info.get("question_type", "")
     mkey = make_matching_key(question)
@@ -3118,6 +3123,9 @@ def get_question_bank_similar(question):
     """相似题匹配：哈希/主干都没命中，或存在多个相似候选时，按题面+选项+题型相似度排序。
     返回最高分的那条（分数需达到 MATCH_AUTO_MIN_SCORE 才算同一题）。"""
     _t0 = time.time()
+    # 图片题不参与相似题匹配，一律走 AI
+    if is_multimodal_question(question):
+        return None, None, 0.0, (time.time() - _t0) * 1000
     info = parse_question_payload(question)
     current_type = info.get("question_type", "")
     q_norm = normalize_question_text(info.get("question_text", ""))
@@ -3150,6 +3158,9 @@ def _bank_row_from_candidate(candidate):
 def get_bank_match_all(question):
     """返回题库中所有匹配该题的候选（同题可多个答案版本），用于网页搜题多结果展示。"""
     _t0 = time.time()
+    # 图片题不查题库，一律走 AI
+    if is_multimodal_question(question):
+        return [], make_matching_key(question), (time.time() - _t0) * 1000
     info = parse_question_payload(question)
     mkey = make_matching_key(question)
     candidates = db.get_question_bank_by_matching_key(mkey)
@@ -3554,6 +3565,10 @@ def save_question_bank_answer(question, answer, model_name="", provider_name="")
         return
     if is_test_question_for_bank(question):
         print("[题库入库] 测试题已跳过，不写入题库", flush=True)
+        return
+    # 图片题不进题库：图片 URL/base64 跨会话不稳定，题库命中无意义，图片题一律走 AI
+    if is_multimodal_question(question):
+        print(f"[题库入库] 图片题跳过，不写入题库 model={model_name} question={str(question)[:60]}", flush=True)
         return
     if _is_garbage_bank_answer(answer, question):
         print(f"[题库入库] 垃圾答案跳过，不写入题库 model={model_name} answer={str(answer)[:80]}", flush=True)
@@ -10691,6 +10706,10 @@ class Handler(BaseHTTPRequestHandler):
                 q_type = row.get("question_type") or ""
                 opts_raw = row.get("options_text") or ""
                 options = [x.strip() for x in opts_raw.split("|") if x.strip()]
+                # 图片题不应存在于题库（图片题一律走 AI），拦住重训练避免旧数据回流
+                if (q_text and '<img' in q_text.lower()) or any(o and '<img' in o.lower() for o in options):
+                    self._send_json(400, {"code": 400, "msg": "图片题已不再收录题库，请从题库删除该题"})
+                    return
                 # 从 question_text 与选项一并提取图片 URL（支持 <img src="..."> 格式）
                 # 注意：指纹按「题面 + 选项内嵌图」计算，只取题面会算出不同的指纹，导致重训练后匹配不上原题
                 img_re = re.compile(r'<img[^>]+src=["\']([^"\']+)["\']', re.I)
@@ -11533,6 +11552,18 @@ class Handler(BaseHTTPRequestHandler):
                     # 纯题库模式：题库没命中就到此为止，不再调用模型，也不产生扣费。
                     print(f"[纯题库未命中] question={question[:60]}...", flush=True)
                     profile_now = build_user_profile(user.get("username", ""))
+                    # 图片题在纯题库模式下永远无法命中（图片题不入库、不匹配），
+                    # 明确提示用户把答题模式切换成 AI，而不是笼统的「题库未命中」。
+                    if is_multimodal_question(question):
+                        self._send_json(200, {"code": 200, "msg": "图片题必须设置成AI", "data": {
+                            "answer": "",
+                            "mode": "question_bank",
+                            "bank": False,
+                            "image_question": True,
+                            "profile": profile_now,
+                            "remainCount": 999999 if profile_now and profile_now.get("active_member") else int((profile_now or {}).get("points_balance") or 0)
+                        }})
+                        return
                     self._send_json(200, {"code": 200, "msg": "题库未命中", "data": {
                         "answer": "",
                         "mode": "question_bank",
@@ -11671,6 +11702,10 @@ class Handler(BaseHTTPRequestHandler):
                     question = question[:20000]
                     if not question.strip():
                         items.append({"index": idx, "answer": None, "bank": False, "status": "empty"})
+                        continue
+                    # 图片题不入库也不查库，批量接口直接标记跳过
+                    if is_multimodal_question(question):
+                        items.append({"index": idx, "answer": None, "bank": False, "status": "image", "msg": "图片题必须设置成AI"})
                         continue
                     if quota_err:
                         items.append({"index": idx, "answer": None, "bank": False, "status": "quota", "msg": quota_err})

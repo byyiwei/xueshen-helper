@@ -3150,6 +3150,10 @@
       let m;
       while ((m = re.exec(String(html || "")))) pushImgSrc(m[1]);
     });
+    // 纯题库模式：图片题不查题库（题库也不收录图片题），直接提示需要切到 AI 模式
+    if (extra && extra.bankOnly && seenImg.size) {
+      return { code: -1004, data: { answer: [] }, msg: "图片题必须设置成AI" };
+    }
     for (const src of seenImg) {
       const dataUrl = await _downloadImg(src);
       if (!dataUrl) return { code: -1005, data: { answer: [] }, msg: "图片下载失败，请刷新题目后重试" };
