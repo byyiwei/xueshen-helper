@@ -2122,6 +2122,12 @@
               type: "switch",
               platforms: WATCH_PLATFORM_KEYS,
               tips: "开启后进入课程页自动播放视频；倍速用上面的「视频倍速」，播完自动翻页用「自动切换章节」"
+            },
+            forceClipboard: {
+              text: "解除复制限制",
+              value: true,
+              type: "switch",
+              tips: "解除网页对复制、粘贴、右键菜单、选中文字的限制，并支持富文本编辑器粘贴（含图片）；关闭后刷新页面生效"
             }
           },
           examConfig: {
@@ -21265,6 +21271,224 @@ const XS_EXT = (() => {
       return oldout.call(this, ...args);
     };
   };
+  /* ======================== 解除复制限制 ========================
+   * 在页面脚本运行前包装 addEventListener，让平台注册的
+   * copy/paste/cut/contextmenu/selectstart/dragstart 监听器注册不进去，
+   * 再配合 CSS 恢复选中、动态对抗、富文本编辑器处理。
+   * 开关 forceClipboard 控制；关闭时一切逻辑跳过（源头拦截需刷新页面才彻底生效）。
+   */
+  const XS_CLIPBOARD_EVENTS = ["paste", "copy", "cut", "contextmenu", "selectstart", "dragstart"];
+  const xsClipboardAllowed = (listener) => !!(listener && listener.__xsClipboardAllow);
+  const patchClipboardEventTarget = (win) => {
+    try {
+      if (!win || !win.EventTarget) return;
+      const proto = win.EventTarget.prototype;
+      const origAdd = proto.addEventListener;
+      if (origAdd.__xsPatched) return;
+      const patched = function(type, listener, options) {
+        if (typeof type === "string" &&
+            XS_CLIPBOARD_EVENTS.includes(type) &&
+            !xsClipboardAllowed(listener) &&
+            xsClipboardEnabled()) {
+          return;
+        }
+        return origAdd.call(this, type, listener, options);
+      };
+      patched.__xsPatched = true;
+      proto.addEventListener = patched;
+    } catch (_) {}
+  };
+  const xsClipboardEnabled = () => {
+    try {
+      if (typeof _GM_getValue === "function") {
+        const raw = _GM_getValue("setting");
+        if (raw) {
+          const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+          const entry = parsed && parsed.config && parsed.config.basicConfig && parsed.config.basicConfig.forceClipboard;
+          return entry ? entry.value !== false : true;
+        }
+      }
+      return true;
+    } catch (_) {
+      return true;
+    }
+  };
+  const clearClipboardRestrictions = (element) => {
+    if (!element) return;
+    try {
+      XS_CLIPBOARD_EVENTS.concat("keydown").forEach((event) => {
+        try { element[`on${event}`] = null; element.removeAttribute(`on${event}`); } catch (_) {}
+      });
+      try { element.removeAttribute("readonly"); } catch (_) {}
+      try { element.removeAttribute("disabled"); } catch (_) {}
+      const style = element.style;
+      if (style) {
+        style.userSelect = "text";
+        style.webkitUserSelect = "text";
+        style.mozUserSelect = "text";
+        style.msUserSelect = "text";
+        style.pointerEvents = "auto";
+      }
+    } catch (_) {}
+  };
+  const cleanupClipboardFrame = (frame) => {
+    try {
+      const fdoc = frame.contentDocument;
+      if (fdoc) fdoc.querySelectorAll("input, textarea, [contenteditable]").forEach(clearClipboardRestrictions);
+    } catch (_) {}
+  };
+  const injectClipboardStyles = (doc) => {
+    try {
+      if (doc.__xsClipboardStyled) return;
+      doc.__xsClipboardStyled = true;
+      const style = doc.createElement("style");
+      style.textContent = `
+        * { -webkit-user-select: text !important; -moz-user-select: text !important; -ms-user-select: text !important; user-select: text !important; }
+        input, textarea, [contenteditable] { user-select: text !important; pointer-events: auto !important; }
+      `;
+      (doc.head || doc.documentElement).appendChild(style);
+    } catch (_) {}
+  };
+  const xsHandlePaste = (e) => {
+    try {
+      e.preventDefault();
+      e.stopPropagation();
+      const doc = e.target.ownerDocument || document;
+      const clipboardData = e.clipboardData || (e.view && e.view.clipboardData);
+      const items = clipboardData && clipboardData.items;
+      const imageItem = items && Array.from(items).find((item) => item.type && item.type.startsWith("image/"));
+      if (imageItem) {
+        const imageFile = imageItem.getAsFile();
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const img = doc.createElement("img");
+            img.src = reader.result;
+            img.alt = "粘贴图片";
+            const selection = doc.getSelection();
+            if (selection && selection.rangeCount > 0) {
+              const range = selection.getRangeAt(0);
+              range.deleteContents();
+              range.insertNode(img);
+              range.setStartAfter(img);
+              selection.removeAllRanges();
+              selection.addRange(range);
+            } else {
+              (doc.body || doc.documentElement).appendChild(img);
+            }
+          } catch (_) {}
+        };
+        reader.readAsDataURL(imageFile);
+        return;
+      }
+      const text = (clipboardData && clipboardData.getData && clipboardData.getData("text/plain")) || "";
+      if (text) {
+        if (doc.execCommand && doc.execCommand("insertText", false, text)) return;
+        const selection = doc.getSelection();
+        if (selection && selection.rangeCount > 0) {
+          const range = selection.getRangeAt(0);
+          range.deleteContents();
+          range.insertNode(doc.createTextNode(text));
+          range.setStartAfter(range.endContainer);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        } else {
+          (doc.body || doc.documentElement).appendChild(doc.createTextNode(text));
+        }
+      }
+    } catch (_) {}
+  };
+  const enablePasteOnElement = (el) => {
+    if (!el || el.__xsPasteEnabled) return;
+    el.__xsPasteEnabled = true;
+    clearClipboardRestrictions(el);
+    try {
+      const onPaste = xsHandlePaste;
+      onPaste.__xsClipboardAllow = true;
+      el.addEventListener("paste", onPaste, true);
+    } catch (_) {}
+  };
+  const processUeditorsIn = (win) => {
+    try {
+      if (!win || !win.UE || !win.UE.instants) return;
+      Object.values(win.UE.instants).forEach((instance) => {
+        try {
+          if (!instance || typeof instance !== "object") return;
+          if (instance.options) {
+            instance.options.pasteplain = false;
+            instance.options.readonly = false;
+            instance.options.disabled = false;
+          }
+          if (instance.setEnabled && instance.body) instance.setEnabled(true);
+          if (instance.body) enablePasteOnElement(instance.body);
+          if (instance.iframe && instance.iframe.contentDocument) enablePasteOnElement(instance.iframe.contentDocument.body);
+        } catch (_) {}
+      });
+    } catch (_) {}
+  };
+  const startClipboardUnrestriction = (topDoc) => {
+    if (!xsClipboardEnabled()) return;
+    patchClipboardEventTarget(window);
+    clearClipboardRestrictions(topDoc.body || topDoc.documentElement);
+    injectClipboardStyles(topDoc);
+    const processAll = (doc) => {
+      try {
+        doc.querySelectorAll("input, textarea, [contenteditable], iframe").forEach((el) => {
+          clearClipboardRestrictions(el);
+          if (el.tagName === "IFRAME") {
+            try { patchClipboardEventTarget(el.contentWindow); } catch (_) {}
+            cleanupClipboardFrame(el);
+            try { processUeditorsIn(el.contentWindow); } catch (_) {}
+          }
+        });
+      } catch (_) {}
+    };
+    processAll(topDoc);
+    try {
+      new MutationObserver((mutations) => {
+        if (!xsClipboardEnabled()) return;
+        for (const mutation of mutations) {
+          if (mutation.type === "attributes") {
+            clearClipboardRestrictions(mutation.target);
+            continue;
+          }
+          for (const node of mutation.addedNodes) {
+            if (node.nodeType !== 1) continue;
+            const targets = [];
+            if (node.matches && node.matches("input, textarea, [contenteditable], iframe")) targets.push(node);
+            if (node.querySelectorAll) {
+              try { node.querySelectorAll("input, textarea, [contenteditable], iframe").forEach((el) => targets.push(el)); } catch (_) {}
+            }
+            targets.forEach((el) => {
+              clearClipboardRestrictions(el);
+              if (el.tagName === "IFRAME") {
+                try { patchClipboardEventTarget(el.contentWindow); } catch (_) {}
+                cleanupClipboardFrame(el);
+                try { processUeditorsIn(el.contentWindow); } catch (_) {}
+              }
+            });
+          }
+        }
+      }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["onpaste", "oncopy", "oncut", "oncontextmenu", "onselectstart", "ondragstart", "onkeydown", "readonly", "disabled"] });
+    } catch (_) {}
+    let ueditorAttempts = 0;
+    const ueditorTimer = setInterval(() => {
+      if (!xsClipboardEnabled()) { clearInterval(ueditorTimer); return; }
+      ueditorAttempts++;
+      processUeditorsIn(window);
+      topDoc.querySelectorAll("iframe").forEach((iframe) => {
+        try { processUeditorsIn(iframe.contentWindow); } catch (_) {}
+      });
+      if (ueditorAttempts >= 40) clearInterval(ueditorTimer);
+    }, 500);
+    document.addEventListener("keydown", (e) => {
+      if (!xsClipboardEnabled()) return;
+      if (e.ctrlKey || e.metaKey) {
+        const key = (e.key || "").toLowerCase();
+        if (["c", "v", "x", "a"].includes(key)) e.stopImmediatePropagation();
+      }
+    }, true);
+  };
   const url = _unsafeWindow.location.href;
   const isTopWindow = _unsafeWindow.self === _unsafeWindow.top;
   const ABC_LOADED_FLAG = Symbol.for("__xsLoaded");
@@ -21302,6 +21526,10 @@ const XS_EXT = (() => {
       }).observe(document.head, { childList: true });
     };
     Object.defineProperty(_unsafeWindow, ABC_LOADED_FLAG, { value: true, configurable: true, enumerable: false, writable: true });
+    // 解除复制限制：越早跑越好，抢在页面脚本注册拦截器之前
+    if (xsClipboardEnabled()) {
+      startClipboardUnrestriction(document);
+    }
     if (url.includes("zhihuishu.com") && isTopWindow) {
       if (url.includes("studyvideoh5.zhihuishu.com")) {
         hookError();
