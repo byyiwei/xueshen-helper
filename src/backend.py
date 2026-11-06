@@ -7807,8 +7807,8 @@ class Handler(BaseHTTPRequestHandler):
                 page = max(1, int(qs.get("page", ["1"])[0] or 1))
                 page_size = min(100, max(10, int(qs.get("page_size", ["50"])[0] or 50)))
                 if date_from or date_to:
-                    _dt.strptime(date_to or date_from, "%Y-%m-%d")
-                    _dt.strptime(date_from or date_to, "%Y-%m-%d")
+                    datetime.strptime(date_to or date_from, "%Y-%m-%d")
+                    datetime.strptime(date_from or date_to, "%Y-%m-%d")
                 total = db.count_answer_summaries(date_from=date_from + " 00:00:00" if date_from else "", date_to=date_to + " 23:59:59" if date_to else "")
                 rows = db.list_answer_summaries(
                     date_from=date_from + " 00:00:00" if date_from else "",
