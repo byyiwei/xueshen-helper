@@ -10741,9 +10741,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not req_id or status not in {"pending", "processing", "done", "rejected"}:
                     self._send_json(400, {"code": 400, "msg": "参数错误"})
                     return
-                ph = _ph()
                 db.execute(
-                    f"UPDATE adapt_requests SET status={ph}, admin_note={ph} WHERE id={ph}",
+                    "UPDATE adapt_requests SET status=%s, admin_note=%s WHERE id=%s",
                     (status, admin_note, req_id)
                 )
                 self._send_json(200, {"code": 200, "msg": "已更新"})
