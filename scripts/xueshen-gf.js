@@ -2922,8 +2922,20 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     }
     return false;
   };
+  // 模型看不见图/看不懂题时的兜底话术不是答案（如「图片内容无法识别，无法确定极限表达式」），
+  // 填进答题框会误导用户。短句（如选项「无法确定」）放行，只拦较长的解释性句子。
+  const _isRefusalAnswer = (text) => {
+    const s = String(text || "").trim();
+    if (!s || s.length <= 6) return false;
+    return /(无法识别|无法确定|无法判断|无法给出|无法作答|无法解答|识别不了|识别失败|看不清|看不出来|未能识别|不能识别|不能确定|请提供图片|请上传图片|请提供题目|无法获取图片|图片无法加载)/.test(s);
+  };
+  const _filterRefusalAnswers = (items) => {
+    if (!Array.isArray(items)) return items;
+    const kept = items.filter((x) => !_isRefusalAnswer(x));
+    return kept.length ? kept : items;
+  };
   const normalizeLocalBackendAnswers = (answer) => {
-    if (Array.isArray(answer)) return answer.map((x) => String(x).trim()).filter(Boolean);
+    if (Array.isArray(answer)) return _filterRefusalAnswers(answer.map((x) => String(x).trim()).filter(Boolean));
     const text = String(answer || "").replace(/。$/, "").trim();
     if (!text) return [];
     // 题库/模型偶尔给出 Python 字面量 "['北京', '上海']"，JSON.parse 不认单引号，先按字面量拆
@@ -2960,7 +2972,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       return text.toUpperCase().split(/[\s,，、;；|]+/).filter(Boolean);
     }
     // 文本答案不再按分隔符拆分（选项内容可能包含任何标点），保留完整字符串由 fillChoice 子串匹配
-    return [text];
+    return _filterRefusalAnswers([text]);
   };
   const getImgUrlKey = (url) => {
     const clean = String(url || "").split(/[?#]/)[0].replace(/\/+$/, "");

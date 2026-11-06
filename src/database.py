@@ -4915,7 +4915,7 @@ class Database:
         row = self.fetchone(sql, tuple(params))
         return int(row.get("total", 0) if row else 0)
 
-    def list_answer_summaries(self, date_from="", date_to="", username="", limit=3000):
+    def list_answer_summaries(self, date_from="", date_to="", username="", limit=3000, offset=0):
         """取「一卷一报」的答题小结原始行（event_type=answer_summary）。
 
         明细在 extra_json 里，MySQL 5.7 没有 JSON_TABLE，所以这里只限量取原文，
@@ -4923,6 +4923,10 @@ class Database:
         """
         ph = _ph()
         limit = min(max(int(limit or 3000), 1), 5000)
+        try:
+            offset = max(int(offset or 0), 0)
+        except (TypeError, ValueError):
+            offset = 0
         where = [f"s.event_type = {ph}"]
         params = ["answer_summary"]
         if username:
@@ -4937,8 +4941,9 @@ class Database:
         sql = ("SELECT s.username, s.page_url, s.extra_json, s.created_at, u.channel, u.channel_ref "
                "FROM script_event_logs s LEFT JOIN users u ON u.username = s.username")
         sql += " WHERE " + " AND ".join(where)
-        sql += f" ORDER BY s.created_at DESC, s.id DESC LIMIT {ph}"
+        sql += f" ORDER BY s.created_at DESC, s.id DESC LIMIT {ph} OFFSET {ph}"
         params.append(limit)
+        params.append(offset)
         return self.fetchall(sql, tuple(params))
 
     def update_admin_email(self, cfg):

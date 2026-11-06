@@ -3526,6 +3526,27 @@ def _is_garbage_bank_answer(answer, question=None):
     )
     if any(m in low or m in text for m in markers):
         return True
+    # 兜底话术模式匹配：模型看不见图/看不懂题时会输出「无法识别/无法确定/无法判断/请提供图片」
+    # 类半解释半作答的句子（如「图片内容无法识别，无法确定极限表达式」），这类话不是答案。
+    # 例外：若答案本身恰好是题目的某个选项（有的题选项就是「无法确定」），视为正常答案。
+    if len(text) <= 120:
+        refuse_patterns = (
+            r"无法识别", r"无法确定", r"无法判断", r"无法给出", r"无法作答", r"无法解答",
+            r"识别不了", r"识别失败", r"看不清", r"看不出来", r"无法查看",
+            r"请提供图片", r"请上传图片", r"请提供题目", r"请补充图片", r"图片未加载",
+            r"无法获取图片", r"图片缺失", r"未能识别", r"不能识别", r"不能确定",
+            r"cannot determine", r"unable to determine", r"unable to identify",
+            r"cannot identify", r"cannot recognize", r"unable to recognize",
+            r"please provide", r"cannot see", r"unable to see",
+        )
+        if re.search(r"|".join(refuse_patterns), text, re.I):
+            _opts = [str(o).strip() for o in extract_options_from_question(question) if str(o).strip()]
+            _hit_option = bool(_opts) and (
+                text in _opts
+                or (re.fullmatch(r"[A-Z](?:[\s、,，]+[A-Z])*", text.strip()) and _letters_to_option_answer(text, _opts))
+            )
+            if not _hit_option:
+                return True
     if len(text) > 400 and not (text.startswith("[") and text.endswith("]")):
         if re.search(r"therefore|分析过程|解题步骤|思考过程|final answer", text, re.I):
             return True
@@ -5755,7 +5776,19 @@ def get_admin_answer_stats(start_date=None, end_date=None):
             and now_ts - ANSWER_STATS_CACHE.get("time", 0) < DASHBOARD_CACHE_SECONDS):
         return ANSWER_STATS_CACHE["data"]
 
-    rows = db.list_answer_summaries(date_from=sd + " 00:00:00", date_to=ed + " 23:59:59")
+    # 分页取完整个区间的数据：一次最多 3000 行，超过就翻页，避免大范围查询把老数据截掉
+    rows = []
+    _offset = 0
+    while True:
+        _page = db.list_answer_summaries(date_from=sd + " 00:00:00", date_to=ed + " 23:59:59", limit=3000, offset=_offset)
+        if not _page:
+            break
+        rows.extend(_page)
+        if len(_page) < 3000:
+            break
+        _offset += 3000
+        if _offset > 500000:
+            break
     totals = {"sessions": 0, "questions": 0, "filled": 0, "bank": 0, "cache": 0, "ai": 0, "unknown": 0}
     by_day, by_platform, by_channel, blocked, blocked_codes, blocked_hashes = {}, {}, {}, {}, {}, {}
     recent = []
@@ -11646,7 +11679,13 @@ class Handler(BaseHTTPRequestHandler):
                     status = "success"
                     bad_answer = _is_truncated_multi_answer(question, answer) or _is_garbage_bank_answer(answer, question)
                     if bad_answer:
-                        print(f"[AI答案] 质量不合格，跳过缓存与入库 answer={str(answer)[:80]}", flush=True)
+                        # 兜底话术/截断答案不下发给脚本：发了用户就会把它填进答题框，
+                        # 返回 500 让脚本走「未查到答案」的正规兜底（不扣题数、不写缓存、不入库）
+                        print(f"[AI答案] 质量不合格，不下发 answer={str(answer)[:80]}", flush=True)
+                        err = "AI 未能给出有效答案，请稍后重试或手动作答"
+                        status = "bad_answer"
+                        self._send_json(500, {"code": 500, "msg": err})
+                        return
                     else:
                         set_ai_cache(cache_key, answer, resolved_model, provider_name)
                         # 自有模型产生的答案不写入共享题库，避免影响其它用户
@@ -11654,9 +11693,6 @@ class Handler(BaseHTTPRequestHandler):
                             save_question_bank_answer(question, answer, resolved_model, provider_name)
                     if use_custom:
                         quota_msg = "自有模型已作答，本次未消耗题数"
-                    elif bad_answer:
-                        # 自己判定不可用的答案不扣题数：同一题重试不该二次付费
-                        quota_msg = "答案质量未达标，本次未消耗题数"
                     else:
                         ok_quota, quota_msg, ent_after = consume_answer_quota(user["username"], question_hash, question_key)
                         if not ok_quota:
