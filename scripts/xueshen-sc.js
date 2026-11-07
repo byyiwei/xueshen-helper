@@ -19710,55 +19710,53 @@ const XS_EXT = (() => {
       const contentMap = [
         {
           key: "0",
-          tab: "◉ 首页",
+          tab: "首页",
           component: ScriptHome
         },
         {
-          key: "1",
-          tab: "▤ 日志",
-          component: _sfc_main$9
-        },
-        {
-          key: "record",
-          tab: "▣ 记录",
-          component: _sfc_main$3
-        },
-        ...(currentPlatform?.queueAdapter ? [{
-          key: "queue",
-          tab: "◫ 队列",
-          component: CourseQueuePanel
-        }] : []),
-
-        {
           key: "2",
-          tab: "◈ 答题",
-          // 新平台用通用答题面板（抓题 + 填答案），旧平台仍用原来的题目列表；
-          // 智慧树在原来答题页里加一个「掌握度满分」切换，不再单独占页签
+          tab: "答题",
           component: currentPlatform?.watchSite
             ? xsQuiz.Panel
             : currentPlatform?.key === "zhs"
               ? ZhiHuiShuAnswerPanel
               : _sfc_main$7
         },
+        ...(currentPlatform?.queueAdapter ? [{
+          key: "queue",
+          tab: "队列",
+          component: CourseQueuePanel
+        }] : []),
+
         {
           key: "3",
-          tab: "◎ 搜题",
+          tab: "搜题",
           component: _sfc_main$5
         },
         {
-          key: "buy",
-          tab: "¥ 购买",
-          component: BuyPanel
-        },
-        {
           key: settingTabKey,
-          tab: "◆ 设置",
+          tab: "设置",
           component: _sfc_main$6
         },
         {
+          key: "buy",
+          tab: "购买",
+          component: BuyPanel
+        },
+        {
+          key: "record",
+          tab: "记录",
+          component: _sfc_main$3
+        },
+        {
           key: "feedback",
-          tab: "◇ 反馈",
+          tab: "反馈",
           component: FeedbackPanel
+        },
+        {
+          key: "1",
+          tab: "日志",
+          component: _sfc_main$9
         }
       ];
       const availableKeys = contentMap.map((item) => item.key);
@@ -20636,18 +20634,24 @@ const XS_EXT = (() => {
     ".xs-buy-body{padding:12px 10px;display:flex;flex-direction:column;gap:14px}",
     ".xs-buy-group-title{font-size:11px;font-weight:700;color:var(--t-text3);letter-spacing:.5px;margin-bottom:8px}",
     ".xs-buy-grid{display:flex;flex-direction:column;gap:10px}",
-    ".xs-buy-card{border:1px solid var(--t-border);background:var(--t-surface);border-radius:12px;padding:13px 14px;box-shadow:0 1px 3px var(--t-shadow)}",
+    ".xs-buy-card{position:relative;border:1px solid var(--t-border);background:var(--t-surface);border-radius:12px;padding:13px 14px;box-shadow:0 1px 3px var(--t-shadow);transition:border-color .16s ease,box-shadow .16s ease}",
+    ".xs-buy-card:hover{border-color:var(--t-primary-border);box-shadow:0 3px 10px var(--t-shadow)}",
+    ".xs-buy-card.hot{border-color:var(--t-primary-border)}",
+    ".xs-buy-hot-tag{position:absolute;top:-1px;right:-1px;font-size:10px;line-height:20px;padding:0 10px;border-radius:0 12px 0 10px;background:var(--t-primary);color:#fff;font-weight:600;letter-spacing:1px}",
     ".xs-buy-top{display:flex;align-items:center;gap:8px}",
     ".xs-buy-name{flex:1;min-width:0;font-size:13.5px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
     ".xs-buy-badge{flex:none;font-size:10.5px;line-height:18px;padding:0 8px;border-radius:999px;background:var(--t-surface2);color:var(--t-text2);font-weight:600}",
     ".xs-buy-badge.hot{background:var(--t-primary-bg);color:var(--t-primary)}",
     ".xs-buy-price{display:flex;align-items:baseline;gap:2px;margin-top:7px}",
-    ".xs-buy-amount{font-size:21px;font-weight:800;color:var(--t-text);letter-spacing:-.3px}",
+    ".xs-buy-cny{font-size:13px;font-weight:700;color:var(--t-text2)}",
+    ".xs-buy-amount{font-size:22px;font-weight:800;color:var(--t-text);letter-spacing:-.3px}",
     ".xs-buy-unit{font-size:11px;color:var(--t-text3)}",
     ".xs-buy-unit-price{margin-top:2px;font-size:11px;color:var(--t-warning)}",
-    ".xs-buy-feature{margin-top:7px;font-size:11.5px;color:var(--t-text2);line-height:1.6}",
-    ".xs-buy-btn{margin-top:11px;width:100%;height:32px;border:none;border-radius:8px;background:var(--t-primary);color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .16s ease}",
-    ".xs-buy-btn:hover{background:var(--t-primary-2)}",
+    ".xs-buy-feats{list-style:none;padding:0;margin:9px 0 0;display:flex;flex-direction:column;gap:4px}",
+    ".xs-buy-feats li{font-size:11.5px;color:var(--t-text2);line-height:1.5;padding-left:15px;position:relative}",
+    ".xs-buy-feats li::before{content:\"\";position:absolute;left:2px;top:7px;width:5px;height:5px;border-radius:50%;background:var(--t-primary)}",
+    ".xs-buy-btn{margin-top:12px;width:100%;height:32px;border:none;border-radius:8px;background:linear-gradient(135deg,var(--t-primary),var(--t-primary-2));color:#fff;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .16s ease;box-shadow:0 2px 6px var(--t-shadow)}",
+    ".xs-buy-btn:hover{filter:brightness(1.06)}",
     ".xs-buy-btn:active{transform:scale(.98)}",
     ".xs-buy-err{margin:10px 12px 0;font-size:12px;color:var(--t-danger);background:var(--t-surface);border:1px solid var(--t-border);border-radius:8px;padding:8px 10px}",
     ".xs-buy-empty{padding:36px 16px;text-align:center;color:var(--t-text3);font-size:12px}",
@@ -20695,17 +20699,22 @@ const XS_EXT = (() => {
         const unit = isMonthly
           ? (price > 0 && days > 0 ? "约 ¥" + (price / days).toFixed(2) + "/天" : "")
           : (price > 0 && pts > 0 ? "约 ¥" + (price / pts).toFixed(3) + "/题" : "");
-        return vue.h("div", { class: "xs-buy-card", key: p.id }, [
+        const feats = isMonthly
+          ? ["包月 " + days + " 天 · 有效期内不限题数畅刷", "AI 智能答题 + 海量题库", "购买后实时到账，立即使用"]
+          : [pts + " 题 · 永久有效，用完为止", "AI 智能答题 + 海量题库", "购买后实时到账，立即使用"];
+        return vue.h("div", { class: "xs-buy-card" + (isMonthly ? " hot" : ""), key: p.id }, [
+          isMonthly ? vue.h("span", { class: "xs-buy-hot-tag" }, "推荐") : null,
           vue.h("div", { class: "xs-buy-top" }, [
             vue.h("span", { class: "xs-buy-name" }, p.name),
             vue.h("span", { class: "xs-buy-badge" + (isMonthly ? " hot" : "") }, isMonthly ? "包月畅答" : "题数加油包")
           ]),
           vue.h("div", { class: "xs-buy-price" }, [
-            vue.h("span", { class: "xs-buy-amount" }, "¥" + priceText),
+            vue.h("span", { class: "xs-buy-cny" }, "¥"),
+            vue.h("span", { class: "xs-buy-amount" }, priceText),
             vue.h("span", { class: "xs-buy-unit" }, " / " + (isMonthly ? days + " 天" : pts + " 题"))
           ]),
           unit ? vue.h("div", { class: "xs-buy-unit-price" }, unit) : null,
-          vue.h("div", { class: "xs-buy-feature" }, isMonthly ? "包月 " + days + " 天 · 有效期内不限题数畅刷" : pts + " 题 · 永久有效，用完为止"),
+          vue.h("ul", { class: "xs-buy-feats" }, feats.map((f) => vue.h("li", null, f))),
           vue.h("button", { class: "xs-buy-btn", onClick: goBuy }, isMonthly ? "立即开通包月" : "立即购买题数")
         ]);
       };
