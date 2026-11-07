@@ -1596,8 +1596,51 @@
   const __noShop = !!(__DIST.code && !__DIST.shop);  // FX-CH:no-shop-guard
   const __noShopTip = "该渠道未开通在线购买，续费请向渠道索取卡密，在「账号」面板输入卡密激活";
   const __billHref = __DIST.shop || (__noShop ? "" : "https://xs.openget.cn/user?section=billing");  // FX-CH:no-shop-billing
-  const localBackendJson = (url, data, token) => {
-    return new Promise((resolve) => {
+  // 网络层的失败统一兜底：GET 抖动时自动重试一次，仍失败就在页面底部挂一条提示，
+  // 网络恢复后自动消失。POST 不自动重试，避免重复提交。
+  let xsNetBanner = null;
+  let xsNetBannerText = "";
+  const xsNetHide = () => {
+    if (xsNetBanner) {
+      try {
+        xsNetBanner.remove();
+      } catch (_) {}
+      xsNetBanner = null;
+      xsNetBannerText = "";
+    }
+  };
+  const xsNetShow = (text, onRetry) => {
+    if (!document.body) return;
+    if (xsNetBanner && xsNetBannerText === text) return;
+    xsNetHide();
+    const box = document.createElement("div");
+    box.setAttribute("data-xs-net", "1");
+    box.style.cssText = "position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:2147483646;display:flex;align-items:center;gap:10px;max-width:calc(100vw - 32px);padding:10px 12px 10px 14px;border-radius:10px;background:#111827;color:#f8fafc;font:13px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;box-shadow:0 10px 30px rgba(15,23,42,.35);border:1px solid rgba(255,255,255,.08)";
+    const label = document.createElement("span");
+    label.textContent = text;
+    box.appendChild(label);
+    if (onRetry) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = "重试";
+      btn.style.cssText = "flex:none;border:0;border-radius:7px;padding:4px 12px;background:#2563eb;color:#fff;font-size:12px;font-family:inherit;line-height:1.6;cursor:pointer";
+      btn.onclick = onRetry;
+      box.appendChild(btn);
+    }
+    const close = document.createElement("button");
+    close.type = "button";
+    close.textContent = "×";
+    close.setAttribute("aria-label", "关闭");
+    close.style.cssText = "flex:none;border:0;background:transparent;color:#94a3b8;font-size:16px;line-height:1;cursor:pointer;padding:0 2px";
+    close.onclick = xsNetHide;
+    box.appendChild(close);
+    document.body.appendChild(box);
+    xsNetBanner = box;
+    xsNetBannerText = text;
+  };
+  const localBackendJson = (url, data, token, options) => {
+    const silent = !!(options && options.silent);
+    const send = () => new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         url,
         method: data ? "POST" : "GET",
@@ -1606,18 +1649,43 @@
           ...token ? { "Authorization": "Bearer " + token } : {}
         },
         data: data ? JSON.stringify(data) : void 0,
-        timeout: 2e4,
-        onload: (response) => {
-          try {
-            resolve(JSON.parse(response.responseText || "{}"));
-          } catch (_) {
-            resolve({ code: 500, msg: "本地后端响应解析失败" });
-          }
-        },
-        onerror: () => resolve({ code: 500, msg: "无法连接本地后端" }),
-        ontimeout: () => resolve({ code: 500, msg: "本地后端请求超时" })
+        timeout: 15e3,
+        onload: (response) => resolve(response),
+        onerror: () => reject(new Error("network")),
+        ontimeout: () => reject(new Error("timeout"))
       });
     });
+    const parse = (response) => {
+      try {
+        return JSON.parse(response.responseText || "{}");
+      } catch (_) {
+        return { code: 500, msg: "服务器返回内容异常，请稍后重试" };
+      }
+    };
+    return send()
+      .then((response) => {
+        xsNetHide();
+        return parse(response);
+      })
+      .catch(() => {
+        if (data) throw new Error("network");
+        if (!silent) xsNetShow("网络有点慢，正在重试…", null);
+        return send()
+          .then((response) => {
+            xsNetHide();
+            return parse(response);
+          })
+          .catch(() => {
+            if (!silent) {
+              xsNetShow("暂时连不上服务器，请检查网络", () => {
+                localBackendJson("https://xs.openget.cn/api/config", null, token, { silent: true }).then((res) => {
+                  if (res && res.code !== 500) xsNetHide();
+                });
+              });
+            }
+            return { code: 500, msg: "暂时连不上服务器，请检查网络后重试" };
+          });
+      });
   };
   const sha256Text = async (text) => {
     const encoder = new TextEncoder();
@@ -2260,7 +2328,7 @@
             (vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(ads.value, (a, i) => {
               return vue.createElementVNode("a", {
                 key: a.id,
-                href: a.link_url || "javascript:;",
+                href: a.link_url ? "https://xs.openget.cn/api/ads/click?id=" + encodeURIComponent(a.id) : "javascript:;",
                 target: "_blank",
                 rel: "noopener",
                 onClick: a.link_url ? void 0 : ($event) => $event.preventDefault(),

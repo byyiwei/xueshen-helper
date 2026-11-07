@@ -7263,6 +7263,29 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        elif path == "/api/ads/click":
+            # 广告点击计数：记一笔后 302 跳到目标页。
+            # 只存 IP 的哈希用于短时间去重，不落原始 IP，也不关联任何账号。
+            try:
+                ad_id = int((parse_qs(parsed.query).get("id") or ["0"])[0] or 0)
+            except Exception:
+                ad_id = 0
+            link = "https://xs.openget.cn/"
+            if ad_id > 0:
+                try:
+                    client_ip = self._client_ip() or ""
+                    ip_hash = hashlib.md5(client_ip.encode("utf-8")).hexdigest() if client_ip else ""
+                    ok, target = db.record_ad_click(ad_id, ip_hash)
+                    if ok and target:
+                        link = target
+                except Exception as e:
+                    print(f"[广告点击] 记录失败: {e}", flush=True)
+            self.send_response(302)
+            self.send_header("Location", link)
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            return
+
         elif path == "/api/ads":
             # 面板广告位：公开接口，只返回上架中的广告，按排序输出
             try:
@@ -8232,7 +8255,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
             try:
-                self._send_json(200, {"code": 200, "ads": db.list_ads(False)})
+                self._send_json(200, {"code": 200, "ads": db.list_ads(False, with_stats=True)})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 

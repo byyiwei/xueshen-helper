@@ -908,6 +908,18 @@ class Database:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
 
+        # ===== 广告点击记录 =====
+        # 只存 IP 的哈希用于去重，不存原始 IP，也不存用户标识。
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS ad_clicks (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                ad_id INT NOT NULL,
+                ip_hash CHAR(32) DEFAULT '' COMMENT '来源 IP 的哈希，用于短时间重复去重',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_ad_clicks_ad (ad_id, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
         # ===== 用户收款信息 =====
         self.execute("""
             CREATE TABLE IF NOT EXISTS user_payment_info (
@@ -4619,13 +4631,87 @@ class Database:
         return rows, total
 
     # ===== 广告位管理 =====
-    def list_ads(self, only_enabled=False):
+    def list_ads(self, only_enabled=False, with_stats=False):
         where = "WHERE enabled = 1" if only_enabled else ""
         rows = self.fetchall(f"SELECT * FROM ads {where} ORDER BY sort_order ASC, id ASC") or []
         for row in rows:
             row["enabled"] = bool(row.get("enabled"))
             row["sort_order"] = int(row.get("sort_order") or 0)
+        if with_stats and rows:
+            stats = self.ad_click_stats()
+            for row in rows:
+                s = stats.get(int(row.get("id") or 0)) or {}
+                row["clicks_total"] = int(s.get("total") or 0)
+                row["clicks_today"] = int(s.get("today") or 0)
+                row["clicks_week"] = int(s.get("week") or 0)
         return rows
+
+    def record_ad_click(self, ad_id, ip_hash="", dedupe_sec=600):
+        """记录一次广告点击，返回 (是否有效广告, 跳转地址)。
+
+        同一个 IP 对同一张广告 dedupe_sec 秒内只计一次，避免刷新页面把数字刷上去。
+        """
+        ph = _ph()
+        ad_id = int(ad_id)
+        conn = self._new_mysql_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(f"SELECT link_url FROM ads WHERE id={ph}", (ad_id,))
+            row = cursor.fetchone()
+            if not row:
+                return False, ""
+            link = str(row.get("link_url") or "")
+            if ip_hash:
+                cursor.execute(
+                    f"SELECT id FROM ad_clicks WHERE ad_id={ph} AND ip_hash={ph} "
+                    f"AND created_at > DATE_SUB(NOW(), INTERVAL {int(dedupe_sec)} SECOND) LIMIT 1",
+                    (ad_id, ip_hash),
+                )
+                if cursor.fetchone():
+                    return True, link
+            cursor.execute(
+                f"INSERT INTO ad_clicks (ad_id, ip_hash) VALUES ({ph},{ph})",
+                (ad_id, ip_hash or ""),
+            )
+            conn.commit()
+            return True, link
+        finally:
+            conn.close()
+
+    def ad_click_stats(self):
+        """按广告汇总点击：累计 / 今日 / 近 7 天。返回 {ad_id: {...}}。"""
+        rows = self.fetchall(
+            """
+            SELECT ad_id,
+                   COUNT(*) AS total,
+                   SUM(created_at >= CURDATE()) AS today,
+                   SUM(created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)) AS week
+            FROM ad_clicks
+            GROUP BY ad_id
+            """
+        ) or []
+        out = {}
+        for row in rows:
+            out[int(row.get("ad_id") or 0)] = {
+                "total": int(row.get("total") or 0),
+                "today": int(row.get("today") or 0),
+                "week": int(row.get("week") or 0),
+            }
+        return out
+
+    def ad_click_daily(self, ad_id, days=14):
+        """单张广告最近 N 天的每日点击数，后台看趋势用。"""
+        ph = _ph()
+        rows = self.fetchall(
+            f"""
+            SELECT DATE(created_at) AS d, COUNT(*) AS c
+            FROM ad_clicks
+            WHERE ad_id={ph} AND created_at >= DATE_SUB(CURDATE(), INTERVAL {int(days) - 1} DAY)
+            GROUP BY DATE(created_at)
+            """,
+            (int(ad_id),),
+        ) or []
+        return [{"date": str(r.get("d")), "count": int(r.get("c") or 0)} for r in rows]
 
     def create_ad(self, data):
         ph = _ph()
