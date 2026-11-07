@@ -1,0 +1,12 @@
+{
+  "xueshen-sc": {
+    "version": "6.0.12",
+    "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
+    "changelog": "v6.0.12 图片题全面走AI更准；AI兜底话术不再当答案填入；反馈中心界面重做"
+  },
+  "xueshen-gf": {
+    "version": "6.0.12",
+    "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
+    "changelog": "v6.0.12 图片题全面走AI更准；AI兜底话术不再当答案填入；反馈中心界面重做"
+  }
+}
