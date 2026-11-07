@@ -6343,7 +6343,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                   <div v-else style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--text3)">
                     <svg class="ui-icon md"><use href="#i-image"></use></svg>
                     <span style="font-size:12.5px">点击选择图片上传</span>
-                    <span style="font-size:11px;color:var(--text3)">建议尺寸 840×260，宽高比约 3.2:1，PNG/JPG，5MB 内</span>
+                    <span style="font-size:11px;color:var(--text3)">建议 840×260（3.2:1），上传后自动压缩并托管到图床，原图多大都行</span>
                   </div>
                   <div v-if="adsUploading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);color:#fff;font-size:13px">上传中...</div>
                 </div>
@@ -8609,21 +8609,64 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       const input=document.getElementById('adImageInput');
       if(input){input.value='';input.click();}
     }
+    // 广告图上传前先压缩：面板里实际只需 840 宽，留 2 倍图 1680 足够；
+    // 原样传 4MB 的 PNG 会让脚本每次开面板都拉几 MB，这就是「图片加载慢」的根子。
+    async function compressAdImage(file){
+      const MAX_W=1680;
+      let src;
+      try{
+        src=await new Promise((resolve,reject)=>{
+          const u=URL.createObjectURL(file);
+          const img=new Image();
+          img.onload=()=>{URL.revokeObjectURL(u);resolve(img);};
+          img.onerror=()=>{URL.revokeObjectURL(u);reject(new Error('图片读取失败'));};
+          img.src=u;
+        });
+      }catch(_){ return null; }
+      const w0=src.naturalWidth||src.width, h0=src.naturalHeight||src.height;
+      if(!w0||!h0) return null;
+      const scale=Math.min(1,MAX_W/w0);
+      // 本来就不大、又没超宽：原样传，别为了压缩掉画质
+      if(scale===1&&file.size<=600*1024) return null;
+      const w=Math.max(1,Math.round(w0*scale)), h=Math.max(1,Math.round(h0*scale));
+      const cv=document.createElement('canvas');
+      cv.width=w; cv.height=h;
+      cv.getContext('2d').drawImage(src,0,0,w,h);
+      let out=cv.toDataURL('image/webp',0.9);
+      if(!out.startsWith('data:image/webp')){
+        // 浏览器不支持 WebP 时退到 JPEG：透明底会变黑，先铺一层深色再叠图，和面板底色一致
+        const cv2=document.createElement('canvas');
+        cv2.width=w; cv2.height=h;
+        const c2=cv2.getContext('2d');
+        c2.fillStyle='#111827';
+        c2.fillRect(0,0,w,h);
+        c2.drawImage(src,0,0,w,h);
+        out=cv2.toDataURL('image/jpeg',0.9);
+      }
+      return out;
+    }
     async function onAdFileChange(e){
       const file=(e.target.files||[])[0];
       if(!file)return;
-      if(file.size>5*1024*1024){showMsg('图片不能超过 5MB','error');return;}
+      if(file.size>20*1024*1024){showMsg('图片不能超过 20MB','error');return;}
       adsUploading.value=true;
       try{
-        const dataUrl=await new Promise((resolve,reject)=>{
-          const reader=new FileReader();
-          reader.onload=()=>resolve(reader.result);
-          reader.onerror=()=>reject(new Error('读取失败'));
-          reader.readAsDataURL(file);
-        });
+        let dataUrl=await compressAdImage(file);
+        if(!dataUrl){
+          dataUrl=await new Promise((resolve,reject)=>{
+            const reader=new FileReader();
+            reader.onload=()=>resolve(reader.result);
+            reader.onerror=()=>reject(new Error('读取失败'));
+            reader.readAsDataURL(file);
+          });
+        }
         const res=await fetch('/admin/ads/upload',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({data:dataUrl})});
         const d=await res.json();
-        if(d.code===200&&d.url){adsEdit.value.image_url=d.url;showMsg('图片已上传','success');}
+        if(d.code===200&&d.url){
+          adsEdit.value.image_url=d.url;
+          const kb=Math.round(dataUrl.length*0.75/1024);
+          showMsg('图片已上传（'+kb+'KB）','success');
+        }
         else showMsg(d.msg||'上传失败','error');
       }catch(_){showMsg('上传失败，请稍后重试','error');}
       adsUploading.value=false;

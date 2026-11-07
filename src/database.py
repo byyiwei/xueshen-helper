@@ -4643,15 +4643,27 @@ class Database:
             conn.close()
 
     def update_ad(self, ad_id, data):
+        """按传入字段部分更新：只给 image_url 时不该把标题、链接一起清空。"""
         ph = _ph()
+        fields = []
+        params = []
+        for key in ("title", "image_url", "link_url"):
+            if key in data:
+                fields.append(f"{key}={ph}")
+                params.append(str(data.get(key) or "").strip()[:500])
+        if "sort_order" in data:
+            fields.append(f"sort_order={ph}")
+            params.append(int(data.get("sort_order") or 0))
+        if "enabled" in data:
+            fields.append(f"enabled={ph}")
+            params.append(1 if data.get("enabled") else 0)
+        if not fields:
+            return 0
+        params.append(int(ad_id))
         conn = self._new_mysql_conn()
         try:
             cursor = conn.cursor()
-            cursor.execute(
-                f"UPDATE ads SET title={ph}, image_url={ph}, link_url={ph}, sort_order={ph}, enabled={ph} WHERE id={ph}",
-                (data.get("title", ""), data.get("image_url", ""), data.get("link_url", ""),
-                 int(data.get("sort_order") or 0), 1 if data.get("enabled", True) else 0, int(ad_id))
-            )
+            cursor.execute("UPDATE ads SET " + ", ".join(fields) + f" WHERE id={ph}", tuple(params))
             conn.commit()
             return cursor.rowcount
         finally:

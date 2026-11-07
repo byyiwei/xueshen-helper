@@ -815,6 +815,64 @@ def _hub_post_json(target, payload_obj, timeout=15):
         return False, "无法连接中控：" + str(e), 0
 
 
+HUB_MEDIA_SIGN_TARGET = "/open/media/sign-upload"
+HUB_MEDIA_COMPLETE_TARGET = "/open/media/complete"
+HUB_MEDIA_MAX_BYTES = 10 * 1024 * 1024   # 中控桶单对象上限 1GB，这里按面板广告图的实际用途收紧
+
+
+def _hub_media_upload(raw, mime="image/png", filename=""):
+    """把图片字节经中控签名直传到 COS，返回 (ok, public_url_or_err)。
+
+    中控只签发不碰字节：sign-upload 锁死 key + content-type + content-length，
+    拿到 uploadUrl 后由本服务直接 PUT，再 complete 让中控 HEAD 对账，最后回公共桶的 CDN 地址。
+    """
+    if not raw:
+        return False, "图片内容为空"
+    if len(raw) > HUB_MEDIA_MAX_BYTES:
+        return False, "图片不能超过 %dMB" % (HUB_MEDIA_MAX_BYTES // 1024 // 1024)
+    ok, data, status = _hub_post_json(HUB_MEDIA_SIGN_TARGET, {
+        "mime": mime,
+        "size": len(raw),
+        "filename": (filename or "image").strip()[:200],
+    }, timeout=20)
+    if not ok:
+        if status == 403:
+            return False, "中控未给该应用开启「存储」能力，请到中控应用详情的能力开关里打开"
+        return False, data if isinstance(data, str) else "中控签发失败（HTTP %s）" % status
+    if not isinstance(data, dict) or not data.get("objectId"):
+        return False, "中控签发返回内容异常"
+    object_id = int(data["objectId"])
+    if not data.get("exists"):
+        upload_url = str(data.get("uploadUrl") or "")
+        if not upload_url:
+            return False, "中控未返回上传地址"
+        # 签名把 content-type / content-length 算进去了，这两个头必须原样带上
+        headers = {str(k): str(v) for k, v in (data.get("headers") or {}).items()}
+        req = urllib.request.Request(upload_url, data=raw, headers=headers, method="PUT")
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                resp.read()
+        except urllib.error.HTTPError as e:
+            try:
+                detail = e.read().decode("utf-8", "replace")[:200]
+            except Exception:
+                detail = ""
+            return False, "上传云存储失败（HTTP %s）%s" % (e.code, ("：" + detail) if detail else "")
+        except Exception as e:
+            return False, "上传云存储失败：" + str(e)
+    ok2, obj, _ = _hub_post_json(HUB_MEDIA_COMPLETE_TARGET, {"objectId": object_id}, timeout=20)
+    if not ok2:
+        return False, obj if isinstance(obj, str) else "中控确认上传失败"
+    url = ""
+    if isinstance(obj, dict):
+        inner = obj.get("object")
+        if isinstance(inner, dict):
+            url = str(inner.get("url") or "")
+    if not url:
+        return False, "中控未返回图片地址（该桶可能不是公共读）"
+    return True, url
+
+
 def _hub_classify_mail_err(text):
     """按 err 区分可恢复性：'too' 命中 oversized/too large 等内容过大类永久错误。"""
     t = str(text or "").lower()
@@ -10827,7 +10885,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
         elif path == "/admin/ads/upload":
-            # 广告图上传：base64 dataURL，落盘到站点 uploads 目录，Nginx 直接服务
+            # 广告图上传：base64 dataURL → 中控签名直传 COS，返回 img.openget.cn 的 CDN 地址
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
@@ -10839,8 +10897,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(400, {"code": 400, "msg": "请上传 PNG/JPG/GIF/WebP 图片"})
                     return
                 ext = m.group(1).lower()
-                if ext == "jpeg":
-                    ext = "jpg"
+                mime = "image/jpeg" if ext in ("jpg", "jpeg") else "image/" + ext
                 try:
                     img_bytes = base64.b64decode(m.group(2), validate=True)
                 except Exception:
@@ -10849,17 +10906,12 @@ class Handler(BaseHTTPRequestHandler):
                 if len(img_bytes) > 5 * 1024 * 1024:
                     self._send_json(400, {"code": 400, "msg": "图片不能超过 5MB"})
                     return
-                upload_dir = os.environ.get("XS_UPLOAD_DIR") or os.path.join(
-                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "uploads")
-                try:
-                    os.makedirs(upload_dir, exist_ok=True)
-                except Exception as e:
-                    self._send_json(500, {"code": 500, "msg": "创建上传目录失败：" + str(e)})
+                ok, out = _hub_media_upload(img_bytes, mime=mime,
+                                            filename="ad_%d.%s" % (int(time.time()), ext))
+                if not ok:
+                    self._send_json(502, {"code": 502, "msg": out})
                     return
-                fname = "ad_%d_%s.%s" % (int(time.time()), secrets.token_hex(4), ext)
-                with open(os.path.join(upload_dir, fname), "wb") as f:
-                    f.write(img_bytes)
-                self._send_json(200, {"code": 200, "url": "https://xs.openget.cn/uploads/" + fname})
+                self._send_json(200, {"code": 200, "url": out})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 

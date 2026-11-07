@@ -2212,19 +2212,34 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       const ads = vue.ref([]);
       const adIndex = vue.ref(0);
       let adTimer = null;
+      // 每 5 秒换一张；点了指示点重新计时，免得刚点完就被定时器带走
+      const restartAdTimer = (n) => {
+        if (adTimer) { clearInterval(adTimer); adTimer = null; }
+        if (n > 1) {
+          adTimer = setInterval(() => { adIndex.value = (adIndex.value + 1) % n; }, 5000);
+        }
+      };
       vue.onMounted(async () => {
+        let list = [];
         try {
           const res = await localBackendJson("https://xs.openget.cn/api/ads");
           if (res && res.code === 200 && Array.isArray(res.ads)) {
-            ads.value = res.ads.filter((a) => a && a.image_url);
+            list = res.ads.filter((a) => a && a.image_url);
+            ads.value = list;
           }
         } catch (_) {}
-      });
-      vue.watch(() => ads.value.length, (n) => {
-        if (adTimer) { clearInterval(adTimer); adTimer = null; }
-        if (n > 1) {
-          adTimer = setInterval(() => { adIndex.value = (adIndex.value + 1) % n; }, 6000);
-        }
+        if (list.length < 2) return;
+        // 先把每张图预热进浏览器缓存再开轮播：否则切到第 2 张时它还没下完，看上去就是「不轮播」。
+        // 4 秒兜底——图特别大时也不能让轮播一直不启动。
+        const warm = list.map((a) => new Promise((done) => {
+          const img = new Image();
+          img.onload = img.onerror = () => done();
+          img.src = a.image_url;
+        }));
+        Promise.race([
+          Promise.all(warm),
+          new Promise((done) => setTimeout(done, 4000))
+        ]).then(() => restartAdTimer(ads.value.length));
       });
       vue.onUnmounted(() => { if (adTimer) clearInterval(adTimer); });
       return (_ctx, _cache) => {
@@ -2252,8 +2267,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 onClick: a.link_url ? void 0 : ($event) => $event.preventDefault(),
                 style: { "position": "absolute", "inset": "0", "display": "block", "opacity": i === adIndex.value ? "1" : "0", "transition": "opacity .45s ease" }
               }, [
-                vue.createElementVNode("img", { src: a.image_url, alt: "", style: { "width": "100%", "height": "100%", "object-fit": "cover", "display": "block" } })
-              ], 8, ["href", "onClick"]);
+                vue.createElementVNode("img", { src: a.image_url, alt: "", decoding: "async", draggable: "false", style: { "width": "100%", "height": "100%", "object-fit": "cover", "display": "block" } })
+              ], 8, ["href", "onClick", "style"]);
             }), 128)),
             ads.value.length > 1 ? (vue.openBlock(), vue.createElementBlock("div", {
               key: "ad-dots",
@@ -2262,9 +2277,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               (vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(ads.value, (a, i) => {
                 return vue.createElementVNode("span", {
                   key: "dot-" + a.id,
-                  onClick: ($event) => adIndex.value = i,
+                  onClick: ($event) => { adIndex.value = i; restartAdTimer(ads.value.length); },
                   style: { "width": i === adIndex.value ? "14px" : "5px", "height": "5px", "border-radius": "3px", "background": i === adIndex.value ? "#fff" : "rgba(255,255,255,.55)", "transition": "all .3s", "cursor": "pointer", "box-shadow": "0 1px 3px rgba(0,0,0,.35)" }
-                }, null, 8, ["onClick"]);
+                }, null, 8, ["onClick", "style"]);
               }), 128))
             ])) : vue.createCommentVNode("", true)
           ])) : vue.createCommentVNode("", true),
@@ -20633,7 +20648,11 @@ const XS_EXT = (() => {
     ".xs-buy-refresh{height:25px;padding:0 11px;border-radius:7px;border:1px solid var(--t-border);background:var(--t-surface);color:var(--t-text2);font-size:11.5px;cursor:pointer;font-family:inherit}",
     ".xs-buy-refresh:hover{border-color:var(--t-primary-border);color:var(--t-primary)}",
     ".xs-buy-refresh:disabled{opacity:.5;cursor:default}",
-    ".xs-buy-body{padding:12px 10px;display:flex;flex-direction:column;gap:14px}",
+    ".xs-buy-body{padding:12px 10px;display:flex;flex-direction:column;gap:12px}",
+    ".xs-buy-tabs{display:flex;gap:5px;padding:9px 10px 0}",
+    ".xs-buy-tab{flex:1;height:30px;border-radius:8px;border:1px solid var(--t-border);background:var(--t-surface);color:var(--t-text2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s ease}",
+    ".xs-buy-tab:hover{color:var(--t-text)}",
+    ".xs-buy-tab.active{background:var(--t-primary-bg);border-color:var(--t-primary-border);color:var(--t-primary)}",
     ".xs-buy-group-title{font-size:11px;font-weight:700;color:var(--t-text3);letter-spacing:.5px;margin-bottom:8px}",
     ".xs-buy-grid{display:flex;flex-direction:column;gap:10px}",
     ".xs-buy-card{position:relative;border:1px solid var(--t-border);background:var(--t-surface);border-radius:12px;padding:13px 14px;box-shadow:0 1px 3px var(--t-shadow);transition:border-color .16s ease,box-shadow .16s ease}",
@@ -20675,6 +20694,8 @@ const XS_EXT = (() => {
           const res = await localBackendJson("https://xs.openget.cn/api/payment/plans");
           if (res && res.code === 200 && Array.isArray(res.plans)) {
             plans.value = res.plans.filter((p) => p && p.name);
+            // 包月没有、题数有时，直接打开题数页签，别让人对着一个空页签
+            if (!monthlyPlans.value.length && pointsPlans.value.length) activeTab.value = "points";
           } else {
             err.value = (res && res.msg) || "套餐加载失败，请稍后重试";
           }
@@ -20720,10 +20741,14 @@ const XS_EXT = (() => {
           vue.h("button", { class: "xs-buy-btn", onClick: goBuy }, isMonthly ? "立即开通包月" : "立即购买题数")
         ]);
       };
-      const group = (list, title) => list.length ? vue.h("div", { class: "xs-buy-group", key: title }, [
-        vue.h("div", { class: "xs-buy-group-title" }, title),
-        vue.h("div", { class: "xs-buy-grid" }, list.map(renderPlan))
-      ]) : null;
+      // 包里月 / 题数分两个页签：套餐一多，竖着堆两段太长
+      const activeTab = vue.ref("monthly");
+      const monthlyPlans = vue.computed(() => plans.value.filter((p) => p.plan_type === "monthly"));
+      const pointsPlans = vue.computed(() => plans.value.filter((p) => p.plan_type !== "monthly"));
+      const tabBtn = (key, label, count) => vue.h("button", {
+        class: "xs-buy-tab" + (activeTab.value === key ? " active" : ""),
+        onClick: () => activeTab.value = key
+      }, label + (count ? " (" + count + ")" : ""));
       vue.onMounted(() => {
         if (shadowRoot && !shadowRoot.querySelector("#xs-buy-panel-css")) {
           const style = document.createElement("style");
@@ -20739,13 +20764,21 @@ const XS_EXT = (() => {
           vue.h("button", { class: "xs-buy-refresh", onClick: loadPlans, disabled: loading.value }, "刷新")
         ]),
         err.value ? vue.h("div", { class: "xs-buy-err" }, err.value) : null,
-        loading.value ? vue.h("div", { class: "xs-buy-empty" }, "正在加载套餐...") : vue.h("div", { class: "xs-buy-body" }, [
-          group(plans.value.filter((p) => p.plan_type === "monthly"), "包月畅答"),
-          group(plans.value.filter((p) => p.plan_type !== "monthly"), "题数加油包"),
-          !plans.value.length && !err.value ? vue.h("div", { class: "xs-buy-empty" }, "暂无可购买的套餐") : null,
-          vue.h("div", { class: "xs-buy-foot" }, [
-            vue.h("span", null, "有卡密？在「设置」页输入卡密即可激活。"),
-            vue.h("a", { href: "javascript:;", onClick: goBuy }, "去购买")
+        loading.value ? vue.h("div", { class: "xs-buy-empty" }, "正在加载套餐...") : vue.h("div", null, [
+          vue.h("div", { class: "xs-buy-tabs" }, [
+            tabBtn("monthly", "包月套餐", monthlyPlans.value.length),
+            tabBtn("points", "题数套餐", pointsPlans.value.length)
+          ]),
+          vue.h("div", { class: "xs-buy-body" }, [
+            (activeTab.value === "monthly" ? monthlyPlans.value : pointsPlans.value).length
+              ? vue.h("div", { class: "xs-buy-grid" }, (activeTab.value === "monthly" ? monthlyPlans.value : pointsPlans.value).map(renderPlan))
+              : vue.h("div", { class: "xs-buy-empty" }, plans.value.length
+                  ? (activeTab.value === "monthly" ? "暂无包月套餐" : "暂无题数套餐")
+                  : "暂无可购买的套餐"),
+            vue.h("div", { class: "xs-buy-foot" }, [
+              vue.h("span", null, "有卡密？在「设置」页输入卡密即可激活。"),
+              vue.h("a", { href: "javascript:;", onClick: goBuy }, "去购买")
+            ])
           ])
         ])
       ]);
