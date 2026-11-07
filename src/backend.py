@@ -7205,6 +7205,13 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        elif path == "/api/ads":
+            # 面板广告位：公开接口，只返回上架中的广告，按排序输出
+            try:
+                self._send_json(200, {"code": 200, "ads": db.list_ads(only_enabled=True)})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         elif path == "/api/custom-model/config":
             try:
                 cfg = db.get_custom_model_config()
@@ -8159,6 +8166,15 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception:
                         r["accounts"] = []
                 self._send_json(200, {"code": 200, "rows": rows, "total": total})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/ads":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                self._send_json(200, {"code": 200, "ads": db.list_ads(False)})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -10749,6 +10765,104 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        # ==================== 广告位管理（POST） ====================
+        elif path == "/admin/ads/save":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                ad_id = int(data.get("id") or 0)
+                title = (data.get("title") or "").strip()[:100]
+                image_url = (data.get("image_url") or "").strip()[:500]
+                link_url = (data.get("link_url") or "").strip()[:500]
+                sort_order = int(data.get("sort_order") or 0)
+                enabled = 1 if data.get("enabled", True) else 0
+                if not image_url:
+                    self._send_json(400, {"code": 400, "msg": "请上传广告图片"})
+                    return
+                if link_url and not re.match(r"^https?://", link_url, re.I):
+                    self._send_json(400, {"code": 400, "msg": "跳转地址需以 http(s):// 开头"})
+                    return
+                payload = {"title": title, "image_url": image_url, "link_url": link_url,
+                           "sort_order": sort_order, "enabled": bool(enabled)}
+                if ad_id:
+                    db.update_ad(ad_id, payload)
+                    self._send_json(200, {"code": 200, "msg": "广告已更新"})
+                else:
+                    db.create_ad(payload)
+                    self._send_json(200, {"code": 200, "msg": "广告已添加"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/ads/delete":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                ad_id = int(data.get("id") or 0)
+                if not ad_id:
+                    self._send_json(400, {"code": 400, "msg": "参数错误"})
+                    return
+                db.delete_ad(ad_id)
+                self._send_json(200, {"code": 200, "msg": "广告已删除"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/ads/status":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                ad_id = int(data.get("id") or 0)
+                enabled = 1 if data.get("enabled") else 0
+                if not ad_id:
+                    self._send_json(400, {"code": 400, "msg": "参数错误"})
+                    return
+                db.set_ad_enabled(ad_id, enabled)
+                self._send_json(200, {"code": 200, "msg": "已" + ("上架" if enabled else "下架")})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/ads/upload":
+            # 广告图上传：base64 dataURL，落盘到站点 uploads 目录，Nginx 直接服务
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                raw = (data.get("data") or "").strip()
+                m = re.match(r"^data:image/(png|jpe?g|gif|webp);base64,([A-Za-z0-9+/=\s]+)$", raw, re.I)
+                if not m:
+                    self._send_json(400, {"code": 400, "msg": "请上传 PNG/JPG/GIF/WebP 图片"})
+                    return
+                ext = m.group(1).lower()
+                if ext == "jpeg":
+                    ext = "jpg"
+                try:
+                    img_bytes = base64.b64decode(m.group(2), validate=True)
+                except Exception:
+                    self._send_json(400, {"code": 400, "msg": "图片数据无效"})
+                    return
+                if len(img_bytes) > 5 * 1024 * 1024:
+                    self._send_json(400, {"code": 400, "msg": "图片不能超过 5MB"})
+                    return
+                upload_dir = os.environ.get("XS_UPLOAD_DIR") or os.path.join(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "uploads")
+                try:
+                    os.makedirs(upload_dir, exist_ok=True)
+                except Exception as e:
+                    self._send_json(500, {"code": 500, "msg": "创建上传目录失败：" + str(e)})
+                    return
+                fname = "ad_%d_%s.%s" % (int(time.time()), secrets.token_hex(4), ext)
+                with open(os.path.join(upload_dir, fname), "wb") as f:
+                    f.write(img_bytes)
+                self._send_json(200, {"code": 200, "url": "https://xs.openget.cn/uploads/" + fname})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         # ==================== 邮件模板管理（POST） ====================
         elif path == "/admin/email-template":
             if not self._check_admin():
@@ -10769,7 +10883,7 @@ class Handler(BaseHTTPRequestHandler):
             if not subject:
                 self._send_json(400, {"code": 400, "msg": "邮件主题不能为空"})
                 return
-            if variables and not _re.match(r"^[a-zA-Z0-9_,\s]*$", variables):
+            if variables and not re.match(r"^[a-zA-Z0-9_,\s]*$", variables):
                 self._send_json(400, {"code": 400, "msg": "变量名仅支持大小写字母、数字和下划线"})
                 return
             try:
@@ -10807,12 +10921,12 @@ class Handler(BaseHTTPRequestHandler):
             send_time = (data.get("send_time") or "").strip()
             recipients = data.get("recipients")
             template_id = data.get("template_id")
-            if send_time and not _re.match(r"^\d{1,2}:\d{2}$", send_time):
+            if send_time and not re.match(r"^\d{1,2}:\d{2}$", send_time):
                 self._send_json(400, {"code": 400, "msg": "发送时间格式应为 HH:MM"})
                 return
             if recipients is not None:
                 for a in [x.strip() for x in recipients.split(",") if x.strip()]:
-                    if not _re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", a):
+                    if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", a):
                         self._send_json(400, {"code": 400, "msg": f"收件人邮箱格式不正确: {a}"})
                         return
             if template_id in ("", None):

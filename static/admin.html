@@ -1331,6 +1331,9 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
             <div class="menu-item" :class="{active:page==='announce'}" @click="page='announce';loadAnnounceConfig()">
               <svg class="ui-icon sm"><use href="#i-bell"></use></svg>公告通知
             </div>
+            <div class="menu-item" :class="{active:page==='ads'}" @click="page='ads';loadAds()">
+              <svg class="ui-icon sm"><use href="#i-image"></use></svg>广告位
+            </div>
           </div>
         </div>
 
@@ -6281,9 +6284,102 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
         </div>
       </template>
 
-      <!-- 每日数据邮件（定时任务） -->
-      <template v-if="page==='daily-report'">
+      <template v-if="page==='ads'">
         <header class="main-header">
+          <h2>广告位</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index<breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+
+          <div class="card">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+              <h3>脚本首页轮播广告</h3>
+              <div style="display:flex;gap:10px;align-items:center">
+                <span style="font-size:12px;color:var(--text3)">建议图片尺寸 840×260（宽高比约 3.2:1），上架后展示在脚本首页顶部</span>
+                <button class="btn btn-primary" style="padding:6px 16px" @click="newAd()">添加广告</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div v-if="adsList.length===0" style="padding:36px;text-align:center;color:var(--text3);font-size:13px">还没有广告，点右上角「添加广告」上传第一张图</div>
+              <div v-else style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px">
+                <div v-for="a in adsList" :key="a.id" style="border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--bg2)">
+                  <div style="position:relative;padding-top:31.25%;background:var(--bg4)">
+                    <img :src="a.image_url" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" alt="">
+                    <span v-if="!a.enabled" style="position:absolute;top:8px;left:8px;font-size:11px;padding:2px 10px;border-radius:999px;background:rgba(0,0,0,.62);color:#fff">已下架</span>
+                  </div>
+                  <div style="padding:10px 12px">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <strong style="font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{a.title||'未命名'}}</strong>
+                      <span style="font-size:11px;color:var(--text3);white-space:nowrap">排序 {{a.sort_order}}</span>
+                    </div>
+                    <div style="font-size:11.5px;color:var(--text3);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{a.link_url||'不跳转'}}</div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-top:9px">
+                      <label class="switch" style="transform:scale(.85);transform-origin:left center"><input type="checkbox" :checked="a.enabled" @change="toggleAd(a)"><span class="slider"></span></label>
+                      <span style="font-size:12px;color:var(--text2)">{{a.enabled?'上架中':'已下架'}}</span>
+                      <span style="flex:1"></span>
+                      <button class="btn btn-secondary" style="padding:4px 12px;font-size:12px" @click="editAd(a)">编辑</button>
+                      <button class="btn btn-secondary" style="padding:4px 12px;font-size:12px;color:var(--danger,#ef4444)" @click="deleteAd(a)">删除</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 广告编辑弹窗 -->
+        <div v-if="adsEdit" class="modal-overlay" @click.self="adsEdit=null">
+          <div class="modal" style="max-width:520px">
+            <div class="modal-header" style="padding:0 0 14px 0;border-bottom:1px solid var(--border);margin-bottom:14px;">
+              <h3><svg class="ui-icon sm" style="margin-right:6px"><use href="#i-image"></use></svg>{{adsEdit.id?'编辑广告':'添加广告'}}</h3>
+              <button class="btn-close" @click="adsEdit=null" aria-label="关闭"><svg class="ui-icon sm"><use href="#i-x"></use></svg></button>
+            </div>
+            <div style="margin:12px 0;max-height:60vh;overflow-y:auto">
+              <div style="margin-bottom:12px">
+                <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">广告图片（必填，5MB 内）</div>
+                <div style="position:relative;padding-top:31.25%;border:1px dashed var(--border);border-radius:10px;background:var(--bg2);overflow:hidden;cursor:pointer" @click="pickAdImage()">
+                  <img v-if="adsEdit.image_url" :src="adsEdit.image_url" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" alt="">
+                  <div v-else style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--text3)">
+                    <svg class="ui-icon md"><use href="#i-image"></use></svg>
+                    <span style="font-size:12.5px">点击选择图片上传</span>
+                  </div>
+                  <div v-if="adsUploading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);color:#fff;font-size:13px">上传中...</div>
+                </div>
+                <input type="file" id="adImageInput" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none" @change="onAdFileChange">
+              </div>
+              <div style="margin-bottom:12px">
+                <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">备注标题（仅后台标识用）</div>
+                <input v-model="adsEdit.title" class="form-control" maxlength="100" placeholder="例如：十一月包月活动">
+              </div>
+              <div style="margin-bottom:12px">
+                <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">点击跳转地址（选填）</div>
+                <input v-model="adsEdit.link_url" class="form-control" placeholder="https://… 用户点击广告图后打开的页面">
+              </div>
+              <div style="display:flex;gap:12px;align-items:flex-end">
+                <div style="width:160px">
+                  <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">排序（小的在前）</div>
+                  <input v-model.number="adsEdit.sort_order" type="number" class="form-control" placeholder="0">
+                </div>
+                <div style="flex:1">
+                  <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">上架状态</div>
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <label class="switch"><input type="checkbox" v-model="adsEdit.enabled"><span class="slider"></span></label>
+                    <span style="font-size:13px;color:var(--text2)">{{adsEdit.enabled?'上架（用户可见）':'下架'}}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="modal-actions">
+              <button class="btn btn-secondary" @click="adsEdit=null">取消</button>
+              <button class="btn btn-success" :disabled="adsSaving||adsUploading" @click="saveAd()">{{adsSaving?'保存中...':'保存'}}</button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- 每日数据邮件（定时任务） -->
+      <template v-if="page==='daily-report'">        <header class="main-header">
           <h2>每日数据邮件</h2>
           <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index<breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
         </header>
@@ -6420,6 +6516,7 @@ createApp({
       'referral-withdrawals':[{label:'推广运营',group:'referral'},{label:'提现审核'}],
       'feedback':[{label:'推广运营',group:'referral'},{label:'问题反馈'}],
       'announce':[{label:'推广运营',group:'referral'},{label:'公告通知'}],
+      'ads':[{label:'推广运营',group:'referral'},{label:'广告位'}],
       'payment-orders':[{label:'支付财务',group:'payment'},{label:'支付明细'}],
       'payment':[{label:'支付财务',group:'payment'},{label:'套餐配置'}],
       'pay-api':[{label:'支付财务',group:'payment'},{label:'支付接口'}],
@@ -8358,7 +8455,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     const mobileSidebarOpen=ref(false);
     const mobileSubmenu=ref(null);
     const MOBILE_SUBMENU_MAP={
-      referral:{title:'推广运营',icon:'i-award',items:[{page:'referral',label:'返利配置',icon:'i-settings',load:loadReferralConfig},{page:'referral-withdrawals',label:'提现审核',icon:'i-wallet',load:loadReferralWithdrawals},{page:'feedback',label:'问题反馈',icon:'i-message-square',load:()=>{loadFeedbackList();loadFeedbackAutoClose();loadFeedbackNotify();}},{page:'announce',label:'公告通知',icon:'i-bell',load:loadAnnounceConfig}]},
+      referral:{title:'推广运营',icon:'i-award',items:[{page:'referral',label:'返利配置',icon:'i-settings',load:loadReferralConfig},{page:'referral-withdrawals',label:'提现审核',icon:'i-wallet',load:loadReferralWithdrawals},{page:'feedback',label:'问题反馈',icon:'i-message-square',load:()=>{loadFeedbackList();loadFeedbackAutoClose();loadFeedbackNotify();}},{page:'announce',label:'公告通知',icon:'i-bell',load:loadAnnounceConfig},{page:'ads',label:'广告位',icon:'i-image',load:loadAds}]},
       payment:{title:'支付财务',icon:'i-credit-card',items:[{page:'payment-orders',label:'支付明细',icon:'i-receipt',load:loadPaymentOrders},{page:'payment',label:'套餐配置',icon:'i-layers',load:loadPaymentConfig},{page:'pay-api',label:'支付接口',icon:'i-zap',load:loadPayApiConfig},{page:'pay-test',label:'支付测试',icon:'i-play-circle',load:()=>{}},{page:'refund-requests',label:'退款申请',icon:'i-rotate-ccw',load:loadRefundRequests}]},
       card:{title:'卡密管理',icon:'i-key',items:[{page:'xianyu',label:'商品配置',icon:'i-store',load:loadXianyuConfig},{page:'card-keys',label:'卡密管理',icon:'i-key',load:loadCardKeys}]},
       distributor:{title:'代理商分销',icon:'i-flag',items:[{page:'distributor',label:'代理商',icon:'i-users',load:loadFxList},{page:'distributor-templates',label:'卡密模板',icon:'i-layers',load:()=>{loadFxOptions();loadFxTemplates();}},{page:'distributor-batches',label:'批次与卡密',icon:'i-package',load:()=>{loadFxOptions();loadFxBatches(1);}},{page:'distributor-withdrawals',label:'提现审核',icon:'i-wallet',load:()=>{loadFxOptions();loadFxWds(1);}},{page:'distributor-revenue',label:'收入统计',icon:'i-trending-up',load:loadFxRevenue},{page:'distributor-config',label:'分销配置',icon:'i-sliders',load:loadFxConfig}]},
@@ -8489,6 +8586,77 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       announceSaving.value=false;
     }
     const announcePolishing=ref(false);
+    // ========== 广告位 ==========
+    const adsList=ref([]);
+    const adsEdit=ref(null);
+    const adsSaving=ref(false);
+    const adsUploading=ref(false);
+    async function loadAds(){
+      try{
+        const res=await safeFetch('/admin/ads',{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200)adsList.value=d.ads||[];
+      }catch(_){showMsg('广告列表加载失败','error');}
+    }
+    function newAd(){
+      adsEdit.value={id:0,title:'',image_url:'',link_url:'',sort_order:0,enabled:true};
+    }
+    function editAd(a){
+      adsEdit.value={id:a.id,title:a.title||'',image_url:a.image_url||'',link_url:a.link_url||'',sort_order:Number(a.sort_order||0),enabled:!!a.enabled};
+    }
+    function pickAdImage(){
+      const input=document.getElementById('adImageInput');
+      if(input){input.value='';input.click();}
+    }
+    async function onAdFileChange(e){
+      const file=(e.target.files||[])[0];
+      if(!file)return;
+      if(file.size>5*1024*1024){showMsg('图片不能超过 5MB','error');return;}
+      adsUploading.value=true;
+      try{
+        const dataUrl=await new Promise((resolve,reject)=>{
+          const reader=new FileReader();
+          reader.onload=()=>resolve(reader.result);
+          reader.onerror=()=>reject(new Error('读取失败'));
+          reader.readAsDataURL(file);
+        });
+        const res=await fetch('/admin/ads/upload',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({data:dataUrl})});
+        const d=await res.json();
+        if(d.code===200&&d.url){adsEdit.value.image_url=d.url;showMsg('图片已上传','success');}
+        else showMsg(d.msg||'上传失败','error');
+      }catch(_){showMsg('上传失败，请稍后重试','error');}
+      adsUploading.value=false;
+    }
+    async function saveAd(){
+      const f=adsEdit.value;
+      if(!f)return;
+      if(!f.image_url){showMsg('请先上传广告图片','error');return;}
+      adsSaving.value=true;
+      try{
+        const res=await adminPost('/admin/ads/save',{id:f.id,title:f.title,image_url:f.image_url,link_url:f.link_url,sort_order:Number(f.sort_order||0),enabled:!!f.enabled});
+        const d=await res.json();
+        showMsg(d.msg||'保存失败',d.code===200?'success':'error');
+        if(d.code===200){adsEdit.value=null;loadAds();}
+      }catch(_){showMsg('网络错误','error');}
+      adsSaving.value=false;
+    }
+    async function toggleAd(a){
+      try{
+        const res=await adminPost('/admin/ads/status',{id:a.id,enabled:!a.enabled});
+        const d=await res.json();
+        if(d.code===200)loadAds();
+        else showMsg(d.msg||'操作失败','error');
+      }catch(_){showMsg('网络错误','error');}
+    }
+    async function deleteAd(a){
+      if(!window.confirm('确定删除这条广告？删除后不可恢复。'))return;
+      try{
+        const res=await adminPost('/admin/ads/delete',{id:a.id});
+        const d=await res.json();
+        showMsg(d.msg||'删除失败',d.code===200?'success':'error');
+        if(d.code===200)loadAds();
+      }catch(_){showMsg('网络错误','error');}
+    }
     async function aiPolishAnnounce(){
       const text=announceConfig.value.announce_text.trim();
       if(!text){showMsg('请先输入公告内容','error');return;}
@@ -9793,6 +9961,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     feedbackNotifyEnabled,loadFeedbackNotify,saveFeedbackNotify,
     adaptList,adaptFilter,adaptPage,adaptTotal,adaptTotalPages,adaptDetail,adaptAdminNote,
     loadAdaptRequests,adaptPrev,adaptNext,openAdaptDetail,setAdaptStatus,copyAdaptText,
+    adsList,adsEdit,adsSaving,adsUploading,newAd,editAd,loadAds,saveAd,toggleAd,deleteAd,pickAdImage,onAdFileChange,
    aiPolishing,aiPolishReply,testingModel,testingNewProvider,testModel,testNewProvider,modelTestResults,newProviderTestResult,
        dailyReportConfig,dailyReportPreview,loadDailyReport,saveDailyReport,sendDailyReportNow,previewDailyReport
     };

@@ -3603,7 +3603,7 @@
                                     <button type="button" class="fb-tab" data-status="pending">待处理</button>
                                     <button type="button" class="fb-tab" data-status="processing">处理中</button>
                                     <button type="button" class="fb-tab" data-status="resolved">已回复</button>
-                                    <button type="button" class="fb-tab" data-status="closed">已关闭</button>
+                                    <button type="button" class="fb-tab" data-status="closed">归档</button>
                                 </div>
                                 <div id="fbTimeTabs" class="fb-tab-group">
                                     <button type="button" class="fb-time-tab active" data-days="0">全部</button>
@@ -5998,7 +5998,9 @@ await loadPlans();
 
         function getFilteredFeedback() {
             let list = fbList;
-            if (fbFilterStatus) list = list.filter(f => f.status === fbFilterStatus);
+            // 默认只展示未关闭的工单；已关闭的收纳进「归档」视图（点归档 tab 查看）
+            list = list.filter(f => fbFilterStatus === 'closed' ? f.status === 'closed' : f.status !== 'closed');
+            if (fbFilterStatus && fbFilterStatus !== 'closed') list = list.filter(f => f.status === fbFilterStatus);
             if (fbFilterDays > 0) {
                 const cutoff = Date.now() - fbFilterDays * 86400000;
                 list = list.filter(f => parseFbTime(f.created_at) >= cutoff);
@@ -6010,6 +6012,10 @@ await loadPlans();
             return list;
         }
 
+        function closedFeedbackCount() {
+            return fbList.filter(f => f.status === 'closed').length;
+        }
+
         function updateFbNotice() {
             const openCount = fbList.filter(f => f.status !== 'closed').length;
             const notice = $('fbOpenTicketNotice');
@@ -6018,6 +6024,9 @@ await loadPlans();
                 const countEl = $('fbOpenCount');
                 if (countEl) countEl.textContent = openCount;
             }
+            const closedTab = document.querySelector('#fbStatusTabs .fb-tab[data-status="closed"]');
+            const closedCount = closedFeedbackCount();
+            if (closedTab) closedTab.textContent = closedCount ? '归档（' + closedCount + '）' : '归档';
         }
 
         function renderFeedbackList() {
@@ -6026,7 +6035,8 @@ await loadPlans();
             if (!el) return;
             const list = getFilteredFeedback();
             if (!list.length) {
-                el.innerHTML = '<div style="padding:32px 12px;text-align:center;color:var(--c-text-3);font-size:13px">' + (fbList.length ? '没有匹配的记录' : '暂无反馈记录') + '</div>';
+                const emptyText = fbFilterStatus === 'closed' ? (closedFeedbackCount() ? '没有匹配的归档工单' : '归档里还没有已关闭的工单') : (fbList.length ? '没有匹配的记录' : '暂无反馈记录');
+                el.innerHTML = '<div style="padding:32px 12px;text-align:center;color:var(--c-text-3);font-size:13px">' + emptyText + '</div>';
                 return;
             }
             el.innerHTML = list.map(f => {

@@ -893,6 +893,21 @@ class Database:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
 
+        # ===== 面板广告位 =====
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS ads (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                title VARCHAR(100) DEFAULT '' COMMENT '备注标题（仅后台标识用）',
+                image_url VARCHAR(512) NOT NULL COMMENT '图片地址',
+                link_url VARCHAR(512) DEFAULT '' COMMENT '点击跳转地址',
+                sort_order INT NOT NULL DEFAULT 0 COMMENT '排序（小的在前）',
+                enabled TINYINT NOT NULL DEFAULT 1 COMMENT '1上架 0下架',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_ads_enabled (enabled, sort_order)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
         # ===== 用户收款信息 =====
         self.execute("""
             CREATE TABLE IF NOT EXISTS user_payment_info (
@@ -4602,6 +4617,67 @@ class Database:
             params
         ) or []
         return rows, total
+
+    # ===== 广告位管理 =====
+    def list_ads(self, only_enabled=False):
+        where = "WHERE enabled = 1" if only_enabled else ""
+        rows = self.fetchall(f"SELECT * FROM ads {where} ORDER BY sort_order ASC, id ASC") or []
+        for row in rows:
+            row["enabled"] = bool(row.get("enabled"))
+            row["sort_order"] = int(row.get("sort_order") or 0)
+        return rows
+
+    def create_ad(self, data):
+        ph = _ph()
+        conn = self._new_mysql_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"INSERT INTO ads (title, image_url, link_url, sort_order, enabled) VALUES ({ph},{ph},{ph},{ph},{ph})",
+                (data.get("title", ""), data.get("image_url", ""), data.get("link_url", ""),
+                 int(data.get("sort_order") or 0), 1 if data.get("enabled", True) else 0)
+            )
+            conn.commit()
+            return int(getattr(cursor, "lastrowid", 0) or 0)
+        finally:
+            conn.close()
+
+    def update_ad(self, ad_id, data):
+        ph = _ph()
+        conn = self._new_mysql_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"UPDATE ads SET title={ph}, image_url={ph}, link_url={ph}, sort_order={ph}, enabled={ph} WHERE id={ph}",
+                (data.get("title", ""), data.get("image_url", ""), data.get("link_url", ""),
+                 int(data.get("sort_order") or 0), 1 if data.get("enabled", True) else 0, int(ad_id))
+            )
+            conn.commit()
+            return cursor.rowcount
+        finally:
+            conn.close()
+
+    def delete_ad(self, ad_id):
+        ph = _ph()
+        conn = self._new_mysql_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(f"DELETE FROM ads WHERE id={ph}", (int(ad_id),))
+            conn.commit()
+            return cursor.rowcount
+        finally:
+            conn.close()
+
+    def set_ad_enabled(self, ad_id, enabled):
+        ph = _ph()
+        conn = self._new_mysql_conn()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(f"UPDATE ads SET enabled={ph} WHERE id={ph}", (1 if enabled else 0, int(ad_id)))
+            conn.commit()
+            return cursor.rowcount
+        finally:
+            conn.close()
 
     def create_feedback(self, username, email, category, title, content):
         """新建反馈，返回新反馈ID（提交时要拿到ID才能上传附件）"""

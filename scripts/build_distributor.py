@@ -42,7 +42,8 @@ REQUIRED = {
     "strip": {"promo", "qq-channel", "scriptcat-update", "auto-update"},
     "inject": {"dist-channel"},
     "ch": {"basic-info-shop", "remain-billing", "pricing-base-url", "pricing-login-param",
-           "card-key-activate", "no-shop-guard", "no-shop-billing"},
+           "card-key-activate", "no-shop-guard", "no-shop-billing",
+           "quota-buy-ans", "quota-buy-search", "buy-panel-open", "buy-panel-open-tab"},
 }
 # 官方收银台地址在渠道版里只有一个合法出处：挂了 FX-CH 的那行，由渠道常量决定去留。
 # 以后再加官方下单入口却忘了挂哨兵，构建直接失败，而不是把官网地址原样发给渠道的下家。
