@@ -8634,28 +8634,22 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       if(!f.image_url){showMsg('请先上传广告图片','error');return;}
       adsSaving.value=true;
       try{
-        const res=await adminPost('/admin/ads/save',{id:f.id,title:f.title,image_url:f.image_url,link_url:f.link_url,sort_order:Number(f.sort_order||0),enabled:!!f.enabled});
-        const d=await res.json();
-        showMsg(d.msg||'保存失败',d.code===200?'success':'error');
-        if(d.code===200){adsEdit.value=null;loadAds();}
+        const d=await adminPost('/admin/ads/save',{id:f.id,title:f.title,image_url:f.image_url,link_url:f.link_url,sort_order:Number(f.sort_order||0),enabled:!!f.enabled});
+        if(d){adsEdit.value=null;showMsg(d.msg||'已保存','success');loadAds();}
       }catch(_){showMsg('网络错误','error');}
       adsSaving.value=false;
     }
     async function toggleAd(a){
       try{
-        const res=await adminPost('/admin/ads/status',{id:a.id,enabled:!a.enabled});
-        const d=await res.json();
-        if(d.code===200)loadAds();
-        else showMsg(d.msg||'操作失败','error');
+        const d=await adminPost('/admin/ads/status',{id:a.id,enabled:!a.enabled});
+        if(d)loadAds();
       }catch(_){showMsg('网络错误','error');}
     }
     async function deleteAd(a){
       if(!window.confirm('确定删除这条广告？删除后不可恢复。'))return;
       try{
-        const res=await adminPost('/admin/ads/delete',{id:a.id});
-        const d=await res.json();
-        showMsg(d.msg||'删除失败',d.code===200?'success':'error');
-        if(d.code===200)loadAds();
+        const d=await adminPost('/admin/ads/delete',{id:a.id});
+        if(d){showMsg(d.msg||'已删除','success');loadAds();}
       }catch(_){showMsg('网络错误','error');}
     }
     async function aiPolishAnnounce(){
