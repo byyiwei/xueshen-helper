@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.12
+// @version      6.0.13
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
@@ -15,6 +15,8 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.13 (2026-11-07)
+// @changelog    1. 新增「解除复制限制」开关：解除网页对复制、粘贴、右键菜单、选中文字的限制，支持富文本编辑器粘贴（含图片），默认开启
 // @changelog    v6.0.12 (2026-11-06)
 // @changelog    1. 图片题全面走 AI：题库不再收录和匹配图片题，答案更准；纯题库模式遇到图片题会提示「图片题必须设置成AI」
 // @changelog    2. AI 说「无法识别/无法确定」类兜底话术时不再当答案填进答题框，会提示未查到答案

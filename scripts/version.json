@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.0.12",
+    "version": "6.0.13",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.0.12 图片题全面走AI更准；AI兜底话术不再当答案填入；反馈中心界面重做"
+    "changelog": "v6.0.13 新增「解除复制限制」：复制粘贴、选中文字不再被网页拦截"
   },
   "xueshen-gf": {
-    "version": "6.0.12",
+    "version": "6.0.13",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.0.12 图片题全面走AI更准；AI兜底话术不再当答案填入；反馈中心界面重做"
+    "changelog": "v6.0.13 新增「解除复制限制」：复制粘贴、选中文字不再被网页拦截"
   }
 }
