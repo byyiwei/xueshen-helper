@@ -77,6 +77,22 @@ def _ph():
     return "%s"
 
 
+def _clip_text(value, max_bytes=60000):
+    """把文本裁到列能放下的字节数内。
+
+    MySQL 的 TEXT 上限是 65535 字节，utf8mb4 下一个汉字占 3 字节、emoji 占 4 字节，
+    超长文本直接插入会整行写入失败（1406 Data too long），日志就整条丢了。
+    宁可截断保留前面大部分内容，也不要整条丢掉。
+    """
+    if value is None:
+        return ""
+    text = value if isinstance(value, str) else str(value)
+    raw = text.encode("utf-8")
+    if len(raw) <= max_bytes:
+        return text
+    return raw[:max_bytes].decode("utf-8", "ignore")
+
+
 # —— 地域归一化（用户画像统计用）——
 # 归属地有两种来源格式，同一个地方会写成两样，不先归一的话排名会碎成两条重复项：
 #   pconline（国内） : "广东省广州市" / "西藏拉萨市"
@@ -5336,10 +5352,10 @@ class Database:
                 username,
                 log.get("model", ""),
                 log.get("final_model", ""),
-                log.get("question", ""),
-                log.get("answer", ""),
+                _clip_text(log.get("question", "")),
+                _clip_text(log.get("answer", "")),
                 log.get("status", "unknown"),
-                log.get("error", ""),
+                _clip_text(log.get("error", "")),
                 int(log.get("duration_ms") or 0),
                 log.get("client_ip", ""),
                 points,
