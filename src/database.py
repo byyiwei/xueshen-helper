@@ -174,6 +174,22 @@ def _model_expire_date(value):
     return text
 
 
+def _model_weight(value, default=100):
+    """模型调用的权重，0 表示关闭该模型。
+
+    旧写法 int(value or 100) 会把 0 当成空值回落到 100：用户在后台把权重改成 0
+    想关掉某个模型，保存后读回来又是 100，界面显示 100、后端也照常调用，
+    等于「关闭」这个开关根本不存在。字段缺失/空串才用默认值，0 必须原样保留。
+    """
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return default
+    try:
+        weight = int(float(value))
+    except (TypeError, ValueError):
+        return default
+    return max(0, min(100, weight))
+
+
 def _dedupe_model_items(models):
     """同一提供商下的模型按 ID 去重。
 
@@ -5237,7 +5253,7 @@ class Database:
                 models_map.setdefault(m["provider_key"], []).append({
                     "value": m.get("model_value", ""),
                     "label": m.get("model_label", ""),
-                    "weight": int(m.get("weight", 100) or 100),
+                    "weight": _model_weight(m.get("weight")),
                     "daily_token_limit": int(m.get("daily_token_limit", 0) or 0),
                     "total_token_limit": int(m.get("total_token_limit", 0) or 0),
                     "vision": bool(m.get("vision")),
@@ -5305,7 +5321,7 @@ class Database:
                         provider_key,
                         model.get("value", ""),
                         model.get("label", ""),
-                        int(model.get("weight", 100) or 100),
+                        _model_weight(model.get("weight")),
                         int(model.get("daily_token_limit", 0) or 0),
                         int(model.get("total_token_limit", 0) or 0),
                         1 if (model.get("vision") is True or model.get("vision") == 1 or str(model.get("vision")).lower() in ("1", "true", "yes", "on")) else 0,

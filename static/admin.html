@@ -718,7 +718,9 @@ html[data-theme="light"] .ip-badge.flag { color: #b45309; }
 .weight-chart { margin: 14px 4px 4px; padding: 12px 14px; background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; }
 .weight-chart-title { font-size: 12px; color: var(--text3); font-weight: 600; margin-bottom: 10px; }
 .weight-chart-body { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
-.weight-legend { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 160px; }
+.pool-name { display: flex; align-items: baseline; gap: 8px; font-size: 12px; font-weight: 600; color: var(--text2); margin-bottom: 8px; }
+.pool-name .pool-total { font-size: 11px; font-weight: 400; color: var(--text3); }
+.weight-legend { display: flex; flex-direction: column; gap: 5px; flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
 .legend-dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 .legend-label { color: var(--text2); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1867,7 +1869,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
               <div style="display:flex;gap:8px;padding:0 4px 6px;font-size:11px;color:var(--text3);font-weight:600;letter-spacing:.3px;align-items:center;flex-wrap:wrap">
                 <div style="flex:1 1 170px;min-width:0">模型ID</div>
                 <div style="flex:1 1 170px;min-width:0">显示名称</div>
-                <div style="width:64px;flex:none;text-align:center">调用占比</div>
+                <div style="width:64px;flex:none;text-align:center" title="权重决定被随机选中的概率；0 = 关闭该模型">权重</div>
                 <div style="width:80px;flex:none;text-align:center">每日Token限额</div>
                 <div style="width:80px;flex:none;text-align:center">总额Token限额</div>
                 <div style="width:52px;flex:none;text-align:center">支持图片</div>
@@ -1908,25 +1910,30 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
               </template>
               <button class="btn-add" v-if="entry.key!=='hub'" @click="addModel(entry.key)">+ 添加模型</button>
               <div class="weight-chart">
-                <div class="weight-chart-title">调用比例（按权重实时计算）</div>
-                <div v-if="weightSegments(entry).hasData" class="weight-chart-body">
-                  <svg width="120" height="120" viewBox="0 0 120 120" style="flex:none">
-                    <circle cx="60" cy="60" r="50" fill="none" stroke="var(--bg4)" stroke-width="14"></circle>
-                    <g transform="rotate(-90 60 60)">
-                      <circle v-for="(s,i) in weightSegments(entry).segments" :key="i" cx="60" cy="60" r="50" fill="none" :stroke="s.color" stroke-width="14" :stroke-dasharray="s.dash+' '+s.gap" :stroke-dashoffset="s.offset"></circle>
-                    </g>
-                    <text x="60" y="56" text-anchor="middle" font-size="10" fill="var(--text3)">总权重</text>
-                    <text x="60" y="72" text-anchor="middle" font-size="15" font-weight="700" fill="var(--text)">{{weightSegments(entry).total}}</text>
-                  </svg>
-                  <div class="weight-legend">
-                    <div v-for="(s,i) in weightSegments(entry).segments" :key="i" class="legend-item">
-                      <span class="legend-dot" :style="{background:s.color}"></span>
-                      <span class="legend-label" :title="s.label">{{s.label}}</span>
-                      <span class="legend-pct">{{s.pctText}}</span>
+                <div class="weight-chart-title">调用机会（按权重实时计算；文字题、图片题各抽各的池）</div>
+                <div v-if="weightPools(entry).length" style="display:flex;flex-wrap:wrap;gap:18px 28px">
+                  <div v-for="pool in weightPools(entry)" :key="pool.key" style="flex:1 1 260px;min-width:0">
+                    <div class="pool-name">{{pool.label}}<span class="pool-total">{{pool.count}} 个模型 · 总权重 {{pool.seg.total}}</span></div>
+                    <div class="weight-chart-body">
+                      <svg width="108" height="108" viewBox="0 0 120 120" style="flex:none">
+                        <circle cx="60" cy="60" r="50" fill="none" stroke="var(--bg4)" stroke-width="14"></circle>
+                        <g transform="rotate(-90 60 60)">
+                          <circle v-for="(s,i) in pool.seg.segments" :key="i" cx="60" cy="60" r="50" fill="none" :stroke="s.color" stroke-width="14" :stroke-dasharray="s.dash+' '+s.gap" :stroke-dashoffset="s.offset"></circle>
+                        </g>
+                        <text x="60" y="56" text-anchor="middle" font-size="10" fill="var(--text3)">总权重</text>
+                        <text x="60" y="72" text-anchor="middle" font-size="15" font-weight="700" fill="var(--text)">{{pool.seg.total}}</text>
+                      </svg>
+                      <div class="weight-legend">
+                        <div v-for="(s,i) in pool.seg.segments" :key="i" class="legend-item">
+                          <span class="legend-dot" :style="{background:s.color}"></span>
+                          <span class="legend-label" :title="s.label">{{s.label}}</span>
+                          <span class="legend-pct">{{s.pctText}}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
-                <div v-else class="weight-empty">未设置有效权重（权重需大于0），所有模型默认均分调用（各100）</div>
+                <div v-else class="weight-empty">没有启用的模型：权重需要大于 0 才会参与自动调用（权重 0 = 关闭）</div>
               </div>
             </div>
           </div>
@@ -8218,9 +8225,8 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       }
     }
     const WEIGHT_COLORS=['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#84cc16','#f97316','#6366f1'];
-    function weightSegments(entry){
-      const models=(entry&&entry.info&&entry.info.models)||[];
-      const valid=models.filter(m=>Number(m.weight||0)>0&&m.value);
+    function weightSegmentsOf(models){
+      const valid=(models||[]).filter(m=>Number(m.weight||0)>0&&m.value);
       const total=valid.reduce((s,m)=>s+Number(m.weight||0),0);
       if(total<=0)return{hasData:false,total:0,segments:[]};
       const C=2*Math.PI*50;
@@ -8234,6 +8240,26 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         return seg;
       });
       return{hasData:true,total,segments};
+    }
+    function weightSegments(entry){
+      return weightSegmentsOf((entry&&entry.info&&entry.info.models)||[]);
+    }
+    // 文字题和图片题走的是两套候选池，混在一个环里算占比会得出「文字模型 80%、
+    // 图片模型各 5%」这种看着像坏的数，所以按池分开算、分开画。
+    function isVisionModel(m){
+      return !!(m&&(m.vision===true||m.vision===1||String(m.vision).toLowerCase()==='true'||String(m.vision)==='1'));
+    }
+    function weightPools(entry){
+      const models=(entry&&entry.info&&entry.info.models)||[];
+      const pools=[
+        {key:'text',label:'文字题',models:models.filter(m=>!isVisionModel(m))},
+        {key:'vision',label:'图片题',models:models.filter(isVisionModel)}
+      ];
+      return pools.map(p=>{
+        const seg=weightSegmentsOf(p.models);
+        const count=p.models.filter(m=>Number(m.weight||0)>0&&m.value).length;
+        return {key:p.key,label:p.label,seg,count};
+      }).filter(p=>p.seg.hasData);
     }
     function addModel(key){
       const oldProviders={...(config.value.providers||{})};
@@ -9961,7 +9987,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       savePaymentConfig,savePayApiConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,movePlan,openUserEdit,saveUserAdmin,
       toggleProvider,collapseAllProviders,togglePayApiSection,
        addProvider,removeProvider,addModel,removeModel,
-       modelUsageTotal,modelUsageToday,modelExpired,modelTotalExhausted,modelDailyExhausted,modelQuotaLeft,modelQuotaTitle,clearModelQuota,weightSegments,
+       modelUsageTotal,modelUsageToday,modelExpired,modelTotalExhausted,modelDailyExhausted,modelQuotaLeft,modelQuotaTitle,clearModelQuota,weightSegments,weightPools,
        qqBot,qqBotStatus,qqBotLogs,qqBotBotpyAvailable,qqBotSaving,loadQqBot,saveQqBot,
       protocolName,statusText,logStatusText,formatDuration,questionTypeName,shortText,formatWan,formatScriptExtra,isMembershipActive,fmtMemberExpire,pointsColorStyle,memberColorStyle,trendPoints,trendX,trendY,trendMax,stackBarX,stackBarY,stackBarH,modelBarWidth,revTrendPoints,revTrendArea,revTrendX,revStep,revY,revMax,
       loadLogCleanup,saveLogCleanup,runLogCleanupNow,logRetentionDays,logCleanupSaving,logCleanupRunning,logCleanupResult,logStats,logStatsLoading,manualCleanupDays,manualCleanupTable,payTestForm,payTestLoading,payTestResult,runPayTest,payApiWeightTotal,payApiWeightPercent,refreshSandpayParams,onSandpayAdvancedChange,
