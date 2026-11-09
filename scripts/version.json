@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.0.13",
+    "version": "6.0.14",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.0.13 新增「解除复制限制」：复制粘贴、选中文字不再被网页拦截"
+    "changelog": "v6.0.14 菜单顺序调整为：日志、首页、答题、搜题、记录、设置、反馈、购买"
   },
   "xueshen-gf": {
-    "version": "6.0.13",
+    "version": "6.0.14",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.0.13 新增「解除复制限制」：复制粘贴、选中文字不再被网页拦截"
+    "changelog": "v6.0.14 菜单顺序调整为：日志、首页、答题、搜题、记录、设置、反馈、购买"
   }
 }
