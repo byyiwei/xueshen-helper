@@ -4387,7 +4387,12 @@ def weighted_pick(candidates):
 
 def provider_round_robin_rest(ordered):
     """保留首选，其余候选按提供商轮询打散：避免同一提供商（如大量同权重模型）连续霸占尝试机会，
-    让不同提供商（如硅基流动 MiniMax、阿里云 qwen）尽早都有机会被尝试。"""
+    让不同提供商（如硅基流动 MiniMax、阿里云 qwen）尽早都有机会被尝试。
+
+    轮询起点和同权重模型之间的先后都要随机。否则候选表顺序固定，首选失败后重试永远落到
+    排第二位的那个模型：线上 qiniu/conatus-free 在 936/1064 次里都排第二，等于替所有
+    限流模型扛下了全部重试，成功次数被抬到 232 次，而它自己按权重应得只有约 130 次。
+    结果就是后台「模型调用分布」看起来跟权重对不上。"""
     if not ordered:
         return ordered
     result = [ordered[0]]
@@ -4395,13 +4400,16 @@ def provider_round_robin_rest(ordered):
     for item in ordered[1:]:
         pools.setdefault(item[0], []).append(item)
     for p in pools:
-        pools[p].sort(key=lambda x: -x[3])
-    while pools:
-        for p in list(pools.keys()):
+        random.shuffle(pools[p])             # 同权重的模型随机排
+        pools[p].sort(key=lambda x: -x[3])   # 权重高的仍然优先
+    providers = list(pools.keys())
+    random.shuffle(providers)                # 每次随机决定先试哪一家
+    while providers:
+        for p in list(providers):
             if pools[p]:
                 result.append(pools[p].pop(0))
             if not pools[p]:
-                del pools[p]
+                providers.remove(p)
     return result
 
 def build_models_html():
