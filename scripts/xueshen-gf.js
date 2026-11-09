@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.13
+// @version      6.0.14
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
@@ -15,6 +15,8 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.14 (2026-11-09)
+// @changelog    1. 菜单顺序调整为：日志、首页、答题、搜题、记录、设置、反馈、购买
 // @changelog    v6.0.13 (2026-11-07)
 // @changelog    1. 新增「解除复制限制」开关：解除网页对复制、粘贴、右键菜单、选中文字的限制，支持富文本编辑器粘贴（含图片），默认开启
 // @changelog    v6.0.12 (2026-11-06)
@@ -19893,6 +19895,11 @@ const XS_EXT = (() => {
       };
       const contentMap = [
         {
+          key: "1",
+          tab: "日志",
+          component: _sfc_main$9
+        },
+        {
           key: "0",
           tab: "首页",
           component: ScriptHome
@@ -19917,19 +19924,14 @@ const XS_EXT = (() => {
           component: _sfc_main$5
         },
         {
-          key: settingTabKey,
-          tab: "设置",
-          component: _sfc_main$6
-        },
-        {
-          key: "buy",
-          tab: "购买",
-          component: BuyPanel
-        },
-        {
           key: "record",
           tab: "记录",
           component: _sfc_main$3
+        },
+        {
+          key: settingTabKey,
+          tab: "设置",
+          component: _sfc_main$6
         },
         {
           key: "feedback",
@@ -19937,9 +19939,9 @@ const XS_EXT = (() => {
           component: FeedbackPanel
         },
         {
-          key: "1",
-          tab: "日志",
-          component: _sfc_main$9
+          key: "buy",
+          tab: "购买",
+          component: BuyPanel
         }
       ];
       const availableKeys = contentMap.map((item) => item.key);
