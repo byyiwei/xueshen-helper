@@ -1639,6 +1639,102 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     xsNetBanner = box;
     xsNetBannerText = text;
   };
+  // 纯题库模式没命中时给一次建议：题库里没有的题不会再去问 AI，用户往往以为是「没答案」。
+  // 只在真的「题库里没有」时出现，一页最多一张，选了「保持纯题库」本次会话不再打扰。
+  let xsBankHintBox = null;
+  let xsBankMissCount = 0;
+  const xsBankHintMuted = () => {
+    try {
+      return sessionStorage.getItem("xs_bank_hint_off") === "1";
+    } catch (_) {
+      return false;
+    }
+  };
+  const xsBankHintHide = () => {
+    if (!xsBankHintBox) return;
+    const box = xsBankHintBox;
+    xsBankHintBox = null;
+    box.style.opacity = "0";
+    box.style.transform = "translate(-50%, 10px)";
+    setTimeout(() => {
+      try {
+        box.remove();
+      } catch (_) {}
+    }, 220);
+  };
+  const xsBankHintSwitch = () => {
+    try {
+      const store = useSettingStore();
+      store.config.basicConfig.answerMode.value = "questionBankAndAI";
+      GM_setValue("setting", JSON.stringify(store.$state || store));
+    } catch (_) {}
+    if (!xsBankHintBox) return;
+    const body = xsBankHintBox.querySelector("[data-xs-bank-body]");
+    const actions = xsBankHintBox.querySelector("[data-xs-bank-actions]");
+    const dot = xsBankHintBox.querySelector("[data-xs-bank-dot]");
+    const title = xsBankHintBox.querySelector("[data-xs-bank-title]");
+    if (dot) dot.style.background = "#22c55e";
+    if (title) title.textContent = "已开启题库+AI";
+    if (body) body.textContent = "下一道题开始生效，题库没收录的题会交给 AI 作答。";
+    if (actions) actions.style.display = "none";
+    setTimeout(xsBankHintHide, 2600);
+  };
+  const xsBankHintShow = () => {
+    xsBankMissCount += 1;
+    if (xsBankHintMuted() || !document.body) return;
+    if (xsBankHintBox) {
+      const title = xsBankHintBox.querySelector("[data-xs-bank-title]");
+      if (title) title.textContent = "本页有 " + xsBankMissCount + " 道题不在题库里";
+      return;
+    }
+    const box = document.createElement("div");
+    box.setAttribute("data-xs-bank-hint", "1");
+    box.style.cssText = "position:fixed;left:50%;bottom:" + (xsNetBanner ? "78px" : "22px") + ";transform:translate(-50%, 10px);opacity:0;z-index:2147483646;width:min(420px, calc(100vw - 32px));box-sizing:border-box;padding:14px 16px 13px;border-radius:12px;background:#111827;color:#f8fafc;font:13px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;box-shadow:0 16px 40px rgba(15,23,42,.38);border:1px solid rgba(255,255,255,.08);transition:opacity .2s ease,transform .2s ease";
+    const head = document.createElement("div");
+    head.style.cssText = "display:flex;align-items:center;gap:8px;margin-bottom:6px";
+    const dot = document.createElement("span");
+    dot.style.cssText = "flex:none;width:6px;height:6px;border-radius:999px;background:#f59e0b";
+    dot.setAttribute("data-xs-bank-dot", "1");
+    const title = document.createElement("span");
+    title.setAttribute("data-xs-bank-title", "1");
+    title.textContent = "题库里没有这道题";
+    title.style.cssText = "font-size:13.5px;font-weight:600;letter-spacing:.3px";
+    head.appendChild(dot);
+    head.appendChild(title);
+    const body = document.createElement("div");
+    body.setAttribute("data-xs-bank-body", "1");
+    body.textContent = "当前是纯题库模式：只查题库、不调用 AI，没收录的题目会被跳过。开启题库+AI 后，这类题交给 AI 作答（会消耗题数）。";
+    body.style.cssText = "color:#cbd5e1;font-size:12.5px;line-height:1.65;margin-bottom:12px";
+    const actions = document.createElement("div");
+    actions.setAttribute("data-xs-bank-actions", "1");
+    actions.style.cssText = "display:flex;align-items:center;justify-content:flex-end;gap:6px";
+    const keep = document.createElement("button");
+    keep.type = "button";
+    keep.textContent = "保持纯题库";
+    keep.style.cssText = "flex:none;border:0;border-radius:7px;padding:5px 10px;background:transparent;color:#94a3b8;font-size:12px;font-family:inherit;line-height:1.6;cursor:pointer";
+    keep.onclick = () => {
+      try {
+        sessionStorage.setItem("xs_bank_hint_off", "1");
+      } catch (_) {}
+      xsBankHintHide();
+    };
+    const open = document.createElement("button");
+    open.type = "button";
+    open.textContent = "开启题库+AI";
+    open.style.cssText = "flex:none;border:0;border-radius:7px;padding:5px 12px;background:#2563eb;color:#fff;font-size:12px;font-family:inherit;line-height:1.6;font-weight:500;cursor:pointer";
+    open.onclick = xsBankHintSwitch;
+    actions.appendChild(keep);
+    actions.appendChild(open);
+    box.appendChild(head);
+    box.appendChild(body);
+    box.appendChild(actions);
+    document.body.appendChild(box);
+    xsBankHintBox = box;
+    requestAnimationFrame(() => {
+      box.style.opacity = "1";
+      box.style.transform = "translate(-50%, 0)";
+    });
+  };
   const localBackendJson = (url, data, token, options) => {
     const silent = !!(options && options.silent);
     const send = () => new Promise((resolve, reject) => {
@@ -3365,7 +3461,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 return;
               }
               const is200NoAnswer = obj.code === 200 && !(obj.data && obj.data.answer);
-              resolve({ code: -1004, data: { answer: [], remainCount: 0 }, msg: is200NoAnswer ? ((obj.data && obj.data.image_question) ? (obj.msg || "图片题必须设置成AI") : "未找到答案") : (obj.msg || "本地题库未命中") });
+              // 纯题库模式下后端明确回了「题库里没有」，这是模式限制不是故障，给一次切 AI 的建议
+              if (is200NoAnswer && extra && extra.bankOnly && !(obj.data && obj.data.image_question)) xsBankHintShow();
+              resolve({ code: -1004, data: { answer: [], remainCount: 0 }, msg: is200NoAnswer ? ((obj.data && obj.data.image_question) ? (obj.msg || "图片题必须设置成AI") : (extra && extra.bankOnly ? "题库未命中" : "未找到答案")) : (obj.msg || "本地题库未命中") });
             }
           } catch (e) {
             resolve(handleError$1("本地后端响应解析失败"));
