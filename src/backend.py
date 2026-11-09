@@ -6278,7 +6278,10 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 pass
             return json.dumps({"_too_large": length})
-        return self.rfile.read(length).decode("utf-8")
+        # 极少数老客户端会用 GBK 之类的非 UTF-8 编码发请求体，硬 decode 会直接抛
+        # UnicodeDecodeError，请求以 traceback 收场、客户端只看到连接被断。
+        # 这里替换掉非法字节，后面 json.loads 失败会走各接口自己的 400/500 分支。
+        return self.rfile.read(length).decode("utf-8", "replace")
 
     def _read_raw_body(self, max_bytes):
         """读取原始字节（附件上传用）。超限返回 None，并让本次连接直接关闭。"""
@@ -12019,9 +12022,17 @@ class Handler(BaseHTTPRequestHandler):
                     # 纯题库模式：题库没命中就到此为止，不再调用模型，也不产生扣费。
                     print(f"[纯题库未命中] question={question[:60]}...", flush=True)
                     profile_now = build_user_profile(user.get("username", ""))
+                    # 这里压根没调用模型，但 status 的默认值是 error、err 还是空的，
+                    # finally 会记成一条「模型 -、错误 -」的空失败，后台看着像模型全挂了。
+                    # 明确标成题库未命中，不算模型失败，也不进「未答出」统计。
+                    provider_name = "question_bank"
+                    resolved_model = "题库"
+                    status = "bank_miss"
+                    err = "题库模式：题库未命中，本题未调用模型"
                     # 图片题在纯题库模式下永远无法命中（图片题不入库、不匹配），
                     # 明确提示用户把答题模式切换成 AI，而不是笼统的「题库未命中」。
                     if is_multimodal_question(question):
+                        err = "题库模式：图片题不入库，需切换成 AI 模式作答"
                         self._send_json(200, {"code": 200, "msg": "图片题必须设置成AI", "data": {
                             "answer": "",
                             "mode": "question_bank",

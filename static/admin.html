@@ -4033,6 +4033,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                   <option value="error">失败（未答出）</option>
                   <option value="switched">已切换（已由其它模型答出）</option>
                   <option value="manual_pick">待手动选择</option>
+                  <option value="bank_miss">题库未命中（未调用模型）</option>
                   <option value="insufficient_quota">余额不足</option>
                 </select>
                 <select v-model="aiLogFilter.source">
@@ -4082,22 +4083,23 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                           <div v-if="log.member_until" :style="memberColorStyle(log.member_until)">会员 {{fmtMemberExpire(log.member_until)}}</div>
                         </td>
                         <td style="padding:10px 8px;white-space:nowrap">
-                          <span :style="{color:log.status==='success'?'var(--success)':(log.status==='insufficient_quota'||log.status==='manual_pick'||(log.status==='error'&&log.final_model))?'var(--warning)':'var(--danger)',fontWeight:'600'}">{{logStatusText(log)}}</span>
+                          <span :style="{color:log.status==='success'?'var(--success)':log.status==='bank_miss'?'var(--text3)':(log.status==='insufficient_quota'||log.status==='manual_pick'||(log.status==='error'&&log.final_model))?'var(--warning)':'var(--danger)',fontWeight:'600'}">{{logStatusText(log)}}</span>
                         </td>
                         <td style="padding:10px 8px;color:var(--accent2);max-width:180px;word-break:break-all">{{log.model||'-'}}
                           <span v-if="log.provider_key==='custom'" style="display:inline-block;margin-left:4px;padding:1px 6px;border-radius:6px;font-size:10px;background:rgba(245,158,11,.15);color:var(--warning);border:1px solid rgba(245,158,11,.35);vertical-align:middle">自有</span>
+                          <span v-else-if="log.provider_key==='question_bank'" style="display:inline-block;margin-left:4px;padding:1px 6px;border-radius:6px;font-size:10px;background:rgba(148,163,184,.14);color:var(--text2);border:1px solid rgba(148,163,184,.3);vertical-align:middle">题库</span>
                           <span v-else style="display:inline-block;margin-left:4px;padding:1px 6px;border-radius:6px;font-size:10px;background:rgba(96,165,250,.12);color:var(--accent2);border:1px solid rgba(96,165,250,.3);vertical-align:middle">平台</span>
                         </td>
                         <td style="padding:10px 8px;color:var(--success);max-width:180px;word-break:break-all">{{log.status==='error'?(log.final_model||'-'):'-'}}</td>
                         <td style="padding:10px 8px;white-space:nowrap">{{formatDuration(log.duration_ms)}}</td>
                         <td style="padding:10px 8px;max-width:320px;word-break:break-word;color:var(--text2)">{{shortText(log.question,90)}}</td>
                         <td style="padding:10px 8px;max-width:260px;word-break:break-word;color:var(--success)">{{shortText(log.answer,80)}}</td>
-                        <td :style="{padding:'10px 8px',maxWidth:'220px',wordBreak:'break-word',color:(log.status==='error'&&log.final_model)?'var(--warning)':'var(--danger)'}">{{shortText(log.error,60)}}</td>
+                        <td :style="{padding:'10px 8px',maxWidth:'220px',wordBreak:'break-word',color:log.status==='bank_miss'?'var(--text3)':(log.status==='error'&&log.final_model)?'var(--warning)':'var(--danger)'}">{{shortText(log.error,60)}}</td>
                         <td style="padding:10px 8px"><button class="btn btn-secondary btn-sm" @click="toggleLog(log.id)">{{expandedLogs[log.id]?'收起':'详情'}}</button></td>
                       </tr>
                       <tr v-if="expandedLogs[log.id]">
                         <td colspan="11" style="padding:0 8px 12px">
-                          <div class="log-detail">用户：{{log.username||'-'}}&#10;来源：{{log.provider_key==='custom'?'自有模型（用户自带）':'平台模型（后台配置）'}}&#10;模型：{{log.model||'-'}}&#10;最终成功模型：{{log.status==='error'?(log.final_model||'无'):'-'}}&#10;题目：{{log.question||'-'}}&#10;&#10;答案：{{log.answer||'-'}}&#10;&#10;错误：{{log.error||'-'}}</div>
+                          <div class="log-detail">用户：{{log.username||'-'}}&#10;来源：{{log.provider_key==='custom'?'自有模型（用户自带）':(log.provider_key==='question_bank'?'题库':'平台模型（后台配置）')}}&#10;模型：{{log.model||'-'}}&#10;最终成功模型：{{log.status==='error'?(log.final_model||'无'):'-'}}&#10;题目：{{log.question||'-'}}&#10;&#10;答案：{{log.answer||'-'}}&#10;&#10;错误：{{log.error||'-'}}</div>
                         </td>
                       </tr>
                     </template>
@@ -8294,7 +8296,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       }catch(e){newProviderTestResult.value={status:'fail',text:'调试失败：网络错误'};}
       finally{testingNewProvider.value=false;}
     }
-    function statusText(s){return s==='success'?'成功':s==='insufficient_quota'?'余额不足':s==='manual_pick'?'待手动选择':'失败';}
+    function statusText(s){return s==='success'?'成功':s==='insufficient_quota'?'余额不足':s==='manual_pick'?'待手动选择':s==='bank_miss'?'题库未命中':'失败';}
     // 单模型失败但已由其它模型答出：不是整题失败，标成「已切换」避免误读。
     function logStatusText(log){return (log.status==='error'&&log.final_model)?'已切换':statusText(log.status);}
     function formatDuration(ms){
