@@ -219,10 +219,13 @@ ANSWER_TIME_BUDGET = 180
 MAX_MODEL_BUDGET = 40
 # 图片题单独放宽预算：带图请求要先上传图片，模型还得识图，思考型模型经常要几十秒才吐答案。
 # 之前和纯文本共用 40 秒，模型正要出结果就被掐断，日志里就是「几个模型全在 40 秒内无响应」。
-# 75 秒实测仍不够：思考型模型光推理就要一分钟以上，单模型给到 120 秒；
-# 整体 270 秒能完整试两个模型。上限受 nginx 与脚本请求超时 300 秒约束，再往上要同时调这两处。
+# 75 秒实测仍不够：思考型模型光推理就要一分钟以上。
+# 单模型上限给 90 秒：真实多模态模型识图一般在 15~40 秒返回，90 秒足够；
+# 而把「其实不会看图、只是被勾了支持图片」的模型卡在 120 秒，等于半道题白等。
+# 90 秒上限下整体 270 秒能完整试三个模型，比原来的两个多一次兜底机会。
+# 上限受 nginx 与脚本请求超时 300 秒约束，再往上要同时调这两处。
 VISION_TIME_BUDGET = 270
-MAX_VISION_MODEL_BUDGET = 120
+MAX_VISION_MODEL_BUDGET = 90
 DASHBOARD_CACHE = {"time": 0, "data": None}
 DASHBOARD_CACHE_SECONDS = 5
 # 官网直营营收口径：代理商充值（plan_type='dist_recharge'）是压在平台的预存款、属于负债，
@@ -4412,6 +4415,22 @@ def provider_round_robin_rest(ordered):
                 providers.remove(p)
     return result
 
+def _looks_multimodal(model_name):
+    """按模型名判断它是否「明确」支持看图。
+
+    后台「支持图片」是人工勾选，很容易把 Kimi-K2、DeepSeek-V4 这类纯文本/代码模型
+    也勾上。这类模型收到图片既不一定报错，也不会真去看图，常见表现是一直磨到
+    超时（日志里「120s 内无响应」），白吃掉半道题的预算。
+    这里只在模型名里找明确的多模态标记，用于图片题排序，不影响文字题。
+    """
+    low = str(model_name or "").lower()
+    if "vl" in low:
+        return True
+    return any(h in low for h in (
+        "omni", "vision", "gemini", "gpt-4o", "gpt-4.1", "gpt-5",
+        "glm-4v", "internvl", "pixtral", "llava", "qvq",
+    ))
+
 def build_models_html():
     options = []
     for name, info in PROVIDERS.items():
@@ -4820,6 +4839,14 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip="", budget=0
         return None, "所有模型均不可用（404冷却中）", "", ""
     # 按权重排序，串行依次尝试，权重高的优先调用；再按提供商轮询打散避免单家霸占
     ordered = provider_round_robin_rest(weighted_pick(active))
+    if need_vision:
+        # 图片题先派给名字里明确是多模态的模型（omni/vl/vision/gemini 等），
+        # 被误勾「支持图片」的纯文本模型排到后面兜底。分区内保持原有轮询顺序。
+        strong = [m for m in ordered if _looks_multimodal(m[2])]
+        weak = [m for m in ordered if not _looks_multimodal(m[2])]
+        if strong and weak:
+            ordered = strong + weak
+            print(f"[自动模型] 图片题优先视觉模型: {', '.join(m[2] for m in strong)}", flush=True)
     print(f"[自动模型] 串行尝试 {len(ordered)} 个模型，顺序: {', '.join(f'{m[2]}({m[0]},w={m[3]})' for m in ordered)}", flush=True)
     errors = []
     error_logs = []  # 失败的模型日志，待确定最终成功模型后统一补记
