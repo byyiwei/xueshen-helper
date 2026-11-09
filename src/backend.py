@@ -4843,8 +4843,13 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip="", budget=0
         print(f"[自动模型] 尝试 provider={provider_name}, model={model_name}, weight={weight}", flush=True)
         attempt_start = time.time()
         remaining = max(deadline - time.time(), 0)
-        if remaining <= 5:
-            print(f"[自动模型] 整体时间预算({total_budget}s)即将耗尽，跳过剩余模型", flush=True)
+        # 预算尾巴不值得再试：图片题一次识图作答至少要几十秒，剩余时间不够时
+        # 拉起模型只会得到一个「24s 内无响应」的超时，既答不出来，日志里还会让人
+        # 误以为是这个模型坏了。直接停手，把原因写成整体预算耗尽。
+        min_attempt = 45 if need_vision else 8
+        if remaining < min_attempt:
+            print(f"[自动模型] 剩余预算 {int(remaining)}s 不足以完成一次作答，跳过剩余模型", flush=True)
+            errors.append("整体时间预算已用完，本题未答完")
             break
         model_budget = MAX_VISION_MODEL_BUDGET if need_vision else MAX_MODEL_BUDGET
         if len(ordered) == 1:

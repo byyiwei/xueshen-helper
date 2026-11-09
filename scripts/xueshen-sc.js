@@ -2621,7 +2621,7 @@
   const _hoisted_12$2 = { key: 0 };
   const _hoisted_13$1 = ["innerHTML"];
   const _hoisted_14$1 = { class: "answer-content" };
-  const _hoisted_15 = ["innerHTML"];
+  const _hoisted_15 = ["innerHTML", "onClick"];
   const _hoisted_16 = {
     key: 0,
     style: { "color": "#f94f17" }
@@ -2672,6 +2672,55 @@
         questionList.value = [...questionList.value];
         useLogStore().insertLog(filled ? `第${qIndex + 1}题已按你选中的候选题填入答案` : `第${qIndex + 1}题候选答案没点上去，请手动勾选`, filled ? undefined : "warning");
         if (filled) notifyManualPickResolved(qIndex + 1);
+      };
+      // 点答案即复制：长文本题（写作/简答）答案动辄几百字，手动选太费劲。
+      // 复制后在被点击的位置弹一个小气泡，1 秒多自动淡出，不打断面板操作。
+      const showCopyToast = (ev, text, ok) => {
+        const host = (getTopDocument() || document).body || document.body;
+        if (!host) return;
+        const el = document.createElement("div");
+        el.textContent = text;
+        el.style.cssText = "position:fixed;z-index:2147483647;padding:6px 12px;border-radius:8px;background:rgba(17,24,39,.88);color:#fff;font-size:12px;line-height:1.4;pointer-events:none;transition:opacity .25s;opacity:1;box-shadow:0 6px 18px rgba(0,0,0,.28)";
+        const x = ev && ev.clientX ? ev.clientX : window.innerWidth / 2;
+        const y = ev && ev.clientY ? ev.clientY : window.innerHeight / 2;
+        el.style.left = Math.min(Math.max(x + 12, 8), Math.max(window.innerWidth - 140, 8)) + "px";
+        el.style.top = Math.max(y - 36, 8) + "px";
+        host.appendChild(el);
+        setTimeout(() => { el.style.opacity = "0"; }, 1200);
+        setTimeout(() => el.remove(), 1600);
+      };
+      const copyAnswer = async (ev, raw) => {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        const value = String(raw == null ? "" : raw)
+          .replace(/<br\s*\/?>/gi, "\n")
+          .replace(/<[^>]+>/g, "")
+          .replace(/​/g, "")
+          .trim();
+        if (!value) {
+          showCopyToast(ev, "这条答案不含文字，请手动复制", false);
+          return;
+        }
+        const ok = () => showCopyToast(ev, "复制成功", true);
+        try {
+          await navigator.clipboard.writeText(value);
+          ok();
+          return;
+        } catch (_) {
+        }
+        // 老内核或没有剪贴板权限时退回 execCommand
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = value;
+          ta.style.cssText = "position:fixed;left:-9999px;top:0;opacity:0";
+          document.body.appendChild(ta);
+          ta.select();
+          const done = document.execCommand("copy");
+          document.body.removeChild(ta);
+          if (done) ok();
+          else showCopyToast(ev, "复制失败，请手动选中复制", false);
+        } catch (_) {
+          showCopyToast(ev, "复制失败，请手动选中复制", false);
+        }
       };
       return (_ctx, _cache) => {
         const _component_a_button = vue.resolveComponent("a-button");
@@ -2758,7 +2807,11 @@
                     vue.createElementVNode("div", _hoisted_14$1, [
                       _cache[8] || (_cache[8] = vue.createElementVNode("span", null, "答案：", -1)),
                       vue.createElementVNode("div", {
-                        innerHTML: (_b = (_a = vue.unref(questionList)[index - 1].answer) == null ? void 0 : _a.answer) == null ? void 0 : _b.join()
+                        innerHTML: (_b = (_a = vue.unref(questionList)[index - 1].answer) == null ? void 0 : _a.answer) == null ? void 0 : _b.join(),
+                        class: "answer-copyable",
+                        title: "点击复制答案",
+                        style: { "cursor": "pointer" },
+                        onClick: ($event) => copyAnswer($event, (_b = (_a = vue.unref(questionList)[index - 1].answer) == null ? void 0 : _a.answer) == null ? void 0 : _b.join())
                       }, null, 8, _hoisted_15),
                       ((_c = vue.unref(questionList)[index - 1].answer) == null ? void 0 : _c.code) === 0 ? (vue.openBlock(), vue.createElementBlock("div", _hoisted_16, "有答案（不完全匹配），请手动选择")) : vue.createCommentVNode("", true),
                       ((_d = vue.unref(questionList)[index - 1].answer) == null ? void 0 : _d.msg) ? (vue.openBlock(), vue.createElementBlock("div", {
@@ -8884,6 +8937,8 @@
         // 学习通作业页的长文本题（简答/论述/写作）用的是 UEditor：
         // textarea 往往没有 name 只有 id，编辑器实例又挂在页面 window 上。
         // 旧代码只按 name 取实例，写作题 name 为空 → 取到空 key → 内容永远写不进编辑器。
+        // 另外题目命中缓存时页面刚打开就开填，此时编辑器 iframe 还没初始化完，
+        // UEditor 会把 setContent 直接丢掉（不报错），所以必须先等 ready 再写。
         const text = String(rawText == null ? "" : rawText);
         if (!text || !textareaElement) return false;
         const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r?\n/g, "<br/>");
@@ -8891,7 +8946,23 @@
         const win = (doc && doc.defaultView) || this._window;
         const UE = (win && win.UE) || (this._window && this._window.UE);
         const keys = [textareaElement.name, textareaElement.id].filter(Boolean);
+        const readBack = (editor) => {
+          try {
+            return String(editor.getContent() || "").replace(/<[^>]*>/g, "").trim();
+          } catch (_) {
+            return "";
+          }
+        };
+        const writeInto = (editor) => {
+          try {
+            editor.setContent(escaped);
+            return true;
+          } catch (_) {
+            return false;
+          }
+        };
         if (UE && typeof UE.getEditor === "function") {
+          let scheduled = false;
           for (const key of keys) {
             let editor = null;
             try {
@@ -8899,14 +8970,26 @@
             } catch (_) {
             }
             if (!editor || typeof editor.setContent !== "function") continue;
-            try {
-              editor.setContent(escaped);
-              // UEditor 未就绪时 setContent 会静默吞掉内容，读回确认有字才算成功
-              const content = typeof editor.getContent === "function" ? String(editor.getContent() || "") : "";
-              if (content.replace(/<[^>]*>/g, "").trim()) return true;
-            } catch (_) {
+            if (typeof editor.ready === "function" && !editor.isReady) {
+              // 未就绪：排队到 ready 后再写，另加一次延迟兜底
+              try {
+                editor.ready(() => writeInto(editor));
+                setTimeout(() => {
+                  if (!readBack(editor)) writeInto(editor);
+                }, 1200);
+                scheduled = true;
+                continue;
+              } catch (_) {
+              }
             }
+            if (writeInto(editor) && readBack(editor)) return true;
+            // 写进去了但读回为空，多半是编辑器还没就绪，稍后补一次
+            setTimeout(() => {
+              if (!readBack(editor)) writeInto(editor);
+            }, 800);
+            scheduled = true;
           }
+          if (scheduled) return true;
         }
         // 没有 UEditor 时退回原生 textarea，并补发事件让页面脚本感知
         try {
