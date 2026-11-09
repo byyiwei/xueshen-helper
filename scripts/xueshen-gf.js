@@ -3992,8 +3992,31 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       const dismiss = () => { panel.remove(); if (activeCxEditor === panel) activeCxEditor = null; };
       apply.onclick = () => {
         if (!setting.config.cxConfig.showCustomEditor.value || !target.isConnected) { dismiss(); return; }
-        if (target.tagName === "TEXTAREA") target.value = editor.value;
-        else target.textContent = editor.value;
+        const ownerWin = target.ownerDocument.defaultView || window;
+        const value = editor.value;
+        let wrote = false;
+        if (target.tagName === "TEXTAREA") {
+          // 学习通长文本题的 textarea 由 UEditor 接管（多数没有 name 只有 id），
+          // 直接写 value 用户看不到效果，必须写进编辑器实例。
+          const UE = ownerWin.UE;
+          const keys = [target.name, target.id].filter(Boolean);
+          if (UE && typeof UE.getEditor === "function") {
+            for (const key of keys) {
+              try {
+                const instance = UE.getEditor(key);
+                if (instance && typeof instance.setContent === "function") {
+                  instance.setContent(value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r?\n/g, "<br/>"));
+                  wrote = true;
+                  break;
+                }
+              } catch (_) {}
+            }
+          }
+          if (!wrote) { target.value = value; wrote = true; }
+        } else {
+          target.textContent = value;
+          wrote = true;
+        }
         const EventType = target.ownerDocument.defaultView.Event;
         target.dispatchEvent(new EventType("input", {bubbles:true}));
         target.dispatchEvent(new EventType("change", {bubbles:true}));
@@ -8255,6 +8278,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         "简答题": "4",
         "名词解释": "5",
         "论述题": "6",
+        "写作题": "26",
+        "作文题": "26",
         "计算题": "7",
         "连线题": "11",
         "匹配题": "11",
@@ -8299,6 +8324,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         {
           keywords: ["论述"],
           type: "6"
+        },
+        {
+          // 学习通新版把作文/写作单独编码成 answertype=26，题型名直接写「写作题」。
+          // 不识别的话整题会被判成 999「异常题型」，连 AI 都不会调。
+          keywords: ["写作", "作文"],
+          type: "26"
         },
         {
           keywords: ["计算"],
@@ -8479,7 +8510,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     constructor(type, iframe) {
       super();
       __publicField(this, "type");
-      __publicField(this, "AI_ALLOW_QUESTION_TYPE", ["0", "1", "2", "3", "4", "5"]);
+      __publicField(this, "AI_ALLOW_QUESTION_TYPE", ["0", "1", "2", "3", "4", "5", "26"]);
       __publicField(this, "answerSeparators", ["===", "#", "---", "###", "|", ";", "；"]);
       __publicField(this, "init", async () => {
         var _that = this;
@@ -8633,6 +8664,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         if (code === 11) return "11";
         if (code === 14) return "14";
         if (code === 15) return "15";
+        // 26 = 写作题（含英语作文）。学习通新版作业页用它区分长文本作文，
+        // 早先没有这条映射，写作题一路落到「未识别题型」。
+        if (code === 26) return "26";
         return "";
       });
       __publicField(this, "getCxQuestionTypeInput", (element) => {
@@ -8849,6 +8883,45 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         }
         return false;
       });
+      __publicField(this, "fillUeditor", (textareaElement, rawText) => {
+        // 学习通作业页的长文本题（简答/论述/写作）用的是 UEditor：
+        // textarea 往往没有 name 只有 id，编辑器实例又挂在页面 window 上。
+        // 旧代码只按 name 取实例，写作题 name 为空 → 取到空 key → 内容永远写不进编辑器。
+        const text = String(rawText == null ? "" : rawText);
+        if (!text || !textareaElement) return false;
+        const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\r?\n/g, "<br/>");
+        const doc = textareaElement.ownerDocument;
+        const win = (doc && doc.defaultView) || this._window;
+        const UE = (win && win.UE) || (this._window && this._window.UE);
+        const keys = [textareaElement.name, textareaElement.id].filter(Boolean);
+        if (UE && typeof UE.getEditor === "function") {
+          for (const key of keys) {
+            let editor = null;
+            try {
+              editor = UE.getEditor(key);
+            } catch (_) {
+            }
+            if (!editor || typeof editor.setContent !== "function") continue;
+            try {
+              editor.setContent(escaped);
+              // UEditor 未就绪时 setContent 会静默吞掉内容，读回确认有字才算成功
+              const content = typeof editor.getContent === "function" ? String(editor.getContent() || "") : "";
+              if (content.replace(/<[^>]*>/g, "").trim()) return true;
+            } catch (_) {
+            }
+          }
+        }
+        // 没有 UEditor 时退回原生 textarea，并补发事件让页面脚本感知
+        try {
+          textareaElement.value = text;
+          const EventType = (win && win.Event) || Event;
+          textareaElement.dispatchEvent(new EventType("input", { bubbles: true }));
+          textareaElement.dispatchEvent(new EventType("change", { bubbles: true }));
+          return true;
+        } catch (_) {
+        }
+        return false;
+      });
       __publicField(this, "fillQuestion", (question) => {
         var _a;
         if (!this._window) return false;
@@ -8906,17 +8979,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           textareaElements.forEach((textareaElement, index) => {
             const blankAnswer = blankAnswers[index];
             if (!blankAnswer) return;
-            try {
-              const ueditor = this._window.UE.getEditor(textareaElement.name);
-              ueditor.setContent(blankAnswer);
-              blankFilled += 1;
-            } catch (e) {
-              try {
-                textareaElement.value = blankAnswer;
-                blankFilled += 1;
-              } catch (_) {
-              }
-            }
+            if (this.fillUeditor(textareaElement, blankAnswer)) blankFilled += 1;
           });
           filled = blankFilled > 0 && blankFilled === textareaElements.length;
         } else if (question.type === "3") {
@@ -8947,22 +9010,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               break;
             }
           }
-        } else if (question.type === "4" || question.type === "5" || question.type === "6") {
+        } else if (question.type === "4" || question.type === "5" || question.type === "6" || question.type === "26") {
           const textareaElement = question.element.querySelector("textarea");
           if (!textareaElement) return false;
           const longAnswer = this.resolveBlankAnswers(question.answer.answer, 1)[0] || "";
           if (!longAnswer) return false;
-          try {
-            const ueditor = this._window.UE.getEditor(textareaElement.name);
-            ueditor.setContent(longAnswer);
-            filled = true;
-          } catch (e) {
-            try {
-              textareaElement.value = longAnswer;
-              filled = true;
-            } catch (_) {
-            }
-          }
+          filled = this.fillUeditor(textareaElement, longAnswer);
         } else if (question.type === "11") {
           filled = this.fillLineQuestion(question);
         } else if (question.type === "14") {
