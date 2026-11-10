@@ -217,6 +217,11 @@ ANSWER_TIME_BUDGET = 180
 # 40 秒是实测折中：总预算 180 秒内至少能试 4 个模型；原来 60 秒时前 3 个慢模型就能把预算吃光，
 # 剩下 8 个兜底模型直接拿到「超出整体时间预算」。
 MAX_MODEL_BUDGET = 40
+# 长答案文字题（多空填空、作文、翻译表格）单独放宽：一个模型要写几十行内容，
+# 40 秒经常还没生成完就被掐断，日志里就是「40s 内无响应」。
+# 单模型 75 秒、整题 200 秒，仍在脚本 240 秒请求超时之内。
+LONG_TEXT_TIME_BUDGET = 200
+MAX_LONG_TEXT_MODEL_BUDGET = 75
 # 图片题单独放宽预算：带图请求要先上传图片，模型还得识图，思考型模型经常要几十秒才吐答案。
 # 之前和纯文本共用 40 秒，模型正要出结果就被掐断，日志里就是「几个模型全在 40 秒内无响应」。
 # 75 秒实测仍不够：思考型模型光推理就要一分钟以上。
@@ -4431,6 +4436,31 @@ def _looks_multimodal(model_name):
         "glm-4v", "internvl", "pixtral", "llava", "qvq",
     ))
 
+def is_long_answer_question(question_payload_str):
+    """判断这道题的答案本身是不是「成段的长内容」：多空填空、作文、翻译表格等。
+
+    选择题几个字母就答完，40 秒够；一道 14 空的中英翻译题要让模型写出 28 行内容，
+    40 秒往往还在生成就被掐断，日志里表现为整批模型「40s 内无响应」，看着像模型坏了，
+    其实只是答案没写完。这类题按更长的单模型预算跑。
+    """
+    try:
+        info = parse_question_payload(question_payload_str)
+    except Exception:
+        return False
+    text = str(info.get("question") or "")
+    qtype = str(info.get("type") or "")
+    # 简答/论述/计算/写作：答案必然成段
+    if qtype in ("4", "5", "6", "26"):
+        return True
+    # 填空题（type 2）按空位数量和题干长度判断：1~2 个空仍是短答案
+    blank_count = len(re.findall(r"[_＿]{2,}", text))
+    if blank_count >= 4:
+        return True
+    if len(text) >= 400:
+        return True
+    low = text.lower()
+    return any(k in low for k in ("translation", "translate", "essay", "作文", "翻译", "论述", "简答"))
+
 def build_models_html():
     options = []
     for name, info in PROVIDERS.items():
@@ -4813,9 +4843,17 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip="", budget=0
         print(f"[自动模型] 超时冷却中: {', '.join(f'{m}({s}s)' for m,s in cooling_timeout)}", flush=True)
     if skipped_token:
         print(f"[自动模型] Token限额耗尽: {', '.join(sorted(set(skipped_token)))}", flush=True)
-    # 图片题用更宽的整体预算（见 VISION_TIME_BUDGET 注释）。
-    # budget 由调用方覆盖：手动选题只要一条参考答案，不能占满整题的 180 秒。
-    total_budget = budget if budget else (VISION_TIME_BUDGET if need_vision else ANSWER_TIME_BUDGET)
+    # 图片题用更宽的整体预算（见 VISION_TIME_BUDGET 注释）；文字题里答案很长的
+    # （多空填空、作文、翻译表格）也用更宽的预算，否则整批模型都卡在 40 秒写不完。
+    long_answer = (not need_vision) and is_long_answer_question(question)
+    if budget:
+        total_budget = budget
+    elif need_vision:
+        total_budget = VISION_TIME_BUDGET
+    else:
+        total_budget = LONG_TEXT_TIME_BUDGET if long_answer else ANSWER_TIME_BUDGET
+    if long_answer:
+        print(f"[自动模型] 长答案题，整体预算 {total_budget}s，单模型 {MAX_LONG_TEXT_MODEL_BUDGET}s", flush=True)
     started_at = time.time()
     deadline = started_at + total_budget
     if not active:
@@ -4873,12 +4911,17 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip="", budget=0
         # 预算尾巴不值得再试：图片题一次识图作答至少要几十秒，剩余时间不够时
         # 拉起模型只会得到一个「24s 内无响应」的超时，既答不出来，日志里还会让人
         # 误以为是这个模型坏了。直接停手，把原因写成整体预算耗尽。
-        min_attempt = 45 if need_vision else 8
+        min_attempt = 45 if need_vision else (20 if long_answer else 8)
         if remaining < min_attempt:
             print(f"[自动模型] 剩余预算 {int(remaining)}s 不足以完成一次作答，跳过剩余模型", flush=True)
             errors.append("整体时间预算已用完，本题未答完")
             break
-        model_budget = MAX_VISION_MODEL_BUDGET if need_vision else MAX_MODEL_BUDGET
+        if need_vision:
+            model_budget = MAX_VISION_MODEL_BUDGET
+        elif long_answer:
+            model_budget = MAX_LONG_TEXT_MODEL_BUDGET
+        else:
+            model_budget = MAX_MODEL_BUDGET
         if len(ordered) == 1:
             # 只有一个可用模型时没有兜底可换，40 秒硬掐会让慢模型永远答不完。
             # 把整题剩余预算都给它（整体仍受 ANSWER_TIME_BUDGET 约束）。
