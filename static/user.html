@@ -4810,14 +4810,13 @@
                     if (res.code === 200) { fillProfile(res.profile); msg('billingMsg', res.msg || '开通成功', true); }
                     else msg('billingMsg', res.msg || '开通失败', false);
                 } else {
-                    const payWin = window.open('', '_blank');
                     const res = await post('/api/payment/purchase', { plan_type: 'custom_model', pay_method: currentPayMethod }, token);
                     if (res.code === 200) {
                         if (res.paying) {
-                            if (res.pay_url) { if (payWin) payWin.location.href = res.pay_url; else window.open(res.pay_url, '_blank'); showPayQr(res.order_no, null, res.pay_url); msg('billingMsg', res.msg || '订单已创建，请完成付款', true); }
-                            else if (res.qr_code) { if (payWin) payWin.close(); showPayQr(res.order_no, res.qr_code, null); msg('billingMsg', res.msg || '订单已创建，请扫码付款', true); }
-                        } else { if (payWin) payWin.close(); fillProfile(res.profile); msg('billingMsg', res.msg || '开通成功', true); }
-                    } else { if (payWin) payWin.close(); msg('billingMsg', res.msg || '购买失败', false); }
+                            if (res.pay_url) { showPayQr(res.order_no, null, res.pay_url); msg('billingMsg', res.msg || '订单已创建，请扫码完成付款', true); }
+                            else if (res.qr_code) { showPayQr(res.order_no, res.qr_code, null); msg('billingMsg', res.msg || '订单已创建，请扫码付款', true); }
+                        } else { fillProfile(res.profile); msg('billingMsg', res.msg || '开通成功', true); }
+                    } else { msg('billingMsg', res.msg || '购买失败', false); }
                 }
             } catch (_) { msg('billingMsg', '购买失败，请检查后端服务是否运行', false); }
             finally { setBusy($('customModelBuyBtn'), false); }
@@ -4836,14 +4835,13 @@
                     if (res.code === 200) { fillProfile(res.profile); msg('modelPanelMsg', res.msg || '开通成功', true); renderCustomModelBuy(); }
                     else msg('modelPanelMsg', res.msg || '开通失败', false);
                 } else {
-                    const payWin = window.open('', '_blank');
                     const res = await post('/api/payment/purchase', { plan_type: 'custom_model', pay_method: currentPayMethod }, token);
                     if (res.code === 200) {
                         if (res.paying) {
-                            if (res.pay_url) { if (payWin) payWin.location.href = res.pay_url; else window.open(res.pay_url, '_blank'); showPayQr(res.order_no, null, res.pay_url); msg('modelPanelMsg', res.msg || '订单已创建，请完成付款', true); }
-                            else if (res.qr_code) { if (payWin) payWin.close(); showPayQr(res.order_no, res.qr_code, null); msg('modelPanelMsg', res.msg || '订单已创建，请扫码付款', true); }
-                        } else { if (payWin) payWin.close(); fillProfile(res.profile); msg('modelPanelMsg', res.msg || '开通成功', true); renderCustomModelBuy(); }
-                    } else { if (payWin) payWin.close(); msg('modelPanelMsg', res.msg || '购买失败', false); }
+                            if (res.pay_url) { showPayQr(res.order_no, null, res.pay_url); msg('modelPanelMsg', res.msg || '订单已创建，请扫码完成付款', true); }
+                            else if (res.qr_code) { showPayQr(res.order_no, res.qr_code, null); msg('modelPanelMsg', res.msg || '订单已创建，请扫码付款', true); }
+                        } else { fillProfile(res.profile); msg('modelPanelMsg', res.msg || '开通成功', true); renderCustomModelBuy(); }
+                    } else { msg('modelPanelMsg', res.msg || '购买失败', false); }
                 }
             } catch (_) { msg('modelPanelMsg', '购买失败，请检查后端服务是否运行', false); }
             finally { setBusy(btn, false); }
@@ -5079,7 +5077,6 @@
             if (Number(price || 0) > 0 && !payMethodsList.length) return msg('billingMsg', '暂无可用支付方式，请联系管理员启用支付通道', false);
             const chk = $('useCommissionDeduct');
             const wantDeduct = !!(chk && chk.checked && Number(price || 0) > 0);
-            const payWin = window.open('', '_blank');
             setBusy(btn, true, '购买中...');
             try {
                 const payload = { plan_id: Number(planId), pay_method: currentPayMethod };
@@ -5094,47 +5091,44 @@
                     if (used > 0) loadCommissionState();
                     if (res.paying) {
                         if (res.pay_url) {
-                            if (payWin) payWin.location.href = res.pay_url;
-                            else window.open(res.pay_url, '_blank', 'noopener,noreferrer');
                             showPayQr(res.order_no, null, res.pay_url);
-                            msg('billingMsg', note + (res.msg || '订单已创建，已为你打开支付页面'), true);
+                            msg('billingMsg', note + (res.msg || '订单已创建，请扫码完成付款'), true);
                         } else if (res.qr_code) {
-                            if (payWin) payWin.close();
                             showPayQr(res.order_no, res.qr_code, null);
                             msg('billingMsg', note + (res.msg || '订单已创建，请扫码付款'), true);
                         } else {
-                            if (payWin) payWin.close();
                             msg('billingMsg', note + (res.msg || '订单已创建'), true);
                         }
                         if (used > 0) $('payQrTip').textContent = note + '订单号：' + res.order_no + '，付款完成后系统会自动确认到账。';
                     } else {
-                        if (payWin) payWin.close();
                         fillProfile(res.profile);
                         msg('billingMsg', note + (res.msg || '购买成功，权益已到账'), true);
                     }
                 } else {
-                    if (payWin) payWin.close();
                     msg('billingMsg', res.msg || '购买失败', false);
                 }
-            } catch (_) { if (payWin) payWin.close(); msg('billingMsg', '购买失败，请检查后端服务是否运行', false); }
+            } catch (_) { msg('billingMsg', '购买失败，请检查后端服务是否运行', false); }
             finally { setBusy(btn, false); }
         }
         function renderPayPanel(orderNo, qrCode, payUrl) {
             const img = $('payQrImg');
             const actions = $('payQrActions');
             const title = $('payQrTitle');
-            if (qrCode) {
+            // 收银台链接也画成二维码：中控的「扫码支付」就是把 payUrl 编成码，
+            // 这里跟它保持一致，手机扫一下直接进付款页；电脑上还能点按钮打开。
+            const content = qrCode || payUrl;
+            if (content) {
                 title.textContent = '请扫码完成付款';
                 img.style.display = '';
-                img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=' + encodeURIComponent(qrCode);
-                actions.innerHTML = '';
-                actions.style.display = 'none';
-            } else if (payUrl) {
-                title.textContent = '已为你打开支付页面，请完成付款';
-                img.style.display = 'none';
-                img.removeAttribute('src');
-                actions.style.display = '';
-                actions.innerHTML = `<a class="qr-link-btn" href="${payUrl}" target="_blank" rel="noopener noreferrer">重新打开支付页面</a>`;
+                img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=' + encodeURIComponent(content);
+                if (payUrl && !qrCode) {
+                    const safeUrl = String(payUrl).replace(/"/g, '&quot;');
+                    actions.style.display = '';
+                    actions.innerHTML = `<a class="qr-link-btn" href="${safeUrl}" target="_blank" rel="noopener noreferrer">在电脑上打开支付页面</a>`;
+                } else {
+                    actions.innerHTML = '';
+                    actions.style.display = 'none';
+                }
             }
             $('payQrTip').textContent = '订单号：' + orderNo + '，付款完成后系统会自动确认到账。';
         }
@@ -5159,13 +5153,9 @@
                     msg('billingMsg', data.msg || '支付成功，权益已到账', true);
                 } else {
                     const img = $('payQrImg');
-                    const actions = $('payQrActions');
-                    const inQrMode = img.style.display !== 'none' && img.getAttribute('src');
-                    const inUrlMode = actions.style.display !== 'none' && actions.innerHTML;
-                    if (data.pay_url && !inUrlMode) {
-                        renderPayPanel(orderNo, null, data.pay_url);
-                    } else if (data.qr_code && !inQrMode) {
-                        renderPayPanel(orderNo, data.qr_code, null);
+                    const showing = img.style.display !== 'none' && img.getAttribute('src');
+                    if (!showing && (data.pay_url || data.qr_code)) {
+                        renderPayPanel(orderNo, data.qr_code, data.pay_url);
                     }
                     if (data.msg) {
                         $('payQrTip').textContent = data.msg + '，请完成付款。';

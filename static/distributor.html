@@ -1094,7 +1094,9 @@
                     html += '用手机扫码付款。<br><img class="payqr" alt="收款二维码" src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data='
                         + encodeURIComponent(res.qr_code) + '">';
                 } else if (res.pay_url && String(res.pay_url).indexOf('https://') === 0) {
-                    html += '点开付款：<a href="' + esc(res.pay_url) + '" target="_blank" rel="noopener noreferrer">打开收银台</a>';
+                    // 收银台链接也画成二维码，手机扫码直接进付款页；电脑上点链接打开
+                    html += '用手机扫码付款。<br><img class="payqr" alt="收款二维码" src="https://api.qrserver.com/v1/create-qr-code/?size=220x220&data='
+                        + encodeURIComponent(res.pay_url) + '"><br><a href="' + esc(res.pay_url) + '" target="_blank" rel="noopener noreferrer">在电脑上打开收银台</a>';
                 } else {
                     html += '未拿到付款链接，请联系管理员。';
                 }

@@ -994,8 +994,8 @@ def hub_pay_sync_order(order_no, force=False):
         db.update_order_payment(order_no, hub_channel=channel)
     if status == "PAID":
         txn = str(data.get("channelTxnId") or "")
-        if txn and txn != (order.get("trade_no") or ""):
-            db.update_order_payment(order_no, trade_no=txn)
+        if txn and (txn != (order.get("trade_no") or "") or txn != (order.get("channel_order_no") or "")):
+            db.update_order_payment(order_no, trade_no=txn, channel_order_no=txn)
         ok_apply, msg = db.apply_paid_order(order_no, from_statuses=("pending", "created", "cancelled"))
         if ok_apply:
             return True, msg, db.get_order(order_no) or order
@@ -7305,6 +7305,8 @@ class Handler(BaseHTTPRequestHandler):
                     db.update_order_payment(
                         hub_order_no,
                         trade_no=str(hub_info.get("channelTxnId") or ""),
+                        # 后台「渠道单号」读的是 channel_order_no，中控的渠道单号要两边都写
+                        channel_order_no=str(hub_info.get("channelTxnId") or ""),
                         hub_channel=str(hub_info.get("channel") or "")[:32],
                     )
                     print(f"[中控支付] 充值下单成功 order={hub_order_no} user={user['username']} "
@@ -9744,6 +9746,8 @@ class Handler(BaseHTTPRequestHandler):
                         db.update_order_payment(
                             hub_order_no,
                             trade_no=str(hub_info.get("channelTxnId") or ""),
+                            # 后台「渠道单号」读的是 channel_order_no，中控的渠道单号要两边都写
+                            channel_order_no=str(hub_info.get("channelTxnId") or ""),
                             hub_channel=str(hub_info.get("channel") or "")[:32],
                         )
                         print(f"[中控支付] 下单成功 order={hub_order_no} user={user['username']} "
