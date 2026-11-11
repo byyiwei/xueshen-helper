@@ -970,6 +970,9 @@ def hub_pay_sync_order(order_no, force=False):
         return False, "不是中控订单", order
     if order.get("status") == "paid":
         return True, "支付成功，权益已到账", order
+    if order.get("status") == "cancelled":
+        # 本地已经关了就不再打扰中控；这笔真晚到的钱由事件回调按「已关闭也发货」处理
+        return False, "订单已关闭，请重新下单", order
     now = time.time()
     with _hub_pay_sync_lock:
         if not force and now - _hub_pay_sync_ts.get(order_no, 0) < HUB_PAY_SYNC_MIN_INTERVAL:
