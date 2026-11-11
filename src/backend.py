@@ -866,7 +866,11 @@ def _hub_pay_should_use(admin, username, biz="purchase", pay_method="", legacy_c
     else:
         if not _hub_pay_flag(admin.get("hub_pay_purchase"), 1):
             return False, "普通购买未开启"
-    if pay_method == "wechat" and legacy_channel in (None, "", "wechat"):
+    # 这一支付方式在老通道里没有任何可用项时，中控不是「灰度对象」而是唯一能收钱的路。
+    # 此时还按白名单/比例拦，用户只会看到「该支付方式暂无可用通道」，白白丢单。
+    if pay_method in ("wechat", "alipay") and legacy_channel in (None, ""):
+        return True, "老通道无可用项，交给中控"
+    if pay_method == "wechat" and legacy_channel == "wechat":
         return True, "老通道无微信下单实现"
     user = (username or "").strip()
     if not user:
