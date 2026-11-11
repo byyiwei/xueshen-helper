@@ -4456,6 +4456,10 @@ def is_long_answer_question(question_payload_str):
     blank_count = len(re.findall(r"[_＿]{2,}", text))
     if blank_count >= 4:
         return True
+    # 真值表/逻辑表这类填空：空位不在题干里（答案填在表格单元格），答案也不长，
+    # 但模型要逐格推演，40 秒常见「还在想就被掐断」。题干多行且带「表」字时放宽。
+    if qtype == "2" and (text.count("\n") >= 8 or "表" in text):
+        return True
     if len(text) >= 400:
         return True
     low = text.lower()
