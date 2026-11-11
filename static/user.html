@@ -821,12 +821,31 @@
         }
         .pay-method-card.active .pm-check { background: var(--c-brand); border-color: var(--c-brand); }
 
+        /* 收款二维码：居中弹窗，不再挤在购买卡片里 */
         .qr-panel {
-            display: none; margin-top: 18px; padding: 22px;
-            border: 1px solid var(--c-border); border-radius: var(--c-radius);
-            background: var(--c-surface-2); text-align: center;
+            display: none; position: fixed; inset: 0; z-index: 3000;
+            align-items: center; justify-content: center; padding: 18px;
+            background: rgba(8, 12, 20, .52);
+            -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
         }
-        .qr-panel.active { display: block; animation: rise .2s ease; }
+        .qr-panel.active { display: flex; }
+        .qr-dialog {
+            position: relative; width: 100%; max-width: 360px; padding: 30px 24px 24px;
+            border: 1px solid var(--c-border); border-radius: 18px; background: var(--c-surface);
+            box-shadow: 0 24px 60px -20px rgba(8, 12, 20, .45), var(--c-shadow);
+            text-align: center;
+        }
+        .qr-panel.active .qr-dialog { animation: qr-pop .2s ease; }
+        @keyframes qr-pop {
+            from { opacity: 0; transform: translateY(8px) scale(.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .qr-close {
+            position: absolute; top: 10px; right: 10px; width: 30px; height: 30px;
+            border: 0; border-radius: 50%; background: transparent; color: var(--c-text-3);
+            font-size: 20px; line-height: 1; cursor: pointer; transition: background .15s, color .15s;
+        }
+        .qr-close:hover { background: var(--c-surface-2); color: var(--c-text); }
         .qr-panel img {
             width: 220px; height: 220px; background: #fff; padding: 10px;
             border-radius: var(--c-radius-sm); box-shadow: var(--c-shadow); border: 1px solid var(--c-border);
@@ -3110,6 +3129,17 @@
         <!-- 移动端侧滑抽屉背景遮罩 -->
         <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 
+        <!-- 收款二维码弹窗：放在 section 外层，避免页面动画的 transform 把 fixed 定位困在容器里 -->
+        <div id="qrPanel" class="qr-panel buy-only">
+            <div class="qr-dialog" role="dialog" aria-modal="true" aria-labelledby="payQrTitle">
+                <button type="button" class="qr-close" id="payQrClose" aria-label="关闭">×</button>
+                <div class="qr-title" id="payQrTitle">请扫码完成付款</div>
+                <img id="payQrImg" alt="支付二维码">
+                <div class="qr-actions" id="payQrActions"></div>
+                <div class="qr-tip" id="payQrTip">付款完成后系统会自动确认到账。</div>
+            </div>
+        </div>
+
         <aside class="user-sidebar" id="userSidebar">
             <div class="user-brand">
                 <div class="user-brand-main">
@@ -3928,12 +3958,6 @@
                             </div>
                         </div>
 
-                        <div id="qrPanel" class="qr-panel buy-only">
-                            <div class="qr-title" id="payQrTitle">请扫码完成付款</div>
-                            <img id="payQrImg" alt="支付二维码">
-                            <div class="qr-actions" id="payQrActions"></div>
-                            <div class="qr-tip" id="payQrTip">付款完成后系统会自动确认到账。</div>
-                        </div>
                         <div id="billingMsg" class="msg"></div>
                     </div>
                 </section>
@@ -5139,6 +5163,17 @@
             payPollTimer = setInterval(() => checkOrderStatus(orderNo), 3000);
             checkOrderStatus(orderNo);
         }
+        // 关闭弹窗只收起界面，轮询继续：用户关掉后在外面付了款，也照样自动到账提示
+        (function bindPayQrClose() {
+            const panel = document.getElementById('qrPanel');
+            const closeBtn = document.getElementById('payQrClose');
+            if (!panel) return;
+            if (closeBtn) closeBtn.onclick = () => panel.classList.remove('active');
+            panel.addEventListener('click', (e) => { if (e.target === panel) panel.classList.remove('active'); });
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && panel.classList.contains('active')) panel.classList.remove('active');
+            });
+        })();
         async function checkOrderStatus(orderNo) {
             const token = localStorage.getItem(TOKEN_KEY);
             if (!token) return;
