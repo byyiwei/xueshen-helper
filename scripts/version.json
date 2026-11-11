@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.0.14",
+    "version": "6.0.15",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.0.14 菜单顺序调整为：日志、首页、答题、搜题、记录、设置、反馈、购买"
+    "changelog": "v6.0.15 修复写作题自动填充；答题面板点答案即复制；答题等待更久，失败自动重试"
   },
   "xueshen-gf": {
-    "version": "6.0.14",
+    "version": "6.0.15",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.0.14 菜单顺序调整为：日志、首页、答题、搜题、记录、设置、反馈、购买"
+    "changelog": "v6.0.15 修复写作题自动填充；答题面板点答案即复制；答题等待更久，失败自动重试"
   }
 }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.14
+// @version      6.0.15
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
@@ -15,6 +15,12 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.15 (2026-11-11)
+// @changelog    1. 修复写作题（含英语作文）无法自动填写：学习通新版把写作题单独编码成 answertype=26，之前认不出、也不调用 AI
+// @changelog    2. 富文本编辑器（UEditor）等加载完成后再写入并校验，写作题答案不会再出现「填了但没填上」
+// @changelog    3. 答题面板的答案点一下就能复制，并提示「复制成功」
+// @changelog    4. 日志页的答题、搜题等模块标签可以直接点击跳到对应页面；移除版本号旁无用的下拉菜单
+// @changelog    5. 答题等待时间放宽：整题最多等 5 分钟、请求超时 6 分钟，一轮模型全部失败时自动再试一次
 // @changelog    v6.0.14 (2026-11-09)
 // @changelog    1. 菜单顺序调整为：日志、首页、答题、搜题、记录、设置、反馈、购买
 // @changelog    v6.0.13 (2026-11-07)
