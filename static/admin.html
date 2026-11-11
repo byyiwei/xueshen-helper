@@ -2899,13 +2899,13 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
               <div class="form-row">
                 <div class="form-group">
                   <label>普通购买</label>
-                  <span class="toggle" :class="hubPayConfig.hub_pay_purchase?'on':''" @click="hubPayConfig.hub_pay_purchase=!hubPayConfig.hub_pay_purchase"></span>
-                  <div style="font-size:12px;color:var(--text3);margin-top:4px">关掉后套餐购买继续走老通道，代理商充值不受影响。</div>
+                  <div class="toggle" style="display:inline-block;vertical-align:middle" :class="hubPayConfig.hub_pay_purchase?'on':''" @click="hubPayConfig.hub_pay_purchase=!hubPayConfig.hub_pay_purchase"></div>
+                  <div style="font-size:12px;color:var(--text3);margin-top:6px">关掉后套餐购买继续走老通道，代理商充值不受影响。</div>
                 </div>
                 <div class="form-group">
                   <label>代理商充值</label>
-                  <span class="toggle" :class="hubPayConfig.hub_pay_dist?'on':''" @click="hubPayConfig.hub_pay_dist=!hubPayConfig.hub_pay_dist"></span>
-                  <div style="font-size:12px;color:var(--text3);margin-top:4px">充值和购买分开灰度，可以先放购买，观察后再放开充值。</div>
+                  <div class="toggle" style="display:inline-block;vertical-align:middle" :class="hubPayConfig.hub_pay_dist?'on':''" @click="hubPayConfig.hub_pay_dist=!hubPayConfig.hub_pay_dist"></div>
+                  <div style="font-size:12px;color:var(--text3);margin-top:6px">充值和购买分开灰度，可以先放购买，观察后再放开充值。</div>
                 </div>
               </div>
               <div class="form-row">
