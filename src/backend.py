@@ -8887,6 +8887,15 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 if event_type == "order.paid":
                     db.update_order_payment(order_no, hub_channel=str(data.get("channel") or "")[:32])
+                    # 渠道单号以中控认到的最终值为准：支付FM 的渠道单号（HMP…）只在支付回调里出现，
+                    # 事件报文里没有，所以到账时再向中控查一次单把它补上。
+                    try:
+                        ok_q, data_q = hub_pay_get(order_no)
+                        txn_q = str((data_q or {}).get("channelTxnId") or "") if ok_q else ""
+                        if txn_q:
+                            db.update_order_payment(order_no, trade_no=txn_q, channel_order_no=txn_q)
+                    except Exception as e:
+                        print(f"[中控支付回调] 补渠道单号失败 order={order_no}: {e}", flush=True)
                     ok_apply, msg_apply = db.apply_paid_order(
                         order_no, from_statuses=("pending", "created", "cancelled"))
                     if not ok_apply:
