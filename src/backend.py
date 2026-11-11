@@ -14,6 +14,7 @@ import re
 import time
 import socket
 import hashlib
+import hmac
 import uuid
 import random
 import string
@@ -820,6 +821,226 @@ def _hub_post_json(target, payload_obj, timeout=15):
         return False, (msg or "中控拒绝（HTTP %d）" % e.code), e.code
     except Exception as e:
         return False, "无法连接中控：" + str(e), 0
+
+
+# ==================== 中控支付（灰度切换） ====================
+# 调用方只传支付方式，通道由中控按应用配置映射；本端只认「二维码/跳转链接 + 订单状态」。
+# 单号直接复用本地 order_no：中控要求 6-64 位且全局唯一，本地单号本来就满足。
+HUB_PAY_ORDER_TARGET = "/open/pay/order"
+HUB_PAY_NOTIFY_PATH = "/api/payment/notify/hub"
+HUB_PAY_DEFAULT_NOTIFY = "https://xs.openget.cn/api/payment/notify/hub"
+HUB_PAY_SYNC_MIN_INTERVAL = 2.0
+
+_hub_pay_sync_ts = {}
+_hub_pay_sync_lock = threading.Lock()
+
+
+def _hub_pay_flag(value, default=0):
+    """数据库里 TINYINT 读回来可能是 None/0/1/字符串，统一成 0/1。"""
+    if value is None or value == "":
+        return default
+    try:
+        return 1 if int(value) else 0
+    except Exception:
+        return default
+
+
+def _hub_pay_whitelist(admin):
+    raw = str((admin or {}).get("hub_pay_whitelist") or "")
+    return {x.strip() for x in re.split(r"[\s,，;；]+", raw) if x.strip()}
+
+
+def _hub_pay_should_use(admin, username, biz="purchase", pay_method="", legacy_channel=None):
+    """这一单要不要走中控。返回 (bool, 原因)，只做判断，不发网络请求。
+
+    顺序：总开关 -> 业务开关 -> 只有中控能收的支付方式 -> 白名单/管理员 -> 灰度百分比。
+    微信单独放行：老的通道清单里能选出 wechat，但后端从来没有微信下单实现，
+    对微信来说中控不是「灰度对象」而是唯一能收钱的路，所以不按比例拦。
+    """
+    admin = admin or {}
+    if not _hub_pay_flag(admin.get("hub_pay_enabled"), 0):
+        return False, "总开关关闭"
+    if biz == "dist_recharge":
+        if not _hub_pay_flag(admin.get("hub_pay_dist"), 1):
+            return False, "代理商充值未开启"
+    else:
+        if not _hub_pay_flag(admin.get("hub_pay_purchase"), 1):
+            return False, "普通购买未开启"
+    if pay_method == "wechat" and legacy_channel in (None, "", "wechat"):
+        return True, "老通道无微信下单实现"
+    user = (username or "").strip()
+    if not user:
+        return False, "无用户名"
+    if user in _hub_pay_whitelist(admin):
+        return True, "白名单"
+    if user == str(admin.get("username") or "").strip():
+        return True, "管理员"
+    try:
+        percent = int(admin.get("hub_pay_percent") or 0)
+    except Exception:
+        percent = 0
+    if percent <= 0:
+        return False, "灰度比例为 0"
+    bucket = int(hashlib.sha256(user.encode("utf-8")).hexdigest()[:8], 16) % 100
+    if percent >= 100:
+        return True, "灰度 100%"
+    return (bucket < percent), "灰度 %d%%（桶 %d）" % (percent, bucket)
+
+
+def _hub_pay_amount_fen(price):
+    """元 -> 分。金额只有两位小数，四舍五入后必须 >= 1 分才允许下单。"""
+    try:
+        return int(round(float(price or 0) * 100))
+    except Exception:
+        return 0
+
+
+def _hub_pay_notify_url(admin):
+    return str((admin or {}).get("hub_pay_notify_url") or "").strip() or HUB_PAY_DEFAULT_NOTIFY
+
+
+def hub_pay_create(order_no, username, plan, pay_method, biz_type, client_ip="", admin=None):
+    """向中控下一笔扫码单。返回 (ok, data_or_err)。
+
+    order_no 由调用方先生成，中控单号与本地单号保持一致：回调、查单、对账都只用这一个号。
+    """
+    admin = admin if admin is not None else (db.get_admin_config() or {})
+    amount_fen = _hub_pay_amount_fen((plan or {}).get("price"))
+    if amount_fen < 1:
+        return False, "订单金额不足 1 分钱，不能走中控支付"
+    payload = {
+        "outTradeNo": order_no,
+        "amountFen": amount_fen,
+        "subject": ("学神助手-" + str((plan or {}).get("name") or "订单"))[:64],
+        "payMethod": pay_method if pay_method in ("wechat", "alipay") else "alipay",
+        "scene": "native",
+        "userKey": (username or "")[:64],
+        "bizType": (biz_type or "")[:32],
+        "notifyUrl": _hub_pay_notify_url(admin),
+        "clientIp": (client_ip or "")[:45],
+        # 用户离开页面后二维码不该永远有效；关单由中控负责，本地只按事件/查单收尾
+        "expireMinutes": 30,
+    }
+    ok, data, status = _hub_post_json(HUB_PAY_ORDER_TARGET, payload, timeout=20)
+    if not ok:
+        if status == 403:
+            return False, "中控未给学神助手开通「支付」能力，请到中控应用详情的能力开关里打开"
+        return False, data if isinstance(data, str) else "中控下单失败（HTTP %s）" % status
+    if not isinstance(data, dict):
+        return False, "中控返回内容异常"
+    return True, data
+
+
+def hub_pay_get(order_no):
+    """按单号查中控订单。返回 (ok, data_or_err)。GET 签名必须把 ?outTradeNo= 计入 rawTarget。"""
+    app_key, app_secret, base_url = _captcha_hub_creds()
+    if not app_secret:
+        return False, "服务端未配置中控密钥（环境变量 HUB_APP_SECRET 或「系统配置→单点登录」App Secret）"
+    target = HUB_PAY_ORDER_TARGET + "?outTradeNo=" + quote(str(order_no or ""), safe="")
+    headers = _hub_sign_headers("GET", target, b"", app_key, app_secret)
+    req = urllib.request.Request(base_url.rstrip("/") + target, headers=headers, method="GET")
+    try:
+        # 轮询路径上的请求，超时要短：中控挂了不能把本站线程按 10 秒一个拖住
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            data = json.loads(resp.read().decode("utf-8") or "{}")
+        return True, data
+    except urllib.error.HTTPError as e:
+        try:
+            err = json.loads(e.read().decode("utf-8"))
+        except Exception:
+            err = {}
+        msg = err.get("message") if isinstance(err, dict) else None
+        if e.code == 403:
+            return False, "中控拒绝：应用没有「支付」能力"
+        if e.code == 404:
+            return False, "中控没有这笔订单"
+        return False, (msg or "中控拒绝（HTTP %d）" % e.code)
+    except Exception as e:
+        return False, "无法连接中控：" + str(e)
+
+
+def hub_pay_sync_order(order_no, force=False):
+    """轮询时把中控状态捞回本地。返回 (paid, msg, order)。
+
+    前端 3 秒轮一次，这里再做 2 秒节流：同一单多个页面/多标签同时轮，
+    打到中控的查询不会成倍放大。
+    """
+    order = db.get_order(order_no) or {}
+    if order.get("pay_channel") != "hub":
+        return False, "不是中控订单", order
+    if order.get("status") == "paid":
+        return True, "支付成功，权益已到账", order
+    now = time.time()
+    with _hub_pay_sync_lock:
+        if not force and now - _hub_pay_sync_ts.get(order_no, 0) < HUB_PAY_SYNC_MIN_INTERVAL:
+            return False, "等待付款", order
+        _hub_pay_sync_ts[order_no] = now
+        if len(_hub_pay_sync_ts) > 5000:
+            for k in [k for k, ts in _hub_pay_sync_ts.items() if now - ts > 3600]:
+                _hub_pay_sync_ts.pop(k, None)
+    ok, data = hub_pay_get(order_no)
+    if not ok or not isinstance(data, dict):
+        return False, "等待付款", order
+    status = str(data.get("status") or "")
+    channel = str(data.get("channel") or "")[:32]
+    if channel and channel != (order.get("hub_channel") or ""):
+        db.update_order_payment(order_no, hub_channel=channel)
+    if status == "PAID":
+        txn = str(data.get("channelTxnId") or "")
+        if txn and txn != (order.get("trade_no") or ""):
+            db.update_order_payment(order_no, trade_no=txn)
+        ok_apply, msg = db.apply_paid_order(order_no, from_statuses=("pending", "created", "cancelled"))
+        if ok_apply:
+            return True, msg, db.get_order(order_no) or order
+        print(f"[中控支付] 到账但权益未发放 order={order_no} 原因={msg}", flush=True)
+        return False, msg, order
+    if status in ("CLOSED", "PAY_FAIL"):
+        if db.cancel_pending_order(order_no):
+            print(f"[中控支付] 订单在中控侧 {status}，本地已关闭 order={order_no}", flush=True)
+            return False, "订单已关闭，请重新下单", db.get_order(order_no) or order
+    return False, "等待付款", order
+
+
+def _hub_pay_secrets():
+    """事件验签可用的密钥：环境变量优先，其次后台存的 Hub App Secret；轮换期允许配旧密钥。"""
+    out = []
+    for raw in (os.environ.get("HUB_APP_SECRET"), os.environ.get("HUB_PAY_APP_SECRET_OLD")):
+        raw = (raw or "").strip()
+        if raw and raw not in out:
+            out.append(raw)
+    cfg = db.get_admin_config() or {}
+    stored = (cfg.get("sso_app_secret") or "").strip()
+    if stored and stored not in out:
+        out.append(stored)
+    return out
+
+
+def hub_pay_verify_event(headers, raw_body):
+    """校验中控事件签名。返回 (ok, payload_or_err)。
+
+    签名串是 eventId + 换行 + 时间戳 + 换行 + 原始 body，HMAC-SHA256 十六进制。
+    时间戳偏 5 分钟以上直接拒：签名截获后不能无限期重放。
+    """
+    event_id = (headers.get("X-Hub-Event-Id") or "").strip()
+    ts = (headers.get("X-Hub-Timestamp") or "").strip()
+    sig = (headers.get("X-Hub-Signature") or "").strip().lower()
+    if not event_id or not ts or not sig:
+        return False, "缺少签名请求头"
+    try:
+        if abs(int(time.time()) - int(ts)) > 300:
+            return False, "时间戳超出允许范围"
+    except Exception:
+        return False, "时间戳不合法"
+    string_to_sign = "\n".join([event_id, ts, raw_body or ""])
+    for secret in _hub_pay_secrets():
+        want = hmac.new(secret.encode("utf-8"), string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+        if hmac.compare_digest(want, sig):
+            try:
+                payload = json.loads(raw_body or "{}")
+            except Exception:
+                return False, "报文不是合法 JSON"
+            return True, payload
+    return False, "签名不匹配"
 
 
 HUB_MEDIA_SIGN_TARGET = "/open/media/sign-upload"
@@ -7047,7 +7268,47 @@ class Handler(BaseHTTPRequestHandler):
             if pay_method not in ("alipay", "wechat"):
                 _fail("支付方式只能是 alipay 或 wechat")
                 return
-            pay_channel, pay_type = _pick_pay_channel(db.get_admin_config() or {}, pay_method)
+            recharge_admin = db.get_admin_config() or {}
+            pay_channel, pay_type = _pick_pay_channel(recharge_admin, pay_method)
+            # 充值单独灰度：中控开关里「代理商充值」这一项默认跟着总开关走
+            use_hub_recharge, recharge_reason = _hub_pay_should_use(
+                recharge_admin, user["username"], "dist_recharge", pay_method, pay_channel)
+            if use_hub_recharge:
+                hub_order_no = db.new_order_no(user["username"])
+                try:
+                    ok_hub, hub_info = hub_pay_create(
+                        hub_order_no, user["username"], plan, pay_method,
+                        _plan_business_type(plan), self._client_ip(), recharge_admin)
+                except Exception as e:
+                    ok_hub, hub_info = False, "中控下单异常：%s" % e
+                if ok_hub:
+                    qr_code = str(hub_info.get("qrCode") or "")
+                    pay_url = str(hub_info.get("payUrl") or "")
+                    try:
+                        db.create_pending_order(
+                            user["username"], plan, pay_method=pay_method, pay_channel="hub",
+                            qr_code=qr_code, pay_url=pay_url, order_no=hub_order_no,
+                            business_type=_plan_business_type(plan), client_ip=self._client_ip(),
+                        )
+                    except Exception as e:
+                        print(f"[中控支付][ERROR] 充值单中控已建单但本地落库失败 order={hub_order_no} "
+                              f"user={user['username']} 金额=¥{plan.get('price')} err={e}", flush=True)
+                        _fail("下单未完成，请重试或联系管理员")
+                        return
+                    db.update_order_payment(
+                        hub_order_no,
+                        trade_no=str(hub_info.get("channelTxnId") or ""),
+                        hub_channel=str(hub_info.get("channel") or "")[:32],
+                    )
+                    print(f"[中控支付] 充值下单成功 order={hub_order_no} user={user['username']} "
+                          f"方式={pay_method} 通道={hub_info.get('channel')} "
+                          f"金额=¥{plan.get('price')} 原因={recharge_reason}", flush=True)
+                    _ok("订单已创建，请扫码付款" if qr_code else "订单已创建，请跳转付款", paying=True,
+                        order_no=hub_order_no, qr_code=qr_code, pay_url=pay_url,
+                        pay_channel="hub", amount=plan["price"])
+                    return
+                print(f"[中控支付] 充值下单失败，回落老通道 user={user['username']} "
+                      f"方式={pay_method} 原因={hub_info}", flush=True)
             if not pay_channel or pay_channel == "wechat":
                 # wechat 官方通道在通用下单口里就没有实现（没有 create_wechat_order），
                 # 落到充值口会变成「下了单没人付」，这里直接当作不可用
@@ -7479,6 +7740,11 @@ class Handler(BaseHTTPRequestHandler):
                 if admin.get("epay_enabled") and admin.get("epay_api_url") and admin.get("epay_pid") and admin.get("epay_key"):
                     alipay_channels.append({"channel": "epay", "pay_type": "alipay"})
                     wechat_channels.append({"channel": "epay", "pay_type": "wxpay"})
+                # 中控支付：总开关开着就把微信/支付宝都列出来。老通道里微信只有「选中」没有
+                # 「下单」，不在这里补一条，前端根本不会让用户选微信。
+                if _hub_pay_flag(admin.get("hub_pay_enabled"), 0) and _hub_pay_flag(admin.get("hub_pay_purchase"), 1):
+                    alipay_channels.append({"channel": "hub", "pay_type": "hub_native"})
+                    wechat_channels.append({"channel": "hub", "pay_type": "hub_native"})
                 # 返回扁平的支付方式列表
                 methods = []
                 if wechat_channels:
@@ -7504,8 +7770,15 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 paid = order.get("status") == "paid"
                 msg = "支付成功，权益已到账" if paid else "等待付款"
+                # 中控订单：每轮先问中控，回调丢了也能靠这里把状态捞回来
+                if not paid and order.get("pay_channel") == "hub":
+                    try:
+                        paid, msg, order = hub_pay_sync_order(order_no)
+                        order = order or {}
+                    except Exception as e:
+                        print(f"[中控支付] 查单异常 order={order_no}: {e}", flush=True)
                 # 支付宝官方通道支持主动查询
-                if not paid and (order.get("pay_channel") == "alipay" or (not order.get("pay_channel") and order.get("pay_method") == "alipay")):
+                elif not paid and (order.get("pay_channel") == "alipay" or (not order.get("pay_channel") and order.get("pay_method") == "alipay")):
                     try:
                         paid, msg, order = query_and_apply_alipay_order(order_no)
                     except Exception:
@@ -7790,7 +8063,14 @@ class Handler(BaseHTTPRequestHandler):
                 "zhifufm_weight": int(admin.get("zhifufm_weight") or 100),
                 "sandpay_weight": int(admin.get("sandpay_weight") or 100),
                 "epay_weight": int(admin.get("epay_weight") or 100),
-                "refund_days_limit": int(admin.get("refund_days_limit") or 7)
+                "refund_days_limit": int(admin.get("refund_days_limit") or 7),
+                # 中控支付灰度（单独的保存接口，避免和上面的老通道表单互相覆盖）
+                "hub_pay_enabled": bool(admin.get("hub_pay_enabled")),
+                "hub_pay_purchase": bool(admin.get("hub_pay_purchase")) if admin.get("hub_pay_purchase") is not None else True,
+                "hub_pay_dist": bool(admin.get("hub_pay_dist")) if admin.get("hub_pay_dist") is not None else True,
+                "hub_pay_percent": int(admin.get("hub_pay_percent") or 0),
+                "hub_pay_whitelist": admin.get("hub_pay_whitelist") or "",
+                "hub_pay_notify_url": admin.get("hub_pay_notify_url") or "",
             }})
         elif path.startswith("/admin/users"):
             if not self._check_admin():
@@ -8567,6 +8847,55 @@ class Handler(BaseHTTPRequestHandler):
             return
         body = self._read_body()
 
+        # 中控支付事件：服务端到服务端，没有用户身份，只认签名与单号。
+        # 到账以这里和「3 秒轮询查单」两条路同时兜底，谁先到谁把订单推进 paid。
+        if path == HUB_PAY_NOTIFY_PATH:
+            try:
+                ok, data = hub_pay_verify_event(self.headers, body or "{}")
+                if not ok:
+                    print(f"[中控支付回调] 验签失败: {data}", flush=True)
+                    self._send_json(401, {"code": 401, "msg": "验签失败"})
+                    return
+                if not isinstance(data, dict):
+                    self._send_json(400, {"code": 400, "msg": "报文不合法"})
+                    return
+                event_type = str(data.get("eventType") or "")
+                order_no = str(data.get("outTradeNo") or "")
+                event_id = (self.headers.get("X-Hub-Event-Id") or "").strip()
+                order = db.get_order(order_no)
+                if not order or order.get("pay_channel") != "hub":
+                    print(f"[中控支付回调] 忽略未知订单 event={event_id} type={event_type} order={order_no}", flush=True)
+                    self._send_json(200, {"code": 200, "msg": "ignored"})
+                    return
+                try:
+                    got_fen = int(data.get("amountFen"))
+                except Exception:
+                    got_fen = None
+                want_fen = _hub_pay_amount_fen(order.get("price"))
+                if got_fen is not None and got_fen != want_fen:
+                    print(f"[中控支付回调] 金额不符 order={order_no} 回调={got_fen} 订单={want_fen}", flush=True)
+                    self._send_json(400, {"code": 400, "msg": "金额不符"})
+                    return
+                if event_type == "order.paid":
+                    db.update_order_payment(order_no, hub_channel=str(data.get("channel") or "")[:32])
+                    ok_apply, msg_apply = db.apply_paid_order(
+                        order_no, from_statuses=("pending", "created", "cancelled"))
+                    if not ok_apply:
+                        # 权益没发出去就让中控重推：它退避重试 6 次，期间人工也能补
+                        print(f"[中控支付回调] 到账未发放 order={order_no} 原因={msg_apply}", flush=True)
+                        self._send_json(500, {"code": 500, "msg": msg_apply})
+                        return
+                    print(f"[中控支付回调] 已到账 order={order_no} user={order.get('username')} "
+                          f"event={event_id}", flush=True)
+                elif event_type == "order.closed":
+                    # 汇付/支付FM 关单只是本地终态，钱仍可能晚到；真到了 apply 会从 cancelled 捡起来
+                    db.cancel_pending_order(order_no)
+                self._send_json(200, {"code": 200, "msg": "ok"})
+            except Exception as e:
+                print(f"[中控支付回调] 处理异常: {e}", flush=True)
+                self._send_json(500, {"code": 500, "msg": "处理失败"})
+            return
+
         if path == "/api/slider-captcha/verify":
             try:
                 data = json.loads(body or "{}")
@@ -9328,7 +9657,11 @@ class Handler(BaseHTTPRequestHandler):
                 # 前端只传 pay_method=wechat/alipay，后端根据权重随机选择通道
                 admin = db.get_admin_config() or {}
                 pay_channel, pay_type = _pick_pay_channel(admin, pay_method)
-                if not pay_channel:
+                # 中控灰度：命中的用户走中控，其余仍走老通道。老通道彻底没有可用项时
+                # 不在这里拦——中控能收就交给中控，两边都不行才报错。
+                use_hub, hub_reason = _hub_pay_should_use(
+                    admin, user["username"], "purchase", pay_method, pay_channel)
+                if not pay_channel and not use_hub:
                     self._send_json(400, {"code": 400, "msg": "该支付方式暂无可用通道，请联系管理员配置"})
                     return
                 # —— 佣金抵扣：客户端只说「要不要用」，原价/抵扣/现金三段全由服务端算 ——
@@ -9376,6 +9709,65 @@ class Handler(BaseHTTPRequestHandler):
                         "profile": build_user_profile(user["username"])
                     })
                     return
+                # —— 中控支付：命中灰度先用中控下单；失败再回落老通道，用户无感 ——
+                if use_hub:
+                    hub_order_no = hold_order_no or db.new_order_no(user["username"])
+                    try:
+                        ok_hub, hub_info = hub_pay_create(
+                            hub_order_no, user["username"], plan, pay_method,
+                            _plan_business_type(plan), order_ip, admin)
+                    except Exception as e:
+                        ok_hub, hub_info = False, "中控下单异常：%s" % e
+                    if ok_hub:
+                        qr_code = str(hub_info.get("qrCode") or "")
+                        pay_url = str(hub_info.get("payUrl") or "")
+                        try:
+                            db.create_pending_order(
+                                user["username"], plan, pay_method=pay_method, pay_channel="hub",
+                                qr_code=qr_code, pay_url=pay_url, order_no=hub_order_no,
+                                business_type=_plan_business_type(plan), client_ip=order_ip,
+                            )
+                        except Exception as e:
+                            # 中控已经建了单，本地却没落库：钱真付了这里查不到单，
+                            # 只能靠事件日志人工补，必须留下足够定位的信息
+                            print(f"[中控支付][ERROR] 中控已建单但本地落库失败 order={hub_order_no} "
+                                  f"user={user['username']} 金额=¥{plan.get('price')} err={e}", flush=True)
+                            self._send_json(500, {"code": 500, "msg": "下单未完成，请重试或联系管理员"})
+                            return
+                        db.update_order_payment(
+                            hub_order_no,
+                            trade_no=str(hub_info.get("channelTxnId") or ""),
+                            hub_channel=str(hub_info.get("channel") or "")[:32],
+                        )
+                        print(f"[中控支付] 下单成功 order={hub_order_no} user={user['username']} "
+                              f"方式={pay_method} 通道={hub_info.get('channel')} "
+                              f"金额=¥{plan.get('price')} 原因={hub_reason}", flush=True)
+                        if str(hub_info.get("status") or "") == "PAID":
+                            ok_apply, msg_apply = db.apply_paid_order(hub_order_no)
+                            if ok_apply:
+                                self._send_json(200, {
+                                    "code": 200, "msg": msg_apply,
+                                    "order_no": hub_order_no, "commission_used": deduct,
+                                    "profile": build_user_profile(user["username"]),
+                                })
+                                return
+                            print(f"[中控支付] 下单即已支付但发放失败 order={hub_order_no} "
+                                  f"原因={msg_apply}", flush=True)
+                        self._send_json(200, {
+                            "code": 200,
+                            "msg": "订单已创建，请扫码付款" if qr_code else "订单已创建，请跳转付款",
+                            "paying": True, "pay_channel": "hub", "order_no": hub_order_no,
+                            "qr_code": qr_code, "pay_url": pay_url, "commission_used": deduct,
+                        })
+                        return
+                    print(f"[中控支付] 下单失败，回落老通道 user={user['username']} "
+                          f"方式={pay_method} 原因={hub_info}", flush=True)
+                    # 老通道也没有可执行的实现：把冻结的佣金退回，别让用户白等
+                    if not pay_channel or pay_channel == "wechat":
+                        if hold_order_no:
+                            db.release_commission_hold(hold_order_no, "中控与老通道均不可用")
+                        self._send_json(502, {"code": 502, "msg": "支付通道暂时不可用，请稍后再试或联系管理员"})
+                        return
                 # 根据通道创建订单
                 try:
                     if pay_channel == "alipay":
@@ -10150,6 +10542,31 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(200, {"code": 200, "msg": "支付宝订单创建成功", "order_no": order_no, "qr_code": qr_code})
                 else:
                     self._send_json(400, {"code": 400, "msg": "不支持的支付通道: " + channel})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/save-hub-pay-config":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                percent = max(0, min(100, int(data.get("hub_pay_percent") or 0)))
+                whitelist = str(data.get("hub_pay_whitelist") or "").strip()[:20000]
+                notify_url = str(data.get("hub_pay_notify_url") or "").strip()[:255]
+                if notify_url and not notify_url.startswith(("http://", "https://")):
+                    self._send_json(400, {"code": 400, "msg": "事件接收地址必须以 http:// 或 https:// 开头"})
+                    return
+                db.execute(
+                    """UPDATE admin_config SET hub_pay_enabled = %s, hub_pay_purchase = %s, hub_pay_dist = %s,
+                        hub_pay_percent = %s, hub_pay_whitelist = %s, hub_pay_notify_url = %s
+                        WHERE id = 1""",
+                    (1 if data.get("hub_pay_enabled") else 0,
+                     1 if data.get("hub_pay_purchase") else 0,
+                     1 if data.get("hub_pay_dist") else 0,
+                     percent, whitelist, notify_url)
+                )
+                self._send_json(200, {"code": 200, "msg": "中控支付配置已保存，对之后的新单立即生效"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 

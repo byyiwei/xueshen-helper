@@ -2057,7 +2057,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                         <td style="padding:10px 12px">{{row.plan_type||'-'}}</td>
                         <td style="padding:10px 12px;font-weight:600;color:var(--success)">¥{{Number(row.price||0).toFixed(2)}}</td>
                         <td style="padding:10px 12px">{{row.points>0?row.points+'点':''}}{{row.days>0?(row.points>0?'/':'')+row.days+'天':''}}{{!row.points&&!row.days?'-':''}}</td>
-                        <td style="padding:10px 12px">{{paymentMethodLabel(row.pay_method, row.pay_type)}}</td>
+                        <td style="padding:10px 12px">{{paymentMethodLabel(row.pay_method, row.pay_type, row.pay_channel)}}</td>
                         <td style="padding:10px 12px"><span :style="{color:row.source==='xianyu'?'var(--warning)':'var(--text)'}">{{row.source==='xianyu'?'闲鱼':'支付'}}</span></td>
                         <td style="padding:10px 12px;color:var(--text3);font-size:12px">{{String(row.created_at||'').replace('T',' ').substring(0,19)}}</td>
                       </tr>
@@ -2878,6 +2878,55 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
               <div class="form-row">
                 <div class="form-group"><label>异步通知URL</label><input v-model="payApiConfig.epay_notify_url" placeholder="https://your-domain.com/pay/epay/notify"></div>
                 <div class="form-group"><label>同步跳转URL</label><input v-model="payApiConfig.epay_return_url" placeholder="https://your-domain.com/pay/epay/return"></div>
+              </div>
+            </div>
+          </div>
+          <!-- 中控支付灰度 -->
+          <div class="collapsible-section">
+            <div class="section-title" @click="togglePayApiSection('hub')">
+              <span class="st-text">中控支付（灰度切换）</span>
+              <span class="st-right">
+                <span class="toggle" :class="hubPayConfig.hub_pay_enabled?'on':''" @click.stop="hubPayConfig.hub_pay_enabled=!hubPayConfig.hub_pay_enabled"></span>
+                <span class="st-arrow" style="display:inline-flex;align-items:center;gap:4px;"><svg class="ui-icon xs"><use :href="payApiCollapsed.hub?'#i-chevron-right':'#i-chevron-down'"></use></svg> {{payApiCollapsed.hub?'展开':'收起'}}</span>
+              </span>
+            </div>
+            <div class="section-body" v-show="!payApiCollapsed.hub">
+              <p style="color:var(--text3);font-size:12px;margin:0 0 12px;line-height:1.7">
+                命中灰度的用户下单改走中控（openget.cn）收款，其余用户仍走上面的老通道；单子在中控侧失败会自动回落老通道。
+                这里只控制「哪些用户走中控」，中控用哪条通道收款在中控后台配置。密钥复用「系统配置 → 单点登录」里的 App Key / App Secret，不用另填。
+                另有一条固定规则：老通道里没有微信下单实现，所以当微信只能落到「微信官方」时，开关打开后微信一律走中控，不受比例限制。
+              </p>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>普通购买</label>
+                  <span class="toggle" :class="hubPayConfig.hub_pay_purchase?'on':''" @click="hubPayConfig.hub_pay_purchase=!hubPayConfig.hub_pay_purchase"></span>
+                  <div style="font-size:12px;color:var(--text3);margin-top:4px">关掉后套餐购买继续走老通道，代理商充值不受影响。</div>
+                </div>
+                <div class="form-group">
+                  <label>代理商充值</label>
+                  <span class="toggle" :class="hubPayConfig.hub_pay_dist?'on':''" @click="hubPayConfig.hub_pay_dist=!hubPayConfig.hub_pay_dist"></span>
+                  <div style="font-size:12px;color:var(--text3);margin-top:4px">充值和购买分开灰度，可以先放购买，观察后再放开充值。</div>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>灰度比例（%）</label>
+                  <input v-model.number="hubPayConfig.hub_pay_percent" type="number" min="0" max="100" style="padding:8px 12px;font-size:14px;width:120px">
+                  <div style="font-size:12px;color:var(--text3);margin-top:4px">按用户名稳定散列，同一用户每次都在同一档，不会一会儿中控一会儿老通道。0 = 只有白名单和管理员账号走中控；100 = 全部走中控。</div>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>白名单用户名</label>
+                <textarea v-model="hubPayConfig.hub_pay_whitelist" rows="3" placeholder="每行一个或用逗号分隔，例如：admin，或 test01,test02" style="width:100%"></textarea>
+                <div style="font-size:12px;color:var(--text3);margin-top:4px">白名单不受灰度比例限制，永远走中控；管理员账号自动算白名单。</div>
+              </div>
+              <div class="form-group">
+                <label>事件接收地址</label>
+                <input v-model="hubPayConfig.hub_pay_notify_url" placeholder="https://xs.openget.cn/api/payment/notify/hub">
+                <div style="font-size:12px;color:var(--text3);margin-top:4px">中控把「已支付 / 已关闭」推到这里。留空则用 <code>https://xs.openget.cn/api/payment/notify/hub</code>；不填也能靠前端轮询确认到账，但回调丢了没有事件兜底。</div>
+              </div>
+              <div style="display:flex;gap:10px;justify-content:center;padding:6px 0 2px">
+                <button class="btn btn-success" @click="saveHubPayConfig">保存中控支付配置</button>
               </div>
             </div>
           </div>
@@ -4881,7 +4930,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                         <td style="padding:10px 12px">{{row.plan_type||'-'}}</td>
                         <td style="padding:10px 12px;font-weight:600;color:var(--success)">¥{{Number(row.price||0).toFixed(2)}}</td>
                         <td style="padding:10px 12px">{{row.points>0?row.points+'点':''}}{{row.days>0?(row.points>0?'/':'')+row.days+'天':''}}{{!row.points&&!row.days?'-':''}}</td>
-                        <td style="padding:10px 12px">{{paymentMethodLabel(row.pay_method, row.pay_type)}}</td>
+                        <td style="padding:10px 12px">{{paymentMethodLabel(row.pay_method, row.pay_type, row.pay_channel)}}</td>
                         <td style="padding:10px 12px"><span :style="{color:row.source==='xianyu'?'var(--warning)':'var(--text)'}">{{row.source==='xianyu'?'闲鱼':'支付'}}</span></td>
                         <td style="padding:10px 12px;color:var(--text3);font-size:12px">{{String(row.created_at||'').replace('T',' ').substring(0,19)}}</td>
                       </tr>
@@ -5806,7 +5855,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                     <td style="padding:8px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="paymentBusinessType(row)">{{paymentBusinessType(row)}}</td>
                     <td style="padding:8px 10px;font-weight:600;color:var(--success);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">¥{{Number(row.price||0).toFixed(2)}}</td>
                     <td style="padding:8px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{row.points>0?row.points+'点':''}}{{row.days>0?(row.points>0?'/':'')+row.days+'天':''}}{{!row.points&&!row.days?'-':''}}</td>
-                    <td style="padding:8px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="paymentMethodLabel(row.pay_method, row.pay_type)">{{paymentMethodLabel(row.pay_method, row.pay_type)}}</td>
+                    <td style="padding:8px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="paymentMethodLabel(row.pay_method, row.pay_type, row.pay_channel)">{{paymentMethodLabel(row.pay_method, row.pay_type, row.pay_channel)}}</td>
                     <td style="padding:8px 10px;vertical-align:middle">
                       <div class="ip-cell" v-if="row.client_ip">
                         <span class="ip-val" :title="'点击复制：'+row.client_ip" @click="copyText(row.client_ip,$event)">{{row.client_ip}}</span>
@@ -6712,7 +6761,13 @@ createApp({
       alipay_weight:100,wechat_weight:100,zhifufm_weight:100,sandpay_weight:100,epay_weight:100,
       refund_days_limit:7
     });
-    const payApiCollapsed=reactive({alipay:true,wechat:true,zhifufm:true,sandpay:true,epay:true,refund:true});
+    const payApiCollapsed=reactive({alipay:true,wechat:true,zhifufm:true,sandpay:true,epay:true,hub:true,refund:true});
+    // 中控支付灰度：单独一份配置、单独保存，避免和老通道表单互相覆盖
+    const hubPayConfig=reactive({
+      hub_pay_enabled:false,hub_pay_purchase:true,hub_pay_dist:true,
+      hub_pay_percent:0,hub_pay_whitelist:'',
+      hub_pay_notify_url:'https://xs.openget.cn/api/payment/notify/hub'
+    });
     const planForm=reactive({id:null,name:'',plan_type:'points',price:0,points:0,days:30,enabled:true,sort_order:0,xianyu_url:''});
     const aiLogs=ref([]);
     const aiLogLoading=ref(false);
@@ -7119,6 +7174,7 @@ createApp({
         if(data.code===200){
           const cfg=data.config||{};
           Object.keys(payApiConfig).forEach(k=>{ if(cfg[k]!==undefined&&cfg[k]!==null)payApiConfig[k]=cfg[k]; });
+          Object.keys(hubPayConfig).forEach(k=>{ if(cfg[k]!==undefined&&cfg[k]!==null)hubPayConfig[k]=cfg[k]; });
         }
         else if(data.code===403){logout();showMsg('登录已过期','error');}
         else showMsg(data.msg||'获取支付接口配置失败','error');
@@ -7861,6 +7917,10 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     async function savePayApiConfig(){
       const data=await adminPost('/admin/save-pay-api-config',payApiConfig);
       if(data)showMsg('支付接口配置已保存');
+    }
+    async function saveHubPayConfig(){
+      const data=await adminPost('/admin/save-hub-pay-config',hubPayConfig);
+      if(data)showMsg(data.msg||'中控支付配置已保存');
     }
     async function saveAdminAccount(){
       const data=await adminPost('/admin/save-account-config',accountConfig);
@@ -9100,14 +9160,16 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     }
     // ===== 支付明细展示辅助 =====    // 支付方式中文映射（原先直接输出 sandpayh5 等英文标识）
     const PAY_METHOD_LABELS={alipay:'支付宝',wechat:'微信支付',card:'卡密',xianyu:'闲鱼',aloop:'支付宝(轮询)',tloop:'微信(轮询)',sandpayh5:'杉德收银台',sandpay:'杉德河马',zhifufm:'支付FM',epay:'易支付'};
-    function paymentMethodLabel(method,payType){
+    function paymentMethodLabel(method,payType,channel){
       // pay_method 与 pay_type 内容高度重复（实测 214 笔完全相同），
       // 仅当两者不一致时才补注支付类型，避免冗余占宽。
       const m=PAY_METHOD_LABELS[method]||method||'';
       const t=PAY_METHOD_LABELS[payType]||payType||'';
-      if(!m&&!t) return '-';
-      if(!t||t===m) return m||t;
-      return m?m+' / '+t:t;
+      // 中控单额外标出来：灰度期间要能一眼分出哪些单走了中控
+      const hub=channel==='hub'?' · 中控':'';
+      if(!m&&!t) return channel==='hub'?'中控':'-';
+      if(!t||t===m) return (m||t)+hub;
+      return (m?m+' / '+t:t)+hub;
     }
     function paymentStatusLabel(s){
       return {paid:'已支付',refunded:'已退款',pending:'待支付',cancelled:'已取消',failed:'支付失败',processing:'处理中',created:'已创建',paying:'支付中'}[s]||s||'-';
@@ -9973,7 +10035,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
        showMailHubRecords,mailHubRecords,mailHubRecordsLoading,mailHubRecordsError,toggleEmailHub,loadMailHubRecords,modelHubConfig,loadModelHubConfig,toggleModelHub,barW,
        loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,userSearch,userBanFilter,userSortBy,userSortOrder,ipSearch,ipSearchList,ipSearchLoading,loadUsersByIp,gotoIpSearch,gotoIpSearchFromOrder,showUserModal,userForm,gotoUserSearch,
         showHtmlPreview,htmlPreviewFrame,htmlPreviewData,toggleHtmlPreview,updateHtmlPreview,switchToHtml,onHtmlInput,syncPlainFromHtml,
-       paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,planForm,
+       paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,hubPayConfig,planForm,
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,
       bankLogs,bankLogLoading,bankLogFilter,bankLogTotal,expandedBankLogs,
       bankAnalysis,bankAnalysisLoading,bankAnalysisFilter,loadBankAnalysis,setBankAnalysisRange,
@@ -9984,7 +10046,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,deleteQuestionBankItem,bankTypeOptions,bankModelOptions,loadBankModels,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,ssoConfig,ssoSaving,showSsoSecret,ssoCallbackUrl,riskConfig,riskWhitelistText,riskUsers,riskScanning,riskSaving,
       doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
       loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadSsoConfig,saveSsoConfig,copySsoUrl,loadRiskConfig,saveRiskConfig,scanRisk,riskBan,riskAddWhitelist,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,
-      savePaymentConfig,savePayApiConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,movePlan,openUserEdit,saveUserAdmin,
+      savePaymentConfig,savePayApiConfig,saveHubPayConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,movePlan,openUserEdit,saveUserAdmin,
       toggleProvider,collapseAllProviders,togglePayApiSection,
        addProvider,removeProvider,addModel,removeModel,
        modelUsageTotal,modelUsageToday,modelExpired,modelTotalExhausted,modelDailyExhausted,modelQuotaLeft,modelQuotaTitle,clearModelQuota,weightSegments,weightPools,

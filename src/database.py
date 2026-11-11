@@ -1490,6 +1490,13 @@ class Database:
         self._add_column_if_missing("admin_config", "sso_app_key", "sso_app_key VARCHAR(128) DEFAULT '' COMMENT 'Hub 分配的 App Key（标识，非密钥）'")
         self._add_column_if_missing("admin_config", "sso_base_url", "sso_base_url VARCHAR(255) DEFAULT '' COMMENT 'Hub 中控基址，默认 https://openget.cn'")
         self._add_column_if_missing("admin_config", "sso_app_secret", "sso_app_secret VARCHAR(255) DEFAULT '' COMMENT 'Hub App Secret，仅服务端持有，界面只显示掩码'")
+        # 中控支付灰度：总开关、购买/充值分别开关、按用户名稳定散列的百分比、白名单、事件接收地址
+        self._add_column_if_missing("admin_config", "hub_pay_enabled", "hub_pay_enabled TINYINT DEFAULT 0 COMMENT '中控支付总开关'")
+        self._add_column_if_missing("admin_config", "hub_pay_purchase", "hub_pay_purchase TINYINT DEFAULT 1 COMMENT '普通购买走中控'")
+        self._add_column_if_missing("admin_config", "hub_pay_dist", "hub_pay_dist TINYINT DEFAULT 1 COMMENT '代理商充值走中控'")
+        self._add_column_if_missing("admin_config", "hub_pay_percent", "hub_pay_percent INT DEFAULT 0 COMMENT '灰度百分比 0-100，按用户名稳定散列'")
+        self._add_column_if_missing("admin_config", "hub_pay_whitelist", "hub_pay_whitelist TEXT COMMENT '中控支付白名单用户名，逗号/换行分隔'")
+        self._add_column_if_missing("admin_config", "hub_pay_notify_url", "hub_pay_notify_url VARCHAR(255) DEFAULT '' COMMENT '中控支付事件接收地址'")
         # 中控统一出口开关：邮件走 /open/mail/send，模型走 /open/v1/chat/completions；密钥复用上面 Hub 配置
         self._add_column_if_missing("admin_config", "email_hub_enabled", "email_hub_enabled TINYINT DEFAULT 0 COMMENT '邮件走中控统一发信出口开关'")
         self._add_column_if_missing("admin_config", "model_hub_enabled", "model_hub_enabled TINYINT DEFAULT 0 COMMENT '模型调用走中控网关开关'")
@@ -1515,6 +1522,8 @@ class Database:
         self._add_column_if_missing("payment_orders", "channel_order_no", "channel_order_no VARCHAR(128) COMMENT '商户订单号(签约类型支付方式有值)'")
         self._add_column_if_missing("payment_orders", "pay_type", "pay_type VARCHAR(50)")
         self._add_column_if_missing("payment_orders", "business_type", "business_type VARCHAR(50)")
+        # 中控支付：实际落到哪条通道（huifu / zfm / wechat_native），排查问题时不用再去中控翻单
+        self._add_column_if_missing("payment_orders", "hub_channel", "hub_channel VARCHAR(32) DEFAULT '' COMMENT '中控实际支付通道'")
         # 下单 IP 与归属地（后台线程异步回填归属地）
         self._add_column_if_missing("payment_orders", "client_ip", "client_ip VARCHAR(64) DEFAULT '' COMMENT '下单IP'")
         self._add_column_if_missing("payment_orders", "client_ip_addr", "client_ip_addr VARCHAR(200) DEFAULT '' COMMENT '下单IP归属地'")
@@ -1877,7 +1886,7 @@ class Database:
         ph = _ph()
         return self.fetchone(f"SELECT * FROM payment_orders WHERE order_no = {ph}", (order_no,))
 
-    def update_order_payment(self, order_no, trade_no="", qr_code="", status=None, pay_url="", bank_order_no="", pay_type="", paid_at=None, channel_order_no=""):
+    def update_order_payment(self, order_no, trade_no="", qr_code="", status=None, pay_url="", bank_order_no="", pay_type="", paid_at=None, channel_order_no="", hub_channel=""):
         ph = _ph()
         sets = []
         params = []
@@ -1899,6 +1908,9 @@ class Database:
         if channel_order_no:
             sets.append(f"channel_order_no = {ph}")
             params.append(channel_order_no)
+        if hub_channel:
+            sets.append(f"hub_channel = {ph}")
+            params.append(hub_channel)
         if pay_type:
             sets.append(f"pay_type = {ph}")
             params.append(pay_type)
@@ -1910,19 +1922,39 @@ class Database:
         params.append(order_no)
         self.execute(f"UPDATE payment_orders SET {', '.join(sets)} WHERE order_no = {ph}", tuple(params))
 
-    def apply_paid_order(self, order_no):
+    def cancel_pending_order(self, order_no):
+        """把未支付的订单标记为已关闭。已支付/退款中的单一律不动。"""
+        ph = _ph()
+        cur = self.execute(
+            f"UPDATE payment_orders SET status = 'cancelled' WHERE order_no = {ph} AND status IN ({ph}, {ph})",
+            (order_no, "pending", "created")
+        )
+        return bool(cur and cur.rowcount)
+
+    def apply_paid_order(self, order_no, from_statuses=("pending", "created")):
+        """把订单推进到已支付并发放权益。
+
+        from_statuses 默认只认待支付/已建单；中控支付的到账事件允许从 cancelled 进来：
+        汇付、支付FM 都没有真正的关单，本地标记关闭之后钱仍可能到账，收了钱就必须发货。
+        其它调用方不传这个参数，行为与原来完全一致。
+        """
         ph = _ph()
         order = self.get_order(order_no)
         if not order:
             return False, "订单不存在"
         if order.get("status") == "paid":
             return True, "订单已到账"
-        if order.get("status") not in ("pending", "created"):
+        allowed = tuple(from_statuses or ("pending", "created"))
+        if order.get("status") not in allowed:
             return False, "订单状态不可到账"
+        if order.get("status") == "cancelled":
+            print(f"[支付到账] 订单本地已关闭但钱到了，按到账处理 order={order_no} "
+                  f"user={order.get('username')} 金额={order.get('price')}", flush=True)
         # 安全：原子性抢占订单，防止重复回调双倍到账
+        marks = ", ".join([ph] * len(allowed))
         cur = self.execute(
-            f"UPDATE payment_orders SET status = 'paying', paid_at = CURRENT_TIMESTAMP WHERE order_no = {ph} AND status IN ({ph}, {ph})",
-            (order_no, "pending", "created")
+            f"UPDATE payment_orders SET status = 'paying', paid_at = CURRENT_TIMESTAMP WHERE order_no = {ph} AND status IN ({marks})",
+            (order_no, *allowed)
         )
         if not cur or cur.rowcount == 0:
             # 被其他请求抢先处理了
