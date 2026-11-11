@@ -3516,7 +3516,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           "Authorization": token ? "Bearer " + token : ""
         },
         data,
-        timeout: 24e4,
+        timeout: 36e4,
         onload: (response) => {
           try {
             const obj = JSON.parse(response.responseText || "{}");
@@ -3558,6 +3558,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     if (result.code === -1006 && (extra.retryCount || 0) < 2) {
       await sleep(result.retryAfter + 1);
       return callLocalBackendAnswer(question, { ...extra, retryCount: (extra.retryCount || 0) + 1 });
+    }
+    // 这一轮所有模型恰好都慢/超时时，后端会返回「未找到答案」。失败模型此时已进冷却，
+    // 隔几秒再请求一次通常能换到别的模型（实测同一道题重试后 17 秒成功）。
+    if (result.code === -1004 && !(extra && extra.bankOnly) && !(extra.retryAiCount || 0)) {
+      await sleep(3e3);
+      return callLocalBackendAnswer(question, { ...extra, retryAiCount: 1 });
     }
     return result;
   };
