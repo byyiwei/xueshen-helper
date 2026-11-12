@@ -2881,10 +2881,10 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
               </div>
             </div>
           </div>
-          <!-- 中控支付灰度 -->
+          <!-- 中控支付 -->
           <div class="collapsible-section">
             <div class="section-title" @click="togglePayApiSection('hub')">
-              <span class="st-text">中控支付（灰度切换）</span>
+              <span class="st-text">中控支付</span>
               <span class="st-right">
                 <span class="toggle" :class="hubPayConfig.hub_pay_enabled?'on':''" @click.stop="hubPayConfig.hub_pay_enabled=!hubPayConfig.hub_pay_enabled"></span>
                 <span class="st-arrow" style="display:inline-flex;align-items:center;gap:4px;"><svg class="ui-icon xs"><use :href="payApiCollapsed.hub?'#i-chevron-right':'#i-chevron-down'"></use></svg> {{payApiCollapsed.hub?'展开':'收起'}}</span>
@@ -2892,33 +2892,32 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
             </div>
             <div class="section-body" v-show="!payApiCollapsed.hub">
               <p style="color:var(--text3);font-size:12px;margin:0 0 12px;line-height:1.7">
-                命中灰度的用户下单改走中控（openget.cn）收款，其余用户仍走上面的老通道；单子在中控侧失败会自动回落老通道。
-                这里只控制「哪些用户走中控」，中控用哪条通道收款在中控后台配置。密钥复用「系统配置 → 单点登录」里的 App Key / App Secret，不用另填。
-                另有一条固定规则：老通道里没有微信下单实现，所以当微信只能落到「微信官方」时，开关打开后微信一律走中控，不受比例限制。
+                套餐购买与代理商充值的收款走中控（openget.cn）。付款方式与具体通道在中控后台配置，这里只控制业务端是否使用中控。
+                密钥复用「系统配置 → 单点登录」里的 App Key / App Secret，不用另填。中控下单失败时，只要上面的老通道还有可用项，会自动回落。
               </p>
               <div class="form-row">
                 <div class="form-group">
                   <label>普通购买</label>
                   <div class="toggle" style="display:inline-block;vertical-align:middle" :class="hubPayConfig.hub_pay_purchase?'on':''" @click="hubPayConfig.hub_pay_purchase=!hubPayConfig.hub_pay_purchase"></div>
-                  <div style="font-size:12px;color:var(--text3);margin-top:6px">关掉后套餐购买继续走老通道，代理商充值不受影响。</div>
+                  <div style="font-size:12px;color:var(--text3);margin-top:6px">关闭后套餐购买不走中控。老通道如果也已关闭，用户将无法付款，请保持开启。</div>
                 </div>
                 <div class="form-group">
                   <label>代理商充值</label>
                   <div class="toggle" style="display:inline-block;vertical-align:middle" :class="hubPayConfig.hub_pay_dist?'on':''" @click="hubPayConfig.hub_pay_dist=!hubPayConfig.hub_pay_dist"></div>
-                  <div style="font-size:12px;color:var(--text3);margin-top:6px">充值和购买分开灰度，可以先放购买，观察后再放开充值。</div>
+                  <div style="font-size:12px;color:var(--text3);margin-top:6px">与套餐购买互不影响，可单独开关代理商充值。</div>
                 </div>
               </div>
               <div class="form-row">
                 <div class="form-group">
-                  <label>灰度比例（%）</label>
+                  <label>中控比例（%）</label>
                   <input v-model.number="hubPayConfig.hub_pay_percent" type="number" min="0" max="100" style="padding:8px 12px;font-size:14px;width:120px">
-                  <div style="font-size:12px;color:var(--text3);margin-top:4px">按用户名稳定散列，同一用户每次都在同一档，不会一会儿中控一会儿老通道。0 = 只有白名单和管理员账号走中控；100 = 全部走中控。</div>
+                  <div style="font-size:12px;color:var(--text3);margin-top:4px">老通道有可用项时，按用户名稳定散列决定多少比例走中控；老通道没有可用项时自动全部走中控。100 = 全部用户走中控，0 = 只有下方名单和管理员走中控。</div>
                 </div>
               </div>
               <div class="form-group">
-                <label>白名单用户名</label>
+                <label>指定用户</label>
                 <textarea v-model="hubPayConfig.hub_pay_whitelist" rows="3" placeholder="每行一个或用逗号分隔，例如：admin，或 test01,test02" style="width:100%"></textarea>
-                <div style="font-size:12px;color:var(--text3);margin-top:4px">白名单不受灰度比例限制，永远走中控；管理员账号自动算白名单。</div>
+                <div style="font-size:12px;color:var(--text3);margin-top:4px">名单内的用户始终走中控，管理员账号自动算入。</div>
               </div>
               <div class="form-group">
                 <label>事件接收地址</label>
@@ -2926,7 +2925,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                 <div style="font-size:12px;color:var(--text3);margin-top:4px">中控把「已支付 / 已关闭」推到这里。留空则用 <code>https://xs.openget.cn/api/payment/notify/hub</code>；不填也能靠前端轮询确认到账，但回调丢了没有事件兜底。</div>
               </div>
               <div style="display:flex;gap:10px;justify-content:center;padding:6px 0 2px">
-                <button class="btn btn-success" @click="saveHubPayConfig">保存中控支付配置</button>
+                <button class="btn btn-success" @click="saveHubPayConfig">保存中控支付设置</button>
               </div>
             </div>
           </div>
