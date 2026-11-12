@@ -994,7 +994,7 @@ def hub_pay_refund(order_no, out_refund_no, amount_fen, reason=""):
     if not ok:
         text = data if isinstance(data, str) else "中控退款失败（HTTP %s）" % status
         if status == 501:
-            text = "该支付通道没有退款接口，请到中控后台或渠道后台人工退款"
+            text = "该支付通道没有退款接口，无法自动退款，请到支付渠道后台人工退款"
         return False, text, status
     if not isinstance(data, dict):
         return False, "中控退款返回内容异常", status
