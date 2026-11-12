@@ -7314,7 +7314,9 @@ class Handler(BaseHTTPRequestHandler):
                           f"金额=¥{plan.get('price')} 原因={recharge_reason}", flush=True)
                     _ok("订单已创建，请扫码付款" if qr_code else "订单已创建，请跳转付款", paying=True,
                         order_no=hub_order_no, qr_code=qr_code, pay_url=pay_url,
-                        pay_channel="hub", amount=plan["price"])
+                        pay_channel="hub", amount=plan["price"],
+                        # 各通道二维码有效期不同（支付FM 15 分钟、汇付 30 分钟），前端倒计时以中控为准
+                        expire_at=str(hub_info.get("expireAt") or ""))
                     return
                 print(f"[中控支付] 充值下单失败，回落老通道 user={user['username']} "
                       f"方式={pay_method} 原因={hub_info}", flush=True)
@@ -9778,6 +9780,8 @@ class Handler(BaseHTTPRequestHandler):
                             "msg": "订单已创建，请扫码付款" if qr_code else "订单已创建，请跳转付款",
                             "paying": True, "pay_channel": "hub", "order_no": hub_order_no,
                             "qr_code": qr_code, "pay_url": pay_url, "commission_used": deduct,
+                            # 各通道二维码有效期不同（支付FM 15 分钟、汇付 30 分钟），前端倒计时以中控为准
+                            "expire_at": str(hub_info.get("expireAt") or ""),
                         })
                         return
                     print(f"[中控支付] 下单失败，回落老通道 user={user['username']} "

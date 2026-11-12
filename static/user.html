@@ -830,112 +830,95 @@
         .pay-mask { position: absolute; inset: 0; background: rgba(16, 24, 40, .45); }
         .pay-dialog {
             position: relative; width: 360px; max-width: 100%; max-height: calc(100vh - 48px);
-            overflow-y: auto; padding: 22px 22px 20px; text-align: center;
-            background: var(--c-surface); border: 1px solid var(--c-border-2);
-            border-radius: 18px; box-shadow: 0 24px 60px -28px rgba(16, 24, 40, .45);
+            overflow-y: auto; padding: 22px 24px 24px; text-align: center;
+            background: #fff; border: 1px solid #edf2f7; color: #101828;
+            border-radius: 16px; box-shadow: 0 24px 60px -28px rgba(16, 24, 40, .45);
             opacity: 0; transform: translateY(10px) scale(.99);
             transition: opacity .18s ease-out, transform .18s ease-out;
         }
         .pay-modal.open .pay-dialog { opacity: 1; transform: none; }
         body.pay-modal-open { overflow: hidden; }
 
-        .pay-head { position: relative; display: flex; align-items: center; justify-content: center; min-height: 28px; padding: 0 30px; }
+        .pay-head { position: relative; display: flex; align-items: center; justify-content: center; height: 28px; }
         .pay-title {
             position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
             overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
         }
-        .pay-brand { display: inline-flex; align-items: center; gap: 7px; font-size: 17px; font-weight: 700; letter-spacing: .3px; }
-        .pay-brand[data-method="wechat"] { color: #07c160; }
-        .pay-brand[data-method="alipay"] { color: #1677ff; }
-        .pay-brand[data-method="unionpay"] { color: #e60012; }
+        .pay-brand { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 24px; }
+        .pay-brand-logo { width: 69px; height: 24px; display: block; }
+        .pay-brand-mark { width: 22px; height: 22px; display: block; }
+        .pay-brand-name { font-size: 18px; font-weight: 700; letter-spacing: .4px; color: #16a34a; }
+        .pay-brand-name.is-plain { color: #101828; }
         .pay-close {
-            position: absolute; top: 50%; right: -6px; transform: translateY(-50%);
+            position: absolute; top: 50%; right: -8px; transform: translateY(-50%);
             width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center;
-            border: 0; border-radius: 8px; background: transparent; color: var(--c-text-3); cursor: pointer;
+            border: 0; border-radius: 8px; background: transparent; color: #98a2b3; cursor: pointer;
             transition: background .16s ease-out, color .16s ease-out;
         }
-        .pay-close .ui-icon { width: 18px; height: 18px; }
-        .pay-close:hover { background: var(--c-surface-2); color: var(--c-text); }
+        .pay-close .ui-icon { width: 16px; height: 16px; }
+        .pay-close:hover { background: #f1f4f9; color: #101828; }
 
-        .pay-lead { margin-top: 18px; font-size: 13px; color: var(--c-text-2); }
+        .pay-lead { margin-top: 22px; font-size: 14px; color: #475467; }
         .pay-lead[hidden] { display: none; }
-        .pay-amount { display: flex; align-items: baseline; justify-content: center; gap: 3px; margin-top: 6px; font-variant-numeric: tabular-nums; }
-        .pay-amount-num { font-size: 32px; line-height: 1.15; font-weight: 700; letter-spacing: -.6px; color: var(--c-text); }
-        .pay-amount-unit { font-size: 15px; font-weight: 600; color: var(--c-text-2); }
-        .pay-subject { margin-top: 6px; font-size: 12px; color: var(--c-text-3); }
-        .pay-subject[hidden] { display: none; }
-        .pay-method-tag {
-            display: inline-block; margin-top: 8px; padding: 3px 10px;
-            border-radius: 999px; background: var(--c-surface-2); font-size: 12px; color: var(--c-text-2);
-        }
-        .pay-method-tag[hidden], .pay-seg-group[hidden] { display: none; }
-        .pay-seg-group {
-            display: flex; gap: 2px; width: 200px; max-width: 100%; margin: 14px auto 0; padding: 3px;
-            background: var(--c-surface-2); border-radius: 999px;
-        }
-        .pay-seg-group.is-busy { pointer-events: none; opacity: .6; }
-        .pay-seg {
-            flex: 1; height: 28px; border: 0; border-radius: 999px; background: transparent;
-            color: var(--c-text-2); font-size: 12.5px; font-weight: 600; cursor: pointer;
-            transition: background .16s ease-out, color .16s ease-out, box-shadow .16s ease-out;
-        }
-        .pay-seg.on { background: var(--c-surface); color: var(--c-text); box-shadow: 0 1px 3px rgba(16, 24, 40, .14); }
+        .pay-amount { display: flex; align-items: baseline; justify-content: center; gap: 5px; margin-top: 6px; font-variant-numeric: tabular-nums; }
+        .pay-amount-num { font-size: 26px; line-height: 1.2; font-weight: 600; letter-spacing: -.3px; color: #101828; }
+        .pay-amount-unit { font-size: 18px; font-weight: 500; color: #101828; }
         .pay-qr-card {
             width: 160px; height: 160px; padding: 12px; box-sizing: content-box;
             margin: 20px auto 0; display: flex; align-items: center; justify-content: center;
-            background: #fff; border-radius: 10px; box-shadow: 0 0 0 1px var(--c-border);
+            background: #fff; border-radius: 8px; box-shadow: 0 0 0 1px #eaecf0;
         }
         .pay-qr-card[hidden] { display: none; }
         .pay-qr-card img { width: 160px; height: 160px; display: block; }
         .pay-qr-card img[hidden] { display: none; }
         .pay-spinner {
             width: 24px; height: 24px; border-radius: 50%;
-            border: 2.5px solid var(--c-surface-3); border-top-color: var(--c-brand);
+            border: 2.5px solid #e8ecf3; border-top-color: #2f6bff;
             animation: pay-spin .8s linear infinite;
         }
         .pay-spinner[hidden] { display: none; }
         @keyframes pay-spin { to { transform: rotate(360deg); } }
         .pay-state-art {
             display: flex; flex-direction: column; align-items: center; gap: 6px;
-            color: var(--c-text-2); font-size: 13px; font-weight: 600;
+            color: #475467; font-size: 13px; font-weight: 600;
         }
         .pay-state-art[hidden] { display: none; }
         .pay-state-art .ui-icon { width: 44px; height: 44px; }
-        .pay-state-art.is-ok { color: var(--c-success); }
-        .pay-state-art.is-off { color: var(--c-text-3); }
-        .pay-state-art.is-err { color: var(--c-danger); }
-        .pay-note { margin-top: 14px; font-size: 12px; line-height: 1.7; color: var(--c-text-3); }
+        .pay-state-art.is-ok { color: #12b76a; }
+        .pay-state-art.is-off { color: #98a2b3; }
+        .pay-state-art.is-err { color: #f04438; }
+        .pay-note { margin-top: 16px; font-size: 12px; line-height: 1.7; color: #98a2b3; }
         .pay-note[hidden] { display: none; }
         .pay-note > span { display: block; }
         .pay-note .pay-countdown { display: inline; font-variant-numeric: tabular-nums; }
         .pay-note .pay-countdown[hidden] { display: none; }
-        .pay-error { margin: 12px 0 0; font-size: 12.5px; line-height: 1.6; color: var(--c-danger); }
+        .pay-error { margin: 12px 0 0; font-size: 12.5px; line-height: 1.6; color: #f04438; }
         .pay-error[hidden] { display: none; }
         .pay-order {
-            display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 10px;
-            font-size: 12px; color: var(--c-text-3); word-break: break-all;
+            display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 12px;
+            font-size: 12px; color: #98a2b3; word-break: break-all;
         }
         .pay-order[hidden] { display: none; }
-        .pay-order b { font-weight: 500; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--c-text-2); }
+        .pay-order b { font-weight: 500; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #475467; }
         .pay-copy {
             flex: none; padding: 2px 7px; border: 0; border-radius: 6px;
-            background: var(--c-surface-2); color: var(--c-text-2); font-size: 11.5px; cursor: pointer;
+            background: #f1f4f9; color: #475467; font-size: 11.5px; cursor: pointer;
         }
-        .pay-copy:hover { color: var(--c-text); }
-        .pay-actions { display: flex; flex-direction: column; gap: 4px; margin-top: 18px; }
+        .pay-copy:hover { color: #101828; }
+        .pay-actions { display: flex; flex-direction: column; gap: 4px; margin-top: 20px; }
         .pay-btn {
             width: 100%; border: 0; border-radius: 10px; font-weight: 600; cursor: pointer;
             transition: background .16s ease-out, color .16s ease-out, opacity .16s ease-out;
         }
         .pay-btn[hidden] { display: none; }
         .pay-btn:disabled { opacity: .55; cursor: not-allowed; }
-        .pay-btn-primary { height: 42px; background: var(--c-text); color: var(--c-surface); font-size: 14px; }
+        .pay-btn-primary { height: 40px; background: #101828; color: #fff; font-size: 14px; }
         .pay-btn-primary:hover { opacity: .88; }
-        .pay-btn-ghost { height: 38px; background: transparent; color: var(--c-text-3); font-size: 13px; }
-        .pay-btn-ghost:hover { color: var(--c-text-2); }
-        .pay-open-link { display: block; margin-top: 12px; text-align: center; font-size: 12px; color: var(--c-text-3); }
+        .pay-btn-ghost { height: 36px; background: transparent; color: #98a2b3; font-size: 13px; }
+        .pay-btn-ghost:hover { color: #475467; }
+        .pay-open-link { display: block; margin-top: 12px; text-align: center; font-size: 12px; color: #98a2b3; }
         .pay-open-link[hidden] { display: none; }
-        .pay-dialog :focus-visible { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+        .pay-dialog :focus-visible { outline: 2px solid #2f6bff; outline-offset: 2px; }
 
         .pending-pay-bar {
             display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -957,13 +940,12 @@
                 padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
             }
             .pay-lead { margin-top: 16px; }
-            .pay-amount-num { font-size: 30px; }
             .pay-qr-card { margin-top: 18px; }
             .pay-actions { margin-top: 16px; }
         }
 
         @media (prefers-reduced-motion: reduce) {
-            .pay-dialog, .pay-seg, .pay-btn, .pay-close { transition: none; }
+            .pay-dialog, .pay-btn, .pay-close { transition: none; }
             .pay-dialog { transform: none; }
         }
 
@@ -3127,6 +3109,26 @@
             <symbol id="i-store" viewBox="0 0 24 24"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"></path><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"></path><path d="M2 7h20"></path></symbol>
             <symbol id="i-menu" viewBox="0 0 24 24"><line x1="4" x2="20" y1="12" y2="12"></line><line x1="4" x2="20" y1="6" y2="6"></line><line x1="4" x2="20" y1="18" y2="18"></line></symbol>
             <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></symbol>
+            <symbol id="i-alipay-wordmark" viewBox="0 0 1157.3333 400">
+                <defs><clipPath id="alipayWmClip" clipPathUnits="userSpaceOnUse"><path d="M0 300h868V0H0Z"></path></clipPath></defs>
+                <g clip-path="url(#alipayWmClip)" transform="matrix(1.33333 0 0 -1.33333 0 400)">
+                    <path d="M0 0h87.488v-17.318h31.243V3.2c-.002.05-.009.07-.009.124 0 4.61-3.613 8.345-8.092 8.422H60.063V27.89H27.362V11.746h-58.601v-29.064H0Z" transform="translate(745.123 252.854)" style="fill: rgb(61, 57, 57); fill-opacity: 1; fill-rule: nonzero; stroke: none;"></path>
+                    <path d="m0 0-32.034-75.76h24.576v-90.155h26.874v119.582H9.682L29.92 0Z" transform="translate(555.846 279.253)" style="fill: rgb(61, 57, 57); fill-opacity: 1; fill-rule: nonzero; stroke: none;"></path>
+                    <path d="m0 0-9.931 33.562c-.654 2.113-2.57 3.648-4.843 3.651h-26.017l7.54-25.468h-30.584v49.328h60.063v11.745h-60.063v23.218h60.063v11.744h-149.904V96.036h60.063V72.818h-60.063V61.073h60.063V11.745h-60.063V0Z" transform="translate(867.56 117.067)" style="fill: rgb(61, 57, 57); fill-opacity: 1; fill-rule: nonzero; stroke: none;"></path>
+                    <path d="M0 0h-23.264l18.118-57.072h27.53L5.524-3.538C4.509-1.454 2.421-.02 0 0" transform="translate(619.044 220.684)" style="fill: rgb(61, 57, 57); fill-opacity: 1; fill-rule: nonzero; stroke: none;"></path>
+                    <path d="M0 0h-27.926v-29.179h-68.831v-11.744h68.831v-104.913c-.242-2.397-2.136-4.267-4.504-4.398h-14.195v-12.16h36.197c5.725.245 10.302 4.99 10.428 10.892V-40.923h11.346v11.744H0z" transform="translate(683.458 277.875)" style="fill: rgb(61, 57, 57); fill-opacity: 1; fill-rule: nonzero; stroke: none;"></path>
+                    <path d="M0 0c-25.503 9.287-45.697 19.493-61.562 29.341 22.978 17.025 43.114 40.133 51.189 71.044h-53.654v19.223h62.211v11.974h-62.211v24.364h-27.727l-.005-.006c-3.035 0-5.495-2.543-5.495-5.686v-18.672h-61.766v-11.974h61.766v-19.223h-52.13V88.417h103.842s-5.76-22.464-34.241-46.609c-25.512 19.317-34.046 34.705-34.046 34.705h-27.856c11.261-19.523 27.271-35.161 44.502-47.568-15.844-10.298-36.344-20.233-62.922-28.176v-14.342s40.979 7.734 80.589 31.07C-39.846-5.656 0-13.573 0-13.573Z" transform="translate(519.574 124.327)" style="fill: rgb(61, 57, 57); fill-opacity: 1; fill-rule: nonzero; stroke: none;"></path>
+                    <path d="m0 0 9.62-28.837H-9.966Zm12.578-37.604 4.637-14.002h13.002L4.607 17.923h-9.938l-25.517-69.529h13.013l4.84 14.002z" transform="translate(408.575 70.862)" style="fill: rgb(61, 57, 57); fill-opacity: 1; fill-rule: nonzero; stroke: none;"></path>
+                    <path d="M0 0v-69.529h42.105v9.465H12.513V0z" transform="translate(479.82 88.785)" style="fill: rgb(61, 57, 57); fill-opacity: 1; fill-rule: nonzero; stroke: none;"></path>
+                    <path d="M567.8 19.256h12.512v69.529H567.8Z" style="fill: rgb(61, 57, 57); fill-opacity: 1; fill-rule: nonzero; stroke: none;"></path>
+                    <path d="M0 0h-13.813v23.789H0c6.942 0 11.091-6.069 11.091-11.942C11.091 6.104 7.204 0 0 0m.703 33.246h-27.027v-69.529h12.511v26.726H.703c13.485 0 22.902 8.803 22.902 21.404 0 12.6-9.417 21.399-22.902 21.399" transform="translate(657.331 55.54)" style="fill: rgb(61, 57, 57); fill-opacity: 1; fill-rule: nonzero; stroke: none;"></path>
+                    <path d="m0 0 9.621-28.837H-9.966Zm12.58-37.604 4.638-14.002h13.001L4.607 17.923h-9.936l-25.517-69.529h13.013l4.84 14.002z" transform="translate(741.809 70.862)" style="fill: rgb(61, 57, 57); fill-opacity: 1; fill-rule: nonzero; stroke: none;"></path>
+                    <path d="m0 0-13.64-29.625L-27.489 0h-13.517l21.054-40.968v-28.561h12.413v28.561l.08.158L13.518 0Z" transform="translate(841.691 88.785)" style="fill: rgb(61, 57, 57); fill-opacity: 1; fill-rule: nonzero; stroke: none;"></path>
+                    <path d="M0 0c-7.518-.745-21.627-4.064-29.345-10.861-23.132-20.111-9.292-56.874 37.513-56.874 27.204 0 54.395 17.345 75.748 45.115C53.539-7.836 27.805 2.739 0 0" transform="translate(73.568 137.035)" style="fill: rgb(22, 119, 255); fill-opacity: 1; fill-rule: nonzero; stroke: none;"></path>
+                    <path d="M0 0h-204.487c-26.629 0-48.194-21.511-48.194-48.063v-203.884c0-26.534 21.565-48.053 48.194-48.053H0c26.623 0 48.178 21.519 48.178 48.053v2.004h-.001v-.036s-78.253 32.528-117.773 51.474c-26.501-32.515-60.692-52.249-96.183-52.249-60.03 0-80.415 52.378-51.99 86.863 6.196 7.516 16.739 14.692 33.103 18.716 25.59 6.266 66.329-3.914 104.504-16.474 6.863 12.615 12.642 26.503 16.949 41.291h-117.656v11.889h60.664v21.299h-73.474v11.888h73.474v30.388s0 5.119 5.202 5.119h29.65v-35.507h72.647V-87.17h-72.647v-21.299h59.301c-5.673-23.18-14.298-44.512-25.108-63.245 17.994-6.49 34.15-12.639 46.186-16.656 43.323-14.47 53.151-15.249 53.151-15.249v-.004h.001v155.56C48.178-21.511 26.623 0 0 0" transform="translate(253.122 300)" style="fill: rgb(22, 119, 255); fill-opacity: 1; fill-rule: nonzero; stroke: none;"></path>
+                </g>
+            </symbol>
+            <symbol id="i-wechat-mark" viewBox="0 0 1228 1024"><path d="M530.8928 703.1296a41.472 41.472 0 0 1-35.7376-19.8144l-2.7136-5.5808L278.272 394.752a18.7392 18.7392 0 0 1-2.048-8.1408 19.968 19.968 0 0 1 20.48-19.3536c4.608 0 8.8576 1.4336 12.288 3.84l234.3936 139.9296a64.4096 64.4096 0 0 0 54.528 5.9392L1116.2624 204.8C1004.9536 80.896 821.76 0 614.4 0 275.0464 0 0 216.576 0 483.6352c0 145.7152 82.7392 276.8896 212.2752 365.5168a38.1952 38.1952 0 0 1 17.2032 31.488 44.4928 44.4928 0 0 1-2.1504 12.3904l-27.6992 97.4848c-1.3312 4.608-3.328 9.3696-3.328 14.1312 0 10.752 9.216 19.3536 20.48 19.3536 4.4032 0 8.0384-1.536 11.776-3.584l134.5536-73.3184c10.1376-5.5296 20.7872-8.96 32.6144-8.96 6.2976 0 12.288 0.9216 18.0736 2.5088 62.72 17.0496 130.4576 26.5728 200.5504 26.5728C953.7024 967.168 1228.8 750.592 1228.8 483.6352c0-80.9472-25.4464-157.1328-70.0416-224.1024l-604.9792 436.992-4.4544 2.4064a42.1376 42.1376 0 0 1-18.432 4.1984z" fill="#15BA11"></path></symbol>
         </defs>
     </svg>
     <button class="theme-toggle login-theme-toggle" title="主题：跟随系统"><svg class="ui-icon"><use href="#i-theme-auto"></use></svg></button>
@@ -3241,7 +3243,7 @@
             <div class="pay-dialog" id="payDialog" role="dialog" aria-modal="true" aria-labelledby="payTitle" tabindex="-1">
                 <h3 class="pay-title" id="payTitle">扫码支付</h3>
                 <div class="pay-head">
-                    <div class="pay-brand" id="payBrand" data-method="wechat">微信支付</div>
+                    <div class="pay-brand" id="payBrand" role="img" aria-label="微信支付"></div>
                     <button type="button" class="pay-close" data-pay-dismiss aria-label="关闭支付弹窗">
                         <svg class="ui-icon" aria-hidden="true"><use href="#i-x"></use></svg>
                     </button>
@@ -3250,16 +3252,13 @@
                 <div class="pay-amount" aria-live="polite">
                     <span class="pay-amount-num" id="payAmount">0.00</span><span class="pay-amount-unit">元</span>
                 </div>
-                <div class="pay-subject" id="paySubject" hidden></div>
-                <div class="pay-method-tag" id="payMethodTag" hidden></div>
-                <div class="pay-seg-group" id="payMethodsSeg" role="group" aria-label="支付方式" hidden></div>
                 <div class="pay-qr-card" id="payQrCard">
                     <div class="pay-spinner" id="paySpinner" aria-hidden="true"></div>
                     <img id="payQrImg" alt="" hidden>
                     <div class="pay-state-art" id="payArt" hidden></div>
                 </div>
                 <div class="pay-note" id="payNote">
-                    <span id="payNoteExpire" hidden>二维码有效期 30 分钟</span>
+                    <span id="payNoteExpire" hidden>二维码有效期 15 分钟</span>
                     <span id="payNoteHint">请尽快完成付款<span class="pay-countdown" id="payCountdown" hidden></span></span>
                 </div>
                 <p class="pay-error" id="payError" role="alert" hidden></p>
@@ -3268,8 +3267,8 @@
                     <button type="button" class="pay-copy" id="payCopy">复制</button>
                 </div>
                 <div class="pay-actions">
-                    <button type="button" class="pay-btn pay-btn-primary" id="payPrimary">我已完成支付</button>
-                    <button type="button" class="pay-btn pay-btn-ghost" id="paySecondary">取消</button>
+                    <button type="button" class="pay-btn pay-btn-primary" id="payPrimary">完成</button>
+                    <button type="button" class="pay-btn pay-btn-ghost" id="paySecondary">关闭</button>
                 </div>
                 <a class="pay-open-link" id="payOpenLink" target="_blank" rel="noopener noreferrer" hidden>在电脑上打开支付页面</a>
             </div>
@@ -5268,17 +5267,14 @@
         function payKey(ctx, method) {
             return String(ctx.planType || 'plan') + ':' + String(ctx.planId || 0) + ':' + String(method || '');
         }
-        // 接口没有直接给 expireAt 时，中控订单固定 30 分钟过期（建单时传的 expireMinutes）
+        // 到期时间由中控下单时给定（不同通道上限不同：支付FM 15 分钟、汇付 30 分钟）
         function payExpireOf(res) {
             if (!res) return null;
             const raw = res.expireAt || res.expire_at || res.expiresAt || res.expires_at;
-            if (raw) {
-                if (typeof raw === 'number') return raw < 1e12 ? raw * 1000 : raw;
-                const t = Date.parse(raw);
-                return isNaN(t) ? null : t;
-            }
-            if (String(res.pay_channel || '') === 'hub') return Date.now() + 30 * 60 * 1000;
-            return null;
+            if (!raw) return null;
+            if (typeof raw === 'number') return raw < 1e12 ? raw * 1000 : raw;
+            const t = Date.parse(raw);
+            return isNaN(t) ? null : t;
         }
         function payShowError(text) {
             const el = payEl('payError');
@@ -5295,31 +5291,15 @@
             const el = payEl('payBrand');
             if (!el) return;
             const method = (payOrder && payOrder.method) || currentPayMethod || 'wechat';
-            el.dataset.method = method;
-            el.textContent = payMethodText(method);
-        }
-
-        function payRenderMethods() {
-            payRenderBrand();
-            const seg = payEl('payMethodsSeg');
-            const tag = payEl('payMethodTag');
-            if (!seg || !tag) return;
-            const list = (payMethodsList || []).filter(m => PAY_METHOD_TEXT[m.value]);
-            if (!list.length) { seg.hidden = true; tag.hidden = true; return; }
-            if (list.length === 1) {
-                tag.textContent = payMethodText(list[0].value);
-                tag.hidden = false;
-                seg.hidden = true;
-                return;
+            const name = payMethodText(method);
+            el.setAttribute('aria-label', name);
+            if (method === 'alipay') {
+                el.innerHTML = '<svg class="pay-brand-logo" viewBox="0 0 1157.3333 400" aria-hidden="true"><use href="#i-alipay-wordmark"></use></svg>';
+            } else if (method === 'wechat') {
+                el.innerHTML = '<svg class="pay-brand-mark" viewBox="0 0 1228 1024" aria-hidden="true"><use href="#i-wechat-mark"></use></svg><span class="pay-brand-name">' + name + '</span>';
+            } else {
+                el.innerHTML = '<span class="pay-brand-name is-plain">' + name + '</span>';
             }
-            tag.hidden = true;
-            seg.hidden = false;
-            seg.innerHTML = list.map(m =>
-                `<button type="button" class="pay-seg${m.value === currentPayMethod ? ' on' : ''}" data-pay-seg="${m.value}" aria-pressed="${m.value === currentPayMethod}">${payMethodText(m.value)}</button>`
-            ).join('');
-            seg.querySelectorAll('[data-pay-seg]').forEach(btn => {
-                btn.onclick = () => paySwitchMethod(btn.getAttribute('data-pay-seg'));
-            });
         }
 
         function payRenderWaitingContent() {
@@ -5347,45 +5327,30 @@
 
             if (payOrder) {
                 payEl('payAmount').textContent = payFmtAmount(payOrder.amount != null ? payOrder.amount : (payOrder.ctx || {}).price);
-                const subject = payOrder.subject || '';
-                payEl('paySubject').textContent = subject;
-                payEl('paySubject').hidden = !subject;
             }
-            payRenderMethods();
-            const seg = payEl('payMethodsSeg');
-            // 成功/关闭/失败时切换支付方式没有意义，收起来
-            if (phase !== 'creating' && phase !== 'waiting') {
-                if (seg) seg.hidden = true;
-                const tagEl = payEl('payMethodTag');
-                if (tagEl) tagEl.hidden = true;
-            }
-            if (seg) seg.classList.toggle('is-busy', phase === 'creating');
+            payRenderBrand();
             payShowError('');
             card.hidden = false;
             img.hidden = true; spin.hidden = true; art.hidden = true;
             cd.hidden = true;
             note.hidden = false;
             noteExpire.hidden = true;
-            lead.hidden = false;
+            lead.hidden = true;
             openLink.hidden = true;
-            primary.hidden = false; secondary.hidden = false;
+            orderRow.hidden = true;
+            primary.hidden = true; secondary.hidden = true;
             primary.disabled = false;
-            primary.textContent = '我已完成支付';
-            secondary.textContent = '取消';
-            if (payOrder && payOrder.orderNo) {
-                orderRow.hidden = false;
-                orderNo.textContent = payOrder.orderNo;
-            } else {
-                orderRow.hidden = true;
-            }
+            primary.textContent = '完成';
+            secondary.textContent = '关闭';
 
             if (phase === 'creating') {
                 spin.hidden = false;
+                lead.hidden = false;
                 lead.textContent = '正在创建订单';
                 note.hidden = true;
-                primary.hidden = true;
             } else if (phase === 'waiting') {
                 payRenderWaitingContent();
+                lead.hidden = false;
                 lead.textContent = '扫一扫付款';
                 noteExpire.hidden = !(payOrder && payOrder.expireAt);
                 if (payOrder && payOrder.payUrl && !payOrder.qrCode) {
@@ -5398,26 +5363,29 @@
                 art.hidden = false;
                 art.className = 'pay-state-art is-ok';
                 art.innerHTML = PAY_ICON_CHECK + '<span>支付成功</span>';
-                lead.hidden = true;
                 note.hidden = true;
+                primary.hidden = false;
                 primary.textContent = '完成';
-                secondary.hidden = true;
+                if (payOrder && payOrder.orderNo) { orderRow.hidden = false; orderNo.textContent = payOrder.orderNo; }
             } else if (phase === 'closed') {
                 const text = extra.text || '订单已关闭';
                 art.hidden = false;
                 art.className = 'pay-state-art is-off';
                 art.innerHTML = PAY_ICON_CLOCK + '<span>' + text + '</span>';
-                lead.hidden = true;
                 note.hidden = true;
+                primary.hidden = false;
                 primary.textContent = '重新发起支付';
+                secondary.hidden = false;
                 secondary.textContent = '关闭';
+                if (payOrder && payOrder.orderNo) { orderRow.hidden = false; orderNo.textContent = payOrder.orderNo; }
             } else if (phase === 'failed') {
                 art.hidden = false;
                 art.className = 'pay-state-art is-err';
                 art.innerHTML = PAY_ICON_ALERT + '<span>下单失败</span>';
-                lead.hidden = true;
                 note.hidden = true;
+                primary.hidden = false;
                 primary.textContent = '重新获取';
+                secondary.hidden = false;
                 secondary.textContent = '取消';
                 if (extra.text) payShowError(extra.text);
             }
@@ -5433,7 +5401,11 @@
                 return;
             }
             box.hidden = false;
-            if (expireLine) expireLine.hidden = false;
+            if (expireLine) {
+                const mins = payOrder.expireMinutes || Math.max(1, Math.round((payOrder.expireAt - Date.now()) / 60000));
+                expireLine.textContent = '二维码有效期 ' + mins + ' 分钟';
+                expireLine.hidden = false;
+            }
             const tick = () => {
                 if (!payOrder || !payOrder.expireAt) return;
                 const left = Math.max(0, payOrder.expireAt - Date.now());
@@ -5584,7 +5556,7 @@
             payOrder = {
                 key: payKey(ctx, method), ctx: ctx, method: method,
                 amount: Number(ctx.price || 0), subject: ctx.subject || '',
-                qrContent: '', qrCode: '', payUrl: '', orderNo: '', expireAt: null,
+                qrContent: '', qrCode: '', payUrl: '', orderNo: '', expireAt: null, expireMinutes: 0,
                 phase: 'creating', msgTarget: ctx.msgTarget || 'billingMsg'
             };
             payHidePendingBar();
@@ -5638,22 +5610,14 @@
             payOrder.payUrl = res.pay_url || '';
             payOrder.qrContent = payOrder.qrCode || payOrder.payUrl || '';
             payOrder.expireAt = payExpireOf(res);
+            if (payOrder.expireAt) {
+                payOrder.expireMinutes = Math.max(1, Math.round((payOrder.expireAt - Date.now()) / 60000));
+            }
             if (res.subject) payOrder.subject = res.subject;
             const modal = payEl('payModal');
             if (!modal || modal.hidden) { payShowPendingBar(); return; }
             paySetPhase('waiting');
             payStartWaitingTimers();
-        }
-
-        async function paySwitchMethod(method) {
-            if (!method || method === currentPayMethod) return;
-            currentPayMethod = method;
-            payRenderMethods();
-            if (payOrder && payOrder.phase === 'waiting' && !payBusy) {
-                const ctx = payOrder.ctx;
-                payOrder = null;
-                await payStart(ctx, { force: true, method: method });
-            }
         }
 
         async function payRetry() {
