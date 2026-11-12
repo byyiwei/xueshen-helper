@@ -223,14 +223,14 @@ MAX_MODEL_BUDGET = 40
 # 长答案文字题（多空填空、作文、翻译表格）单独放宽：一个模型要写几十行内容，
 # 40 秒经常还没生成完就被掐断，日志里就是「40s 内无响应」。
 LONG_TEXT_TIME_BUDGET = 300
-MAX_LONG_TEXT_MODEL_BUDGET = 75
+MAX_LONG_TEXT_MODEL_BUDGET = 90
 # 图片题单独放宽预算：带图请求要先上传图片，模型还得识图，思考型模型经常要几十秒才吐答案。
 # 之前和纯文本共用 40 秒，模型正要出结果就被掐断，日志里就是「几个模型全在 40 秒内无响应」。
 # 75 秒实测仍不够：思考型模型光推理就要一分钟以上。
-# 单模型上限给 90 秒：真实多模态模型识图一般在 15~40 秒返回，90 秒足够；
-# 而把「其实不会看图、只是被勾了支持图片」的模型卡在 120 秒，等于半道题白等。
+# 单模型上限给 120 秒：真实多模态模型识图常见 15~60 秒，复杂电路图/表格会超过 90 秒；
+# 而把「其实不会看图、只是被勾了支持图片」的模型卡太久也不合适，120 是折中。
 VISION_TIME_BUDGET = 300
-MAX_VISION_MODEL_BUDGET = 90
+MAX_VISION_MODEL_BUDGET = 120
 DASHBOARD_CACHE = {"time": 0, "data": None}
 DASHBOARD_CACHE_SECONDS = 5
 # 官网直营营收口径：代理商充值（plan_type='dist_recharge'）是压在平台的预存款、属于负债，
@@ -4899,8 +4899,10 @@ def is_long_answer_question(question_payload_str):
         info = parse_question_payload(question_payload_str)
     except Exception:
         return False
-    text = str(info.get("question") or "")
-    qtype = str(info.get("type") or "")
+    text = str(info.get("question_text") or "")
+    qtype = str(info.get("question_type") or "")
+    # parse_question_payload 返回的是 question_text / question_type；读错键会让所有题
+    # 都判成短答案，长答案题永远只拿到 40 秒预算。
     # 简答/论述/计算/写作：答案必然成段
     if qtype in ("4", "5", "6", "26"):
         return True
