@@ -1468,6 +1468,11 @@ class Database:
         self._add_column_if_missing("admin_config", "feedback_auto_close_days", "feedback_auto_close_days INT DEFAULT 7")
         self._add_column_if_missing("admin_config", "feedback_notify_enabled", "feedback_notify_enabled TINYINT DEFAULT 0")
         self._add_column_if_missing("admin_config", "refund_days_limit", "refund_days_limit INT DEFAULT 7 COMMENT '退款时效（天），0=不允许退款'")
+        # 退款自动审核：两个开关都开，且订单支付时间落在 [min,max] 小时内才自动退
+        self._add_column_if_missing("admin_config", "auto_refund_enabled", "auto_refund_enabled TINYINT DEFAULT 0 COMMENT '自动退款总开关'")
+        self._add_column_if_missing("admin_config", "auto_refund_audit", "auto_refund_audit TINYINT DEFAULT 0 COMMENT '退款申请自动审核开关'")
+        self._add_column_if_missing("admin_config", "auto_refund_min_hours", "auto_refund_min_hours INT DEFAULT 0 COMMENT '支付后满多少小时可自动审核'")
+        self._add_column_if_missing("admin_config", "auto_refund_max_hours", "auto_refund_max_hours INT DEFAULT 24 COMMENT '支付后超过多少小时不再自动审核'")
         self._add_column_if_missing("admin_config", "xianyu_enabled", "xianyu_enabled TINYINT DEFAULT 0")
         self._add_column_if_missing("admin_config", "xianyu_url", "xianyu_url VARCHAR(255) DEFAULT ''")
         self._add_column_if_missing("admin_config", "card_pay_name", "card_pay_name VARCHAR(50) DEFAULT '卡密激活'")

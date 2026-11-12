@@ -2945,6 +2945,38 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                   <div style="font-size:12px;color:var(--text3);margin-top:4px">设为 0 表示不允许退款，支付超过此天数后管理员无法退款。</div>
                 </div>
               </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>自动退款</label>
+                  <div style="display:flex;align-items:center;gap:10px;padding:6px 0">
+                    <span class="toggle" :class="payApiConfig.auto_refund_enabled?'on':''" @click="payApiConfig.auto_refund_enabled=!payApiConfig.auto_refund_enabled"></span>
+                    <span style="font-size:13px;color:var(--text2)">用户申请退款后，系统直接调用中控把款项原路退回</span>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label>自动审核</label>
+                  <div style="display:flex;align-items:center;gap:10px;padding:6px 0">
+                    <span class="toggle" :class="payApiConfig.auto_refund_audit?'on':''" @click="payApiConfig.auto_refund_audit=!payApiConfig.auto_refund_audit"></span>
+                    <span style="font-size:13px;color:var(--text2)">符合时间范围的申请不再进入人工审核</span>
+                  </div>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>自动审核时间范围（支付后）</label>
+                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                    <input v-model.number="payApiConfig.auto_refund_min_hours" type="number" min="0" max="8760" style="padding:8px 12px;font-size:14px;width:100px">
+                    <span style="font-size:13px;color:var(--text2)">小时 至</span>
+                    <input v-model.number="payApiConfig.auto_refund_max_hours" type="number" min="0" max="8760" style="padding:8px 12px;font-size:14px;width:100px">
+                    <span style="font-size:13px;color:var(--text2)">小时</span>
+                  </div>
+                  <div style="font-size:12px;color:var(--text3);margin-top:4px">例如 0 至 24：支付后 24 小时内申请自动审核，超过这个范围仍走人工。</div>
+                </div>
+              </div>
+              <div class="form-group" style="padding:10px 12px;border-radius:8px;background:var(--card);border:1px solid var(--border);font-size:12px;color:var(--text3);line-height:1.7">
+                自动退款和自动审核两个开关都打开才生效，只对中控支付订单有效；老通道订单仍由管理员手动处理。<br>
+                渠道返回失败或仍在处理中时，申请保持待审核，不会自动通过；退款成功后系统自动撤销权益并通知用户。
+              </div>
             </div>
           </div>
           <div style="display:flex;gap:10px;justify-content:center;padding:10px 0">
@@ -6758,7 +6790,8 @@ createApp({
       // 易支付
       epay_enabled:false,epay_api_url:'',epay_pid:'',epay_key:'',epay_notify_url:'',epay_return_url:'',
       alipay_weight:100,wechat_weight:100,zhifufm_weight:100,sandpay_weight:100,epay_weight:100,
-      refund_days_limit:7
+      refund_days_limit:7,
+      auto_refund_enabled:false,auto_refund_audit:false,auto_refund_min_hours:0,auto_refund_max_hours:24
     });
     const payApiCollapsed=reactive({alipay:true,wechat:true,zhifufm:true,sandpay:true,epay:true,hub:true,refund:true});
     // 中控支付灰度：单独一份配置、单独保存，避免和老通道表单互相覆盖

@@ -1070,6 +1070,124 @@ def hub_refund_order(order_no, reason="", operator="admin"):
     return "failed", (msg_text or "渠道退款失败")
 
 
+def _auto_refund_eligible(order, admin):
+    """这笔订单能不能走自动审核退款。返回 (bool, 原因)。
+
+    条件：自动退款开关 + 自动审核开关都开；只处理中控订单（钱的退回靠中控接口，
+    老通道没有退款接口，自动通过只会撤销权益而不退钱）；支付时间落在配置的小时区间内。
+    """
+    admin = admin or {}
+    if not _hub_pay_flag(admin.get("auto_refund_enabled"), 0):
+        return False, "未开启自动退款"
+    if not _hub_pay_flag(admin.get("auto_refund_audit"), 0):
+        return False, "未开启自动审核"
+    if str((order or {}).get("pay_channel") or "") != "hub":
+        return False, "非中控订单"
+    if str((order or {}).get("status") or "") != "paid" or (order or {}).get("refunded_at"):
+        return False, "订单状态不可退"
+    paid_at = (order or {}).get("paid_at")
+    if not paid_at:
+        return False, "缺少支付时间"
+    if isinstance(paid_at, str):
+        try:
+            paid_at = datetime.strptime(paid_at.split(".")[0], "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return False, "支付时间格式异常"
+    try:
+        min_h = max(0, int(admin.get("auto_refund_min_hours") or 0))
+        max_h = admin.get("auto_refund_max_hours")
+        max_h = 24 if max_h is None else int(max_h)
+    except Exception:
+        min_h, max_h = 0, 24
+    max_h = max(min_h, max_h)
+    elapsed = (datetime.now() - paid_at).total_seconds() / 3600.0
+    if elapsed < min_h or elapsed > max_h:
+        return False, f"不在自动审核时间范围（支付后 {min_h}-{max_h} 小时）"
+    return True, ""
+
+
+def _auto_process_refund_request(order_no, reason=""):
+    """用户提交退款申请后按配置自动审核。返回给用户看的提示。
+
+    成功才把申请标成已通过；渠道处理中/失败都保持待审核，交给人工处理。
+    """
+    order = db.get_order(order_no) or {}
+    admin = db.get_admin_config() or {}
+    eligible, why = _auto_refund_eligible(order, admin)
+    if not eligible:
+        return ""
+    print(f"[自动退款] 开始处理 order={order_no} 原因={why or '符合条件'}", flush=True)
+    result, payload = hub_refund_order(order_no, reason=reason or "用户申请退款", operator="auto")
+    if result == "success":
+        refund_amount = float((payload or {}).get("amount") or 0)
+        row = db.fetchone(
+            "SELECT id FROM refund_requests WHERE order_no = %s AND status = 'pending' ORDER BY id DESC LIMIT 1",
+            (order_no,)
+        )
+        if row:
+            db.process_refund_request(row["id"], "approved", "自动审核通过，渠道已退款")
+            _send_refund_result_email(row["id"], "approved", refund_amount, "自动审核通过，渠道已退款")
+        print(f"[自动退款] 已退款 order={order_no} 金额={refund_amount:.2f}", flush=True)
+        return "退款已原路退回，权益已撤销"
+    if result == "processing":
+        print(f"[自动退款] 渠道处理中 order={order_no}", flush=True)
+        return "退款已提交渠道处理，到账后会自动完成"
+    fail_text = payload if isinstance(payload, str) else "渠道退款失败"
+    # 失败保持待审核：钱没退出去，绝不能把申请标成已通过
+    print(f"[自动退款] 失败转人工 order={order_no} 原因={fail_text}", flush=True)
+    return "退款申请已提交，等待管理员处理"
+
+
+def _send_refund_result_email(request_id, status, refund_amount, note=""):
+    """退款申请处理结果邮件。自动审核与后台手动处理共用。"""
+    try:
+        row = db.fetchone("SELECT * FROM refund_requests WHERE id = %s", (request_id,))
+        if not row:
+            return
+        user_row = db.fetchone("SELECT email FROM users WHERE username = %s", (row["username"],))
+        if not user_row or not user_row.get("email"):
+            return
+        order = db.get_order(row["order_no"])
+        scene = "refund_approved" if status == "approved" else "refund_rejected"
+        plan_name = (order or {}).get("plan_name") or ""
+        price = str((order or {}).get("price") or "0")
+        refund_reason = row.get("reason") or ""
+        status_text = "已通过" if status == "approved" else "已拒绝"
+        fallback_html = f"""<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
+<h2 style="color:#1e293b">退款申请{status_text}</h2>
+<p style="color:#475569">您好，您的退款申请已被管理员{status_text}。</p>
+<table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px">
+<tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">订单号</td><td style="padding:8px 12px;border:1px solid #e2e8f0;font-weight:600">{row['order_no']}</td></tr>
+<tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">套餐</td><td style="padding:8px 12px;border:1px solid #e2e8f0">{plan_name}</td></tr>
+<tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">金额</td><td style="padding:8px 12px;border:1px solid #e2e8f0">¥{price}</td></tr>
+<tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">实退金额</td><td style="padding:8px 12px;border:1px solid #e2e8f0;font-weight:600;color:#dc2626">¥{refund_amount:.2f}</td></tr>
+<tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">退款原因</td><td style="padding:8px 12px;border:1px solid #e2e8f0">{refund_reason or '无'}</td></tr>
+<tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">管理员备注</td><td style="padding:8px 12px;border:1px solid #e2e8f0">{note or '无'}</td></tr>
+</table>
+<p style="color:#94a3b8;font-size:13px">如有疑问请联系管理员。</p>
+</div>"""
+        threading.Thread(target=send_email, args=(
+            user_row["email"],
+            f"退款申请{status_text} - {row['order_no']}",
+        ), kwargs={
+            "scene": scene,
+            "body_html": fallback_html,
+            "body_text": f"退款申请{status_text}\n\n订单号：{row['order_no']}\n套餐：{plan_name}\n金额：¥{price}\n实退金额：¥{refund_amount:.2f}\n退款原因：{refund_reason or '无'}\n管理员备注：{note or '无'}",
+            "variables": {
+                "username": row["username"],
+                "order_no": row["order_no"],
+                "plan_name": plan_name,
+                "price": price,
+                "refund_amount": f"{refund_amount:.2f}",
+                "reason": refund_reason,
+                "note": note or "无",
+                "subject": f"退款申请{status_text} - {row['order_no']}"
+            }
+        }, daemon=True).start()
+    except Exception as e:
+        print(f"[退款邮件] 发送失败 request={request_id}: {e}", flush=True)
+
+
 def hub_pay_sync_order(order_no, force=False):
     """轮询时把中控状态捞回本地。返回 (paid, msg, order)。
 
@@ -8176,6 +8294,10 @@ class Handler(BaseHTTPRequestHandler):
                 "sandpay_weight": int(admin.get("sandpay_weight") or 100),
                 "epay_weight": int(admin.get("epay_weight") or 100),
                 "refund_days_limit": int(admin.get("refund_days_limit") or 7),
+                "auto_refund_enabled": bool(admin.get("auto_refund_enabled")),
+                "auto_refund_audit": bool(admin.get("auto_refund_audit")),
+                "auto_refund_min_hours": int(admin.get("auto_refund_min_hours") or 0),
+                "auto_refund_max_hours": int(admin.get("auto_refund_max_hours") if admin.get("auto_refund_max_hours") is not None else 24),
                 # 中控支付灰度（单独的保存接口，避免和上面的老通道表单互相覆盖）
                 "hub_pay_enabled": bool(admin.get("hub_pay_enabled")),
                 "hub_pay_purchase": bool(admin.get("hub_pay_purchase")) if admin.get("hub_pay_purchase") is not None else True,
@@ -9655,7 +9777,13 @@ class Handler(BaseHTTPRequestHandler):
                         }, daemon=True).start()
                 except Exception as e:
                     print(f"[退款申请] 管理员邮件通知失败: {e}", flush=True)
-                self._send_json(200, {"code": 200, "msg": msg})
+                # 自动审核：符合开关与时间窗就立刻退款；失败时申请保持待审核，等人工处理
+                auto_tip = ""
+                try:
+                    auto_tip = _auto_process_refund_request(order_no, reason)
+                except Exception as e:
+                    print(f"[退款申请] 自动审核异常 order={order_no}: {e}", flush=True)
+                self._send_json(200, {"code": 200, "msg": auto_tip or msg})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -10731,6 +10859,11 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 data = json.loads(body or "{}")
+                # 自动审核时间窗按「支付后多少小时」算：min 到 max 之间（含两端）
+                auto_min = max(0, int(data.get("auto_refund_min_hours") or 0))
+                auto_max = data.get("auto_refund_max_hours")
+                auto_max = 24 if auto_max is None or auto_max == "" else int(auto_max)
+                auto_max = max(auto_min, max(0, auto_max))
                 ph = "%s"
                 db.execute(
                     f"""UPDATE admin_config SET
@@ -10745,7 +10878,9 @@ class Handler(BaseHTTPRequestHandler):
                         epay_enabled = {ph}, epay_api_url = {ph}, epay_pid = {ph}, epay_key = {ph},
                         epay_notify_url = {ph}, epay_return_url = {ph},
                         alipay_weight = {ph}, wechat_weight = {ph}, zhifufm_weight = {ph}, sandpay_weight = {ph}, epay_weight = {ph},
-                        refund_days_limit = {ph}
+                        refund_days_limit = {ph},
+                        auto_refund_enabled = {ph}, auto_refund_audit = {ph},
+                        auto_refund_min_hours = {ph}, auto_refund_max_hours = {ph}
                     WHERE id = 1""",
                     (
                         1 if data.get("alipay_enabled") else 0,
@@ -10786,7 +10921,11 @@ class Handler(BaseHTTPRequestHandler):
                         max(0, min(1000, int(data.get("zhifufm_weight") or 100))),
                         max(0, min(1000, int(data.get("sandpay_weight") or 100))),
                         max(0, min(1000, int(data.get("epay_weight") or 100))),
-                        max(0, int(data.get("refund_days_limit") or 7))
+                        max(0, int(data.get("refund_days_limit") or 7)),
+                        1 if data.get("auto_refund_enabled") else 0,
+                        1 if data.get("auto_refund_audit") else 0,
+                        auto_min,
+                        auto_max
                     )
                 )
                 self._send_json(200, {"code": 200, "msg": "支付接口配置已保存"})
@@ -10907,50 +11046,8 @@ class Handler(BaseHTTPRequestHandler):
                         if isinstance(refund_msg, dict):
                             refund_amount = float(refund_msg.get("amount") or 0)
                 ok, msg = db.process_refund_request(request_id, status, note)
-                # 发送邮件通知
                 if ok:
-                    row = db.fetchone("SELECT * FROM refund_requests WHERE id = %s", (request_id,))
-                    if row:
-                        # 获取用户邮箱
-                        user_row = db.fetchone("SELECT email FROM users WHERE username = %s", (row["username"],))
-                        if user_row and user_row.get("email"):
-                            order = db.get_order(row["order_no"])
-                            scene = "refund_approved" if status == "approved" else "refund_rejected"
-                            plan_name = (order or {}).get("plan_name") or ""
-                            price = str((order or {}).get("price") or "0")
-                            refund_reason = row.get("reason") or ""
-                            status_text = "已通过" if status == "approved" else "已拒绝"
-                            fallback_html = f"""<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px">
-<h2 style="color:#1e293b">退款申请{status_text}</h2>
-<p style="color:#475569">您好，您的退款申请已被管理员{status_text}。</p>
-<table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px">
-<tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">订单号</td><td style="padding:8px 12px;border:1px solid #e2e8f0;font-weight:600">{row['order_no']}</td></tr>
-<tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">套餐</td><td style="padding:8px 12px;border:1px solid #e2e8f0">{plan_name}</td></tr>
-<tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">金额</td><td style="padding:8px 12px;border:1px solid #e2e8f0">¥{price}</td></tr>
-<tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">实退金额</td><td style="padding:8px 12px;border:1px solid #e2e8f0;font-weight:600;color:#dc2626">¥{refund_amount:.2f}</td></tr>
-<tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">退款原因</td><td style="padding:8px 12px;border:1px solid #e2e8f0">{refund_reason or '无'}</td></tr>
-<tr><td style="padding:8px 12px;border:1px solid #e2e8f0;color:#64748b">管理员备注</td><td style="padding:8px 12px;border:1px solid #e2e8f0">{note or '无'}</td></tr>
-</table>
-<p style="color:#94a3b8;font-size:13px">如有疑问请联系管理员。</p>
-</div>"""
-                            threading.Thread(target=send_email, args=(
-                                user_row["email"],
-                                f"退款申请{status_text} - {row['order_no']}",
-                            ), kwargs={
-                                "scene": scene,
-                                "body_html": fallback_html,
-                                "body_text": f"退款申请{status_text}\n\n订单号：{row['order_no']}\n套餐：{plan_name}\n金额：¥{price}\n实退金额：¥{refund_amount:.2f}\n退款原因：{refund_reason or '无'}\n管理员备注：{note or '无'}",
-                                "variables": {
-                                    "username": row["username"],
-                                    "order_no": row["order_no"],
-                                    "plan_name": plan_name,
-                                    "price": price,
-                                    "refund_amount": f"{refund_amount:.2f}",
-                                    "reason": refund_reason,
-                                    "note": note or "无",
-                                    "subject": f"退款申请{status_text} - {row['order_no']}"
-                                }
-                            }, daemon=True).start()
+                    _send_refund_result_email(request_id, status, refund_amount, note)
                 self._send_json(200 if ok else 400, {"code": 200 if ok else 400, "msg": msg,
                                                      "refund_amount": refund_amount})
             except Exception as e:
