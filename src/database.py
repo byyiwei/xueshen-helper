@@ -459,6 +459,10 @@ class Database:
         self._add_column_if_missing("payment_orders", "refunded_by", "refunded_by VARCHAR(50) DEFAULT '' COMMENT '退款操作人'")
         self._add_column_if_missing("payment_orders", "refund_amount", "refund_amount DECIMAL(10,2) DEFAULT 0 COMMENT '实际退款金额'")
         self._add_column_if_missing("payment_orders", "refund_detail", "refund_detail TEXT COMMENT '退款计算说明'")
+        # 中控自动退款：记录渠道退款单号与处理结果（processing / success / failed）
+        self._add_column_if_missing("payment_orders", "refund_no", "refund_no VARCHAR(64) DEFAULT '' COMMENT '渠道退款单号 outRefundNo'")
+        self._add_column_if_missing("payment_orders", "refund_status", "refund_status VARCHAR(16) DEFAULT '' COMMENT '退款提交状态 processing/success/failed'")
+        self._add_column_if_missing("payment_orders", "refund_msg", "refund_msg VARCHAR(255) DEFAULT '' COMMENT '退款渠道返回信息'")
 
         # 用户脚本设置云端记忆
         self.execute("""
@@ -2404,6 +2408,37 @@ class Database:
         )
         tip = "已批准，退款已处理" if status == "approved" else "已拒绝"
         return True, f"退款申请{tip}"
+
+    def set_order_refund_state(self, order_no, refund_no=None, refund_status=None, refund_msg=None):
+        """记录中控渠道退款单号与处理状态，供后台/排障查看。"""
+        ph = _ph()
+        sets = []
+        params = []
+        if refund_no is not None:
+            sets.append(f"refund_no = {ph}")
+            params.append(str(refund_no)[:64])
+        if refund_status is not None:
+            sets.append(f"refund_status = {ph}")
+            params.append(str(refund_status)[:16])
+        if refund_msg is not None:
+            sets.append(f"refund_msg = {ph}")
+            params.append(str(refund_msg)[:250])
+        if not sets:
+            return
+        params.append(order_no)
+        self.execute(f"UPDATE payment_orders SET {', '.join(sets)} WHERE order_no = {ph}", tuple(params))
+
+    def approve_refund_request_by_order(self, order_no, admin_note=""):
+        """渠道退款到账后，把该订单还在待审核的申请自动通过（幂等）。"""
+        ph = _ph()
+        row = self.fetchone(
+            f"SELECT id FROM refund_requests WHERE order_no = {ph} AND status = 'pending' ORDER BY id DESC LIMIT 1",
+            (order_no,)
+        )
+        if not row:
+            return False
+        ok, _msg = self.process_refund_request(row["id"], "approved", admin_note)
+        return ok
 
     # ==================== 风控管理（退款行为） ====================
     def get_risk_config(self):

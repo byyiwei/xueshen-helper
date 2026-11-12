@@ -827,6 +827,7 @@ def _hub_post_json(target, payload_obj, timeout=15):
 # 调用方只传支付方式，通道由中控按应用配置映射；本端只认「二维码/跳转链接 + 订单状态」。
 # 单号直接复用本地 order_no：中控要求 6-64 位且全局唯一，本地单号本来就满足。
 HUB_PAY_ORDER_TARGET = "/open/pay/order"
+HUB_PAY_REFUND_TARGET = "/open/pay/refund"
 HUB_PAY_NOTIFY_PATH = "/api/payment/notify/hub"
 HUB_PAY_DEFAULT_NOTIFY = "https://xs.openget.cn/api/payment/notify/hub"
 HUB_PAY_SYNC_MIN_INTERVAL = 2.0
@@ -976,6 +977,97 @@ def hub_pay_get(order_no):
         return False, (msg or "中控拒绝（HTTP %d）" % e.code)
     except Exception as e:
         return False, "无法连接中控：" + str(e)
+
+
+def hub_pay_refund(order_no, out_refund_no, amount_fen, reason=""):
+    """让中控把订单的钱退回给用户。返回 (ok, data_or_err, http_status)。
+
+    同步返回 SUCCESS 才是真退成功；PROCESSING 只代表渠道受理，最终以 refund.succeeded 事件为准。
+    """
+    payload = {
+        "outTradeNo": str(order_no),
+        "outRefundNo": str(out_refund_no),
+        "amountFen": int(amount_fen),
+        "reason": (reason or "用户申请退款")[:128],
+    }
+    ok, data, status = _hub_post_json(HUB_PAY_REFUND_TARGET, payload, timeout=25)
+    if not ok:
+        text = data if isinstance(data, str) else "中控退款失败（HTTP %s）" % status
+        if status == 501:
+            text = "该支付通道没有退款接口，请到中控后台或渠道后台人工退款"
+        return False, text, status
+    if not isinstance(data, dict):
+        return False, "中控退款返回内容异常", status
+    return True, data, status
+
+
+def hub_refund_order(order_no, reason="", operator="admin"):
+    """管理员退款：中控订单先让中控去退，只有渠道确认成功才撤销本地权益。
+
+    返回 (result, payload)：
+      success    → 钱已退出，payload 为 db.refund_order 的结果（含实退金额）
+      processing → 渠道已受理但未到终态，权益先不动，等 refund.succeeded 事件再收尾
+      failed     → 失败，payload 为失败原因
+    """
+    order = db.get_order(order_no)
+    if not order:
+        return "failed", "订单不存在"
+    if str(order.get("pay_channel") or "") != "hub":
+        ok, msg = db.refund_order(order_no, reason=reason, operator=operator)
+        return ("success", msg) if ok else ("failed", msg)
+    if order.get("status") != "paid":
+        return "failed", "仅已支付订单可退款"
+    if order.get("refunded_at"):
+        return "success", {"msg": "该订单已退款", "amount": float(order.get("refund_amount") or 0)}
+    # 钱一旦交给渠道就收不回来，本地会拒绝退款的情况必须在调渠道之前拦下
+    blocked = db.refund_block_reason(order)
+    if blocked:
+        return "failed", blocked
+    admin_cfg = db.get_admin_config() or {}
+    refund_days = int(admin_cfg.get("refund_days_limit") or 7)
+    paid_at = order.get("paid_at")
+    if refund_days > 0 and paid_at:
+        if isinstance(paid_at, str):
+            try:
+                paid_at = datetime.strptime(paid_at.split(".")[0], "%Y-%m-%d %H:%M:%S")
+            except Exception:
+                paid_at = None
+        if paid_at and datetime.now() > paid_at + timedelta(days=refund_days):
+            return "failed", f"该订单已超过 {refund_days} 天退款时效，无法退款"
+    calc = db.calculate_refund(order, balance=db._user_points_balance(order.get("username")))
+    amount = float(calc.get("amount") or 0)
+    amount_fen = int(round(amount * 100))
+    if amount_fen <= 0:
+        return "failed", "该订单已无可退金额（已使用部分不予退款）"
+    # outRefundNo 对同一笔退款必须稳定，中控靠它幂等；上一次明确失败过才换新号重试
+    out_refund_no = "RF" + str(order_no)
+    if str(order.get("refund_status") or "") == "failed":
+        out_refund_no = "RF" + str(order_no) + "-" + str(int(time.time()))
+    out_refund_no = out_refund_no[:64]
+    ok, data, http_status = hub_pay_refund(order_no, out_refund_no, amount_fen, reason)
+    if not ok:
+        msg = str(data or "中控退款失败")
+        db.set_order_refund_state(order_no, refund_no=out_refund_no, refund_status="failed", refund_msg=msg)
+        return "failed", msg
+    st = str(data.get("status") or "").upper()
+    msg_text = str(data.get("message") or "")
+    if st == "SUCCESS":
+        ok_refund, res = db.refund_order(order_no, reason=reason or "用户申请退款", operator=operator)
+        if not ok_refund:
+            fail_text = res if isinstance(res, str) else "权益撤销失败"
+            db.set_order_refund_state(order_no, refund_no=out_refund_no, refund_status="success",
+                                      refund_msg=("渠道已退款，但本地撤销失败：" + fail_text)[:250])
+            print(f"[中控退款][ERROR] 渠道已退款但本地撤销失败 order={order_no} 原因={fail_text}", flush=True)
+            return "failed", "钱已由渠道退回，但本地撤销权益失败，请人工处理：" + fail_text
+        db.set_order_refund_state(order_no, refund_no=out_refund_no, refund_status="success", refund_msg=msg_text)
+        return "success", res
+    if st in ("PROCESSING", "CREATED"):
+        db.set_order_refund_state(order_no, refund_no=out_refund_no, refund_status="processing", refund_msg=msg_text)
+        return "processing", {"msg": "退款已提交渠道处理，到账后会自动撤销权益",
+                              "amount": amount, "out_refund_no": out_refund_no}
+    db.set_order_refund_state(order_no, refund_no=out_refund_no, refund_status="failed",
+                              refund_msg=(msg_text or "渠道退款失败")[:250])
+    return "failed", (msg_text or "渠道退款失败")
 
 
 def hub_pay_sync_order(order_no, force=False):
@@ -8892,7 +8984,8 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     got_fen = None
                 want_fen = _hub_pay_amount_fen(order.get("price"))
-                if got_fen is not None and got_fen != want_fen:
+                # 退款事件的 amountFen 是「本次退款金额」，不是订单金额，不能套用订单金额校验
+                if event_type in ("order.paid", "order.closed") and got_fen is not None and got_fen != want_fen:
                     print(f"[中控支付回调] 金额不符 order={order_no} 回调={got_fen} 订单={want_fen}", flush=True)
                     self._send_json(400, {"code": 400, "msg": "金额不符"})
                     return
@@ -8919,6 +9012,41 @@ class Handler(BaseHTTPRequestHandler):
                 elif event_type == "order.closed":
                     # 汇付/支付FM 关单只是本地终态，钱仍可能晚到；真到了 apply 会从 cancelled 捡起来
                     db.cancel_pending_order(order_no)
+                elif event_type == "refund.succeeded":
+                    # 渠道确认退款到账才撤销权益；事件可能重推，已退过的单直接跳过撤销
+                    out_refund_no = str(data.get("outRefundNo") or "")[:64]
+                    if not order.get("refunded_at"):
+                        ok_refund, res = db.refund_order(
+                            order_no, reason="渠道退款到账", operator="hub")
+                        if ok_refund:
+                            db.set_order_refund_state(order_no, refund_no=out_refund_no or None,
+                                                      refund_status="success", refund_msg="渠道退款到账")
+                        else:
+                            fail_text = res if isinstance(res, str) else "权益撤销失败"
+                            db.set_order_refund_state(
+                                order_no, refund_no=out_refund_no or None, refund_status="success",
+                                refund_msg=("渠道已退款，但本地撤销失败：" + fail_text)[:250])
+                            print(f"[中控退款][ERROR] 渠道已退款但本地撤销失败 order={order_no} 原因={fail_text}",
+                                  flush=True)
+                    else:
+                        db.set_order_refund_state(order_no, refund_no=out_refund_no or None,
+                                                  refund_status="success", refund_msg="渠道退款到账")
+                    # 钱已经退了，用户那笔待审核申请随之通过（幂等）
+                    db.approve_refund_request_by_order(order_no, "渠道退款到账，系统自动通过")
+                    print(f"[中控退款] 已确认到账 order={order_no} refund={out_refund_no} event={event_id}",
+                          flush=True)
+                elif event_type == "refund.failed":
+                    out_refund_no = str(data.get("outRefundNo") or "")[:64]
+                    fail_text = str(data.get("message") or "渠道退款失败")[:250]
+                    already_ok = bool(order.get("refunded_at")) or str(order.get("refund_status") or "") == "success"
+                    # 重试后换了新退款单号时，旧单迟到的失败事件不能盖掉当前状态
+                    stale = bool(out_refund_no and order.get("refund_no")
+                                 and order.get("refund_no") != out_refund_no)
+                    if not already_ok and not stale:
+                        db.set_order_refund_state(order_no, refund_no=out_refund_no or None,
+                                                  refund_status="failed", refund_msg=fail_text)
+                        print(f"[中控退款] 渠道失败 order={order_no} refund={out_refund_no} 原因={fail_text}",
+                              flush=True)
                 self._send_json(200, {"code": 200, "msg": "ok"})
             except Exception as e:
                 print(f"[中控支付回调] 处理异常: {e}", flush=True)
@@ -10679,7 +10807,17 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 admin_cfg = db.get_admin_config() or {}
                 operator = admin_cfg.get("username") or "admin"
-                ok, msg = db.refund_order(order_no, reason=reason, operator=operator)
+                target_order = db.get_order(order_no) or {}
+                if str(target_order.get("pay_channel") or "") == "hub":
+                    result, payload = hub_refund_order(order_no, reason=reason, operator=operator)
+                    if result == "processing":
+                        self._send_json(200, {"code": 200, "msg": payload.get("msg"), "processing": True,
+                                              "refund_amount": float(payload.get("amount") or 0)})
+                        return
+                    ok = result == "success"
+                    msg = payload
+                else:
+                    ok, msg = db.refund_order(order_no, reason=reason, operator=operator)
                 refund_amount = 0.0
                 if ok and isinstance(msg, dict):
                     refund_amount = float(msg.get("amount") or 0)
@@ -10734,20 +10872,40 @@ class Handler(BaseHTTPRequestHandler):
                     if not row:
                         self._send_json(400, {"code": 400, "msg": "申请不存在"})
                         return
-                    refund_ok, refund_msg = db.refund_order(row["order_no"], reason=row.get("reason") or "用户申请退款", operator="admin")
-                    if not refund_ok:
-                        # 退款失败时必须落库，否则该申请会永久停留在 pending，
-                        # 管理员既无法批准也无法驳回（死锁）。
-                        fail_text = refund_msg if isinstance(refund_msg, str) else "退款失败"
-                        db.process_refund_request(
-                            request_id, "rejected",
-                            f"系统自动驳回：{fail_text}"
-                        )
-                        self._send_json(400, {"code": 400, "msg": fail_text,
-                                              "auto_rejected": True})
-                        return
-                    if isinstance(refund_msg, dict):
-                        refund_amount = float(refund_msg.get("amount") or 0)
+                    target_order = db.get_order(row["order_no"]) or {}
+                    if str(target_order.get("pay_channel") or "") == "hub":
+                        # 中控订单：点「同意」就直接调渠道退款，钱退成功才撤销权益。
+                        # 同步失败时申请保持待审核，方便管理员处理后重试；不要在这里自动驳回。
+                        result, payload = hub_refund_order(
+                            row["order_no"], reason=row.get("reason") or "用户申请退款", operator="admin")
+                        if result == "processing":
+                            self._send_json(200, {
+                                "code": 200,
+                                "msg": "退款已提交渠道处理，到账后系统会自动完成，请稍后刷新查看",
+                                "processing": True,
+                                "refund_amount": float(payload.get("amount") or 0),
+                            })
+                            return
+                        if result != "success":
+                            fail_text = payload if isinstance(payload, str) else "退款失败"
+                            self._send_json(400, {"code": 400, "msg": fail_text})
+                            return
+                        refund_amount = float((payload or {}).get("amount") or 0)
+                    else:
+                        refund_ok, refund_msg = db.refund_order(row["order_no"], reason=row.get("reason") or "用户申请退款", operator="admin")
+                        if not refund_ok:
+                            # 退款失败时必须落库，否则该申请会永久停留在 pending，
+                            # 管理员既无法批准也无法驳回（死锁）。
+                            fail_text = refund_msg if isinstance(refund_msg, str) else "退款失败"
+                            db.process_refund_request(
+                                request_id, "rejected",
+                                f"系统自动驳回：{fail_text}"
+                            )
+                            self._send_json(400, {"code": 400, "msg": fail_text,
+                                                  "auto_rejected": True})
+                            return
+                        if isinstance(refund_msg, dict):
+                            refund_amount = float(refund_msg.get("amount") or 0)
                 ok, msg = db.process_refund_request(request_id, status, note)
                 # 发送邮件通知
                 if ok:
