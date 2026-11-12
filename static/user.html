@@ -821,45 +821,147 @@
         }
         .pay-method-card.active .pm-check { background: var(--c-brand); border-color: var(--c-brand); }
 
-        /* 收款二维码：居中弹窗，不再挤在购买卡片里 */
-        .qr-panel {
-            display: none; position: fixed; inset: 0; z-index: 3000;
-            align-items: center; justify-content: center; padding: 18px;
-            background: rgba(8, 12, 20, .52);
-            -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+        /* ===== 支付弹窗 ===== */
+        .pay-modal {
+            position: fixed; inset: 0; z-index: 3000; display: flex;
+            align-items: center; justify-content: center; padding: 24px;
         }
-        .qr-panel.active { display: flex; }
-        .qr-dialog {
-            position: relative; width: 100%; max-width: 360px; padding: 30px 24px 24px;
-            border: 1px solid var(--c-border); border-radius: 18px; background: var(--c-surface);
-            box-shadow: 0 24px 60px -20px rgba(8, 12, 20, .45), var(--c-shadow);
-            text-align: center;
+        .pay-modal[hidden] { display: none; }
+        .pay-mask { position: absolute; inset: 0; background: rgba(9, 13, 21, .55); }
+        .pay-dialog {
+            position: relative; width: 420px; max-width: 100%; max-height: calc(100vh - 48px);
+            overflow-y: auto; padding: 24px; background: var(--c-surface);
+            border: 1px solid var(--c-border); border-radius: 16px;
+            box-shadow: 0 24px 64px -24px rgba(9, 13, 21, .5);
+            opacity: 0; transform: translateY(12px) scale(.99);
+            transition: opacity .18s ease-out, transform .18s ease-out;
         }
-        .qr-panel.active .qr-dialog { animation: qr-pop .2s ease; }
-        @keyframes qr-pop {
-            from { opacity: 0; transform: translateY(8px) scale(.98); }
-            to { opacity: 1; transform: translateY(0) scale(1); }
+        .pay-modal.open .pay-dialog { opacity: 1; transform: none; }
+        body.pay-modal-open { overflow: hidden; }
+        .pay-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+        .pay-title { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: .2px; color: var(--c-text); }
+        .pay-close {
+            width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center;
+            border: 0; border-radius: 8px; background: transparent; color: var(--c-text-3); cursor: pointer;
+            transition: background .16s ease-out, color .16s ease-out;
         }
-        .qr-close {
-            position: absolute; top: 10px; right: 10px; width: 30px; height: 30px;
-            border: 0; border-radius: 50%; background: transparent; color: var(--c-text-3);
-            font-size: 20px; line-height: 1; cursor: pointer; transition: background .15s, color .15s;
+        .pay-close:hover { background: var(--c-surface-2); color: var(--c-text); }
+        .pay-amount { display: flex; align-items: baseline; gap: 4px; margin-top: 24px; font-variant-numeric: tabular-nums; }
+        .pay-amount-cur { font-size: 16px; font-weight: 600; color: var(--c-text-2); }
+        .pay-amount-num { font-size: 32px; line-height: 1.1; font-weight: 700; letter-spacing: -.5px; color: var(--c-text); }
+        .pay-subject { margin-top: 8px; font-size: 13px; color: var(--c-text-3); }
+        .pay-method-tag {
+            display: inline-flex; align-items: center; margin-top: 16px; padding: 6px 12px;
+            border-radius: 8px; background: var(--c-surface-2); font-size: 13px; color: var(--c-text-2);
         }
-        .qr-close:hover { background: var(--c-surface-2); color: var(--c-text); }
-        .qr-panel img {
-            width: 220px; height: 220px; background: #fff; padding: 10px;
-            border-radius: var(--c-radius-sm); box-shadow: var(--c-shadow); border: 1px solid var(--c-border);
+        .pay-method-tag[hidden], .pay-methods[hidden] { display: none; }
+        .pay-methods {
+            display: flex; gap: 4px; margin-top: 16px; padding: 4px;
+            background: var(--c-surface-2); border-radius: 10px;
         }
-        .qr-panel .qr-title { font-weight: 700; margin-bottom: 12px; color: var(--c-text); font-size: 15px; }
-        .qr-panel .qr-tip { color: var(--c-text-3); font-size: 13px; margin-top: 12px; }
-        .qr-link-btn {
-            display: inline-flex; align-items: center; gap: 8px; margin: 14px auto 0;
-            padding: 10px 24px; border-radius: var(--c-radius-sm);
-            background: var(--c-brand); color: #fff; font-weight: 700; font-size: 14.5px;
-            text-decoration: none; box-shadow: 0 4px 14px var(--c-brand-glow);
-            transition: transform .16s, background .16s;
+        .pay-methods.is-busy { pointer-events: none; opacity: .6; }
+        .pay-seg {
+            flex: 1; height: 36px; border: 0; border-radius: 7px; background: transparent;
+            color: var(--c-text-2); font-size: 14px; font-weight: 500; cursor: pointer;
+            transition: background .16s ease-out, color .16s ease-out;
         }
-        .qr-link-btn:hover { background: var(--c-brand-strong); transform: translateY(-1px); }
+        .pay-seg.on { background: var(--c-text); color: var(--c-surface); font-weight: 600; }
+        .pay-qr-card {
+            width: 232px; height: 232px; margin: 24px auto 0;
+            display: flex; align-items: center; justify-content: center;
+            background: #fff; border: 1px solid var(--c-border); border-radius: 12px;
+        }
+        .pay-qr-card[hidden] { display: none; }
+        .pay-qr-card img { width: 208px; height: 208px; display: block; }
+        .pay-qr-card img[hidden] { display: none; }
+        .pay-spinner {
+            width: 28px; height: 28px; border-radius: 50%;
+            border: 3px solid var(--c-surface-3); border-top-color: var(--c-brand);
+            animation: pay-spin .8s linear infinite;
+        }
+        .pay-spinner[hidden] { display: none; }
+        @keyframes pay-spin { to { transform: rotate(360deg); } }
+        .pay-state-art {
+            display: flex; flex-direction: column; align-items: center; gap: 8px;
+            color: var(--c-text-2); font-size: 14px; font-weight: 600;
+        }
+        .pay-state-art[hidden] { display: none; }
+        .pay-state-art .ui-icon { width: 56px; height: 56px; }
+        .pay-state-art.is-ok { color: var(--c-success); }
+        .pay-state-art.is-off { color: var(--c-text-3); }
+        .pay-state-art.is-err { color: var(--c-danger); }
+        .pay-qr-hint { margin: 12px 0 0; text-align: center; font-size: 13px; color: var(--c-text-3); }
+        .pay-qr-hint[hidden] { display: none; }
+        .pay-error { margin: 16px 0 0; font-size: 13px; line-height: 1.6; color: var(--c-danger); }
+        .pay-error[hidden] { display: none; }
+        .pay-state-row {
+            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+            margin-top: 24px; font-size: 14px; color: var(--c-text-2);
+        }
+        .pay-state { display: inline-flex; align-items: center; gap: 8px; }
+        .pay-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c-brand); flex: none; }
+        .pay-dot.ok { background: var(--c-success); }
+        .pay-dot.off { background: var(--c-text-3); }
+        .pay-dot.err { background: var(--c-danger); }
+        .pay-countdown { font-variant-numeric: tabular-nums; color: var(--c-text-2); }
+        .pay-countdown[hidden] { display: none; }
+        .pay-order {
+            display: flex; align-items: center; gap: 8px; margin-top: 16px;
+            font-size: 13px; color: var(--c-text-3); word-break: break-all;
+        }
+        .pay-order[hidden] { display: none; }
+        .pay-order b { font-weight: 500; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--c-text-2); }
+        .pay-copy {
+            flex: none; padding: 4px 8px; border: 1px solid var(--c-border); border-radius: 6px;
+            background: transparent; color: var(--c-text-2); font-size: 12px; cursor: pointer;
+        }
+        .pay-copy:hover { background: var(--c-surface-2); }
+        .pay-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 24px; }
+        .pay-btn {
+            width: 100%; height: 44px; border-radius: 10px; border: 1px solid transparent;
+            font-size: 14px; font-weight: 600; cursor: pointer;
+            transition: background .16s ease-out, border-color .16s ease-out, color .16s ease-out;
+        }
+        .pay-btn[hidden] { display: none; }
+        .pay-btn:disabled { opacity: .55; cursor: not-allowed; }
+        .pay-btn-primary { background: var(--c-brand); color: #fff; }
+        .pay-btn-primary:hover { background: var(--c-brand-strong); }
+        .pay-btn-ghost { background: transparent; border-color: var(--c-border); color: var(--c-text-2); }
+        .pay-btn-ghost:hover { background: var(--c-surface-2); }
+        .pay-open-link { display: block; margin-top: 16px; text-align: center; font-size: 13px; color: var(--c-text-3); }
+        .pay-open-link[hidden] { display: none; }
+        .pay-dialog :focus-visible { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+
+        .pending-pay-bar {
+            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+            margin: 0 0 14px; padding: 12px 14px; border: 1px solid var(--c-border);
+            border-radius: var(--c-radius-sm); background: var(--c-surface-2);
+            font-size: 13px; color: var(--c-text-2);
+        }
+        .pending-pay-bar[hidden] { display: none; }
+        .pending-pay-bar button {
+            flex: none; padding: 6px 10px; border: 1px solid var(--c-brand); border-radius: 8px;
+            background: transparent; color: var(--c-brand); font-size: 13px; font-weight: 600; cursor: pointer;
+        }
+        .pending-pay-bar button:hover { background: var(--c-brand-soft); }
+
+        @media (max-width: 640px) {
+            .pay-modal { align-items: flex-end; padding: 0; }
+            .pay-dialog {
+                width: 100%; max-height: 90vh; border-radius: 16px 16px 0 0; border-bottom: 0;
+                padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+            }
+            .pay-amount { margin-top: 20px; }
+            .pay-amount-num { font-size: 28px; }
+            .pay-qr-card { width: 224px; height: 224px; margin-top: 20px; }
+            .pay-qr-card img { width: 200px; height: 200px; }
+            .pay-actions { margin-top: 20px; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .pay-dialog, .pay-seg, .pay-btn, .pay-close { transition: none; }
+            .pay-dialog { transform: none; }
+        }
 
         .channel-buy-tip {
             display: none; align-items: flex-start; gap: 10px; padding: 13px 16px;
@@ -3129,14 +3231,42 @@
         <!-- 移动端侧滑抽屉背景遮罩 -->
         <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
 
-        <!-- 收款二维码弹窗：放在 section 外层，避免页面动画的 transform 把 fixed 定位困在容器里 -->
-        <div id="qrPanel" class="qr-panel buy-only">
-            <div class="qr-dialog" role="dialog" aria-modal="true" aria-labelledby="payQrTitle">
-                <button type="button" class="qr-close" id="payQrClose" aria-label="关闭">×</button>
-                <div class="qr-title" id="payQrTitle">请扫码完成付款</div>
-                <img id="payQrImg" alt="支付二维码">
-                <div class="qr-actions" id="payQrActions"></div>
-                <div class="qr-tip" id="payQrTip">付款完成后系统会自动确认到账。</div>
+        <!-- 支付弹窗：放在 section 外层，避免页面动画的 transform 把 fixed 定位困在容器里 -->
+        <div id="payModal" class="pay-modal buy-only" hidden>
+            <div class="pay-mask" data-pay-dismiss></div>
+            <div class="pay-dialog" id="payDialog" role="dialog" aria-modal="true" aria-labelledby="payTitle" tabindex="-1">
+                <div class="pay-head">
+                    <h3 class="pay-title" id="payTitle">扫码支付</h3>
+                    <button type="button" class="pay-close" data-pay-dismiss aria-label="关闭支付弹窗">
+                        <svg class="ui-icon" aria-hidden="true"><use href="#i-x"></use></svg>
+                    </button>
+                </div>
+                <div class="pay-amount" aria-live="polite">
+                    <span class="pay-amount-cur">¥</span><span class="pay-amount-num" id="payAmount">0.00</span>
+                </div>
+                <div class="pay-subject" id="paySubject" hidden></div>
+                <div class="pay-method-tag" id="payMethodTag" hidden></div>
+                <div class="pay-methods" id="payMethodsSeg" role="group" aria-label="支付方式" hidden></div>
+                <div class="pay-qr-card" id="payQrCard">
+                    <div class="pay-spinner" id="paySpinner" aria-hidden="true"></div>
+                    <img id="payQrImg" alt="" hidden>
+                    <div class="pay-state-art" id="payArt" hidden></div>
+                </div>
+                <p class="pay-qr-hint" id="payQrHint" hidden></p>
+                <p class="pay-error" id="payError" role="alert" hidden></p>
+                <div class="pay-state-row">
+                    <span class="pay-state"><i class="pay-dot" id="payDot" aria-hidden="true"></i><span id="payStateText">正在创建订单</span></span>
+                    <span class="pay-countdown" id="payCountdown" hidden></span>
+                </div>
+                <div class="pay-order" id="payOrderRow" hidden>
+                    <span>订单号 <b id="payOrderNo"></b></span>
+                    <button type="button" class="pay-copy" id="payCopy">复制</button>
+                </div>
+                <div class="pay-actions">
+                    <button type="button" class="pay-btn pay-btn-primary" id="payPrimary">我已完成支付</button>
+                    <button type="button" class="pay-btn pay-btn-ghost" id="paySecondary">取消</button>
+                </div>
+                <a class="pay-open-link" id="payOpenLink" target="_blank" rel="noopener noreferrer" hidden>在电脑上打开支付页面</a>
             </div>
         </div>
 
@@ -3958,6 +4088,10 @@
                             </div>
                         </div>
 
+                        <div id="pendingPayBar" class="pending-pay-bar" hidden>
+                            <span id="pendingPayText">有订单待支付</span>
+                            <button type="button" id="pendingPayBtn">继续支付</button>
+                        </div>
                         <div id="billingMsg" class="msg"></div>
                     </div>
                 </section>
@@ -4834,13 +4968,10 @@
                     if (res.code === 200) { fillProfile(res.profile); msg('billingMsg', res.msg || '开通成功', true); }
                     else msg('billingMsg', res.msg || '开通失败', false);
                 } else {
-                    const res = await post('/api/payment/purchase', { plan_type: 'custom_model', pay_method: currentPayMethod }, token);
-                    if (res.code === 200) {
-                        if (res.paying) {
-                            if (res.pay_url) { showPayQr(res.order_no, null, res.pay_url); msg('billingMsg', res.msg || '订单已创建，请扫码完成付款', true); }
-                            else if (res.qr_code) { showPayQr(res.order_no, res.qr_code, null); msg('billingMsg', res.msg || '订单已创建，请扫码付款', true); }
-                        } else { fillProfile(res.profile); msg('billingMsg', res.msg || '开通成功', true); }
-                    } else { msg('billingMsg', res.msg || '购买失败', false); }
+                    await payStart({
+                        planType: 'custom_model', planId: 0, price: price,
+                        subject: '自有模型开通', msgTarget: 'billingMsg'
+                    });
                 }
             } catch (_) { msg('billingMsg', '购买失败，请检查后端服务是否运行', false); }
             finally { setBusy($('customModelBuyBtn'), false); }
@@ -4859,13 +4990,10 @@
                     if (res.code === 200) { fillProfile(res.profile); msg('modelPanelMsg', res.msg || '开通成功', true); renderCustomModelBuy(); }
                     else msg('modelPanelMsg', res.msg || '开通失败', false);
                 } else {
-                    const res = await post('/api/payment/purchase', { plan_type: 'custom_model', pay_method: currentPayMethod }, token);
-                    if (res.code === 200) {
-                        if (res.paying) {
-                            if (res.pay_url) { showPayQr(res.order_no, null, res.pay_url); msg('modelPanelMsg', res.msg || '订单已创建，请扫码完成付款', true); }
-                            else if (res.qr_code) { showPayQr(res.order_no, res.qr_code, null); msg('modelPanelMsg', res.msg || '订单已创建，请扫码付款', true); }
-                        } else { fillProfile(res.profile); msg('modelPanelMsg', res.msg || '开通成功', true); renderCustomModelBuy(); }
-                    } else { msg('modelPanelMsg', res.msg || '购买失败', false); }
+                    await payStart({
+                        planType: 'custom_model', planId: 0, price: price,
+                        subject: '自有模型开通', msgTarget: 'modelPanelMsg'
+                    });
                 }
             } catch (_) { msg('modelPanelMsg', '购买失败，请检查后端服务是否运行', false); }
             finally { setBusy(btn, false); }
@@ -4873,6 +5001,11 @@
         let payMethodsList = [];
         let currentPayMethod = 'wechat';
         let payPollTimer = null;
+        let payTickTimer = null;
+        let payOrder = null;
+        let payChecking = false;
+        let payBusy = false;
+        let payLastFocus = null;
         async function loadProfile() {
             const token = localStorage.getItem(TOKEN_KEY);
             if (!token) return false;
@@ -5099,105 +5232,485 @@
                 return;
             }
             if (Number(price || 0) > 0 && !payMethodsList.length) return msg('billingMsg', '暂无可用支付方式，请联系管理员启用支付通道', false);
+            const plan = (_allPlans || []).find(p => String(p.id) === String(planId)) || {};
             const chk = $('useCommissionDeduct');
             const wantDeduct = !!(chk && chk.checked && Number(price || 0) > 0);
             setBusy(btn, true, '购买中...');
             try {
-                const payload = { plan_id: Number(planId), pay_method: currentPayMethod };
-                if (wantDeduct) {
-                    payload.use_commission = true;
-                    payload.commission_request_no = 'DK' + Date.now() + Math.random().toString(36).slice(2, 8);
-                }
-                const res = await post('/api/payment/purchase', payload, token);
-                const used = Number(res.commission_used || 0);
-                const note = used > 0 ? `原价 ¥${Number(price || 0).toFixed(2)}，佣金已抵扣 ¥${used.toFixed(2)}。` : '';
-                if (res.code === 200) {
-                    if (used > 0) loadCommissionState();
-                    if (res.paying) {
-                        if (res.pay_url) {
-                            showPayQr(res.order_no, null, res.pay_url);
-                            msg('billingMsg', note + (res.msg || '订单已创建，请扫码完成付款'), true);
-                        } else if (res.qr_code) {
-                            showPayQr(res.order_no, res.qr_code, null);
-                            msg('billingMsg', note + (res.msg || '订单已创建，请扫码付款'), true);
-                        } else {
-                            msg('billingMsg', note + (res.msg || '订单已创建'), true);
-                        }
-                        if (used > 0) $('payQrTip').textContent = note + '订单号：' + res.order_no + '，付款完成后系统会自动确认到账。';
-                    } else {
-                        fillProfile(res.profile);
-                        msg('billingMsg', note + (res.msg || '购买成功，权益已到账'), true);
-                    }
-                } else {
-                    msg('billingMsg', res.msg || '购买失败', false);
-                }
-            } catch (_) { msg('billingMsg', '购买失败，请检查后端服务是否运行', false); }
-            finally { setBusy(btn, false); }
+                await payStart({
+                    planId: Number(planId),
+                    planType: plan.plan_type || '',
+                    price: Number(price || 0),
+                    subject: plan.name || '套餐购买',
+                    useCommission: wantDeduct,
+                    msgTarget: 'billingMsg'
+                });
+            } finally { setBusy(btn, false); }
         }
-        function renderPayPanel(orderNo, qrCode, payUrl) {
-            const img = $('payQrImg');
-            const actions = $('payQrActions');
-            const title = $('payQrTitle');
-            // 收银台链接也画成二维码：中控的「扫码支付」就是把 payUrl 编成码，
-            // 这里跟它保持一致，手机扫一下直接进付款页；电脑上还能点按钮打开。
-            const content = qrCode || payUrl;
-            if (content) {
-                title.textContent = '请扫码完成付款';
-                img.style.display = '';
-                img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=' + encodeURIComponent(content);
-                if (payUrl && !qrCode) {
-                    const safeUrl = String(payUrl).replace(/"/g, '&quot;');
-                    actions.style.display = '';
-                    actions.innerHTML = `<a class="qr-link-btn" href="${safeUrl}" target="_blank" rel="noopener noreferrer">在电脑上打开支付页面</a>`;
-                } else {
-                    actions.innerHTML = '';
-                    actions.style.display = 'none';
-                }
+        // ===== 支付弹窗：创建、待支付、成功、关闭、失败、网络异常 =====
+        const PAY_METHOD_TEXT = { wechat: '微信支付', alipay: '支付宝', unionpay: '云闪付' };
+        const PAY_METHOD_SCAN = { wechat: '请使用微信扫一扫', alipay: '请使用支付宝扫一扫', unionpay: '请使用云闪付扫一扫' };
+        const PAY_ICON_CHECK = '<svg class="ui-icon" aria-hidden="true"><use href="#i-check-circle-2"></use></svg>';
+        const PAY_ICON_CLOCK = '<svg class="ui-icon" aria-hidden="true"><use href="#i-clock"></use></svg>';
+        const PAY_ICON_ALERT = '<svg class="ui-icon" aria-hidden="true"><use href="#i-alert"></use></svg>';
+
+        function payEl(id) { return document.getElementById(id); }
+        function payMethodText(m) { return PAY_METHOD_TEXT[m] || '扫码支付'; }
+        function payFmtAmount(v) { const n = Number(v == null ? 0 : v); return (isFinite(n) ? n : 0).toFixed(2); }
+        function payQrUrl(content, size) {
+            return 'https://api.qrserver.com/v1/create-qr-code/?size=' + size + 'x' + size + '&margin=0&data=' + encodeURIComponent(content);
+        }
+        function payKey(ctx, method) {
+            return String(ctx.planType || 'plan') + ':' + String(ctx.planId || 0) + ':' + String(method || '');
+        }
+        // 接口没有直接给 expireAt 时，中控订单固定 30 分钟过期（建单时传的 expireMinutes）
+        function payExpireOf(res) {
+            if (!res) return null;
+            const raw = res.expireAt || res.expire_at || res.expiresAt || res.expires_at;
+            if (raw) {
+                if (typeof raw === 'number') return raw < 1e12 ? raw * 1000 : raw;
+                const t = Date.parse(raw);
+                return isNaN(t) ? null : t;
             }
-            $('payQrTip').textContent = '订单号：' + orderNo + '，付款完成后系统会自动确认到账。';
+            if (String(res.pay_channel || '') === 'hub') return Date.now() + 30 * 60 * 1000;
+            return null;
         }
-        function showPayQr(orderNo, qrCode, payUrl) {
-            if (payPollTimer) clearInterval(payPollTimer);
-            $('qrPanel').classList.add('active');
-            renderPayPanel(orderNo, qrCode, payUrl);
-            payPollTimer = setInterval(() => checkOrderStatus(orderNo), 3000);
-            checkOrderStatus(orderNo);
+        function payShowError(text) {
+            const el = payEl('payError');
+            if (!el) return;
+            el.textContent = text || '';
+            el.hidden = !text;
         }
-        // 关闭弹窗只收起界面，轮询继续：用户关掉后在外面付了款，也照样自动到账提示
-        (function bindPayQrClose() {
-            const panel = document.getElementById('qrPanel');
-            const closeBtn = document.getElementById('payQrClose');
-            if (!panel) return;
-            if (closeBtn) closeBtn.onclick = () => panel.classList.remove('active');
-            panel.addEventListener('click', (e) => { if (e.target === panel) panel.classList.remove('active'); });
+        function payStopTimers() {
+            if (payPollTimer) { clearInterval(payPollTimer); payPollTimer = null; }
+            if (payTickTimer) { clearInterval(payTickTimer); payTickTimer = null; }
+        }
+
+        function payRenderMethods() {
+            const seg = payEl('payMethodsSeg');
+            const tag = payEl('payMethodTag');
+            if (!seg || !tag) return;
+            const list = (payMethodsList || []).filter(m => PAY_METHOD_TEXT[m.value]);
+            if (!list.length) { seg.hidden = true; tag.hidden = true; return; }
+            if (list.length === 1) {
+                tag.textContent = payMethodText(list[0].value);
+                tag.hidden = false;
+                seg.hidden = true;
+                return;
+            }
+            tag.hidden = true;
+            seg.hidden = false;
+            seg.innerHTML = list.map(m =>
+                `<button type="button" class="pay-seg${m.value === currentPayMethod ? ' on' : ''}" data-pay-seg="${m.value}" aria-pressed="${m.value === currentPayMethod}">${payMethodText(m.value)}</button>`
+            ).join('');
+            seg.querySelectorAll('[data-pay-seg]').forEach(btn => {
+                btn.onclick = () => paySwitchMethod(btn.getAttribute('data-pay-seg'));
+            });
+        }
+
+        function payRenderWaitingContent() {
+            const img = payEl('payQrImg'), spin = payEl('paySpinner'), art = payEl('payArt'), hint = payEl('payQrHint');
+            const content = payOrder && payOrder.qrContent;
+            if (content) {
+                spin.hidden = true; art.hidden = true;
+                img.hidden = false;
+                img.alt = '支付二维码，' + (PAY_METHOD_SCAN[payOrder.method] || '请扫码支付');
+                const nextSrc = payQrUrl(content, 416);
+                if (img.getAttribute('src') !== nextSrc) img.src = nextSrc;
+                hint.hidden = false;
+                hint.textContent = PAY_METHOD_SCAN[payOrder.method] || '请扫码完成支付';
+            } else {
+                img.hidden = true; art.hidden = true; spin.hidden = false;
+                hint.hidden = false;
+                hint.textContent = '正在获取付款二维码';
+            }
+        }
+
+        function paySetPhase(phase, extra) {
+            extra = extra || {};
+            if (payOrder) payOrder.phase = phase;
+            const card = payEl('payQrCard'), img = payEl('payQrImg'), spin = payEl('paySpinner'), art = payEl('payArt');
+            const hint = payEl('payQrHint'), dot = payEl('payDot'), st = payEl('payStateText');
+            const cd = payEl('payCountdown'), orderRow = payEl('payOrderRow'), orderNo = payEl('payOrderNo');
+            const primary = payEl('payPrimary'), secondary = payEl('paySecondary'), openLink = payEl('payOpenLink');
+            if (!card) return;
+
+            if (payOrder) {
+                payEl('payAmount').textContent = payFmtAmount(payOrder.amount != null ? payOrder.amount : (payOrder.ctx || {}).price);
+                const subject = payOrder.subject || '';
+                payEl('paySubject').textContent = subject;
+                payEl('paySubject').hidden = !subject;
+            }
+            payRenderMethods();
+            const seg = payEl('payMethodsSeg');
+            if (seg) seg.classList.toggle('is-busy', phase === 'creating');
+            payShowError('');
+            card.hidden = false;
+            img.hidden = true; spin.hidden = true; art.hidden = true;
+            hint.hidden = true;
+            cd.hidden = true;
+            openLink.hidden = true;
+            primary.hidden = false; secondary.hidden = false;
+            primary.disabled = false;
+            primary.textContent = '我已完成支付';
+            secondary.textContent = '取消';
+            dot.className = 'pay-dot';
+            if (payOrder && payOrder.orderNo) {
+                orderRow.hidden = false;
+                orderNo.textContent = payOrder.orderNo;
+            } else {
+                orderRow.hidden = true;
+            }
+
+            if (phase === 'creating') {
+                spin.hidden = false;
+                st.textContent = '正在创建订单';
+                primary.hidden = true;
+                secondary.textContent = '取消';
+            } else if (phase === 'waiting') {
+                payRenderWaitingContent();
+                st.textContent = '等待支付';
+                if (payOrder && payOrder.payUrl && !payOrder.qrCode) {
+                    openLink.hidden = false;
+                    openLink.href = payOrder.payUrl;
+                }
+                if (extra.error) payShowError(extra.error);
+                payStartCountdown();
+            } else if (phase === 'success') {
+                art.hidden = false;
+                art.className = 'pay-state-art is-ok';
+                art.innerHTML = PAY_ICON_CHECK + '<span>支付成功</span>';
+                hint.hidden = true;
+                st.textContent = '支付成功';
+                dot.className = 'pay-dot ok';
+                primary.textContent = '完成';
+                secondary.hidden = true;
+            } else if (phase === 'closed') {
+                const text = extra.text || '订单已关闭';
+                art.hidden = false;
+                art.className = 'pay-state-art is-off';
+                art.innerHTML = PAY_ICON_CLOCK + '<span>' + text + '</span>';
+                st.textContent = text;
+                dot.className = 'pay-dot off';
+                primary.textContent = '重新发起支付';
+                secondary.textContent = '关闭';
+            } else if (phase === 'failed') {
+                art.hidden = false;
+                art.className = 'pay-state-art is-err';
+                art.innerHTML = PAY_ICON_ALERT + '<span>下单失败</span>';
+                st.textContent = '下单失败';
+                dot.className = 'pay-dot err';
+                primary.textContent = '重新获取';
+                secondary.textContent = '取消';
+                if (extra.text) payShowError(extra.text);
+            }
+        }
+
+        function payStartCountdown() {
+            const box = payEl('payCountdown');
+            if (!box) return;
+            if (!payOrder || !payOrder.expireAt) { box.hidden = true; return; }
+            box.hidden = false;
+            const tick = () => {
+                if (!payOrder || !payOrder.expireAt) return;
+                const left = Math.max(0, payOrder.expireAt - Date.now());
+                const sec = Math.ceil(left / 1000);
+                box.textContent = '剩余 ' + String(Math.floor(sec / 60)).padStart(2, '0') + ':' + String(sec % 60).padStart(2, '0');
+                if (left <= 0) {
+                    if (payTickTimer) { clearInterval(payTickTimer); payTickTimer = null; }
+                    payHandleExpire();
+                }
+            };
+            tick();
+            if (!payTickTimer) payTickTimer = setInterval(tick, 1000);
+        }
+
+        async function payFetchStatus() {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token || !payOrder || !payOrder.orderNo) return null;
+            try {
+                const res = await fetch('/api/payment/order-status?order_no=' + encodeURIComponent(payOrder.orderNo), {
+                    headers: { Authorization: 'Bearer ' + token }
+                });
+                const data = await res.json().catch(() => null);
+                if (!data || typeof data.paid === 'undefined') return null;
+                return data;
+            } catch (_) { return null; }
+        }
+
+        function payStartPolling() {
+            if (!payOrder || payOrder.phase !== 'waiting' || !payOrder.orderNo) return;
+            if (!payPollTimer) payPollTimer = setInterval(() => payCheckOnce(false), 3000);
+            payCheckOnce(false);
+        }
+        function payStartWaitingTimers() {
+            payStopTimers();
+            if (!payOrder || payOrder.phase !== 'waiting') return;
+            payStartPolling();
+            payStartCountdown();
+        }
+
+        async function payCheckOnce(manual) {
+            if (!payOrder || payOrder.phase !== 'waiting' || !payOrder.orderNo) return;
+            if (payChecking) return;
+            payChecking = true;
+            const primary = payEl('payPrimary');
+            if (manual) { primary.disabled = true; primary.textContent = '查询中...'; }
+            const data = await payFetchStatus();
+            payChecking = false;
+            if (manual) {
+                primary.disabled = false;
+                if (payOrder && payOrder.phase === 'waiting') primary.textContent = '我已完成支付';
+            }
+            if (!data) {
+                payShowError('网络异常，正在重试');
+                return; // 保留二维码，轮询继续
+            }
+            payShowError('');
+            if (data.paid) { payMarkSuccess(data); return; }
+            const st = String(data.status || '').toLowerCase();
+            if (st === 'cancelled') { payMarkClosed('订单已关闭'); return; }
+            if (st === 'refunded') { payMarkClosed('订单已关闭'); return; }
+            const content = data.qr_code || data.pay_url;
+            if (content && content !== payOrder.qrContent) {
+                payOrder.qrContent = content;
+                payOrder.qrCode = data.qr_code || '';
+                payOrder.payUrl = data.pay_url || '';
+                if (payOrder.phase === 'waiting') payRenderWaitingContent();
+            }
+        }
+
+        async function payHandleExpire() {
+            if (!payOrder || payOrder.phase !== 'waiting') return;
+            const data = await payFetchStatus();
+            if (data && data.paid) { payMarkSuccess(data); return; }
+            payMarkClosed('订单已过期');
+        }
+
+        function payMarkSuccess(data) {
+            payStopTimers();
+            payHidePendingBar();
+            const target = (payOrder && payOrder.msgTarget) || 'billingMsg';
+            paySetPhase('success');
+            if (data && data.profile) fillProfile(data.profile);
+            msg(target, (data && data.msg) || '支付成功，权益已到账', true);
+        }
+        function payMarkClosed(text) {
+            payStopTimers();
+            payHidePendingBar();
+            paySetPhase('closed', { text: text });
+        }
+
+        function payShowPendingBar() {
+            const bar = payEl('pendingPayBar');
+            if (!bar || !payOrder) return;
+            payEl('pendingPayText').textContent = '有订单待支付，金额 ¥' + payFmtAmount(payOrder.amount);
+            bar.hidden = false;
+        }
+        function payHidePendingBar() {
+            const bar = payEl('pendingPayBar');
+            if (bar) bar.hidden = true;
+        }
+
+        function payOpenModal() {
+            const modal = payEl('payModal');
+            if (!modal || !modal.hidden) return;
+            payLastFocus = document.activeElement;
+            modal.hidden = false;
+            document.body.classList.add('pay-modal-open');
+            requestAnimationFrame(() => modal.classList.add('open'));
+            const dialog = payEl('payDialog');
+            if (dialog) setTimeout(() => dialog.focus(), 0);
+        }
+        function payCloseModal() {
+            const modal = payEl('payModal');
+            if (!modal || modal.hidden) return;
+            payStopTimers();
+            modal.classList.remove('open');
+            document.body.classList.remove('pay-modal-open');
+            setTimeout(() => { modal.hidden = true; }, 200);
+            if (payOrder && payOrder.phase === 'waiting') payShowPendingBar(); else payHidePendingBar();
+            if (payLastFocus && typeof payLastFocus.focus === 'function') {
+                try { payLastFocus.focus(); } catch (_) {}
+            }
+            payLastFocus = null;
+        }
+        function payReopen() {
+            if (!payOrder) return;
+            if (payOrder.phase !== 'waiting') return;
+            payHidePendingBar();
+            payOpenModal();
+            paySetPhase('waiting');
+            payStartWaitingTimers();
+        }
+
+        async function payStart(ctx, opts) {
+            opts = opts || {};
+            const method = opts.method || currentPayMethod;
+            if (!opts.force && payOrder && payOrder.phase === 'waiting' &&
+                payOrder.key === payKey(ctx, method) &&
+                (!payOrder.expireAt || payOrder.expireAt > Date.now())) {
+                payHidePendingBar();
+                payOpenModal();
+                paySetPhase('waiting');
+                payStartWaitingTimers();
+                return;
+            }
+            if (payBusy) return;
+            payBusy = true;
+            payOrder = {
+                key: payKey(ctx, method), ctx: ctx, method: method,
+                amount: Number(ctx.price || 0), subject: ctx.subject || '',
+                qrContent: '', qrCode: '', payUrl: '', orderNo: '', expireAt: null,
+                phase: 'creating', msgTarget: ctx.msgTarget || 'billingMsg'
+            };
+            payHidePendingBar();
+            payOpenModal();
+            paySetPhase('creating');
+            try {
+                await payCreateOrder();
+            } finally {
+                payBusy = false;
+            }
+        }
+
+        async function payCreateOrder() {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) { paySetPhase('failed', { text: '登录状态已失效，请重新登录' }); return; }
+            const ctx = payOrder.ctx, method = payOrder.method;
+            const payload = {};
+            if (ctx.planType === 'custom_model') payload.plan_type = 'custom_model';
+            else payload.plan_id = Number(ctx.planId);
+            payload.pay_method = method;
+            if (ctx.useCommission) {
+                payload.use_commission = true;
+                payload.commission_request_no = 'DK' + Date.now() + Math.random().toString(36).slice(2, 8);
+            }
+            let res;
+            try {
+                res = await post('/api/payment/purchase', payload, token);
+            } catch (_) {
+                paySetPhase('failed', { text: '网络异常，请稍后重试' });
+                return;
+            }
+            if (res.code !== 200) {
+                paySetPhase('failed', { text: res.msg || '下单失败，请稍后重试' });
+                return;
+            }
+            const used = Number(res.commission_used || 0);
+            if (used > 0) {
+                payOrder.amount = Math.max(0, Number(ctx.price || 0) - used);
+                if (typeof loadCommissionState === 'function') loadCommissionState();
+            }
+            if (!res.paying) {
+                payOrder.orderNo = res.order_no || '';
+                payHidePendingBar();
+                paySetPhase('success');
+                if (res.profile) fillProfile(res.profile);
+                msg(payOrder.msgTarget, res.msg || '购买成功，权益已到账', true);
+                return;
+            }
+            payOrder.orderNo = res.order_no || '';
+            payOrder.qrCode = res.qr_code || '';
+            payOrder.payUrl = res.pay_url || '';
+            payOrder.qrContent = payOrder.qrCode || payOrder.payUrl || '';
+            payOrder.expireAt = payExpireOf(res);
+            if (res.subject) payOrder.subject = res.subject;
+            const modal = payEl('payModal');
+            if (!modal || modal.hidden) { payShowPendingBar(); return; }
+            paySetPhase('waiting');
+            payStartWaitingTimers();
+        }
+
+        async function paySwitchMethod(method) {
+            if (!method || method === currentPayMethod) return;
+            currentPayMethod = method;
+            payRenderMethods();
+            if (payOrder && payOrder.phase === 'waiting' && !payBusy) {
+                const ctx = payOrder.ctx;
+                payOrder = null;
+                await payStart(ctx, { force: true, method: method });
+            }
+        }
+
+        async function payRetry() {
+            if (payBusy || !payOrder || !payOrder.ctx) return;
+            const ctx = payOrder.ctx;
+            const method = payOrder.method || currentPayMethod;
+            currentPayMethod = method;
+            payOrder = null;
+            await payStart(ctx, { force: true, method: method });
+        }
+
+        async function payPrimaryClick() {
+            if (!payOrder) return;
+            const phase = payOrder.phase;
+            if (phase === 'waiting') { await payCheckOnce(true); return; }
+            if (phase === 'success') { payCloseModal(); return; }
+            if (phase === 'closed' || phase === 'failed') { await payRetry(); return; }
+        }
+
+        async function payCopyOrderNo() {
+            if (!payOrder || !payOrder.orderNo) return;
+            const text = payOrder.orderNo;
+            const btn = payEl('payCopy');
+            let ok = false;
+            try {
+                if (navigator.clipboard && window.isSecureContext) {
+                    await navigator.clipboard.writeText(text);
+                    ok = true;
+                }
+            } catch (_) { ok = false; }
+            if (!ok) {
+                try {
+                    const ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.style.position = 'fixed';
+                    ta.style.opacity = '0';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    ok = document.execCommand && document.execCommand('copy');
+                    document.body.removeChild(ta);
+                } catch (_) { ok = false; }
+            }
+            if (ok) {
+                const old = btn.textContent;
+                btn.textContent = '已复制';
+                setTimeout(() => { btn.textContent = old; }, 1500);
+            }
+        }
+
+        (function bindPayModal() {
+            const modal = payEl('payModal');
+            if (!modal) return;
+            modal.querySelectorAll('[data-pay-dismiss]').forEach(el => {
+                el.addEventListener('click', () => payCloseModal());
+            });
+            payEl('payPrimary').addEventListener('click', payPrimaryClick);
+            payEl('paySecondary').addEventListener('click', () => payCloseModal());
+            payEl('payCopy').addEventListener('click', payCopyOrderNo);
+            const pendingBtn = payEl('pendingPayBtn');
+            if (pendingBtn) pendingBtn.addEventListener('click', payReopen);
             document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape' && panel.classList.contains('active')) panel.classList.remove('active');
+                if (modal.hidden) return;
+                if (e.key === 'Escape') { e.preventDefault(); payCloseModal(); return; }
+                if (e.key !== 'Tab') return;
+                const dialog = payEl('payDialog');
+                const nodes = Array.from(dialog.querySelectorAll('button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])'))
+                    .filter(el => !el.hidden && !el.disabled && el.offsetParent !== null);
+                if (!nodes.length) { e.preventDefault(); dialog.focus(); return; }
+                const first = nodes[0], last = nodes[nodes.length - 1];
+                if (e.shiftKey && (document.activeElement === first || document.activeElement === dialog)) {
+                    e.preventDefault(); last.focus();
+                } else if (!e.shiftKey && document.activeElement === last) {
+                    e.preventDefault(); first.focus();
+                }
+            });
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) { payStopTimers(); return; }
+                if (payOrder && payOrder.phase === 'waiting' && !modal.hidden) payStartWaitingTimers();
             });
         })();
-        async function checkOrderStatus(orderNo) {
-            const token = localStorage.getItem(TOKEN_KEY);
-            if (!token) return;
-            try {
-                const res = await fetch('/api/payment/order-status?order_no=' + encodeURIComponent(orderNo), { headers: { Authorization: 'Bearer ' + token } });
-                const data = await res.json().catch(() => ({}));
-                if (data.paid) {
-                    if (payPollTimer) clearInterval(payPollTimer);
-                    payPollTimer = null;
-                    $('qrPanel').classList.remove('active');
-                    fillProfile(data.profile);
-                    msg('billingMsg', data.msg || '支付成功，权益已到账', true);
-                } else {
-                    const img = $('payQrImg');
-                    const showing = img.style.display !== 'none' && img.getAttribute('src');
-                    if (!showing && (data.pay_url || data.qr_code)) {
-                        renderPayPanel(orderNo, data.qr_code, data.pay_url);
-                    }
-                    if (data.msg) {
-                        $('payQrTip').textContent = data.msg + '，请完成付款。';
-                    }
-                }
-            } catch (_) { }
-        }
         function boolValue(v) { return String(v) === 'true'; }
         function abcValue(settings, section, key, fallback) {
             const abc = settings.abcConfig || {};
