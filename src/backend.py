@@ -903,6 +903,21 @@ def _hub_pay_notify_url(admin):
     return str((admin or {}).get("hub_pay_notify_url") or "").strip() or HUB_PAY_DEFAULT_NOTIFY
 
 
+def _hub_created_channel_fields(hub_info):
+    """中控刚下单时能写进订单的渠道字段。
+
+    支付FM 下单返回的 txnId 是它自己的平台单号（714…），真正的渠道单号（HMP…）只有支付回调里才有；
+    汇付下单返回的 txnId 就是 party_order_id（002900HS…），下单即有，可以当渠道单号展示。
+    未支付/已关闭的支付FM单没有渠道单号，后台就留空，不拿平台单号凑数。
+    """
+    txn = str((hub_info or {}).get("channelTxnId") or "")
+    channel = str((hub_info or {}).get("channel") or "")[:32]
+    fields = {"trade_no": txn, "hub_channel": channel}
+    if txn and channel != "zfm":
+        fields["channel_order_no"] = txn
+    return fields
+
+
 def hub_pay_create(order_no, username, plan, pay_method, biz_type, client_ip="", admin=None):
     """向中控下一笔扫码单。返回 (ok, data_or_err)。
 
@@ -7302,13 +7317,7 @@ class Handler(BaseHTTPRequestHandler):
                               f"user={user['username']} 金额=¥{plan.get('price')} err={e}", flush=True)
                         _fail("下单未完成，请重试或联系管理员")
                         return
-                    db.update_order_payment(
-                        hub_order_no,
-                        trade_no=str(hub_info.get("channelTxnId") or ""),
-                        # 后台「渠道单号」读的是 channel_order_no，中控的渠道单号要两边都写
-                        channel_order_no=str(hub_info.get("channelTxnId") or ""),
-                        hub_channel=str(hub_info.get("channel") or "")[:32],
-                    )
+                    db.update_order_payment(hub_order_no, **_hub_created_channel_fields(hub_info))
                     print(f"[中控支付] 充值下单成功 order={hub_order_no} user={user['username']} "
                           f"方式={pay_method} 通道={hub_info.get('channel')} "
                           f"金额=¥{plan.get('price')} 原因={recharge_reason}", flush=True)
@@ -9754,13 +9763,7 @@ class Handler(BaseHTTPRequestHandler):
                                   f"user={user['username']} 金额=¥{plan.get('price')} err={e}", flush=True)
                             self._send_json(500, {"code": 500, "msg": "下单未完成，请重试或联系管理员"})
                             return
-                        db.update_order_payment(
-                            hub_order_no,
-                            trade_no=str(hub_info.get("channelTxnId") or ""),
-                            # 后台「渠道单号」读的是 channel_order_no，中控的渠道单号要两边都写
-                            channel_order_no=str(hub_info.get("channelTxnId") or ""),
-                            hub_channel=str(hub_info.get("channel") or "")[:32],
-                        )
+                        db.update_order_payment(hub_order_no, **_hub_created_channel_fields(hub_info))
                         print(f"[中控支付] 下单成功 order={hub_order_no} user={user['username']} "
                               f"方式={pay_method} 通道={hub_info.get('channel')} "
                               f"金额=¥{plan.get('price')} 原因={hub_reason}", flush=True)
