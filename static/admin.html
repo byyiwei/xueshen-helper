@@ -4173,6 +4173,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
               <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                 <span style="font-size:12px;color:var(--text3)">排队 {{aiTaskCounts.queued||0}} · 运行 {{aiTaskCounts.running||0}} · 等待 {{aiTaskCounts.waiting||0}} · 已解决 {{aiTaskCounts.solved||0}}</span>
                 <select v-model="aiTaskFilter" class="form-control" style="width:140px;padding:6px 10px;font-size:13px" @change="aiTaskPage=1;loadAiTasks()">
+                  <option value="pending">待处理（排队/运行/等待）</option>
                   <option value="">全部状态</option>
                   <option value="queued">排队中</option>
                   <option value="running">运行中</option>
@@ -8819,7 +8820,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       });
     });
     const aiTaskList=ref([]);
-    const aiTaskFilter=ref('');
+    const aiTaskFilter=ref('pending');
     const aiTaskPage=ref(1);
     const aiTaskTotal=ref(0);
     const aiTaskTotalPages=computed(()=>Math.max(1,Math.ceil(aiTaskTotal.value/20)));

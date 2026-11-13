@@ -4839,7 +4839,9 @@ class Database:
         page_size = min(max(1, int(page_size or 20)), 100)
         where = ""
         params = []
-        if status:
+        if status == "pending":
+            where = " WHERE status IN ('queued','running','waiting')"
+        elif status:
             where = f" WHERE status={ph}"
             params.append(status)
         total_row = self.fetchone(f"SELECT COUNT(*) AS cnt FROM ai_answer_tasks{where}", tuple(params)) or {}
