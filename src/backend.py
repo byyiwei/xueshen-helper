@@ -832,9 +832,9 @@ HUB_PAY_NOTIFY_PATH = "/api/payment/notify/hub"
 HUB_PAY_DEFAULT_NOTIFY = "https://xs.openget.cn/api/payment/notify/hub"
 HUB_PAY_SYNC_MIN_INTERVAL = 2.0
 # 回调不可靠（河马付偶尔丢推送），用户在前端等付款结果时主动让中控查一次渠道。
-# 下限 15 秒：既能把手动到账从 2~3 分钟压到十几秒，又不会把渠道查单接口打爆。
-HUB_PAY_PROBE_MIN_INTERVAL = 15.0
-HUB_PAY_PROBE_MIN_AGE = 10.0
+# 5 秒：页面开着时基本几秒内到账；只对「还在等待支付」的单子生效，同一单节流。
+HUB_PAY_PROBE_MIN_INTERVAL = 5.0
+HUB_PAY_PROBE_MIN_AGE = 6.0
 
 _hub_pay_sync_ts = {}
 _hub_pay_probe_ts = {}
