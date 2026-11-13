@@ -8837,6 +8837,22 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, {"code": 200, "data": result})
 
         # ===== 后台查看自动化需求 =====
+        elif path == "/admin/adapt-requests/pending":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                row = db.fetchone(
+                    "SELECT COUNT(*) AS cnt, COALESCE(SUM(urgent=1), 0) AS urgent "
+                    "FROM adapt_requests WHERE status='pending'"
+                ) or {}
+                self._send_json(200, {
+                    "code": 200,
+                    "pending": int(row.get("cnt") or 0),
+                    "urgent": int(row.get("urgent") or 0),
+                })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/adapt-requests":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})

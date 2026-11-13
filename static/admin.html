@@ -1328,7 +1328,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
               <svg class="ui-icon sm"><use href="#i-message-square"></use></svg>问题反馈
             </div>
             <div class="menu-item" :class="{active:page==='adapt-requests'}" @click="page='adapt-requests';loadAdaptRequests()">
-              <svg class="ui-icon sm"><use href="#i-clipboard"></use></svg>定制需求
+              <svg class="ui-icon sm"><use href="#i-clipboard"></use></svg>定制需求<span v-if="adaptPending" :style="{marginLeft:'auto',minWidth:'18px',padding:'0 5px',height:'18px',lineHeight:'18px',textAlign:'center',borderRadius:'9px',background:'var(--warning)',color:'#fff',fontSize:'11px',fontWeight:'600'}">{{adaptPending}}</span>
             </div>
             <div class="menu-item" :class="{active:page==='announce'}" @click="page='announce';loadAnnounceConfig()">
               <svg class="ui-icon sm"><use href="#i-bell"></use></svg>公告通知
@@ -1512,6 +1512,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
             <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(239,68,68,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='ai-logs';expandedGroups.models=true;aiLogFilter.status='error';loadAiLogs(1)"><div class="metric-label">失败数</div><div class="metric-value" style="color:var(--danger)">{{dashboard.cards.error||0}}</div><div class="metric-sub">点击查看失败详情 →</div></div>
             <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(245,158,11,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='feedback';expandedGroups.referral=true;loadFeedbackList()"><div class="metric-label">待处理反馈</div><div class="metric-value" style="color:var(--warning)">{{feedbackPendingCount||0}}</div><div class="metric-sub">点击查看处理 →</div></div>
             <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(239,68,68,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='refund-requests';loadRefundRequests()"><div class="metric-label">待处理退款</div><div class="metric-value" style="color:var(--danger)">{{dashboard.cards?.refund_pending||0}}</div><div class="metric-sub">点击查看处理 →</div></div>
+            <div class="metric-card" :style="{cursor:'pointer',transition:'border-color .2s',borderColor:adaptPending?'rgba(245,158,11,.45)':''}" onmouseover="this.style.borderColor='rgba(245,158,11,.4)'" onmouseout="this.style.borderColor=adaptPending?'rgba(245,158,11,.45)':''" @click="page='adapt-requests';loadAdaptRequests()"><div class="metric-label">待评估定制需求</div><div class="metric-value" :style="{color:adaptPending?'var(--warning)':'var(--text)'}">{{adaptPending}}</div><div class="metric-sub"><span v-if="adaptUrgent" style="color:var(--danger,#ef4444);font-weight:600">加急 {{adaptUrgent}} · </span>点击查看处理 →</div></div>
           </div>
           <div class="dash-grid">
             <div class="chart-card">
@@ -7056,6 +7057,8 @@ createApp({
     async function loadAll(){
       await loadDashboard();
       await loadAdminAccount();
+      loadAdaptPending();
+      startAdaptPendingPolling();
       // 侧栏「待审核代理商」角标：静默失败，不影响主流程
       try{
         const dr=await safeFetch('/admin/distributor/config',{headers:{'Authorization':token.value}});
@@ -8663,6 +8666,10 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     const adaptTotalPages=ref(0);
     const adaptDetail=ref(null);
     const adaptAdminNote=ref('');
+    const adaptPending=ref(0);
+    const adaptUrgent=ref(0);
+    let adaptPendingPollTimer=null;
+    let adaptPendingFirstLoad=true;
     const feedbackAutoCloseDays=ref(7);
     const cardPayLabel=ref('卡密');
     const feedbackDetail=ref(null);
@@ -9396,6 +9403,28 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     }
     function feedbackSearch(){feedbackPage.value=1;loadFeedbackList();}
     // ========== 定制需求 ==========
+    async function loadAdaptPending(notifyNew=false){
+      if(!token.value)return;
+      let ok=false;
+      try{
+        const res=await safeFetch('/admin/adapt-requests/pending',{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200){
+          const prev=adaptPending.value;
+          adaptPending.value=Number(d.pending||0);
+          adaptUrgent.value=Number(d.urgent||0);
+          if(notifyNew&&!adaptPendingFirstLoad&&adaptPending.value>prev){
+            showMsg('有新的定制需求待评估，共 '+adaptPending.value+' 条','warning',5000);
+          }
+          ok=true;
+        }
+      }catch(_){}
+      if(ok)adaptPendingFirstLoad=false;
+    }
+    function startAdaptPendingPolling(){
+      if(adaptPendingPollTimer)return;
+      adaptPendingPollTimer=setInterval(()=>loadAdaptPending(true),60000);
+    }
     async function loadAdaptRequests(){
       const params=new URLSearchParams({page:String(adaptPage.value),page_size:'20'});
       try{
@@ -9427,6 +9456,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
           showMsg('已更新状态');
           adaptDetail.value=null;
           loadAdaptRequests();
+          loadAdaptPending();
         }else showMsg((res&&res.msg)||'更新失败','error');
       }catch(e){showMsg('更新失败: '+(e.message||e),'error');}
     }
@@ -10124,7 +10154,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     fbAttachList,fbUploadingCount,onAdminFbFiles,onAdminFbPaste,removeAdminFbAttachment,downloadAdminFbAttachment,copyAdminFbImage,adminFbSize,
     feedbackAutoCloseDays,loadFeedbackAutoClose,saveFeedbackAutoClose,cardPayLabel,
     feedbackNotifyEnabled,loadFeedbackNotify,saveFeedbackNotify,
-    adaptList,adaptFilter,adaptPage,adaptTotal,adaptTotalPages,adaptDetail,adaptAdminNote,
+    adaptList,adaptFilter,adaptPage,adaptTotal,adaptTotalPages,adaptDetail,adaptAdminNote,adaptPending,adaptUrgent,loadAdaptPending,
     loadAdaptRequests,adaptPrev,adaptNext,openAdaptDetail,setAdaptStatus,copyAdaptText,
     adsList,adsEdit,adsSaving,adsUploading,newAd,editAd,loadAds,saveAd,toggleAd,deleteAd,pickAdImage,onAdFileChange,
    aiPolishing,aiPolishReply,testingModel,testingNewProvider,testModel,testNewProvider,modelTestResults,newProviderTestResult,
