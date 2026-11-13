@@ -4862,6 +4862,16 @@ class Database:
             row = self.fetchone("SELECT COUNT(*) AS cnt FROM ai_answer_tasks") or {}
         return int(row.get("cnt") or 0)
 
+    def count_ai_answer_tasks_by_status(self):
+        """实时看板用：一次性取回各状态数量，避免轮询时连发多条 COUNT。"""
+        rows = self.fetchall(
+            "SELECT status, COUNT(*) AS cnt FROM ai_answer_tasks GROUP BY status"
+        ) or []
+        out = {}
+        for row in rows:
+            out[str(row.get("status") or "")] = int(row.get("cnt") or 0)
+        return out
+
     def reset_running_ai_answer_tasks(self):
         """进程重启后，把上次没跑完的 running 任务放回队列。"""
         self.execute("UPDATE ai_answer_tasks SET status='waiting', next_retry_at=NOW() WHERE status='running'")

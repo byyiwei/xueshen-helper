@@ -5526,6 +5526,46 @@ AI_TASK_ROUND_WAIT = (120, 300, 900, 1800, 3600)
 AI_TASK_CLAIM_LOCK = threading.Lock()
 AI_TASK_WORKER_STARTED = False
 AI_TASK_TRIED_LIMIT = 200
+AI_TASK_LIVE = {}
+AI_TASK_EVENTS = []
+AI_TASK_LIVE_LOCK = threading.Lock()
+AI_TASK_EVENT_LIMIT = 40
+
+
+def _task_live_update(task_id, **fields):
+    """记录某条任务此刻在试哪个模型，供管理后台实时看板轮询。"""
+    with AI_TASK_LIVE_LOCK:
+        cur = AI_TASK_LIVE.get(int(task_id)) or {}
+        cur.update(fields)
+        cur["task_id"] = int(task_id)
+        AI_TASK_LIVE[int(task_id)] = cur
+        return dict(cur)
+
+
+def _task_live_clear(task_id):
+    with AI_TASK_LIVE_LOCK:
+        AI_TASK_LIVE.pop(int(task_id), None)
+
+
+def _task_event(text, level="info", task_id=0):
+    item = {
+        "ts": time.time(),
+        "level": level,
+        "text": str(text or "")[:300],
+        "task_id": int(task_id or 0),
+    }
+    with AI_TASK_LIVE_LOCK:
+        AI_TASK_EVENTS.append(item)
+        if len(AI_TASK_EVENTS) > AI_TASK_EVENT_LIMIT:
+            del AI_TASK_EVENTS[: len(AI_TASK_EVENTS) - AI_TASK_EVENT_LIMIT]
+
+
+def _task_live_snapshot():
+    with AI_TASK_LIVE_LOCK:
+        live = [dict(v) for v in AI_TASK_LIVE.values()]
+        events = list(reversed(AI_TASK_EVENTS))
+    live.sort(key=lambda x: float(x.get("attempt_started_at") or 0), reverse=True)
+    return live, events
 
 
 def _task_question_info(question):
@@ -5596,6 +5636,7 @@ def _run_ai_task(task):
     task_id = int(task["id"])
     question = str(task.get("question") or "")
     if not question:
+        _task_live_clear(task_id)
         db.update_ai_answer_task(task_id, status="failed", last_error="题目内容为空")
         return
     info = _task_question_info(question)
@@ -5612,6 +5653,7 @@ def _run_ai_task(task):
     try:
         prepared_messages = build_ai_messages(question, deadline=time.time() + 120)
     except Exception as e:
+        _task_live_clear(task_id)
         db.update_ai_answer_task(
             task_id, status="waiting", last_error=f"图片准备失败：{e}"[:1000],
             next_retry_at=datetime.now() + timedelta(seconds=300),
@@ -5620,6 +5662,7 @@ def _run_ai_task(task):
 
     ordered, wait_seconds = _task_model_order(need_vision)
     if not ordered:
+        _task_live_clear(task_id)
         db.update_ai_answer_task(
             task_id, status="waiting",
             last_error="所有模型都在冷却或限额中",
@@ -5627,12 +5670,35 @@ def _run_ai_task(task):
         )
         return
 
+    with AI_TASK_LIVE_LOCK:
+        prev_live = dict(AI_TASK_LIVE.get(task_id) or {})
+    task_started = float(prev_live.get("started_at") or time.time())
+    model_plan = [
+        {
+            "provider": p,
+            "provider_title": str((pi or {}).get("title") or p or "中控"),
+            "model": m,
+        }
+        for p, pi, m, _w in ordered
+    ]
+    _task_live_update(
+        task_id, round_no=round_no + 1, attempts=attempts,
+        models=model_plan, model_index=0,
+        question=question[:120], has_image=need_vision,
+        started_at=task_started, status="switching", last_error="",
+    )
+    _task_event(
+        f"#{task_id} 开始第 {round_no + 1} 轮，候选模型 {len(model_plan)} 个",
+        "info", task_id,
+    )
+
     blocked_providers = set()
     last_errors = []
-    for provider_name, provider_info, model_name, _weight in ordered:
+    for idx, (provider_name, provider_info, model_name, _weight) in enumerate(ordered):
         # 人工停用/删除任务后，后台线程在下一次尝试前就退出
         cur = db.get_ai_answer_task(task_id=task_id)
         if not cur or str(cur.get("status") or "") not in ("running", "waiting", "queued"):
+            _task_live_clear(task_id)
             return
         if provider_name in blocked_providers:
             continue
@@ -5643,6 +5709,16 @@ def _run_ai_task(task):
             model_budget = MAX_LONG_TEXT_MODEL_BUDGET
         else:
             model_budget = MAX_MODEL_BUDGET
+        _task_live_update(
+            task_id, model_index=idx, status="calling",
+            provider=provider_name,
+            provider_title=str((provider_info or {}).get("title") or provider_name or "中控"),
+            model=model_name,
+            attempt_started_at=attempt_start,
+            budget_seconds=model_budget,
+        )
+        event_extra = "识图" if need_vision else ("长答案" if long_answer else "普通")
+        _task_event(f"#{task_id} 正在调用 {model_name}（{event_extra}，预算 {model_budget}s）", "call", task_id)
         try:
             answer, err, tokens = call_provider_chat(
                 question, model_name, provider_info,
@@ -5673,6 +5749,11 @@ def _run_ai_task(task):
                     "duration_ms": int((time.time() - attempt_start) * 1000),
                     "client_ip": str(task.get("client_ip") or ""),
                 })
+                _task_live_clear(task_id)
+                _task_event(
+                    f"#{task_id} 由 {model_name} 答出，用时 {max(1, int(time.time() - attempt_start))}s",
+                    "success", task_id,
+                )
                 print(f"[答题任务] 成功 task={task_id} model={provider_name}/{model_name}", flush=True)
                 return
             err = "答案质量不合格，已跳过"
@@ -5685,6 +5766,15 @@ def _run_ai_task(task):
             tried_models=json.dumps(tried, ensure_ascii=False),
             last_error="；".join(last_errors[-5:])[:2000],
         )
+        _task_live_update(
+            task_id, model_index=idx + 1, status="switching",
+            last_error=f"{model_name}: {err[:200]}",
+            last_attempt_ms=int((time.time() - attempt_start) * 1000),
+        )
+        if idx + 1 < len(ordered):
+            _task_event(f"#{task_id} {model_name} 失败，切换到 {ordered[idx + 1][2]}", "warn", task_id)
+        else:
+            _task_event(f"#{task_id} {model_name} 失败，本轮候选已用完", "warn", task_id)
         enqueue_ai_log({
             "provider_key": provider_name or "",
             "username": str(task.get("username") or ""),
@@ -5716,6 +5806,12 @@ def _run_ai_task(task):
         last_error="；".join(last_errors[-5:])[:2000] or "本轮模型均失败",
         next_retry_at=datetime.now() + timedelta(seconds=wait_seconds),
     )
+    _task_live_clear(task_id)
+    wait_text = f"{wait_seconds // 60} 分钟" if wait_seconds >= 60 else f"{wait_seconds} 秒"
+    _task_event(
+        f"#{task_id} 第 {round_no} 轮全部失败，{wait_text}后再试",
+        "error", task_id,
+    )
     print(f"[答题任务] 第 {round_no} 轮全失败 task={task_id}，{wait_seconds}s 后重试", flush=True)
 
 
@@ -5734,6 +5830,7 @@ def _ai_task_worker():
             traceback.print_exc()
             if task:
                 try:
+                    _task_live_clear(task["id"])
                     db.update_ai_answer_task(
                         task["id"], status="waiting", last_error=str(e)[:1000],
                         next_retry_at=datetime.now() + timedelta(seconds=60),
@@ -8588,6 +8685,68 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {"code": 200, "days": days, "rows": out})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/ai-tasks/live":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                now = time.time()
+                counts = db.count_ai_answer_tasks_by_status()
+                rows, pending_total = db.list_ai_answer_tasks(status="pending", page=1, page_size=60)
+                live, events = _task_live_snapshot()
+                task_meta = {}
+                tasks = []
+                for r in rows:
+                    retry_in = None
+                    nra = r.get("next_retry_at")
+                    if isinstance(nra, datetime):
+                        retry_in = max(0, int((nra - datetime.now()).total_seconds()))
+                    elif nra:
+                        try:
+                            retry_in = max(0, int((datetime.fromisoformat(str(nra).replace("Z", "")).replace(tzinfo=None) - datetime.now()).total_seconds()))
+                        except Exception:
+                            retry_in = None
+                    item = {
+                        "id": int(r.get("id") or 0),
+                        "status": str(r.get("status") or ""),
+                        "question": str(r.get("question_text") or r.get("question") or "")[:120],
+                        "has_image": bool(int(r.get("has_image") or 0)),
+                        "round_no": int(r.get("round_no") or 0),
+                        "attempts": int(r.get("attempts") or 0),
+                        "last_error": str(r.get("last_error") or "")[:300],
+                        "next_retry_at": str(nra or ""),
+                        "retry_in": retry_in,
+                        "updated_at": str(r.get("updated_at") or ""),
+                        "username": str(r.get("username") or ""),
+                    }
+                    task_meta[item["id"]] = item
+                    tasks.append(item)
+                for item in live:
+                    meta = task_meta.get(int(item.get("task_id") or 0)) or {}
+                    if meta:
+                        item["question"] = meta.get("question") or item.get("question") or ""
+                        item["username"] = meta.get("username") or ""
+                        item["has_image"] = meta.get("has_image", item.get("has_image", False))
+                        item["attempts"] = meta.get("attempts", item.get("attempts", 0))
+                self._send_json(200, {
+                    "code": 200,
+                    "now": now,
+                    "workers": AI_TASK_WORKERS,
+                    "counts": {
+                        "queued": int(counts.get("queued") or 0),
+                        "running": int(counts.get("running") or 0),
+                        "waiting": int(counts.get("waiting") or 0),
+                        "pending": pending_total,
+                        "solved": int(counts.get("solved") or 0),
+                        "failed": int(counts.get("failed") or 0),
+                        "stopped": int(counts.get("stopped") or 0),
+                    },
+                    "live": live,
+                    "tasks": tasks,
+                    "events": events,
+                })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/ai-tasks":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -10759,6 +10918,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(404, {"code": 404, "msg": "任务不存在"})
                     return
                 if action == "retry":
+                    _task_live_clear(task_id)
                     db.update_ai_answer_task(
                         task_id, status="queued", next_retry_at=datetime.now(),
                         last_error="", round_no=0, attempts=0, tried_models="[]",
@@ -10766,9 +10926,11 @@ class Handler(BaseHTTPRequestHandler):
                     )
                     msg = "已重新排队"
                 elif action == "stop":
+                    _task_live_clear(task_id)
                     db.update_ai_answer_task(task_id, status="stopped", next_retry_at=None)
                     msg = "已停止重试"
                 elif action == "delete":
+                    _task_live_clear(task_id)
                     db.delete_ai_answer_task(task_id)
                     msg = "已删除"
                 else:

@@ -1066,6 +1066,208 @@ html[data-theme="light"] .data-table .scene-refund_rejected { color: #b45309; }
 html[data-theme="light"] .data-table .scene-refund_request { color: #9333ea; }
 html[data-theme="light"] .model-test-result.ok { color: #16a34a; }
 html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
+
+/* ==================== 实时答题看板 ==================== */
+.live-board { display: flex; flex-direction: column; gap: 16px; margin-bottom: 20px; }
+.live-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 28px;
+  padding: 22px 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(110% 150% at 0% 0%, rgba(59, 130, 246, 0.16), transparent 52%),
+    linear-gradient(135deg, var(--bg2), var(--bg));
+}
+.live-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--chart-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--chart-grid) 1px, transparent 1px);
+  background-size: 30px 30px;
+  -webkit-mask-image: linear-gradient(90deg, transparent 8%, #000 60%, transparent);
+  mask-image: linear-gradient(90deg, transparent 8%, #000 60%, transparent);
+  opacity: 0.55;
+}
+.live-hero-main, .live-stats { position: relative; z-index: 1; }
+.live-hero-main { min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.live-kicker {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--success);
+}
+.live-pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45);
+  animation: livePulse 2.2s ease-out infinite;
+}
+@keyframes livePulse {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.42); }
+  70% { box-shadow: 0 0 0 9px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+.live-kicker-sep { width: 1px; height: 11px; background: var(--border2); }
+.live-kicker-muted { color: var(--text3); font-weight: 500; letter-spacing: 0.05em; }
+.live-clock { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 11px; color: var(--text2); letter-spacing: 0.02em; }
+.live-title { margin-top: 9px; font-size: 25px; line-height: 1.25; font-weight: 700; letter-spacing: -0.02em; color: var(--text); }
+.live-desc { margin-top: 8px; max-width: 660px; font-size: 12.5px; line-height: 1.7; color: var(--text2); }
+.live-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(78px, 1fr));
+  gap: 10px;
+  min-width: 430px;
+  align-self: center;
+}
+.live-stat {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.42);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+.live-stat-num { font-size: 25px; line-height: 1.1; font-weight: 700; letter-spacing: -0.03em; color: var(--text); font-variant-numeric: tabular-nums; }
+.live-stat-label { margin-top: 5px; font-size: 11px; color: var(--text3); white-space: nowrap; }
+.live-stat.accent .live-stat-num { color: var(--accent2); }
+.live-stat.success .live-stat-num { color: var(--success); }
+.live-stat.warn .live-stat-num { color: var(--warning); }
+.live-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(310px, 0.85fr); gap: 16px; align-items: start; }
+.live-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.live-panel { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card); overflow: hidden; min-width: 0; }
+.live-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.live-panel-head h3 { margin: 0; font-size: 13.5px; font-weight: 650; color: var(--text); display: flex; align-items: center; gap: 8px; }
+.worker-load { display: flex; align-items: center; gap: 3px; margin-left: 1px; }
+.worker-load i { display: block; width: 3px; height: 11px; border-radius: 2px; background: var(--bg4); transition: background 0.3s ease, box-shadow 0.3s ease; }
+.worker-load i.busy { background: var(--success); box-shadow: 0 0 6px rgba(16, 185, 129, 0.45); }
+.live-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--bg3); color: var(--text2); font-size: 11px; font-weight: 600; }
+.live-conn { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text3); white-space: nowrap; }
+.live-conn::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--text3); }
+.live-conn.on { color: var(--success); }
+.live-conn.on::before { background: var(--success); }
+.run-list { max-height: 760px; overflow-y: auto; }
+.run-card { padding: 17px 18px 15px; border-bottom: 1px solid var(--border); }
+.run-card:last-child { border-bottom: 0; }
+.run-top { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.run-id { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 11.5px; color: var(--text3); }
+.run-state { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; background: var(--success-subtle); color: var(--success); }
+.run-state::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.run-state.switching { background: var(--warn-subtle); color: var(--warning); }
+.run-tag { font-size: 10.5px; padding: 1px 7px; border: 1px solid var(--border2); border-radius: 9px; color: var(--text2); }
+.run-elapsed { margin-left: auto; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 12px; color: var(--text2); font-variant-numeric: tabular-nums; }
+.run-elapsed b { font-weight: 600; color: var(--text); }
+.run-question { margin: 9px 0 13px; font-size: 13px; line-height: 1.55; color: var(--text); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.relay { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 3px; scrollbar-width: thin; }
+.relay-step { position: relative; flex: 0 0 auto; width: 164px; padding: 8px 10px 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg2); opacity: 0.5; overflow: hidden; }
+.relay-step.is-done { opacity: 0.55; }
+.relay-step.is-next { opacity: 0.82; border-style: dashed; }
+.relay-step.is-active {
+  opacity: 1;
+  border-color: var(--accent);
+  background: linear-gradient(180deg, var(--accent-subtle), transparent 82%);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.16), 0 7px 20px rgba(59, 130, 246, 0.13);
+}
+.relay-step.is-active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent2), transparent);
+  animation: relaySweep 1.7s linear infinite;
+}
+@keyframes relaySweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.relay-provider { font-size: 10px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.relay-model { margin-top: 1px; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 11.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.relay-state { margin-top: 4px; font-size: 10px; color: var(--text3); }
+.relay-step.is-active .relay-state { color: var(--accent2); }
+.relay-step.is-next .relay-state { color: var(--warning); }
+.run-progress { height: 3px; margin-top: 12px; border-radius: 2px; background: var(--bg4); overflow: hidden; }
+.run-progress span { display: block; height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width 0.9s linear; }
+.run-progress span.over { background: linear-gradient(90deg, var(--warning), var(--danger)); }
+.run-foot { display: flex; align-items: baseline; gap: 14px; margin-top: 8px; font-size: 11px; color: var(--text3); }
+.run-foot > span:first-child { white-space: nowrap; }
+.run-error { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text3); }
+.run-error::before { content: "上一模型："; color: var(--text3); }
+.worker-pool { border-top: 1px solid var(--border); padding: 13px 18px 15px; background: linear-gradient(180deg, transparent, rgba(15, 23, 42, 0.28)); }
+.worker-pool-head { display: flex; align-items: center; justify-content: space-between; font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text3); }
+.worker-pool-head b { font-weight: 600; color: var(--text2); letter-spacing: 0; }
+.worker-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 9px; }
+.worker-slot { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; font-size: 10.5px; color: var(--text3); background: var(--bg2); }
+.worker-slot-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--bg4); flex: 0 0 auto; }
+.worker-slot.busy { border-color: rgba(16, 185, 129, 0.3); background: var(--success-subtle); color: var(--text2); }
+.worker-slot.busy .worker-slot-dot { background: var(--success); box-shadow: 0 0 6px rgba(16, 185, 129, 0.52); }
+.worker-slot-state { margin-left: auto; font-size: 9.5px; color: var(--text3); }
+.worker-slot.busy .worker-slot-state { color: var(--success); }
+.live-empty { padding: 48px 24px; text-align: center; color: var(--text3); }
+.live-empty-icon { width: 44px; height: 44px; margin: 0 auto 12px; border: 1px dashed var(--border2); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--text3); }
+.live-empty-title { font-size: 13px; color: var(--text2); font-weight: 600; }
+.live-empty-desc { margin-top: 4px; font-size: 11.5px; line-height: 1.6; }
+.queue-list { padding: 6px; max-height: 260px; overflow-y: auto; }
+.queue-row { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 9px; }
+.queue-row:hover { background: var(--bg3); }
+.queue-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--warning); flex: 0 0 auto; }
+.queue-dot.queued { background: var(--accent2); }
+.queue-body { min-width: 0; flex: 1; }
+.queue-q { font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue-meta { margin-top: 1px; font-size: 10.5px; color: var(--text3); }
+.queue-countdown { flex: 0 0 auto; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 11px; color: var(--warning); font-variant-numeric: tabular-nums; }
+.queue-countdown.queued { color: var(--accent2); }
+.queue-empty { padding: 22px 16px; text-align: center; font-size: 11.5px; color: var(--text3); }
+.event-list { max-height: 280px; overflow-y: auto; padding: 6px 0; }
+.event-row { display: grid; grid-template-columns: 7px minmax(0, 1fr) auto; gap: 10px; padding: 7px 16px; align-items: start; }
+.event-dot { width: 6px; height: 6px; margin-top: 6px; border-radius: 50%; background: var(--accent2); }
+.event-row.warn .event-dot { background: var(--warning); }
+.event-row.error .event-dot { background: var(--danger); }
+.event-row.success .event-dot { background: var(--success); }
+.event-row.call .event-dot { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-subtle); }
+.event-text { min-width: 0; font-size: 11.5px; line-height: 1.5; color: var(--text2); overflow-wrap: anywhere; }
+.event-row.success .event-text { color: var(--text); }
+.event-time { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 10px; color: var(--text3); white-space: nowrap; padding-top: 1px; }
+html[data-theme="light"] .live-hero { background: radial-gradient(110% 150% at 0% 0%, rgba(37, 99, 235, 0.12), transparent 52%), linear-gradient(135deg, #ffffff, #f3f6fb); }
+html[data-theme="light"] .live-stat { background: rgba(255, 255, 255, 0.72); }
+html[data-theme="light"] .relay-step.is-active { box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.15), 0 7px 20px rgba(37, 99, 235, 0.1); }
+html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, transparent, rgba(241, 245, 249, 0.78)); }
+@media (max-width: 1120px) {
+  .live-grid { grid-template-columns: 1fr; }
+  .live-side { display: grid; grid-template-columns: 1fr 1fr; align-items: start; }
+}
+@media (max-width: 820px) {
+  .live-hero { flex-direction: column; gap: 18px; }
+  .live-stats { min-width: 0; width: 100%; }
+  .live-side { grid-template-columns: 1fr; }
+}
+@media (max-width: 480px) {
+  .live-hero { padding: 18px; }
+  .live-title { font-size: 21px; }
+  .live-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .live-stat { padding: 9px 10px; border-radius: 9px; }
+  .live-stat-num { font-size: 19px; }
+  .live-stat-label { font-size: 10px; margin-top: 3px; }
+  .relay { flex-wrap: wrap; overflow: visible; }
+  .relay-step { width: calc(50% - 4px); min-width: 0; }
+  .run-foot { flex-wrap: wrap; gap: 2px 12px; }
+  .run-error { white-space: normal; }
+  .worker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 </style>
 <script>
 (function(){
@@ -4167,6 +4369,108 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="live-board">
+            <section class="live-hero">
+              <div class="live-hero-main">
+                <div class="live-kicker">
+                  <span class="live-pulse"></span><span>LIVE</span>
+                  <span class="live-kicker-sep"></span>
+                  <span class="live-kicker-muted">每 2 秒刷新</span>
+                  <span class="live-clock">{{aiLiveClock}}</span>
+                </div>
+                <h2 class="live-title">答题调度实时看板</h2>
+                <p class="live-desc">
+                  {{aiLiveWorkers}} 个工作线程在后台轮换模型，失败自动切下一个，一轮全失败就按轮次等待重试。
+                  当前 {{aiLiveRunning.length}} 条正在调用，{{aiLiveQueue.length}} 条排队或等待。
+                </p>
+              </div>
+              <div class="live-stats">
+                <div class="live-stat success"><div class="live-stat-num">{{aiLiveCounts.running||0}}</div><div class="live-stat-label">运行中</div></div>
+                <div class="live-stat accent"><div class="live-stat-num">{{aiLiveCounts.queued||0}}</div><div class="live-stat-label">排队</div></div>
+                <div class="live-stat warn"><div class="live-stat-num">{{aiLiveCounts.waiting||0}}</div><div class="live-stat-label">等待重试</div></div>
+                <div class="live-stat"><div class="live-stat-num">{{aiLiveCounts.solved||0}}</div><div class="live-stat-label">累计解决</div></div>
+              </div>
+            </section>
+            <div class="live-grid">
+              <div class="live-panel">
+                <div class="live-panel-head">
+                  <h3><svg class="ui-icon sm"><use href="#i-zap"></use></svg>正在作答<span class="live-badge">{{aiLiveRunning.length}}</span><span class="worker-load" :title="'工作线程 '+aiLiveRunning.length+' / '+aiLiveWorkers+' 占用'"><i v-for="n in aiLiveWorkers" :key="n" :class="{busy:n<=aiLiveRunning.length}"></i></span></h3>
+                  <span class="live-conn" :class="{on:aiLiveConnected}">{{aiLiveConnected?'连接正常':'等待数据'}}</span>
+                </div>
+                <div class="run-list">
+                  <article class="run-card" v-for="card in aiLiveRunning" :key="card.task_id">
+                    <div class="run-top">
+                      <span class="run-id">#{{card.task_id}}</span>
+                      <span class="run-state" :class="{switching:card.status!=='calling'}">{{card.status==='calling'?'正在调用':'切换模型'}}</span>
+                      <span class="run-tag" v-if="card.has_image">识图</span>
+                      <span class="run-elapsed"><b>{{liveDuration(liveElapsed(card.status==='calling'?(card.attempt_started_at||card.started_at):card.started_at))}}</b><span v-if="card.status==='calling'&&card.budget_seconds"> / {{card.budget_seconds}}s</span></span>
+                    </div>
+                    <div class="run-question" :title="card.question">{{card.question||'（题目内容为空）'}}</div>
+                    <div class="relay">
+                      <div class="relay-step" v-for="(m,idx) in (card.models||[])" :key="idx+'-'+m.model" :class="relayClass(card,idx)" :title="m.provider_title+' / '+m.model">
+                        <div class="relay-provider">{{m.provider_title}}</div>
+                        <div class="relay-model">{{m.model}}</div>
+                        <div class="relay-state">{{relayLabel(card,idx)}}</div>
+                      </div>
+                    </div>
+                    <div class="run-progress"><span :class="{over:liveProgress(card)>=100}" :style="{width:liveProgress(card)+'%'}"></span></div>
+                    <div class="run-foot">
+                      <span>第 {{card.round_no||1}} 轮 · 累计尝试 {{card.attempts||0}} 次</span>
+                      <span class="run-error" v-if="card.last_error" :title="card.last_error">{{card.last_error}}</span>
+                    </div>
+                  </article>
+                  <div class="live-empty" v-if="aiLiveRunning.length===0">
+                    <div class="live-empty-icon"><svg class="ui-icon md"><use href="#i-clock"></use></svg></div>
+                    <div class="live-empty-title">工作线程空闲</div>
+                    <div class="live-empty-desc">有新任务排队时会自动开始，这里会实时出现模型切换过程。</div>
+                  </div>
+                </div>
+                <div class="worker-pool">
+                  <div class="worker-pool-head"><span>线程池占用</span><b>{{aiLiveRunning.length}} / {{aiLiveWorkers}}</b></div>
+                  <div class="worker-grid">
+                    <div class="worker-slot" v-for="n in aiLiveWorkers" :key="n" :class="{busy:n<=aiLiveRunning.length}">
+                      <span class="worker-slot-dot"></span><span>线程 {{n}}</span>
+                      <span class="worker-slot-state">{{n<=aiLiveRunning.length?'作答中':'空闲'}}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="live-side">
+                <div class="live-panel">
+                  <div class="live-panel-head">
+                    <h3><svg class="ui-icon sm"><use href="#i-layers"></use></svg>排队与等待<span class="live-badge">{{aiLiveQueue.length}}</span></h3>
+                    <span class="live-conn">自动重试</span>
+                  </div>
+                  <div class="queue-list">
+                    <div class="queue-row" v-for="t in aiLiveQueue" :key="t.id">
+                      <span class="queue-dot" :class="{queued:t.status==='queued'}"></span>
+                      <div class="queue-body">
+                        <div class="queue-q" :title="t.question">#{{t.id}} {{t.question||'（空题目）'}}</div>
+                        <div class="queue-meta">{{aiTaskStatusText(t.status)}} · 第 {{t.round_no||0}} 轮 · 已试 {{t.attempts||0}} 次</div>
+                      </div>
+                      <span class="queue-countdown" :class="{queued:t.status==='queued'}" v-if="t.status==='waiting'">{{(t.retry_in===null||t.retry_in===undefined)?'待重试':formatCountdown(queueCountdown(t))}}</span>
+                      <span class="queue-countdown queued" v-else>就绪</span>
+                    </div>
+                    <div class="queue-empty" v-if="aiLiveQueue.length===0">当前没有排队或等待的任务</div>
+                  </div>
+                </div>
+                <div class="live-panel">
+                  <div class="live-panel-head">
+                    <h3><svg class="ui-icon sm"><use href="#i-activity"></use></svg>最新动态</h3>
+                    <span class="live-conn">实时事件</span>
+                  </div>
+                  <div class="event-list">
+                    <div class="event-row" v-for="(ev,idx) in aiLiveEvents" :key="idx" :class="ev.level">
+                      <span class="event-dot"></span>
+                      <div class="event-text">{{ev.text}}</div>
+                      <span class="event-time">{{eventAgo(ev.ts)}}</span>
+                    </div>
+                    <div class="queue-empty" v-if="aiLiveEvents.length===0">还没有调度事件，有新任务时会实时出现</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
           <div class="card">
             <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
               <h3 style="margin:0">后台答题任务</h3>
@@ -8737,6 +9041,8 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       mobileSidebarOpen.value=false;
       if(v==='model-cooldown')startCooldownPolling();
       else stopCooldownPolling();
+      if(v==='ai-tasks')startAiTaskLive();
+      else stopAiTaskLive();
     });
     window.addEventListener('resize',()=>{isMobile.value=window.innerWidth<=768;});
     // 支付明细
@@ -8825,6 +9131,23 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     const aiTaskTotal=ref(0);
     const aiTaskTotalPages=computed(()=>Math.max(1,Math.ceil(aiTaskTotal.value/20)));
     const aiTaskCounts=ref({queued:0,running:0,waiting:0,solved:0,failed:0,stopped:0,pending:0});
+    // 实时看板：live 是正在调用模型的内存态，tasks 是排队/等待，events 是最近调度事件
+    const aiLive=ref({live:[],tasks:[],events:[],counts:{},workers:6,now:0});
+    const aiLiveConnected=ref(false);
+    const aiLiveNow=ref(0);
+    const aiLiveOffset=ref(0);
+    let aiLiveTimer=null;
+    let aiLiveTickTimer=null;
+    const aiLiveRunning=computed(()=>aiLive.value.live||[]);
+    const aiLiveQueue=computed(()=>(aiLive.value.tasks||[]).filter(t=>t.status==='queued'||t.status==='waiting'));
+    const aiLiveEvents=computed(()=>aiLive.value.events||[]);
+    const aiLiveCounts=computed(()=>({queued:0,running:0,waiting:0,solved:0,failed:0,stopped:0,pending:0,...(aiLive.value.counts||{})}));
+    const aiLiveWorkers=computed(()=>Number(aiLive.value.workers||6));
+    const aiLiveClock=computed(()=>{
+      const d=new Date((aiLiveNow.value||Date.now()/1000)*1000);
+      const p=n=>String(n).padStart(2,'0');
+      return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
+    });
     const feedbackAutoCloseDays=ref(7);
     const cardPayLabel=ref('卡密');
     const feedbackDetail=ref(null);
@@ -9636,8 +9959,88 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       if(d){
         showMsg(d.msg||'操作成功','success');
         loadAiTasks();
+        loadAiTasksLive();
         if(action!=='delete')loadDashboard();
       }
+    }
+    let aiLiveFetching=false;
+    async function loadAiTasksLive(){
+      if(!token.value||aiLiveFetching)return;
+      aiLiveFetching=true;
+      try{
+        const res=await safeFetch('/admin/ai-tasks/live',{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200){
+          const serverNow=Number(d.now||Date.now()/1000);
+          aiLiveOffset.value=serverNow-Date.now()/1000;
+          aiLiveNow.value=serverNow;
+          aiLive.value={live:d.live||[],tasks:d.tasks||[],events:d.events||[],counts:d.counts||{},workers:d.workers||6,now:serverNow};
+          aiLiveConnected.value=true;
+          if(d.counts)aiTaskCounts.value=aiTaskCountsFrom(d.counts);
+        }else if(d.code===403){
+          logout();showMsg('登录已过期','error');
+        }else{
+          aiLiveConnected.value=false;
+        }
+      }catch(e){
+        aiLiveConnected.value=false;
+      }finally{
+        aiLiveFetching=false;
+      }
+    }
+    function startAiTaskLive(){
+      stopAiTaskLive();
+      aiLiveNow.value=Date.now()/1000;
+      loadAiTasksLive();
+      aiLiveTimer=setInterval(loadAiTasksLive,2000);
+      aiLiveTickTimer=setInterval(()=>{aiLiveNow.value=Date.now()/1000+aiLiveOffset.value;},1000);
+    }
+    function stopAiTaskLive(){
+      if(aiLiveTimer){clearInterval(aiLiveTimer);aiLiveTimer=null;}
+      if(aiLiveTickTimer){clearInterval(aiLiveTickTimer);aiLiveTickTimer=null;}
+    }
+    function liveElapsed(ts){
+      const n=Number(ts||0);
+      return n>0?Math.max(0,aiLiveNow.value-n):0;
+    }
+    function liveDuration(sec){
+      sec=Math.max(0,Math.floor(Number(sec)||0));
+      if(sec<60)return sec+' 秒';
+      if(sec<3600)return Math.floor(sec/60)+' 分 '+String(sec%60).padStart(2,'0')+' 秒';
+      return Math.floor(sec/3600)+' 小时 '+Math.floor((sec%3600)/60)+' 分';
+    }
+    function formatCountdown(sec){
+      sec=Math.max(0,Math.floor(Number(sec)||0));
+      if(sec<60)return sec+'s';
+      return Math.floor(sec/60)+':'+String(sec%60).padStart(2,'0');
+    }
+    function queueCountdown(t){
+      if(!t||t.retry_in===null||t.retry_in===undefined)return -1;
+      const base=Number(aiLive.value.now||aiLiveNow.value||0);
+      const passed=Math.max(0,aiLiveNow.value-base);
+      return Math.max(0,Number(t.retry_in)-passed);
+    }
+    function eventAgo(ts){
+      const sec=Math.max(0,Math.floor(aiLiveNow.value-Number(ts||0)));
+      if(sec<5)return '刚刚';
+      if(sec<60)return sec+' 秒前';
+      if(sec<3600)return Math.floor(sec/60)+' 分前';
+      return Math.floor(sec/3600)+' 小时前';
+    }
+    function relayClass(card,idx){
+      const cur=Number(card.model_index||0);
+      return {'is-done':idx<cur,'is-active':idx===cur&&card.status==='calling','is-next':idx===cur&&card.status!=='calling'};
+    }
+    function relayLabel(card,idx){
+      const cur=Number(card.model_index||0);
+      if(idx<cur)return '已尝试';
+      if(idx===cur)return card.status==='calling'?'调用中':'下一个';
+      return '候补';
+    }
+    function liveProgress(card){
+      if(!card||card.status!=='calling'||!card.budget_seconds)return 0;
+      const pct=liveElapsed(card.attempt_started_at||card.started_at)/Number(card.budget_seconds)*100;
+      return Math.max(0,Math.min(100,Math.round(pct||0)));
     }
     function aiTaskStatusText(s){return {queued:'排队中',running:'运行中',waiting:'等待重试',solved:'已解决',failed:'已失败',stopped:'已停止'}[s]||s||'-';}
     function modelStatusText(s){return {active:'启用中',disabled:'已停用',deleted:'已删除',expired:'已到期',provider_disabled:'服务商停用',hub:'中控'}[s]||s||'-';}
@@ -10383,6 +10786,8 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     adaptList,adaptFilter,adaptPage,adaptTotal,adaptTotalPages,adaptDetail,adaptAdminNote,adaptPending,adaptUrgent,loadAdaptPending,
     modelStatsDays,modelStatsRows,modelStatsLoading,modelStatsFilter,modelStatsKeyword,modelStatsFilteredRows,modelStatusText,modelStatusStyle,loadModelStats,disableModel,
     aiTaskList,aiTaskFilter,aiTaskPage,aiTaskTotal,aiTaskTotalPages,aiTaskCounts,loadAiTasks,aiTaskAction,aiTaskStatusText,aiTaskStatusStyle,
+    aiLiveRunning,aiLiveQueue,aiLiveEvents,aiLiveCounts,aiLiveWorkers,aiLiveClock,aiLiveConnected,loadAiTasksLive,startAiTaskLive,stopAiTaskLive,
+    liveElapsed,liveDuration,formatCountdown,queueCountdown,eventAgo,relayClass,relayLabel,liveProgress,
     loadAdaptRequests,adaptPrev,adaptNext,openAdaptDetail,setAdaptStatus,copyAdaptText,
     adsList,adsEdit,adsSaving,adsUploading,newAd,editAd,loadAds,saveAd,toggleAd,deleteAd,pickAdImage,onAdFileChange,
    aiPolishing,aiPolishReply,testingModel,testingNewProvider,testModel,testNewProvider,modelTestResults,newProviderTestResult,
