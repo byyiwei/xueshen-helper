@@ -831,13 +831,10 @@ HUB_PAY_REFUND_TARGET = "/open/pay/refund"
 HUB_PAY_NOTIFY_PATH = "/api/payment/notify/hub"
 HUB_PAY_DEFAULT_NOTIFY = "https://xs.openget.cn/api/payment/notify/hub"
 HUB_PAY_SYNC_MIN_INTERVAL = 2.0
-# 回调不可靠（河马付偶尔丢推送），用户在前端等付款结果时主动让中控查一次渠道。
-# 5 秒：页面开着时基本几秒内到账；只对「还在等待支付」的单子生效，同一单节流。
-HUB_PAY_PROBE_MIN_INTERVAL = 5.0
-HUB_PAY_PROBE_MIN_AGE = 6.0
+# 渠道查单由中控负责（中控 GET 订单时会顺手查渠道，5 秒冷却），本端只读中控订单状态，
+# 不再重复调 /open/pay/query，免得同一笔订单被两条路径反复查渠道。
 
 _hub_pay_sync_ts = {}
-_hub_pay_probe_ts = {}
 _hub_pay_sync_lock = threading.Lock()
 
 
@@ -1220,32 +1217,6 @@ def hub_pay_sync_order(order_no, force=False):
         return False, "等待付款", order
     status = str(data.get("status") or "")
     channel = str(data.get("channel") or "")[:32]
-    if status == "USER_PAYING":
-        # 渠道回调可能没送到中控（河马付偶发），只 GET 中控会一直等到它两分钟一次的兜底查单。
-        # 用户还在页面上等结果时，隔一会儿主动让中控查一次渠道，十几秒内就能确认到账。
-        try:
-            created = order.get("created_at")
-            if isinstance(created, str):
-                created = datetime.strptime(created.split(".")[0], "%Y-%m-%d %H:%M:%S")
-            age = (datetime.now() - created).total_seconds() if isinstance(created, datetime) else 999
-        except Exception:
-            age = 999
-        if age >= HUB_PAY_PROBE_MIN_AGE:
-            probe_now = time.time()
-            with _hub_pay_sync_lock:
-                do_probe = probe_now - _hub_pay_probe_ts.get(order_no, 0) >= HUB_PAY_PROBE_MIN_INTERVAL
-                if do_probe:
-                    _hub_pay_probe_ts[order_no] = probe_now
-                if len(_hub_pay_probe_ts) > 5000:
-                    for k in [k for k, ts in _hub_pay_probe_ts.items() if probe_now - ts > 3600]:
-                        _hub_pay_probe_ts.pop(k, None)
-            if do_probe:
-                ok_q, data_q, _st_q = _hub_post_json(
-                    "/open/pay/query", {"outTradeNo": order_no}, timeout=8)
-                if ok_q and isinstance(data_q, dict):
-                    data = data_q
-                    status = str(data.get("status") or status)
-                    channel = str(data.get("channel") or channel)[:32]
     if channel and channel != (order.get("hub_channel") or ""):
         db.update_order_payment(order_no, hub_channel=channel)
     if status == "PAID":
