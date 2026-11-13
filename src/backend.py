@@ -8544,11 +8544,37 @@ class Handler(BaseHTTPRequestHandler):
                     err = int(r.get("err") or 0)
                     img_calls = int(r.get("img_calls") or 0)
                     img_err = int(r.get("img_err") or 0)
+                    pk = r.get("provider_key") or ""
+                    model_name = r.get("model") or ""
+                    pinfo = PROVIDERS.get(pk) or {}
+                    cfg_status = "deleted"
+                    weight_now = 0
+                    if pk == HUB_PROVIDER_KEY:
+                        cfg_status = "hub"
+                    elif pinfo:
+                        matched = None
+                        for m in (pinfo.get("models") or []):
+                            if str(m.get("value") or "") == model_name:
+                                matched = m
+                                break
+                        if matched is None:
+                            cfg_status = "deleted"
+                        else:
+                            weight_now = int(matched.get("weight") or 0)
+                            if weight_now <= 0:
+                                cfg_status = "disabled"
+                            elif is_model_expired(matched):
+                                cfg_status = "expired"
+                            elif not pinfo.get("enabled"):
+                                cfg_status = "provider_disabled"
+                            else:
+                                cfg_status = "active"
                     out.append({
-                        "provider": r.get("provider_key") or "",
-                        "provider_title": ((PROVIDERS.get(r.get("provider_key") or "") or {}).get("title")
-                                           or r.get("provider_key") or ""),
-                        "model": r.get("model") or "",
+                        "provider": pk,
+                        "provider_title": (pinfo.get("title") or pk),
+                        "model": model_name,
+                        "config_status": cfg_status,
+                        "weight": weight_now,
                         "calls": calls, "ok": int(r.get("ok") or 0), "err": err,
                         "error_rate": round(err * 100.0 / max(1, calls), 1),
                         "timeout": int(r.get("timeout_cnt") or 0),

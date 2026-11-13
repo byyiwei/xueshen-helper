@@ -4112,6 +4112,16 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
             <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
               <h3 style="margin:0">模型失败统计</h3>
               <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <input v-model="modelStatsKeyword" class="form-control" placeholder="搜索模型/服务商" style="width:170px;padding:6px 10px;font-size:13px">
+                <select v-model="modelStatsFilter" class="form-control" style="width:132px;padding:6px 10px;font-size:13px">
+                  <option value="">全部状态</option>
+                  <option value="active">启用中</option>
+                  <option value="inactive">已停用/已删除</option>
+                  <option value="disabled">已停用</option>
+                  <option value="deleted">已删除</option>
+                  <option value="expired">已到期</option>
+                  <option value="provider_disabled">服务商停用</option>
+                </select>
                 <button class="date-quick" :class="{active:modelStatsDays===1}" @click="modelStatsDays=1;loadModelStats()">今天</button>
                 <button class="date-quick" :class="{active:modelStatsDays===7}" @click="modelStatsDays=7;loadModelStats()">近7天</button>
                 <button class="date-quick" :class="{active:modelStatsDays===30}" @click="modelStatsDays=30;loadModelStats()">近30天</button>
@@ -4121,12 +4131,13 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
             <div class="card-body" style="padding:0;overflow-x:auto">
               <table class="data-table">
                 <thead><tr>
-                  <th>模型</th><th>服务商</th><th style="width:70px">调用</th><th style="width:70px">成功</th><th style="width:70px">失败</th><th style="width:90px">失败率</th><th style="width:70px">超时</th><th style="width:60px">429</th><th style="width:60px">400</th><th style="width:60px">5xx</th><th style="width:80px">平均耗时</th><th style="width:110px">图片失败</th><th style="width:80px">操作</th>
+                  <th>模型</th><th>服务商</th><th style="width:100px">当前状态</th><th style="width:70px">调用</th><th style="width:70px">成功</th><th style="width:70px">失败</th><th style="width:90px">失败率</th><th style="width:70px">超时</th><th style="width:60px">429</th><th style="width:60px">400</th><th style="width:60px">5xx</th><th style="width:80px">平均耗时</th><th style="width:110px">图片失败</th><th style="width:80px">操作</th>
                 </tr></thead>
                 <tbody>
-                  <tr v-for="r in modelStatsRows" :key="r.provider+'/'+r.model" :style="(r.calls>=20&&r.error_rate>=50)?'background:rgba(239,68,68,.06)':''">
+                  <tr v-for="r in modelStatsFilteredRows" :key="r.provider+'/'+r.model" :style="(r.calls>=20&&r.error_rate>=50)?'background:rgba(239,68,68,.06)':''">
                     <td style="font-weight:600;font-size:12.5px">{{r.model}}</td>
                     <td style="font-size:12px;color:var(--text3)">{{r.provider_title||r.provider||'-'}}</td>
+                    <td><span :style="modelStatusStyle(r.config_status)">{{modelStatusText(r.config_status)}}</span></td>
                     <td>{{r.calls}}</td>
                     <td style="color:var(--success)">{{r.ok}}</td>
                     <td :style="{color:r.err?'var(--danger)':'var(--text3)'}">{{r.err}}</td>
@@ -4137,14 +4148,14 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
                     <td>{{r.server_error}}</td>
                     <td>{{r.avg_ms?(r.avg_ms/1000).toFixed(1)+'s':'-'}}</td>
                     <td style="font-size:12px"><span v-if="r.img_calls">{{r.img_err}}/{{r.img_calls}}（{{r.img_error_rate}}%）</span><span v-else style="color:var(--text3)">-</span></td>
-                    <td><button v-if="r.provider!=='hub'" class="btn btn-secondary" style="padding:3px 10px;font-size:12px" @click="disableModel(r)">停用</button><span v-else style="font-size:12px;color:var(--text3)">中控</span></td>
+                    <td><button v-if="r.config_status==='active'" class="btn btn-secondary" style="padding:3px 10px;font-size:12px" @click="disableModel(r)">停用</button><span v-else style="font-size:12px;color:var(--text3)">{{r.config_status==='hub'?'中控':modelStatusText(r.config_status)}}</span></td>
                   </tr>
-                  <tr v-if="modelStatsRows.length===0"><td colspan="13" style="padding:30px;text-align:center;color:var(--text3)">暂无模型调用数据</td></tr>
+                  <tr v-if="modelStatsFilteredRows.length===0"><td colspan="14" style="padding:30px;text-align:center;color:var(--text3)">{{modelStatsRows.length?'当前筛选没有模型':'暂无模型调用数据'}}</td></tr>
                 </tbody>
               </table>
             </div>
             <div class="card-body" style="padding:12px 20px;border-top:1px solid var(--border);font-size:12px;color:var(--text3)">
-              失败率 = 失败次数 / 调用次数。调用满 20 次且失败率达到 50% 的行会标红，建议核对后停用。停用会把模型权重设为 0，立即不再进入自动答题候选。
+              失败率 = 失败次数 / 调用次数。调用满 20 次且失败率达到 50% 的行会标红，建议核对后停用。停用会把模型权重设为 0，立即不再进入自动答题候选。「当前状态」按现在的模型配置实时判断：已删除表示配置里已经没有这个模型，历史调用记录仍保留；已停用表示权重为 0；已到期、服务商停用也都不会再被自动调用。
             </div>
           </div>
         </div>
@@ -8792,6 +8803,21 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     const modelStatsDays=ref(1);
     const modelStatsRows=ref([]);
     const modelStatsLoading=ref(false);
+    const modelStatsFilter=ref('');
+    const modelStatsKeyword=ref('');
+    const modelStatsFilteredRows=computed(()=>{
+      const f=modelStatsFilter.value;
+      const kw=modelStatsKeyword.value.trim().toLowerCase();
+      return modelStatsRows.value.filter(r=>{
+        if(f==='inactive'){if(r.config_status==='active'||r.config_status==='hub')return false;}
+        else if(f&&r.config_status!==f)return false;
+        if(kw){
+          const text=((r.model||'')+' '+(r.provider_title||'')+' '+(r.provider||'')).toLowerCase();
+          if(!text.includes(kw))return false;
+        }
+        return true;
+      });
+    });
     const aiTaskList=ref([]);
     const aiTaskFilter=ref('');
     const aiTaskPage=ref(1);
@@ -9613,6 +9639,12 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       }
     }
     function aiTaskStatusText(s){return {queued:'排队中',running:'运行中',waiting:'等待重试',solved:'已解决',failed:'已失败',stopped:'已停止'}[s]||s||'-';}
+    function modelStatusText(s){return {active:'启用中',disabled:'已停用',deleted:'已删除',expired:'已到期',provider_disabled:'服务商停用',hub:'中控'}[s]||s||'-';}
+    function modelStatusStyle(s){
+      const map={active:['rgba(16,185,129,.13)','#10b981'],disabled:['rgba(245,158,11,.14)','#f59e0b'],deleted:['rgba(148,163,184,.16)','#94a3b8'],expired:['rgba(148,163,184,.16)','#94a3b8'],provider_disabled:['rgba(239,68,68,.12)','#ef4444'],hub:['rgba(96,165,250,.14)','#60a5fa']};
+      const c=map[s]||map.deleted;
+      return {display:'inline-block',padding:'2px 8px',borderRadius:'10px',fontSize:'12px',whiteSpace:'nowrap',background:c[0],color:c[1]};
+    }
     function aiTaskStatusStyle(s){
       const map={queued:['rgba(96,165,250,.14)','#60a5fa'],running:['rgba(16,185,129,.14)','#10b981'],waiting:['rgba(245,158,11,.14)','#f59e0b'],solved:['rgba(16,185,129,.12)','#10b981'],failed:['rgba(239,68,68,.14)','#ef4444'],stopped:['rgba(148,163,184,.16)','#94a3b8']};
       const c=map[s]||map.stopped;
@@ -10348,7 +10380,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     feedbackAutoCloseDays,loadFeedbackAutoClose,saveFeedbackAutoClose,cardPayLabel,
     feedbackNotifyEnabled,loadFeedbackNotify,saveFeedbackNotify,
     adaptList,adaptFilter,adaptPage,adaptTotal,adaptTotalPages,adaptDetail,adaptAdminNote,adaptPending,adaptUrgent,loadAdaptPending,
-    modelStatsDays,modelStatsRows,modelStatsLoading,loadModelStats,disableModel,
+    modelStatsDays,modelStatsRows,modelStatsLoading,modelStatsFilter,modelStatsKeyword,modelStatsFilteredRows,modelStatusText,modelStatusStyle,loadModelStats,disableModel,
     aiTaskList,aiTaskFilter,aiTaskPage,aiTaskTotal,aiTaskTotalPages,aiTaskCounts,loadAiTasks,aiTaskAction,aiTaskStatusText,aiTaskStatusStyle,
     loadAdaptRequests,adaptPrev,adaptNext,openAdaptDetail,setAdaptStatus,copyAdaptText,
     adsList,adsEdit,adsSaving,adsUploading,newAd,editAd,loadAds,saveAd,toggleAd,deleteAd,pickAdImage,onAdFileChange,
