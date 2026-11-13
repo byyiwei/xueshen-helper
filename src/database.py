@@ -929,6 +929,37 @@ class Database:
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
 
+        # ===== 后台AI答题任务池 =====
+        # 用户请求不再占着连接等模型；题目进池子后由后台线程反复换模型试，
+        # 成功写 answer 并回填 AI 缓存，失败按 next_retry_at 间隔重试。
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS ai_answer_tasks (
+                id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                task_key CHAR(64) NOT NULL COMMENT '题目指纹（题面+题型+选项+图片）',
+                status VARCHAR(16) NOT NULL DEFAULT 'queued' COMMENT 'queued/running/waiting/solved/failed/stopped',
+                question LONGTEXT COMMENT '原始题目 JSON（含图片）',
+                question_text TEXT COMMENT '题干预览',
+                question_type VARCHAR(16) DEFAULT '' COMMENT '题型',
+                has_image TINYINT NOT NULL DEFAULT 0,
+                answer LONGTEXT COMMENT '成功答案',
+                answer_model VARCHAR(255) DEFAULT '',
+                answer_provider VARCHAR(100) DEFAULT '',
+                attempts INT NOT NULL DEFAULT 0 COMMENT '累计模型尝试次数',
+                round_no INT NOT NULL DEFAULT 0 COMMENT '已跑完的轮次',
+                tried_models LONGTEXT COMMENT '本轮/累计尝试的模型与错误',
+                last_error TEXT,
+                username VARCHAR(50) DEFAULT '',
+                client_ip VARCHAR(64) DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                solved_at TIMESTAMP NULL,
+                next_retry_at TIMESTAMP NULL,
+                UNIQUE KEY uniq_ai_task_key (task_key),
+                INDEX idx_ai_task_status (status, next_retry_at),
+                INDEX idx_ai_task_created (created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
         # ===== 面板广告位 =====
         self.execute("""
             CREATE TABLE IF NOT EXISTS ads (
@@ -4733,6 +4764,108 @@ class Database:
             params
         ) or []
         return rows, total
+
+    # ==================== 后台AI答题任务池 ====================
+    _AI_TASK_FIELDS = {
+        "status", "answer", "answer_model", "answer_provider", "attempts",
+        "round_no", "tried_models", "last_error", "next_retry_at", "solved_at",
+    }
+
+    def get_ai_answer_task(self, task_key=None, task_id=None):
+        ph = _ph()
+        if task_key:
+            return self.fetchone(f"SELECT * FROM ai_answer_tasks WHERE task_key={ph}", (task_key,))
+        if task_id:
+            return self.fetchone(f"SELECT * FROM ai_answer_tasks WHERE id={ph}", (int(task_id),))
+        return None
+
+    def create_ai_answer_task(self, data):
+        """按 task_key 建任务；已存在则不加新行，返回现有任务。
+
+        用 INSERT IGNORE + 再查，保证同一道题并发提交也只产生一条任务。
+        """
+        ph = _ph()
+        task_key = str(data.get("task_key") or "")
+        if not task_key:
+            return None
+        self.execute(
+            f"""INSERT IGNORE INTO ai_answer_tasks
+            (task_key, status, question, question_text, question_type, has_image,
+             username, client_ip, next_retry_at)
+            VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},NOW())""",
+            (task_key, "queued", data.get("question") or "",
+             (data.get("question_text") or "")[:5000], data.get("question_type") or "",
+             1 if data.get("has_image") else 0,
+             data.get("username") or "", data.get("client_ip") or "")
+        )
+        return self.get_ai_answer_task(task_key=task_key)
+
+    def claim_ai_answer_task(self):
+        """取一条到期的待答任务并原子标成 running。
+
+        单进程内由 backend 的任务锁串行调用；这里再用 status 条件更新兜一次，
+        避免重启后两个 worker 同时接到同一条。
+        """
+        row = self.fetchone(
+            "SELECT * FROM ai_answer_tasks "
+            "WHERE status IN ('queued','waiting') "
+            "AND (next_retry_at IS NULL OR next_retry_at <= NOW()) "
+            "ORDER BY id ASC LIMIT 1"
+        )
+        if not row:
+            return None
+        cur = self.execute(
+            "UPDATE ai_answer_tasks SET status='running' "
+            "WHERE id=%s AND status IN ('queued','waiting')",
+            (int(row["id"]),)
+        )
+        if getattr(cur, "rowcount", 0) != 1:
+            return None
+        row["status"] = "running"
+        return row
+
+    def update_ai_answer_task(self, task_id, **fields):
+        ph = _ph()
+        clean = {k: v for k, v in fields.items() if k in self._AI_TASK_FIELDS}
+        if not clean:
+            return
+        sets = ", ".join(f"{k}={ph}" for k in clean)
+        params = list(clean.values()) + [int(task_id)]
+        self.execute(f"UPDATE ai_answer_tasks SET {sets} WHERE id={ph}", tuple(params))
+
+    def list_ai_answer_tasks(self, status="", page=1, page_size=20):
+        ph = _ph()
+        page = max(1, int(page or 1))
+        page_size = min(max(1, int(page_size or 20)), 100)
+        where = ""
+        params = []
+        if status:
+            where = f" WHERE status={ph}"
+            params.append(status)
+        total_row = self.fetchone(f"SELECT COUNT(*) AS cnt FROM ai_answer_tasks{where}", tuple(params)) or {}
+        offset = (page - 1) * page_size
+        rows = self.fetchall(
+            f"SELECT * FROM ai_answer_tasks{where} ORDER BY "
+            f"CASE status WHEN 'running' THEN 0 WHEN 'queued' THEN 1 WHEN 'waiting' THEN 2 ELSE 3 END, "
+            f"updated_at DESC LIMIT {ph} OFFSET {ph}",
+            tuple(params + [page_size, offset])
+        ) or []
+        return rows, int(total_row.get("cnt") or 0)
+
+    def count_ai_answer_tasks(self, status=""):
+        ph = _ph()
+        if status:
+            row = self.fetchone(f"SELECT COUNT(*) AS cnt FROM ai_answer_tasks WHERE status={ph}", (status,)) or {}
+        else:
+            row = self.fetchone("SELECT COUNT(*) AS cnt FROM ai_answer_tasks") or {}
+        return int(row.get("cnt") or 0)
+
+    def reset_running_ai_answer_tasks(self):
+        """进程重启后，把上次没跑完的 running 任务放回队列。"""
+        self.execute("UPDATE ai_answer_tasks SET status='waiting', next_retry_at=NOW() WHERE status='running'")
+
+    def delete_ai_answer_task(self, task_id):
+        self.execute("DELETE FROM ai_answer_tasks WHERE id=%s", (int(task_id),))
 
     # ===== 广告位管理 =====
     def list_ads(self, only_enabled=False, with_stats=False):

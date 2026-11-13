@@ -1294,7 +1294,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
 
         <!-- 模型服务组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.models}">
-          <div class="menu-group-header dock-item" :class="{active:['ai-config','ai-logs','model-cooldown'].includes(page)}" @click="expandedGroups.models=!expandedGroups.models">
+          <div class="menu-group-header dock-item" :class="{active:['ai-config','ai-logs','model-health','ai-tasks','model-cooldown'].includes(page)}" @click="expandedGroups.models=!expandedGroups.models">
             <svg class="ui-icon sm"><use href="#i-cpu"></use></svg>模型服务
             <svg class="ui-icon xs arrow"><use href="#i-chevron-right"></use></svg>
           </div>
@@ -1304,6 +1304,12 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
             </div>
             <div class="menu-item" :class="{active:page==='ai-logs'}" @click="page='ai-logs';loadAiLogs()">
               <svg class="ui-icon sm"><use href="#i-activity"></use></svg>模型日志
+            </div>
+            <div class="menu-item" :class="{active:page==='model-health'}" @click="page='model-health';loadModelStats()">
+              <svg class="ui-icon sm"><use href="#i-shield"></use></svg>模型健康
+            </div>
+            <div class="menu-item" :class="{active:page==='ai-tasks'}" @click="page='ai-tasks';loadAiTasks()">
+              <svg class="ui-icon sm"><use href="#i-clock"></use></svg>失败池<span v-if="aiTaskCounts.pending" :style="{marginLeft:'auto',minWidth:'18px',padding:'0 5px',height:'18px',lineHeight:'18px',textAlign:'center',borderRadius:'9px',background:'var(--warning)',color:'#fff',fontSize:'11px',fontWeight:'600'}">{{aiTaskCounts.pending}}</span>
             </div>
             <div class="menu-item" :class="{active:page==='model-cooldown'}" @click="page='model-cooldown'">
               <svg class="ui-icon sm"><use href="#i-clock"></use></svg>冷却队列
@@ -1513,6 +1519,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
             <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(245,158,11,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='feedback';expandedGroups.referral=true;loadFeedbackList()"><div class="metric-label">待处理反馈</div><div class="metric-value" style="color:var(--warning)">{{feedbackPendingCount||0}}</div><div class="metric-sub">点击查看处理 →</div></div>
             <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(239,68,68,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='refund-requests';loadRefundRequests()"><div class="metric-label">待处理退款</div><div class="metric-value" style="color:var(--danger)">{{dashboard.cards?.refund_pending||0}}</div><div class="metric-sub">点击查看处理 →</div></div>
             <div class="metric-card" :style="{cursor:'pointer',transition:'border-color .2s',borderColor:adaptPending?'rgba(245,158,11,.45)':''}" onmouseover="this.style.borderColor='rgba(245,158,11,.4)'" onmouseout="this.style.borderColor=adaptPending?'rgba(245,158,11,.45)':''" @click="page='adapt-requests';loadAdaptRequests()"><div class="metric-label">待评估定制需求</div><div class="metric-value" :style="{color:adaptPending?'var(--warning)':'var(--text)'}">{{adaptPending}}</div><div class="metric-sub"><span v-if="adaptUrgent" style="color:var(--danger,#ef4444);font-weight:600">加急 {{adaptUrgent}} · </span>点击查看处理 →</div></div>
+            <div class="metric-card" :style="{cursor:'pointer',transition:'border-color .2s',borderColor:aiTaskCounts.pending?'rgba(239,68,68,.45)':''}" onmouseover="this.style.borderColor='rgba(239,68,68,.4)'" onmouseout="this.style.borderColor=aiTaskCounts.pending?'rgba(239,68,68,.45)':''" @click="page='ai-tasks';loadAiTasks()"><div class="metric-label">失败池待处理</div><div class="metric-value" :style="{color:aiTaskCounts.pending?'var(--danger)':'var(--text)'}">{{aiTaskCounts.pending||0}}</div><div class="metric-sub">后台仍在轮流尝试 · 点击查看 →</div></div>
           </div>
           <div class="dash-grid">
             <div class="chart-card">
@@ -4094,6 +4101,114 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
           </div>
         </div>
       </template>
+      <template v-if="page==='model-health'">
+        <header class="main-header">
+          <h2>模型健康</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index<breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="card">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+              <h3 style="margin:0">模型失败统计</h3>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <button class="date-quick" :class="{active:modelStatsDays===1}" @click="modelStatsDays=1;loadModelStats()">今天</button>
+                <button class="date-quick" :class="{active:modelStatsDays===7}" @click="modelStatsDays=7;loadModelStats()">近7天</button>
+                <button class="date-quick" :class="{active:modelStatsDays===30}" @click="modelStatsDays=30;loadModelStats()">近30天</button>
+                <button class="btn btn-secondary" style="padding:6px 14px" :disabled="modelStatsLoading" @click="loadModelStats()">{{modelStatsLoading?'加载中...':'刷新'}}</button>
+              </div>
+            </div>
+            <div class="card-body" style="padding:0;overflow-x:auto">
+              <table class="data-table">
+                <thead><tr>
+                  <th>模型</th><th>服务商</th><th style="width:70px">调用</th><th style="width:70px">成功</th><th style="width:70px">失败</th><th style="width:90px">失败率</th><th style="width:70px">超时</th><th style="width:60px">429</th><th style="width:60px">400</th><th style="width:60px">5xx</th><th style="width:80px">平均耗时</th><th style="width:110px">图片失败</th><th style="width:80px">操作</th>
+                </tr></thead>
+                <tbody>
+                  <tr v-for="r in modelStatsRows" :key="r.provider+'/'+r.model" :style="(r.calls>=20&&r.error_rate>=50)?'background:rgba(239,68,68,.06)':''">
+                    <td style="font-weight:600;font-size:12.5px">{{r.model}}</td>
+                    <td style="font-size:12px;color:var(--text3)">{{r.provider_title||r.provider||'-'}}</td>
+                    <td>{{r.calls}}</td>
+                    <td style="color:var(--success)">{{r.ok}}</td>
+                    <td :style="{color:r.err?'var(--danger)':'var(--text3)'}">{{r.err}}</td>
+                    <td><span :style="{fontWeight:'600',color:r.error_rate>=50&&r.calls>=20?'var(--danger)':r.error_rate>=20?'var(--warning)':'var(--success)'}">{{r.error_rate}}%</span></td>
+                    <td>{{r.timeout}}</td>
+                    <td>{{r.limited}}</td>
+                    <td>{{r.bad_request}}</td>
+                    <td>{{r.server_error}}</td>
+                    <td>{{r.avg_ms?(r.avg_ms/1000).toFixed(1)+'s':'-'}}</td>
+                    <td style="font-size:12px"><span v-if="r.img_calls">{{r.img_err}}/{{r.img_calls}}（{{r.img_error_rate}}%）</span><span v-else style="color:var(--text3)">-</span></td>
+                    <td><button v-if="r.provider!=='hub'" class="btn btn-secondary" style="padding:3px 10px;font-size:12px" @click="disableModel(r)">停用</button><span v-else style="font-size:12px;color:var(--text3)">中控</span></td>
+                  </tr>
+                  <tr v-if="modelStatsRows.length===0"><td colspan="13" style="padding:30px;text-align:center;color:var(--text3)">暂无模型调用数据</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="card-body" style="padding:12px 20px;border-top:1px solid var(--border);font-size:12px;color:var(--text3)">
+              失败率 = 失败次数 / 调用次数。调用满 20 次且失败率达到 50% 的行会标红，建议核对后停用。停用会把模型权重设为 0，立即不再进入自动答题候选。
+            </div>
+          </div>
+        </div>
+      </template>
+      <template v-if="page==='ai-tasks'">
+        <header class="main-header">
+          <h2>失败池</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index<breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="card">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+              <h3 style="margin:0">后台答题任务</h3>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <span style="font-size:12px;color:var(--text3)">排队 {{aiTaskCounts.queued||0}} · 运行 {{aiTaskCounts.running||0}} · 等待 {{aiTaskCounts.waiting||0}} · 已解决 {{aiTaskCounts.solved||0}}</span>
+                <select v-model="aiTaskFilter" class="form-control" style="width:140px;padding:6px 10px;font-size:13px" @change="aiTaskPage=1;loadAiTasks()">
+                  <option value="">全部状态</option>
+                  <option value="queued">排队中</option>
+                  <option value="running">运行中</option>
+                  <option value="waiting">等待重试</option>
+                  <option value="solved">已解决</option>
+                  <option value="failed">已失败</option>
+                  <option value="stopped">已停止</option>
+                </select>
+                <button class="btn btn-secondary" style="padding:6px 14px" @click="loadAiTasks()">刷新</button>
+              </div>
+            </div>
+            <div class="card-body" style="padding:0;overflow-x:auto">
+              <table class="data-table">
+                <thead><tr>
+                  <th style="width:60px">ID</th><th style="width:80px">状态</th><th>题目</th><th style="width:60px">图片</th><th style="width:60px">轮次</th><th style="width:70px">尝试</th><th>最后错误</th><th style="width:150px">下次重试/完成</th><th style="width:190px">操作</th>
+                </tr></thead>
+                <tbody>
+                  <tr v-for="r in aiTaskList" :key="r.id">
+                    <td>{{r.id}}</td>
+                    <td><span :style="aiTaskStatusStyle(r.status)">{{aiTaskStatusText(r.status)}}</span></td>
+                    <td style="font-size:12.5px;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="r.question_text">{{r.question_text||'-'}}</td>
+                    <td>{{r.has_image?'是':'-'}}</td>
+                    <td>{{r.round_no||0}}</td>
+                    <td>{{r.attempts||0}}</td>
+                    <td style="font-size:12px;color:var(--text3);max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="r.last_error">{{r.last_error||'-'}}</td>
+                    <td style="font-size:12px;color:var(--text3)">{{r.status==='solved'?(r.solved_at||'').replace('T',' ').substring(0,19):(r.next_retry_at||'').replace('T',' ').substring(0,19)||'-'}}</td>
+                    <td>
+                      <button class="btn btn-secondary" style="padding:3px 8px;font-size:12px" @click="aiTaskAction(r,'retry')">重试</button>
+                      <button v-if="r.status==='running'||r.status==='waiting'||r.status==='queued'" class="btn btn-secondary" style="padding:3px 8px;font-size:12px;margin-left:4px" @click="aiTaskAction(r,'stop')">停止</button>
+                      <button class="btn btn-secondary" style="padding:3px 8px;font-size:12px;margin-left:4px;color:var(--danger)" @click="aiTaskAction(r,'delete')">删除</button>
+                    </td>
+                  </tr>
+                  <tr v-if="aiTaskList.length===0"><td colspan="9" style="padding:30px;text-align:center;color:var(--text3)">池子里没有任务</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-top:1px solid var(--border)">
+              <div style="font-size:12px;color:var(--text3)">共 {{aiTaskTotal}} 条 · 每页 20 条</div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button class="btn btn-secondary" style="padding:4px 12px" :disabled="aiTaskPage<=1" @click="aiTaskPage--;loadAiTasks()">上一页</button>
+                <span style="font-size:13px">{{aiTaskPage}} / {{aiTaskTotalPages}}</span>
+                <button class="btn btn-secondary" style="padding:4px 12px" :disabled="aiTaskPage>=aiTaskTotalPages" @click="aiTaskPage++;loadAiTasks()">下一页</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
       <template v-if="page==='ai-logs'">
         <header class="main-header">
           <h2>模型调用日志</h2>
@@ -6629,6 +6744,8 @@ createApp({
       'script-logs':[{label:'日志监控',group:'logs'},{label:'脚本日志'}],
       'answer-stats':[{label:'题库中心',group:'questions'},{label:'答题统计'}],
       'ai-logs':[{label:'模型服务',group:'models'},{label:'模型日志'}],
+      'model-health':[{label:'模型服务',group:'models'},{label:'模型健康'}],
+      'ai-tasks':[{label:'模型服务',group:'models'},{label:'失败池'}],
       'bank-logs':[{label:'题库中心',group:'questions'},{label:'题库日志'}],
       'bank-analysis':[{label:'题库分析'}],
       'user-analysis':[{label:'用户分析'}],
@@ -7058,6 +7175,7 @@ createApp({
       await loadDashboard();
       await loadAdminAccount();
       loadAdaptPending();
+      refreshAiTaskCounts();
       startAdaptPendingPolling();
       // 侧栏「待审核代理商」角标：静默失败，不影响主流程
       try{
@@ -8589,7 +8707,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       card:{title:'卡密管理',icon:'i-key',items:[{page:'xianyu',label:'商品配置',icon:'i-store',load:loadXianyuConfig},{page:'card-keys',label:'卡密管理',icon:'i-key',load:loadCardKeys}]},
       distributor:{title:'代理商分销',icon:'i-flag',items:[{page:'distributor',label:'代理商',icon:'i-users',load:loadFxList},{page:'distributor-templates',label:'卡密模板',icon:'i-layers',load:()=>{loadFxOptions();loadFxTemplates();}},{page:'distributor-batches',label:'批次与卡密',icon:'i-package',load:()=>{loadFxOptions();loadFxBatches(1);}},{page:'distributor-withdrawals',label:'提现审核',icon:'i-wallet',load:()=>{loadFxOptions();loadFxWds(1);}},{page:'distributor-revenue',label:'收入统计',icon:'i-trending-up',load:loadFxRevenue},{page:'distributor-config',label:'分销配置',icon:'i-sliders',load:loadFxConfig}]},
       logs:{title:'日志监控',icon:'i-terminal',items:[{page:'script-logs',label:'脚本日志',icon:'i-terminal',load:loadScriptLogs},{page:'log-cleanup',label:'日志清理',icon:'i-trash-2',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'i-mail',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
-      models:{title:'模型服务',icon:'i-cpu',items:[{page:'ai-config',label:'模型配置',icon:'i-bot',load:loadConfig},{page:'ai-logs',label:'模型日志',icon:'i-activity',load:loadAiLogs},{page:'model-cooldown',label:'冷却队列',icon:'i-clock',load:()=>{}}]},
+      models:{title:'模型服务',icon:'i-cpu',items:[{page:'ai-config',label:'模型配置',icon:'i-bot',load:loadConfig},{page:'ai-logs',label:'模型日志',icon:'i-activity',load:loadAiLogs},{page:'model-health',label:'模型健康',icon:'i-shield',load:loadModelStats},{page:'ai-tasks',label:'失败池',icon:'i-clock',load:loadAiTasks},{page:'model-cooldown',label:'冷却队列',icon:'i-clock',load:()=>{}}]},
       config:{title:'系统配置',icon:'i-settings',items:[{page:'qq-bot',label:'QQ频道机器人',icon:'i-message-circle',load:loadQqBot},{page:'email-config',label:'邮箱配置',icon:'i-mail',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'sso-config',label:'单点登录',icon:'i-shield',load:loadSsoConfig},{page:'db-config',label:'系统设置',icon:'i-database',load:loadDbConfig}]}
     };
     function openMobileSubmenu(key,title,icon){
@@ -8670,6 +8788,16 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     const adaptUrgent=ref(0);
     let adaptPendingPollTimer=null;
     let adaptPendingFirstLoad=true;
+    // 模型健康 / 失败池
+    const modelStatsDays=ref(1);
+    const modelStatsRows=ref([]);
+    const modelStatsLoading=ref(false);
+    const aiTaskList=ref([]);
+    const aiTaskFilter=ref('');
+    const aiTaskPage=ref(1);
+    const aiTaskTotal=ref(0);
+    const aiTaskTotalPages=computed(()=>Math.max(1,Math.ceil(aiTaskTotal.value/20)));
+    const aiTaskCounts=ref({queued:0,running:0,waiting:0,solved:0,failed:0,stopped:0,pending:0});
     const feedbackAutoCloseDays=ref(7);
     const cardPayLabel=ref('卡密');
     const feedbackDetail=ref(null);
@@ -9423,7 +9551,72 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     }
     function startAdaptPendingPolling(){
       if(adaptPendingPollTimer)return;
-      adaptPendingPollTimer=setInterval(()=>loadAdaptPending(true),60000);
+      adaptPendingPollTimer=setInterval(()=>{loadAdaptPending(true);refreshAiTaskCounts();},60000);
+    }
+    // ========== 模型健康 / 失败池 ==========
+    async function loadModelStats(){
+      if(!token.value)return;
+      modelStatsLoading.value=true;
+      try{
+        const res=await safeFetch('/admin/model-stats?days='+modelStatsDays.value,{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200)modelStatsRows.value=d.rows||[];
+        else if(d.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(d.msg||'加载失败','error');
+      }catch(e){showMsg('加载模型统计失败','error');}
+      finally{modelStatsLoading.value=false;}
+    }
+    async function disableModel(row){
+      if(!row||!row.provider||!row.model)return;
+      if(row.provider==='hub'){showMsg('中控模型请到中控后台停用','warning');return;}
+      if(!window.confirm('停用「'+row.model+'」？停用后权重设为 0，自动答题不再使用它，可在模型配置里重新开启。'))return;
+      const d=await adminPost('/admin/model-disable',{provider:row.provider,model:row.model});
+      if(d){showMsg(d.msg||'已停用','success');loadModelStats();}
+    }
+    function aiTaskCountsFrom(c){
+      const counts=c||{};
+      return {...aiTaskCounts.value,...counts,pending:(Number(counts.queued||0)+Number(counts.running||0)+Number(counts.waiting||0))};
+    }
+    async function refreshAiTaskCounts(){
+      if(!token.value)return;
+      try{
+        const res=await safeFetch('/admin/ai-tasks?page=1',{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200)aiTaskCounts.value=aiTaskCountsFrom(d.counts);
+      }catch(_){}
+    }
+    async function loadAiTasks(){
+      if(!token.value)return;
+      const params=new URLSearchParams({page:String(aiTaskPage.value),page_size:'20'});
+      if(aiTaskFilter.value)params.set('status',aiTaskFilter.value);
+      try{
+        const res=await safeFetch('/admin/ai-tasks?'+params.toString(),{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200){
+          aiTaskList.value=d.rows||[];
+          aiTaskTotal.value=d.total||0;
+          aiTaskCounts.value=aiTaskCountsFrom(d.counts);
+        }
+        else if(d.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(d.msg||'加载失败','error');
+      }catch(e){showMsg('加载失败池失败','error');}
+    }
+    async function aiTaskAction(row,action){
+      if(!row)return;
+      if(action==='delete'&&!window.confirm('删除任务 #'+row.id+'？删除后这条题不会再自动重试。'))return;
+      if(action==='stop'&&!window.confirm('停止任务 #'+row.id+'？停止后不再自动重试。'))return;
+      const d=await adminPost('/admin/ai-tasks/action',{id:row.id,action});
+      if(d){
+        showMsg(d.msg||'操作成功','success');
+        loadAiTasks();
+        if(action!=='delete')loadDashboard();
+      }
+    }
+    function aiTaskStatusText(s){return {queued:'排队中',running:'运行中',waiting:'等待重试',solved:'已解决',failed:'已失败',stopped:'已停止'}[s]||s||'-';}
+    function aiTaskStatusStyle(s){
+      const map={queued:['rgba(96,165,250,.14)','#60a5fa'],running:['rgba(16,185,129,.14)','#10b981'],waiting:['rgba(245,158,11,.14)','#f59e0b'],solved:['rgba(16,185,129,.12)','#10b981'],failed:['rgba(239,68,68,.14)','#ef4444'],stopped:['rgba(148,163,184,.16)','#94a3b8']};
+      const c=map[s]||map.stopped;
+      return {display:'inline-block',padding:'2px 8px',borderRadius:'10px',fontSize:'12px',whiteSpace:'nowrap',background:c[0],color:c[1]};
     }
     async function loadAdaptRequests(){
       const params=new URLSearchParams({page:String(adaptPage.value),page_size:'20'});
@@ -10155,6 +10348,8 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     feedbackAutoCloseDays,loadFeedbackAutoClose,saveFeedbackAutoClose,cardPayLabel,
     feedbackNotifyEnabled,loadFeedbackNotify,saveFeedbackNotify,
     adaptList,adaptFilter,adaptPage,adaptTotal,adaptTotalPages,adaptDetail,adaptAdminNote,adaptPending,adaptUrgent,loadAdaptPending,
+    modelStatsDays,modelStatsRows,modelStatsLoading,loadModelStats,disableModel,
+    aiTaskList,aiTaskFilter,aiTaskPage,aiTaskTotal,aiTaskTotalPages,aiTaskCounts,loadAiTasks,aiTaskAction,aiTaskStatusText,aiTaskStatusStyle,
     loadAdaptRequests,adaptPrev,adaptNext,openAdaptDetail,setAdaptStatus,copyAdaptText,
     adsList,adsEdit,adsSaving,adsUploading,newAd,editAd,loadAds,saveAd,toggleAd,deleteAd,pickAdImage,onAdFileChange,
    aiPolishing,aiPolishReply,testingModel,testingNewProvider,testModel,testNewProvider,modelTestResults,newProviderTestResult,

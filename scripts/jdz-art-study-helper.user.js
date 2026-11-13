@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         景德镇艺术-学习助手
 // @namespace    https://github.com/jdzvuacj
-// @version      4.2.1
+// @version      4.2.2
 // @description  景德镇艺术职业学院 学习平台助手：自动播放、自定义倍速、自动下一节、考试/作业自动答题、AI云端答题、学习记录、日志面板、账号登录
 // @author       IPYIWEI
 // @match        *://*.o-learn.cn/*
@@ -209,7 +209,56 @@
             const token = store.account.scriptKey || store.account.token || '';
             const data = 'question=' + encodeURIComponent(JSON.stringify(questionPayload))
                 + '&u=' + encodeURIComponent(u)
-                + '&model_mode=auto';
+                + '&model_mode=auto'
+                + '&async=1';
+            const finish = (obj) => {
+                if (obj.code === 200 && obj.data) {
+                    // 同步权益信息（剩余题数 / 包月状态），无需额外请求
+                    if (obj.data.remainCount !== undefined || obj.data.profile) {
+                        const prof = obj.data.profile || {};
+                        const isActive = !!(prof.active_member !== undefined ? prof.active_member : store.account.profile && store.account.profile.active_member);
+                        store.account.profile = {
+                            points_balance: isActive ? null : Number(prof.points_balance !== undefined ? prof.points_balance : obj.data.remainCount),
+                            active_member: isActive,
+                            member_until: prof.member_until || (store.account.profile && store.account.profile.member_until) || '',
+                        };
+                        saveStore();
+                        if (loginStatusEl) updateLoginStatus();
+                    }
+                    resolve({ ok: true, data: obj.data, msg: obj.msg || (obj.data.bank ? '题库命中' : obj.data.cache ? '缓存命中' : 'AI回答') });
+                } else if (obj.code === 401) {
+                    resolve({ ok: false, msg: '登录态失效，请重新登录用户中心' });
+                } else {
+                    resolve({ ok: false, msg: obj.msg || '未命中' });
+                }
+            };
+            const poll = (taskId, tries) => {
+                setTimeout(() => {
+                    GM_xmlhttpRequest({
+                        url: CONFIG.backendBase + '/api/v1/cx/task?task_id=' + encodeURIComponent(taskId),
+                        method: 'GET',
+                        headers: { 'Authorization': token ? 'Bearer ' + token : '' },
+                        timeout: 15000,
+                        onload: (res) => {
+                            try {
+                                const obj = JSON.parse(res.responseText || '{}');
+                                if (obj.code === 202) { poll(taskId, tries + 1); return; }
+                                finish(obj);
+                            } catch (e) {
+                                resolve({ ok: false, msg: '后台任务响应解析失败' });
+                            }
+                        },
+                        onerror: () => {
+                            if (tries < 120) poll(taskId, tries + 1);
+                            else resolve({ ok: false, msg: '无法连接后端' });
+                        },
+                        ontimeout: () => {
+                            if (tries < 120) poll(taskId, tries + 1);
+                            else resolve({ ok: false, msg: '后台任务查询超时' });
+                        },
+                    });
+                }, Math.min(3000 + tries * 500, 10000));
+            };
             GM_xmlhttpRequest({
                 url: CONFIG.backendBase + '/api/v1/cx?v=xs-5.0',
                 method: 'POST',
@@ -222,25 +271,11 @@
                 onload: (res) => {
                     try {
                         const obj = JSON.parse(res.responseText || '{}');
-                        if (obj.code === 200 && obj.data) {
-                            // 同步权益信息（剩余题数 / 包月状态），无需额外请求
-                            if (obj.data.remainCount !== undefined || obj.data.profile) {
-                                const prof = obj.data.profile || {};
-                                const isActive = !!(prof.active_member !== undefined ? prof.active_member : store.account.profile && store.account.profile.active_member);
-                                store.account.profile = {
-                                    points_balance: isActive ? null : Number(prof.points_balance !== undefined ? prof.points_balance : obj.data.remainCount),
-                                    active_member: isActive,
-                                    member_until: prof.member_until || (store.account.profile && store.account.profile.member_until) || '',
-                                };
-                                saveStore();
-                                if (loginStatusEl) updateLoginStatus();
-                            }
-                            resolve({ ok: true, data: obj.data, msg: obj.msg || (obj.data.bank ? '题库命中' : obj.data.cache ? '缓存命中' : 'AI回答') });
-                        } else if (res.status === 401 || obj.code === 401) {
-                            resolve({ ok: false, msg: '登录态失效，请重新登录用户中心' });
-                        } else {
-                            resolve({ ok: false, msg: obj.msg || '未命中' });
+                        if (obj.code === 202 && obj.data && obj.data.task_id) {
+                            poll(obj.data.task_id, 0);
+                            return;
                         }
+                        finish(obj);
                     } catch (e) {
                         resolve({ ok: false, msg: '响应解析失败' });
                     }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.15
+// @version      6.0.16
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -15,12 +15,12 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
-// @changelog    v6.0.15 (2026-11-11)
+// @changelog    v6.0.16 (2026-11-13)
 // @changelog    1. 修复写作题（含英语作文）无法自动填写：学习通新版把写作题单独编码成 answertype=26，之前认不出、也不调用 AI
 // @changelog    2. 富文本编辑器（UEditor）等加载完成后再写入并校验，写作题答案不会再出现「填了但没填上」
 // @changelog    3. 答题面板的答案点一下就能复制，并提示「复制成功」
 // @changelog    4. 日志页的答题、搜题等模块标签可以直接点击跳到对应页面；移除版本号旁无用的下拉菜单
-// @changelog    5. 答题等待时间放宽：整题最多等 5 分钟、请求超时 6 分钟，一轮模型全部失败时自动再试一次
+// @changelog    5. 答题改为后台任务池：提交后持续轮询，模型轮换一直尝试到成功，不再按整题 5 分钟截断
 // @changelog    v6.0.14 (2026-11-09)
 // @changelog    1. 菜单顺序调整为：日志、首页、答题、搜题、记录、设置、反馈、购买
 // @changelog    v6.0.13 (2026-11-07)
@@ -3509,10 +3509,67 @@
       + "&match_mode=" + _matchMode
       + (_matchMode === "manual" && !(extra && extra.bankOnly) ? "&manual_ai=1" : "")
       + (extra && extra.skipBank ? "&skip_bank=1" : "")
-      + (extra && extra.bankOnly ? "&bank_only=1" : "");
+      + (extra && extra.bankOnly ? "&bank_only=1" : "")
+      + "&async=1";
     const _interval = Number(extra && extra.interval);
     await sleep(Number.isFinite(_interval) && _interval >= 0 ? _interval : setting.config.basicConfig.reqIntervalTime.value);
     const result = await new Promise((resolve) => {
+      const finishTask = (obj, response) => {
+        if (obj.code === 200 && obj.data && (obj.data.answer || (obj.data.multimatch && obj.data.candidates && obj.data.candidates.length))) {
+          const candidates = Array.isArray(obj.data.candidates) ? obj.data.candidates : [];
+          resolve({
+            code: 1,
+            data: {
+              answer: normalizeLocalBackendAnswers(obj.data.answer),
+              src: obj.data.bank ? "bank" : obj.data.cache ? "cache" : obj.data.multimatch ? "pick" : "ai",
+              multimatch: !!obj.data.multimatch && candidates.length > 0,
+              candidates,
+              remainCount: obj.data.remainCount !== void 0 ? formatLocalRemainCount(obj.data.remainCount) : getProfileRemainingCount(obj.data.profile)
+            },
+            msg: obj.data.multimatch ? (obj.msg || "题库中有多道相似题，请手动选择") : (obj.msg || (obj.data.bank ? "题库命中" : obj.data.cache ? "缓存命中" : "本地后端返回"))
+          });
+          if (obj.data.profile) updateUserInfoFromProfile(obj.data.profile);
+        } else if (response.status === 401 || obj.code === 401) {
+          resolve(handleError$1("本地后端未登录或登录态失效，请先登录用户中心"));
+        } else {
+          if (response.status === 429 || obj.code === 429 || /请求过于频繁/.test(obj.msg || "")) {
+            const seconds = Number(((obj.msg || "").match(/(\d+)\s*秒/) || [])[1] || 6);
+            resolve({ code: -1006, msg: obj.msg || "请求限流", retryAfter: Math.min(60, Math.max(1, seconds)) });
+            return;
+          }
+          const is200NoAnswer = obj.code === 200 && !(obj.data && obj.data.answer);
+          // 纯题库模式下后端明确回了「题库里没有」，这是模式限制不是故障，给一次切 AI 的建议
+          if (is200NoAnswer && extra && extra.bankOnly && !(obj.data && obj.data.image_question)) xsBankHintShow();
+          resolve({ code: -1004, data: { answer: [], remainCount: 0 }, msg: is200NoAnswer ? ((obj.data && obj.data.image_question) ? (obj.msg || "图片题必须设置成AI") : (extra && extra.bankOnly ? "题库未命中" : "未找到答案")) : (obj.msg || "本地题库未命中") });
+        }
+      };
+      const pollTask = (taskId, tries) => {
+        setTimeout(() => {
+          GM_xmlhttpRequest({
+            url: LOCAL_BACKEND_ANSWER_URL + "/task?task_id=" + encodeURIComponent(taskId),
+            method: "GET",
+            headers: { "Authorization": token ? "Bearer " + token : "" },
+            timeout: 15000,
+            onload: (response) => {
+              try {
+                const obj = JSON.parse(response.responseText || "{}");
+                if (obj.code === 202) { pollTask(taskId, tries + 1); return; }
+                finishTask(obj, response);
+              } catch (e) {
+                resolve(handleError$1("后台任务响应解析失败"));
+              }
+            },
+            onerror: () => {
+              if (tries < 120) pollTask(taskId, tries + 1);
+              else resolve(handleError$1("无法连接本地后端 https://xs.openget.cn"));
+            },
+            ontimeout: () => {
+              if (tries < 120) pollTask(taskId, tries + 1);
+              else resolve(handleError$1("后台任务查询超时，请稍后重试"));
+            }
+          });
+        }, Math.min(3e3 + tries * 500, 1e4));
+      };
       GM_xmlhttpRequest({
         url: LOCAL_BACKEND_ANSWER_URL + "?v=xs-5.0",
         method: "POST",
@@ -3525,33 +3582,11 @@
         onload: (response) => {
           try {
             const obj = JSON.parse(response.responseText || "{}");
-            if (obj.code === 200 && obj.data && (obj.data.answer || (obj.data.multimatch && obj.data.candidates && obj.data.candidates.length))) {
-              const candidates = Array.isArray(obj.data.candidates) ? obj.data.candidates : [];
-              resolve({
-                code: 1,
-                data: {
-                  answer: normalizeLocalBackendAnswers(obj.data.answer),
-                  src: obj.data.bank ? "bank" : obj.data.cache ? "cache" : obj.data.multimatch ? "pick" : "ai",
-                  multimatch: !!obj.data.multimatch && candidates.length > 0,
-                  candidates,
-                  remainCount: obj.data.remainCount !== void 0 ? formatLocalRemainCount(obj.data.remainCount) : getProfileRemainingCount(obj.data.profile)
-                },
-                msg: obj.data.multimatch ? (obj.msg || "题库中有多道相似题，请手动选择") : (obj.msg || (obj.data.bank ? "题库命中" : obj.data.cache ? "缓存命中" : "本地后端返回"))
-              });
-              if (obj.data.profile) updateUserInfoFromProfile(obj.data.profile);
-            } else if (response.status === 401 || obj.code === 401) {
-              resolve(handleError$1("本地后端未登录或登录态失效，请先登录用户中心"));
-            } else {
-              if (response.status === 429 || obj.code === 429 || /请求过于频繁/.test(obj.msg || "")) {
-                const seconds = Number(((obj.msg || "").match(/(\d+)\s*秒/) || [])[1] || 6);
-                resolve({ code: -1006, msg: obj.msg || "请求限流", retryAfter: Math.min(60, Math.max(1, seconds)) });
-                return;
-              }
-              const is200NoAnswer = obj.code === 200 && !(obj.data && obj.data.answer);
-              // 纯题库模式下后端明确回了「题库里没有」，这是模式限制不是故障，给一次切 AI 的建议
-              if (is200NoAnswer && extra && extra.bankOnly && !(obj.data && obj.data.image_question)) xsBankHintShow();
-              resolve({ code: -1004, data: { answer: [], remainCount: 0 }, msg: is200NoAnswer ? ((obj.data && obj.data.image_question) ? (obj.msg || "图片题必须设置成AI") : (extra && extra.bankOnly ? "题库未命中" : "未找到答案")) : (obj.msg || "本地题库未命中") });
+            if (obj.code === 202 && obj.data && obj.data.task_id) {
+              pollTask(obj.data.task_id, 0);
+              return;
             }
+            finishTask(obj, response);
           } catch (e) {
             resolve(handleError$1("本地后端响应解析失败"));
           }
@@ -22384,7 +22419,56 @@ const XS_EXT = (() => {
             const data = 'question=' + encodeURIComponent(JSON.stringify(questionPayload))
                 + '&u=' + encodeURIComponent(u)
                 + '&model_mode=auto'
+                + '&async=1'
                 + (skipBank ? '&skip_bank=1' : '');
+            const finish = (obj) => {
+                if (obj.code === 200 && obj.data) {
+                    // 同步权益信息（剩余题数 / 包月状态），无需额外请求
+                    if (obj.data.remainCount !== undefined || obj.data.profile) {
+                        const prof = obj.data.profile || {};
+                        const isActive = !!(prof.active_member !== undefined ? prof.active_member : store.account.profile && store.account.profile.active_member);
+                        store.account.profile = {
+                            points_balance: isActive ? null : Number(prof.points_balance !== undefined ? prof.points_balance : obj.data.remainCount),
+                            active_member: isActive,
+                            member_until: prof.member_until || (store.account.profile && store.account.profile.member_until) || '',
+                        };
+                        saveStore();
+                        if (loginStatusEl) updateLoginStatus();
+                    }
+                    resolve({ ok: true, data: obj.data, msg: obj.msg || (obj.data.bank ? '题库命中' : obj.data.cache ? '缓存命中' : 'AI回答') });
+                } else if (obj.code === 401) {
+                    resolve({ ok: false, msg: '登录态失效，请重新登录用户中心' });
+                } else {
+                    resolve({ ok: false, msg: obj.msg || '未命中' });
+                }
+            };
+            const poll = (taskId, tries) => {
+                setTimeout(() => {
+                    GM_xmlhttpRequest({
+                        url: CONFIG.backendBase + '/api/v1/cx/task?task_id=' + encodeURIComponent(taskId),
+                        method: 'GET',
+                        headers: { 'Authorization': token ? 'Bearer ' + token : '' },
+                        timeout: 15000,
+                        onload: (res) => {
+                            try {
+                                const obj = JSON.parse(res.responseText || '{}');
+                                if (obj.code === 202) { poll(taskId, tries + 1); return; }
+                                finish(obj);
+                            } catch (e) {
+                                resolve({ ok: false, msg: '后台任务响应解析失败' });
+                            }
+                        },
+                        onerror: () => {
+                            if (tries < 120) poll(taskId, tries + 1);
+                            else resolve({ ok: false, msg: '无法连接后端' });
+                        },
+                        ontimeout: () => {
+                            if (tries < 120) poll(taskId, tries + 1);
+                            else resolve({ ok: false, msg: '后台任务查询超时' });
+                        },
+                    });
+                }, Math.min(3000 + tries * 500, 10000));
+            };
             GM_xmlhttpRequest({
                 url: CONFIG.backendBase + '/api/v1/cx?v=xs-5.0',
                 method: 'POST',
@@ -22397,25 +22481,11 @@ const XS_EXT = (() => {
                 onload: (res) => {
                     try {
                         const obj = JSON.parse(res.responseText || '{}');
-                        if (obj.code === 200 && obj.data) {
-                            // 同步权益信息（剩余题数 / 包月状态），无需额外请求
-                            if (obj.data.remainCount !== undefined || obj.data.profile) {
-                                const prof = obj.data.profile || {};
-                                const isActive = !!(prof.active_member !== undefined ? prof.active_member : store.account.profile && store.account.profile.active_member);
-                                store.account.profile = {
-                                    points_balance: isActive ? null : Number(prof.points_balance !== undefined ? prof.points_balance : obj.data.remainCount),
-                                    active_member: isActive,
-                                    member_until: prof.member_until || (store.account.profile && store.account.profile.member_until) || '',
-                                };
-                                saveStore();
-                                if (loginStatusEl) updateLoginStatus();
-                            }
-                            resolve({ ok: true, data: obj.data, msg: obj.msg || (obj.data.bank ? '题库命中' : obj.data.cache ? '缓存命中' : 'AI回答') });
-                        } else if (res.status === 401 || obj.code === 401) {
-                            resolve({ ok: false, msg: '登录态失效，请重新登录用户中心' });
-                        } else {
-                            resolve({ ok: false, msg: obj.msg || '未命中' });
+                        if (obj.code === 202 && obj.data && obj.data.task_id) {
+                            poll(obj.data.task_id, 0);
+                            return;
                         }
+                        finish(obj);
                     } catch (e) {
                         resolve({ ok: false, msg: '响应解析失败' });
                     }

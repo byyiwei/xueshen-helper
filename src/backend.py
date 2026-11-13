@@ -1459,11 +1459,14 @@ def do_hub_chat(messages, model, provider_info=None, timeout=None):
     if not app_secret:
         return None, "服务端未配置中控密钥（环境变量 HUB_APP_SECRET 或「系统配置→单点登录」App Secret）", 0
     payload = {"model": model or "auto", "messages": messages,
-               "temperature": 0.1, "max_tokens": 4096}
+               "max_tokens": 4096}
+    if _model_accepts_temperature(model):
+        payload["temperature"] = 0.1
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     url = base_url.rstrip("/") + HUB_CHAT_TARGET
     _timeout = timeout or HUB_CHAT_TIMEOUT
     attempt = 0
+    temp_retried = False
     while True:
         headers = _hub_sign_headers("POST", HUB_CHAT_TARGET, data, app_key, app_secret)
         headers["Content-Type"] = "application/json"
@@ -1498,6 +1501,11 @@ def do_hub_chat(messages, model, provider_info=None, timeout=None):
                 msg = json.loads(body).get("error", {}).get("message") or body
             except Exception:
                 msg = body
+            if e.code == 400 and not temp_retried and _temperature_rejected(msg):
+                payload.pop("temperature", None)
+                data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+                temp_retried = True
+                continue
             if e.code == 403:
                 return None, "应用未开启「模型」能力，请到中控应用详情的能力开关里打开（HTTP 403）", 0
             if e.code == 404:
@@ -4505,6 +4513,18 @@ def _normalize_openai_base_url(base_url):
     return url
 
 
+def _model_accepts_temperature(model_name):
+    """部分新模型（如阿里云上的 kimi-k3）不接受 temperature 参数，带上就整条请求 400。
+    对已知模型直接不发这个字段；其他模型万一也报同样错误，调用处会去掉参数再试一次。"""
+    low = str(model_name or "").lower()
+    return "kimi-k3" not in low
+
+
+def _temperature_rejected(err_text):
+    low = str(err_text or "").lower()
+    return "temperature" in low and ("not supported" in low or "unsupported" in low)
+
+
 def do_openai_compatible_chat(messages, model, api_key, base_url, time_budget=None):
     if not api_key:
         return None, "API Key 为空，请先在管理后台配置 AI 提供商的 API Key", 0
@@ -4516,7 +4536,7 @@ def do_openai_compatible_chat(messages, model, api_key, base_url, time_budget=No
 
     def _try_request(msgs, use_temp=True, use_max_tokens=True, timeout=30):
         payload = {"model": model, "messages": msgs}
-        if use_temp:
+        if use_temp and _model_accepts_temperature(model):
             payload["temperature"] = 0.1
         if use_max_tokens:
             payload["max_tokens"] = 4096
@@ -5498,6 +5518,245 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip="", budget=0
         err_msg = "自动模型全部尝试失败；" + "；".join(errors[-5:])
     return None, err_msg, last[2], last[0]
 
+# ==================== 后台答题任务池 ====================
+# 用户请求只负责提交任务/领取结果，模型在后台线程里一轮一轮地跑，不设总时长。
+# 同一道题按指纹去重：多人同时问只跑一次，成功后写 AI 缓存和题库。
+AI_TASK_WORKERS = 6
+AI_TASK_ROUND_WAIT = (120, 300, 900, 1800, 3600)
+AI_TASK_CLAIM_LOCK = threading.Lock()
+AI_TASK_WORKER_STARTED = False
+AI_TASK_TRIED_LIMIT = 200
+
+
+def _task_question_info(question):
+    info = parse_question_payload(question)
+    return {
+        "question_text": str(info.get("question_text") or "")[:5000],
+        "question_type": str(info.get("question_type") or ""),
+        "has_image": is_multimodal_question(question),
+    }
+
+
+def get_or_create_ai_task(question, username="", client_ip=""):
+    """按题目指纹取任务；没有就建，失败过的旧任务重新排队。"""
+    task_key = make_matching_key(question)
+    info = _task_question_info(question)
+    existing = db.get_ai_answer_task(task_key=task_key)
+    if existing:
+        status = str(existing.get("status") or "")
+        if status in ("queued", "running", "waiting", "solved"):
+            return existing
+        # failed/stopped：题目没变，直接重新排队，不新建行，后台统计还能看到历史
+        db.update_ai_answer_task(
+            existing["id"], status="queued", answer="", answer_model="",
+            answer_provider="", attempts=0, round_no=0, tried_models="[]",
+            last_error="", next_retry_at=datetime.now(), solved_at=None,
+        )
+        return db.get_ai_answer_task(task_id=existing["id"])
+    return db.create_ai_answer_task({
+        "task_key": task_key,
+        "question": question,
+        "question_text": info["question_text"],
+        "question_type": info["question_type"],
+        "has_image": info["has_image"],
+        "username": username,
+        "client_ip": client_ip,
+    })
+
+
+def _task_tried_note(tried, provider, model, err):
+    tried.append({
+        "provider": provider or "",
+        "model": model or "",
+        "error": str(err or "")[:500],
+        "at": int(time.time()),
+    })
+    if len(tried) > AI_TASK_TRIED_LIMIT:
+        del tried[:len(tried) - AI_TASK_TRIED_LIMIT]
+
+
+def _task_model_order(need_vision):
+    candidates = get_enabled_model_candidates(need_vision=need_vision)
+    active, cooling_429, cooling_timeout, _skip404, _skiptoken = split_model_candidates(candidates)
+    if not active:
+        waits = [s for _, s in cooling_429 + cooling_timeout if s > 0]
+        return [], (min(waits) + 5 if waits else 60)
+    ordered = provider_round_robin_rest(weighted_pick(active))
+    if need_vision:
+        strong = [m for m in ordered if _looks_multimodal(m[2])]
+        weak = [m for m in ordered if not _looks_multimodal(m[2])]
+        strong.sort(key=lambda m: _vision_rank(m[2]))
+        weak.sort(key=lambda m: _vision_rank(m[2]))
+        ordered = strong + weak
+    return ordered, 0
+
+
+def _run_ai_task(task):
+    """跑一轮完整候选模型；全失败就写 waiting + 下次重试时间，不设总截止。"""
+    task_id = int(task["id"])
+    question = str(task.get("question") or "")
+    if not question:
+        db.update_ai_answer_task(task_id, status="failed", last_error="题目内容为空")
+        return
+    info = _task_question_info(question)
+    need_vision = info["has_image"]
+    long_answer = (not need_vision) and is_long_answer_question(question)
+    try:
+        tried = json.loads(task.get("tried_models") or "[]")
+        if not isinstance(tried, list):
+            tried = []
+    except Exception:
+        tried = []
+    attempts = int(task.get("attempts") or 0)
+    round_no = int(task.get("round_no") or 0)
+    try:
+        prepared_messages = build_ai_messages(question, deadline=time.time() + 120)
+    except Exception as e:
+        db.update_ai_answer_task(
+            task_id, status="waiting", last_error=f"图片准备失败：{e}"[:1000],
+            next_retry_at=datetime.now() + timedelta(seconds=300),
+        )
+        return
+
+    ordered, wait_seconds = _task_model_order(need_vision)
+    if not ordered:
+        db.update_ai_answer_task(
+            task_id, status="waiting",
+            last_error="所有模型都在冷却或限额中",
+            next_retry_at=datetime.now() + timedelta(seconds=max(wait_seconds, 60)),
+        )
+        return
+
+    blocked_providers = set()
+    last_errors = []
+    for provider_name, provider_info, model_name, _weight in ordered:
+        # 人工停用/删除任务后，后台线程在下一次尝试前就退出
+        cur = db.get_ai_answer_task(task_id=task_id)
+        if not cur or str(cur.get("status") or "") not in ("running", "waiting", "queued"):
+            return
+        if provider_name in blocked_providers:
+            continue
+        attempt_start = time.time()
+        if need_vision:
+            model_budget = MAX_VISION_MODEL_BUDGET
+        elif long_answer:
+            model_budget = MAX_LONG_TEXT_MODEL_BUDGET
+        else:
+            model_budget = MAX_MODEL_BUDGET
+        try:
+            answer, err, tokens = call_provider_chat(
+                question, model_name, provider_info,
+                time_budget=model_budget, prepared_messages=prepared_messages,
+            )
+        except Exception as e:
+            answer, err, tokens = None, str(e), 0
+        attempts += 1
+        if answer:
+            answer = normalize_ai_answer(question, answer)
+            if answer and not _is_truncated_multi_answer(question, answer) and not _is_garbage_bank_answer(answer, question):
+                record_model_token_usage(model_name, tokens)
+                cache_key = make_ai_cache_key(question, "auto")
+                set_ai_cache(cache_key, answer, model_name, provider_name)
+                save_question_bank_answer(question, answer, model_name, provider_name)
+                db.update_ai_answer_task(
+                    task_id, status="solved", answer=answer,
+                    answer_model=model_name, answer_provider=provider_name,
+                    attempts=attempts, tried_models=json.dumps(tried, ensure_ascii=False),
+                    last_error="", next_retry_at=None, solved_at=datetime.now(),
+                )
+                enqueue_ai_log({
+                    "provider_key": provider_name or "",
+                    "username": str(task.get("username") or ""),
+                    "model": model_name, "final_model": model_name,
+                    "question": question, "answer": answer,
+                    "status": "success", "error": "",
+                    "duration_ms": int((time.time() - attempt_start) * 1000),
+                    "client_ip": str(task.get("client_ip") or ""),
+                })
+                print(f"[答题任务] 成功 task={task_id} model={provider_name}/{model_name}", flush=True)
+                return
+            err = "答案质量不合格，已跳过"
+
+        err = str(err or "未返回内容")
+        _task_tried_note(tried, provider_name, model_name, err)
+        last_errors.append(f"{model_name}: {err[:160]}")
+        db.update_ai_answer_task(
+            task_id, attempts=attempts,
+            tried_models=json.dumps(tried, ensure_ascii=False),
+            last_error="；".join(last_errors[-5:])[:2000],
+        )
+        enqueue_ai_log({
+            "provider_key": provider_name or "",
+            "username": str(task.get("username") or ""),
+            "model": model_name, "final_model": "",
+            "question": question, "answer": "",
+            "status": "error", "error": err,
+            "duration_ms": int((time.time() - attempt_start) * 1000),
+            "client_ip": str(task.get("client_ip") or ""),
+        })
+        # 与同步答题一致的冷却与能力标记
+        cooldown_sec, _detail = upstream_429_wait(err)
+        if cooldown_sec is not None:
+            set_cooldown(MODEL_429_COOLDOWN, provider_name, model_name, cooldown_sec)
+        else:
+            if "HTTP 404" in err or "model is not found" in err.lower() or ("模型" in err and "不存在" in err):
+                set_cooldown(MODEL_FAIL_COOLDOWN, provider_name, model_name, MODEL_FAIL_COOLDOWN_SECONDS)
+            if "not support image" in err.lower() or "does not support image" in err.lower():
+                MODEL_NON_VISION.add(model_name)
+            if is_content_blocked_error(err):
+                blocked_providers.add(provider_name)
+            if is_timeout_error(err):
+                set_cooldown(MODEL_TIMEOUT_COOLDOWN, provider_name, model_name, MODEL_TIMEOUT_COOLDOWN_SECONDS)
+
+    round_no += 1
+    wait_seconds = AI_TASK_ROUND_WAIT[min(round_no - 1, len(AI_TASK_ROUND_WAIT) - 1)]
+    db.update_ai_answer_task(
+        task_id, status="waiting", round_no=round_no, attempts=attempts,
+        tried_models=json.dumps(tried, ensure_ascii=False),
+        last_error="；".join(last_errors[-5:])[:2000] or "本轮模型均失败",
+        next_retry_at=datetime.now() + timedelta(seconds=wait_seconds),
+    )
+    print(f"[答题任务] 第 {round_no} 轮全失败 task={task_id}，{wait_seconds}s 后重试", flush=True)
+
+
+def _ai_task_worker():
+    while True:
+        task = None
+        try:
+            with AI_TASK_CLAIM_LOCK:
+                task = db.claim_ai_answer_task()
+            if not task:
+                time.sleep(2)
+                continue
+            _run_ai_task(task)
+        except Exception as e:
+            print(f"[答题任务] 工作线程异常: {e}", flush=True)
+            traceback.print_exc()
+            if task:
+                try:
+                    db.update_ai_answer_task(
+                        task["id"], status="waiting", last_error=str(e)[:1000],
+                        next_retry_at=datetime.now() + timedelta(seconds=60),
+                    )
+                except Exception:
+                    pass
+            time.sleep(2)
+
+
+def _start_ai_task_workers():
+    global AI_TASK_WORKER_STARTED
+    if AI_TASK_WORKER_STARTED:
+        return
+    AI_TASK_WORKER_STARTED = True
+    try:
+        db.reset_running_ai_answer_tasks()
+    except Exception as e:
+        print(f"[答题任务] 重置 running 任务失败: {e}", flush=True)
+    for i in range(AI_TASK_WORKERS):
+        threading.Thread(target=_ai_task_worker, name=f"ai-task-{i}", daemon=True).start()
+    print(f"[答题任务] 已启动 {AI_TASK_WORKERS} 个后台工作线程", flush=True)
+
+
 def is_model_available_for_custom(model_name):
     """自有模型也必须服从后台的停用/到期状态。
 
@@ -5710,6 +5969,8 @@ def grade_model_test(answer, err, elapsed_ms, tokens, want_vision, color_name=""
         err = f"上游限流（HTTP 429），请约 {wait} 秒后再点测试" + (f"：{detail}" if detail else "")
     elif "timed out" in err_lower or "timeout" in err_lower or "read operation" in err_lower:
         err = "响应超时（%ds），请检查 Base URL 是否正确或模型是否可用" % (45 if want_vision else 30)
+    elif "unsupported model" in err_lower and "openai compatibility" in err_lower:
+        err = "这个模型不能用 OpenAI 兼容接口调用（常见于生图模型，不是对话/识图模型）：" + (err or "")[:200]
     elif want_vision and ("image" in err_lower or "multimodal" in err_lower) and (
             "support" in err_lower or "invalid" in err_lower):
         err = "上游拒收图片，该模型不支持识图：" + (err or "")[:200]
@@ -5728,19 +5989,36 @@ def call_llm_lightweight(messages, model, provider_info, timeout=15):
         payload = {
             "model": model,
             "messages": messages,
-            "temperature": 0.3,
             "max_tokens": 4096
         }
-        data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            f"{base_url.rstrip('/')}/chat/completions",
-            data=data,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"},
-            method="POST"
-        )
-        try:
+        if _model_accepts_temperature(model):
+            payload["temperature"] = 0.3
+
+        def _post(payload_obj):
+            data = json.dumps(payload_obj).encode("utf-8")
+            req = urllib.request.Request(
+                f"{base_url.rstrip('/')}/chat/completions",
+                data=data,
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"},
+                method="POST"
+            )
             with urllib.request.urlopen(req, timeout=timeout) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
+                return json.loads(resp.read().decode("utf-8"))
+
+        try:
+            try:
+                result = _post(payload)
+            except urllib.error.HTTPError as e:
+                body = e.read().decode('utf-8', errors='replace')
+                if e.code == 429:
+                    retry_after = e.headers.get("Retry-After", "") if hasattr(e, 'headers') else ""
+                    cooldown = min(int(retry_after), 60) if retry_after.isdigit() else 30
+                    return None, f"__429__:{cooldown}:{body}", 0
+                if e.code == 400 and "temperature" in payload and _temperature_rejected(body):
+                    payload.pop("temperature", None)
+                    result = _post(payload)
+                else:
+                    return None, f"HTTP {e.code}: {body[:200]}", 0
             if "error" in result:
                 return None, result["error"].get("message", "Unknown error"), 0
             if "choices" not in result or not result["choices"]:
@@ -6299,6 +6577,10 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
     refund_pending_sql = """
         SELECT COUNT(*) AS cnt FROM refund_requests WHERE status='pending'
     """
+    ai_task_pending_sql = """
+        SELECT COUNT(*) AS cnt FROM ai_answer_tasks
+        WHERE status IN ('queued','running','waiting')
+    """
     conn = db._new_mysql_conn()
     try:
         cursor = conn.cursor()
@@ -6316,6 +6598,11 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
         rev_trend_rows = cursor.fetchall()
         cursor.execute(refund_pending_sql)
         refund_pending_row = cursor.fetchone() or {}
+        try:
+            cursor.execute(ai_task_pending_sql)
+            ai_task_pending_row = cursor.fetchone() or {}
+        except Exception:
+            ai_task_pending_row = {}
     finally:
         conn.close()
     trend_map = {str(r.get("day"))[:10]: r for r in trend_rows}
@@ -6361,6 +6648,7 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
             "bank_hits": int(card_stats.get("bank_hits") or 0),
             "bank_hit_rate": round((int(card_stats.get("bank_hits") or 0) / max(1, int(card_stats.get("success") or 0))) * 100, 1),
             "refund_pending": int(refund_pending_row.get("cnt") or 0),
+            "ai_task_pending": int(ai_task_pending_row.get("cnt") or 0),
         },
         "trend": trend,
         "models": [{"model": r.get("model"), "total": int(r.get("total") or 0)} for r in model_rows if r.get("model")],
@@ -7753,6 +8041,56 @@ class Handler(BaseHTTPRequestHandler):
                 "pieceY": data.get("pieceY"), "pieceSize": data.get("pieceSize"),
                 "w": data.get("w"), "h": data.get("h"), "ttl": data.get("ttl"),
             }})
+        elif path == "/api/v1/cx/task":
+            # 后台任务的结果轮询：答题请求返回 202 后，脚本用 task_id 来取最终答案。
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "请先登录后再使用模型搜题"})
+                return
+            qs = parse_qs(parsed.query)
+            task_key = str(qs.get("task_id", [""])[0] or "").strip()
+            task = db.get_ai_answer_task(task_key=task_key) if task_key else None
+            if not task:
+                self._send_json(404, {"code": 404, "msg": "任务不存在或已被清理"})
+                return
+            task_status = str(task.get("status") or "")
+            if task_status == "solved":
+                answer = normalize_ai_answer(str(task.get("question") or ""), str(task.get("answer") or ""))
+                question_key = make_matching_key(str(task.get("question") or ""))
+                if not answer:
+                    self._send_json(500, {"code": 500, "msg": "后台答案为空，请重新提交"})
+                    return
+                ok_quota, quota_msg, ent_after = consume_answer_quota(
+                    user["username"], question_key, question_key)
+                if not ok_quota:
+                    self._send_json(402, {"code": 402, "msg": quota_msg})
+                    return
+                profile_after = build_user_profile(user["username"])
+                self._send_json(200, {"code": 200, "msg": quota_msg, "data": {
+                    "answer": answer,
+                    "model": task.get("answer_model") or "",
+                    "mode": "auto",
+                    "cache": True,
+                    "task_id": task_key,
+                    "profile": profile_after,
+                    "remainCount": 999999 if (profile_after and profile_after.get("active_member")) else int((profile_after or {}).get("points_balance") or 0),
+                }})
+                return
+            if task_status in ("queued", "running", "waiting"):
+                self._send_json(202, {"code": 202, "msg": "后台仍在尝试", "data": {
+                    "task_id": task_key,
+                    "status": task_status,
+                    "round": int(task.get("round_no") or 0),
+                    "attempts": int(task.get("attempts") or 0),
+                    "retry_after": 3,
+                    "last_error": str(task.get("last_error") or "")[:300],
+                }})
+                return
+            self._send_json(500, {
+                "code": 500,
+                "msg": "后台重试已停止：" + (str(task.get("last_error") or "没有模型答出")[:300]),
+                "data": {"task_id": task_key, "status": task_status},
+            })
         elif path == "/api/config":
             PROVIDERS = recover_providers_if_empty(PROVIDERS)
             self._send_json(200, {"code": 200, "models": build_models_html(), "providers": list(PROVIDERS.keys())})
@@ -8169,6 +8507,86 @@ class Handler(BaseHTTPRequestHandler):
                 sd = q.get("start", [""])[0]
                 ed = q.get("end", [""])[0]
                 self._send_json(200, {"code": 200, "data": get_admin_dashboard_stats(sd, ed)})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/model-stats":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                q = parse_qs(parsed.query)
+                days = int(q.get("days", ["7"])[0] or 7)
+                days = min(max(days, 1), 90)
+                since = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+                rows = db.fetchall(
+                    """SELECT provider_key, model,
+                       COUNT(*) AS calls,
+                       SUM(status='success') AS ok,
+                       SUM(status='error') AS err,
+                       SUM(status='error' AND error LIKE '%%超时%%') AS timeout_cnt,
+                       SUM(status='error' AND error LIKE '%%429%%') AS limited_cnt,
+                       SUM(status='error' AND error LIKE '%%HTTP 400%%') AS bad_request_cnt,
+                       SUM(status='error' AND (error LIKE '%%HTTP 5%%' OR error LIKE '%%503%%')) AS server_err_cnt,
+                       ROUND(AVG(duration_ms)) AS avg_ms,
+                       SUM(question LIKE '%%<img%%') AS img_calls,
+                       SUM(status='error' AND question LIKE '%%<img%%') AS img_err
+                       FROM ai_call_logs
+                       WHERE created_at >= %s
+                         AND COALESCE(model,'') <> ''
+                         AND COALESCE(provider_key,'') NOT IN ('question_bank','','custom')
+                       GROUP BY provider_key, model
+                       ORDER BY err DESC, calls DESC""",
+                    (since,)
+                ) or []
+                out = []
+                for r in rows:
+                    calls = int(r.get("calls") or 0)
+                    err = int(r.get("err") or 0)
+                    img_calls = int(r.get("img_calls") or 0)
+                    img_err = int(r.get("img_err") or 0)
+                    out.append({
+                        "provider": r.get("provider_key") or "",
+                        "provider_title": ((PROVIDERS.get(r.get("provider_key") or "") or {}).get("title")
+                                           or r.get("provider_key") or ""),
+                        "model": r.get("model") or "",
+                        "calls": calls, "ok": int(r.get("ok") or 0), "err": err,
+                        "error_rate": round(err * 100.0 / max(1, calls), 1),
+                        "timeout": int(r.get("timeout_cnt") or 0),
+                        "limited": int(r.get("limited_cnt") or 0),
+                        "bad_request": int(r.get("bad_request_cnt") or 0),
+                        "server_error": int(r.get("server_err_cnt") or 0),
+                        "avg_ms": int(r.get("avg_ms") or 0),
+                        "img_calls": img_calls, "img_err": img_err,
+                        "img_error_rate": round(img_err * 100.0 / max(1, img_calls), 1) if img_calls else 0,
+                    })
+                self._send_json(200, {"code": 200, "days": days, "rows": out})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/ai-tasks":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                q = parse_qs(parsed.query)
+                page = int(q.get("page", ["1"])[0] or 1)
+                status = str(q.get("status", [""])[0] or "")
+                rows, total = db.list_ai_answer_tasks(status=status, page=page, page_size=20)
+                for r in rows:
+                    for k in ("created_at", "updated_at", "solved_at", "next_retry_at"):
+                        r[k] = str(r.get(k) or "")
+                    try:
+                        r["tried_models"] = json.loads(r.get("tried_models") or "[]")
+                    except Exception:
+                        r["tried_models"] = []
+                counts = {
+                    "queued": db.count_ai_answer_tasks("queued"),
+                    "running": db.count_ai_answer_tasks("running"),
+                    "waiting": db.count_ai_answer_tasks("waiting"),
+                    "solved": db.count_ai_answer_tasks("solved"),
+                    "failed": db.count_ai_answer_tasks("failed"),
+                    "stopped": db.count_ai_answer_tasks("stopped"),
+                }
+                self._send_json(200, {"code": 200, "rows": rows, "total": total, "counts": counts})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/config":
@@ -10302,6 +10720,62 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        elif path == "/admin/ai-tasks/action":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                task_id = int(data.get("id") or 0)
+                action = str(data.get("action") or "").strip()
+                task = db.get_ai_answer_task(task_id=task_id) if task_id else None
+                if not task:
+                    self._send_json(404, {"code": 404, "msg": "任务不存在"})
+                    return
+                if action == "retry":
+                    db.update_ai_answer_task(
+                        task_id, status="queued", next_retry_at=datetime.now(),
+                        last_error="", round_no=0, attempts=0, tried_models="[]",
+                        answer="", answer_model="", answer_provider="", solved_at=None,
+                    )
+                    msg = "已重新排队"
+                elif action == "stop":
+                    db.update_ai_answer_task(task_id, status="stopped", next_retry_at=None)
+                    msg = "已停止重试"
+                elif action == "delete":
+                    db.delete_ai_answer_task(task_id)
+                    msg = "已删除"
+                else:
+                    self._send_json(400, {"code": 400, "msg": "未知操作"})
+                    return
+                self._send_json(200, {"code": 200, "msg": msg})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/model-disable":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                provider = str(data.get("provider") or "").strip()
+                model = str(data.get("model") or "").strip()
+                if not provider or not model:
+                    self._send_json(400, {"code": 400, "msg": "缺少 provider/model"})
+                    return
+                providers = json.loads(json.dumps(PROVIDERS, ensure_ascii=False))
+                found = False
+                for m in (providers.get(provider) or {}).get("models") or []:
+                    if str(m.get("value") or "") == model:
+                        m["weight"] = 0
+                        found = True
+                if not found:
+                    self._send_json(404, {"code": 404, "msg": "没有找到这个模型"})
+                    return
+                save_providers_config(providers)
+                print(f"[模型健康] 已停用 {provider}/{model}（权重设为 0）", flush=True)
+                self._send_json(200, {"code": 200, "msg": f"已停用 {model}"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/model-cooldowns/clear":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -12642,6 +13116,9 @@ class Handler(BaseHTTPRequestHandler):
                 model = params.get("model", [""])[0]
                 req_model_mode = params.get("model_mode", ["auto"])[0] or "auto"
                 skip_bank = str(params.get("skip_bank", ["0"])[0] or "0").strip().lower() in ("1", "true", "yes")
+                # 新脚本显式带 async=1：题目交给后台任务池，接口先回 202，脚本轮询结果。
+                # 老脚本不带这个参数，继续走同步答题，避免升级过渡期把老客户端打坏。
+                use_task_pool = str(params.get("async", ["0"])[0] or "0").strip().lower() in ("1", "true", "yes")
                 # 纯题库模式：只查题库，未命中直接返回；不调模型、不读 AI 缓存，也不扣题数。
                 bank_only = str(params.get("bank_only", ["0"])[0] or "0").strip().lower() in ("1", "true", "yes")
                 # 新脚本在手动选题时会带 1：除题库候选外，再实时问一次 AI，把答案也列进候选。
@@ -12921,7 +13398,37 @@ class Handler(BaseHTTPRequestHandler):
                         return
                     need_vision = is_multimodal_question(question)
                     print(f"[AI请求] mode=auto, question={question[:60]}..., vision={need_vision}", flush=True)
-                    answer, err, resolved_model, provider_name = ask_ai_auto(question, need_vision=need_vision, username=user.get("username", "") if user else "", client_ip=self.client_address[0] if self.client_address else "")
+                    if use_task_pool:
+                        task = get_or_create_ai_task(
+                            question,
+                            username=user.get("username", "") if user else "",
+                            client_ip=self.client_address[0] if self.client_address else "",
+                        )
+                        if task and str(task.get("status") or "") == "solved":
+                            # 后台任务已经答出来了，直接按缓存答案走
+                            answer = str(task.get("answer") or "")
+                            resolved_model = str(task.get("answer_model") or "")
+                            provider_name = str(task.get("answer_provider") or "")
+                        elif task:
+                            # 不再占着 HTTP 连接等模型：任务交给后台线程，脚本轮询结果
+                            status = "task_queued"
+                            err = "已转入后台继续尝试"
+                            self._send_json(202, {
+                                "code": 202,
+                                "msg": "题目已提交，后台正在轮流尝试所有模型",
+                                "data": {
+                                    "task_id": task.get("task_key") or "",
+                                    "status": task.get("status") or "queued",
+                                    "retry_after": 3,
+                                },
+                            })
+                            return
+                        else:
+                            # 任务表异常时退回同步答题，保证接口还能用
+                            answer, err, resolved_model, provider_name = ask_ai_auto(question, need_vision=need_vision, username=user.get("username", "") if user else "", client_ip=self.client_address[0] if self.client_address else "")
+                    else:
+                        # 老脚本：保持原来的同步答题
+                        answer, err, resolved_model, provider_name = ask_ai_auto(question, need_vision=need_vision, username=user.get("username", "") if user else "", client_ip=self.client_address[0] if self.client_address else "")
                 if not use_custom and not resolved_model:
                     err = err or "没有启用的 AI 提供商，请先配置"
                     self._send_json(500, {"code": 500, "msg": err})
@@ -13263,6 +13770,7 @@ if __name__ == "__main__":
     _start_daily_report_thread()
     _start_commission_settle_thread()
     _start_qq_bot_thread()
+    _start_ai_task_workers()
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     try:
         server.serve_forever()
