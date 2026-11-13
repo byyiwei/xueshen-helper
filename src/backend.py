@@ -231,6 +231,28 @@ MAX_LONG_TEXT_MODEL_BUDGET = 90
 # 而把「其实不会看图、只是被勾了支持图片」的模型卡太久也不合适，120 是折中。
 VISION_TIME_BUDGET = 300
 MAX_VISION_MODEL_BUDGET = 120
+# 图片题串行尝试，前面每多一个 120 秒超时的模型，后面再稳的模型也轮不到。
+# 权重排序是随机的，实测会出现「两个慢模型先跑满 240 秒，deepseek 还没轮到」。
+# 下面按 2026-11-13 全天图片题实测（成功次数/平均耗时）排优先顺序：
+# deepseek 49/49 约 8s、kimi-k3-1 36/36 约 11s、kimi-k2.6 20/21 约 22s，
+# 而 qwen3.8-max 8 次超时、moonshot 版 kimi-k2.6 平均 90s。
+VISION_FAST_MODELS = ("deepseek-v4.1-flash", "kimi-k3-1", "kimi-k2.6", "glm-5.3", "doubao")
+VISION_SLOW_MODELS = ("kimi-k2.7", "qwen3.8-max", "moonshotai/kimi-k2.6")
+
+
+def _vision_rank(model_name):
+    """图片题的尝试顺序：实测快的在前，未知模型居中，实测慢的放最后。"""
+    low = str(model_name or "").lower()
+    if "moonshotai/kimi-k2.6" in low:
+        return 90
+    for i, key in enumerate(VISION_FAST_MODELS):
+        if key in low:
+            return i
+    for i, key in enumerate(VISION_SLOW_MODELS):
+        if key in low:
+            return 80 + i
+    return 50
+
 DASHBOARD_CACHE = {"time": 0, "data": None}
 DASHBOARD_CACHE_SECONDS = 5
 # 官网直营营收口径：代理商充值（plan_type='dist_recharge'）是压在平台的预存款、属于负债，
@@ -5339,12 +5361,17 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip="", budget=0
     ordered = provider_round_robin_rest(weighted_pick(active))
     if need_vision:
         # 图片题先派给名字里明确是多模态的模型（omni/vl/vision/gemini 等），
-        # 被误勾「支持图片」的纯文本模型排到后面兜底。分区内保持原有轮询顺序。
+        # 被误勾「支持图片」的纯文本模型排到后面兜底。
+        # 两段内部都按实测速度排：慢模型排前面会把 300 秒预算吃光，轮不到后面的快模型。
         strong = [m for m in ordered if _looks_multimodal(m[2])]
         weak = [m for m in ordered if not _looks_multimodal(m[2])]
+        strong.sort(key=lambda m: _vision_rank(m[2]))
+        weak.sort(key=lambda m: _vision_rank(m[2]))
         if strong and weak:
             ordered = strong + weak
             print(f"[自动模型] 图片题优先视觉模型: {', '.join(m[2] for m in strong)}", flush=True)
+        elif weak:
+            ordered = weak
     print(f"[自动模型] 串行尝试 {len(ordered)} 个模型，顺序: {', '.join(f'{m[2]}({m[0]},w={m[3]})' for m in ordered)}", flush=True)
     errors = []
     error_logs = []  # 失败的模型日志，待确定最终成功模型后统一补记
