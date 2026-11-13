@@ -1309,7 +1309,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
               <svg class="ui-icon sm"><use href="#i-shield"></use></svg>模型健康
             </div>
             <div class="menu-item" :class="{active:page==='ai-tasks'}" @click="page='ai-tasks';loadAiTasks()">
-              <svg class="ui-icon sm"><use href="#i-clock"></use></svg>失败池<span v-if="aiTaskCounts.pending" :style="{marginLeft:'auto',minWidth:'18px',padding:'0 5px',height:'18px',lineHeight:'18px',textAlign:'center',borderRadius:'9px',background:'var(--warning)',color:'#fff',fontSize:'11px',fontWeight:'600'}">{{aiTaskCounts.pending}}</span>
+              <svg class="ui-icon sm"><use href="#i-clock"></use></svg>答题任务<span v-if="aiTaskCounts.pending" :style="{marginLeft:'auto',minWidth:'18px',padding:'0 5px',height:'18px',lineHeight:'18px',textAlign:'center',borderRadius:'9px',background:'var(--warning)',color:'#fff',fontSize:'11px',fontWeight:'600'}">{{aiTaskCounts.pending}}</span>
             </div>
             <div class="menu-item" :class="{active:page==='model-cooldown'}" @click="page='model-cooldown'">
               <svg class="ui-icon sm"><use href="#i-clock"></use></svg>冷却队列
@@ -1519,7 +1519,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
             <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(245,158,11,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='feedback';expandedGroups.referral=true;loadFeedbackList()"><div class="metric-label">待处理反馈</div><div class="metric-value" style="color:var(--warning)">{{feedbackPendingCount||0}}</div><div class="metric-sub">点击查看处理 →</div></div>
             <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(239,68,68,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='refund-requests';loadRefundRequests()"><div class="metric-label">待处理退款</div><div class="metric-value" style="color:var(--danger)">{{dashboard.cards?.refund_pending||0}}</div><div class="metric-sub">点击查看处理 →</div></div>
             <div class="metric-card" :style="{cursor:'pointer',transition:'border-color .2s',borderColor:adaptPending?'rgba(245,158,11,.45)':''}" onmouseover="this.style.borderColor='rgba(245,158,11,.4)'" onmouseout="this.style.borderColor=adaptPending?'rgba(245,158,11,.45)':''" @click="page='adapt-requests';loadAdaptRequests()"><div class="metric-label">待评估定制需求</div><div class="metric-value" :style="{color:adaptPending?'var(--warning)':'var(--text)'}">{{adaptPending}}</div><div class="metric-sub"><span v-if="adaptUrgent" style="color:var(--danger,#ef4444);font-weight:600">加急 {{adaptUrgent}} · </span>点击查看处理 →</div></div>
-            <div class="metric-card" :style="{cursor:'pointer',transition:'border-color .2s',borderColor:aiTaskCounts.pending?'rgba(239,68,68,.45)':''}" onmouseover="this.style.borderColor='rgba(239,68,68,.4)'" onmouseout="this.style.borderColor=aiTaskCounts.pending?'rgba(239,68,68,.45)':''" @click="page='ai-tasks';loadAiTasks()"><div class="metric-label">失败池待处理</div><div class="metric-value" :style="{color:aiTaskCounts.pending?'var(--danger)':'var(--text)'}">{{aiTaskCounts.pending||0}}</div><div class="metric-sub">后台仍在轮流尝试 · 点击查看 →</div></div>
+            <div class="metric-card" :style="{cursor:'pointer',transition:'border-color .2s',borderColor:aiTaskCounts.pending?'rgba(239,68,68,.45)':''}" onmouseover="this.style.borderColor='rgba(239,68,68,.4)'" onmouseout="this.style.borderColor=aiTaskCounts.pending?'rgba(239,68,68,.45)':''" @click="page='ai-tasks';loadAiTasks()"><div class="metric-label">答题任务待处理</div><div class="metric-value" :style="{color:aiTaskCounts.pending?'var(--danger)':'var(--text)'}">{{aiTaskCounts.pending||0}}</div><div class="metric-sub">后台仍在轮流尝试 · 点击查看 →</div></div>
           </div>
           <div class="dash-grid">
             <div class="chart-card">
@@ -4162,7 +4162,7 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
       </template>
       <template v-if="page==='ai-tasks'">
         <header class="main-header">
-          <h2>失败池</h2>
+          <h2>答题任务</h2>
           <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index<breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
         </header>
         <div class="main-body">
@@ -6757,7 +6757,7 @@ createApp({
       'answer-stats':[{label:'题库中心',group:'questions'},{label:'答题统计'}],
       'ai-logs':[{label:'模型服务',group:'models'},{label:'模型日志'}],
       'model-health':[{label:'模型服务',group:'models'},{label:'模型健康'}],
-      'ai-tasks':[{label:'模型服务',group:'models'},{label:'失败池'}],
+      'ai-tasks':[{label:'模型服务',group:'models'},{label:'答题任务'}],
       'bank-logs':[{label:'题库中心',group:'questions'},{label:'题库日志'}],
       'bank-analysis':[{label:'题库分析'}],
       'user-analysis':[{label:'用户分析'}],
@@ -8719,7 +8719,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       card:{title:'卡密管理',icon:'i-key',items:[{page:'xianyu',label:'商品配置',icon:'i-store',load:loadXianyuConfig},{page:'card-keys',label:'卡密管理',icon:'i-key',load:loadCardKeys}]},
       distributor:{title:'代理商分销',icon:'i-flag',items:[{page:'distributor',label:'代理商',icon:'i-users',load:loadFxList},{page:'distributor-templates',label:'卡密模板',icon:'i-layers',load:()=>{loadFxOptions();loadFxTemplates();}},{page:'distributor-batches',label:'批次与卡密',icon:'i-package',load:()=>{loadFxOptions();loadFxBatches(1);}},{page:'distributor-withdrawals',label:'提现审核',icon:'i-wallet',load:()=>{loadFxOptions();loadFxWds(1);}},{page:'distributor-revenue',label:'收入统计',icon:'i-trending-up',load:loadFxRevenue},{page:'distributor-config',label:'分销配置',icon:'i-sliders',load:loadFxConfig}]},
       logs:{title:'日志监控',icon:'i-terminal',items:[{page:'script-logs',label:'脚本日志',icon:'i-terminal',load:loadScriptLogs},{page:'log-cleanup',label:'日志清理',icon:'i-trash-2',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'i-mail',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
-      models:{title:'模型服务',icon:'i-cpu',items:[{page:'ai-config',label:'模型配置',icon:'i-bot',load:loadConfig},{page:'ai-logs',label:'模型日志',icon:'i-activity',load:loadAiLogs},{page:'model-health',label:'模型健康',icon:'i-shield',load:loadModelStats},{page:'ai-tasks',label:'失败池',icon:'i-clock',load:loadAiTasks},{page:'model-cooldown',label:'冷却队列',icon:'i-clock',load:()=>{}}]},
+      models:{title:'模型服务',icon:'i-cpu',items:[{page:'ai-config',label:'模型配置',icon:'i-bot',load:loadConfig},{page:'ai-logs',label:'模型日志',icon:'i-activity',load:loadAiLogs},{page:'model-health',label:'模型健康',icon:'i-shield',load:loadModelStats},{page:'ai-tasks',label:'答题任务',icon:'i-clock',load:loadAiTasks},{page:'model-cooldown',label:'冷却队列',icon:'i-clock',load:()=>{}}]},
       config:{title:'系统配置',icon:'i-settings',items:[{page:'qq-bot',label:'QQ频道机器人',icon:'i-message-circle',load:loadQqBot},{page:'email-config',label:'邮箱配置',icon:'i-mail',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'sso-config',label:'单点登录',icon:'i-shield',load:loadSsoConfig},{page:'db-config',label:'系统设置',icon:'i-database',load:loadDbConfig}]}
     };
     function openMobileSubmenu(key,title,icon){
@@ -8800,7 +8800,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     const adaptUrgent=ref(0);
     let adaptPendingPollTimer=null;
     let adaptPendingFirstLoad=true;
-    // 模型健康 / 失败池
+    // 模型健康 / 答题任务
     const modelStatsDays=ref(1);
     const modelStatsRows=ref([]);
     const modelStatsLoading=ref(false);
@@ -9580,7 +9580,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       if(adaptPendingPollTimer)return;
       adaptPendingPollTimer=setInterval(()=>{loadAdaptPending(true);refreshAiTaskCounts();},60000);
     }
-    // ========== 模型健康 / 失败池 ==========
+    // ========== 模型健康 / 答题任务 ==========
     async function loadModelStats(){
       if(!token.value)return;
       modelStatsLoading.value=true;
@@ -9626,7 +9626,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         }
         else if(d.code===403){logout();showMsg('登录已过期','error');}
         else showMsg(d.msg||'加载失败','error');
-      }catch(e){showMsg('加载失败池失败','error');}
+      }catch(e){showMsg('加载答题任务失败','error');}
     }
     async function aiTaskAction(row,action){
       if(!row)return;
