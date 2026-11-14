@@ -527,6 +527,33 @@ class Database:
         self._add_column_if_missing("admin_config", "log_retention_days", "log_retention_days INT DEFAULT 0")
         self._add_column_if_missing("admin_config", "log_cleanup_last_at", "log_cleanup_last_at DATETIME NULL COMMENT '上次日志清理时间（用于24小时定时判断，持久化避免重启重置）'")
 
+        # 管理员登录会话：落库保存，服务重启/发版后已登录的后台不会被踢下线
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS admin_sessions (
+                token VARCHAR(96) PRIMARY KEY,
+                username VARCHAR(50) NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_expires (expires_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+        # 管理员操作审计：谁在什么时候改了什么，排查误操作/多人协作时用
+        self.execute("""
+            CREATE TABLE IF NOT EXISTS admin_audit_logs (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT,
+                admin_username VARCHAR(50) NOT NULL DEFAULT '',
+                action VARCHAR(64) NOT NULL DEFAULT '',
+                target VARCHAR(255) NOT NULL DEFAULT '',
+                detail TEXT,
+                client_ip VARCHAR(64) NOT NULL DEFAULT '',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_created (created_at),
+                INDEX idx_admin (admin_username, created_at),
+                INDEX idx_action (action, created_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
         self._ensure_admin_payment_columns()
 
         # 付费套餐、订单与扣题流水
@@ -7860,6 +7887,99 @@ class Database:
                 "pending_commission": float(row.get("pending_commission") or 0)
             })
         return {"list": result, "total": total, "page": page, "per_page": per_page}
+
+    # ==================== 管理员会话持久化 ====================
+    def save_admin_session(self, token, username, expires_at):
+        """写入/刷新管理员会话，服务重启后仍能凭 token 恢复登录。"""
+        ph = _ph()
+        self.execute(
+            f"""INSERT INTO admin_sessions (token, username, expires_at, last_seen_at)
+                VALUES ({ph}, {ph}, {ph}, NOW())
+                ON DUPLICATE KEY UPDATE username=VALUES(username), expires_at=VALUES(expires_at), last_seen_at=NOW()""",
+            (token, username, expires_at)
+        )
+
+    def get_admin_session(self, token):
+        row = self.fetchone(
+            "SELECT token, username, expires_at FROM admin_sessions WHERE token=%s AND expires_at > NOW()",
+            (token,)
+        )
+        return row or None
+
+    def touch_admin_session(self, token, expires_at):
+        self.execute(
+            "UPDATE admin_sessions SET expires_at=%s, last_seen_at=NOW() WHERE token=%s",
+            (expires_at, token)
+        )
+
+    def delete_admin_session(self, token):
+        if token:
+            self.execute("DELETE FROM admin_sessions WHERE token=%s", (token,))
+
+    def clear_admin_sessions(self):
+        self.execute("DELETE FROM admin_sessions")
+
+    def cleanup_admin_sessions(self):
+        try:
+            self.execute("DELETE FROM admin_sessions WHERE expires_at <= NOW()")
+        except Exception:
+            pass
+
+    # ==================== 管理员操作审计 ====================
+    def add_admin_audit_log(self, admin_username, action, target="", detail="", client_ip=""):
+        try:
+            ph = _ph()
+            self.execute(
+                f"INSERT INTO admin_audit_logs (admin_username, action, target, detail, client_ip) VALUES ({ph},{ph},{ph},{ph},{ph})",
+                ((admin_username or "")[:50], (action or "")[:64], (target or "")[:255], (detail or "")[:4000], (client_ip or "")[:64])
+            )
+        except Exception as e:
+            print(f"[审计日志] 写入失败: {e}", flush=True)
+
+    def list_admin_audit_logs(self, page=1, page_size=30, action="", keyword=""):
+        page = max(1, int(page or 1))
+        page_size = min(200, max(1, int(page_size or 30)))
+        offset = (page - 1) * page_size
+        where, params = [], []
+        if action:
+            where.append("action=%s")
+            params.append(action)
+        if keyword:
+            where.append("(admin_username LIKE %s OR target LIKE %s OR detail LIKE %s)")
+            like = f"%{keyword}%"
+            params.extend([like, like, like])
+        wsql = (" WHERE " + " AND ".join(where)) if where else ""
+        total_row = self.fetchone(f"SELECT COUNT(*) AS cnt FROM admin_audit_logs{wsql}", tuple(params)) or {}
+        rows = self.fetchall(
+            f"SELECT id, admin_username, action, target, detail, client_ip, created_at FROM admin_audit_logs{wsql} ORDER BY id DESC LIMIT %s OFFSET %s",
+            tuple(params) + (page_size, offset)
+        )
+        return {"rows": rows or [], "total": int(total_row.get("cnt") or 0), "page": page, "page_size": page_size}
+
+    # ==================== 后台全局搜索 ====================
+    def global_search(self, keyword, limit=6):
+        """页面搜索之外的快速命中：用户、订单、反馈。只读，最多各 6 条。"""
+        q = (keyword or "").strip()
+        if not q:
+            return {"users": [], "orders": [], "feedback": []}
+        like = f"%{q}%"
+        limit = min(20, max(1, int(limit or 6)))
+        users = self.fetchall(
+            "SELECT id, username, email, points_balance, member_until, is_banned, created_at FROM users "
+            "WHERE username LIKE %s OR email LIKE %s ORDER BY last_login_at DESC, id DESC LIMIT %s",
+            (like, like, limit)
+        ) or []
+        orders = self.fetchall(
+            "SELECT order_no, username, price, status, plan_name, created_at FROM payment_orders "
+            "WHERE order_no LIKE %s OR username LIKE %s ORDER BY created_at DESC LIMIT %s",
+            (like, like, limit)
+        ) or []
+        feedback = self.fetchall(
+            "SELECT id, username, title, status, created_at FROM user_feedback "
+            "WHERE title LIKE %s OR content LIKE %s ORDER BY id DESC LIMIT %s",
+            (like, like, limit)
+        ) or []
+        return {"users": users, "orders": orders, "feedback": feedback}
 
 
 def hash_password(password):

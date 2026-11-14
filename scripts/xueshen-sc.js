@@ -10,7 +10,7 @@
 // @description:zh-CN 超星学习通、知到智慧树免费网课助手（刷课脚本）：自动刷课、自动答题、视频倍速、自动切换任务点，海量题库每日更新，支持免费搜题查网课答案。同时支持青书学堂、出头科技、雨课堂、云班课、智慧职教、国家开放大学、中国大学MOOC、U校园、学堂在线、绎通云、山东专技、西财在线｜DeepSeek AI 兜底作答｜字体加密解析
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
-// @license      Proprietary
+// @license      All Rights Reserved
 // @antifeature payment 部分高级功能需付费（AI 答题额度、自有模型）
 // @original-author enncy
 // @original-license MIT

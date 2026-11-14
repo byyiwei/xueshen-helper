@@ -735,7 +735,13 @@ def make_admin_password(input_password):
 
 def create_admin_session(username):
     token = "adm_" + secrets.token_urlsafe(32)
-    ADMIN_SESSIONS[token] = {"username": username, "expires": time.time() + ADMIN_SESSION_TTL}
+    expires = time.time() + ADMIN_SESSION_TTL
+    ADMIN_SESSIONS[token] = {"username": username, "expires": expires}
+    # 落库：服务重启/发版后仍能恢复登录，不会被强制踢下线
+    try:
+        db.save_admin_session(token, username, datetime.fromtimestamp(expires))
+    except Exception as e:
+        print(f"[管理员会话] 写入数据库失败: {e}", flush=True)
     return token
 
 def verify_admin_session(token):
@@ -743,16 +749,55 @@ def verify_admin_session(token):
         return False
     info = ADMIN_SESSIONS.get(token)
     if not info:
-        return False
+        # 内存里没有（多半是刚重启过），从数据库恢复
+        try:
+            row = db.get_admin_session(token)
+        except Exception as e:
+            print(f"[管理员会话] 读取数据库失败: {e}", flush=True)
+            row = None
+        if not row:
+            return False
+        try:
+            raw_exp = row.get("expires_at")
+            if isinstance(raw_exp, str):
+                exp = time.mktime(time.strptime(raw_exp[:19], "%Y-%m-%d %H:%M:%S"))
+            else:
+                exp = float(raw_exp.timestamp() if hasattr(raw_exp, "timestamp") else time.mktime(raw_exp.timetuple()))
+        except Exception:
+            exp = 0
+        if exp < time.time():
+            try:
+                db.delete_admin_session(token)
+            except Exception:
+                pass
+            return False
+        info = {"username": row.get("username") or "", "expires": exp}
+        ADMIN_SESSIONS[token] = info
     if float(info.get("expires") or 0) < time.time():
         ADMIN_SESSIONS.pop(token, None)
+        try:
+            db.delete_admin_session(token)
+        except Exception:
+            pass
         return False
-    info["expires"] = time.time() + ADMIN_SESSION_TTL
+    new_expires = time.time() + ADMIN_SESSION_TTL
+    info["expires"] = new_expires
+    # 每次请求都写库太频繁，10 分钟内只顺带续一次
+    if new_expires - float(info.get("_db_touch") or 0) > 600:
+        info["_db_touch"] = new_expires
+        try:
+            db.touch_admin_session(token, datetime.fromtimestamp(new_expires))
+        except Exception:
+            pass
     return True
 
 def revoke_admin_session(token):
     if token:
         ADMIN_SESSIONS.pop(token, None)
+        try:
+            db.delete_admin_session(token)
+        except Exception:
+            pass
 
 
 # ==================== 中控单点登录（Hub SSO） ====================
@@ -6622,6 +6667,17 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
     now_ts = time.time()
     if DASHBOARD_CACHE.get("data") and DASHBOARD_CACHE.get("key") == cache_key and now_ts - DASHBOARD_CACHE.get("time", 0) < DASHBOARD_CACHE_SECONDS:
         return DASHBOARD_CACHE["data"]
+    # 上一等长周期，用来看「较上期」涨跌（今天就看昨天，近7天就看前7天）
+    try:
+        sd_dt0 = _dt.strptime(sd, "%Y-%m-%d")
+        ed_dt0 = _dt.strptime(ed, "%Y-%m-%d")
+        period_days = max(1, (ed_dt0 - sd_dt0).days + 1)
+        prev_ed_dt = sd_dt0 - _td(days=1)
+        prev_sd_dt = prev_ed_dt - _td(days=period_days - 1)
+        prev_sd = prev_sd_dt.strftime("%Y-%m-%d")
+        prev_ed_next = sd_dt0.strftime("%Y-%m-%d")
+    except Exception:
+        prev_sd, prev_ed_next = sd, ed_next
     ph = "%s"
     card_sql = f"""
         SELECT
@@ -6725,6 +6781,16 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
         card_stats = cursor.fetchone() or {}
         cursor.execute(active_sql, (sd, ed_next, sd, ed_next, sd, ed_next, sd, ed_next))
         active_stats = cursor.fetchone() or {}
+        # 上一等长周期：只取涨跌需要的关键指标
+        try:
+            cursor.execute(card_sql, (prev_sd, prev_ed_next, prev_sd, prev_ed_next))
+            prev_card_stats = cursor.fetchone() or {}
+            cursor.execute(active_sql, (prev_sd, prev_ed_next, prev_sd, prev_ed_next, prev_sd, prev_ed_next, prev_sd, prev_ed_next))
+            prev_active_stats = cursor.fetchone() or {}
+            cursor.execute(revenue_sql, (prev_sd, prev_ed_next))
+            prev_rev_stats = cursor.fetchone() or {}
+        except Exception:
+            prev_card_stats, prev_active_stats, prev_rev_stats = {}, {}, {}
         cursor.execute(trend_sql, (sd, ed_next))
         trend_rows = cursor.fetchall()
         cursor.execute(model_sql, (sd, ed_next))
@@ -6786,6 +6852,14 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
             "bank_hit_rate": round((int(card_stats.get("bank_hits") or 0) / max(1, int(card_stats.get("success") or 0))) * 100, 1),
             "refund_pending": int(refund_pending_row.get("cnt") or 0),
             "ai_task_pending": int(ai_task_pending_row.get("cnt") or 0),
+        },
+        "prev": {
+            "active": int(prev_active_stats.get("total_active") or 0) or int(prev_card_stats.get("active") or 0),
+            "calls": int(prev_card_stats.get("calls") or 0),
+            "success": int(prev_card_stats.get("success") or 0),
+            "error": int(prev_card_stats.get("error") or 0),
+            "bank_hits": int(prev_card_stats.get("bank_hits") or 0),
+            "revenue": round(float(prev_rev_stats.get("total_revenue") or 0), 2),
         },
         "trend": trend,
         "models": [{"model": r.get("model"), "total": int(r.get("total") or 0)} for r in model_rows if r.get("model")],
@@ -7502,6 +7576,18 @@ class Handler(BaseHTTPRequestHandler):
         """验证管理员会话 Token"""
         auth = self.headers.get("Authorization", "")
         return verify_admin_session(auth)
+
+    def _admin_username(self):
+        auth = self.headers.get("Authorization", "")
+        info = ADMIN_SESSIONS.get(auth) or {}
+        return info.get("username") or "admin"
+
+    def _audit(self, action, target="", detail=""):
+        """记录管理员关键操作；失败不影响主流程。"""
+        try:
+            db.add_admin_audit_log(self._admin_username(), action, target, detail, self._client_ip())
+        except Exception:
+            pass
 
     def _admin_guard(self):
         if self._check_admin():
@@ -8980,6 +9066,31 @@ class Handler(BaseHTTPRequestHandler):
                 "hub_pay_whitelist": admin.get("hub_pay_whitelist") or "",
                 "hub_pay_notify_url": admin.get("hub_pay_notify_url") or "",
             }})
+        elif path == "/admin/global-search":
+            if not self._admin_guard():
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                keyword = (qs.get("q", [""])[0] or "").strip()
+                result = db.global_search(keyword, limit=6)
+                result["code"] = 200
+                self._send_json(200, result)
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/audit-logs":
+            if not self._admin_guard():
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                page = int(qs.get("page", ["1"])[0] or 1)
+                page_size = int(qs.get("page_size", ["30"])[0] or 30)
+                action = (qs.get("action", [""])[0] or "").strip()
+                keyword = (qs.get("keyword", [""])[0] or "").strip()
+                result = db.list_admin_audit_logs(page, page_size, action, keyword)
+                result["code"] = 200
+                self._send_json(200, result)
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
         elif path.startswith("/admin/users"):
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -10804,6 +10915,10 @@ class Handler(BaseHTTPRequestHandler):
                 if username == expected_user and verify_admin_password(pwd, admin.get("password", "admin")):
                     token = create_admin_session(username)
                     clear_login_failures("admin", self._client_ip(), username)
+                    try:
+                        db.add_admin_audit_log(username, "admin.login", username, "后台登录成功", self._client_ip())
+                    except Exception:
+                        pass
                     self._send_json(200, {"code": 200, "token": token, "user": {"username": username}})
                     return
                 retry_after = record_login_failure("admin", self._client_ip(), username, {"username": username})
@@ -10869,6 +10984,10 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 db.update_admin_password(make_admin_password(new_pwd))
                 ADMIN_SESSIONS.clear()
+                try:
+                    db.clear_admin_sessions()
+                except Exception:
+                    pass
                 self._send_json(200, {"code": 200, "msg": "管理员密码已重置，请重新登录"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -10976,6 +11095,7 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     self._send_json(400, {"code": 400, "msg": "未知操作"})
                     return
+                self._audit("ai_task." + action, f"task#{task_id}", str(task.get("question_text") or "")[:160])
                 self._send_json(200, {"code": 200, "msg": msg})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -11001,6 +11121,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 save_providers_config(providers)
                 print(f"[模型健康] 已停用 {provider}/{model}（权重设为 0）", flush=True)
+                self._audit("model.disable", f"{provider}/{model}", "模型权重设为 0")
                 self._send_json(200, {"code": 200, "msg": f"已停用 {model}"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -11163,6 +11284,7 @@ class Handler(BaseHTTPRequestHandler):
                 if "providers" in data:
                     save_providers_config(data["providers"])
                     print(f"[保存AI配置] 已持久化到数据库")
+                self._audit("config.save", "模型配置", "保存 AI 提供商与模型配置")
                 self._send_json(200, {"code": 200, "msg": "保存成功"})
             except Exception as e:
                 print(f"[保存AI配置] 错误: {str(e)}")
@@ -11797,6 +11919,7 @@ class Handler(BaseHTTPRequestHandler):
                 ok, msg = db.process_refund_request(request_id, status, note)
                 if ok:
                     _send_refund_result_email(request_id, status, refund_amount, note)
+                    self._audit("refund.process", f"request#{request_id}", f"{status}，金额 ¥{refund_amount:.2f}，备注 {note[:80]}")
                 self._send_json(200 if ok else 400, {"code": 200 if ok else 400, "msg": msg,
                                                      "refund_amount": refund_amount})
             except Exception as e:
@@ -11973,6 +12096,7 @@ class Handler(BaseHTTPRequestHandler):
                     db.extend_user_membership(username, int(data.get("member_days_delta") or 0), data.get("reason") or "管理员充值包月")
                 if "member_until" in data:
                     db.set_user_member_until(username, data.get("member_until") or None)
+                self._audit("user.update", username, f"点数调整 {int(data.get('points_delta') or 0)}，会员天数 +{int(data.get('member_days_delta') or 0)}")
                 self._send_json(200, {"code": 200, "msg": "用户已更新", "profile": build_user_profile(username)})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -12360,6 +12484,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(400, {"code": 400, "msg": "参数无效"})
                     return
                 db.update_feedback_status(fid, status)
+                self._audit("feedback.status", f"feedback#{fid}", f"状态改为 {status}")
                 self._send_json(200, {"code": 200, "msg": "状态更新成功"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})

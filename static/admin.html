@@ -254,7 +254,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 118px 0 24px;
+  padding: 0 232px 0 24px;
   flex-shrink: 0;
   position: relative;
   gap: 16px;
@@ -979,7 +979,7 @@ html[data-theme="light"] .ip-badge.flag { color: #b45309; }
   .mobile-menu-overlay.show { display: block; }
 
   .main-content { height: 100vh; height: 100dvh; width: 100%; }
-  .main-header { padding: 0 108px 0 54px; height: 56px; }
+  .main-header { padding: 0 150px 0 54px; height: 56px; }
   .main-header .breadcrumb, .main-header .breadcrumb-nav { display: none !important; }
   .main-body { padding: 14px 12px calc(24px + env(safe-area-inset-bottom)) !important; }
 
@@ -1268,6 +1268,90 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
   .run-error { white-space: normal; }
   .worker-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* ===== 全局快捷搜索 ===== */
+.cmd-trigger {
+  display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 10px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg3);
+  color: var(--text3); font-size: 12px; cursor: pointer; transition: border-color .18s, color .18s, background .18s;
+}
+.cmd-trigger:hover { border-color: var(--border2); color: var(--text2); background: var(--card); }
+.cmd-trigger kbd {
+  font-family: "SFMono-Regular", Consolas, monospace; font-size: 10px; padding: 1px 5px;
+  border: 1px solid var(--border); border-radius: 4px; background: var(--card); color: var(--text3);
+}
+.cmd-overlay {
+  position: fixed; inset: 0; z-index: 4000; display: flex; align-items: flex-start; justify-content: center;
+  padding: 12vh 16px 16px; background: rgba(4, 8, 16, .58); backdrop-filter: blur(8px);
+}
+.cmd-panel {
+  width: min(680px, 100%); max-height: 72vh; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--card); border: 1px solid var(--border2); border-radius: 16px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .45);
+}
+.cmd-input-row { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.cmd-input-row input {
+  flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text);
+  font-size: 16px; line-height: 1.4;
+}
+.cmd-input-row input::placeholder { color: var(--text3); }
+.cmd-close { border: 0; background: transparent; color: var(--text3); cursor: pointer; padding: 4px; border-radius: 6px; }
+.cmd-close:hover { color: var(--text); background: var(--bg3); }
+.cmd-list { overflow-y: auto; padding: 8px; }
+.cmd-section { padding: 8px 10px 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; color: var(--text3); text-transform: uppercase; }
+.cmd-item {
+  width: 100%; display: flex; align-items: center; gap: 11px; padding: 9px 10px; border: 0; border-radius: 9px;
+  background: transparent; color: var(--text); text-align: left; cursor: pointer;
+}
+.cmd-item:hover, .cmd-item.active { background: var(--accent-subtle); }
+.cmd-item-icon { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; background: var(--bg3); color: var(--text2); flex: none; }
+.cmd-item-main { min-width: 0; flex: 1; display: block; }
+.cmd-item-title { display: block; font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd-item-sub { display: block; font-size: 11.5px; color: var(--text3); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd-item-hint { font-size: 11px; color: var(--text3); flex: none; }
+.cmd-empty { padding: 34px 16px; text-align: center; color: var(--text3); font-size: 13px; }
+.cmd-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 16px; border-top: 1px solid var(--border); color: var(--text3); font-size: 11px; }
+
+/* ===== 页面内标签 ===== */
+.page-tabs { display: inline-flex; gap: 3px; padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg3); }
+.page-tab { border: 0; background: transparent; color: var(--text3); font-size: 12.5px; font-weight: 600; padding: 6px 12px; border-radius: 7px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.page-tab.active { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.page-tab-count { font-size: 10.5px; font-weight: 700; padding: 0 5px; min-width: 16px; height: 16px; line-height: 16px; border-radius: 8px; background: var(--bg4); color: var(--text2); }
+.page-tab.active .page-tab-count { background: var(--accent-subtle); color: var(--accent2); }
+
+/* ===== 首页分组 ===== */
+.dash-section { margin: 18px 0 10px; }
+.dash-section:first-of-type { margin-top: 4px; }
+.dash-section-head { display: flex; align-items: center; gap: 8px; margin: 0 2px 9px; }
+.dash-section-head h3 { margin: 0; font-size: 12.5px; font-weight: 700; color: var(--text2); letter-spacing: .02em; }
+.dash-section-head span { font-size: 11px; color: var(--text3); }
+.dash-section-head .dash-section-line { flex: 1; height: 1px; background: var(--border); }
+.metric-delta { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 700; margin-top: 4px; }
+.metric-delta.up { color: var(--success); }
+.metric-delta.down { color: var(--danger); }
+.metric-delta.flat { color: var(--text3); }
+
+/* ===== 统一加载 / 空状态 ===== */
+.state-box { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 42px 20px; text-align: center; color: var(--text3); }
+.state-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 12px; background: var(--bg3); color: var(--text3); }
+.state-title { font-size: 13.5px; font-weight: 600; color: var(--text2); }
+.state-desc { font-size: 12px; line-height: 1.6; max-width: 420px; }
+.state-retry { margin-top: 2px; }
+.menu-badge { margin-left: auto; min-width: 18px; padding: 0 5px; height: 18px; line-height: 18px; text-align: center; border-radius: 9px; background: var(--warning); color: #fff; font-size: 11px; font-weight: 700; }
+.menu-group-header .menu-badge { margin-left: 4px; }
+
+@media (max-width: 768px) {
+  .cmd-overlay { padding-top: 8vh; }
+  .cmd-panel { max-height: 78vh; }
+  .cmd-trigger span { display: none; }
+  .cmd-trigger kbd { display: none; }
+  .page-tabs { width: 100%; }
+  .page-tab { flex: 1; justify-content: center; }
+  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .metric-card { padding: 14px; }
+  .metric-value { font-size: 22px; }
+  .metric-sub { font-size: 11px; }
+}
 </style>
 <script>
 (function(){
@@ -1530,13 +1614,13 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
               <svg class="ui-icon sm"><use href="#i-settings"></use></svg>返利配置
             </div>
             <div class="menu-item" :class="{active:page==='referral-withdrawals'}" @click="page='referral-withdrawals';loadReferralWithdrawals()">
-              <svg class="ui-icon sm"><use href="#i-wallet"></use></svg>提现审核
+              <svg class="ui-icon sm"><use href="#i-wallet"></use></svg>提现审核<span v-if="referralWdSummary.pending_count" class="menu-badge">{{referralWdSummary.pending_count}}</span>
             </div>
             <div class="menu-item" :class="{active:page==='feedback'}" @click="page='feedback';loadFeedbackList();loadFeedbackAutoClose();loadFeedbackNotify()">
-              <svg class="ui-icon sm"><use href="#i-message-square"></use></svg>问题反馈
+              <svg class="ui-icon sm"><use href="#i-message-square"></use></svg>问题反馈<span v-if="feedbackPendingCount" class="menu-badge">{{feedbackPendingCount}}</span>
             </div>
             <div class="menu-item" :class="{active:page==='adapt-requests'}" @click="page='adapt-requests';loadAdaptRequests()">
-              <svg class="ui-icon sm"><use href="#i-clipboard"></use></svg>定制需求<span v-if="adaptPending" :style="{marginLeft:'auto',minWidth:'18px',padding:'0 5px',height:'18px',lineHeight:'18px',textAlign:'center',borderRadius:'9px',background:'var(--warning)',color:'#fff',fontSize:'11px',fontWeight:'600'}">{{adaptPending}}</span>
+              <svg class="ui-icon sm"><use href="#i-clipboard"></use></svg>定制需求<span v-if="adaptPending" class="menu-badge">{{adaptPending}}</span>
             </div>
             <div class="menu-item" :class="{active:page==='announce'}" @click="page='announce';loadAnnounceConfig()">
               <svg class="ui-icon sm"><use href="#i-bell"></use></svg>公告通知
@@ -1558,7 +1642,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
               <svg class="ui-icon sm"><use href="#i-receipt"></use></svg>支付明细
             </div>
             <div class="menu-item" :class="{active:page==='refund-requests'}" @click="page='refund-requests';loadRefundRequests()">
-              <svg class="ui-icon sm"><use href="#i-rotate-ccw"></use></svg>退款申请
+              <svg class="ui-icon sm"><use href="#i-rotate-ccw"></use></svg>退款申请<span v-if="dashboard.cards&&dashboard.cards.refund_pending" class="menu-badge">{{dashboard.cards.refund_pending}}</span>
             </div>
             <div class="menu-item" :class="{active:page==='payment'}" @click="page='payment';loadPaymentConfig()">
               <svg class="ui-icon sm"><use href="#i-layers"></use></svg>套餐配置
@@ -1637,7 +1721,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
 
         <!-- 系统配置组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.config}">
-          <div class="menu-group-header dock-item" :class="{active:['email-config','db-config','qq-bot','sso-config'].includes(page)}" @click="expandedGroups.config=!expandedGroups.config">
+          <div class="menu-group-header dock-item" :class="{active:['email-config','db-config','qq-bot','sso-config','audit-logs'].includes(page)}" @click="expandedGroups.config=!expandedGroups.config">
             <svg class="ui-icon sm"><use href="#i-settings"></use></svg>系统配置
             <svg class="ui-icon xs arrow"><use href="#i-chevron-right"></use></svg>
           </div>
@@ -1651,6 +1735,9 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
             <div class="menu-item" :class="{active:page==='sso-config'}" @click="page='sso-config';loadSsoConfig()">
               <svg class="ui-icon sm"><use href="#i-shield"></use></svg>单点登录
             </div>
+            <div class="menu-item" :class="{active:page==='audit-logs'}" @click="page='audit-logs';loadAuditLogs(1)">
+              <svg class="ui-icon sm"><use href="#i-file-text"></use></svg>操作审计
+            </div>
             <div class="menu-item" :class="{active:page==='db-config'}" @click="page='db-config';loadDbConfig()">
               <svg class="ui-icon sm"><use href="#i-database"></use></svg>系统设置
             </div>
@@ -1663,11 +1750,61 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
     <main class="main-content">
       <button class="mobile-menu-toggle" @click="mobileSidebarOpen=!mobileSidebarOpen" aria-label="打开菜单"><svg class="ui-icon md"><use href="#i-menu"></use></svg></button>
       <div class="top-account">
+        <button class="cmd-trigger" @click="openSearch" title="全局搜索（Ctrl+K）">
+          <svg class="ui-icon sm"><use href="#i-search"></use></svg><span>搜索</span><kbd>Ctrl K</kbd>
+        </button>
         <button class="theme-toggle" :title="'主题：'+themeLabels[themeMode]" @click="cycleTheme"><svg class="ui-icon sm"><use :href="themeMode==='light'?'#i-sun':themeMode==='dark'?'#i-moon':'#i-monitor'"></use></svg></button>
         <div class="top-avatar"><img v-if="accountConfig.avatar_data" :src="accountConfig.avatar_data"><svg v-else class="ui-icon sm"><use href="#i-user"></use></svg></div>
         <div class="top-menu">
           <button @click="page='profile';loadAdminAccount();loadEmailConfig()">个人中心</button>
           <button class="danger" @click="logout">退出登录</button>
+        </div>
+      </div>
+      <div v-if="searchOpen" class="cmd-overlay" @click.self="closeSearch">
+        <div class="cmd-panel" role="dialog" aria-label="全局搜索">
+          <div class="cmd-input-row">
+            <svg class="ui-icon sm" style="color:var(--text3);flex:none"><use href="#i-search"></use></svg>
+            <input ref="searchInputEl" v-model="searchQuery" @keydown.esc.prevent="closeSearch" @keydown.down.prevent="moveSearch(1)" @keydown.up.prevent="moveSearch(-1)" @keydown.enter.prevent="openSearchActive" placeholder="搜索页面、用户名、订单号、反馈…">
+            <button class="cmd-close" @click="closeSearch" aria-label="关闭"><svg class="ui-icon sm"><use href="#i-x"></use></svg></button>
+          </div>
+          <div class="cmd-list">
+            <template v-if="searchPageItems.length">
+              <div class="cmd-section">页面</div>
+              <button v-for="(it,idx) in searchPageItems" :key="'p-'+it.page" class="cmd-item" :class="{active:searchActive===idx}" @mouseenter="searchActive=idx" @click="goSearchPage(it.page)">
+                <span class="cmd-item-icon"><svg class="ui-icon sm"><use href="#i-file-text"></use></svg></span>
+                <span class="cmd-item-main"><span class="cmd-item-title">{{it.label}}</span><span class="cmd-item-sub">{{it.path}}</span></span>
+                <span class="cmd-item-hint">页面</span>
+              </button>
+            </template>
+            <template v-if="searchUsers.length">
+              <div class="cmd-section">用户</div>
+              <button v-for="(u,idx) in searchUsers" :key="'u-'+u.id" class="cmd-item" :class="{active:searchActive===searchPageItems.length+idx}" @mouseenter="searchActive=searchPageItems.length+idx" @click="goSearchUser(u)">
+                <span class="cmd-item-icon"><svg class="ui-icon sm"><use href="#i-user"></use></svg></span>
+                <span class="cmd-item-main"><span class="cmd-item-title">{{u.username}}</span><span class="cmd-item-sub">{{u.email||'未绑定邮箱'}} · {{u.points_balance||0}} 题</span></span>
+                <span class="cmd-item-hint">用户</span>
+              </button>
+            </template>
+            <template v-if="searchOrders.length">
+              <div class="cmd-section">订单</div>
+              <button v-for="(o,idx) in searchOrders" :key="'o-'+o.order_no" class="cmd-item" :class="{active:searchActive===searchPageItems.length+searchUsers.length+idx}" @mouseenter="searchActive=searchPageItems.length+searchUsers.length+idx" @click="goSearchOrder(o)">
+                <span class="cmd-item-icon"><svg class="ui-icon sm"><use href="#i-receipt"></use></svg></span>
+                <span class="cmd-item-main"><span class="cmd-item-title">{{o.order_no}}</span><span class="cmd-item-sub">{{o.username}} · ¥{{Number(o.price||0).toFixed(2)}} · {{paymentStatusLabel(o.status)}}</span></span>
+                <span class="cmd-item-hint">订单</span>
+              </button>
+            </template>
+            <template v-if="searchFeedback.length">
+              <div class="cmd-section">反馈</div>
+              <button v-for="(f,idx) in searchFeedback" :key="'f-'+f.id" class="cmd-item" :class="{active:searchActive===searchPageItems.length+searchUsers.length+searchOrders.length+idx}" @mouseenter="searchActive=searchPageItems.length+searchUsers.length+searchOrders.length+idx" @click="goSearchFeedback(f)">
+                <span class="cmd-item-icon"><svg class="ui-icon sm"><use href="#i-message-square"></use></svg></span>
+                <span class="cmd-item-main"><span class="cmd-item-title">{{f.title||'反馈 #'+f.id}}</span><span class="cmd-item-sub">{{f.username||'-'}} · {{f.created_at||''}}</span></span>
+                <span class="cmd-item-hint">反馈</span>
+              </button>
+            </template>
+            <div v-if="searchLoading" class="cmd-empty">正在搜索…</div>
+            <div v-else-if="searchQuery.trim()&&!searchPageItems.length&&!searchUsers.length&&!searchOrders.length&&!searchFeedback.length" class="cmd-empty">没有找到匹配的页面、用户、订单或反馈</div>
+            <div v-else-if="!searchQuery.trim()" class="cmd-empty">输入页面名、用户名或订单号，回车打开第一条结果</div>
+          </div>
+          <div class="cmd-foot"><span>↑↓ 选择 · Enter 打开 · Esc 关闭</span><span>搜索范围：页面 / 用户 / 订单 / 反馈</span></div>
         </div>
       </div>
       <!-- Dashboard Page -->
@@ -1701,27 +1838,41 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
               </div>
             </div>
           </div>
-          <div class="metric-grid">
-            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(96,165,250,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='user-mgmt';loadUsers();loadLoginLocks()"><div class="metric-label">用户数</div><div class="metric-value">{{dashboard.cards.users||0}}</div><div class="metric-sub">点击管理用户 →</div></div>
-            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(96,165,250,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='user-mgmt';loadUsers();loadLoginLocks()">
-              <div class="metric-label">活跃数</div>
-              <div class="metric-value">{{dashboard.cards.active||0}}</div>
-              <div class="metric-sub" style="display:flex;gap:8px;flex-wrap:wrap">
-                <span style="color:var(--accent2)" title="调过答题接口的用户">答题 {{dashboard.cards.active_answer||0}}</span>
-                <span style="color:var(--warning)" title="只有视频/直播/阅读等脚本活动、没答题的登录用户">挂机 {{dashboard.cards.active_idle||0}}</span>
-                <span style="color:var(--success)" title="会员在期/有题数余额/自有模型在期">付费 {{dashboard.cards.active_paid||0}}</span>
+          <div class="dash-section">
+            <div class="dash-section-head"><h3>今日业务</h3><span>用户与模型调用</span><span class="dash-section-line"></span></div>
+            <div class="metric-grid">
+              <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(96,165,250,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='user-mgmt';loadUsers();loadLoginLocks()"><div class="metric-label">用户数</div><div class="metric-value">{{dashboard.cards.users||0}}</div><div class="metric-sub">点击管理用户 →</div></div>
+              <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(96,165,250,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='user-mgmt';loadUsers();loadLoginLocks()">
+                <div class="metric-label">活跃数</div>
+                <div class="metric-value">{{dashboard.cards.active||0}}</div>
+                <div class="metric-sub" style="display:flex;gap:8px;flex-wrap:wrap">
+                  <span style="color:var(--accent2)" title="调过答题接口的用户">答题 {{dashboard.cards.active_answer||0}}</span>
+                  <span style="color:var(--warning)" title="只有视频/直播/阅读等脚本活动、没答题的登录用户">挂机 {{dashboard.cards.active_idle||0}}</span>
+                  <span style="color:var(--success)" title="会员在期/有题数余额/自有模型在期">付费 {{dashboard.cards.active_paid||0}}</span>
+                </div>
+                <div class="metric-delta" :class="dashDeltaClass('active')">{{dashDeltaText('active')}}</div>
               </div>
+              <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(96,165,250,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='ai-logs';expandedGroups.models=true;aiLogFilter.status='';loadAiLogs(1)"><div class="metric-label">模型调用数</div><div class="metric-value">{{dashboard.cards.calls||0}}</div><div class="metric-sub">点击查看日志 →</div><div class="metric-delta" :class="dashDeltaClass('calls')">{{dashDeltaText('calls')}}</div></div>
+              <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(16,185,129,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='ai-logs';expandedGroups.models=true;aiLogFilter.status='success';loadAiLogs(1)"><div class="metric-label">成功数</div><div class="metric-value" style="color:var(--success)">{{dashboard.cards.success||0}}</div><div class="metric-sub">点击查看成功详情 →</div><div class="metric-delta" :class="dashDeltaClass('success')">{{dashDeltaText('success')}}</div></div>
+              <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(239,68,68,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='ai-logs';expandedGroups.models=true;aiLogFilter.status='error';loadAiLogs(1)"><div class="metric-label">失败数</div><div class="metric-value" style="color:var(--danger)">{{dashboard.cards.error||0}}</div><div class="metric-sub">点击查看失败详情 →</div><div class="metric-delta" :class="dashDeltaClass('error')">{{dashDeltaText('error')}}</div></div>
             </div>
-            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(16,185,129,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='question-bank';loadQuestionBank()"><div class="metric-label">题库总数</div><div class="metric-value">{{dashboard.cards.question_bank||0}}</div><div class="metric-sub">区间新增 {{dashboard.cards.bank_new||0}} · 点击管理题库 →</div></div>
-            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(16,185,129,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='bank-logs';expandedGroups.questions=true;loadBankLogs()"><div class="metric-label">题库命中数</div><div class="metric-value" style="color:var(--success)">{{dashboard.cards.bank_hits||0}}</div><div class="metric-sub">点击查看日志 →</div></div>
-            <div class="metric-card"><div class="metric-label">题库命中率</div><div class="metric-value" style="color:var(--accent2)">{{dashboard.cards.bank_hit_rate||0}}%</div><div class="metric-sub">占成功答题比例</div></div>
-            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(96,165,250,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='ai-logs';expandedGroups.models=true;aiLogFilter.status='';loadAiLogs(1)"><div class="metric-label">模型调用数</div><div class="metric-value">{{dashboard.cards.calls||0}}</div><div class="metric-sub">点击查看日志 →</div></div>
-            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(16,185,129,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='ai-logs';expandedGroups.models=true;aiLogFilter.status='success';loadAiLogs(1)"><div class="metric-label">成功数</div><div class="metric-value" style="color:var(--success)">{{dashboard.cards.success||0}}</div><div class="metric-sub">点击查看成功详情 →</div></div>
-            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(239,68,68,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='ai-logs';expandedGroups.models=true;aiLogFilter.status='error';loadAiLogs(1)"><div class="metric-label">失败数</div><div class="metric-value" style="color:var(--danger)">{{dashboard.cards.error||0}}</div><div class="metric-sub">点击查看失败详情 →</div></div>
-            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(245,158,11,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='feedback';expandedGroups.referral=true;loadFeedbackList()"><div class="metric-label">待处理反馈</div><div class="metric-value" style="color:var(--warning)">{{feedbackPendingCount||0}}</div><div class="metric-sub">点击查看处理 →</div></div>
-            <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(239,68,68,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='refund-requests';loadRefundRequests()"><div class="metric-label">待处理退款</div><div class="metric-value" style="color:var(--danger)">{{dashboard.cards?.refund_pending||0}}</div><div class="metric-sub">点击查看处理 →</div></div>
-            <div class="metric-card" :style="{cursor:'pointer',transition:'border-color .2s',borderColor:adaptPending?'rgba(245,158,11,.45)':''}" onmouseover="this.style.borderColor='rgba(245,158,11,.4)'" onmouseout="this.style.borderColor=adaptPending?'rgba(245,158,11,.45)':''" @click="page='adapt-requests';loadAdaptRequests()"><div class="metric-label">待评估定制需求</div><div class="metric-value" :style="{color:adaptPending?'var(--warning)':'var(--text)'}">{{adaptPending}}</div><div class="metric-sub"><span v-if="adaptUrgent" style="color:var(--danger,#ef4444);font-weight:600">加急 {{adaptUrgent}} · </span>点击查看处理 →</div></div>
-            <div class="metric-card" :style="{cursor:'pointer',transition:'border-color .2s',borderColor:aiTaskCounts.pending?'rgba(239,68,68,.45)':''}" onmouseover="this.style.borderColor='rgba(239,68,68,.4)'" onmouseout="this.style.borderColor=aiTaskCounts.pending?'rgba(239,68,68,.45)':''" @click="page='ai-tasks';loadAiTasks()"><div class="metric-label">答题任务待处理</div><div class="metric-value" :style="{color:aiTaskCounts.pending?'var(--danger)':'var(--text)'}">{{aiTaskCounts.pending||0}}</div><div class="metric-sub">后台仍在轮流尝试 · 点击查看 →</div></div>
+          </div>
+          <div class="dash-section">
+            <div class="dash-section-head"><h3>待办事项</h3><span>需要人工处理</span><span class="dash-section-line"></span></div>
+            <div class="metric-grid">
+              <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(245,158,11,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='feedback';expandedGroups.referral=true;loadFeedbackList()"><div class="metric-label">待处理反馈</div><div class="metric-value" style="color:var(--warning)">{{feedbackPendingCount||0}}</div><div class="metric-sub">点击查看处理 →</div></div>
+              <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(239,68,68,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='refund-requests';loadRefundRequests()"><div class="metric-label">待处理退款</div><div class="metric-value" style="color:var(--danger)">{{dashboard.cards?.refund_pending||0}}</div><div class="metric-sub">点击查看处理 →</div></div>
+              <div class="metric-card" :style="{cursor:'pointer',transition:'border-color .2s',borderColor:adaptPending?'rgba(245,158,11,.45)':''}" onmouseover="this.style.borderColor='rgba(245,158,11,.4)'" onmouseout="this.style.borderColor=adaptPending?'rgba(245,158,11,.45)':''" @click="page='adapt-requests';loadAdaptRequests()"><div class="metric-label">待评估定制需求</div><div class="metric-value" :style="{color:adaptPending?'var(--warning)':'var(--text)'}">{{adaptPending}}</div><div class="metric-sub"><span v-if="adaptUrgent" style="color:var(--danger,#ef4444);font-weight:600">加急 {{adaptUrgent}} · </span>点击查看处理 →</div></div>
+              <div class="metric-card" :style="{cursor:'pointer',transition:'border-color .2s',borderColor:aiTaskCounts.pending?'rgba(239,68,68,.45)':''}" onmouseover="this.style.borderColor='rgba(239,68,68,.4)'" onmouseout="this.style.borderColor=aiTaskCounts.pending?'rgba(239,68,68,.45)':''" @click="page='ai-tasks';loadAiTasks()"><div class="metric-label">答题任务待处理</div><div class="metric-value" :style="{color:aiTaskCounts.pending?'var(--danger)':'var(--text)'}">{{aiTaskCounts.pending||0}}</div><div class="metric-sub">后台仍在轮流尝试 · 点击查看 →</div></div>
+            </div>
+          </div>
+          <div class="dash-section">
+            <div class="dash-section-head"><h3>题库</h3><span>命中与积累</span><span class="dash-section-line"></span></div>
+            <div class="metric-grid">
+              <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(16,185,129,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='question-bank';loadQuestionBank()"><div class="metric-label">题库总数</div><div class="metric-value">{{dashboard.cards.question_bank||0}}</div><div class="metric-sub">区间新增 {{dashboard.cards.bank_new||0}} · 点击管理题库 →</div></div>
+              <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(16,185,129,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='bank-logs';expandedGroups.questions=true;loadBankLogs()"><div class="metric-label">题库命中数</div><div class="metric-value" style="color:var(--success)">{{dashboard.cards.bank_hits||0}}</div><div class="metric-sub">点击查看日志 →</div><div class="metric-delta" :class="dashDeltaClass('bank_hits')">{{dashDeltaText('bank_hits')}}</div></div>
+              <div class="metric-card"><div class="metric-label">题库命中率</div><div class="metric-value" style="color:var(--accent2)">{{dashboard.cards.bank_hit_rate||0}}%</div><div class="metric-sub">占成功答题比例</div></div>
+            </div>
           </div>
           <div class="dash-grid">
             <div class="chart-card">
@@ -1896,6 +2047,65 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
               </g>
               <text v-if="!(dashboard.revenue?.trend||[]).length || !(dashboard.revenue?.trend||[]).some(r=>r.revenue>0)" x="350" y="100" fill="var(--text3)" font-size="13" text-anchor="middle">暂无收入数据</text>
             </svg>
+          </div>
+        </div>
+      </template>
+
+      <!-- 管理员操作审计 -->
+      <template v-if="page==='audit-logs'">
+        <header class="main-header">
+          <h2>操作审计</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index<breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+          <div class="card">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+              <h3 style="margin:0">管理员操作记录</h3>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <select v-model="auditFilter.action" class="form-control" style="width:150px;padding:6px 10px;font-size:13px" @change="loadAuditLogs(1)">
+                  <option value="">全部操作</option>
+                  <option value="admin.login">后台登录</option>
+                  <option value="config.save">保存模型配置</option>
+                  <option value="model.disable">停用模型</option>
+                  <option value="user.update">修改用户</option>
+                  <option value="refund.process">退款处理</option>
+                  <option value="feedback.status">反馈状态</option>
+                  <option value="ai_task.retry">重试任务</option>
+                  <option value="ai_task.stop">停止任务</option>
+                  <option value="ai_task.delete">删除任务</option>
+                </select>
+                <input v-model="auditFilter.keyword" class="form-control" placeholder="搜索管理员 / 对象 / 详情" style="width:210px;padding:6px 10px;font-size:13px" @keyup.enter="loadAuditLogs(1)">
+                <button class="btn btn-secondary" style="padding:6px 14px" @click="loadAuditLogs(1)">查询</button>
+                <button class="btn btn-secondary" style="padding:6px 14px" @click="auditFilter.action='';auditFilter.keyword='';loadAuditLogs(1)">重置</button>
+              </div>
+            </div>
+            <div class="card-body" style="padding:0;overflow-x:auto">
+              <div v-if="auditLoading" class="state-box"><div class="state-title">正在读取操作记录…</div></div>
+              <div v-else-if="auditError" class="state-box"><div class="state-icon"><svg class="ui-icon md"><use href="#i-alert-triangle"></use></svg></div><div class="state-title">读取失败</div><div class="state-desc">{{auditError}}</div><button class="btn btn-secondary btn-sm state-retry" @click="loadAuditLogs(auditPage)">重试</button></div>
+              <div v-else-if="auditLogs.length===0" class="state-box"><div class="state-icon"><svg class="ui-icon md"><use href="#i-file-text"></use></svg></div><div class="state-title">还没有操作记录</div><div class="state-desc">登录后台、保存配置、处理退款、修改用户等关键操作会自动记录在这里。</div></div>
+              <table v-else class="data-table">
+                <thead><tr><th style="width:150px">时间</th><th style="width:120px">管理员</th><th style="width:120px">操作</th><th style="width:180px">对象</th><th>详情</th><th style="width:130px">IP</th></tr></thead>
+                <tbody>
+                  <tr v-for="r in auditLogs" :key="r.id">
+                    <td style="font-size:12px;color:var(--text3);white-space:nowrap">{{r.created_at}}</td>
+                    <td style="font-size:12.5px;font-weight:600">{{r.admin_username||'-'}}</td>
+                    <td><span class="chip" style="font-size:11px">{{auditActionText(r.action)}}</span></td>
+                    <td style="font-size:12px;color:var(--accent2);word-break:break-all">{{r.target||'-'}}</td>
+                    <td style="font-size:12px;color:var(--text2);word-break:break-word">{{r.detail||'-'}}</td>
+                    <td style="font-size:11.5px;color:var(--text3);font-family:monospace">{{r.client_ip||'-'}}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;padding:12px 20px;border-top:1px solid var(--border)">
+              <div style="font-size:12px;color:var(--text3)">共 {{auditTotal}} 条 · 每页 {{auditPageSize}} 条</div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button class="btn btn-secondary" style="padding:4px 12px" :disabled="auditPage<=1" @click="loadAuditLogs(auditPage-1)">上一页</button>
+                <span style="font-size:13px">{{auditPage}} / {{auditTotalPages}}</span>
+                <button class="btn btn-secondary" style="padding:4px 12px" :disabled="auditPage>=auditTotalPages" @click="loadAuditLogs(auditPage+1)">下一页</button>
+              </div>
+            </div>
           </div>
         </div>
       </template>
@@ -2740,6 +2950,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                 <button class="btn btn-primary btn-sm" @click="loadUsers()">搜索</button>
                 <button class="btn btn-secondary btn-sm" @click="resetUserSearch">重置</button>
                 <button class="btn btn-secondary btn-sm" @click="loadUsers">刷新</button>
+                <button class="btn btn-secondary btn-sm" @click="exportUsersCsv">导出 CSV</button>
               </div>
             </div>
             <div class="card-body">
@@ -3229,6 +3440,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
               </div>
               <button class="btn btn-primary" @click="loadRefundRequests(1)">查询</button>
               <button class="btn btn-secondary" @click="rrFilterStatus='';rrFilterUsername='';rrFilterOrderNo='';rrFilterIp='';loadRefundRequests(1)">重置</button>
+              <button class="btn btn-secondary" @click="exportRefundsCsv">导出 CSV</button>
             </div>
           </div>
           <div class="card">
@@ -4328,12 +4540,13 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                 <button class="date-quick" :class="{active:modelStatsDays===7}" @click="modelStatsDays=7;loadModelStats()">近7天</button>
                 <button class="date-quick" :class="{active:modelStatsDays===30}" @click="modelStatsDays=30;loadModelStats()">近30天</button>
                 <button class="btn btn-secondary" style="padding:6px 14px" :disabled="modelStatsLoading" @click="loadModelStats()">{{modelStatsLoading?'加载中...':'刷新'}}</button>
+                <button class="btn btn-secondary" style="padding:6px 14px" @click="modelStatsCompact=!modelStatsCompact">{{modelStatsCompact?'完整列':'精简列'}}</button>
               </div>
             </div>
             <div class="card-body" style="padding:0;overflow-x:auto">
               <table class="data-table">
                 <thead><tr>
-                  <th>模型</th><th>服务商</th><th style="width:100px">当前状态</th><th style="width:70px">调用</th><th style="width:70px">成功</th><th style="width:70px">失败</th><th style="width:90px">失败率</th><th style="width:70px">超时</th><th style="width:60px">429</th><th style="width:60px">400</th><th style="width:60px">5xx</th><th style="width:80px">平均耗时</th><th style="width:110px">图片失败</th><th style="width:80px">操作</th>
+                  <th style="cursor:pointer" @click="toggleModelStatsSort('model')">模型{{sortMark('model')}}</th><th style="cursor:pointer" @click="toggleModelStatsSort('provider')">服务商{{sortMark('provider')}}</th><th style="width:100px">当前状态</th><th style="width:70px;cursor:pointer" @click="toggleModelStatsSort('calls')">调用{{sortMark('calls')}}</th><th v-if="!modelStatsCompact" style="width:70px;cursor:pointer" @click="toggleModelStatsSort('ok')">成功{{sortMark('ok')}}</th><th style="width:70px;cursor:pointer" @click="toggleModelStatsSort('err')">失败{{sortMark('err')}}</th><th style="width:90px;cursor:pointer" @click="toggleModelStatsSort('error_rate')">失败率{{sortMark('error_rate')}}</th><th style="width:70px;cursor:pointer" @click="toggleModelStatsSort('timeout')">超时{{sortMark('timeout')}}</th><th v-if="!modelStatsCompact" style="width:60px;cursor:pointer" @click="toggleModelStatsSort('limited')">429{{sortMark('limited')}}</th><th v-if="!modelStatsCompact" style="width:60px;cursor:pointer" @click="toggleModelStatsSort('bad_request')">400{{sortMark('bad_request')}}</th><th v-if="!modelStatsCompact" style="width:60px;cursor:pointer" @click="toggleModelStatsSort('server_error')">5xx{{sortMark('server_error')}}</th><th v-if="!modelStatsCompact" style="width:80px;cursor:pointer" @click="toggleModelStatsSort('avg_ms')">平均耗时{{sortMark('avg_ms')}}</th><th style="width:110px">图片失败</th><th style="width:80px">操作</th>
                 </tr></thead>
                 <tbody>
                   <tr v-for="r in modelStatsFilteredRows" :key="r.provider+'/'+r.model" :style="(r.calls>=20&&r.error_rate>=50)?'background:rgba(239,68,68,.06)':''">
@@ -4341,18 +4554,18 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                     <td style="font-size:12px;color:var(--text3)">{{r.provider_title||r.provider||'-'}}</td>
                     <td><span :style="modelStatusStyle(r.config_status)">{{modelStatusText(r.config_status)}}</span></td>
                     <td>{{r.calls}}</td>
-                    <td style="color:var(--success)">{{r.ok}}</td>
+                    <td v-if="!modelStatsCompact" style="color:var(--success)">{{r.ok}}</td>
                     <td :style="{color:r.err?'var(--danger)':'var(--text3)'}">{{r.err}}</td>
                     <td><span :style="{fontWeight:'600',color:r.error_rate>=50&&r.calls>=20?'var(--danger)':r.error_rate>=20?'var(--warning)':'var(--success)'}">{{r.error_rate}}%</span></td>
                     <td>{{r.timeout}}</td>
-                    <td>{{r.limited}}</td>
-                    <td>{{r.bad_request}}</td>
-                    <td>{{r.server_error}}</td>
-                    <td>{{r.avg_ms?(r.avg_ms/1000).toFixed(1)+'s':'-'}}</td>
+                    <td v-if="!modelStatsCompact">{{r.limited}}</td>
+                    <td v-if="!modelStatsCompact">{{r.bad_request}}</td>
+                    <td v-if="!modelStatsCompact">{{r.server_error}}</td>
+                    <td v-if="!modelStatsCompact">{{r.avg_ms?(r.avg_ms/1000).toFixed(1)+'s':'-'}}</td>
                     <td style="font-size:12px"><span v-if="r.img_calls">{{r.img_err}}/{{r.img_calls}}（{{r.img_error_rate}}%）</span><span v-else style="color:var(--text3)">-</span></td>
                     <td><button v-if="r.config_status==='active'" class="btn btn-secondary" style="padding:3px 10px;font-size:12px" @click="disableModel(r)">停用</button><span v-else style="font-size:12px;color:var(--text3)">{{r.config_status==='hub'?'中控':modelStatusText(r.config_status)}}</span></td>
                   </tr>
-                  <tr v-if="modelStatsFilteredRows.length===0"><td colspan="14" style="padding:30px;text-align:center;color:var(--text3)">{{modelStatsRows.length?'当前筛选没有模型':'暂无模型调用数据'}}</td></tr>
+                  <tr v-if="modelStatsFilteredRows.length===0"><td :colspan="modelStatsCompact?9:14" style="padding:30px;text-align:center;color:var(--text3)">{{modelStatsRows.length?'当前筛选没有模型':'暂无模型调用数据'}}</td></tr>
                 </tbody>
               </table>
             </div>
@@ -4369,7 +4582,14 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
         </header>
         <div class="main-body">
           <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
-          <div class="live-board">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+            <div class="page-tabs">
+              <button class="page-tab" :class="{active:aiTaskTab==='live'}" @click="aiTaskTab='live'">实时看板<span class="page-tab-count">{{aiLiveCounts.running||0}}</span></button>
+              <button class="page-tab" :class="{active:aiTaskTab==='list'}" @click="aiTaskTab='list';loadAiTasks()">任务列表<span class="page-tab-count">{{aiTaskCounts.pending||0}}</span></button>
+            </div>
+            <span style="font-size:11.5px;color:var(--text3)">看板每 2 秒刷新，任务列表按需加载</span>
+          </div>
+          <div class="live-board" v-show="aiTaskTab==='live'">
             <section class="live-hero">
               <div class="live-hero-main">
                 <div class="live-kicker">
@@ -4471,7 +4691,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
               </div>
             </div>
           </div>
-          <div class="card">
+          <div class="card" v-show="aiTaskTab==='list'">
             <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
               <h3 style="margin:0">后台答题任务</h3>
               <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
@@ -4510,7 +4730,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                       <button class="btn btn-secondary" style="padding:3px 8px;font-size:12px;margin-left:4px;color:var(--danger)" @click="aiTaskAction(r,'delete')">删除</button>
                     </td>
                   </tr>
-                  <tr v-if="aiTaskList.length===0"><td colspan="9" style="padding:30px;text-align:center;color:var(--text3)">池子里没有任务</td></tr>
+                  <tr v-if="aiTaskList.length===0"><td colspan="9" style="padding:0"><div class="state-box"><div class="state-icon"><svg class="ui-icon md"><use href="#i-clock"></use></svg></div><div class="state-title">当前筛选没有任务</div><div class="state-desc">换一个状态筛选，或等脚本提交新的答题任务。</div></div></td></tr>
                 </tbody>
               </table>
             </div>
@@ -4538,6 +4758,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
               <h3>调用记录</h3>
               <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                 <button class="btn btn-secondary btn-sm" @click="loadAiLogs(1)">查询</button>
+                <button class="btn btn-secondary btn-sm" @click="exportAiLogsCsv">导出 CSV</button>
                 <button class="btn btn-danger btn-sm" @click="clearAiLogs">按条件清空</button>
               </div>
             </div>
@@ -4579,13 +4800,13 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                 <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1200px">
                   <thead>
                     <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
-                      <th style="text-align:left;padding:10px 8px">时间</th>
+                      <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="toggleAiLogSort('created_at')">时间{{aiLogSortMark('created_at')}}</th>
                       <th style="text-align:left;padding:10px 8px">用户</th>
                       <th style="text-align:left;padding:10px 8px" title="该条日志写入时的题数/包月快照（扣点后）">调用时剩余/到期</th>
-                      <th style="text-align:left;padding:10px 8px">状态</th>
-                      <th style="text-align:left;padding:10px 8px">模型</th>
+                      <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="toggleAiLogSort('status')">状态{{aiLogSortMark('status')}}</th>
+                      <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="toggleAiLogSort('model')">模型{{aiLogSortMark('model')}}</th>
                       <th style="text-align:left;padding:10px 8px">最终成功模型</th>
-                      <th style="text-align:left;padding:10px 8px">耗时</th>
+                      <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="toggleAiLogSort('duration_ms')">耗时{{aiLogSortMark('duration_ms')}}</th>
                       <th style="text-align:left;padding:10px 8px">题目</th>
                       <th style="text-align:left;padding:10px 8px">返回答案</th>
                       <th style="text-align:left;padding:10px 8px">错误</th>
@@ -4593,7 +4814,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                     </tr>
                   </thead>
                   <tbody>
-                    <template v-for="log in aiLogs" :key="log.id">
+                    <template v-for="log in aiLogSorted" :key="log.id">
                       <tr style="border-bottom:1px solid var(--border);color:var(--text)">
                         <td style="padding:10px 8px;color:var(--text3);white-space:nowrap">{{log.created_at}}</td>
                         <td style="padding:10px 8px;white-space:nowrap;color:var(--accent2)">{{log.username||'-'}}</td>
@@ -6271,6 +6492,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
               </div>
               <button class="btn btn-primary" @click="paymentOrdersSearch()">查询</button>
               <button class="btn btn-secondary" @click="resetPaymentFilter()">重置</button>
+              <button class="btn btn-secondary" @click="exportPaymentOrdersCsv">导出 CSV</button>
             </div>
           </div>
           <!-- 合计栏 -->
@@ -7022,7 +7244,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
 </div>
 
 <script>
-const {createApp,ref,computed,reactive,watch}=Vue;
+const {createApp,ref,computed,reactive,watch,nextTick}=Vue;
 
 createApp({
   setup(){
@@ -7045,6 +7267,7 @@ createApp({
       'referral':[{label:'推广运营',group:'referral'},{label:'返利配置'}],
       'referral-withdrawals':[{label:'推广运营',group:'referral'},{label:'提现审核'}],
       'feedback':[{label:'推广运营',group:'referral'},{label:'问题反馈'}],
+      'adapt-requests':[{label:'推广运营',group:'referral'},{label:'定制需求'}],
       'announce':[{label:'推广运营',group:'referral'},{label:'公告通知'}],
       'ads':[{label:'推广运营',group:'referral'},{label:'广告位'}],
       'payment-orders':[{label:'支付财务',group:'payment'},{label:'支付明细'}],
@@ -7075,6 +7298,8 @@ createApp({
       'qq-bot':[{label:'系统配置',group:'config'},{label:'QQ频道机器人'}],
       'email-config':[{label:'系统配置',group:'config'},{label:'邮箱配置'}],
       'db-config':[{label:'系统配置',group:'config'},{label:'系统设置'}],
+      'sso-config':[{label:'系统配置',group:'config'},{label:'单点登录'}],
+      'audit-logs':[{label:'系统配置',group:'config'},{label:'操作审计'}],
       'daily-report':[{label:'日志监控',group:'logs'},{label:'每日数据邮件'}],
       'profile':[{label:'个人中心'}]
     };
@@ -7085,9 +7310,160 @@ createApp({
       if(item.group){
         expandedGroups.value[item.group]=true;
         const target=GROUP_FIRST_PAGE[item.group];
-        if(target&&target!==page.value){page.value=target;}
+        if(target&&target!==page.value){page.value=target;loadPageData(target);}
       }
     }
+    // ===== URL 深链接：刷新/后退/收藏都能回到具体页面 =====
+    function readHashPage(){
+      const raw=(location.hash||'').replace(/^#\/?/,'').trim();
+      return BREADCRUMB_MAP[raw]?raw:'';
+    }
+    const initialHashPage=readHashPage();
+    function navigateToPage(p){
+      if(!p||!BREADCRUMB_MAP[p])return;
+      page.value=p;
+      const group=(BREADCRUMB_MAP[p][0]||{}).group;
+      if(group)expandedGroups.value[group]=true;
+      loadPageData(p);
+    }
+    window.addEventListener('popstate',()=>{
+      const p=readHashPage();
+      if(p&&p!==page.value)navigateToPage(p);
+    });
+    window.addEventListener('hashchange',()=>{
+      const p=readHashPage();
+      if(p&&p!==page.value)navigateToPage(p);
+    });
+    // ===== 全局快捷搜索（Ctrl+K）=====
+    const searchOpen=ref(false);
+    const searchQuery=ref('');
+    const searchInputEl=ref(null);
+    const searchActive=ref(0);
+    const searchLoading=ref(false);
+    const searchResults=ref({users:[],orders:[],feedback:[]});
+    const searchUsers=computed(()=>searchResults.value.users||[]);
+    const searchOrders=computed(()=>searchResults.value.orders||[]);
+    const searchFeedback=computed(()=>searchResults.value.feedback||[]);
+    const PAGE_SEARCH_ALIASES={
+      dashboard:'首页 概览 数据 运营',
+      'user-mgmt':'用户 会员 封禁 点数',
+      'user-analysis':'用户分析 留存',
+      'question-bank':'题库 题目',
+      'bank-analysis':'题库分析',
+      'answer-stats':'答题统计',
+      'bank-logs':'题库日志 命中',
+      'ai-config':'模型配置 AI 提供商',
+      'ai-logs':'模型日志 调用记录',
+      'model-health':'模型健康 失败率',
+      'ai-tasks':'答题任务 任务池 实时看板',
+      'model-cooldown':'冷却队列',
+      'payment-orders':'支付明细 订单',
+      'refund-requests':'退款 退款申请',
+      'referral':'返利配置 推广',
+      'referral-withdrawals':'提现审核',
+      feedback:'问题反馈',
+      'adapt-requests':'定制需求',
+      'distributor':'代理商',
+      'card-keys':'卡密',
+      'script-logs':'脚本日志',
+      'log-cleanup':'日志清理',
+      'daily-report':'每日数据邮件',
+      'audit-logs':'审计 操作日志 谁改了什么',
+      'db-config':'系统设置 数据库',
+      'sso-config':'单点登录',
+      'qq-bot':'QQ 机器人',
+      'email-config':'邮箱配置 邮件'
+    };
+    const searchPageItems=computed(()=>{
+      const q=searchQuery.value.trim().toLowerCase();
+      if(!q)return [];
+      const out=[];
+      for(const [p,items] of Object.entries(BREADCRUMB_MAP)){
+        const label=(items[items.length-1]||{}).label||p;
+        const path=items.map(x=>x.label).join(' / ');
+        const alias=PAGE_SEARCH_ALIASES[p]||'';
+        if((label+' '+path+' '+alias+' '+p).toLowerCase().includes(q))out.push({page:p,label,path});
+      }
+      return out.slice(0,8);
+    });
+    let searchTimer=null,searchSeq=0;
+    function resetSearchResults(){searchResults.value={users:[],orders:[],feedback:[]};searchLoading.value=false;}
+    function openSearch(){
+      if(!token.value)return;
+      searchOpen.value=true;
+      searchQuery.value='';
+      searchActive.value=0;
+      resetSearchResults();
+      nextTick(()=>{try{searchInputEl.value&&searchInputEl.value.focus();}catch(e){}});
+    }
+    function closeSearch(){searchOpen.value=false;}
+    function moveSearch(delta){
+      const total=searchPageItems.value.length+searchUsers.value.length+searchOrders.value.length+searchFeedback.value.length;
+      if(!total)return;
+      searchActive.value=(searchActive.value+delta+total)%total;
+    }
+    function openSearchActive(){
+      const i=searchActive.value;
+      const pages=searchPageItems.value,users=searchUsers.value,orders=searchOrders.value,fbs=searchFeedback.value;
+      if(i<pages.length)return goSearchPage(pages[i].page);
+      if(i<pages.length+users.length)return goSearchUser(users[i-pages.length]);
+      if(i<pages.length+users.length+orders.length)return goSearchOrder(orders[i-pages.length-users.length]);
+      const f=fbs[i-pages.length-users.length-orders.length];
+      if(f)goSearchFeedback(f);
+    }
+    function goSearchPage(p){closeSearch();navigateToPage(p);}
+    function goSearchUser(u){
+      closeSearch();
+      userSearch.value=u.username||'';
+      userBanFilter.value='';
+      expandedGroups.value.users=true;
+      page.value='user-mgmt';
+      loadUsers();
+    }
+    function goSearchOrder(o){
+      closeSearch();
+      paymentOrdersFilter.value.order_no=o.order_no||'';
+      expandedGroups.value.payment=true;
+      page.value='payment-orders';
+      loadPaymentOrders();
+    }
+    function goSearchFeedback(f){
+      closeSearch();
+      feedbackFilter.value.keyword=f.title||'';
+      expandedGroups.value.referral=true;
+      page.value='feedback';
+      loadFeedbackList();
+    }
+    watch(searchQuery,(q)=>{
+      searchActive.value=0;
+      if(searchTimer)clearTimeout(searchTimer);
+      const kw=(q||'').trim();
+      if(!kw){resetSearchResults();return;}
+      searchLoading.value=true;
+      searchTimer=setTimeout(async()=>{
+        const seq=++searchSeq;
+        try{
+          const r=await fetch('/admin/global-search?q='+encodeURIComponent(kw),{headers:{'Authorization':token.value}});
+          const d=await r.json();
+          if(seq!==searchSeq)return;
+          if(d.code===200){searchResults.value={users:d.users||[],orders:d.orders||[],feedback:d.feedback||[]};}
+          else{resetSearchResults();}
+        }catch(e){
+          if(seq===searchSeq)resetSearchResults();
+        }finally{
+          if(seq===searchSeq)searchLoading.value=false;
+        }
+      },220);
+    });
+    window.addEventListener('keydown',(e)=>{
+      if((e.ctrlKey||e.metaKey)&&String(e.key||'').toLowerCase()==='k'){
+        if(!token.value)return;
+        e.preventDefault();
+        if(searchOpen.value)closeSearch();else openSearch();
+        return;
+      }
+      if(e.key==='Escape'&&searchOpen.value)closeSearch();
+    });
     const token=ref(localStorage.getItem('ne21_admin_token')||'');
     const config=ref({providers:{}});
     const qqBot=ref({config:{enabled:false,appid:'',secret:'',sandbox:false,reply_template:'{answer}',max_answer_len:0}});
@@ -7243,6 +7619,31 @@ createApp({
     const aiLogTotal=ref(0);
     const expandedLogs=reactive({});
     const aiLogFilter=reactive({status:'',model:'',keyword:'',username:'',date_from:'',date_to:'',source:'',limit:100,page:1});
+    // 记住上次的模型日志筛选，刷新页面不用重新选条件
+    try{
+      const saved=JSON.parse(localStorage.getItem('ne21_ai_log_filter')||'{}');
+      Object.keys(aiLogFilter).forEach(k=>{if(saved[k]!==undefined&&k!=='page')aiLogFilter[k]=saved[k];});
+    }catch(e){}
+    watch(()=>JSON.stringify({...aiLogFilter,page:1}),v=>{try{localStorage.setItem('ne21_ai_log_filter',v);}catch(e){}});
+    const aiLogSort=ref({field:'created_at',order:'desc'});
+    const aiLogSorted=computed(()=>{
+      const {field,order}=aiLogSort.value;
+      const dir=order==='asc'?1:-1;
+      return (aiLogs.value||[]).slice().sort((a,b)=>{
+        if(field==='duration_ms')return (Number(a.duration_ms||0)-Number(b.duration_ms||0))*dir;
+        if(field==='model'||field==='status'){
+          const av=String(a[field]||'').toLowerCase(),bv=String(b[field]||'').toLowerCase();
+          return av.localeCompare(bv)*dir;
+        }
+        const av=String(a.created_at||''),bv=String(b.created_at||'');
+        return (av.localeCompare(bv)||(Number(a.id||0)-Number(b.id||0)))*dir;
+      });
+    });
+    function toggleAiLogSort(field){
+      if(aiLogSort.value.field===field)aiLogSort.value={field,order:aiLogSort.value.order==='desc'?'asc':'desc'};
+      else aiLogSort.value={field,order:field==='created_at'?'desc':'asc'};
+    }
+    function aiLogSortMark(field){return aiLogSort.value.field===field?(aiLogSort.value.order==='asc'?' ↑':' ↓'):'';}
     const scriptLogs=ref([]);
     const scriptLogLoading=ref(false);
     const scriptLogTotal=ref(0);
@@ -7459,7 +7860,7 @@ createApp({
       try{
         const res=await fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:loginForm.username,password:loginForm.password,slider_token:adminSlider.sliderToken})});
         const data=await res.json();
-        if(data.code===200){token.value=data.token;localStorage.setItem('ne21_admin_token',token.value);page.value='dashboard';loadAll();}
+        if(data.code===200){token.value=data.token;localStorage.setItem('ne21_admin_token',token.value);const start=readHashPage()||'dashboard';page.value=start;loadAll();if(start!=='dashboard')loadPageData(start);}
         else{loginForm.password='';await resetAdminSlider(data.msg||'用户名或密码错误，请重新完成滑块验证');}
       }catch(e){await resetAdminSlider('请求失败，请重新完成滑块验证');}
     }
@@ -7502,6 +7903,12 @@ createApp({
         const dd=await dr.json();
         if(dd.code===200)fxStats.value=dd.stats||{};
       }catch(_){}
+      // 侧栏「提现审核」角标：推广提现待审核笔数
+      try{
+        const wr=await safeFetch('/admin/referral/withdrawals?status=pending',{headers:{'Authorization':token.value}});
+        const wd=await wr.json();
+        if(wd.code===200&&wd.summary)referralWdSummary.value=wd.summary;
+      }catch(_){}
     }
     async function loadDashboard(){
       if(!token.value)return;
@@ -7519,6 +7926,86 @@ createApp({
         const fd=await fr.json();
         if(fd.code===200){feedbackPendingCount.value=fd.data.pending_count||0;}
       }catch(_){}
+    }
+    function dashDeltaInfo(key){
+      const cur=Number((dashboard.value.cards||{})[key]||0);
+      const prev=Number((dashboard.value.prev||{})[key]||0);
+      if(prev<=0)return {diff:cur>0?cur:0,pct:null,has:cur>0};
+      const diff=cur-prev;
+      return {diff,pct:Math.round(diff/prev*100),has:true};
+    }
+    function dashDeltaText(key){
+      const d=dashDeltaInfo(key);
+      if(!d.has)return '较上期持平';
+      if(d.pct===null||d.pct===0)return '较上期 '+(d.diff>=0?'+':'')+d.diff;
+      return (d.diff>0?'↑ ':'↓ ')+Math.abs(d.pct)+'% 较上期';
+    }
+    function dashDeltaClass(key){
+      const d=dashDeltaInfo(key);
+      if(!d.has||d.diff===0)return 'flat';
+      const good=d.diff>0;
+      if(key==='error')return good?'down':'up';
+      return good?'up':'down';
+    }
+    // ===== CSV 导出 =====
+    function csvCell(v){
+      const s=(v===null||v===undefined)?'':String(v);
+      return /[",\n\r]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;
+    }
+    function downloadCsv(filename,headers,rows){
+      const lines=[headers.map(csvCell).join(',')].concat((rows||[]).map(r=>r.map(csvCell).join(',')));
+      const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1500);
+    }
+    function csvStamp(){const d=new Date();const p=n=>String(n).padStart(2,'0');return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'_'+p(d.getHours())+p(d.getMinutes());}
+    async function exportPaymentOrdersCsv(){
+      const f=paymentOrdersFilter.value;
+      const p=new URLSearchParams({username:f.username||'',status:f.status||'',plan_name:f.plan_name||'',pay_method:f.pay_method||'',date_from:f.date_from||'',date_to:f.date_to||'',order_no:f.order_no||'',sort:paymentOrdersSort.value.field||'created_at',order:paymentOrdersSort.value.order||'desc',page:'1',page_size:'5000'});
+      try{
+        const r=await fetch('/admin/payment-orders?'+p,{headers:{'Authorization':token.value}});
+        const d=await r.json();
+        if(d.code!==200)return showMsg(d.msg||'导出失败','error');
+        const rows=(d.data&&d.data.rows)||[];
+        downloadCsv('支付明细_'+csvStamp()+'.csv',['订单号','用户名','套餐','金额','支付方式','状态','创建时间','支付时间','退款申请'],rows.map(x=>[x.order_no,x.username,x.plan_name,Number(x.price||0).toFixed(2),paymentMethodLabel(x.pay_method),paymentStatusLabel(x.status),x.created_at,x.paid_at||'',x.refund_request_status==='pending'?'待审核':'']));
+        showMsg('已导出 '+rows.length+' 条支付明细','success');
+      }catch(e){showMsg('导出失败：'+(e.message||e),'error');}
+    }
+    async function exportRefundsCsv(){
+      const p=new URLSearchParams({status:rrFilterStatus.value||'',username:rrFilterUsername.value||'',order_no:rrFilterOrderNo.value||'',ip:rrFilterIp.value||'',page:'1',page_size:'5000'});
+      try{
+        const r=await fetch('/admin/refund-requests?'+p,{headers:{'Authorization':token.value}});
+        const d=await r.json();
+        if(d.code!==200)return showMsg(d.msg||'导出失败','error');
+        const rows=d.rows||(d.data&&d.data.rows)||[];
+        downloadCsv('退款申请_'+csvStamp()+'.csv',['申请ID','用户名','订单号','状态','申请金额','原因','申请IP','申请时间','处理时间','处理备注'],rows.map(x=>[x.id,x.username,x.order_no,x.status,x.refund_amount,x.reason,x.client_ip||'',x.created_at,x.processed_at||'',x.admin_note||'']));
+        showMsg('已导出 '+rows.length+' 条退款申请','success');
+      }catch(e){showMsg('导出失败：'+(e.message||e),'error');}
+    }
+    async function exportUsersCsv(){
+      const p=new URLSearchParams({search:userSearch.value.trim(),banned:userBanFilter.value,sort_by:userSortBy.value,sort_order:userSortOrder.value});
+      try{
+        const r=await fetch('/admin/users?'+p,{headers:{'Authorization':token.value}});
+        const d=await r.json();
+        if(d.code!==200)return showMsg(d.msg||'导出失败','error');
+        const rows=d.users||[];
+        downloadCsv('用户列表_'+csvStamp()+'.csv',['ID','用户名','邮箱','题数余额','会员到期','状态','注册时间','最后登录','注册IP','最后登录IP'],rows.map(x=>[x.id,x.username,x.email,x.points_balance,x.member_until||'',x.is_banned?'已封禁':'正常',x.created_at,x.last_login_at||'',x.register_ip||'',x.last_login_ip||'']));
+        showMsg('已导出 '+rows.length+' 个用户','success');
+      }catch(e){showMsg('导出失败：'+(e.message||e),'error');}
+    }
+    async function exportAiLogsCsv(){
+      const f=aiLogFilter.value;
+      const p=new URLSearchParams({status:f.status||'',model:f.model||'',keyword:f.keyword||'',date_from:f.date_from||'',date_to:f.date_to||'',source:f.source||'',username:f.username||'',page:'1',limit:'200'});
+      try{
+        const r=await fetch('/admin/ai-logs?'+p,{headers:{'Authorization':token.value}});
+        const d=await r.json();
+        if(d.code!==200)return showMsg(d.msg||'导出失败','error');
+        const rows=d.logs||[];
+        downloadCsv('模型日志_'+csvStamp()+'.csv',['ID','时间','用户','服务商','模型','最终成功模型','状态','耗时(ms)','错误','题目','答案'],rows.map(x=>[x.id,x.created_at,x.username||'',x.provider_key||'',x.model||'',x.final_model||'',logStatusText(x.status),x.duration_ms||0,x.error||'',x.question||'',x.answer||'']));
+        showMsg('已导出当前筛选前 '+rows.length+' 条模型日志（接口单次最多 200 条）','success',5000);
+      }catch(e){showMsg('导出失败：'+(e.message||e),'error');}
     }
     function setQuickRange(type){
       const today=fmtLocalDate(new Date());
@@ -9033,7 +9520,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       distributor:{title:'代理商分销',icon:'i-flag',items:[{page:'distributor',label:'代理商',icon:'i-users',load:loadFxList},{page:'distributor-templates',label:'卡密模板',icon:'i-layers',load:()=>{loadFxOptions();loadFxTemplates();}},{page:'distributor-batches',label:'批次与卡密',icon:'i-package',load:()=>{loadFxOptions();loadFxBatches(1);}},{page:'distributor-withdrawals',label:'提现审核',icon:'i-wallet',load:()=>{loadFxOptions();loadFxWds(1);}},{page:'distributor-revenue',label:'收入统计',icon:'i-trending-up',load:loadFxRevenue},{page:'distributor-config',label:'分销配置',icon:'i-sliders',load:loadFxConfig}]},
       logs:{title:'日志监控',icon:'i-terminal',items:[{page:'script-logs',label:'脚本日志',icon:'i-terminal',load:loadScriptLogs},{page:'log-cleanup',label:'日志清理',icon:'i-trash-2',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'i-mail',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
       models:{title:'模型服务',icon:'i-cpu',items:[{page:'ai-config',label:'模型配置',icon:'i-bot',load:loadConfig},{page:'ai-logs',label:'模型日志',icon:'i-activity',load:loadAiLogs},{page:'model-health',label:'模型健康',icon:'i-shield',load:loadModelStats},{page:'ai-tasks',label:'答题任务',icon:'i-clock',load:loadAiTasks},{page:'model-cooldown',label:'冷却队列',icon:'i-clock',load:()=>{}}]},
-      config:{title:'系统配置',icon:'i-settings',items:[{page:'qq-bot',label:'QQ频道机器人',icon:'i-message-circle',load:loadQqBot},{page:'email-config',label:'邮箱配置',icon:'i-mail',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'sso-config',label:'单点登录',icon:'i-shield',load:loadSsoConfig},{page:'db-config',label:'系统设置',icon:'i-database',load:loadDbConfig}]}
+      config:{title:'系统配置',icon:'i-settings',items:[{page:'qq-bot',label:'QQ频道机器人',icon:'i-message-circle',load:loadQqBot},{page:'email-config',label:'邮箱配置',icon:'i-mail',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'sso-config',label:'单点登录',icon:'i-shield',load:loadSsoConfig},{page:'audit-logs',label:'操作审计',icon:'i-file-text',load:()=>loadAuditLogs(1)},{page:'db-config',label:'系统设置',icon:'i-database',load:loadDbConfig}]}
     };
     function openMobileSubmenu(key,title,icon){
       const cfg=MOBILE_SUBMENU_MAP[key];
@@ -9046,8 +9533,36 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         expandedGroups.value[key]=!expandedGroups.value[key];
       }
     }
+    function loadPageData(p){
+      let fn=null;
+      if(p==='dashboard')fn=loadDashboard;
+      else if(p==='user-mgmt')fn=()=>{loadUsers();loadLoginLocks();};
+      else if(p==='user-analysis')fn=loadUserAnalysis;
+      else if(p==='risk-control')fn=()=>{loadRiskConfig();scanRisk();};
+      else if(p==='question-bank')fn=()=>{loadQuestionBank();loadConfig();};
+      else if(p==='bank-analysis')fn=loadBankAnalysis;
+      else if(p==='answer-stats')fn=loadAnswerStats;
+      else if(p==='bank-logs')fn=loadBankLogs;
+      else if(p==='adapt-requests')fn=loadAdaptRequests;
+      else if(p==='sso-config')fn=loadSsoConfig;
+      else if(p==='audit-logs')fn=loadAuditLogs;
+      else if(p==='profile')fn=()=>{loadAdminAccount();loadEmailConfig();};
+      else{
+        for(const cfg of Object.values(MOBILE_SUBMENU_MAP)){
+          const hit=(cfg.items||[]).find(it=>it.page===p);
+          if(hit){fn=hit.load;break;}
+        }
+      }
+      if(fn){try{fn();}catch(e){console.error('[页面加载]',p,e);}}
+    }
     watch(page,(v)=>{
       mobileSidebarOpen.value=false;
+      if(v&&v!=='login'&&BREADCRUMB_MAP[v]){
+        const target='#'+v;
+        if(location.hash!==target)history.pushState(null,'',target);
+        const group=(BREADCRUMB_MAP[v][0]||{}).group;
+        if(group)expandedGroups.value[group]=true;
+      }
       if(v==='model-cooldown')startCooldownPolling();
       else stopCooldownPolling();
       if(v==='ai-tasks')startAiTaskLive();
@@ -9121,10 +9636,28 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     const modelStatsLoading=ref(false);
     const modelStatsFilter=ref('');
     const modelStatsKeyword=ref('');
+    const modelStatsSort=ref({field:'calls',order:'desc'});
+    const modelStatsCompact=ref(false);
+    // 模型健康的筛选条件也记在本地，下次打开还是上次的视角
+    try{
+      const ms=JSON.parse(localStorage.getItem('ne21_model_stats_prefs')||'{}');
+      if(ms.days)modelStatsDays.value=Number(ms.days)||1;
+      if(ms.filter!==undefined)modelStatsFilter.value=ms.filter;
+      if(ms.keyword!==undefined)modelStatsKeyword.value=ms.keyword;
+      if(ms.sort&&ms.sort.field)modelStatsSort.value=ms.sort;
+      modelStatsCompact.value=!!ms.compact;
+    }catch(e){}
+    watch([modelStatsDays,modelStatsFilter,modelStatsKeyword,modelStatsSort,modelStatsCompact],()=>{
+      try{localStorage.setItem('ne21_model_stats_prefs',JSON.stringify({days:modelStatsDays.value,filter:modelStatsFilter.value,keyword:modelStatsKeyword.value,sort:modelStatsSort.value,compact:modelStatsCompact.value}));}catch(e){}
+    },{deep:true});
+    function toggleModelStatsSort(field){
+      if(modelStatsSort.value.field===field)modelStatsSort.value={field,order:modelStatsSort.value.order==='desc'?'asc':'desc'};
+      else modelStatsSort.value={field,order:field==='model'||field==='provider'?'asc':'desc'};
+    }
     const modelStatsFilteredRows=computed(()=>{
       const f=modelStatsFilter.value;
       const kw=modelStatsKeyword.value.trim().toLowerCase();
-      return modelStatsRows.value.filter(r=>{
+      const rows=modelStatsRows.value.filter(r=>{
         if(f==='inactive'){if(r.config_status==='active'||r.config_status==='hub')return false;}
         else if(f&&r.config_status!==f)return false;
         if(kw){
@@ -9133,8 +9666,53 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         }
         return true;
       });
+      const {field,order}=modelStatsSort.value;
+      const dir=order==='asc'?1:-1;
+      return rows.slice().sort((a,b)=>{
+        if(field==='model'||field==='provider'){
+          const av=String(field==='model'?(a.model||''):(a.provider_title||a.provider||'')).toLowerCase();
+          const bv=String(field==='model'?(b.model||''):(b.provider_title||b.provider||'')).toLowerCase();
+          return av.localeCompare(bv)*dir;
+        }
+        return (Number(a[field]||0)-Number(b[field]||0))*dir;
+      });
     });
+    function sortMark(field){return modelStatsSort.value.field===field?(modelStatsSort.value.order==='asc'?' ↑':' ↓'):'';}
+    // 管理员操作审计
+    const auditLogs=ref([]);
+    const auditLoading=ref(false);
+    const auditError=ref('');
+    const auditPage=ref(1);
+    const auditPageSize=ref(30);
+    const auditTotal=ref(0);
+    const auditFilter=reactive({action:'',keyword:''});
+    const auditTotalPages=computed(()=>Math.max(1,Math.ceil(auditTotal.value/auditPageSize.value)));
+    function auditActionText(a){
+      const map={'admin.login':'后台登录','config.save':'保存模型配置','model.disable':'停用模型','user.update':'修改用户','refund.process':'退款处理','feedback.status':'反馈状态','ai_task.retry':'重试任务','ai_task.stop':'停止任务','ai_task.delete':'删除任务'};
+      return map[a]||a||'-';
+    }
+    async function loadAuditLogs(p){
+      const page=Math.max(1,Number(p||auditPage.value||1));
+      auditLoading.value=true;auditError.value='';
+      try{
+        const params=new URLSearchParams({page:String(page),page_size:String(auditPageSize.value),action:auditFilter.action||'',keyword:auditFilter.keyword||''});
+        const r=await fetch('/admin/audit-logs?'+params,{headers:{'Authorization':token.value}});
+        const d=await r.json();
+        if(d.code===200){
+          auditLogs.value=d.rows||[];
+          auditTotal.value=Number(d.total||0);
+          auditPage.value=page;
+        }else{
+          auditError.value=d.msg||'接口返回异常';
+        }
+      }catch(e){
+        auditError.value=e.message||'网络错误';
+      }finally{
+        auditLoading.value=false;
+      }
+    }
     const aiTaskList=ref([]);
+    const aiTaskTab=ref('live');
     const aiTaskFilter=ref('pending');
     const aiTaskPage=ref(1);
     const aiTaskTotal=ref(0);
@@ -10725,7 +11303,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       loadFxList(1);
     }
 
-    if(token.value){page.value='dashboard';loadAll();}
+    if(token.value){const start=readHashPage()||'dashboard';page.value=start;loadAll();if(start!=='dashboard')loadPageData(start);}
     else {page.value='login';initAdminSlider();}
     loading.value=false;
 
@@ -10737,6 +11315,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         showHtmlPreview,htmlPreviewFrame,htmlPreviewData,toggleHtmlPreview,updateHtmlPreview,switchToHtml,onHtmlInput,syncPlainFromHtml,
        paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,hubPayConfig,planForm,
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,
+      aiLogSorted,aiLogSort,toggleAiLogSort,aiLogSortMark,
       bankLogs,bankLogLoading,bankLogFilter,bankLogTotal,expandedBankLogs,
       bankAnalysis,bankAnalysisLoading,bankAnalysisFilter,loadBankAnalysis,setBankAnalysisRange,
       answerStats,answerStatsLoading,answerStatsFilter,loadAnswerStats,setAnswerStatRange,ansTrendRows,ansTrendX,ansTrendY,ansTrendPoints,
@@ -10794,13 +11373,17 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     feedbackNotifyEnabled,loadFeedbackNotify,saveFeedbackNotify,
     adaptList,adaptFilter,adaptPage,adaptTotal,adaptTotalPages,adaptDetail,adaptAdminNote,adaptPending,adaptUrgent,loadAdaptPending,
     modelStatsDays,modelStatsRows,modelStatsLoading,modelStatsFilter,modelStatsKeyword,modelStatsFilteredRows,modelStatusText,modelStatusStyle,loadModelStats,disableModel,
-    aiTaskList,aiTaskFilter,aiTaskPage,aiTaskTotal,aiTaskTotalPages,aiTaskCounts,loadAiTasks,aiTaskAction,aiTaskStatusText,aiTaskStatusStyle,
+    modelStatsSort,modelStatsCompact,toggleModelStatsSort,sortMark,
+    aiTaskList,aiTaskTab,aiTaskFilter,aiTaskPage,aiTaskTotal,aiTaskTotalPages,aiTaskCounts,loadAiTasks,aiTaskAction,aiTaskStatusText,aiTaskStatusStyle,
     aiLiveRunning,aiLiveQueue,aiLiveEvents,aiLiveCounts,aiLiveWorkers,aiLiveClock,aiLiveConnected,loadAiTasksLive,startAiTaskLive,stopAiTaskLive,
     liveElapsed,liveDuration,formatCountdown,queueCountdown,eventAgo,relayClass,relayLabel,liveProgress,
     loadAdaptRequests,adaptPrev,adaptNext,openAdaptDetail,setAdaptStatus,copyAdaptText,
     adsList,adsEdit,adsSaving,adsUploading,newAd,editAd,loadAds,saveAd,toggleAd,deleteAd,pickAdImage,onAdFileChange,
    aiPolishing,aiPolishReply,testingModel,testingNewProvider,testModel,testNewProvider,modelTestResults,newProviderTestResult,
-       dailyReportConfig,dailyReportPreview,loadDailyReport,saveDailyReport,sendDailyReportNow,previewDailyReport
+       dailyReportConfig,dailyReportPreview,loadDailyReport,saveDailyReport,sendDailyReportNow,previewDailyReport,
+       searchOpen,searchQuery,searchInputEl,searchPageItems,searchUsers,searchOrders,searchFeedback,searchLoading,searchActive,openSearch,closeSearch,moveSearch,openSearchActive,goSearchPage,goSearchUser,goSearchOrder,goSearchFeedback,
+       dashDeltaText,dashDeltaClass,exportPaymentOrdersCsv,exportRefundsCsv,exportUsersCsv,exportAiLogsCsv,
+       auditLogs,auditLoading,auditError,auditPage,auditPageSize,auditTotal,auditTotalPages,auditFilter,loadAuditLogs,auditActionText
     };
   }
 }).mount('#app');
