@@ -1559,6 +1559,9 @@ def do_hub_chat(messages, model, provider_info=None, timeout=None):
             content = str(content).strip()
             if not content:
                 return None, "中控网关返回内容为空，请重试", 0
+            content, leak_err = clean_model_output(content)
+            if leak_err:
+                return None, leak_err, 0
             usage = result.get("usage") or {}
             return content, None, int(usage.get("total_tokens") or 0)
         except urllib.error.HTTPError as e:
@@ -4141,10 +4144,72 @@ def _is_image_option_answer(answer, question=None):
     return all(it in opt_set for it in items)
 
 
+_REASONING_LEAK_MARKERS = (
+    "我们需要回答", "我们需要求", "我们需要", "注意规则", "需要遵守", "可能的步骤",
+    "我们可以写", "这样步骤少", "这样既用了", "这个没有直接", "需要确保", "可以增加步骤",
+    "但可能不够详细", "需要写出完整", "不要用 LaTeX", "题目中用了", "题目要求",
+    "思考过程", "分析草稿",
+)
+
+
+def is_reasoning_leak(text):
+    """模型把「自问自答」的思考过程当成答案输出。
+
+    小参数推理模型偶尔会在 content 里反复念规则、重复同一段解答，
+    最后连 max_tokens 都用完，答案被截断。这种文本不能存题库，也不能填进答题框。
+    """
+    t = str(text or "")
+    if len(t) < 300:
+        return False
+    hits = sum(1 for m in _REASONING_LEAK_MARKERS if m in t)
+    if hits >= 3:
+        return True
+    if t.count("我们需要") >= 2 or t.count("可能的步骤") >= 2 or t.count("这样步骤少") >= 2:
+        return True
+    paras = [p.strip() for p in re.split(r"\n\s*\n", t) if len(p.strip()) > 60]
+    return len(paras) >= 4 and (len(paras) - len(set(paras))) >= 2
+
+
+def extract_clean_solution(text):
+    """从夹带思考过程的输出里，取出一段完整的「解：…答案：…」。
+
+    取不到就返回空串，交给 is_reasoning_leak 判定整条丢弃、换模型重试。
+    """
+    t = str(text or "").strip()
+    best = ""
+    for marker in ("解：", "证明："):
+        start = 0
+        while True:
+            i = t.find(marker, start)
+            if i < 0:
+                break
+            m = re.search(r"(?m)^\s*答案\s*[:：].*$", t[i:])
+            if m:
+                block = t[i:i + m.end()].strip()
+                if 20 <= len(block) <= 4000 and (
+                        "=" in block or "lim" in block.lower() or "原式" in block):
+                    best = block
+            start = i + len(marker)
+    return best
+
+
+def clean_model_output(content):
+    """统一清理模型回复：能捞出一段干净解答就捞，捞不出但明显在念思考过程就判失败。"""
+    text = str(content or "").strip()
+    clean = extract_clean_solution(text)
+    if clean:
+        return clean, None
+    if is_reasoning_leak(text):
+        return None, "模型只输出了思考过程，没有给出最终解答"
+    return text, None
+
+
 def _is_garbage_bank_answer(answer, question=None):
     """题库不应复用的垃圾答案：空、纯图、看图失败提示、大段思考过程。"""
     text = str(answer or "").strip()
     if not text:
+        return True
+    if is_reasoning_leak(text):
         return True
     low = text.lower()
     markers = (
@@ -4701,6 +4766,9 @@ def do_openai_compatible_chat(messages, model, api_key, base_url, time_budget=No
             content = str(content).strip()
             if not content:
                 return None, f"API 返回异常: 未找到 content 字段，响应: {json.dumps(result, ensure_ascii=False)[:500]}", 0
+            content, leak_err = clean_model_output(content)
+            if leak_err:
+                return None, leak_err, 0
             usage = result.get("usage") or {}
             total_tokens = int(usage.get("total_tokens") or 0)
             return content, None, total_tokens
@@ -5247,6 +5315,7 @@ def build_ai_messages(question_payload_str, force_text_only=False, deadline=None
             "- 最后一行以「答案：」开头，给出最终结果\n"
             "- 过程要能看出思路，通常 3~8 步；简单题也别只写一行结果\n"
             "- 不要复述题目，不要写分析草稿或思考过程，不要解释你正在做什么\n"
+            "- 只输出一份最终解答；不要自问自答、不要重复同一段，不要出现「我们需要」「注意规则」「可能的步骤」这类思考文字\n"
             "- 数学式子用普通文本写清楚（如 lim(x→0) (√(x+1)-1)/x），不要用 LaTeX 的 $ 和 \\frac\n"
             "- 图片题：先识别图片中的题目，再按上面的要求写过程"
         )
@@ -6291,6 +6360,9 @@ def call_llm_lightweight(messages, model, provider_info, timeout=15):
                             text = p
                             break
                     break
+            text, leak_err = clean_model_output(text)
+            if leak_err:
+                return None, leak_err, 0
             return text, None, total_tokens
         except urllib.error.HTTPError as e:
             body = e.read().decode('utf-8', errors='replace')
