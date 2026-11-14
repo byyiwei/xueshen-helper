@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.16
+// @version      6.0.17
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
@@ -15,6 +15,9 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.17 (2026-11-14)
+// @changelog    1. 修复部分油猴环境下控制面板无法加载：不再 delete globalThis.__abcCSS，避免 Proxy 的 deleteProperty 报错
+// @changelog    2. 许可证标记改为 All Rights Reserved
 // @changelog    v6.0.16 (2026-11-13)
 // @changelog    1. 修复写作题（含英语作文）无法自动填写：学习通新版把写作题单独编码成 answertype=26，之前认不出、也不调用 AI
 // @changelog    2. 富文本编辑器（UEditor）等加载完成后再写入并校验，写作题答案不会再出现「填了但没填上」

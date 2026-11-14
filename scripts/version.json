@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.0.16",
+    "version": "6.0.17",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.0.16 修复写作题自动填充；答题改为后台任务池，模型轮换一直尝试到成功；答题面板点答案即复制"
+    "changelog": "v6.0.17 修复部分油猴环境控制面板无法加载（__abcCSS Proxy 报错）；许可证标记改为 All Rights Reserved"
   },
   "xueshen-gf": {
-    "version": "6.0.16",
+    "version": "6.0.17",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.0.16 修复写作题自动填充；答题改为后台任务池，模型轮换一直尝试到成功；答题面板点答案即复制"
+    "changelog": "v6.0.17 修复部分油猴环境控制面板无法加载（__abcCSS Proxy 报错）；许可证标记改为 All Rights Reserved"
   }
 }
