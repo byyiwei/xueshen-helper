@@ -3679,6 +3679,10 @@ def get_question_bank_match(question):
         info = parse_question_payload(question)
         print(f"[题库匹配] 图片题跳过题库 type={info.get('question_type', '')}，直接走AI", flush=True)
         return None, make_matching_key(question), None, (time.time() - _t0) * 1000
+    if needs_solution_process(question):
+        info = parse_question_payload(question)
+        print(f"[题库匹配] 计算题跳过题库 type={info.get('question_type', '')}，直接走AI写过程", flush=True)
+        return None, make_matching_key(question), None, (time.time() - _t0) * 1000
     info = parse_question_payload(question)
     current_type = info.get("question_type", "")
     mkey = make_matching_key(question)
@@ -3746,6 +3750,9 @@ def get_question_bank_similar(question):
     # 图片题不参与相似题匹配，一律走 AI
     if is_multimodal_question(question):
         return None, None, 0.0, (time.time() - _t0) * 1000
+    # 计算题要写过程，题库里的旧答案只有结果，不能拿来直接填
+    if needs_solution_process(question):
+        return None, None, 0.0, (time.time() - _t0) * 1000
     info = parse_question_payload(question)
     current_type = info.get("question_type", "")
     q_norm = normalize_question_text(info.get("question_text", ""))
@@ -3780,6 +3787,9 @@ def get_bank_match_all(question):
     _t0 = time.time()
     # 图片题不查题库，一律走 AI
     if is_multimodal_question(question):
+        return [], make_matching_key(question), (time.time() - _t0) * 1000
+    # 计算题不查题库：旧条目只有最终结果，拿回来还是缺过程
+    if needs_solution_process(question):
         return [], make_matching_key(question), (time.time() - _t0) * 1000
     info = parse_question_payload(question)
     mkey = make_matching_key(question)
@@ -4167,7 +4177,9 @@ def _is_garbage_bank_answer(answer, question=None):
             )
             if not _hit_option:
                 return True
-    if len(text) > 400 and not (text.startswith("[") and text.endswith("]")):
+    # 计算/分录/程序题的答案本来就是几百字的过程，里面出现「解题步骤/final answer」
+    # 是正常写法，不能按「大段思考过程」扔掉。
+    if len(text) > 400 and not needs_solution_process(question) and not (text.startswith("[") and text.endswith("]")):
         if re.search(r"therefore|分析过程|解题步骤|思考过程|final answer", text, re.I):
             return True
     if is_pure_image_answer(text) or (
@@ -4385,6 +4397,10 @@ def normalize_ai_answer(question, answer):
     # 2) 去掉残留的孤立 <think> / </think> 标签
     text = re.sub(r"<\s*/?\s*think\s*>", "", text, flags=re.I)
     text = text.strip()
+    # 计算/分录/程序题的「过程」就是答案本身。后面的字母提取和结论区截断会把
+    # 前面几行步骤全扔掉，只剩「答案：1/2」，正好又变成老师说的「只给答案」。
+    if needs_solution_process(question) and not extract_options_from_question(question):
+        return text
     # 3) "C</think>C" 去标签后变 "CC"，"A,B,C</think>A,B,C" 变 "A,B,CA,B,C"，
     #    "错误错误" 变自身，"1000001010000010" 同理：若整串为「前半==后半」的重复
     #    （短答案，<=60 字符），则取前半（即正确答案）。不限字母，中文/数字重复同样折叠。
@@ -5130,6 +5146,20 @@ def is_multimodal_question(question_payload_str):
                 return True
     return False
 
+# 计算题 / 分录题 / 程序题。除了超星的数字题型码，智慧树等平台直接传中文题型名。
+PROCESS_QUESTION_TYPES = {"7", "9", "17", "计算题", "分录题", "程序题"}
+
+
+def needs_solution_process(question_payload_str):
+    """是否需要写解题过程。计算/分录/程序题老师按步骤给分，只回答案会被扣分。
+
+    这类题不走题库：题库里存的多是光秃秃的最终结果，命中后照样没有过程，
+    等于把「只给答案」的问题又原样喂回给用户。统一交给 AI 写完整过程。
+    """
+    info = parse_question_payload(question_payload_str)
+    return str(info.get("question_type") or "").strip() in PROCESS_QUESTION_TYPES
+
+
 def is_pure_image_question(question_payload_str):
     """判断是否是纯图片题（题干只有图片没有有效文字）
     
@@ -5207,18 +5237,32 @@ def build_ai_messages(question_payload_str, force_text_only=False, deadline=None
         # 放宽到 32 张，仍超出时只记日志不拦截，交给模型尽力作答
         if len(images) > 32:
             print(f"[build_ai_messages] 题目图片 {len(images)} 张，超过32张软上限，继续作答", flush=True)
-    system_prompt = (
-        "你是答题助手，只输出最终答案，禁止输出任何解释、分析、思考过程或中间步骤。\n"
-        "规则：\n"
-        "- 选择题：只输出选项字母。单选如 A；多选必须输出全部正确字母，用逗号分隔（如 A,B,D）或连写（如 ABD），禁止只输出其中一个\n"
-        "- 判断题：只输出 正确 或 错误\n"
-        "- 填空题：只输出填空内容\n"
-        "- 简答题：输出简洁答案，不超过50字\n"
-        "- 写作题/作文题：按题目要求的字数和体裁输出完整短文，不要写成要点提纲，也不要附加题目或说明\n"
-        "- 图片题：请识别图片中的题目，依据图片内容作答\n"
-        "- 图片前若标注「第N张图＝选项X」，表示该图就是选项X的内容，作答时按选项字母输出\n"
-        "- 不要输出题目、不要重复选项内容、不要输出分析过程"
-    )
+    if needs_solution_process(question_payload_str):
+        # 计算/分录/程序题按步骤给分，只回最终答案会被判「缺少推导过程」扣分。
+        # 这类题的提示词单独写，要求先写过程、最后一行给答案。
+        system_prompt = (
+            "你是答题助手。这道题需要写出完整解题过程，只给最终答案会被判不合格。\n"
+            "规则：\n"
+            "- 先写「解：」，然后分步推导，每步单独一行，保留关键公式、变形、代入和中间结果\n"
+            "- 最后一行以「答案：」开头，给出最终结果\n"
+            "- 过程要能看出思路，通常 3~8 步；简单题也别只写一行结果\n"
+            "- 不要复述题目，不要写分析草稿或思考过程，不要解释你正在做什么\n"
+            "- 数学式子用普通文本写清楚（如 lim(x→0) (√(x+1)-1)/x），不要用 LaTeX 的 $ 和 \\frac\n"
+            "- 图片题：先识别图片中的题目，再按上面的要求写过程"
+        )
+    else:
+        system_prompt = (
+            "你是答题助手，只输出最终答案，禁止输出任何解释、分析、思考过程或中间步骤。\n"
+            "规则：\n"
+            "- 选择题：只输出选项字母。单选如 A；多选必须输出全部正确字母，用逗号分隔（如 A,B,D）或连写（如 ABD），禁止只输出其中一个\n"
+            "- 判断题：只输出 正确 或 错误\n"
+            "- 填空题：只输出填空内容\n"
+            "- 简答题：输出简洁答案，不超过50字\n"
+            "- 写作题/作文题：按题目要求的字数和体裁输出完整短文，不要写成要点提纲，也不要附加题目或说明\n"
+            "- 图片题：请识别图片中的题目，依据图片内容作答\n"
+            "- 图片前若标注「第N张图＝选项X」，表示该图就是选项X的内容，作答时按选项字母输出\n"
+            "- 不要输出题目、不要重复选项内容、不要输出分析过程"
+        )
     if not images:
         # 纯文本题目
         text_content = build_ai_question_text(question_payload_str)
