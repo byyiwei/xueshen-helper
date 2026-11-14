@@ -3444,6 +3444,12 @@ def generate_code(length=6):
 
 
 # ==================== AI 调用 ====================
+# 过程题提示词版本。每次改「必须写过程」的规则就把它加一，旧缓存和旧任务自动作废。
+SOLUTION_PROMPT_REV = "2026-11-15-1"
+# 这个版本上线的时间点：在此之前解出来的过程题任务，可能还是「只给结论」的旧结果。
+SOLUTION_PROMPT_REV_AT = datetime(2026, 11, 15, 3, 16, 0)
+
+
 def make_ai_cache_key(question, model_mode, model_name="", custom_cfg=None):
     custom_cfg = custom_cfg or {}
     payload = {
@@ -3455,6 +3461,10 @@ def make_ai_cache_key(question, model_mode, model_name="", custom_cfg=None):
         "custom_model": custom_cfg.get("model", ""),
         "api_key_hash": hashlib.sha256((custom_cfg.get("api_key", "") or "").encode()).hexdigest() if custom_cfg.get("api_key") else ""
     }
+    # 过程题的提示词改版后，旧缓存里多是「只给结论」的短答案，必须换一个缓存命名空间，
+    # 否则重新作答时又会命中旧结果，看起来像修复没生效。
+    if needs_solution_process(question):
+        payload["prompt_rev"] = SOLUTION_PROMPT_REV
     return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
 
 def get_ai_cache(cache_key):
@@ -5224,13 +5234,24 @@ PROCESS_QUESTION_TYPES = {
 
 
 def needs_solution_process(question_payload_str):
-    """是否需要写解题过程。计算/分录/程序题老师按步骤给分，只回答案会被扣分。
+    """是否需要写解题过程。计算/分录/程序/简答题老师按步骤给分，只回答案会被扣分。
 
     这类题不走题库：题库里存的多是光秃秃的最终结果，命中后照样没有过程，
     等于把「只给答案」的问题又原样喂回给用户。统一交给 AI 写完整过程。
     """
     info = parse_question_payload(question_payload_str)
     return str(info.get("question_type") or "").strip() in PROCESS_QUESTION_TYPES
+
+
+def _looks_like_process_answer(text):
+    """答案是不是一份过程，而不是一句结论。用于识别修复前遗留的旧缓存/旧任务。"""
+    t = str(text or "").strip()
+    if len(t) < 80:
+        return False
+    if "解：" in t or "证明：" in t:
+        return True
+    lines = [x.strip() for x in t.splitlines() if x.strip()]
+    return len(lines) >= 3 and ("=" in t or "lim" in t.lower())
 
 
 def is_pure_image_question(question_payload_str):
@@ -5321,6 +5342,7 @@ def build_ai_messages(question_payload_str, force_text_only=False, deadline=None
             "- 证明极限优先用定义、重要极限（如 lim(x→0) sinx/x=1）和等价无穷小，不要用中值定理等题目未要求的工具\n"
             "- 等价无穷小只能替换乘除因子，加减项不能直接替换；分母是根式或几项相加时，先有理化/通分，再对整体做等价替换\n"
             "- 判断同阶/等价、求极限的简答题，必须先写判定依据（如「比值极限存在且为非零常数则为同阶」），再写完整的极限计算过程，最后才写结论\n"
+            "- 比较两个无穷小时，比值严格按题目出现的先后顺序（前者÷后者），不要颠倒分子分母\n"
             "- 最后一行以「答案：」开头，给出最终结果\n"
             "- 过程要能看出思路，通常 3~8 步；简单题也别只写一行结果\n"
             "- 极限结果是无穷大时直接写 ∞（或题目参考答案的表述），不要额外讨论左极限、右极限，除非题目明确要求讨论单侧极限\n"
@@ -5772,6 +5794,22 @@ def _task_question_info(question):
     }
 
 
+def _task_solved_before_prompt_rev(existing):
+    """旧任务是否在这次「必须写过程」的提示词改版之前就解出来了。"""
+    solved_at = existing.get("solved_at")
+    if not solved_at:
+        return True
+    if isinstance(solved_at, str):
+        try:
+            solved_at = datetime.strptime(str(solved_at)[:19], "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return True
+    try:
+        return solved_at < SOLUTION_PROMPT_REV_AT
+    except TypeError:
+        return True
+
+
 def get_or_create_ai_task(question, username="", client_ip=""):
     """按题目指纹取任务；没有就建，失败过的旧任务重新排队。"""
     task_key = make_matching_key(question)
@@ -5779,9 +5817,16 @@ def get_or_create_ai_task(question, username="", client_ip=""):
     existing = db.get_ai_answer_task(task_key=task_key)
     if existing:
         status = str(existing.get("status") or "")
-        if status in ("queued", "running", "waiting", "solved"):
+        # 过程题的任务如果是改版前解的（或答案只有一句结论），不能继续复用：
+        # 否则用户重新作答拿到的还是旧短答案，看起来像提示词没生效。
+        stale_process = (
+            status == "solved"
+            and needs_solution_process(question)
+            and (not _looks_like_process_answer(existing.get("answer")) or _task_solved_before_prompt_rev(existing))
+        )
+        if status in ("queued", "running", "waiting", "solved") and not stale_process:
             return existing
-        # failed/stopped：题目没变，直接重新排队，不新建行，后台统计还能看到历史
+        # failed/stopped 或过期的过程题任务：题目没变，直接重新排队，不新建行
         db.update_ai_answer_task(
             existing["id"], status="queued", answer="", answer_model="",
             answer_provider="", attempts=0, round_no=0, tried_models="[]",
@@ -13880,7 +13925,10 @@ class Handler(BaseHTTPRequestHandler):
                 cached = get_ai_cache(cache_key)
                 if cached and not use_custom and not skip_bank:
                     answer = cached.get("answer", "")
-                    if answer and (_is_truncated_multi_answer(question, answer) or _is_garbage_bank_answer(answer, question)):
+                    if needs_solution_process(question) and not _looks_like_process_answer(answer):
+                        print(f"[AI缓存命中但缺少过程，改走AI] mode={model_mode} answer={str(answer)[:80]}", flush=True)
+                        cached = None
+                    elif answer and (_is_truncated_multi_answer(question, answer) or _is_garbage_bank_answer(answer, question)):
                         print(f"[AI缓存命中但答案不可用，改走AI] mode={model_mode} answer={str(answer)[:80]}", flush=True)
                         cached = None
                     elif not answer:
