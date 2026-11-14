@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.0.19",
+    "version": "6.0.20",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.0.19 修复纯文字题误报「图片下载失败」；设置页新增历史版本库入口"
+    "changelog": "v6.0.20 修复超星公式题题干丢失；证明题写出完整过程；公式图不再当题目图片下载"
   },
   "xueshen-gf": {
-    "version": "6.0.19",
+    "version": "6.0.20",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.0.19 修复纯文字题误报「图片下载失败」；设置页新增历史版本库入口"
+    "changelog": "v6.0.20 修复超星公式题题干丢失；证明题写出完整过程；公式图不再当题目图片下载"
   }
 }

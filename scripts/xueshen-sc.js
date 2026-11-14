@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.19
+// @version      6.0.20
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -15,6 +15,10 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.20 (2026-11-15)
+// @changelog    1. 修复超星公式题题干丢失：公式图里的 LaTeX 直接还原成文字，极限、积分等表达式不再缺失，答案和过程不再算错
+// @changelog    2. 证明题按需要写过程的题型作答，不再只回一句结论；简答/计算/证明按题头真实题型选择提示词
+// @changelog    3. 公式图不再当题目图片下载，避免小图标过滤误删和模型看小图读错
 // @changelog    v6.0.19 (2026-11-14)
 // @changelog    1. 修复纯文字题被误判为「图片下载失败」：过滤题目区域的小图标、占位图等装饰图片，只有确实识别到题目大图且下载失败时才提示重试
 // @changelog    2. 设置页新增「历史版本库」入口：新版遇到问题时，可以安装旧版本脚本回退
@@ -3534,6 +3538,8 @@
     const el = question.element;
     if (el && el.querySelectorAll) {
       el.querySelectorAll("img").forEach((img) => {
+        // 公式图已经在题干里还原成 LaTeX 文本，不再当图片下载
+        if (/ans-latex-moudle/i.test(String(img.className || "")) || img.getAttribute("data")) return;
         if (isDecorativeImg(img)) return;
         pushImgSrc(img.getAttribute("data-src") || img.currentSrc || img.src || "");
       });
@@ -3545,9 +3551,13 @@
       });
     }
     htmlBlobs.forEach((html) => {
-      const re = /<img[^>]+src=["']([^"']+)["']/gi;
-      let m;
-      while ((m = re.exec(String(html || "")))) pushImgSrc(m[1]);
+      const tagRe = /<img\b[^>]*>/gi;
+      let tag;
+      while ((tag = tagRe.exec(String(html || "")))) {
+        if (/ans-latex-moudle/i.test(tag[0])) continue;
+        const srcMatch = tag[0].match(/\bsrc=["']([^"']+)["']/i);
+        if (srcMatch) pushImgSrc(srcMatch[1]);
+      }
     });
     // 纯题库模式：图片题不查题库（题库也不收录图片题），直接提示需要切到 AI 模式
     if (extra && extra.bankOnly && seenImg.size) {
@@ -8492,6 +8502,7 @@
         "写作题": "26",
         "作文题": "26",
         "计算题": "7",
+        "证明题": "7",
         "连线题": "11",
         "匹配题": "11",
         "完型填空": "14",
@@ -8505,6 +8516,7 @@
         "简答": "4",
         "论述": "6",
         "计算": "7",
+        "证明": "7",
         "思政元素": "2"
       };
       this.questionTypeKeywordRules = [
@@ -8547,6 +8559,11 @@
           type: "7"
         },
         {
+          // 证明题同样按步骤给分：只回一句结论等于没写过程
+          keywords: ["证明"],
+          type: "7"
+        },
+        {
           keywords: ["连线", "匹配"],
           type: "11"
         },
@@ -8559,10 +8576,43 @@
           type: "15"
         }
       ];
+      this.latexFromData = (raw) => {
+        let s = String(raw || "");
+        if (!s) return "";
+        try {
+          s = s.replace(/%u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+        } catch (e) {
+        }
+        try {
+          s = decodeURIComponent(s);
+        } catch (e) {
+          try {
+            s = unescape(s);
+          } catch (e2) {
+          }
+        }
+        try {
+          const v = JSON.parse(s);
+          if (typeof v === "string") s = v;
+        } catch (e) {
+          s = s.replace(/^"+|"+$/g, "");
+        }
+        return String(s || "").trim();
+      };
+      // 超星把公式渲染成一张小图片，真正的 LaTeX 放在 img 的 data 属性里。
+      // 只发图片时模型容易读错、读漏；先把公式还原成 $...$ 文本，题干才是完整的。
+      this.replaceLatexImages = (html) => String(html || "").replace(/<img\b[^>]*>/gi, (tag) => {
+        if (!/ans-latex-moudle/i.test(tag)) return tag;
+        const m = tag.match(/\bdata=["']([^"']*)["']/i);
+        if (!m) return "";
+        const latex = this.latexFromData(m[1]);
+        return latex ? " $" + latex + "$ " : "";
+      });
       this.removeHtml = (htmlStr, replacen = true) => {
         const textArea = document.createElement("textarea");
         textArea.innerHTML = htmlStr;
         htmlStr = textArea.value;
+        htmlStr = this.replaceLatexImages(htmlStr);
         htmlStr = htmlStr.replace(/[\t\r\xa0]/g, " ");
         htmlStr = htmlStr.replace(/[\u2000-\u200a]/g, " ");
         htmlStr = htmlStr.replace(/<br\s*\/?>/g, "\n");
@@ -8905,7 +8955,7 @@
           // 超星把填空、简答、论述、计算、分录都编码成「文本框题」，旧映射统一成 2（填空）。
           // 但填空只要最终内容，计算/论述却要写过程，混成 2 会让 AI 只回一个结果。
           // 页面题头写着具体题型时以文字为准；填法都是同一个文本框，不影响作答。
-          if (typeFromCode === "2") {
+          if (typeFromCode === "2" || typeFromCode === "4") {
             const textType = this.resolveQuestionType(questionTypeText);
             if (["4", "5", "6", "7", "9"].includes(textType)) return textType;
           }
