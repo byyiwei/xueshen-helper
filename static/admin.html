@@ -4609,7 +4609,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                           <span v-else-if="log.provider_key==='question_bank'" style="display:inline-block;margin-left:4px;padding:1px 6px;border-radius:6px;font-size:10px;background:rgba(148,163,184,.14);color:var(--text2);border:1px solid rgba(148,163,184,.3);vertical-align:middle">题库</span>
                           <span v-else style="display:inline-block;margin-left:4px;padding:1px 6px;border-radius:6px;font-size:10px;background:rgba(96,165,250,.12);color:var(--accent2);border:1px solid rgba(96,165,250,.3);vertical-align:middle">平台</span>
                         </td>
-                        <td style="padding:10px 8px;color:var(--success);max-width:180px;word-break:break-all">{{log.status==='error'?(log.final_model||'-'):'-'}}</td>
+                        <td style="padding:10px 8px;color:var(--success);max-width:180px;word-break:break-all">{{logFinalModel(log)}}</td>
                         <td style="padding:10px 8px;white-space:nowrap">{{formatDuration(log.duration_ms)}}</td>
                         <td style="padding:10px 8px;max-width:320px;word-break:break-word;color:var(--text2)">{{shortText(log.question,90)}}</td>
                         <td style="padding:10px 8px;max-width:260px;word-break:break-word;color:var(--success)">{{shortText(log.answer,80)}}</td>
@@ -4618,14 +4618,14 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                       </tr>
                       <tr v-if="expandedLogs[log.id]">
                         <td colspan="11" style="padding:0 8px 12px">
-                          <div class="log-detail">用户：{{log.username||'-'}}&#10;来源：{{log.provider_key==='custom'?'自有模型（用户自带）':(log.provider_key==='question_bank'?'题库':'平台模型（后台配置）')}}&#10;模型：{{log.model||'-'}}&#10;本题最终成功模型：{{log.status==='error'?(log.final_model||'未记录（本条只是单次尝试）'):'-'}}&#10;题目：{{log.question||'-'}}&#10;&#10;答案：{{log.answer||'-'}}&#10;&#10;错误：{{log.error||'-'}}</div>
+                          <div class="log-detail">用户：{{log.username||'-'}}&#10;来源：{{log.provider_key==='custom'?'自有模型（用户自带）':(log.provider_key==='question_bank'?'题库':'平台模型（后台配置）')}}&#10;模型：{{log.model||'-'}}&#10;本题最终成功模型：{{logFinalModel(log)}}&#10;题目：{{log.question||'-'}}&#10;&#10;答案：{{log.answer||'-'}}&#10;&#10;错误：{{log.error||'-'}}</div>
                         </td>
                       </tr>
                     </template>
                   </tbody>
                 </table>
                 <div style="padding:10px 8px 2px;color:var(--text3);font-size:11.5px;line-height:1.7">
-                  说明：失败记录只代表某个模型的一次尝试，自动答题会继续换下一个模型；同一道题后面若有成功记录，以那条为准。
+                  说明：「失败」只统计整题最终没有答出的记录；中途失败、后来由其他模型答出的，归到「已切换」，不算失败。
                 </div>
                 <div class="pager">
                   <button class="btn btn-secondary btn-sm" :disabled="aiLogFilter.page<=1" @click="loadAiLogs(aiLogFilter.page-1)">上一页</button>
@@ -8857,6 +8857,12 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     function statusText(s){return s==='success'?'成功':s==='insufficient_quota'?'余额不足':s==='manual_pick'?'待手动选择':s==='bank_miss'?'题库未命中':'失败';}
     // 单模型失败但已由其它模型答出：不是整题失败，标成「已切换」避免误读。
     function logStatusText(log){return (log.status==='error'&&log.final_model)?'已切换':statusText(log.status);}
+    function logFinalModel(log){
+      if(!log)return '-';
+      if(log.status==='success')return log.model||'-';
+      if(log.status==='error')return log.final_model||'无（整题未答出）';
+      return '-';
+    }
     function formatDuration(ms){
       ms=Number(ms||0);
       return ms>=1000?(ms/1000).toFixed(1)+'s':ms+'ms';
@@ -10745,7 +10751,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
        addProvider,removeProvider,addModel,removeModel,
        modelUsageTotal,modelUsageToday,modelExpired,modelTotalExhausted,modelDailyExhausted,modelQuotaLeft,modelQuotaTitle,clearModelQuota,weightSegments,weightPools,
        qqBot,qqBotStatus,qqBotLogs,qqBotBotpyAvailable,qqBotSaving,loadQqBot,saveQqBot,
-      protocolName,statusText,logStatusText,formatDuration,questionTypeName,shortText,formatWan,formatScriptExtra,isMembershipActive,fmtMemberExpire,pointsColorStyle,memberColorStyle,trendPoints,trendX,trendY,trendMax,stackBarX,stackBarY,stackBarH,modelBarWidth,revTrendPoints,revTrendArea,revTrendX,revStep,revY,revMax,
+      protocolName,statusText,logStatusText,logFinalModel,formatDuration,questionTypeName,shortText,formatWan,formatScriptExtra,isMembershipActive,fmtMemberExpire,pointsColorStyle,memberColorStyle,trendPoints,trendX,trendY,trendMax,stackBarX,stackBarY,stackBarH,modelBarWidth,revTrendPoints,revTrendArea,revTrendX,revStep,revY,revMax,
       loadLogCleanup,saveLogCleanup,runLogCleanupNow,logRetentionDays,logCleanupSaving,logCleanupRunning,logCleanupResult,logStats,logStatsLoading,manualCleanupDays,manualCleanupTable,payTestForm,payTestLoading,payTestResult,runPayTest,payApiWeightTotal,payApiWeightPercent,refreshSandpayParams,onSandpayAdvancedChange,
       referralTab,referralConfig,referralSaving,referralWithdrawals,referralWdFilter,referralWdSummary,referralStats,referralQrPreview,
       loadReferralConfig,saveReferralConfig,loadReferralWithdrawals,approveWithdrawal,rejectWithdrawal,loadReferralStats,
