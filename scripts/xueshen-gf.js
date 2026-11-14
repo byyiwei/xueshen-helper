@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.16
+// @version      6.0.17
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
@@ -10,11 +10,14 @@
 // @description:zh-CN 超星学习通、知到智慧树免费网课助手（刷课脚本）：自动刷课、自动答题、视频倍速、自动切换任务点，海量题库每日更新，支持免费搜题查网课答案。同时支持青书学堂、出头科技、雨课堂、云班课、智慧职教、国家开放大学、中国大学MOOC、U校园、学堂在线、绎通云、山东专技、西财在线｜DeepSeek AI 兜底作答｜字体加密解析
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
-// @license      Proprietary
+// @license      All Rights Reserved
 // @antifeature payment 部分高级功能需付费（AI 答题额度、自有模型）
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.17 (2026-11-14)
+// @changelog    1. 修复部分油猴环境下控制面板无法加载：不再 delete globalThis.__abcCSS，避免 Proxy 的 deleteProperty 报错
+// @changelog    2. 许可证标记改为 All Rights Reserved
 // @changelog    v6.0.16 (2026-11-13)
 // @changelog    1. 修复写作题（含英语作文）无法自动填写：学习通新版把写作题单独编码成 answertype=26，之前认不出、也不调用 AI
 // @changelog    2. 富文本编辑器（UEditor）等加载完成后再写入并校验，写作题答案不会再出现「填了但没填上」
@@ -22089,7 +22092,9 @@ const XS_EXT = (() => {
         shadow.appendChild(style);
         // 记住这块样式，后面页面新注入的样式都会追加到它后面，需要把它挪回最后，否则同权重会被页面样式盖掉
         shadow.__xsPanelCss = style;
-        delete globalThis.__abcCSS;
+        // 某些油猴环境里 globalThis 是 Proxy，delete 会被 deleteProperty trap 拒绝并在严格模式抛错，
+        // 导致整个控制面板初始化中断。直接置空即可，injectCSSIntoShadow 只判断真假。
+        try { globalThis.__abcCSS = void 0; } catch (e) {}
       }
     }, observeHeadStyles = function(shadow) {
       const clonedMap = /* @__PURE__ */ new WeakMap();
