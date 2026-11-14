@@ -5331,13 +5331,9 @@ def build_ai_messages(question_payload_str, force_text_only=False, deadline=None
                     user_content.append({"type": "text", "text": f"第{img_no}张图＝选项{_lab}"})
                 user_content.append({"type": "image_url", "image_url": {"url": img_data}})
     if failed_imgs:
-        # 题干本身有文字、且一张图都没成功时，多半是页面上的小图标没下到。
-        # 这种文字题照常作答，不能因为一个装饰图让整题报「图片下载失败」。
-        # 纯图片题，或者已经发了一部分图（题目不完整）时，仍然拦下。
-        if img_no == 0 and not is_pure_image_question(question_payload_str):
-            print(f"[build_ai_messages] {failed_imgs}张图片下载失败，按文字题继续作答", flush=True)
-        else:
-            raise ValueError(f"{failed_imgs}张题目图片无法下载，未发送不完整题目给模型，请刷新后重试")
+        # 装饰图在脚本侧已经过滤；能走到这里的都是真正的内容图，缺一张题目就不完整，
+        # 继续作答只会让模型猜。仍然拦下，让用户刷新重试。
+        raise ValueError(f"{failed_imgs}张题目图片无法下载，未发送不完整题目给模型，请刷新后重试")
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_content}

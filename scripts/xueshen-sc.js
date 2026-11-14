@@ -3499,6 +3499,7 @@
     const pushImgSrc = (src) => {
       const u = String(src || "").trim();
       if (!u || /^data:image\/svg\+xml/i.test(u)) return;
+      if (/(icon|emoji|avatar|logo|loading|placeholder|spacer|blank\.(gif|png)|pixel|1x1|transparent)/i.test(u)) return;
       if (seenImg.has(u)) return;
       seenImg.add(u);
     };
@@ -3562,7 +3563,9 @@
       const textOnlyLen = [question.title, ...(question.optionsText || [])]
         .map((t) => String(t || "").replace(/<img[^>]*>/gi, "").replace(/<[^>]+>/g, "").replace(/&nbsp;/gi, "").replace(/\s+/g, ""))
         .join("").length;
-      if (textOnlyLen < 6) {
+      // 只有「压根没识别到内容图」的文字题才继续作答；识别到了图却全下不下来，
+      // 说明图是题目的一部分，该提示重试，不能只拿文字让模型猜。
+      if (!(seenImg.size === 0 && textOnlyLen >= 6)) {
         return { code: -1005, data: { answer: [] }, msg: "图片下载失败，请刷新题目后重试" };
       }
     }
