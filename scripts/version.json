@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.0.18",
+    "version": "6.0.19",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.0.18 计算/分录/程序题写出完整解题过程；图片下载失败改由服务器带 Referer 重试；简答/论述/计算题按真实题型上报"
+    "changelog": "v6.0.19 修复纯文字题误报「图片下载失败」；设置页新增历史版本库入口"
   },
   "xueshen-gf": {
-    "version": "6.0.18",
+    "version": "6.0.19",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.0.18 计算/分录/程序题写出完整解题过程；图片下载失败改由服务器带 Referer 重试；简答/论述/计算题按真实题型上报"
+    "changelog": "v6.0.19 修复纯文字题误报「图片下载失败」；设置页新增历史版本库入口"
   }
 }
