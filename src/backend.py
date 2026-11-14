@@ -286,7 +286,14 @@ def ai_log_worker():
     while True:
         item = AI_LOG_QUEUE.get()
         try:
-            db.save_ai_call_log(item)
+            if isinstance(item, dict) and item.get("_action") == "backfill_final_model":
+                db.backfill_ai_log_final_model(
+                    item.get("question") or "",
+                    item.get("final_model") or "",
+                    item.get("since"),
+                )
+            else:
+                db.save_ai_call_log(item)
         except Exception as e:
             print(f"[AI日志错误] {e}", flush=True)
         finally:
@@ -300,6 +307,24 @@ def enqueue_ai_log(item):
         DASHBOARD_CACHE["data"] = None
     except queue.Full:
         print("[AI日志队列] 队列已满，丢弃一条日志", flush=True)
+
+
+def enqueue_ai_log_backfill(question, final_model, since=None):
+    """等这条任务之前排队的失败日志都写库后，再把它们标成「已切换」。
+
+    任务池的失败尝试是边跑边记的，当时还不知道后面会不会成功。成功后再回填
+    final_model，失败筛选和首页失败数就只会剩下真正没答出来的题。
+    """
+    try:
+        AI_LOG_QUEUE.put_nowait({
+            "_action": "backfill_final_model",
+            "question": question or "",
+            "final_model": final_model or "",
+            "since": since,
+        })
+        DASHBOARD_CACHE["data"] = None
+    except queue.Full:
+        print("[AI日志队列] 队列已满，跳过一次失败日志回填", flush=True)
 
 # 题库调用日志异步队列
 BANK_LOG_QUEUE = queue.Queue(maxsize=10000)
@@ -5749,6 +5774,7 @@ def _run_ai_task(task):
                     "duration_ms": int((time.time() - attempt_start) * 1000),
                     "client_ip": str(task.get("client_ip") or ""),
                 })
+                enqueue_ai_log_backfill(question, model_name, task.get("created_at"))
                 _task_live_clear(task_id)
                 _task_event(
                     f"#{task_id} 由 {model_name} 答出，用时 {max(1, int(time.time() - attempt_start))}s",

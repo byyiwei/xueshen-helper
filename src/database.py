@@ -5596,6 +5596,27 @@ class Database:
             )
         )
 
+    def backfill_ai_log_final_model(self, question, final_model, since=None):
+        """同题后来答出来了：把之前的失败尝试标上最终成功模型。
+
+        调用记录里「失败」只算整题没答出来的；这些中间失败会归到「已切换」，
+        不再进首页失败数和失败筛选，但模型健康统计仍能看到它们。
+        """
+        if not question or not final_model:
+            return
+        question = _clip_text(question)
+        final_model = _clip_text(final_model, 255)
+        ph = _ph()
+        sql = (
+            f"UPDATE ai_call_logs SET final_model={ph} "
+            f"WHERE question={ph} AND status='error' AND COALESCE(final_model, '')=''"
+        )
+        params = [final_model, question]
+        if since:
+            sql += f" AND created_at >= {ph}"
+            params.append(since)
+        self.execute(sql, tuple(params))
+
     def add_model_token_usage(self, model_name, tokens):
         """记录模型 token 消耗（按天汇总，UPSERT）"""
         ph = _ph()
