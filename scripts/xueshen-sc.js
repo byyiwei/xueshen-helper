@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.17
+// @version      6.0.18
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -15,6 +15,10 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.18 (2026-11-14)
+// @changelog    1. 计算题、分录题、程序题现在会写出完整解题过程，最后一行给答案，不再只回一个结果
+// @changelog    2. 修复图片题「图片下载失败」：本地被防盗链拦住时改由服务器带 Referer 重试，新版学习通的 blob 图也能读取
+// @changelog    3. 超星简答题/论述题/计算题按真实题型上报，AI 作答口径更准确
 // @changelog    v6.0.17 (2026-11-14)
 // @changelog    1. 修复部分油猴环境下控制面板无法加载：不再 delete globalThis.__abcCSS，避免 Proxy 的 deleteProperty 报错
 // @changelog    2. 许可证标记改为 All Rights Reserved
@@ -3385,30 +3389,56 @@
       });
     });
   };
-  const _downloadImg = (url) => new Promise((resolve) => {
-    if (/^data:image\/[^;]+;base64,/i.test(String(url))) { resolve(url); return; }
-    if (!url || String(url).startsWith("blob:")) {
-      resolve(null);
-      return;
+  // 页面上下文读图：blob: 地址只有当前页面能取，跨站图靠浏览器自带的 Cookie/Referer
+  // 往往比 GM 请求更容易过防盗链。读取失败一律返回 null，由调用方决定要不要交给后端。
+  const _readImgInPage = async (url) => {
+    try {
+      const res = await fetch(url, { credentials: 'include' });
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      if (!/^image\//i.test(blob.type || '')) return null;
+      return await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch (_) {
+      return null;
     }
+  };
+  const toRemoteImgUrl = (url) => {
+    const s = String(url || '').trim();
+    if (!s || /^(blob|data):/i.test(s)) return '';
+    if (s.startsWith('//')) return location.protocol + s;
+    if (/^https?:\/\//i.test(s)) return s;
+    try { return new URL(s, document.baseURI).href; } catch (_) { return ''; }
+  };
+  const _downloadImg = (url) => new Promise((resolve) => {
+    const src = String(url || '').trim();
+    if (/^data:image\/[^;]+;base64,/i.test(src)) { resolve(src); return; }
+    if (!src) { resolve(null); return; }
+    // blob: 图（新版学习通不少题目图是这种）GM 下不了，交回页面自己读
+    if (src.startsWith('blob:')) { _readImgInPage(src).then(resolve); return; }
+    const fallback = () => { _readImgInPage(src).then(resolve); };
     GM_xmlhttpRequest({
-      url, method: 'GET', responseType: 'arraybuffer', timeout: 15000,
+      url: src, method: 'GET', responseType: 'arraybuffer', timeout: 15000,
       onload: (res) => {
         try {
-          if (res.status < 200 || res.status >= 300) { resolve(null); return; }
+          if (res.status < 200 || res.status >= 300) { fallback(); return; }
           const bytes = new Uint8Array(res.response);
-          if (!bytes.length) { resolve(null); return; }
+          if (!bytes.length) { fallback(); return; }
           let binary = '';
           const chunk = 0x8000;
           for (let i = 0; i < bytes.length; i += chunk)
             binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
           const type = (res.responseHeaders.match(/content-type:\s*([^\s;\r\n]+)/i) || [])[1] || 'image/jpeg';
-          if (!/^image\//i.test(type)) { resolve(null); return; }
+          if (!/^image\//i.test(type)) { fallback(); return; }
           resolve('data:' + type + ';base64,' + btoa(binary));
-        } catch (e) { resolve(null); }
+        } catch (e) { fallback(); }
       },
-      onerror: () => resolve(null),
-      ontimeout: () => resolve(null),
+      onerror: fallback,
+      ontimeout: fallback,
     });
   });
   // 「手动选择」时的处理方式：wait=停下来等我选完再继续；skip=跳过本题、本轮不自动提交
@@ -3492,10 +3522,20 @@
     }
     for (const src of seenImg) {
       const dataUrl = await _downloadImg(src);
-      if (!dataUrl) return { code: -1005, data: { answer: [] }, msg: "图片下载失败，请刷新题目后重试" };
-      images.push(dataUrl);
-      imageSources.push(src);
+      if (dataUrl) {
+        images.push(dataUrl);
+        imageSources.push(src);
+        continue;
+      }
+      // 本地下载失败（防盗链 403、相对地址、blob 读不出）时不要整题放弃：
+      // 把原始地址交给后端，后端会带 Referer 再下一次，超星 p.ananas 这类图大多能取到。
+      const remote = toRemoteImgUrl(src);
+      if (remote) {
+        images.push(remote);
+        imageSources.push(src);
+      }
     }
+    if (!images.length) return { code: -1005, data: { answer: [] }, msg: "图片下载失败，请刷新题目后重试" };
     const payloadObj = {
       question: question.title || "",
       options: question.optionsText || [],
@@ -8637,7 +8677,7 @@
     constructor(type, iframe) {
       super();
       __publicField(this, "type");
-      __publicField(this, "AI_ALLOW_QUESTION_TYPE", ["0", "1", "2", "3", "4", "5", "26"]);
+      __publicField(this, "AI_ALLOW_QUESTION_TYPE", ["0", "1", "2", "3", "4", "5", "6", "7", "9", "26"]);
       __publicField(this, "answerSeparators", ["===", "#", "---", "###", "|", ";", "；"]);
       __publicField(this, "init", async () => {
         var _that = this;
@@ -8787,7 +8827,14 @@
         if (code === 0) return "0";
         if (code === 1) return "1";
         if (code === 3) return "3";
-        if ([2, 4, 5, 6, 7, 8, 9, 10].includes(code)) return "2";
+        // 4~9 都是长文本框题，但作答要求不同：填空只要内容，计算/分录/程序要过程。
+        // 以前一律压成 2（填空），AI 收到「只输出填空内容」，计算题就只回了个结果。
+        if (code === 4) return "4";
+        if (code === 5) return "5";
+        if (code === 6) return "6";
+        if (code === 7) return "7";
+        if (code === 9) return "9";
+        if ([2, 8, 10].includes(code)) return "2";
         if (code === 11) return "11";
         if (code === 14) return "14";
         if (code === 15) return "15";
@@ -8810,7 +8857,16 @@
         );
         if ((!typeFromCode || ["0", "1"].includes(typeFromCode)) &&
             (element.querySelector('input[type="checkbox"], [role="checkbox"]') || /多选|多项选择|不定项|X型/i.test(questionTypeText))) return "1";
-        if (typeFromCode) return typeFromCode;
+        if (typeFromCode) {
+          // 超星把填空、简答、论述、计算、分录都编码成「文本框题」，旧映射统一成 2（填空）。
+          // 但填空只要最终内容，计算/论述却要写过程，混成 2 会让 AI 只回一个结果。
+          // 页面题头写着具体题型时以文字为准；填法都是同一个文本框，不影响作答。
+          if (typeFromCode === "2") {
+            const textType = this.resolveQuestionType(questionTypeText);
+            if (["4", "5", "6", "7", "9"].includes(textType)) return textType;
+          }
+          return typeFromCode;
+        }
         return this.resolveQuestionType(questionTypeText);
       });
       __publicField(this, "getChoiceOptionInputs", (optionContainer) => {
@@ -9167,7 +9223,7 @@
               break;
             }
           }
-        } else if (question.type === "4" || question.type === "5" || question.type === "6" || question.type === "26") {
+        } else if (question.type === "4" || question.type === "5" || question.type === "6" || question.type === "7" || question.type === "9" || question.type === "26") {
           const textareaElement = question.element.querySelector("textarea");
           if (!textareaElement) return false;
           const longAnswer = this.resolveBlankAnswers(question.answer.answer, 1)[0] || "";
