@@ -4459,6 +4459,90 @@ def _mentioned_options(text, options):
     found.sort(key=lambda o: order.get(o, 999))
     return found
 
+# 这些题型默认是数学/文字过程题。模型偶尔无视提示词，仍然吐出 LaTeX，
+# 超星编辑器不会自动渲染，填进去就是一堆 \( \) \[ \frac，所以这里统一转成普通文本。
+PLAIN_MATH_QUESTION_TYPES = {"4", "7", "简答题", "计算题", "证明题", "计算分析题"}
+
+_LATEX_SYMBOLS = [
+    ("\\arctan", "arctan"), ("\\arcsin", "arcsin"), ("\\arccos", "arccos"),
+    ("\\sinh", "sinh"), ("\\cosh", "cosh"), ("\\tanh", "tanh"),
+    ("\\sin", "sin"), ("\\cos", "cos"), ("\\tan", "tan"), ("\\cot", "cot"),
+    ("\\sec", "sec"), ("\\csc", "csc"), ("\\ln", "ln"), ("\\log", "log"),
+    ("\\exp", "exp"), ("\\max", "max"), ("\\min", "min"), ("\\sup", "sup"),
+    ("\\inf", "inf"), ("\\lim", "lim"),
+    ("\\rightarrow", "→"), ("\\Rightarrow", "⇒"), ("\\leftarrow", "←"),
+    ("\\to", "→"), ("\\cdot", "·"), ("\\times", "×"), ("\\div", "÷"),
+    ("\\pm", "±"), ("\\mp", "∓"), ("\\infty", "∞"), ("\\sim", "~"),
+    ("\\approx", "≈"), ("\\neq", "≠"), ("\\ne", "≠"), ("\\leq", "≤"),
+    ("\\le", "≤"), ("\\geq", "≥"), ("\\ge", "≥"), ("\\in", "∈"),
+    ("\\notin", "∉"), ("\\subset", "⊂"), ("\\cup", "∪"), ("\\cap", "∩"),
+    ("\\forall", "∀"), ("\\exists", "∃"), ("\\pi", "π"),
+    ("\\alpha", "α"), ("\\beta", "β"), ("\\gamma", "γ"), ("\\delta", "δ"),
+    ("\\theta", "θ"), ("\\lambda", "λ"), ("\\mu", "μ"), ("\\sigma", "σ"),
+    ("\\phi", "φ"), ("\\omega", "ω"), ("\\Delta", "Δ"), ("\\Omega", "Ω"),
+]
+
+
+def _needs_plain_math(question_payload_str):
+    try:
+        info = parse_question_payload(question_payload_str)
+    except Exception:
+        return False
+    return str(info.get("question_type") or "").strip() in PLAIN_MATH_QUESTION_TYPES
+
+
+def latex_to_plain_text(text):
+    """把常见的 LaTeX 写法转成编辑框里能直接看的普通文本。"""
+    t = str(text or "")
+    if "\\" not in t and "$" not in t:
+        return t
+    # 数学定界符
+    t = t.replace("\\[", "\n").replace("\\]", "\n")
+    t = t.replace("\\(", "").replace("\\)", "")
+    t = t.replace("$$", "\n").replace("$", "")
+    # 排版命令
+    for cmd in ("\\displaystyle", "\\textstyle", "\\scriptstyle", "\\limits", "\\left", "\\right",
+                "\\quad", "\\qquad", "\\,", "\\;", "\\!", "\\ ", "\\:"):
+        t = t.replace(cmd, " ")
+    t = re.sub(r"\\(?:begin|end)\s*\{[^{}]*\}", "\n", t)
+    t = t.replace("\\\\", "\n")
+    # \text{...} / \mathrm{...}
+    t = re.sub(r"\\(?:text|mathrm|mathbf|mathit)\s*\{([^{}]*)\}", r"\1", t)
+    # 根号
+    t = re.sub(r"\\sqrt\s*\[\s*3\s*\]\s*\{([^{}]*)\}", r"∛(\1)", t)
+    t = re.sub(r"\\sqrt\s*\[([^\]]*)\]\s*\{([^{}]*)\}", r"(\2)^(1/\1)", t)
+    t = re.sub(r"\\sqrt\s*\{([^{}]*)\}", r"√(\1)", t)
+    # 分式（由内向外循环，兼容嵌套）
+    frac_re = re.compile(r"\\[dt]?frac\s*\{([^{}]*)\}\s*\{([^{}]*)\}")
+    for _ in range(8):
+        new = frac_re.sub(r"(\1)/(\2)", t)
+        if new == t:
+            break
+        t = new
+    # 极限/积分/求和的下标
+    t = re.sub(r"\\lim\s*_\s*\{([^{}]*)\}", r"lim(\1)", t)
+    t = re.sub(r"\\(?:int|sum|prod)\s*_\s*\{([^{}]*)\}\s*\^\s*\{([^{}]*)\}", r"\1(\2)", t)
+    # 上下标
+    t = re.sub(r"\^\s*\{([^{}]*)\}", r"^\1", t)
+    t = re.sub(r"_\s*\{([^{}]*)\}", r"_\1", t)
+    # 常用符号与函数名
+    for src, dst in _LATEX_SYMBOLS:
+        t = t.replace(src, dst)
+    # 剩余的未知命令
+    t = re.sub(r"\\[a-zA-Z]+", "", t)
+    t = t.replace("\\", "")
+    # 收尾：去行尾空格、压缩空行
+    t = re.sub(r"[ \t\u00a0]+", " ", t)
+    # 数学符号两侧不留空格，去掉分式中单字母的多余括号
+    t = re.sub(r"\s*(→|←|⇒|·|×|÷|≤|≥|≠|≈|∞)\s*", r"\1", t)
+    t = re.sub(r"(?<=[A-Za-z0-9)])~\s+", "~", t)
+    t = re.sub(r"/\(([A-Za-z0-9]+)\)", r"/\1", t)
+    t = re.sub(r"\(([A-Za-z0-9]+)\)/", r"\1/", t)
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    t = "\n".join(line.strip() for line in t.splitlines())
+    return t.strip()
+
+
 def normalize_ai_answer(question, answer):
     """把模型返回清洗成适合脚本匹配的最终答案，避免返回 Thinking Process。"""
     if not answer:
@@ -4472,6 +4556,9 @@ def normalize_ai_answer(question, answer):
     # 2) 去掉残留的孤立 <think> / </think> 标签
     text = re.sub(r"<\s*/?\s*think\s*>", "", text, flags=re.I)
     text = text.strip()
+    # 数学过程题：模型偶尔无视提示词仍然输出 LaTeX，编辑器不会渲染，先转成普通文本。
+    if _needs_plain_math(question):
+        text = latex_to_plain_text(text)
     # 计算/分录/程序题的「过程」就是答案本身。后面的字母提取和结论区截断会把
     # 前面几行步骤全扔掉，只剩「答案：1/2」，正好又变成老师说的「只给答案」。
     if needs_solution_process(question) and not extract_options_from_question(question):
@@ -5348,7 +5435,7 @@ def build_ai_messages(question_payload_str, force_text_only=False, deadline=None
             "- 极限结果是无穷大时直接写 ∞（或题目参考答案的表述），不要额外讨论左极限、右极限，除非题目明确要求讨论单侧极限\n"
             "- 不要复述题目，不要写分析草稿或思考过程，不要解释你正在做什么\n"
             "- 只输出一份最终解答；不要自问自答、不要重复同一段，不要出现「我们需要」「注意规则」「可能的步骤」这类思考文字\n"
-            "- 数学式子用普通文本写清楚（如 lim(x→0) (√(x+1)-1)/x），不要用 LaTeX 的 $ 和 \\frac\n"
+            "- 数学式子用普通文本写清楚（如 lim(x→0) (√(x+1)-1)/x），不要输出任何 LaTeX：不要用 $、\\( \\)、\\[ \\]、\\frac、\\lim_、\\to、\\cdot\n"
             "- 图片题：先识别图片中的题目，再按上面的要求写过程"
         )
     else:
