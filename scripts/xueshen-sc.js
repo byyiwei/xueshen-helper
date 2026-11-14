@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.19
+// @version      6.0.20
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -15,6 +15,10 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.20 (2026-11-15)
+// @changelog    1. 修复超星公式题题干丢失：公式图里的 LaTeX 直接还原成文字，极限、积分等表达式不再缺失，答案和过程不再算错
+// @changelog    2. 证明题按需要写过程的题型作答，不再只回一句结论；简答/计算/证明按题头真实题型选择提示词
+// @changelog    3. 公式图不再当题目图片下载，避免小图标过滤误删和模型看小图读错
 // @changelog    v6.0.19 (2026-11-14)
 // @changelog    1. 修复纯文字题被误判为「图片下载失败」：过滤题目区域的小图标、占位图等装饰图片，只有确实识别到题目大图且下载失败时才提示重试
 // @changelog    2. 设置页新增「历史版本库」入口：新版遇到问题时，可以安装旧版本脚本回退
