@@ -3499,12 +3499,34 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     const seenImg = new Set();
     const pushImgSrc = (src) => {
       const u = String(src || "").trim();
-      if (!u || seenImg.has(u)) return;
+      if (!u || /^data:image\/svg\+xml/i.test(u)) return;
+      if (/(icon|emoji|avatar|logo|loading|placeholder|spacer|blank\.(gif|png)|pixel|1x1|transparent)/i.test(u)) return;
+      if (seenImg.has(u)) return;
       seenImg.add(u);
+    };
+    // 题目容器里除了题目图，还有一堆界面小图标：选项勾、编辑按钮、加载占位、统计像素。
+    // 以前把它们也当题目图去下载，任何一个失败就整题报「图片下载失败」，
+    // 文字题也跟着躺枪。按尺寸和文件名先排掉装饰图，只留下真正的内容图。
+    const isDecorativeImg = (img) => {
+      try {
+        const w = Number(img.naturalWidth || img.width || img.getAttribute("width") || 0);
+        const h = Number(img.naturalHeight || img.height || img.getAttribute("height") || 0);
+        if ((w && w < 24) || (h && h < 24)) return true;
+        const src = String(img.getAttribute("data-src") || img.getAttribute("src") || "");
+        if (/(icon|emoji|avatar|logo|loading|placeholder|spacer|blank\.(gif|png)|pixel|1x1|transparent)/i.test(src)) return true;
+        const cls = String(img.className || "") + " " + String((img.parentElement && img.parentElement.className) || "");
+        if (/(^|[\s_-])(icon|emoji|avatar|logo|loading|placeholder)([\s_-]|$)/i.test(cls)) return true;
+        return false;
+      } catch (_) {
+        return false;
+      }
     };
     const el = question.element;
     if (el && el.querySelectorAll) {
-      el.querySelectorAll("img").forEach((img) => pushImgSrc(img.getAttribute("data-src") || img.currentSrc || img.src || ""));
+      el.querySelectorAll("img").forEach((img) => {
+        if (isDecorativeImg(img)) return;
+        pushImgSrc(img.getAttribute("data-src") || img.currentSrc || img.src || "");
+      });
     }
     const htmlBlobs = [question.title, ...(question.optionsText || [])];
     if (question.options && typeof question.options === "object") {
@@ -3536,7 +3558,18 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         imageSources.push(src);
       }
     }
-    if (!images.length) return { code: -1005, data: { answer: [] }, msg: "图片下载失败，请刷新题目后重试" };
+    if (!images.length) {
+      // 题干/选项本身有文字：说明这是文字题，图片全没取到也照常交给 AI，
+      // 不能拿「图片下载失败」把能答的文字题挡住。
+      const textOnlyLen = [question.title, ...(question.optionsText || [])]
+        .map((t) => String(t || "").replace(/<img[^>]*>/gi, "").replace(/<[^>]+>/g, "").replace(/&nbsp;/gi, "").replace(/\s+/g, ""))
+        .join("").length;
+      // 只有「压根没识别到内容图」的文字题才继续作答；识别到了图却全下不下来，
+      // 说明图是题目的一部分，该提示重试，不能只拿文字让模型猜。
+      if (!(seenImg.size === 0 && textOnlyLen >= 6)) {
+        return { code: -1005, data: { answer: [] }, msg: "图片下载失败，请刷新题目后重试" };
+      }
+    }
     const payloadObj = {
       question: question.title || "",
       options: question.optionsText || [],
