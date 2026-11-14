@@ -2967,6 +2967,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                       <th style="text-align:left;padding:10px 8px">邮箱</th>
                       <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="setSort('points_balance')">权益 <svg class="ui-icon xs" style="display:inline-block;vertical-align:-1px" v-if="userSortBy==='points_balance'"><use :href="userSortOrder==='asc'?'#i-chevron-up':'#i-chevron-down'"></use></svg></th>
                       <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="setSort('paid_amount')">消费 <svg class="ui-icon xs" style="display:inline-block;vertical-align:-1px" v-if="userSortBy==='paid_amount'"><use :href="userSortOrder==='asc'?'#i-chevron-up':'#i-chevron-down'"></use></svg></th>
+                      <th style="text-align:left;padding:10px 8px">脚本版本</th>
                       <th style="text-align:left;padding:10px 8px">状态</th>
                       <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="setSort('created_at')">注册时间 <svg class="ui-icon xs" style="display:inline-block;vertical-align:-1px" v-if="userSortBy==='created_at'"><use :href="userSortOrder==='asc'?'#i-chevron-up':'#i-chevron-down'"></use></svg></th>
                       <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="setSort('register_ip')">注册IP <svg class="ui-icon xs" style="display:inline-block;vertical-align:-1px" v-if="userSortBy==='register_ip'"><use :href="userSortOrder==='asc'?'#i-chevron-up':'#i-chevron-down'"></use></svg></th>
@@ -2993,6 +2994,14 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                             <span v-if="u.bought_member">会员 {{u.bought_member}} 次</span>
                             <span v-if="!u.bought_points&&!u.bought_member">自有模型</span>
                           </div>
+                        </template>
+                        <span v-else style="color:var(--text3)">—</span>
+                      </td>
+                      <td style="padding:10px 8px;white-space:nowrap">
+                        <template v-if="u.script_version">
+                          <span class="badge" :class="u.script_version===latestScriptVersion?'badge-success':'badge-warning'"
+                                :title="u.script_version===latestScriptVersion?'已是最新版本':'不是最新版本，建议提示用户更新'">v{{u.script_version}}</span>
+                          <div style="color:var(--text3);font-size:11.5px;margin-top:4px">{{u.script_version_at||''}}</div>
                         </template>
                         <span v-else style="color:var(--text3)">—</span>
                       </td>
@@ -7593,6 +7602,7 @@ createApp({
     const pwdForm=reactive({old:'',new:'',confirm:''});
     const accountConfig=reactive({username:'admin',admin_email:'',avatar_data:''});
     const users=ref([]);
+    const latestScriptVersion=ref('');
     const userSearch=ref('');
     const userBanFilter=ref('');
     const userSortBy=ref('created_at');
@@ -8005,7 +8015,7 @@ createApp({
         const d=await r.json();
         if(d.code!==200)return showMsg(d.msg||'导出失败','error');
         const rows=d.users||[];
-        downloadCsv('用户列表_'+csvStamp()+'.csv',['ID','用户名','邮箱','题数余额','会员到期','消费金额','购买题数','会员次数','状态','注册时间','最后登录','注册IP','最后登录IP'],rows.map(x=>[x.id,x.username,x.email,x.points_balance,x.member_until||'',x.paid_amount||0,x.bought_points||0,x.bought_member||0,x.is_banned?'已封禁':'正常',x.created_at,x.last_login_at||'',x.register_ip||'',x.last_login_ip||'']));
+        downloadCsv('用户列表_'+csvStamp()+'.csv',['ID','用户名','邮箱','题数余额','会员到期','消费金额','购买题数','会员次数','脚本版本','状态','注册时间','最后登录','注册IP','最后登录IP'],rows.map(x=>[x.id,x.username,x.email,x.points_balance,x.member_until||'',x.paid_amount||0,x.bought_points||0,x.bought_member||0,x.script_version||'',x.is_banned?'已封禁':'正常',x.created_at,x.last_login_at||'',x.register_ip||'',x.last_login_ip||'']));
         showMsg('已导出 '+rows.length+' 个用户','success');
       }catch(e){showMsg('导出失败：'+(e.message||e),'error');}
     }
@@ -8051,7 +8061,7 @@ createApp({
         const url='/admin/users'+(qs?('?'+qs):'');
         const res=await fetch(url,{headers:{'Authorization':token.value}});
         const data=await res.json();
-        if(data.code===200){users.value=data.users||[];}
+        if(data.code===200){users.value=data.users||[];latestScriptVersion.value=data.latest_script_version||'';}
         else if(data.code===403){logout();showMsg('登录已过期','error');}
       }catch(e){showMsg('获取用户列表失败: '+e,'error');}
     }
@@ -11325,7 +11335,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
        loading,page,loginMode,themeMode,themeLabels,themeIcons,cycleTheme,breadcrumbItems,navigateBreadcrumb,toasts,removeToast,toasts,removeToast,toasts,removeToast,config,emailConfig,emailTemplates,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,SCENE_ICONS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
        mailServers,showServerForm,mailServerForm,showSmtpPass,mailServerTotalWeight,mailServerWeightPercent,toggleEmailEnabled,openServerForm,saveMailServer,deleteMailServer,
        showMailHubRecords,mailHubRecords,mailHubRecordsLoading,mailHubRecordsError,toggleEmailHub,loadMailHubRecords,modelHubConfig,loadModelHubConfig,toggleModelHub,barW,
-       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,userSearch,userBanFilter,userSortBy,userSortOrder,ipSearch,ipSearchList,ipSearchLoading,loadUsersByIp,gotoIpSearch,gotoIpSearchFromOrder,showUserModal,userForm,gotoUserSearch,
+       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,latestScriptVersion,userSearch,userBanFilter,userSortBy,userSortOrder,ipSearch,ipSearchList,ipSearchLoading,loadUsersByIp,gotoIpSearch,gotoIpSearchFromOrder,showUserModal,userForm,gotoUserSearch,
         showHtmlPreview,htmlPreviewFrame,htmlPreviewData,toggleHtmlPreview,updateHtmlPreview,switchToHtml,onHtmlInput,syncPlainFromHtml,
        paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,hubPayConfig,planForm,
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,

@@ -9181,7 +9181,7 @@ class Handler(BaseHTTPRequestHandler):
                 # 构建查询（条件用列表拼，避免 search 与 banned 只能二选一）
                 sql = ("SELECT u.id, u.username, u.email, u.is_verified, u.points_balance, u.member_until, "
                        "u.is_banned, u.ban_reason, u.created_at, u.last_login_at, u.register_ip, u.register_ip_addr, "
-                       "u.last_login_ip, u.last_login_ip_addr, "
+                       "u.last_login_ip, u.last_login_ip_addr, u.script_version, u.script_version_at, "
                        "COALESCE(p.paid_orders,0) AS paid_orders, COALESCE(p.paid_amount,0) AS paid_amount, "
                        "COALESCE(p.bought_points,0) AS bought_points, COALESCE(p.bought_member,0) AS bought_member, "
                        "p.last_paid_at "
@@ -9201,7 +9201,16 @@ class Handler(BaseHTTPRequestHandler):
                     sql += " WHERE " + " AND ".join(where_list)
                 sql += f" ORDER BY {sort_expr} LIMIT 500"
                 users_list = db.fetchall(sql, tuple(params_list)) if params_list else db.fetchall(sql)
-                self._send_json(200, {"code": 200, "users": users_list})
+                # 给前端一个当前最新脚本版本，用来把「旧版本」标黄
+                latest_script_version = ""
+                try:
+                    with open(os.path.join(BASE_DIR, "scripts", "version.json"), encoding="utf-8") as vf:
+                        vdata = json.load(vf)
+                    latest_script_version = str((vdata.get("xueshen-sc") or {}).get("version") or "")
+                except (OSError, ValueError):
+                    latest_script_version = ""
+                self._send_json(200, {"code": 200, "users": users_list,
+                                      "latest_script_version": latest_script_version})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/users-by-ip":

@@ -761,6 +761,9 @@ class Database:
         """)
         self._add_column_if_missing("script_event_logs", "points_balance", "points_balance INT NULL COMMENT '写入时题数快照'")
         self._add_column_if_missing("script_event_logs", "member_until", "member_until TIMESTAMP NULL COMMENT '写入时包月到期快照'")
+        self._add_column_if_missing("script_event_logs", "script_version", "script_version VARCHAR(32) NULL COMMENT '上报时的脚本版本'")
+        self._add_column_if_missing("users", "script_version", "script_version VARCHAR(32) DEFAULT '' COMMENT '最近一次上报的脚本版本'")
+        self._add_column_if_missing("users", "script_version_at", "script_version_at TIMESTAMP NULL COMMENT '脚本版本更新时间'")
         self.execute("""
             CREATE TABLE IF NOT EXISTS question_bank (
                 id INT PRIMARY KEY AUTO_INCREMENT,
@@ -5338,6 +5341,16 @@ class Database:
                 if recent:
                     continue
             extra = item.get("extra")
+            # 脚本版本：答题小结等事件会把 script_version 放在 extra 里。
+            # 单独落到列上，后台用户列表才能直接显示「这个人现在用哪个版本」。
+            script_version = str(item.get("script_version") or "").strip()[:32]
+            if not script_version and isinstance(extra, dict):
+                script_version = str(extra.get("script_version") or "").strip()[:32]
+            if not script_version and isinstance(extra, str):
+                try:
+                    script_version = str((json.loads(extra) or {}).get("script_version") or "").strip()[:32]
+                except (ValueError, TypeError, AttributeError):
+                    script_version = ""
             if extra is not None and not isinstance(extra, str):
                 extra = json.dumps(extra, ensure_ascii=False)
             uname = username or item.get("username", "") or ""
@@ -5346,8 +5359,8 @@ class Database:
             )
             self.execute(
                 f"""INSERT INTO script_event_logs
-                    (username, event_type, level, message, page_url, course_id, task_id, client_ip, user_agent, extra_json, points_balance, member_until)
-                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+                    (username, event_type, level, message, page_url, course_id, task_id, client_ip, user_agent, extra_json, points_balance, member_until, script_version)
+                    VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
                 (
                     uname,
                     event_type,
@@ -5361,8 +5374,16 @@ class Database:
                     extra,
                     points,
                     member_until,
+                    script_version or None,
                 )
             )
+            # 只在版本变化时写 users，避免每条日志都打一次用户表
+            if script_version and uname:
+                self.execute(
+                    f"UPDATE users SET script_version={ph}, script_version_at=NOW() "
+                    f"WHERE username={ph} AND COALESCE(script_version, '') <> {ph}",
+                    (script_version, uname, script_version)
+                )
             count += 1
         return count
 
