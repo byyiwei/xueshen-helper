@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.0.17",
+    "version": "6.0.18",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.0.17 修复部分油猴环境控制面板无法加载（__abcCSS Proxy 报错）；许可证标记改为 All Rights Reserved"
+    "changelog": "v6.0.18 计算/分录/程序题写出完整解题过程；图片下载失败改由服务器带 Referer 重试；简答/论述/计算题按真实题型上报"
   },
   "xueshen-gf": {
-    "version": "6.0.17",
+    "version": "6.0.18",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.0.17 修复部分油猴环境控制面板无法加载（__abcCSS Proxy 报错）；许可证标记改为 All Rights Reserved"
+    "changelog": "v6.0.18 计算/分录/程序题写出完整解题过程；图片下载失败改由服务器带 Referer 重试；简答/论述/计算题按真实题型上报"
   }
 }

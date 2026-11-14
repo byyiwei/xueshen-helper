@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.17
+// @version      6.0.18
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
@@ -15,6 +15,10 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.18 (2026-11-14)
+// @changelog    1. 计算题、分录题、程序题现在会写出完整解题过程，最后一行给答案，不再只回一个结果
+// @changelog    2. 修复图片题「图片下载失败」：本地被防盗链拦住时改由服务器带 Referer 重试，新版学习通的 blob 图也能读取
+// @changelog    3. 超星简答题/论述题/计算题按真实题型上报，AI 作答口径更准确
 // @changelog    v6.0.17 (2026-11-14)
 // @changelog    1. 修复部分油猴环境下控制面板无法加载：不再 delete globalThis.__abcCSS，避免 Proxy 的 deleteProperty 报错
 // @changelog    2. 许可证标记改为 All Rights Reserved
