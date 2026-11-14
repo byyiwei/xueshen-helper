@@ -22089,7 +22089,9 @@ const XS_EXT = (() => {
         shadow.appendChild(style);
         // 记住这块样式，后面页面新注入的样式都会追加到它后面，需要把它挪回最后，否则同权重会被页面样式盖掉
         shadow.__xsPanelCss = style;
-        delete globalThis.__abcCSS;
+        // 某些油猴环境里 globalThis 是 Proxy，delete 会被 deleteProperty trap 拒绝并在严格模式抛错，
+        // 导致整个控制面板初始化中断。直接置空即可，injectCSSIntoShadow 只判断真假。
+        try { globalThis.__abcCSS = void 0; } catch (e) {}
       }
     }, observeHeadStyles = function(shadow) {
       const clonedMap = /* @__PURE__ */ new WeakMap();
