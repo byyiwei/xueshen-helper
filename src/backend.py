@@ -9147,29 +9147,51 @@ class Handler(BaseHTTPRequestHandler):
                 sort_by = (query_params.get("sort_by", ["created_at"])[0] or "created_at").strip()
                 sort_order = (query_params.get("sort_order", ["desc"])[0] or "desc").strip().lower()
                 # 白名单校验排序字段
-                allowed_sort = {"created_at", "last_login_at", "id", "username", "points_balance", "register_ip", "last_login_ip"}
+                allowed_sort = {"created_at", "last_login_at", "id", "username", "points_balance", "register_ip", "last_login_ip", "paid_amount"}
                 if sort_by not in allowed_sort:
                     sort_by = "created_at"
                 if sort_order not in ("asc", "desc"):
                     sort_order = "desc"
                 # 处理 last_login_at 排序：未登录（NULL）用户始终排在末尾，避免被按注册时间插入排序
-                if sort_by == 'last_login_at':
-                    sort_expr = f"(last_login_at IS NULL) ASC, last_login_at {sort_order}"
+                if sort_by == 'paid_amount':
+                    sort_expr = f"COALESCE(p.paid_amount, 0) {sort_order}"
+                elif sort_by == 'last_login_at':
+                    sort_expr = f"(u.last_login_at IS NULL) ASC, u.last_login_at {sort_order}"
                 else:
-                    sort_expr = f"{sort_by} {sort_order}"
+                    sort_expr = f"u.{sort_by} {sort_order}"
+                # 消费统计：只算真正付过款、没退款、非代理商充值的订单。
+                # 买题和会员分开统计，前端据此显示「已消费」标识和明细。
+                paid_join = (
+                    "LEFT JOIN ("
+                    " SELECT username, COUNT(*) AS paid_orders,"
+                    " SUM(price) AS paid_amount,"
+                    " SUM(CASE WHEN plan_type='points' THEN points ELSE 0 END) AS bought_points,"
+                    " SUM(CASE WHEN plan_type='monthly' THEN 1 ELSE 0 END) AS bought_member,"
+                    " MAX(COALESCE(paid_at, created_at)) AS last_paid_at"
+                    " FROM payment_orders"
+                    " WHERE status='paid' AND refunded_at IS NULL AND COALESCE(plan_type,'') <> 'dist_recharge'"
+                    " GROUP BY username"
+                    ") p ON p.username = u.username"
+                )
                 # 构建查询（条件用列表拼，避免 search 与 banned 只能二选一）
-                sql = "SELECT id, username, email, is_verified, points_balance, member_until, is_banned, ban_reason, created_at, last_login_at, register_ip, register_ip_addr, last_login_ip, last_login_ip_addr FROM users"
+                sql = ("SELECT u.id, u.username, u.email, u.is_verified, u.points_balance, u.member_until, "
+                       "u.is_banned, u.ban_reason, u.created_at, u.last_login_at, u.register_ip, u.register_ip_addr, "
+                       "u.last_login_ip, u.last_login_ip_addr, "
+                       "COALESCE(p.paid_orders,0) AS paid_orders, COALESCE(p.paid_amount,0) AS paid_amount, "
+                       "COALESCE(p.bought_points,0) AS bought_points, COALESCE(p.bought_member,0) AS bought_member, "
+                       "p.last_paid_at "
+                       "FROM users u " + paid_join)
                 where_list = []
                 params_list = []
                 if search:
-                    where_list.append("(username LIKE %s OR email LIKE %s)")
+                    where_list.append("(u.username LIKE %s OR u.email LIKE %s)")
                     like = f"%{search}%"
                     params_list.extend([like, like])
                 # 封禁筛选：1=只看已封禁；0=只看正常（NULL 视为正常，与前端 u.is_banned 判定一致）
                 if banned == "1":
-                    where_list.append("is_banned = 1")
+                    where_list.append("u.is_banned = 1")
                 elif banned == "0":
-                    where_list.append("(is_banned = 0 OR is_banned IS NULL)")
+                    where_list.append("(u.is_banned = 0 OR u.is_banned IS NULL)")
                 if where_list:
                     sql += " WHERE " + " AND ".join(where_list)
                 sql += f" ORDER BY {sort_expr} LIMIT 500"

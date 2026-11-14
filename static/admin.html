@@ -2940,6 +2940,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                   <option value="id">ID</option>
                   <option value="username">用户名</option>
                   <option value="points_balance">点数</option>
+                  <option value="paid_amount">消费金额</option>
                   <option value="register_ip">注册IP</option>
                   <option value="last_login_ip">登录IP</option>
                 </select>
@@ -2965,6 +2966,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                       <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="setSort('username')">用户名 <svg class="ui-icon xs" style="display:inline-block;vertical-align:-1px" v-if="userSortBy==='username'"><use :href="userSortOrder==='asc'?'#i-chevron-up':'#i-chevron-down'"></use></svg></th>
                       <th style="text-align:left;padding:10px 8px">邮箱</th>
                       <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="setSort('points_balance')">权益 <svg class="ui-icon xs" style="display:inline-block;vertical-align:-1px" v-if="userSortBy==='points_balance'"><use :href="userSortOrder==='asc'?'#i-chevron-up':'#i-chevron-down'"></use></svg></th>
+                      <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="setSort('paid_amount')">消费 <svg class="ui-icon xs" style="display:inline-block;vertical-align:-1px" v-if="userSortBy==='paid_amount'"><use :href="userSortOrder==='asc'?'#i-chevron-up':'#i-chevron-down'"></use></svg></th>
                       <th style="text-align:left;padding:10px 8px">状态</th>
                       <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="setSort('created_at')">注册时间 <svg class="ui-icon xs" style="display:inline-block;vertical-align:-1px" v-if="userSortBy==='created_at'"><use :href="userSortOrder==='asc'?'#i-chevron-up':'#i-chevron-down'"></use></svg></th>
                       <th style="text-align:left;padding:10px 8px;cursor:pointer" @click="setSort('register_ip')">注册IP <svg class="ui-icon xs" style="display:inline-block;vertical-align:-1px" v-if="userSortBy==='register_ip'"><use :href="userSortOrder==='asc'?'#i-chevron-up':'#i-chevron-down'"></use></svg></th>
@@ -2981,6 +2983,18 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                       <td style="padding:10px 8px">
                         <div>点数：<b>{{u.points_balance||0}}</b></div>
                         <div style="color:var(--text3)">包月至：{{u.member_until||'未开通'}}</div>
+                      </td>
+                      <td style="padding:10px 8px;white-space:nowrap">
+                        <template v-if="u.paid_orders">
+                          <span class="badge badge-success" title="已付款且未退款的订单">已消费 ¥{{u.paid_amount}}</span>
+                          <div style="color:var(--text3);font-size:11.5px;margin-top:4px;line-height:1.5">
+                            <span v-if="u.bought_points">买题 {{u.bought_points}}</span>
+                            <span v-if="u.bought_points&&u.bought_member"> · </span>
+                            <span v-if="u.bought_member">会员 {{u.bought_member}} 次</span>
+                            <span v-if="!u.bought_points&&!u.bought_member">自有模型</span>
+                          </div>
+                        </template>
+                        <span v-else style="color:var(--text3)">—</span>
                       </td>
                       <td style="padding:10px 8px">
                         <span v-if="u.is_banned" style="color:var(--danger)">已封禁</span>
@@ -7991,7 +8005,7 @@ createApp({
         const d=await r.json();
         if(d.code!==200)return showMsg(d.msg||'导出失败','error');
         const rows=d.users||[];
-        downloadCsv('用户列表_'+csvStamp()+'.csv',['ID','用户名','邮箱','题数余额','会员到期','状态','注册时间','最后登录','注册IP','最后登录IP'],rows.map(x=>[x.id,x.username,x.email,x.points_balance,x.member_until||'',x.is_banned?'已封禁':'正常',x.created_at,x.last_login_at||'',x.register_ip||'',x.last_login_ip||'']));
+        downloadCsv('用户列表_'+csvStamp()+'.csv',['ID','用户名','邮箱','题数余额','会员到期','消费金额','购买题数','会员次数','状态','注册时间','最后登录','注册IP','最后登录IP'],rows.map(x=>[x.id,x.username,x.email,x.points_balance,x.member_until||'',x.paid_amount||0,x.bought_points||0,x.bought_member||0,x.is_banned?'已封禁':'正常',x.created_at,x.last_login_at||'',x.register_ip||'',x.last_login_ip||'']));
         showMsg('已导出 '+rows.length+' 个用户','success');
       }catch(e){showMsg('导出失败：'+(e.message||e),'error');}
     }
