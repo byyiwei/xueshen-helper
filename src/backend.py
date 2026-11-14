@@ -5147,7 +5147,7 @@ def is_multimodal_question(question_payload_str):
     return False
 
 # 计算题 / 分录题 / 程序题。除了超星的数字题型码，智慧树等平台直接传中文题型名。
-PROCESS_QUESTION_TYPES = {"7", "9", "17", "计算题", "分录题", "程序题"}
+PROCESS_QUESTION_TYPES = {"7", "9", "17", "计算题", "证明题", "分录题", "程序题", "计算分析题"}
 
 
 def needs_solution_process(question_payload_str):
