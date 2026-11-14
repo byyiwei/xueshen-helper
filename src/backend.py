@@ -5759,8 +5759,9 @@ def _run_ai_task(task):
             err = "答案质量不合格，已跳过"
 
         err = str(err or "未返回内容")
-        _task_tried_note(tried, provider_name, model_name, err)
-        last_errors.append(f"{model_name}: {err[:160]}")
+        err_display = ai_error_for_display(err)
+        _task_tried_note(tried, provider_name, model_name, err_display)
+        last_errors.append(f"{model_name}: {err_display[:160]}")
         db.update_ai_answer_task(
             task_id, attempts=attempts,
             tried_models=json.dumps(tried, ensure_ascii=False),
@@ -5768,7 +5769,7 @@ def _run_ai_task(task):
         )
         _task_live_update(
             task_id, model_index=idx + 1, status="switching",
-            last_error=f"{model_name}: {err[:200]}",
+            last_error=f"{model_name}: {err_display[:200]}",
             last_attempt_ms=int((time.time() - attempt_start) * 1000),
         )
         if idx + 1 < len(ordered):
@@ -5780,7 +5781,7 @@ def _run_ai_task(task):
             "username": str(task.get("username") or ""),
             "model": model_name, "final_model": "",
             "question": question, "answer": "",
-            "status": "error", "error": err,
+            "status": "error", "error": err_display,
             "duration_ms": int((time.time() - attempt_start) * 1000),
             "client_ip": str(task.get("client_ip") or ""),
         })
@@ -6007,6 +6008,19 @@ def upstream_429_wait(err):
         except Exception:
             pass
     return wait, re.sub(r"\s+", " ", detail).strip()[:160]
+
+
+def ai_error_for_display(err):
+    """把内部哨兵转成能给人看的话；冷却/分类判断仍用原始 err。"""
+    wait, detail = upstream_429_wait(err)
+    if wait is not None:
+        msg = f"上游限流（429），约 {wait} 秒后恢复"
+        return msg + (f"：{detail}" if detail else "")
+    text = str(err or "未返回内容")
+    if text.startswith("__budget__:"):
+        detail = text.split(":", 1)[1].strip() if ":" in text else ""
+        return "本次调用时间预算用完" + (f"：{detail}" if detail else "")
+    return text
 
 
 def is_timeout_error(err):

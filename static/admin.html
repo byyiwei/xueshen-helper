@@ -4618,12 +4618,15 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                       </tr>
                       <tr v-if="expandedLogs[log.id]">
                         <td colspan="11" style="padding:0 8px 12px">
-                          <div class="log-detail">用户：{{log.username||'-'}}&#10;来源：{{log.provider_key==='custom'?'自有模型（用户自带）':(log.provider_key==='question_bank'?'题库':'平台模型（后台配置）')}}&#10;模型：{{log.model||'-'}}&#10;最终成功模型：{{log.status==='error'?(log.final_model||'无'):'-'}}&#10;题目：{{log.question||'-'}}&#10;&#10;答案：{{log.answer||'-'}}&#10;&#10;错误：{{log.error||'-'}}</div>
+                          <div class="log-detail">用户：{{log.username||'-'}}&#10;来源：{{log.provider_key==='custom'?'自有模型（用户自带）':(log.provider_key==='question_bank'?'题库':'平台模型（后台配置）')}}&#10;模型：{{log.model||'-'}}&#10;本题最终成功模型：{{log.status==='error'?(log.final_model||'未记录（本条只是单次尝试）'):'-'}}&#10;题目：{{log.question||'-'}}&#10;&#10;答案：{{log.answer||'-'}}&#10;&#10;错误：{{log.error||'-'}}</div>
                         </td>
                       </tr>
                     </template>
                   </tbody>
                 </table>
+                <div style="padding:10px 8px 2px;color:var(--text3);font-size:11.5px;line-height:1.7">
+                  说明：失败记录只代表某个模型的一次尝试，自动答题会继续换下一个模型；同一道题后面若有成功记录，以那条为准。
+                </div>
                 <div class="pager">
                   <button class="btn btn-secondary btn-sm" :disabled="aiLogFilter.page<=1" @click="loadAiLogs(aiLogFilter.page-1)">上一页</button>
                   <span>第 {{aiLogFilter.page}} / {{Math.max(1,Math.ceil(aiLogTotal/aiLogFilter.limit))}} 页</span>
