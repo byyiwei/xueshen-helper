@@ -4625,7 +4625,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                   </tbody>
                 </table>
                 <div style="padding:10px 8px 2px;color:var(--text3);font-size:11.5px;line-height:1.7">
-                  说明：「失败」只统计整题最终没有答出的记录；中途失败、后来由其他模型答出的，归到「已切换」，不算失败。
+                  说明：「失败」只统计整题最终没有答出的记录；中途失败、后来由其他模型答出的，归到「已切换」，默认不在全部状态里显示，需要排查时可在状态筛选里单独查看。
                 </div>
                 <div class="pager">
                   <button class="btn btn-secondary btn-sm" :disabled="aiLogFilter.page<=1" @click="loadAiLogs(aiLogFilter.page-1)">上一页</button>

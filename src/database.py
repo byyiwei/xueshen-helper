@@ -5683,6 +5683,10 @@ class Database:
         elif status:
             where.append(f"a.status = {ph}")
             params.append(status)
+        else:
+            # 全部状态默认不展示「已切换」的中间失败，调用日志只保留最终结果；
+            # 需要排查模型切换时，可以单独筛「已切换」。
+            where.append("NOT (a.status = 'error' AND COALESCE(a.final_model, '') <> '')")
         if model:
             where.append(f"a.model = {ph}")
             params.append(model)
