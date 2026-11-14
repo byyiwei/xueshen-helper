@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.18
+// @version      6.0.19
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -15,6 +15,9 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.19 (2026-11-14)
+// @changelog    1. 修复纯文字题被误判为「图片下载失败」：过滤题目区域的小图标、占位图等装饰图片，只有确实识别到题目大图且下载失败时才提示重试
+// @changelog    2. 设置页新增「历史版本库」入口：新版遇到问题时，可以安装旧版本脚本回退
 // @changelog    v6.0.18 (2026-11-14)
 // @changelog    1. 计算题、分录题、程序题现在会写出完整解题过程，最后一行给答案，不再只回一个结果
 // @changelog    2. 修复图片题「图片下载失败」：本地被防盗链拦住时改由服务器带 Referer 重试，新版学习通的 blob 图也能读取
@@ -2554,6 +2557,14 @@
                   href: "https://www.firefox.com/"
                 }, "火狐浏览器")
               ], -1)),
+              vue.createElementVNode("li", null, [
+                vue.createTextVNode("新版脚本遇到问题？到 "),
+                vue.createElementVNode("a", {
+                  target: "_blank",
+                  href: "https://xs.openget.cn/history"
+                }, "历史版本库"),
+                vue.createTextVNode(" 安装旧版本回退。")
+              ], -1),
               vue.unref(chatWebUrl) ? (vue.openBlock(), vue.createElementBlock("li", {
                 key: 1,
                 innerHTML: vue.unref(chatWebUrl)
@@ -3510,7 +3521,7 @@
       try {
         const w = Number(img.naturalWidth || img.width || img.getAttribute("width") || 0);
         const h = Number(img.naturalHeight || img.height || img.getAttribute("height") || 0);
-        if ((w && w < 24) || (h && h < 24)) return true;
+        if ((w && w < 40) || (h && h < 40)) return true;
         const src = String(img.getAttribute("data-src") || img.getAttribute("src") || "");
         if (/(icon|emoji|avatar|logo|loading|placeholder|spacer|blank\.(gif|png)|pixel|1x1|transparent)/i.test(src)) return true;
         const cls = String(img.className || "") + " " + String((img.parentElement && img.parentElement.className) || "");

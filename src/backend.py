@@ -8221,6 +8221,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send_file(200, INTRO_HTML_FILE, "text/html; charset=utf-8")
         elif path == "/user" or path == "/user/" or path == "/login" or path == "/register" or path == "/forgot":
             self._send_file(200, USER_HTML_FILE, "text/html; charset=utf-8")
+        elif path == "/history" or path == "/history/":
+            # 历史版本库：脚本回退下载页，版本文件由 Nginx 从 /scripts/history/ 静态托管
+            self._send_file(200, os.path.join(BASE_DIR, "static", "history.html"), "text/html; charset=utf-8")
         elif path == "/admin" or path == "/admin/":
             # 中控「后台地址」可能直接指向 /admin，跳转时带上 ?hub_ticket=。
             # 带票就地走 SSO 兑换并落地会话；不带票才正常吐 SPA（不能误伤账号密码登录）。
