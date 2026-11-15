@@ -6075,6 +6075,7 @@ def _run_ai_task(task):
                     last_error="", next_retry_at=None, solved_at=datetime.now(),
                 )
                 enqueue_ai_log({
+                    "task_id": task_id,
                     "provider_key": provider_name or "",
                     "username": str(task.get("username") or ""),
                     "model": model_name, "final_model": model_name,
@@ -6112,10 +6113,11 @@ def _run_ai_task(task):
         else:
             _task_event(f"#{task_id} {model_name} 失败，本轮候选已用完", "warn", task_id)
         enqueue_ai_log({
+            "task_id": task_id,
             "provider_key": provider_name or "",
             "username": str(task.get("username") or ""),
             "model": model_name, "final_model": "",
-            "question": question, "answer": "",
+            "question": question, "answer": answer or "",
             "status": "error", "error": err_display,
             "duration_ms": int((time.time() - attempt_start) * 1000),
             "client_ip": str(task.get("client_ip") or ""),
@@ -9141,6 +9143,59 @@ class Handler(BaseHTTPRequestHandler):
                     "tasks": tasks,
                     "events": events,
                 })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/ai-tasks/history":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                q = parse_qs(parsed.query)
+                page = int(q.get("page", ["1"])[0] or 1)
+                keyword = str(q.get("keyword", [""])[0] or "").strip()
+                status = str(q.get("status", [""])[0] or "").strip()
+                date_from = str(q.get("date_from", [""])[0] or "").strip()
+                date_to = str(q.get("date_to", [""])[0] or "").strip()
+                rows, total = db.list_ai_answer_tasks(
+                    status=status, page=page, page_size=20,
+                    keyword=keyword, date_from=date_from, date_to=date_to, order="recent",
+                )
+                for r in rows:
+                    for k in ("created_at", "updated_at", "solved_at", "next_retry_at"):
+                        r[k] = str(r.get(k) or "")
+                    try:
+                        r["tried_models"] = json.loads(r.get("tried_models") or "[]")
+                    except Exception:
+                        r["tried_models"] = []
+                self._send_json(200, {
+                    "code": 200, "rows": rows, "total": total, "page": page,
+                    "page_size": 20, "keyword": keyword, "status": status,
+                })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/ai-tasks/detail":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                q = parse_qs(parsed.query)
+                task_id = int(q.get("id", ["0"])[0] or 0)
+                task = db.get_ai_answer_task(task_id=task_id) if task_id else None
+                if not task:
+                    self._send_json(404, {"code": 404, "msg": "任务不存在"})
+                    return
+                for k in ("created_at", "updated_at", "solved_at", "next_retry_at"):
+                    task[k] = str(task.get(k) or "")
+                try:
+                    task["tried_models"] = json.loads(task.get("tried_models") or "[]")
+                except Exception:
+                    task["tried_models"] = []
+                logs = db.get_ai_answer_task_logs(
+                    task_id=task_id, question=str(task.get("question") or ""), limit=200
+                )
+                for row in logs:
+                    row["created_at"] = str(row.get("created_at") or "")
+                self._send_json(200, {"code": 200, "task": task, "logs": logs})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/ai-tasks":

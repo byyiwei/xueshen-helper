@@ -713,6 +713,9 @@ class Database:
         """)
         self._add_column_if_missing("ai_call_logs", "username", "username VARCHAR(50) DEFAULT ''")
         self._add_column_if_missing("ai_call_logs", "final_model", "final_model VARCHAR(255) DEFAULT ''")
+        # 答题任务里的每一次模型尝试都要能串回同一条任务，后台才能看完整轨迹。
+        # 只靠 question 文本匹配不行：图片题的 base64 太长，日志落库时会被截断。
+        self._add_column_if_missing("ai_call_logs", "task_id", "task_id BIGINT NULL COMMENT '答题任务ID'")
         # 写入时快照：调用记录里的「剩余/到期」应是该次写入时的值，不能每次列表 JOIN 当前余额
         self._add_column_if_missing("ai_call_logs", "points_balance", "points_balance INT NULL COMMENT '写入时题数快照'")
         self._add_column_if_missing("ai_call_logs", "member_until", "member_until TIMESTAMP NULL COMMENT '写入时包月到期快照'")
@@ -4863,26 +4866,70 @@ class Database:
         params = list(clean.values()) + [int(task_id)]
         self.execute(f"UPDATE ai_answer_tasks SET {sets} WHERE id={ph}", tuple(params))
 
-    def list_ai_answer_tasks(self, status="", page=1, page_size=20):
+    def list_ai_answer_tasks(self, status="", page=1, page_size=20, keyword="", date_from="", date_to="", order="priority"):
         ph = _ph()
         page = max(1, int(page or 1))
         page_size = min(max(1, int(page_size or 20)), 100)
-        where = ""
+        conds = []
         params = []
         if status == "pending":
-            where = " WHERE status IN ('queued','running','waiting')"
+            conds.append("status IN ('queued','running','waiting')")
         elif status:
-            where = f" WHERE status={ph}"
+            conds.append(f"status={ph}")
             params.append(status)
+        keyword = str(keyword or "").strip()
+        if keyword:
+            like = f"%{keyword}%"
+            kw_conds = [
+                f"question_text LIKE {ph}",
+                f"answer LIKE {ph}",
+                f"username LIKE {ph}",
+            ]
+            params.extend([like, like, like])
+            if keyword.isdigit():
+                kw_conds.append(f"id={ph}")
+                params.append(int(keyword))
+            conds.append("(" + " OR ".join(kw_conds) + ")")
+        if date_from:
+            conds.append(f"created_at >= {ph}")
+            params.append(date_from)
+        if date_to:
+            conds.append(f"created_at < DATE_ADD({ph}, INTERVAL 1 DAY)")
+            params.append(date_to)
+        where = (" WHERE " + " AND ".join(conds)) if conds else ""
         total_row = self.fetchone(f"SELECT COUNT(*) AS cnt FROM ai_answer_tasks{where}", tuple(params)) or {}
         offset = (page - 1) * page_size
+        if order == "recent":
+            order_sql = "updated_at DESC, id DESC"
+        else:
+            order_sql = (
+                "CASE status WHEN 'running' THEN 0 WHEN 'queued' THEN 1 WHEN 'waiting' THEN 2 ELSE 3 END, "
+                "updated_at DESC"
+            )
         rows = self.fetchall(
-            f"SELECT * FROM ai_answer_tasks{where} ORDER BY "
-            f"CASE status WHEN 'running' THEN 0 WHEN 'queued' THEN 1 WHEN 'waiting' THEN 2 ELSE 3 END, "
-            f"updated_at DESC LIMIT {ph} OFFSET {ph}",
+            f"SELECT * FROM ai_answer_tasks{where} ORDER BY {order_sql} LIMIT {ph} OFFSET {ph}",
             tuple(params + [page_size, offset])
         ) or []
         return rows, int(total_row.get("cnt") or 0)
+
+    def get_ai_answer_task_logs(self, task_id=0, question="", limit=200):
+        """取一条答题任务的完整尝试轨迹。新日志按 task_id 关联；旧日志退回按题目精确匹配。"""
+        ph = _ph()
+        limit = min(max(1, int(limit or 200)), 500)
+        rows = []
+        if task_id:
+            rows = self.fetchall(
+                f"SELECT * FROM ai_call_logs WHERE task_id={ph} ORDER BY id ASC LIMIT {ph}",
+                (int(task_id), limit)
+            ) or []
+        if not rows and question:
+            # 图片题的原始 question 可能超过日志字段长度，旧日志只按前缀能匹配到一部分；
+            # 有 task_id 的新日志不受影响。
+            rows = self.fetchall(
+                f"SELECT * FROM ai_call_logs WHERE question={ph} ORDER BY id ASC LIMIT {ph}",
+                (str(question), limit)
+            ) or []
+        return rows
 
     def count_ai_answer_tasks(self, status=""):
         ph = _ph()
@@ -5626,9 +5673,10 @@ class Database:
         )
         self.execute(
             f"""INSERT INTO ai_call_logs
-                (provider_key, username, model, final_model, question, answer, status, error, duration_ms, client_ip, points_balance, member_until)
-                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
+                (task_id, provider_key, username, model, final_model, question, answer, status, error, duration_ms, client_ip, points_balance, member_until)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})""",
             (
+                int(log.get("task_id") or 0) or None,
                 log.get("provider_key", ""),
                 username,
                 log.get("model", ""),
