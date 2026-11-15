@@ -623,6 +623,7 @@ PAGE_SNAPSHOT_REASONS = {
     "no_container": "找不到题目容器", "unknown_type": "认不出题型",
     "page_parse_failed": "页面解析失败", "structure_changed": "页面结构变了",
     "no_option_answer": "没取到选项答案", "answer_fill_failed": "答案拿到了但填不上",
+    "unsupported_type": "该题型暂不支持",
     "option_not_found": "找不到选项按钮", "cannot_click": "选项点不上",
     "input_not_found": "找不到输入框", "cannot_input": "输入框填不进去",
     "image_download_failed": "图片下载失败", "image_recognize_failed": "图片识别失败",

@@ -1965,7 +1965,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       event_type: opts.eventType || "answer_summary",
       level: "info",
       message: String(opts.message || "").slice(0, 4000),
-      page_url: location.href,
+      // 页面异常只传路径，不带 cpi/enc 这些参数；答题小结仍用完整地址
+      page_url: opts.pageUrl || location.href,
       extra: Object.assign({
         time: getDateTime(),
         script_version: getScriptInfo().version
@@ -1976,6 +1977,82 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       (res) => Boolean(res && res.code === 200)
     );
   };
+  // ===== 页面结构快照 =====
+  // 识别不出页面、题目类型不认识、答案拿到了点不上、图片下不下来时上报。
+  // 只传结构摘要（选择器、计数、几个关键节点），绝不传整页 HTML；后端还会再钳一次。
+  const PAGE_ISSUE_DEDUP = /* @__PURE__ */ new Map();
+  const summarizeIssueNode = (el) => {
+    if (!el || !el.tagName) return null;
+    let path = "";
+    try {
+      const parts = [];
+      let node = el;
+      for (let depth = 0; node && node.nodeType === 1 && depth < 4; depth += 1) {
+        let seg = String(node.tagName || "").toLowerCase();
+        if (node.id) seg += "#" + node.id;
+        else if (typeof node.className === "string" && node.className.trim()) {
+          seg += "." + node.className.trim().split(/\s+/).slice(0, 2).join(".");
+        }
+        parts.unshift(seg);
+        node = node.parentElement;
+      }
+      path = parts.join(" > ");
+    } catch (_) {}
+    return {
+      tag: String(el.tagName || "").toLowerCase(),
+      id: String(el.id || ""),
+      classes: typeof el.className === "string" ? el.className : "",
+      text: String(el.innerText || el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80),
+      path
+    };
+  };
+  const guessIssuePageType = (question) => {
+    const wt = question && question.workType;
+    if (wt) return "cx-" + wt;
+    const host = location.hostname || "";
+    if (/zhihuishu\.com$/i.test(host)) return "zhs-web";
+    if (/chaoxing\.com$/i.test(host)) return "cx-zy";
+    return "unknown";
+  };
+  const reportPageIssue = (payload) => {
+    try {
+      if (!payload || (!payload.reason_code && !payload.stage)) return Promise.resolve(false);
+      const extra = Object.assign({
+        page_type: "unknown",
+        stage: "other",
+        reason_code: "",
+        selector: "",
+        expected: "",
+        found: {},
+        nodes: [],
+        page_title: String(document.title || "").slice(0, 80),
+        url_path: String(location.pathname || "").slice(0, 200)
+      }, payload || {});
+      extra.script_version = getScriptInfo().version;
+      extra.nodes = (Array.isArray(extra.nodes) ? extra.nodes : [])
+        .slice(0, 4)
+        .map((n) => (n && n.nodeType === 1 ? summarizeIssueNode(n) : n))
+        .filter(Boolean);
+      const sig = [extra.page_type, extra.stage, extra.reason_code, extra.selector].join("|");
+      const now = Date.now();
+      if (now - (PAGE_ISSUE_DEDUP.get(sig) || 0) < 6e4) return Promise.resolve(false);
+      PAGE_ISSUE_DEDUP.set(sig, now);
+      if (PAGE_ISSUE_DEDUP.size > 80) {
+        for (const [key, at] of PAGE_ISSUE_DEDUP) {
+          if (now - at > 6e5) PAGE_ISSUE_DEDUP.delete(key);
+        }
+      }
+      return enqueueScriptEvent(extra, { eventType: "page_snapshot", pageUrl: extra.url_path });
+    } catch (_) {
+      return Promise.resolve(false);
+    }
+  };
+  // 答题逻辑分散在不同的闭包里，用全局桥接，调用点只写一行，拿不到也不报错
+  try {
+    window.__XSReportPageIssue = reportPageIssue;
+    window.__XSSummarizeIssueNode = summarizeIssueNode;
+    window.__XSGuessIssuePageType = guessIssuePageType;
+  } catch (_) {}
   // 「一卷一报」：本场共几题、几题真填上了、答案分别来自题库/缓存/模型、哪几题没填上。
   // 只统计「点上了没有」——平台交卷后不回吐分数，score 恒为 null，别当成判对率。
   const ANSWER_SUMMARY_LIMIT = 40;
@@ -3588,6 +3665,19 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       // 只有「压根没识别到内容图」的文字题才继续作答；识别到了图却全下不下来，
       // 说明图是题目的一部分，该提示重试，不能只拿文字让模型猜。
       if (!(seenImg.size === 0 && textOnlyLen >= 6)) {
+        window.__XSReportPageIssue && window.__XSReportPageIssue({
+          page_type: window.__XSGuessIssuePageType ? window.__XSGuessIssuePageType(question) : "unknown",
+          stage: "image",
+          reason_code: "image_download_failed",
+          selector: "题干/选项图片",
+          expected: "题目图片可下载",
+          found: {
+            images: seenImg.size,
+            downloaded: images.length,
+            text_len: textOnlyLen
+          },
+          nodes: question && question.element ? [question.element] : []
+        });
         return { code: -1005, data: { answer: [] }, msg: "图片下载失败，请刷新题目后重试" };
       }
     }
@@ -8788,6 +8878,25 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           }, 1e3);
           const { answerMode } = this.setting.config.basicConfig;
           const mode = answerMode.value;
+          // 答案拿到了但页面上点不上：把题目节点和控件数量报回去，才能判断是页面改版还是选项是图片
+          const reportFillFail = (question) => {
+            const el = question && question.element;
+            const isChoice = ["0", "1"].includes(String((question && question.type) || ""));
+            const controls = el && el.querySelectorAll ? el.querySelectorAll('input, textarea, [contenteditable="true"]') : [];
+            window.__XSReportPageIssue && window.__XSReportPageIssue({
+              page_type: "cx-" + this.type,
+              stage: "fill",
+              reason_code: "answer_fill_failed",
+              selector: isChoice ? '.answerBg input[type="radio"], .answerBg input[type="checkbox"]' : '.answerBg textarea, .answerBg input[type="text"]',
+              expected: isChoice ? "选项按钮可点击并回读为已选中" : "文本框可写入并回读",
+              found: {
+                type: String((question && question.type) || ""),
+                options: ((question && question.optionsText) || []).length,
+                controls: controls.length
+              },
+              nodes: el ? [el] : []
+            });
+          };
           registerQuestionFillHook(this);
           for (const [index, question] of this.questions.entries()) {
             if (!this.setting.config.basicConfig.autoAnswer.value) break;
@@ -8828,6 +8937,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 }
                 question.answer.code = 0;
                 question.answer.msg = "答案拿到了但没点上去";
+                reportFillFail(question);
                 // 题库答案填不上（常见于图片选项），改走模型
               } else if (mode === "questionBank" || answerData.code !== -1004) {
                 question.answer = {
@@ -8865,6 +8975,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 if (!fillSuccess) {
                   question.answer.code = 0;
                   question.answer.msg = "答案拿到了但没点上去";
+                  reportFillFail(question);
                   continue;
                 }
                 this.correctNum += 1;
@@ -8883,14 +8994,39 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 code: -1,
                 answer: ["该题型不支持AI答题"]
               };
+              window.__XSReportPageIssue && window.__XSReportPageIssue({
+                page_type: "cx-" + this.type,
+                stage: "detect_type",
+                reason_code: "unsupported_type",
+                selector: "题型 " + String(question.type || ""),
+                expected: "题型在当前脚本的支持列表内",
+                found: {
+                  type: String(question.type || ""),
+                  options: (question.optionsText || []).length
+                },
+                nodes: question.element ? [question.element] : []
+              });
             }
           }
           this.questionStore.currentQuestionIndex += 1;
-        } else
+        } else {
           this.log.insertLog(
             "没有解析到题目，请检查是否进入正确页面...",
             "warning"
           );
+          window.__XSReportPageIssue && window.__XSReportPageIssue({
+            page_type: "cx-" + this.type,
+            stage: "parse",
+            reason_code: "no_container",
+            selector: this.type === "zj" ? ".TiMu" : ".questionLi",
+            expected: this.type === "zj" ? "章节测验题目容器 .TiMu" : "作业/考试题目容器 .questionLi",
+            found: {
+              containers: 0,
+              iframes: this._document ? this._document.querySelectorAll("iframe").length : 0
+            },
+            nodes: this._document && this._document.body ? [this._document.body] : []
+          });
+        }
         setTimeout(() => {
           autoSetTab(_that.setting, "1");
         }, 2e3);
@@ -9394,6 +9530,19 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               `未识别题型：${questionTypeText || "空题型"}，请反馈给开发者补充规则..`,
               "warning"
             );
+            window.__XSReportPageIssue && window.__XSReportPageIssue({
+              page_type: "cx-" + this.type,
+              stage: "detect_type",
+              reason_code: "unknown_type",
+              selector: this.type === "ks" ? 'input[name^="type"]' : 'input[id^="answertype"]',
+              expected: "题头能读出题型名称或题型编码",
+              found: {
+                type_text: String(questionTypeText || "").slice(0, 40),
+                options: optionElements ? optionElements.length : 0,
+                inputs: element.querySelectorAll('input, textarea, [contenteditable="true"]').length
+              },
+              nodes: [element]
+            });
           }
           this.questions.push({
             element,
@@ -10999,6 +11148,24 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           }, 1e3);
           const { answerMode } = this.setting.config.basicConfig;
           const mode = answerMode.value;
+          const reportFillFail = (question) => {
+            const el = question && question.element;
+            const isChoice = ["单选题", "多选题", "判断题", "多项选择题", "X型选择题", "X型题", "不定项选择题", "不定项"].includes(String((question && question.type) || ""));
+            const controls = el && el.querySelectorAll ? el.querySelectorAll('input, textarea, [contenteditable="true"]') : [];
+            window.__XSReportPageIssue && window.__XSReportPageIssue({
+              page_type: "zhs-web",
+              stage: "fill",
+              reason_code: "answer_fill_failed",
+              selector: isChoice ? ".subject_node input, .subject_node label" : ".subject_node textarea, .subject_node input",
+              expected: isChoice ? "选项可点击并回读为已选中" : "文本框可写入并回读",
+              found: {
+                type: String((question && question.type) || ""),
+                options: ((question && question.optionsText) || []).length,
+                controls: controls.length
+              },
+              nodes: el ? [el] : []
+            });
+          };
           // 一屏一题：页面渲染的题目节点比接口题目少，切题后必须等新题渲染出来
           const nodeCount = this._document ? this._document.querySelectorAll(".subject_node").length : 0;
           const pagedMode = nodeCount > 0 && nodeCount < this.questions.length;
@@ -11041,6 +11208,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 if (errorStatus) {
                   question.answer.code = 0;
                   question.answer.msg = "答案拿到了但没点上去";
+                  reportFillFail(question);
                   fillFailed = true;
                 } else {
                   this.correctNum += 1;
@@ -11078,6 +11246,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                   if (errorStatus) {
                     question.answer.code = 0;
                     question.answer.msg = "答案拿到了但没点上去";
+                    reportFillFail(question);
                     fillFailed = true;
                   } else {
                     this.correctNum += 1;
@@ -11096,6 +11265,18 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                   code: -1,
                   answer: ["该题型不支持AI答题"]
                 };
+                window.__XSReportPageIssue && window.__XSReportPageIssue({
+                  page_type: "zhs-web",
+                  stage: "detect_type",
+                  reason_code: "unsupported_type",
+                  selector: "题型 " + String(question.type || ""),
+                  expected: "题型在当前脚本的支持列表内",
+                  found: {
+                    type: String(question.type || ""),
+                    options: (question.optionsText || []).length
+                  },
+                  nodes: question.element ? [question.element] : []
+                });
               }
             }
             if (!fillFailed && this.type == "zy") {
@@ -11128,11 +11309,24 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             }
           }
           this.questionStore.currentQuestionIndex += 1;
-        } else
+        } else {
           this.log.insertLog(
             "没有解析到题目，请检查是否进入正确页面...",
             "warning"
           );
+          window.__XSReportPageIssue && window.__XSReportPageIssue({
+            page_type: "zhs-web",
+            stage: "parse",
+            reason_code: "page_parse_failed",
+            selector: ".subject_node",
+            expected: "智慧树作业页 .subject_node 题目节点",
+            found: {
+              subject_nodes: this._document ? this._document.querySelectorAll(".subject_node").length : 0,
+              iframes: this._document ? this._document.querySelectorAll("iframe").length : 0
+            },
+            nodes: this._document && this._document.body ? [this._document.body] : []
+          });
+        }
         setTimeout(() => {
           autoSetTab(_that.setting, "1");
         }, 2e3);
@@ -13948,12 +14142,35 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           }
         } else {
           question.answer = { code: -1, answer: ["该题型不支持AI答题"] };
+          window.__XSReportPageIssue && window.__XSReportPageIssue({
+            page_type: window.__XSGuessIssuePageType ? window.__XSGuessIssuePageType(question) : "unknown",
+            stage: "detect_type",
+            reason_code: "unsupported_type",
+            selector: "题型 " + String(question.type || ""),
+            expected: "题型在当前脚本的支持列表内",
+            found: { type: String(question.type || ""), options: (question.optionsText || []).length },
+            nodes: question.element ? [question.element] : []
+          });
         }
       }
       if (bankFilled) return true;
       if ([1, 2].includes(question.answer.code)) {
         const filled = await fillQuestion(question);
-        if (!filled) question.answer.code = 0;
+        if (!filled) {
+          question.answer.code = 0;
+          window.__XSReportPageIssue && window.__XSReportPageIssue({
+            page_type: window.__XSGuessIssuePageType ? window.__XSGuessIssuePageType(question) : "unknown",
+            stage: "fill",
+            reason_code: "answer_fill_failed",
+            selector: isChoiceType(question.type) ? "选项控件 input/label" : "文本框 textarea/input",
+            expected: "写入后能回读为已填写/已选中",
+            found: {
+              type: String(question.type || ""),
+              options: (question.optionsText || []).length
+            },
+            nodes: question.element ? [question.element] : []
+          });
+        }
         return filled;
       }
       return false;
@@ -13961,6 +14178,18 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     const profile = await getActiveProfile();
     if (!profile) {
       log.insertLog("未识别到支持的题目区域，请确认页面已加载完成..", "warning");
+      window.__XSReportPageIssue && window.__XSReportPageIssue({
+        page_type: window.__XSGuessIssuePageType ? window.__XSGuessIssuePageType(null) : "unknown",
+        stage: "parse",
+        reason_code: "page_parse_failed",
+        selector: "未匹配到站点配置（getActiveProfile 为空）",
+        expected: "当前页面能匹配到一套已知的答题页结构",
+        found: {
+          iframes: document.querySelectorAll("iframe").length,
+          ready_state: String(document.readyState || "")
+        },
+        nodes: []
+      });
       return;
     }
     log.insertLog(`进入${profile.name}页面，脚本开始工作..`);
