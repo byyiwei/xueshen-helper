@@ -1745,13 +1745,16 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
 
         <!-- 日志监控组 -->
         <div class="menu-group" :class="{expanded:expandedGroups.logs}">
-          <div class="menu-group-header dock-item" :class="{active:['script-logs','log-cleanup','daily-report'].includes(page)}" @click="expandedGroups.logs=!expandedGroups.logs">
+          <div class="menu-group-header dock-item" :class="{active:['script-logs','page-issues','log-cleanup','daily-report'].includes(page)}" @click="expandedGroups.logs=!expandedGroups.logs">
             <svg class="ui-icon sm"><use href="#i-terminal"></use></svg>日志监控
             <svg class="ui-icon xs arrow"><use href="#i-chevron-right"></use></svg>
           </div>
           <div class="menu-group-items">
             <div class="menu-item" :class="{active:page==='script-logs'}" @click="page='script-logs';loadScriptLogs()">
               <svg class="ui-icon sm"><use href="#i-terminal"></use></svg>脚本日志
+            </div>
+            <div class="menu-item" :class="{active:page==='page-issues'}" @click="page='page-issues';loadPageIssues(1)">
+              <svg class="ui-icon sm"><use href="#i-alert-triangle"></use></svg>页面异常
             </div>
             <div class="menu-item" :class="{active:page==='log-cleanup'}" @click="page='log-cleanup';loadLogCleanup()">
               <svg class="ui-icon sm"><use href="#i-trash-2"></use></svg>日志清理
@@ -5409,6 +5412,136 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
         </div>
       </template>
 
+      <!-- 页面异常（脚本上报的页面结构快照） -->
+      <template v-if="page==='page-issues'">
+        <header class="main-header">
+          <h2>页面异常</h2>
+          <nav class="breadcrumb-nav"><span v-for="(item,index) in breadcrumbItems" :key="index"><span v-if="index>0" class="breadcrumb-sep">/</span><span class="breadcrumb-item" :class="{active:index===breadcrumbItems.length-1,clickable:index<breadcrumbItems.length-1}" @click="navigateBreadcrumb(item,index)">{{item.label}}</span></span></nav>
+        </header>
+        <div class="main-body">
+          <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
+
+          <div class="date-range" style="margin-bottom:18px">
+            <span style="font-size:13px;color:var(--text2);font-weight:600">统计区间</span>
+            <input class="date-input" type="date" v-model="pageIssueFilter.date_from">
+            <span style="color:var(--text3)">至</span>
+            <input class="date-input" type="date" v-model="pageIssueFilter.date_to">
+            <input class="date-input" style="width:240px" type="text" v-model="pageIssueFilter.keyword" placeholder="搜索用户、选择器、报错原因" @keyup.enter="loadPageIssues(1)">
+            <button class="btn btn-primary btn-sm" @click="loadPageIssues(1)">查询</button>
+            <button class="btn btn-secondary btn-sm" @click="setPageIssueRange(1)">今天</button>
+            <button class="btn btn-secondary btn-sm" @click="setPageIssueRange(7)">近7天</button>
+            <button class="btn btn-secondary btn-sm" @click="setPageIssueRange(30)">近30天</button>
+          </div>
+
+          <div v-if="pageIssueLoading" style="text-align:center;color:var(--text3);padding:40px 0;font-size:13px">正在加载页面异常...</div>
+          <template v-else-if="pageIssues">
+            <div class="note-bar">脚本上报的是页面结构摘要，不传整页内容。按「页面 + 环节 + 原因 + 选择器」聚类：同一行挂在越多用户身上，说明是页面改版，先修它。</div>
+
+            <div class="metric-grid-4">
+              <div class="metric-card"><div class="metric-label">异常次数</div><div class="metric-value">{{pageIssues.summary.total}}</div><div class="metric-sub">区间内上报条数（60 秒内重复已去掉）</div></div>
+              <div class="metric-card"><div class="metric-label">涉及用户</div><div class="metric-value">{{pageIssues.summary.users}}</div><div class="metric-sub">按最近 {{pageIssues.summary.sampled}} 条聚合</div></div>
+              <div class="metric-card"><div class="metric-label">问题种类</div><div class="metric-value">{{pageIssues.summary.clusters}}</div><div class="metric-sub">页面/环节/原因/选择器的组合</div></div>
+              <div class="metric-card"><div class="metric-label">最高频问题</div><div class="metric-value" style="font-size:18px;line-height:1.35">{{pageIssues.summary.top_reason||'-'}}</div><div class="metric-sub">{{pageIssues.summary.top_reason_count?pageIssues.summary.top_reason_count+' 次':''}}</div></div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><h3>高频问题</h3><span>按出现次数排序，最多 30 组</span></div>
+              <div class="card-body" style="overflow-x:auto">
+                <table class="data-table" style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:900px">
+                  <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left">
+                    <th style="padding:8px">页面</th><th style="padding:8px">环节</th><th style="padding:8px">原因</th><th style="padding:8px">选择器</th><th style="padding:8px">次数</th><th style="padding:8px">用户</th><th style="padding:8px">最近一次</th><th style="padding:8px">样例节点</th>
+                  </tr></thead>
+                  <tbody>
+                    <tr v-for="c in pageIssues.clusters" :key="c.page_type+c.stage+c.reason_code+c.selector" style="border-bottom:1px solid var(--border)">
+                      <td style="padding:8px;white-space:nowrap">{{c.page_type_name}}</td>
+                      <td style="padding:8px;color:var(--text2);white-space:nowrap">{{c.stage_name}}</td>
+                      <td style="padding:8px;color:var(--danger);white-space:nowrap">{{c.reason_name}}</td>
+                      <td style="padding:8px;color:var(--text2);word-break:break-all;max-width:260px">{{c.selector||'-'}}</td>
+                      <td style="padding:8px;font-weight:700">{{c.count}}</td>
+                      <td style="padding:8px;color:var(--text2)">{{c.user_count}}</td>
+                      <td style="padding:8px;color:var(--text3);white-space:nowrap">{{c.last_at}}</td>
+                      <td style="padding:8px;color:var(--text3);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="c.sample.node_path||c.sample.expected">{{c.sample.node_text||c.sample.expected||c.sample.node_path||'-'}}</td>
+                    </tr>
+                    <tr v-if="!pageIssues.clusters.length"><td colspan="8" style="padding:24px;text-align:center;color:var(--text3)">区间内没有页面异常，说明脚本识别和填写都正常</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><h3>异常明细</h3><span v-if="pageIssues.total">共 {{pageIssues.total}} 条 · 第 {{pageIssues.page}}/{{pageIssueTotalPages}} 页</span></div>
+              <div class="card-body" style="overflow-x:auto">
+                <table class="data-table" style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:980px">
+                  <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left">
+                    <th style="padding:8px;width:145px">时间</th><th style="padding:8px;width:100px">用户</th><th style="padding:8px;width:130px">页面</th><th style="padding:8px;width:110px">环节</th><th style="padding:8px;width:150px">原因</th><th style="padding:8px">选择器</th><th style="padding:8px;width:80px">脚本版</th><th style="padding:8px;width:70px">操作</th>
+                  </tr></thead>
+                  <tbody>
+                    <tr v-for="r in pageIssues.rows" :key="r.id" style="border-bottom:1px solid var(--border)">
+                      <td style="padding:8px;color:var(--text3);white-space:nowrap">{{r.created_at}}</td>
+                      <td style="padding:8px;color:var(--text2)">{{r.username||'-'}}</td>
+                      <td style="padding:8px;white-space:nowrap">{{r.page_type_name}}</td>
+                      <td style="padding:8px;color:var(--text2);white-space:nowrap">{{r.stage_name}}</td>
+                      <td style="padding:8px;color:var(--danger);white-space:nowrap">{{r.reason_name}}</td>
+                      <td style="padding:8px;color:var(--text2);word-break:break-all">{{r.selector||'-'}}</td>
+                      <td style="padding:8px;color:var(--text3)">{{r.script_version||'-'}}</td>
+                      <td><button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;white-space:nowrap" @click="pageIssueDetail=r">查看</button></td>
+                    </tr>
+                    <tr v-if="!pageIssues.rows.length"><td colspan="8" style="padding:24px;text-align:center;color:var(--text3)">区间内没有异常记录</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="card-body" style="display:flex;align-items:center;gap:10px;border-top:1px solid var(--border)">
+                <button class="btn btn-secondary btn-sm" :disabled="pageIssues.page<=1||pageIssueLoading" @click="loadPageIssues(pageIssues.page-1)">上一页</button>
+                <button class="btn btn-secondary btn-sm" :disabled="pageIssues.page>=pageIssueTotalPages||pageIssueLoading" @click="loadPageIssues(pageIssues.page+1)">下一页</button>
+              </div>
+            </div>
+          </template>
+          <div v-else style="text-align:center;color:var(--text3);padding:40px 0;font-size:13px">还没有取到数据，先点「查询」</div>
+        </div>
+
+        <div v-if="pageIssueDetail" class="modal-overlay" @click.self="pageIssueDetail=null">
+          <div class="modal-card" style="width:min(760px,calc(100vw - 32px));max-width:760px">
+            <div class="modal-header">
+              <h3 style="margin:0">页面异常 #{{pageIssueDetail.id}} <span style="font-size:12px;font-weight:400;color:var(--text3)">{{pageIssueDetail.created_at}}</span></h3>
+              <button class="btn-close" @click="pageIssueDetail=null" aria-label="关闭"><svg class="ui-icon sm"><use href="#i-x"></use></svg></button>
+            </div>
+            <div class="modal-body">
+              <div class="trace-summary">
+                <div class="trace-summary-item">用户<b>{{pageIssueDetail.username||'-'}}</b></div>
+                <div class="trace-summary-item">页面<b>{{pageIssueDetail.page_type_name}}</b></div>
+                <div class="trace-summary-item">环节<b>{{pageIssueDetail.stage_name}}</b></div>
+                <div class="trace-summary-item">原因<b style="color:var(--danger)">{{pageIssueDetail.reason_name}}</b></div>
+                <div class="trace-summary-item">脚本版本<b>{{pageIssueDetail.script_version||'-'}}</b></div>
+              </div>
+              <div class="trace-block-title">选择器</div>
+              <div class="trace-text">{{pageIssueDetail.selector||'（脚本未提供）'}}</div>
+              <div class="trace-block-title" v-if="pageIssueDetail.expected">预期结构</div>
+              <div class="trace-text" v-if="pageIssueDetail.expected">{{pageIssueDetail.expected}}</div>
+              <div class="trace-block-title" v-if="Object.keys(pageIssueDetail.found||{}).length">实际找到</div>
+              <div class="trace-text" v-if="Object.keys(pageIssueDetail.found||{}).length">
+                <span v-for="(v,k) in pageIssueDetail.found" :key="k" style="display:inline-block;margin:0 8px 6px 0">{{k}}：{{v}}</span>
+              </div>
+              <div class="trace-block-title" v-if="(pageIssueDetail.nodes||[]).length">页面节点</div>
+              <div class="trace-list" v-if="(pageIssueDetail.nodes||[]).length">
+                <div v-for="(n,idx) in pageIssueDetail.nodes" :key="idx" class="trace-item" style="grid-template-columns:24px minmax(0,1fr)">
+                  <div class="trace-index">{{idx+1}}</div>
+                  <div>
+                    <div class="trace-head"><span class="trace-model">&lt;{{n.tag||'?'}}&gt;</span><span class="trace-provider">{{n.id?'#'+n.id:''}} {{n.classes?'.'+n.classes.replace(/ /g,'.'):''}}</span></div>
+                    <div class="trace-msg" v-if="n.path">路径：{{n.path}}</div>
+                    <div class="trace-msg" v-if="n.text">文字：{{n.text}}</div>
+                  </div>
+                </div>
+              </div>
+              <div class="trace-block-title" v-if="pageIssueDetail.page_title||pageIssueDetail.url_path">页面信息</div>
+              <div class="trace-text" v-if="pageIssueDetail.page_title||pageIssueDetail.url_path">{{pageIssueDetail.page_title}}<br v-if="pageIssueDetail.page_title&&pageIssueDetail.url_path">{{pageIssueDetail.url_path}}</div>
+              <div class="modal-actions" style="margin-top:18px">
+                <button class="btn btn-secondary" @click="pageIssueDetail=null">关闭</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+
       <!-- Question Bank Page -->
       <template v-if="page==='question-bank'">
         <header class="main-header">
@@ -7460,6 +7593,7 @@ createApp({
       'distributor-revenue':[{label:'代理商分销',group:'distributor'},{label:'收入统计'}],
       'distributor-config':[{label:'代理商分销',group:'distributor'},{label:'分销配置'}],
       'script-logs':[{label:'日志监控',group:'logs'},{label:'脚本日志'}],
+      'page-issues':[{label:'日志监控',group:'logs'},{label:'页面异常'}],
       'answer-stats':[{label:'题库中心',group:'questions'},{label:'答题统计'}],
       'ai-logs':[{label:'模型服务',group:'models'},{label:'模型日志'}],
       'model-health':[{label:'模型服务',group:'models'},{label:'模型健康'}],
@@ -7542,6 +7676,7 @@ createApp({
       'distributor':'代理商',
       'card-keys':'卡密',
       'script-logs':'脚本日志',
+      'page-issues':'页面异常 页面结构 填不上 点不上 解析不了 图片下载失败',
       'log-cleanup':'日志清理',
       'daily-report':'每日数据邮件',
       'audit-logs':'审计 操作日志 谁改了什么',
@@ -8438,6 +8573,43 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       answerStatsFilter.date_to=fmtLocalDate(to);
       loadAnswerStats();
       loadAnswerRows(1);
+    }
+    // ===== 页面异常（脚本上报的页面结构快照） =====
+    const pageIssues=ref(null);
+    const pageIssueLoading=ref(false);
+    const pageIssueFilter=reactive({date_from:'',date_to:'',keyword:''});
+    const pageIssueDetail=ref(null);
+    const pageIssueTotalPages=computed(()=>Math.max(1,Math.ceil(((pageIssues.value&&pageIssues.value.total)||0)/Math.max(1,(pageIssues.value&&pageIssues.value.page_size)||20))));
+    function setPageIssueRange(days){
+      const to=new Date();
+      const from=new Date();
+      from.setDate(from.getDate()-days+1);
+      pageIssueFilter.date_from=fmtLocalDate(from);
+      pageIssueFilter.date_to=fmtLocalDate(to);
+      loadPageIssues(1);
+    }
+    async function loadPageIssues(page=1){
+      if(!token.value)return;
+      if(!pageIssueFilter.date_from||!pageIssueFilter.date_to){
+        const to=new Date(),from=new Date();
+        from.setDate(from.getDate()-6);
+        pageIssueFilter.date_from=fmtLocalDate(from);
+        pageIssueFilter.date_to=fmtLocalDate(to);
+      }
+      if(pageIssueFilter.date_from>pageIssueFilter.date_to){showMsg("开始日期不能晚于结束日期","error");return;}
+      pageIssueLoading.value=true;
+      try{
+        const qs=new URLSearchParams({page:String(Math.max(1,page)),page_size:'20'});
+        if(pageIssueFilter.date_from)qs.set('date_from',pageIssueFilter.date_from);
+        if(pageIssueFilter.date_to)qs.set('date_to',pageIssueFilter.date_to);
+        if(pageIssueFilter.keyword.trim())qs.set('keyword',pageIssueFilter.keyword.trim());
+        const res=await safeFetch('/admin/page-issues?'+qs.toString(),{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){pageIssues.value=data.data||null;}
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'获取页面异常失败','error');
+      }catch(e){showMsg('获取页面异常失败: '+(e.message||e),'error',6000);}
+      finally{pageIssueLoading.value=false;}
     }
     // 折线只画有答题的那几天，横坐标仍按区间天数排，空白天留缺口而不是把曲线压扁
     function ansTrendRows(){
@@ -9695,7 +9867,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       payment:{title:'支付财务',icon:'i-credit-card',items:[{page:'payment-orders',label:'支付明细',icon:'i-receipt',load:loadPaymentOrders},{page:'payment',label:'套餐配置',icon:'i-layers',load:loadPaymentConfig},{page:'pay-api',label:'支付接口',icon:'i-zap',load:loadPayApiConfig},{page:'pay-test',label:'支付测试',icon:'i-play-circle',load:()=>{}},{page:'refund-requests',label:'退款申请',icon:'i-rotate-ccw',load:loadRefundRequests}]},
       card:{title:'卡密管理',icon:'i-key',items:[{page:'xianyu',label:'商品配置',icon:'i-store',load:loadXianyuConfig},{page:'card-keys',label:'卡密管理',icon:'i-key',load:loadCardKeys}]},
       distributor:{title:'代理商分销',icon:'i-flag',items:[{page:'distributor',label:'代理商',icon:'i-users',load:loadFxList},{page:'distributor-templates',label:'卡密模板',icon:'i-layers',load:()=>{loadFxOptions();loadFxTemplates();}},{page:'distributor-batches',label:'批次与卡密',icon:'i-package',load:()=>{loadFxOptions();loadFxBatches(1);}},{page:'distributor-withdrawals',label:'提现审核',icon:'i-wallet',load:()=>{loadFxOptions();loadFxWds(1);}},{page:'distributor-revenue',label:'收入统计',icon:'i-trending-up',load:loadFxRevenue},{page:'distributor-config',label:'分销配置',icon:'i-sliders',load:loadFxConfig}]},
-      logs:{title:'日志监控',icon:'i-terminal',items:[{page:'script-logs',label:'脚本日志',icon:'i-terminal',load:loadScriptLogs},{page:'log-cleanup',label:'日志清理',icon:'i-trash-2',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'i-mail',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
+      logs:{title:'日志监控',icon:'i-terminal',items:[{page:'script-logs',label:'脚本日志',icon:'i-terminal',load:loadScriptLogs},{page:'page-issues',label:'页面异常',icon:'i-alert-triangle',load:()=>loadPageIssues(1)},{page:'log-cleanup',label:'日志清理',icon:'i-trash-2',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'i-mail',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
       models:{title:'模型服务',icon:'i-cpu',items:[{page:'ai-config',label:'模型配置',icon:'i-bot',load:loadConfig},{page:'ai-logs',label:'模型日志',icon:'i-activity',load:loadAiLogs},{page:'model-health',label:'模型健康',icon:'i-shield',load:loadModelStats},{page:'ai-tasks',label:'答题任务',icon:'i-clock',load:loadAiTasks},{page:'model-cooldown',label:'冷却队列',icon:'i-clock',load:()=>{}}]},
       config:{title:'系统配置',icon:'i-settings',items:[{page:'qq-bot',label:'QQ频道机器人',icon:'i-message-circle',load:loadQqBot},{page:'email-config',label:'邮箱配置',icon:'i-mail',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'sso-config',label:'单点登录',icon:'i-shield',load:loadSsoConfig},{page:'audit-logs',label:'操作审计',icon:'i-file-text',load:()=>loadAuditLogs(1)},{page:'db-config',label:'系统设置',icon:'i-database',load:loadDbConfig}]}
     };
@@ -9719,6 +9891,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       else if(p==='question-bank')fn=()=>{loadQuestionBank();loadConfig();};
       else if(p==='bank-analysis')fn=loadBankAnalysis;
       else if(p==='answer-stats')fn=loadAnswerStats;
+      else if(p==='page-issues')fn=()=>loadPageIssues(1);
       else if(p==='bank-logs')fn=loadBankLogs;
       else if(p==='adapt-requests')fn=loadAdaptRequests;
       else if(p==='sso-config')fn=loadSsoConfig;
@@ -11553,6 +11726,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       bankLogs,bankLogLoading,bankLogFilter,bankLogTotal,expandedBankLogs,
       bankAnalysis,bankAnalysisLoading,bankAnalysisFilter,loadBankAnalysis,setBankAnalysisRange,
       answerStats,answerStatsLoading,answerStatsFilter,loadAnswerStats,setAnswerStatRange,ansTrendRows,ansTrendX,ansTrendY,ansTrendPoints,
+      pageIssues,pageIssueLoading,pageIssueFilter,pageIssueDetail,pageIssueTotalPages,loadPageIssues,setPageIssueRange,
       answerRows,answerRowsTotal,answerRowsPage,answerRowsPageSize,answerRowsLoading,answerRowsLoaded,loadAnswerRows,
       userAnalysis,userAnalysisLoading,userAnalysisFilter,loadUserAnalysis,setUserAnalysisRange,pct,
       oldUserRechargeExpanded,oldUserRechargeDetails,oldUserRechargePage,oldUserRechargeTotal,oldUserRechargeTotalPages,oldUserRechargeSum,oldUserRechargeLoading,toggleOldUserRecharge,loadOldUserRechargeDetails,

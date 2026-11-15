@@ -605,6 +605,93 @@ def sanitize_answer_summary(item):
     except Exception:
         return None
 
+
+# 「页面结构快照」：脚本识别页面/填充题目失败时上报，用来回答「哪套页面改版了、改的是哪个节点」。
+# 只收结构化摘要，绝不收整页 HTML：整页动辄几 MB，还夹着学生姓名、学号和内联图片。
+PAGE_SNAPSHOT_NODE_LIMIT = 6
+PAGE_SNAPSHOT_TYPES = {
+    "cx-zj": "超星章节测验", "cx-zy": "超星作业", "cx-ks": "超星考试",
+    "zhs-web": "智慧树考试页", "zhs-h5": "智慧树整卷", "olearn": "景德镇o-learn",
+    "unknown": "未标注平台",
+}
+PAGE_SNAPSHOT_STAGES = {
+    "load": "页面加载", "parse": "解析页面", "find_question": "找题目容器",
+    "detect_type": "识别题型", "image": "处理图片", "fill": "填写答案",
+    "submit": "提交试卷", "login": "登录状态", "other": "其他",
+}
+PAGE_SNAPSHOT_REASONS = {
+    "no_container": "找不到题目容器", "unknown_type": "认不出题型",
+    "page_parse_failed": "页面解析失败", "structure_changed": "页面结构变了",
+    "no_option_answer": "没取到选项答案", "answer_fill_failed": "答案拿到了但填不上",
+    "option_not_found": "找不到选项按钮", "cannot_click": "选项点不上",
+    "input_not_found": "找不到输入框", "cannot_input": "输入框填不进去",
+    "image_download_failed": "图片下载失败", "image_recognize_failed": "图片识别失败",
+    "image_not_supported": "题型不支持图片", "submit_blocked": "交卷按钮点不动",
+    "page_not_loaded": "页面没加载出来", "login_lost": "登录状态失效",
+}
+
+def sanitize_page_snapshot(item):
+    """把脚本上报的页面结构快照钳成可统计、可存储的小 JSON。返回 None 表示丢弃。"""
+    try:
+        extra = item.get("extra")
+        if isinstance(extra, str):
+            extra = json.loads(extra)
+        if not isinstance(extra, dict):
+            return None
+        page_type = str(extra.get("page_type") or extra.get("platform") or "unknown")[:20]
+        reason = str(extra.get("reason_code") or "")[:40]
+        stage = str(extra.get("stage") or "")[:20]
+        if not reason and not stage:
+            return None
+        # found 只留计数/布尔/短字符串，防止有人把整页数据塞进来
+        raw_found = extra.get("found") if isinstance(extra.get("found"), dict) else {}
+        found = {}
+        for key, val in list(raw_found.items())[:12]:
+            k = str(key)[:24]
+            if isinstance(val, bool):
+                found[k] = val
+            elif isinstance(val, (int, float)):
+                found[k] = max(-1, min(val, 100000))
+            else:
+                found[k] = str(val)[:40]
+        nodes = []
+        raw_nodes = extra.get("nodes") if isinstance(extra.get("nodes"), list) else []
+        for row in raw_nodes[:PAGE_SNAPSHOT_NODE_LIMIT]:
+            if not isinstance(row, dict):
+                continue
+            nodes.append({
+                "tag": str(row.get("tag") or "")[:20],
+                "id": str(row.get("id") or "")[:40],
+                "classes": str(row.get("classes") or row.get("class") or "")[:120],
+                "text": re.sub(r"\s+", " ", str(row.get("text") or ""))[:80],
+                "path": str(row.get("path") or row.get("selector") or "")[:200],
+            })
+        clean = {
+            "page_type": page_type,
+            "stage": stage,
+            "reason_code": reason,
+            "selector": str(extra.get("selector") or "")[:200],
+            "expected": str(extra.get("expected") or "")[:200],
+            "found": found,
+            "nodes": nodes,
+            "page_title": re.sub(r"\s+", " ", str(extra.get("page_title") or ""))[:80],
+            "url_path": str(extra.get("url_path") or "")[:200],
+            "script_version": str(extra.get("script_version") or item.get("script_version") or "")[:32],
+            "signature": str(extra.get("signature") or "")[:64],
+        }
+        item["extra"] = clean
+        item["event_type"] = "page_snapshot"
+        page_name = PAGE_SNAPSHOT_TYPES.get(page_type, page_type or "未标注平台")
+        stage_name = PAGE_SNAPSHOT_STAGES.get(stage, stage or "出错")
+        reason_name = PAGE_SNAPSHOT_REASONS.get(reason, reason or "未说明")
+        sel = clean["selector"]
+        item["message"] = (f"[页面异常] {page_name} · {stage_name} · {reason_name}"
+                           + (f" · {sel[:60]}" if sel else ""))[:4000]
+        return item
+    except Exception:
+        return None
+
+
 def set_system_keep_awake(enabled=True):
     """Windows 系统级防休眠/防息屏。开启后只要后端进程运行，系统会尽量保持唤醒。"""
     global POWER_KEEP_AWAKE_ENABLED
@@ -7450,6 +7537,159 @@ def get_admin_answer_stats(start_date=None, end_date=None):
     return data
 
 
+def _fmt_dt(val):
+    if val is None:
+        return ""
+    if hasattr(val, "strftime"):
+        return val.strftime("%Y-%m-%d %H:%M:%S")
+    return str(val)
+
+
+def _page_snapshot_extra(raw):
+    if isinstance(raw, dict):
+        return raw
+    try:
+        data = json.loads(raw or "{}")
+        return data if isinstance(data, dict) else {}
+    except (ValueError, TypeError):
+        return {}
+
+
+def get_admin_page_issues(start_date=None, end_date=None, keyword="", username="", page=1, page_size=20):
+    """页面结构异常的聚类与明细。
+
+    脚本上报的是「在哪套页面、哪一步、哪个选择器出了问题」的结构摘要。
+    这里按「页面 + 环节 + 原因 + 选择器」聚类：同一个选择器挂在很多用户身上，
+    就说明页面改版了，改一处能修一整批；这和答题统计里「反复点不上的题目」是一个思路。
+    """
+    from datetime import datetime as _dt, timedelta as _td
+    today = _dt.now().strftime("%Y-%m-%d")
+    sd = start_date or (_dt.now() - _td(days=6)).strftime("%Y-%m-%d")
+    ed = end_date or today
+    try:
+        start_day = _dt.strptime(sd, "%Y-%m-%d")
+        end_day = _dt.strptime(ed, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        raise ValueError("日期格式应为 YYYY-MM-DD")
+    if start_day > end_day:
+        raise ValueError("开始日期不能晚于结束日期")
+    if (end_day - start_day).days > 92:
+        raise ValueError("单次查询日期范围不能超过 93 天")
+
+    from_sql = sd + " 00:00:00"
+    to_sql = ed + " 23:59:59"
+    total = db.count_page_snapshots(date_from=from_sql, date_to=to_sql, username=username, keyword=keyword)
+
+    # 聚类最多看 2000 条，防止有人刷接口把后台拖死
+    sample_rows = db.list_page_snapshots(
+        date_from=from_sql, date_to=to_sql, username=username, keyword=keyword, limit=2000, offset=0
+    )
+    clusters = {}
+    users = set()
+    page_types = set()
+    reason_counts = {}
+    for row in sample_rows:
+        extra = _page_snapshot_extra(row.get("extra_json"))
+        ptype = str(extra.get("page_type") or "unknown")
+        stage = str(extra.get("stage") or "")
+        reason = str(extra.get("reason_code") or "")
+        selector = str(extra.get("selector") or "")
+        users.add(str(row.get("username") or ""))
+        page_types.add(ptype)
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+        key = (ptype, stage, reason, selector)
+        item = clusters.get(key)
+        if not item:
+            nodes = extra.get("nodes") or []
+            first_node = nodes[0] if nodes and isinstance(nodes[0], dict) else {}
+            item = {
+                "page_type": ptype,
+                "page_type_name": PAGE_SNAPSHOT_TYPES.get(ptype, ptype or "未标注平台"),
+                "stage": stage,
+                "stage_name": PAGE_SNAPSHOT_STAGES.get(stage, stage or "出错"),
+                "reason_code": reason,
+                "reason_name": PAGE_SNAPSHOT_REASONS.get(reason, reason or "未说明"),
+                "selector": selector,
+                "count": 0,
+                "users": set(),
+                "last_at": "",
+                "sample": {
+                    "expected": str(extra.get("expected") or ""),
+                    "found": extra.get("found") or {},
+                    "page_title": str(extra.get("page_title") or ""),
+                    "url_path": str(extra.get("url_path") or ""),
+                    "node_path": str(first_node.get("path") or ""),
+                    "node_text": str(first_node.get("text") or ""),
+                    "script_version": str(extra.get("script_version") or row.get("script_version") or ""),
+                },
+            }
+            clusters[key] = item
+        item["count"] += 1
+        item["users"].add(str(row.get("username") or ""))
+        ts = _fmt_dt(row.get("created_at"))
+        if ts > item["last_at"]:
+            item["last_at"] = ts
+    cluster_list = sorted(clusters.values(), key=lambda x: -x["count"])[:30]
+    for c in cluster_list:
+        c["user_count"] = len(c["users"])
+        c.pop("users", None)
+
+    offset = (max(int(page or 1), 1) - 1) * min(max(int(page_size or 20), 1), 100)
+    rows = db.list_page_snapshots(
+        date_from=from_sql, date_to=to_sql, username=username, keyword=keyword,
+        limit=min(max(int(page_size or 20), 1), 100), offset=offset,
+    )
+    out_rows = []
+    for row in rows:
+        extra = _page_snapshot_extra(row.get("extra_json"))
+        ptype = str(extra.get("page_type") or "unknown")
+        stage = str(extra.get("stage") or "")
+        reason = str(extra.get("reason_code") or "")
+        out_rows.append({
+            "id": row.get("id"),
+            "username": str(row.get("username") or ""),
+            "message": str(row.get("message") or ""),
+            "page_type": ptype,
+            "page_type_name": PAGE_SNAPSHOT_TYPES.get(ptype, ptype or "未标注平台"),
+            "stage": stage,
+            "stage_name": PAGE_SNAPSHOT_STAGES.get(stage, stage or "出错"),
+            "reason_code": reason,
+            "reason_name": PAGE_SNAPSHOT_REASONS.get(reason, reason or "未说明"),
+            "selector": str(extra.get("selector") or ""),
+            "expected": str(extra.get("expected") or ""),
+            "found": extra.get("found") or {},
+            "nodes": extra.get("nodes") or [],
+            "page_title": str(extra.get("page_title") or ""),
+            "url_path": str(extra.get("url_path") or ""),
+            "script_version": str(extra.get("script_version") or row.get("script_version") or ""),
+            "created_at": _fmt_dt(row.get("created_at")),
+        })
+
+    top_reasons = sorted(reason_counts.items(), key=lambda kv: -kv[1])[:8]
+    return {
+        "summary": {
+            "total": total,
+            "users": len(users),
+            "page_types": len(page_types),
+            "clusters": len(clusters),
+            "sampled": len(sample_rows),
+            "top_reason": PAGE_SNAPSHOT_REASONS.get(top_reasons[0][0], top_reasons[0][0]) if top_reasons else "",
+            "top_reason_count": top_reasons[0][1] if top_reasons else 0,
+        },
+        "reasons": [
+            {"code": code, "name": PAGE_SNAPSHOT_REASONS.get(code, code or "未说明"), "count": n}
+            for code, n in top_reasons
+        ],
+        "clusters": cluster_list,
+        "rows": out_rows,
+        "total": total,
+        "page": max(int(page or 1), 1),
+        "page_size": min(max(int(page_size or 20), 1), 100),
+        "date_from": sd,
+        "date_to": ed,
+    }
+
+
 # ==================== JWT 简易实现 ====================
 # 安全：JWT secret 优先从环境变量读取，其次从本地文件读取，最后自动生成
 def load_jwt_secret():
@@ -9752,6 +9992,26 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(400, {"code": 400, "msg": str(e)})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/page-issues":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                data = get_admin_page_issues(
+                    start_date=qs.get("date_from", [""])[0] or None,
+                    end_date=qs.get("date_to", [""])[0] or None,
+                    keyword=qs.get("keyword", [""])[0].strip(),
+                    username=qs.get("username", [""])[0].strip(),
+                    page=qs.get("page", ["1"])[0],
+                    page_size=qs.get("page_size", ["20"])[0],
+                )
+                self._send_json(200, {"code": 200, "data": data})
+            except ValueError as e:
+                self._send_json(400, {"code": 400, "msg": str(e)})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/script-logs":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -12015,6 +12275,12 @@ class Handler(BaseHTTPRequestHandler):
                         continue
                     if entry.get("event_type") == "answer_summary":
                         clean = sanitize_answer_summary(entry)
+                        if clean is None:
+                            dropped += 1
+                            continue
+                        entry = clean
+                    elif str(entry.get("event_type") or "").lower() in ("page_snapshot", "page_issue"):
+                        clean = sanitize_page_snapshot(entry)
                         if clean is None:
                             dropped += 1
                             continue

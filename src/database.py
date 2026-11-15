@@ -5376,6 +5376,18 @@ class Database:
             level = item.get("level", "")
             message = str(item.get("message", ""))[:4000]
             page_url = str(item.get("page_url", ""))[:1000]
+            # 页面结构快照同理：同一用户同一页面同一个问题，60 秒内只留一条。
+            # 脚本可能每道题都命中同一个选择器，不去重的话一次作业能刷出几百条。
+            if event_type == "page_snapshot":
+                recent = self.fetchone(
+                    f"""SELECT id FROM script_event_logs
+                        WHERE username = {ph} AND event_type = {ph} AND message = {ph} AND page_url = {ph}
+                          AND created_at >= DATE_SUB(NOW(), INTERVAL 60 SECOND)
+                        ORDER BY id DESC LIMIT 1""",
+                    (username or item.get("username", ""), event_type, message, page_url)
+                )
+                if recent:
+                    continue
             # 兜底降噪：低价值心跳类日志 60 秒内同用户、同页面、同消息只保留 1 条。
             if event_type in ("heartbeat", "external_page", "reading") and (message in ("直播保活", "直播页面播放/保活中", "阅读页自动浏览中", "新页面媒体任务播放中") or message.startswith("直播保活：")):
                 recent = self.fetchone(
@@ -5532,6 +5544,62 @@ class Database:
         if username:
             where.append(f"s.username = {ph}")
             params.append(username)
+        if date_from:
+            where.append(f"s.created_at >= {ph}")
+            params.append(date_from)
+        if date_to:
+            where.append(f"s.created_at <= {ph}")
+            params.append(date_to)
+        sql = "SELECT COUNT(*) AS c FROM script_event_logs s WHERE " + " AND ".join(where)
+        row = self.fetchone(sql, tuple(params))
+        return int(row.get("c") or 0) if row else 0
+
+    def list_page_snapshots(self, date_from="", date_to="", username="", keyword="", limit=2000, offset=0):
+        """取脚本上报的页面结构快照（event_type=page_snapshot）。
+
+        聚合（按页面/环节/原因聚类）放到 backend 的 Python 里做；这里只限量取原文，
+        防止有人刷接口把后台拖死。
+        """
+        ph = _ph()
+        limit = min(max(int(limit or 2000), 1), 5000)
+        try:
+            offset = max(int(offset or 0), 0)
+        except (TypeError, ValueError):
+            offset = 0
+        where = [f"s.event_type = {ph}"]
+        params = ["page_snapshot"]
+        if username:
+            where.append(f"s.username = {ph}")
+            params.append(username)
+        if keyword:
+            like = f"%{keyword}%"
+            where.append(f"(s.message LIKE {ph} OR s.page_url LIKE {ph} OR s.extra_json LIKE {ph})")
+            params.extend([like, like, like])
+        if date_from:
+            where.append(f"s.created_at >= {ph}")
+            params.append(date_from)
+        if date_to:
+            where.append(f"s.created_at <= {ph}")
+            params.append(date_to)
+        sql = ("SELECT s.id, s.username, s.message, s.page_url, s.extra_json, s.script_version, s.created_at "
+               "FROM script_event_logs s")
+        sql += " WHERE " + " AND ".join(where)
+        sql += f" ORDER BY s.created_at DESC, s.id DESC LIMIT {ph} OFFSET {ph}"
+        params.append(limit)
+        params.append(offset)
+        return self.fetchall(sql, tuple(params))
+
+    def count_page_snapshots(self, date_from="", date_to="", username="", keyword=""):
+        ph = _ph()
+        where = [f"s.event_type = {ph}"]
+        params = ["page_snapshot"]
+        if username:
+            where.append(f"s.username = {ph}")
+            params.append(username)
+        if keyword:
+            like = f"%{keyword}%"
+            where.append(f"(s.message LIKE {ph} OR s.page_url LIKE {ph} OR s.extra_json LIKE {ph})")
+            params.extend([like, like, like])
         if date_from:
             where.append(f"s.created_at >= {ph}")
             params.append(date_from)
