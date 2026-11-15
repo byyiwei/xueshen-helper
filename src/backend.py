@@ -5362,11 +5362,45 @@ def is_pure_image_question(question_payload_str):
     text_only = re.sub(r'[\s\u3000\r\n\t，。！？、；：,.!?;:\-—_【】\[\]（）()\"\'“”‘’《》]', '', text_only)
     return len(text_only.strip()) < 5
 
+def _sniff_image_mime(data):
+    """按文件头判断真实图片类型；不像图片就返回空串。
+
+    只信 Content-Type 会被坑：超星/组卷这类站点对非浏览器请求经常回一个
+    「302 Found」的 HTML 页面，状态码还是 200，于是 HTML 被当成图片发给模型，
+    所有多模态模型都回「image format is illegal」。必须看字节。
+    """
+    head = bytes(data or b"")[:16]
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if head.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "image/webp"
+    if head[:2] == b"BM":
+        return "image/bmp"
+    return ""
+
+def _data_url_is_image(url):
+    """内联 data:image 也可能是客户端把网页内容当图片传上来的，解一段出来验一下。"""
+    m = re.match(r"^data:image/([a-zA-Z0-9.+-]+);base64,(.*)$", url or "", re.S)
+    if not m:
+        return True  # 不是 base64 内联图，交给下载分支
+    mime = "image/" + m.group(1).lower()
+    if mime not in ("image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp", "image/bmp"):
+        return True  # svg 等文本格式不做文件头校验
+    try:
+        head = base64.b64decode(m.group(2)[:96], validate=False)[:16]
+    except Exception:
+        return False
+    return bool(_sniff_image_mime(head))
+
 def _download_image_to_base64(url, timeout=15, deadline=None):
     """下载远程图片并转为 base64 data URL，供多模态模型使用。失败时返回 None。"""
-    # 已经是 base64 data URL，直接返回
+    # 已经是 base64 data URL，直接返回（但先确认里面装的真是图片）
     if url.startswith("data:"):
-        return url
+        return url if _data_url_is_image(url) else None
     # 多组请求头尝试，应对超星等需要 Referer 的站点
     header_sets = [
         {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -5385,19 +5419,12 @@ def _download_image_to_base64(url, timeout=15, deadline=None):
             with urlopen(req, timeout=timeout) as resp:
                 data = resp.read()
             ct = resp.headers.get("Content-Type", "")
-            mime = ct.split(";")[0].strip() if ct else ""
-            if not mime or not mime.startswith("image/"):
-                lower = url.lower().split("?")[0]
-                if lower.endswith(".png"):
-                    mime = "image/png"
-                elif lower.endswith((".jpg", ".jpeg")):
-                    mime = "image/jpeg"
-                elif lower.endswith(".gif"):
-                    mime = "image/gif"
-                elif lower.endswith(".webp"):
-                    mime = "image/webp"
-                else:
-                    mime = "image/png"
+            mime = _sniff_image_mime(data)
+            if not mime:
+                # 拿到的是 HTML 错误页/防盗链页，不是图片。换一组请求头再试，
+                # 都失败就返回 None，由调用方报「图片无法下载」，别把网页发给模型。
+                print(f"[图片下载尝试] {url}: 返回的不是图片（Content-Type={ct or '无'}，{len(data)} 字节）", flush=True)
+                continue
             b64 = base64.b64encode(data).decode("utf-8")
             return f"data:{mime};base64,{b64}"
         except Exception as e:
@@ -5988,9 +6015,22 @@ def _run_ai_task(task):
         prepared_messages = build_ai_messages(question, deadline=time.time() + 120)
     except Exception as e:
         _task_live_clear(task_id)
+        round_no += 1
+        err_text = f"题目图片无法下载：{e}"[:1000]
+        # 图片地址失效/防盗链不会靠重试变好。原来每 5 分钟重跑一次，一道题的
+        # 尝试次数能堆到 36 次，日志里全是同样的失败。试两轮就收手，用户重新
+        # 提交时 get_or_create_ai_task 会把 failed 任务重新排队。
+        if round_no >= 2:
+            db.update_ai_answer_task(
+                task_id, status="failed", round_no=round_no, attempts=attempts,
+                last_error=err_text, next_retry_at=None,
+            )
+            _task_event(f"#{task_id} 题目图片一直取不到，停止重试", "error", task_id)
+            print(f"[答题任务] 图片准备连续失败，任务停止 task={task_id}", flush=True)
+            return
         db.update_ai_answer_task(
-            task_id, status="waiting", last_error=f"图片准备失败：{e}"[:1000],
-            next_retry_at=datetime.now() + timedelta(seconds=300),
+            task_id, status="waiting", round_no=round_no, attempts=attempts,
+            last_error=err_text, next_retry_at=datetime.now() + timedelta(seconds=300),
         )
         return
 
