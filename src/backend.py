@@ -4304,7 +4304,7 @@ def save_question_bank_answer(question, answer, model_name="", provider_name="")
     if _is_garbage_bank_answer(answer, question):
         print(f"[题库入库] 垃圾答案跳过，不写入题库 model={model_name} answer={str(answer)[:80]}", flush=True)
         return
-    if _is_truncated_multi_answer(question, answer):
+    if _is_truncated_multi_answer(question, answer, fresh=True):
         print(f"[题库入库] 多选答案不完整，跳过入库 model={model_name} answer={str(answer)[:80]}", flush=True)
         return
     info = parse_question_payload(question)
@@ -4361,21 +4361,28 @@ def _parse_answer_list(answer):
             pass
     return None
 
-def _is_truncated_multi_answer(question, answer):
-    """多选题若只剩单个选项文本/单字母，视为被截断的脏答案，不能复用、不能入库。"""
+def _is_truncated_multi_answer(question, answer, fresh=False):
+    """多选题若只剩单个选项文本/单字母，视为被截断的脏答案，不能复用、不能入库。
+
+    fresh=True 表示这是模型刚刚现场答出来的结果。多选题完全可能只有一项正确
+    （尤其「以下不属于……」这类题），不能因为答案只有一个字母就整题判废；
+    以前这里一刀切，导致所有模型都答对也被跳过，题目永远答不出来。
+    """
     info = parse_question_payload(question)
     if not _is_multiple_choice_type(info.get("question_type")):
         return False
     text = str(answer or "").strip()
     if not text:
         return True
+    options = extract_options_from_question(question)
+    allow_single = fresh or len(options) <= 2
     items = _parse_answer_list(text)
     if items is not None:
-        return len(items) < 2
+        return len(items) < 2 and not allow_single
     clean = re.sub(r"[\s、,，&+与和/|]+", "", text).upper()
     if re.match(r"^[A-Z]{2,}$", clean):
         return False
-    return True
+    return not allow_single
 
 def _img_file_keys(html_or_url):
     """抽出图片 URL 的末段文件名（去扩展名），用于同一张图的多种 CDN 形态比对。"""
@@ -6056,7 +6063,7 @@ def _run_ai_task(task):
         attempts += 1
         if answer:
             answer = normalize_ai_answer(question, answer)
-            if answer and not _is_truncated_multi_answer(question, answer) and not _is_garbage_bank_answer(answer, question):
+            if answer and not _is_truncated_multi_answer(question, answer, fresh=True) and not _is_garbage_bank_answer(answer, question):
                 record_model_token_usage(model_name, tokens)
                 cache_key = make_ai_cache_key(question, "auto")
                 set_ai_cache(cache_key, answer, model_name, provider_name)
@@ -13895,7 +13902,7 @@ class Handler(BaseHTTPRequestHandler):
                                 if ai_answer:
                                     ai_norm = normalize_ai_answer(question, ai_answer)
                                     if (ai_norm
-                                            and not _is_truncated_multi_answer(question, ai_norm)
+                                            and not _is_truncated_multi_answer(question, ai_norm, fresh=True)
                                             and not _is_garbage_bank_answer(ai_norm, question)
                                             and not any(str(c.get("answer") or "").strip() == ai_norm.strip() for c in items)):
                                         items.append({
@@ -14015,7 +14022,7 @@ class Handler(BaseHTTPRequestHandler):
                     if needs_solution_process(question) and not _looks_like_process_answer(answer):
                         print(f"[AI缓存命中但缺少过程，改走AI] mode={model_mode} answer={str(answer)[:80]}", flush=True)
                         cached = None
-                    elif answer and (_is_truncated_multi_answer(question, answer) or _is_garbage_bank_answer(answer, question)):
+                    elif answer and (_is_truncated_multi_answer(question, answer, fresh=True) or _is_garbage_bank_answer(answer, question)):
                         print(f"[AI缓存命中但答案不可用，改走AI] mode={model_mode} answer={str(answer)[:80]}", flush=True)
                         cached = None
                     elif not answer:
@@ -14091,7 +14098,7 @@ class Handler(BaseHTTPRequestHandler):
                         self._send_json(500, {"code": 500, "msg": err})
                         return
                     status = "success"
-                    bad_answer = _is_truncated_multi_answer(question, answer) or _is_garbage_bank_answer(answer, question)
+                    bad_answer = _is_truncated_multi_answer(question, answer, fresh=True) or _is_garbage_bank_answer(answer, question)
                     if bad_answer:
                         # 兜底话术/截断答案不下发给脚本：发了用户就会把它填进答题框，
                         # 返回 500 让脚本走「未查到答案」的正规兜底（不扣题数、不写缓存、不入库）
