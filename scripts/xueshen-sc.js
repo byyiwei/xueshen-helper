@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.20
+// @version      6.0.21
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -15,6 +15,10 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.21 (2026-11-16)
+// @changelog    1. 支持超星新版作业页的复合选择题：大题里的小题逐题识别、逐题作答，阅读题自动带上短文，不再整页只识别成两道空题
+// @changelog    2. 修复英文单词答案填不上：peak、migration 这类答案不再被当成选项字母，也不会和 immigration 这种相似选项判成多义而放弃
+// @changelog    3. 题目解析到了但选项全空时自动上报页面结构，后台可直接定位改版页面，不用再登录用户账号排查
 // @changelog    v6.0.20 (2026-11-15)
 // @changelog    1. 修复超星公式题题干丢失：公式图里的 LaTeX 直接还原成文字，极限、积分等表达式不再缺失，答案和过程不再算错
 // @changelog    2. 证明题按需要写过程的题型作答，不再只回一句结论；简答/计算/证明按题头真实题型选择提示词
