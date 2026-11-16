@@ -8896,7 +8896,7 @@
               reason_code: "answer_fill_failed",
               selector: isChoice
                 ? (hoverOptions.length ? '.stem_answer > div[onclick*="addChoice"]' : '.answerBg input[type="radio"], .answerBg input[type="checkbox"]')
-                : "textarea / contenteditable",
+                : "textarea / input / contenteditable",
               expected: isChoice ? "选项按钮可点击并回读为已选中" : "文本框可写入并回读",
               found: {
                 type: String((question && question.type) || ""),
@@ -9272,6 +9272,57 @@
         });
         return flat.slice(0, blankCount);
       });
+      __publicField(this, "getBlankFields", (root) => {
+        // 超星填空题常用 input.tkInput / .Zy_ulTk 里的文本框，只有部分题目用 textarea；
+        // 旧逻辑只找 textarea，页面是 input 时整题放弃（答案拿到了但填不上）。
+        if (!root || !root.querySelectorAll) return [];
+        const visible = (el) => {
+          if (el.disabled || el.readOnly) return false;
+          try {
+            if (el.getClientRects && el.getClientRects().length === 0) return false;
+            const win = el.ownerDocument && el.ownerDocument.defaultView;
+            const style = win && win.getComputedStyle(el);
+            if (style && (style.display === "none" || style.visibility === "hidden")) return false;
+          } catch (_) {
+          }
+          return true;
+        };
+        const fields = [...root.querySelectorAll("textarea, input")].filter((el) => {
+          const tag = String(el.tagName || "").toLowerCase();
+          if (tag === "input") {
+            const type = String(el.getAttribute("type") || "text").toLowerCase();
+            if (!["text", "search", "tel", "number", ""].includes(type)) return false;
+          }
+          return visible(el);
+        });
+        if (fields.length) return fields;
+        return [...root.querySelectorAll('[contenteditable="true"]')].filter(visible);
+      });
+      __publicField(this, "fillBlankField", (field, rawText) => {
+        const text = String(rawText == null ? "" : rawText);
+        if (!field || !text) return false;
+        const tag = String(field.tagName || "").toLowerCase();
+        if (tag === "textarea") return this.fillUeditor(field, text);
+        const win = (field.ownerDocument && field.ownerDocument.defaultView) || this._window;
+        try {
+          const EventType2 = (win && win.Event) || Event;
+          if (field.isContentEditable) {
+            field.focus();
+            field.textContent = text;
+            field.dispatchEvent(new EventType2("input", { bubbles: true }));
+            return String(field.textContent || "").trim() === text.trim();
+          }
+          // 有些页面用框架接管 value，直接赋值不触发监听，走原型 setter 更稳
+          const desc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field) || {}, "value");
+          if (desc && desc.set) desc.set.call(field, text);
+          else field.value = text;
+          field.dispatchEvent(new EventType2("input", { bubbles: true }));
+          field.dispatchEvent(new EventType2("change", { bubbles: true }));
+          return String(field.value || "").trim() === text.trim();
+        } catch (_) {
+          return false;
+        }
+      });
       __publicField(this, "resolveJudgeAnswer", (rawAnswer) => {
         const text = String(rawAnswer == null ? "" : rawAnswer).replace(/\s+/g, "");
         if (!text) return "";
@@ -9497,19 +9548,22 @@
           for (const key of targets) this.selectChoiceOption(question.options[key]);
           filled = optionKeys.every(key => this.isChoiceOptionSelected(question.options[key]) === targets.has(key));
         } else if (question.type === "2") {
-          const textareaElements = question.element.querySelectorAll("textarea");
-          if (textareaElements.length === 0) return false;
+          const blankFields = this.getBlankFields(question.element);
+          if (blankFields.length === 0) return false;
           const blankAnswers = this.resolveBlankAnswers(
             question.answer.answer,
-            textareaElements.length
+            blankFields.length
           );
+          if (!blankAnswers.length) return false;
           let blankFilled = 0;
-          textareaElements.forEach((textareaElement, index) => {
+          blankFields.forEach((field, index) => {
             const blankAnswer = blankAnswers[index];
             if (!blankAnswer) return;
-            if (this.fillUeditor(textareaElement, blankAnswer)) blankFilled += 1;
+            if (this.fillBlankField(field, blankAnswer)) blankFilled += 1;
           });
-          filled = blankFilled > 0 && blankFilled === textareaElements.length;
+          // 答案数和空数不一致时，填上能对上的部分也算成功，避免整题空白
+          const expect = Math.min(blankFields.length, blankAnswers.length);
+          filled = blankFilled > 0 && blankFilled === expect;
         } else if (question.type === "3") {
           const answer = this.resolveJudgeAnswer(question.answer.answer[0]);
           if (!answer) {
