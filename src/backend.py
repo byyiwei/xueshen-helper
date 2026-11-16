@@ -13469,8 +13469,8 @@ class Handler(BaseHTTPRequestHandler):
                         u = db.get_user_by_username(w["username"])
                         if u and u.get("email"):
                             send_email(u["email"], "", scene="referral_withdrawal",
-                                       variables={"username": w["username"], "amount": str(w["amount"]),
-                                                  "status": "已通过", "reason": "", "subject": "提现审核结果通知"})
+                                       variables={"username": w["username"], "order_no": w["id"],
+                                                  "status": "已通过", "reason": "", "subject": "申请审核结果通知"})
                     self._send_json(200, {"code": 200, "msg": "已通过，请人工转账"})
                 else:
                     self._send_json(400, {"code": 400, "msg": "该提现已处理或不存在"})
@@ -13492,8 +13492,8 @@ class Handler(BaseHTTPRequestHandler):
                         u = db.get_user_by_username(w["username"])
                         if u and u.get("email"):
                             send_email(u["email"], "", scene="referral_withdrawal",
-                                       variables={"username": w["username"], "amount": str(w["amount"]),
-                                                  "status": "已驳回", "reason": reason, "subject": "提现审核结果通知"})
+                                       variables={"username": w["username"], "order_no": w["id"],
+                                                  "status": "已驳回", "reason": reason, "subject": "申请审核结果通知"})
                     self._send_json(200, {"code": 200, "msg": "已驳回，余额已退还"})
                 else:
                     self._send_json(400, {"code": 400, "msg": "该提现已处理或不存在"})
