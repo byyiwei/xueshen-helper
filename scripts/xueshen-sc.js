@@ -8869,6 +8869,7 @@
       __publicField(this, "init", async () => {
         var _that = this;
         this.parseHtml();
+        this.reportParseIssues();
         if (this.questions.length) {
           this.log.insertLog(
             `成功解析到${this.questions.length}个题目，开始答题..`
@@ -9047,6 +9048,35 @@
           this.addQuestions(questionElements);
         }
         this.questionStore.questionList = this.questions;
+      });
+      // 页面能打开、题目也解析出来了，但选择题一个选项都没取到：多半是页面改版，
+      // 旧选择器失效（新版作业把 .answerBg 换成了可点击的 div.hoverDiv）。
+      // 这种「半解析成功」以前完全静默，只能等用户反馈；这里把 DOM 特征一起报回去。
+      __publicField(this, "reportParseIssues", () => {
+        const optionQuestions = this.questions.filter(
+          (q) => ["0", "1", "14", "15"].includes(String(q.type))
+        );
+        const empty = optionQuestions.filter((q) => !((q.optionsText || []).length));
+        if (!empty.length) return;
+        const doc = this._document;
+        const count = (sel) => (doc && doc.querySelectorAll ? doc.querySelectorAll(sel).length : 0);
+        window.__XSReportPageIssue && window.__XSReportPageIssue({
+          page_type: "cx-" + this.type,
+          stage: "parse",
+          reason_code: "structure_changed",
+          selector: this.type === "zj" ? ".TiMu 内的选择题选项" : ".answerBg / .reading_answer 选项",
+          expected: "每道选择题至少能取到 2 个选项",
+          found: {
+            questions: this.questions.length,
+            empty_choice: empty.length,
+            containers: count(this.type === "zj" ? ".TiMu" : ".questionLi"),
+            answer_bg: count(".answerBg"),
+            hover_div: count('.hoverDiv[onclick*="addChoice"]'),
+            reading_answer: count(".reading_answer"),
+            save_single: count("span.saveSingleSelect")
+          },
+          nodes: empty.slice(0, 4).map((q) => q.element)
+        });
       });
       __publicField(this, "getChoiceOptionContainer", (optionElement) => {
         if (!optionElement) return null;
