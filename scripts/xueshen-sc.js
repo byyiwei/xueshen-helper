@@ -9485,7 +9485,7 @@
           // .reading_answer 子题，选项是可点击的 div.hoverDiv（onclick="addChoice(this)"），
           // 页面上没有 .answerBg。旧逻辑只认 .answerBg，会把整页只当成 1~2 道空题，
           // 子题和选项全丢。这里把每道子题拆成独立题目，复用后面的单选/多选作答与填充。
-          if (["zy", "ks"].includes(this.type) && !element.querySelector(".answerBg")) {
+          if (["zy", "ks"].includes(this.type) && !element.querySelector(".answerBg") && !element.querySelector("span.saveSingleSelect")) {
             const subQuestions = [...element.querySelectorAll(".reading_answer")].filter(
               (sub) => sub.querySelector('.stem_answer > div[onclick*="addChoice"]')
             );
