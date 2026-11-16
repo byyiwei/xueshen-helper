@@ -2033,7 +2033,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         .slice(0, 4)
         .map((n) => (n && n.nodeType === 1 ? summarizeIssueNode(n) : n))
         .filter(Boolean);
-      const sig = [extra.page_type, extra.stage, extra.reason_code, extra.selector].join("|");
+      const sig = [extra.page_type, extra.stage, extra.reason_code, extra.selector, extra.signature || ""].join("|");
       const now = Date.now();
       if (now - (PAGE_ISSUE_DEDUP.get(sig) || 0) < 6e4) return Promise.resolve(false);
       PAGE_ISSUE_DEDUP.set(sig, now);
@@ -8887,17 +8887,25 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             const el = question && question.element;
             const isChoice = ["0", "1"].includes(String((question && question.type) || ""));
             const controls = el && el.querySelectorAll ? el.querySelectorAll('input, textarea, [contenteditable="true"]') : [];
+            const hoverOptions = el && el.querySelectorAll ? el.querySelectorAll('.stem_answer > div[onclick*="addChoice"]') : [];
+            const answerText = ((question && question.answer && question.answer.answer) || []).join("|");
             window.__XSReportPageIssue && window.__XSReportPageIssue({
               page_type: "cx-" + this.type,
               stage: "fill",
               reason_code: "answer_fill_failed",
-              selector: isChoice ? '.answerBg input[type="radio"], .answerBg input[type="checkbox"]' : '.answerBg textarea, .answerBg input[type="text"]',
+              selector: isChoice
+                ? (hoverOptions.length ? '.stem_answer > div[onclick*="addChoice"]' : '.answerBg input[type="radio"], .answerBg input[type="checkbox"]')
+                : "textarea / contenteditable",
               expected: isChoice ? "选项按钮可点击并回读为已选中" : "文本框可写入并回读",
               found: {
                 type: String((question && question.type) || ""),
                 options: ((question && question.optionsText) || []).length,
-                controls: controls.length
+                controls: controls.length,
+                answer: String(answerText).slice(0, 40),
+                options_preview: ((question && question.optionsText) || []).join(" | ").slice(0, 40)
               },
+              // 同一页可能有多道题填不上，签名带上题目 id，60 秒去重时才不会只留下第一道
+              signature: String((el && (el.id || el.getAttribute("data"))) || "").slice(0, 40),
               nodes: el ? [el] : []
             });
           };
@@ -9202,20 +9210,27 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         }
         return this.isChoiceOptionSelected(optionContainer);
       });
-      __publicField(this, "optionTextMatches", (optionKey, answerText) => {
+      __publicField(this, "optionTextMatches", (optionKey, answerText, strict = false) => {
         const rawOpt = String(optionKey || "").trim();
         const rawAns = String(answerText || "").trim();
         if (!rawOpt || !rawAns) return false;
         if (rawOpt === rawAns) return true;
-        const stripLead = (s) => String(s || "").replace(/^[A-Za-z][.、．)）:\s]*/, "").trim();
+        // 只去掉「A. 」「B、」这种真正的选项前缀。旧规则不管后面跟什么都砍掉首字母，
+        // 英文答案 peak / migration 会被砍成 eak / igration：peak 因为太短匹配不上，
+        // migration 只能靠包含关系勉强命中，换个选项写法就漏。
+        const stripLead = (s) => String(s || "").replace(/^[A-Za-z][.、．)）:\s]+/, "").trim();
         const a = this.clearMark(rawAns);
         const b = this.clearMark(rawOpt);
         const a2 = this.clearMark(stripLead(rawAns));
         const b2 = this.clearMark(stripLead(rawOpt));
-        if (a && b && a === b) return true;
-        if (a2 && b2 && a2 === b2) return true;
+        // 英文选项大小写不敏感
+        const eq = (x, y) => Boolean(x && y && x.toLowerCase() === y.toLowerCase());
+        if (eq(a, b) || eq(a2, b2)) return true;
+        if (strict) return false;
         // 选项/答案一侧带了多余说明时，用包含关系兜底（要求足够长，防短串误撞）
-        if (a2 && b2 && a2.length >= 4 && b2.length >= 4 && (a2.includes(b2) || b2.includes(a2))) return true;
+        const al = String(a2 || "").toLowerCase();
+        const bl = String(b2 || "").toLowerCase();
+        if (al.length >= 4 && bl.length >= 4 && (al.includes(bl) || bl.includes(al))) return true;
         return false;
       });
       __publicField(this, "splitAnswer", (answer = "") => {
@@ -9416,7 +9431,13 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             let matches = optionKeys.filter(k => k === clearAnswer);
             if (!matches.length) {
               const letters = text.replace(/[\s,，、;；|]+/g, "").toUpperCase();
-              const textMatches = optionKeys.filter(k => this.optionTextMatches(k, clearAnswer) || this.optionTextMatches(k, answer));
+              // 先按「完全相等」找：英文单词答案 peak 和选项 speak 用包含关系会撞在一起，
+              // 完全相等只有一项时优先用它，避免明明有精确选项却判成多义、直接放弃。
+              const strictMatches = optionKeys.filter(
+                (k) => this.optionTextMatches(k, clearAnswer, true) || this.optionTextMatches(k, answer, true)
+              );
+              const textMatches = strictMatches.length === 1 ? strictMatches
+                : optionKeys.filter(k => this.optionTextMatches(k, clearAnswer) || this.optionTextMatches(k, answer));
               if (textMatches.length === 1 && letters.length > 1) matches = textMatches;
               else if (/^[A-Z]+$/.test(letters)) {
                 if ([...letters].some(c => c.charCodeAt(0) - 65 >= optionKeys.length)) return false;
