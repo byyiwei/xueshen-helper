@@ -3687,6 +3687,9 @@
       platform: "abc-helper",
       refer: question.refer || location.href
     };
+    // 复合题拆出来的子题：短文（材料）单独放 context，后端拼进给模型的题面；
+    // 题库匹配和面板仍只用子题本身，不被整篇阅读材料带偏。
+    if (question.context) payloadObj.context = String(question.context);
     if (images.length) { payloadObj.images = images; payloadObj.image_sources = imageSources; }
     const payload = JSON.stringify(payloadObj);
     const _matchMode = getQuestionMatchMode();
@@ -9478,6 +9481,43 @@
       __publicField(this, "addQuestions", (questionElements) => {
         questionElements.forEach((element) => {
           var _a, _b, _c, _d;
+          // 超星新版作业页（fanyaMarking / ans-cc）：一个 .questionLi 里套着多道
+          // .reading_answer 子题，选项是可点击的 div.hoverDiv（onclick="addChoice(this)"），
+          // 页面上没有 .answerBg。旧逻辑只认 .answerBg，会把整页只当成 1~2 道空题，
+          // 子题和选项全丢。这里把每道子题拆成独立题目，复用后面的单选/多选作答与填充。
+          if (["zy", "ks"].includes(this.type) && !element.querySelector(".answerBg")) {
+            const subQuestions = [...element.querySelectorAll(".reading_answer")].filter(
+              (sub) => sub.querySelector('.stem_answer > div[onclick*="addChoice"]')
+            );
+            if (subQuestions.length) {
+              const h3 = element.querySelector("h3");
+              const parentText = this.removeHtml(h3 ? h3.innerHTML : "");
+              // 阅读题的短文放在大题题干里，子题本身只有设问；短文够长才作为材料带上
+              const passage = parentText.length >= 200 ? parentText : "";
+              subQuestions.forEach((sub) => {
+                const stemEl = sub.querySelector(".reader_answer_tit");
+                const stem = this.removeHtml(stemEl ? stemEl.innerHTML : "");
+                const typeText = ((sub.querySelector(".read_type") || {}).innerText || "");
+                const questionType = /多选|多项选择|不定项/.test(typeText) ? "1" : "0";
+                const [optionsObject, optionTexts] = this.extractOptions(
+                  sub.querySelectorAll('.stem_answer > div[onclick*="addChoice"]'),
+                  ".answer_p"
+                );
+                this.questions.push({
+                  element: sub,
+                  type: questionType,
+                  title: this.clean(stem),
+                  context: passage,
+                  optionsText: optionTexts,
+                  options: optionsObject,
+                  answer: { code: -1, answer: [] },
+                  workType: this.type,
+                  refer: this._window.location.href
+                });
+              });
+              return;
+            }
+          }
           let questionTitle = "";
           let questionTypeText = "";
           let optionElements;

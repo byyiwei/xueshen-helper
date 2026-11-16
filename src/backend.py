@@ -3610,12 +3610,15 @@ def normalize_question_text(text):
 
 def parse_question_payload(question):
     raw = str(question or "")
-    result = {"question_text": raw, "question_type": "", "options": [], "images": []}
+    result = {"question_text": raw, "question_type": "", "options": [], "images": [], "context": ""}
     try:
         data = json.loads(raw)
         if isinstance(data, dict):
             result["question_text"] = str(data.get("question") or raw)
             result["question_type"] = str(data.get("type") or "")
+            # 复合题（阅读理解）拆成子题后，整篇短文随子题一起传上来；只给模型看，
+            # 不参与题库匹配，避免短文把「阅读理解」的子题和别的卷子串在一起。
+            result["context"] = str(data.get("context") or "").strip()
             options = data.get("options") or []
             if isinstance(options, list):
                 result["options"] = [str(x).strip() for x in options if str(x).strip()]
@@ -5370,6 +5373,9 @@ def build_ai_question_text(question_payload_str):
         }
         type_label = type_map.get(q_type, q_type)
         parts.append(f"[{type_label}]")
+    context = (info.get("context") or "").strip()
+    if context:
+        parts.append("材料：\n" + context)
     parts.append(q_text)
     if options:
         parts.append("选项：")
@@ -5598,6 +5604,9 @@ def build_ai_messages(question_payload_str, force_text_only=False, deadline=None
         }
         type_label = type_map.get(q_type, q_type)
         parts.append(f"[{type_label}]")
+    _context = (info.get("context") or "").strip()
+    if _context:
+        parts.append("材料：\n" + _context)
     if q_text:
         parts.append(q_text)
     if options:
