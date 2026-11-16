@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.20
+// @version      6.0.21
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
@@ -15,6 +15,10 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.21 (2026-11-16)
+// @changelog    1. 支持超星新版作业页的复合选择题：大题里的小题逐题识别、逐题作答，阅读题自动带上短文，不再整页只识别成两道空题
+// @changelog    2. 修复英文单词答案填不上：peak、migration 这类答案不再被当成选项字母，也不会和 immigration 这种相似选项判成多义而放弃
+// @changelog    3. 题目解析到了但选项全空时自动上报页面结构，后台可直接定位改版页面，不用再登录用户账号排查
 // @changelog    v6.0.20 (2026-11-15)
 // @changelog    1. 修复超星公式题题干丢失：公式图里的 LaTeX 直接还原成文字，极限、积分等表达式不再缺失，答案和过程不再算错
 // @changelog    2. 证明题按需要写过程的题型作答，不再只回一句结论；简答/计算/证明按题头真实题型选择提示词
@@ -1965,7 +1969,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       event_type: opts.eventType || "answer_summary",
       level: "info",
       message: String(opts.message || "").slice(0, 4000),
-      page_url: location.href,
+      // 页面异常只传路径，不带 cpi/enc 这些参数；答题小结仍用完整地址
+      page_url: opts.pageUrl || location.href,
       extra: Object.assign({
         time: getDateTime(),
         script_version: getScriptInfo().version
@@ -1976,6 +1981,82 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       (res) => Boolean(res && res.code === 200)
     );
   };
+  // ===== 页面结构快照 =====
+  // 识别不出页面、题目类型不认识、答案拿到了点不上、图片下不下来时上报。
+  // 只传结构摘要（选择器、计数、几个关键节点），绝不传整页 HTML；后端还会再钳一次。
+  const PAGE_ISSUE_DEDUP = /* @__PURE__ */ new Map();
+  const summarizeIssueNode = (el) => {
+    if (!el || !el.tagName) return null;
+    let path = "";
+    try {
+      const parts = [];
+      let node = el;
+      for (let depth = 0; node && node.nodeType === 1 && depth < 4; depth += 1) {
+        let seg = String(node.tagName || "").toLowerCase();
+        if (node.id) seg += "#" + node.id;
+        else if (typeof node.className === "string" && node.className.trim()) {
+          seg += "." + node.className.trim().split(/\s+/).slice(0, 2).join(".");
+        }
+        parts.unshift(seg);
+        node = node.parentElement;
+      }
+      path = parts.join(" > ");
+    } catch (_) {}
+    return {
+      tag: String(el.tagName || "").toLowerCase(),
+      id: String(el.id || ""),
+      classes: typeof el.className === "string" ? el.className : "",
+      text: String(el.innerText || el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80),
+      path
+    };
+  };
+  const guessIssuePageType = (question) => {
+    const wt = question && question.workType;
+    if (wt) return "cx-" + wt;
+    const host = location.hostname || "";
+    if (/zhihuishu\.com$/i.test(host)) return "zhs-web";
+    if (/chaoxing\.com$/i.test(host)) return "cx-zy";
+    return "unknown";
+  };
+  const reportPageIssue = (payload) => {
+    try {
+      if (!payload || (!payload.reason_code && !payload.stage)) return Promise.resolve(false);
+      const extra = Object.assign({
+        page_type: "unknown",
+        stage: "other",
+        reason_code: "",
+        selector: "",
+        expected: "",
+        found: {},
+        nodes: [],
+        page_title: String(document.title || "").slice(0, 80),
+        url_path: String(location.pathname || "").slice(0, 200)
+      }, payload || {});
+      extra.script_version = getScriptInfo().version;
+      extra.nodes = (Array.isArray(extra.nodes) ? extra.nodes : [])
+        .slice(0, 4)
+        .map((n) => (n && n.nodeType === 1 ? summarizeIssueNode(n) : n))
+        .filter(Boolean);
+      const sig = [extra.page_type, extra.stage, extra.reason_code, extra.selector, extra.signature || ""].join("|");
+      const now = Date.now();
+      if (now - (PAGE_ISSUE_DEDUP.get(sig) || 0) < 6e4) return Promise.resolve(false);
+      PAGE_ISSUE_DEDUP.set(sig, now);
+      if (PAGE_ISSUE_DEDUP.size > 80) {
+        for (const [key, at] of PAGE_ISSUE_DEDUP) {
+          if (now - at > 6e5) PAGE_ISSUE_DEDUP.delete(key);
+        }
+      }
+      return enqueueScriptEvent(extra, { eventType: "page_snapshot", pageUrl: extra.url_path });
+    } catch (_) {
+      return Promise.resolve(false);
+    }
+  };
+  // 答题逻辑分散在不同的闭包里，用全局桥接，调用点只写一行，拿不到也不报错
+  try {
+    window.__XSReportPageIssue = reportPageIssue;
+    window.__XSSummarizeIssueNode = summarizeIssueNode;
+    window.__XSGuessIssuePageType = guessIssuePageType;
+  } catch (_) {}
   // 「一卷一报」：本场共几题、几题真填上了、答案分别来自题库/缓存/模型、哪几题没填上。
   // 只统计「点上了没有」——平台交卷后不回吐分数，score 恒为 null，别当成判对率。
   const ANSWER_SUMMARY_LIMIT = 40;
@@ -3588,6 +3669,19 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       // 只有「压根没识别到内容图」的文字题才继续作答；识别到了图却全下不下来，
       // 说明图是题目的一部分，该提示重试，不能只拿文字让模型猜。
       if (!(seenImg.size === 0 && textOnlyLen >= 6)) {
+        window.__XSReportPageIssue && window.__XSReportPageIssue({
+          page_type: window.__XSGuessIssuePageType ? window.__XSGuessIssuePageType(question) : "unknown",
+          stage: "image",
+          reason_code: "image_download_failed",
+          selector: "题干/选项图片",
+          expected: "题目图片可下载",
+          found: {
+            images: seenImg.size,
+            downloaded: images.length,
+            text_len: textOnlyLen
+          },
+          nodes: question && question.element ? [question.element] : []
+        });
         return { code: -1005, data: { answer: [] }, msg: "图片下载失败，请刷新题目后重试" };
       }
     }
@@ -3598,6 +3692,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       platform: "abc-helper",
       refer: question.refer || location.href
     };
+    // 复合题拆出来的子题：短文（材料）单独放 context，后端拼进给模型的题面；
+    // 题库匹配和面板仍只用子题本身，不被整篇阅读材料带偏。
+    if (question.context) payloadObj.context = String(question.context);
     if (images.length) { payloadObj.images = images; payloadObj.image_sources = imageSources; }
     const payload = JSON.stringify(payloadObj);
     const _matchMode = getQuestionMatchMode();
@@ -8779,6 +8876,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       __publicField(this, "init", async () => {
         var _that = this;
         this.parseHtml();
+        this.reportParseIssues();
         if (this.questions.length) {
           this.log.insertLog(
             `成功解析到${this.questions.length}个题目，开始答题..`
@@ -8788,6 +8886,33 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           }, 1e3);
           const { answerMode } = this.setting.config.basicConfig;
           const mode = answerMode.value;
+          // 答案拿到了但页面上点不上：把题目节点和控件数量报回去，才能判断是页面改版还是选项是图片
+          const reportFillFail = (question) => {
+            const el = question && question.element;
+            const isChoice = ["0", "1"].includes(String((question && question.type) || ""));
+            const controls = el && el.querySelectorAll ? el.querySelectorAll('input, textarea, [contenteditable="true"]') : [];
+            const hoverOptions = el && el.querySelectorAll ? el.querySelectorAll('.stem_answer > div[onclick*="addChoice"]') : [];
+            const answerText = ((question && question.answer && question.answer.answer) || []).join("|");
+            window.__XSReportPageIssue && window.__XSReportPageIssue({
+              page_type: "cx-" + this.type,
+              stage: "fill",
+              reason_code: "answer_fill_failed",
+              selector: isChoice
+                ? (hoverOptions.length ? '.stem_answer > div[onclick*="addChoice"]' : '.answerBg input[type="radio"], .answerBg input[type="checkbox"]')
+                : "textarea / contenteditable",
+              expected: isChoice ? "选项按钮可点击并回读为已选中" : "文本框可写入并回读",
+              found: {
+                type: String((question && question.type) || ""),
+                options: ((question && question.optionsText) || []).length,
+                controls: controls.length,
+                answer: String(answerText).slice(0, 40),
+                options_preview: ((question && question.optionsText) || []).join(" | ").slice(0, 40)
+              },
+              // 同一页可能有多道题填不上，签名带上题目 id，60 秒去重时才不会只留下第一道
+              signature: String((el && (el.id || el.getAttribute("data"))) || "").slice(0, 40),
+              nodes: el ? [el] : []
+            });
+          };
           registerQuestionFillHook(this);
           for (const [index, question] of this.questions.entries()) {
             if (!this.setting.config.basicConfig.autoAnswer.value) break;
@@ -8828,6 +8953,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 }
                 question.answer.code = 0;
                 question.answer.msg = "答案拿到了但没点上去";
+                reportFillFail(question);
                 // 题库答案填不上（常见于图片选项），改走模型
               } else if (mode === "questionBank" || answerData.code !== -1004) {
                 question.answer = {
@@ -8865,6 +8991,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 if (!fillSuccess) {
                   question.answer.code = 0;
                   question.answer.msg = "答案拿到了但没点上去";
+                  reportFillFail(question);
                   continue;
                 }
                 this.correctNum += 1;
@@ -8883,14 +9010,39 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 code: -1,
                 answer: ["该题型不支持AI答题"]
               };
+              window.__XSReportPageIssue && window.__XSReportPageIssue({
+                page_type: "cx-" + this.type,
+                stage: "detect_type",
+                reason_code: "unsupported_type",
+                selector: "题型 " + String(question.type || ""),
+                expected: "题型在当前脚本的支持列表内",
+                found: {
+                  type: String(question.type || ""),
+                  options: (question.optionsText || []).length
+                },
+                nodes: question.element ? [question.element] : []
+              });
             }
           }
           this.questionStore.currentQuestionIndex += 1;
-        } else
+        } else {
           this.log.insertLog(
             "没有解析到题目，请检查是否进入正确页面...",
             "warning"
           );
+          window.__XSReportPageIssue && window.__XSReportPageIssue({
+            page_type: "cx-" + this.type,
+            stage: "parse",
+            reason_code: "no_container",
+            selector: this.type === "zj" ? ".TiMu" : ".questionLi",
+            expected: this.type === "zj" ? "章节测验题目容器 .TiMu" : "作业/考试题目容器 .questionLi",
+            found: {
+              containers: 0,
+              iframes: this._document ? this._document.querySelectorAll("iframe").length : 0
+            },
+            nodes: this._document && this._document.body ? [this._document.body] : []
+          });
+        }
         setTimeout(() => {
           autoSetTab(_that.setting, "1");
         }, 2e3);
@@ -8911,6 +9063,35 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           this.addQuestions(questionElements);
         }
         this.questionStore.questionList = this.questions;
+      });
+      // 页面能打开、题目也解析出来了，但选择题一个选项都没取到：多半是页面改版，
+      // 旧选择器失效（新版作业把 .answerBg 换成了可点击的 div.hoverDiv）。
+      // 这种「半解析成功」以前完全静默，只能等用户反馈；这里把 DOM 特征一起报回去。
+      __publicField(this, "reportParseIssues", () => {
+        const optionQuestions = this.questions.filter(
+          (q) => ["0", "1", "14", "15"].includes(String(q.type))
+        );
+        const empty = optionQuestions.filter((q) => !((q.optionsText || []).length));
+        if (!empty.length) return;
+        const doc = this._document;
+        const count = (sel) => (doc && doc.querySelectorAll ? doc.querySelectorAll(sel).length : 0);
+        window.__XSReportPageIssue && window.__XSReportPageIssue({
+          page_type: "cx-" + this.type,
+          stage: "parse",
+          reason_code: "structure_changed",
+          selector: this.type === "zj" ? ".TiMu 内的选择题选项" : ".answerBg / .reading_answer 选项",
+          expected: "每道选择题至少能取到 2 个选项",
+          found: {
+            questions: this.questions.length,
+            empty_choice: empty.length,
+            containers: count(this.type === "zj" ? ".TiMu" : ".questionLi"),
+            answer_bg: count(".answerBg"),
+            hover_div: count('.hoverDiv[onclick*="addChoice"]'),
+            reading_answer: count(".reading_answer"),
+            save_single: count("span.saveSingleSelect")
+          },
+          nodes: empty.slice(0, 4).map((q) => q.element)
+        });
       });
       __publicField(this, "getChoiceOptionContainer", (optionElement) => {
         if (!optionElement) return null;
@@ -9033,20 +9214,27 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         }
         return this.isChoiceOptionSelected(optionContainer);
       });
-      __publicField(this, "optionTextMatches", (optionKey, answerText) => {
+      __publicField(this, "optionTextMatches", (optionKey, answerText, strict = false) => {
         const rawOpt = String(optionKey || "").trim();
         const rawAns = String(answerText || "").trim();
         if (!rawOpt || !rawAns) return false;
         if (rawOpt === rawAns) return true;
-        const stripLead = (s) => String(s || "").replace(/^[A-Za-z][.、．)）:\s]*/, "").trim();
+        // 只去掉「A. 」「B、」这种真正的选项前缀。旧规则不管后面跟什么都砍掉首字母，
+        // 英文答案 peak / migration 会被砍成 eak / igration：peak 因为太短匹配不上，
+        // migration 只能靠包含关系勉强命中，换个选项写法就漏。
+        const stripLead = (s) => String(s || "").replace(/^[A-Za-z][.、．)）:\s]+/, "").trim();
         const a = this.clearMark(rawAns);
         const b = this.clearMark(rawOpt);
         const a2 = this.clearMark(stripLead(rawAns));
         const b2 = this.clearMark(stripLead(rawOpt));
-        if (a && b && a === b) return true;
-        if (a2 && b2 && a2 === b2) return true;
+        // 英文选项大小写不敏感
+        const eq = (x, y) => Boolean(x && y && x.toLowerCase() === y.toLowerCase());
+        if (eq(a, b) || eq(a2, b2)) return true;
+        if (strict) return false;
         // 选项/答案一侧带了多余说明时，用包含关系兜底（要求足够长，防短串误撞）
-        if (a2 && b2 && a2.length >= 4 && b2.length >= 4 && (a2.includes(b2) || b2.includes(a2))) return true;
+        const al = String(a2 || "").toLowerCase();
+        const bl = String(b2 || "").toLowerCase();
+        if (al.length >= 4 && bl.length >= 4 && (al.includes(bl) || bl.includes(al))) return true;
         return false;
       });
       __publicField(this, "splitAnswer", (answer = "") => {
@@ -9247,7 +9435,13 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             let matches = optionKeys.filter(k => k === clearAnswer);
             if (!matches.length) {
               const letters = text.replace(/[\s,，、;；|]+/g, "").toUpperCase();
-              const textMatches = optionKeys.filter(k => this.optionTextMatches(k, clearAnswer) || this.optionTextMatches(k, answer));
+              // 先按「完全相等」找：英文单词答案 peak 和选项 speak 用包含关系会撞在一起，
+              // 完全相等只有一项时优先用它，避免明明有精确选项却判成多义、直接放弃。
+              const strictMatches = optionKeys.filter(
+                (k) => this.optionTextMatches(k, clearAnswer, true) || this.optionTextMatches(k, answer, true)
+              );
+              const textMatches = strictMatches.length === 1 ? strictMatches
+                : optionKeys.filter(k => this.optionTextMatches(k, clearAnswer) || this.optionTextMatches(k, answer));
               if (textMatches.length === 1 && letters.length > 1) matches = textMatches;
               else if (/^[A-Z]+$/.test(letters)) {
                 if ([...letters].some(c => c.charCodeAt(0) - 65 >= optionKeys.length)) return false;
@@ -9345,6 +9539,43 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       __publicField(this, "addQuestions", (questionElements) => {
         questionElements.forEach((element) => {
           var _a, _b, _c, _d;
+          // 超星新版作业页（fanyaMarking / ans-cc）：一个 .questionLi 里套着多道
+          // .reading_answer 子题，选项是可点击的 div.hoverDiv（onclick="addChoice(this)"），
+          // 页面上没有 .answerBg。旧逻辑只认 .answerBg，会把整页只当成 1~2 道空题，
+          // 子题和选项全丢。这里把每道子题拆成独立题目，复用后面的单选/多选作答与填充。
+          if (["zy", "ks"].includes(this.type) && !element.querySelector(".answerBg") && !element.querySelector("span.saveSingleSelect")) {
+            const subQuestions = [...element.querySelectorAll(".reading_answer")].filter(
+              (sub) => sub.querySelector('.stem_answer > div[onclick*="addChoice"]')
+            );
+            if (subQuestions.length) {
+              const h3 = element.querySelector("h3");
+              const parentText = this.removeHtml(h3 ? h3.innerHTML : "");
+              // 阅读题的短文放在大题题干里，子题本身只有设问；短文够长才作为材料带上
+              const passage = parentText.length >= 200 ? parentText : "";
+              subQuestions.forEach((sub) => {
+                const stemEl = sub.querySelector(".reader_answer_tit");
+                const stem = this.removeHtml(stemEl ? stemEl.innerHTML : "");
+                const typeText = ((sub.querySelector(".read_type") || {}).innerText || "");
+                const questionType = /多选|多项选择|不定项/.test(typeText) ? "1" : "0";
+                const [optionsObject, optionTexts] = this.extractOptions(
+                  sub.querySelectorAll('.stem_answer > div[onclick*="addChoice"]'),
+                  ".answer_p"
+                );
+                this.questions.push({
+                  element: sub,
+                  type: questionType,
+                  title: this.clean(stem),
+                  context: passage,
+                  optionsText: optionTexts,
+                  options: optionsObject,
+                  answer: { code: -1, answer: [] },
+                  workType: this.type,
+                  refer: this._window.location.href
+                });
+              });
+              return;
+            }
+          }
           let questionTitle = "";
           let questionTypeText = "";
           let optionElements;
@@ -9394,6 +9625,19 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               `未识别题型：${questionTypeText || "空题型"}，请反馈给开发者补充规则..`,
               "warning"
             );
+            window.__XSReportPageIssue && window.__XSReportPageIssue({
+              page_type: "cx-" + this.type,
+              stage: "detect_type",
+              reason_code: "unknown_type",
+              selector: this.type === "ks" ? 'input[name^="type"]' : 'input[id^="answertype"]',
+              expected: "题头能读出题型名称或题型编码",
+              found: {
+                type_text: String(questionTypeText || "").slice(0, 40),
+                options: optionElements ? optionElements.length : 0,
+                inputs: element.querySelectorAll('input, textarea, [contenteditable="true"]').length
+              },
+              nodes: [element]
+            });
           }
           this.questions.push({
             element,
@@ -10999,6 +11243,24 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           }, 1e3);
           const { answerMode } = this.setting.config.basicConfig;
           const mode = answerMode.value;
+          const reportFillFail = (question) => {
+            const el = question && question.element;
+            const isChoice = ["单选题", "多选题", "判断题", "多项选择题", "X型选择题", "X型题", "不定项选择题", "不定项"].includes(String((question && question.type) || ""));
+            const controls = el && el.querySelectorAll ? el.querySelectorAll('input, textarea, [contenteditable="true"]') : [];
+            window.__XSReportPageIssue && window.__XSReportPageIssue({
+              page_type: "zhs-web",
+              stage: "fill",
+              reason_code: "answer_fill_failed",
+              selector: isChoice ? ".subject_node input, .subject_node label" : ".subject_node textarea, .subject_node input",
+              expected: isChoice ? "选项可点击并回读为已选中" : "文本框可写入并回读",
+              found: {
+                type: String((question && question.type) || ""),
+                options: ((question && question.optionsText) || []).length,
+                controls: controls.length
+              },
+              nodes: el ? [el] : []
+            });
+          };
           // 一屏一题：页面渲染的题目节点比接口题目少，切题后必须等新题渲染出来
           const nodeCount = this._document ? this._document.querySelectorAll(".subject_node").length : 0;
           const pagedMode = nodeCount > 0 && nodeCount < this.questions.length;
@@ -11041,6 +11303,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 if (errorStatus) {
                   question.answer.code = 0;
                   question.answer.msg = "答案拿到了但没点上去";
+                  reportFillFail(question);
                   fillFailed = true;
                 } else {
                   this.correctNum += 1;
@@ -11078,6 +11341,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                   if (errorStatus) {
                     question.answer.code = 0;
                     question.answer.msg = "答案拿到了但没点上去";
+                    reportFillFail(question);
                     fillFailed = true;
                   } else {
                     this.correctNum += 1;
@@ -11096,6 +11360,18 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                   code: -1,
                   answer: ["该题型不支持AI答题"]
                 };
+                window.__XSReportPageIssue && window.__XSReportPageIssue({
+                  page_type: "zhs-web",
+                  stage: "detect_type",
+                  reason_code: "unsupported_type",
+                  selector: "题型 " + String(question.type || ""),
+                  expected: "题型在当前脚本的支持列表内",
+                  found: {
+                    type: String(question.type || ""),
+                    options: (question.optionsText || []).length
+                  },
+                  nodes: question.element ? [question.element] : []
+                });
               }
             }
             if (!fillFailed && this.type == "zy") {
@@ -11128,11 +11404,24 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             }
           }
           this.questionStore.currentQuestionIndex += 1;
-        } else
+        } else {
           this.log.insertLog(
             "没有解析到题目，请检查是否进入正确页面...",
             "warning"
           );
+          window.__XSReportPageIssue && window.__XSReportPageIssue({
+            page_type: "zhs-web",
+            stage: "parse",
+            reason_code: "page_parse_failed",
+            selector: ".subject_node",
+            expected: "智慧树作业页 .subject_node 题目节点",
+            found: {
+              subject_nodes: this._document ? this._document.querySelectorAll(".subject_node").length : 0,
+              iframes: this._document ? this._document.querySelectorAll("iframe").length : 0
+            },
+            nodes: this._document && this._document.body ? [this._document.body] : []
+          });
+        }
         setTimeout(() => {
           autoSetTab(_that.setting, "1");
         }, 2e3);
@@ -13948,12 +14237,35 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           }
         } else {
           question.answer = { code: -1, answer: ["该题型不支持AI答题"] };
+          window.__XSReportPageIssue && window.__XSReportPageIssue({
+            page_type: window.__XSGuessIssuePageType ? window.__XSGuessIssuePageType(question) : "unknown",
+            stage: "detect_type",
+            reason_code: "unsupported_type",
+            selector: "题型 " + String(question.type || ""),
+            expected: "题型在当前脚本的支持列表内",
+            found: { type: String(question.type || ""), options: (question.optionsText || []).length },
+            nodes: question.element ? [question.element] : []
+          });
         }
       }
       if (bankFilled) return true;
       if ([1, 2].includes(question.answer.code)) {
         const filled = await fillQuestion(question);
-        if (!filled) question.answer.code = 0;
+        if (!filled) {
+          question.answer.code = 0;
+          window.__XSReportPageIssue && window.__XSReportPageIssue({
+            page_type: window.__XSGuessIssuePageType ? window.__XSGuessIssuePageType(question) : "unknown",
+            stage: "fill",
+            reason_code: "answer_fill_failed",
+            selector: isChoiceType(question.type) ? "选项控件 input/label" : "文本框 textarea/input",
+            expected: "写入后能回读为已填写/已选中",
+            found: {
+              type: String(question.type || ""),
+              options: (question.optionsText || []).length
+            },
+            nodes: question.element ? [question.element] : []
+          });
+        }
         return filled;
       }
       return false;
@@ -13961,6 +14273,18 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     const profile = await getActiveProfile();
     if (!profile) {
       log.insertLog("未识别到支持的题目区域，请确认页面已加载完成..", "warning");
+      window.__XSReportPageIssue && window.__XSReportPageIssue({
+        page_type: window.__XSGuessIssuePageType ? window.__XSGuessIssuePageType(null) : "unknown",
+        stage: "parse",
+        reason_code: "page_parse_failed",
+        selector: "未匹配到站点配置（getActiveProfile 为空）",
+        expected: "当前页面能匹配到一套已知的答题页结构",
+        found: {
+          iframes: document.querySelectorAll("iframe").length,
+          ready_state: String(document.readyState || "")
+        },
+        nodes: []
+      });
       return;
     }
     log.insertLog(`进入${profile.name}页面，脚本开始工作..`);

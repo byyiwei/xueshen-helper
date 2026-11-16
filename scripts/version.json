@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.0.20",
+    "version": "6.0.21",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.0.20 修复超星公式题题干丢失；证明题写出完整过程；公式图不再当题目图片下载"
+    "changelog": "v6.0.21 支持超星新版作业页复合选择题；修复英文单词答案填不上；页面改版自动上报"
   },
   "xueshen-gf": {
-    "version": "6.0.20",
+    "version": "6.0.21",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.0.20 修复超星公式题题干丢失；证明题写出完整过程；公式图不再当题目图片下载"
+    "changelog": "v6.0.21 支持超星新版作业页复合选择题；修复英文单词答案填不上；页面改版自动上报"
   }
 }
