@@ -9444,8 +9444,35 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 : optionKeys.filter(k => this.optionTextMatches(k, clearAnswer) || this.optionTextMatches(k, answer));
               if (textMatches.length === 1 && letters.length > 1) matches = textMatches;
               else if (/^[A-Z]+$/.test(letters)) {
-                if ([...letters].some(c => c.charCodeAt(0) - 65 >= optionKeys.length)) return false;
-                matches = [...new Set([...letters].map(c => optionKeys[c.charCodeAt(0) - 65]))];
+                const validLetters = [...letters].filter(c => c.charCodeAt(0) - 65 < optionKeys.length);
+                const outOfRange = [...letters].filter(c => c.charCodeAt(0) - 65 >= optionKeys.length);
+                if (outOfRange.length) {
+                  // 页面选项比答案少：常见于老师把几个选项一起粘进了同一个选项框，
+                  // 页面上本来就点不到这些选项。多选就把能点的部分填上，别整题放弃；
+                  // 单选拿不准时仍放弃，避免选错。
+                  if (question.type !== "1" || !validLetters.length) return false;
+                  this.log.insertLog(
+                    `答案含页面没有的选项 ${outOfRange.join("")}，本题只填 ${validLetters.join("")}`,
+                    "warning"
+                  );
+                  // 这类页面不是脚本解析坏了，是题目本身少放了选项框；上报一条，后台能直接看到
+                  window.__XSReportPageIssue && window.__XSReportPageIssue({
+                    page_type: "cx-" + this.type,
+                    stage: "fill",
+                    reason_code: "answer_option_out_of_range",
+                    selector: ".answerBg",
+                    expected: "答案里的每个选项字母都能在页面上找到",
+                    found: {
+                      options: optionKeys.length,
+                      answer: [...letters].join(""),
+                      missing: outOfRange.join(""),
+                      options_preview: (question.optionsText || []).join(" | ").slice(0, 40)
+                    },
+                    signature: String((question.element && (question.element.id || question.element.getAttribute("data"))) || "").slice(0, 40),
+                    nodes: question.element ? [question.element] : []
+                  });
+                }
+                matches = [...new Set(validLetters.map(c => optionKeys[c.charCodeAt(0) - 65]))];
               } else {
                 matches = textMatches;
                 if (matches.length > 1) return false;
