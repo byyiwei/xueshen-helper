@@ -1775,7 +1775,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
             <div class="menu-item" :class="{active:page==='qq-bot'}" @click="page='qq-bot';loadQqBot()">
               <svg class="ui-icon sm"><use href="#i-message-circle"></use></svg>QQ频道机器人
             </div>
-            <div class="menu-item" :class="{active:page==='email-config'}" @click="page='email-config';loadEmailConfig();loadEmailTemplates()">
+            <div class="menu-item" :class="{active:page==='email-config'}" @click="page='email-config';loadEmailConfig();loadEmailTemplates();syncHubTemplates(true)">
               <svg class="ui-icon sm"><use href="#i-mail"></use></svg>邮箱配置
             </div>
             <div class="menu-item" :class="{active:page==='sso-config'}" @click="page='sso-config';loadSsoConfig()">
@@ -2616,6 +2616,10 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
               </div>
             </div>
             <div class="card-body">
+              <div class="form-row">
+                <div class="form-group"><label>发件地址（用于邮件页脚）</label><input v-model="emailConfig.hub_from_addr" placeholder="xueshen@mail.openget.cn"></div>
+                <div class="form-group" style="justify-content:flex-end;display:flex"><button class="btn btn-secondary btn-sm" @click="saveEmailHubFromAddr">保存</button></div>
+              </div>
               <p style="font-size:12px;color:var(--text3);line-height:1.7;margin:0">密钥只存服务端（环境变量 <code>HUB_APP_SECRET</code>，或复用「系统配置 → 单点登录」的 App Secret），后台界面不出现明文。403 表示应用未开启「邮件」能力，请到中控应用详情的能力开关里打开。</p>
             </div>
           </div>
@@ -2759,7 +2763,10 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
           <div class="card">
             <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
               <h3>邮件模板管理</h3>
-              <button class="btn btn-primary btn-sm" @click="openTemplateModal(null)">新建模板</button>
+              <div style="display:flex;align-items:center;gap:10px">
+                <button class="btn btn-secondary btn-sm" @click="syncHubTemplates(false)" :disabled="hubTplSyncing">{{ hubTplSyncing?'同步中…':'同步中控模板' }}</button>
+                <button class="btn btn-primary btn-sm" @click="openTemplateModal(null)">新建模板</button>
+              </div>
             </div>
             <div class="card-body">
               <div v-if="emailTemplates.length===0" class="empty-state">
@@ -2767,13 +2774,14 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                 <p>暂无邮件模板，点击右上角「新建模板」添加</p>
               </div>
               <div v-else style="overflow-x:auto">
-                <table class="data-table">
+                <table class="data-table" style="table-layout:fixed;width:100%">
                   <thead>
                     <tr>
-                      <th>应用场景</th>
+                      <th style="width:210px">应用场景</th>
                       <th>主题</th>
-                      <th>格式</th>
-                      <th>变量</th>
+                      <th style="width:64px">格式</th>
+                      <th style="width:210px">变量</th>
+                      <th style="width:120px;white-space:nowrap">中控模板</th>
                       <th style="width:160px">操作</th>
                     </tr>
                   </thead>
@@ -2785,9 +2793,13 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                           <span v-if="t.is_resend" class="scene-badge scene-feedback_reply" style="flex-shrink:0;font-size:11px;padding:3px 8px">补发</span>
                         </div>
                       </td>
-                      <td>{{ t.subject }}</td>
+                      <td :title="t.subject" style="font-size:13px;line-height:1.5">{{ t.subject }}</td>
                       <td><span class="format-badge">{{ t.content_type==='html'?'HTML':'纯文本' }}</span></td>
-                      <td style="font-size:12px;color:var(--text2)">{{ t.variables||'无' }}</td>
+                      <td :title="t.variables||'无'" style="font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ t.variables||'无' }}</td>
+                      <td style="white-space:nowrap">
+                        <span v-if="t.hub_template_id" class="format-badge" :style="t.hub_status===0?'':(t.hub_status===1?'color:#b45309;border-color:#fcd34d':'color:#b91c1c;border-color:#fca5a5')" :title="t.hub_review_reason||('中控模板 #'+t.hub_template_id)">{{ hubTplStatusText(t.hub_status) }} · #{{ t.hub_template_id }}</span>
+                        <span v-else style="font-size:12px;color:var(--text3)">未同步</span>
+                      </td>
                       <td>
                         <div class="actions">
                           <button class="btn btn-secondary btn-sm" @click="openTemplateModal(t)">编辑</button>
@@ -2851,6 +2863,14 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                   <label>邮件主题</label>
                   <input v-model="templateForm.subject" placeholder="如：学神助手 - 注册验证码">
                 </div>
+                <div class="form-group" v-if="editingTemplateId&&templateForm.hub_template_id">
+                  <label>中控模板</label>
+                  <div style="font-size:13px;color:var(--text2);padding:9px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px">
+                    #{{ templateForm.hub_template_id }} · {{ hubTplStatusText(templateForm.hub_status) }}
+                    <span v-if="templateForm.hub_review_reason" style="color:#b91c1c"> · {{ templateForm.hub_review_reason }}</span>
+                  </div>
+                </div>
+                <div style="font-size:12px;color:var(--text3);line-height:1.7;margin:-2px 0 14px">保存时会同步到中控。修改模板名或正文会重新提交腾讯云审核，审核通过前该场景的邮件会暂停发送；只改变量说明不会送审。</div>
                 <div class="form-group">
                   <label>内容格式</label>
                   <div class="format-tabs">
@@ -7797,7 +7817,7 @@ createApp({
     const riskUsers=ref([]);
     const riskScanning=ref(false);
     const riskSaving=ref(false);
-    const emailConfig=ref({enabled:false,hub:false,test_recipient:''});
+    const emailConfig=ref({enabled:false,hub:false,hub_from_addr:'',test_recipient:''});
     const showMailHubRecords=ref(false);
     const mailHubRecords=ref([]);
     const mailHubRecordsLoading=ref(false);
@@ -7808,10 +7828,11 @@ createApp({
     const mailServerForm=ref({id:null,name:'',type:'smtp',enabled:true,weight:1,smtp_host:'',smtp_port:587,smtp_user:'',smtp_pass:'',from_addr:'',from_name:'学神助手',secret_id:'',secret_key:'',ses_region:'ap-guangzhou',ses_template_id:0,is_resend:false});
     const showSmtpPass=ref(false);
     const emailTemplates=ref([]);
+    const hubTplSyncing=ref(false);
     const dailyReportConfig=ref(null);
     const dailyReportPreview=ref(null);
     const templateModal=ref({show:false});
-    const templateForm=ref({scene:'',subject:'',body_text:'',body_html:'',body_text_plain:'',content_type:'text',is_resend:false});
+    const templateForm=ref({scene:'',subject:'',body_text:'',body_html:'',body_text_plain:'',content_type:'text',is_resend:false,hub_template_id:null,hub_status:null,hub_review_reason:''});
     const editingTemplateId=ref(null);
     const TEMPLATE_SCENES={user_register:'用户注册验证码',user_reset:'用户密码重置验证码',admin_reset:'管理员密码重置验证码',referral_withdrawal:'推广提现通知',feedback_reply:'问题反馈回复',daily_report:'每日运营数据日报',feedback_new:'新问题反馈通知',refund_approved:'退款申请通过',refund_rejected:'退款申请拒绝',refund_request:'新退款申请通知'};
     const SCENE_VARS={user_register:['username','code','subject','from_addr'],user_reset:['username','code','subject','from_addr'],admin_reset:['username','code','subject','from_addr'],referral_withdrawal:['username','amount','status','reason','subject','from_addr'],feedback_reply:['username','title','reply_text','subject','from_addr'],daily_report:['date','reg_count','order_count','revenue_total','monthly_count','monthly_revenue','points_count','points_revenue','custom_model_count','custom_model_revenue','subject','from_addr'],feedback_new:['username','category','title','content','subject','from_addr'],refund_approved:['username','order_no','plan_name','price','reason','note','subject','from_addr'],refund_rejected:['username','order_no','plan_name','price','reason','note','subject','from_addr'],refund_request:['username','order_no','plan_name','price','reason','subject','from_addr']};
@@ -8176,8 +8197,20 @@ createApp({
         else{loginForm.password='';await resetAdminSlider(data.msg||'用户名或密码错误，请重新完成滑块验证');}
       }catch(e){await resetAdminSlider('请求失败，请重新完成滑块验证');}
     }
+    function emailLooksOk(v){
+      v=String(v||'').replace(/＠/g,'@').replace(/[。．]/g,'.').replace(/[\s　]/g,'');
+      if(!v||v.length>254||v.split('@').length!==2)return false;
+      const local=v.split('@')[0];
+      if(!local||/^\.|\.$|\.\./.test(local))return false;
+      return /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]{1,64}@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/.test(v);
+    }
+    function cleanEmailInput(v){
+      return String(v||'').replace(/＠/g,'@').replace(/[。．]/g,'.').replace(/[\s　]/g,'');
+    }
     async function doForgot(){
+      forgotForm.email=cleanEmailInput(forgotForm.email);
       if(!forgotForm.email)return showMsg('请输入绑定邮箱','error');
+      if(!emailLooksOk(forgotForm.email))return showMsg('邮箱格式不正确，请检查后重新填写','error');
       try{
         const res=await fetch('/admin/forgot-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:forgotForm.email})});
         const data=await res.json();
@@ -8186,7 +8219,9 @@ createApp({
       }catch(e){showMsg('请求失败: '+e,'error');}
     }
     async function doReset(){
+      resetForm.email=cleanEmailInput(resetForm.email);
       if(!resetForm.email||!resetForm.code||!resetForm.newPassword)return showMsg('请填写完整','error');
+      if(!emailLooksOk(resetForm.email))return showMsg('邮箱格式不正确，请检查后重新填写','error');
       if(resetForm.newPassword!==resetForm.confirmPassword)return showMsg('两次密码不一致','error');
       try{
         const res=await fetch('/admin/reset-password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:resetForm.email,code:resetForm.code,new_password:resetForm.newPassword})});
@@ -8913,7 +8948,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         const res=await fetch('/admin/email-config',{headers:{'Authorization':token.value}});
         const data=await res.json();
         if(data.code===200&&data.config){
-          emailConfig.value={enabled:!!data.config.enabled,hub:!!data.config.hub,test_recipient:data.config.test_recipient||''};
+          emailConfig.value={enabled:!!data.config.enabled,hub:!!data.config.hub,hub_from_addr:data.config.hub_from_addr||'',test_recipient:data.config.test_recipient||''};
           mailServers.value=data.config.servers||[];
         }
       }catch(e){/* ignore */}
@@ -8935,6 +8970,38 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         if(data.code===200)showMsg(emailConfig.value.hub?'发信已改走中控统一出口':'发信已切回本地邮件服务器');
         else{emailConfig.value.hub=!emailConfig.value.hub;showMsg(data.msg||'保存失败','error');}
       }catch(e){emailConfig.value.hub=!emailConfig.value.hub;showMsg('请求失败: '+e,'error');}
+    }
+    async function saveEmailHubFromAddr(){
+      try{
+        const res=await fetch('/admin/email-config',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({hub_from_addr:emailConfig.value.hub_from_addr})});
+        const data=await res.json();
+        if(data.code===200)showMsg('发件地址已保存');
+        else showMsg(data.msg||'保存失败','error');
+      }catch(e){showMsg('请求失败: '+e,'error');}
+    }
+    function hubTplStatusText(status){
+      const map={0:'已通过',1:'审核中',2:'被拒',3:'未知'};
+      const n=Number(status);
+      return map[n]!=null?map[n]:'未同步';
+    }
+    async function syncHubTemplates(silent){
+      if(hubTplSyncing.value)return;
+      hubTplSyncing.value=true;
+      try{
+        const res=await fetch('/admin/email-templates/hub-sync',{method:'POST',headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===403){logout();showMsg('登录已过期','error');return;}
+        if(data.code===200){
+          if(data.templates)emailTemplates.value=data.templates;
+          if(!silent)showMsg(data.msg||'已同步中控模板');
+        }else if(!silent){
+          showMsg(data.msg||'同步失败','error');
+        }
+      }catch(e){
+        if(!silent)showMsg('请求失败: '+e,'error');
+      }finally{
+        hubTplSyncing.value=false;
+      }
     }
     async function loadMailHubRecords(){
       showMailHubRecords.value=true;
@@ -9141,10 +9208,10 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     function openTemplateModal(template){
       if(template){
         editingTemplateId.value=template.id;
-        templateForm.value={scene:template.scene||'',subject:template.subject||'',body_text:template.body_text||'',body_html:template.body_html||'',body_text_plain:template.body_text||'',content_type:template.content_type||'text',is_resend:!!template.is_resend};
+        templateForm.value={scene:template.scene||'',subject:template.subject||'',body_text:template.body_text||'',body_html:template.body_html||'',body_text_plain:template.body_text||'',content_type:template.content_type||'text',is_resend:!!template.is_resend,hub_template_id:template.hub_template_id||null,hub_status:template.hub_status,hub_review_reason:template.hub_review_reason||''};
       }else{
         editingTemplateId.value=null;
-        templateForm.value={scene:'',subject:'',body_text:'',body_html:'',body_text_plain:'',content_type:'text',is_resend:false};
+        templateForm.value={scene:'',subject:'',body_text:'',body_html:'',body_text_plain:'',content_type:'text',is_resend:false,hub_template_id:null,hub_status:null,hub_review_reason:''};
       }
       templateModal.value.show=true;
     }
@@ -9194,7 +9261,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         const res=await fetch('/admin/email-template',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify(payload)});
         const data=await res.json();
         if(data.code===403){logout();showMsg('登录已过期','error');return;}
-        if(data.code===200){showMsg('模板保存成功');closeTemplateModal();loadEmailTemplates();}
+        if(data.code===200){showMsg(data.msg||'模板保存成功',data.hub_synced===false?'error':'success');closeTemplateModal();loadEmailTemplates();}
         else showMsg(data.msg||'保存失败','error');
       }catch(e){showMsg('请求失败: '+e,'error');}
     }
@@ -9231,6 +9298,8 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       if(data)showMsg(data.msg||'中控支付配置已保存');
     }
     async function saveAdminAccount(){
+      accountConfig.admin_email=cleanEmailInput(accountConfig.admin_email);
+      if(accountConfig.admin_email&&!emailLooksOk(accountConfig.admin_email))return showMsg('绑定找回邮箱格式不正确，请检查后重新填写','error');
       const data=await adminPost('/admin/save-account-config',accountConfig);
       if(data){showMsg('管理员账号信息已保存');loginForm.username=accountConfig.username||'admin';}
     }
@@ -9869,7 +9938,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       distributor:{title:'代理商分销',icon:'i-flag',items:[{page:'distributor',label:'代理商',icon:'i-users',load:loadFxList},{page:'distributor-templates',label:'卡密模板',icon:'i-layers',load:()=>{loadFxOptions();loadFxTemplates();}},{page:'distributor-batches',label:'批次与卡密',icon:'i-package',load:()=>{loadFxOptions();loadFxBatches(1);}},{page:'distributor-withdrawals',label:'提现审核',icon:'i-wallet',load:()=>{loadFxOptions();loadFxWds(1);}},{page:'distributor-revenue',label:'收入统计',icon:'i-trending-up',load:loadFxRevenue},{page:'distributor-config',label:'分销配置',icon:'i-sliders',load:loadFxConfig}]},
       logs:{title:'日志监控',icon:'i-terminal',items:[{page:'script-logs',label:'脚本日志',icon:'i-terminal',load:loadScriptLogs},{page:'page-issues',label:'页面异常',icon:'i-alert-triangle',load:()=>loadPageIssues(1)},{page:'log-cleanup',label:'日志清理',icon:'i-trash-2',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'i-mail',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
       models:{title:'模型服务',icon:'i-cpu',items:[{page:'ai-config',label:'模型配置',icon:'i-bot',load:loadConfig},{page:'ai-logs',label:'模型日志',icon:'i-activity',load:loadAiLogs},{page:'model-health',label:'模型健康',icon:'i-shield',load:loadModelStats},{page:'ai-tasks',label:'答题任务',icon:'i-clock',load:loadAiTasks},{page:'model-cooldown',label:'冷却队列',icon:'i-clock',load:()=>{}}]},
-      config:{title:'系统配置',icon:'i-settings',items:[{page:'qq-bot',label:'QQ频道机器人',icon:'i-message-circle',load:loadQqBot},{page:'email-config',label:'邮箱配置',icon:'i-mail',load:()=>{loadEmailConfig();loadEmailTemplates();}},{page:'sso-config',label:'单点登录',icon:'i-shield',load:loadSsoConfig},{page:'audit-logs',label:'操作审计',icon:'i-file-text',load:()=>loadAuditLogs(1)},{page:'db-config',label:'系统设置',icon:'i-database',load:loadDbConfig}]}
+      config:{title:'系统配置',icon:'i-settings',items:[{page:'qq-bot',label:'QQ频道机器人',icon:'i-message-circle',load:loadQqBot},{page:'email-config',label:'邮箱配置',icon:'i-mail',load:()=>{loadEmailConfig();loadEmailTemplates();syncHubTemplates(true);}},{page:'sso-config',label:'单点登录',icon:'i-shield',load:loadSsoConfig},{page:'audit-logs',label:'操作审计',icon:'i-file-text',load:()=>loadAuditLogs(1)},{page:'db-config',label:'系统设置',icon:'i-database',load:loadDbConfig}]}
     };
     function openMobileSubmenu(key,title,icon){
       const cfg=MOBILE_SUBMENU_MAP[key];
@@ -11715,7 +11784,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     loading.value=false;
 
     return{
-       loading,page,loginMode,themeMode,themeLabels,themeIcons,cycleTheme,breadcrumbItems,navigateBreadcrumb,toasts,removeToast,toasts,removeToast,toasts,removeToast,config,emailConfig,emailTemplates,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,SCENE_ICONS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
+       loading,page,loginMode,themeMode,themeLabels,themeIcons,cycleTheme,breadcrumbItems,navigateBreadcrumb,toasts,removeToast,toasts,removeToast,toasts,removeToast,config,emailConfig,emailTemplates,hubTplSyncing,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,SCENE_ICONS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
        mailServers,showServerForm,mailServerForm,showSmtpPass,mailServerTotalWeight,mailServerWeightPercent,toggleEmailEnabled,openServerForm,saveMailServer,deleteMailServer,
        showMailHubRecords,mailHubRecords,mailHubRecordsLoading,mailHubRecordsError,toggleEmailHub,loadMailHubRecords,modelHubConfig,loadModelHubConfig,toggleModelHub,barW,
        loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,latestScriptVersion,userSearch,userBanFilter,userSortBy,userSortOrder,ipSearch,ipSearchList,ipSearchLoading,loadUsersByIp,gotoIpSearch,gotoIpSearchFromOrder,showUserModal,userForm,gotoUserSearch,
@@ -11731,7 +11800,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       userAnalysis,userAnalysisLoading,userAnalysisFilter,loadUserAnalysis,setUserAnalysisRange,pct,
       oldUserRechargeExpanded,oldUserRechargeDetails,oldUserRechargePage,oldUserRechargeTotal,oldUserRechargeTotalPages,oldUserRechargeSum,oldUserRechargeLoading,toggleOldUserRecharge,loadOldUserRechargeDetails,
       questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,deleteQuestionBankItem,bankTypeOptions,bankModelOptions,loadBankModels,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,ssoConfig,ssoSaving,showSsoSecret,ssoCallbackUrl,riskConfig,riskWhitelistText,riskUsers,riskScanning,riskSaving,
-      doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
+      doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,saveEmailHubFromAddr,hubTplStatusText,syncHubTemplates,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
       loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadSsoConfig,saveSsoConfig,copySsoUrl,loadRiskConfig,saveRiskConfig,scanRisk,riskBan,riskAddWhitelist,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,
       savePaymentConfig,savePayApiConfig,saveHubPayConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,movePlan,openUserEdit,saveUserAdmin,
       toggleProvider,collapseAllProviders,togglePayApiSection,

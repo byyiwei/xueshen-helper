@@ -13,6 +13,7 @@ import tempfile
 import re
 import time
 import socket
+import subprocess
 import hashlib
 import hmac
 import uuid
@@ -915,7 +916,7 @@ HUB_MAIL_SEND_TARGET = "/open/mail/send"
 HUB_MAIL_RECORDS_TARGET = "/open/mail/records?limit=20"
 HUB_MAIL_MAX_HTML_BYTES = 1024 * 1024   # 中控限制：html ≤ 1MB
 HUB_MAIL_MAX_SUBJECT_CHARS = 190        # 中控限制：主题 ≤ 190 字
-HUB_MAIL_RETRY_WAIT = 30                # SMTP 临时故障重试等待（秒）
+HUB_MAIL_RETRY_WAIT = 5                 # 中控 502/网络抖动后重试等待（秒）
 HUB_MAIL_INFLIGHT_TTL = 120
 _hub_mail_inflight = {}                 # key -> 到期时间：同一封信并发重复投递的挡板
 _hub_mail_lock = threading.Lock()
@@ -980,28 +981,8 @@ def _provider_usable(pinfo):
 
 
 def _hub_post_json(target, payload_obj, timeout=15):
-    """带 hub-v1 签名 POST JSON 到中控。返回 (ok, parsed_or_err, http_status)。"""
-    app_key, app_secret, base_url = _captcha_hub_creds()
-    if not app_secret:
-        return False, "服务端未配置中控密钥（环境变量 HUB_APP_SECRET 或「系统配置→单点登录」App Secret）", 0
-    body = json.dumps(payload_obj, ensure_ascii=False).encode("utf-8")
-    headers = _hub_sign_headers("POST", target, body, app_key, app_secret)
-    headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(base_url.rstrip("/") + target, data=body, headers=headers, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return True, json.loads(resp.read().decode("utf-8") or "{}"), resp.status
-    except urllib.error.HTTPError as e:
-        try:
-            err = json.loads(e.read().decode("utf-8"))
-        except Exception:
-            err = {}
-        msg = err.get("message") if isinstance(err, dict) else None
-        if e.code == 403:
-            return False, "应用未开启「邮件」能力，请到中控应用详情的能力开关里打开", e.code
-        return False, (msg or "中控拒绝（HTTP %d）" % e.code), e.code
-    except Exception as e:
-        return False, "无法连接中控：" + str(e), 0
+    """兼容旧调用点：带 hub-v1 签名 POST JSON 到中控。"""
+    return _hub_request_json("POST", target, payload_obj, timeout=timeout)
 
 
 # ==================== 中控支付（灰度切换） ====================
@@ -1526,26 +1507,84 @@ def _hub_classify_mail_err(text):
     return "temp"
 
 
-def _hub_mail_send_once(to_addr, subject, html):
-    """单次投递。返回 (True, None, '') 或 (False, 人话, 中控 err 原文)。
+def _hub_request_json(method, target, payload_obj=None, timeout=15, module_label=None):
+    """带 hub-v1 签名发 JSON（GET/POST/PATCH 都用它）。返回 (ok, parsed_or_err, http_status)。"""
+    app_key, app_secret, base_url = _captcha_hub_creds()
+    if not app_secret:
+        return False, "服务端未配置中控密钥（环境变量 HUB_APP_SECRET 或「系统配置→单点登录」App Secret）", 0
+    body = b"" if payload_obj is None else json.dumps(payload_obj, ensure_ascii=False).encode("utf-8")
+    headers = _hub_sign_headers(method, target, body, app_key, app_secret)
+    if body:
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(base_url.rstrip("/") + target, data=(body or None), headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return True, json.loads(resp.read().decode("utf-8") or "{}"), resp.status
+    except urllib.error.HTTPError as e:
+        try:
+            err = json.loads(e.read().decode("utf-8"))
+        except Exception:
+            err = {}
+        msg = err.get("message") if isinstance(err, dict) else None
+        if e.code == 403:
+            fallback = ("应用未开启「%s」能力，请到中控应用详情的能力开关里打开" % module_label
+                        if module_label else "中控应用未开启该能力，请到中控应用详情的能力开关里打开")
+            return False, (msg or fallback), e.code
+        return False, (msg or "中控拒绝（HTTP %d）" % e.code), e.code
+    except Exception as e:
+        return False, "无法连接中控：" + str(e), 0
 
-    permanent=True 表示根本没走到 SMTP（缺密钥/能力未开/中控明确拒绝），不该再补投一次。
+
+def _hub_mail_send_once(payload):
+    """单次投递一封。返回 (ok, 人话, 中控原文, permanent)。
+
+    permanent=True 表示参数/权限/模板审核问题，换时间重试也没用；
+    网络故障、502/503/504 是临时故障，可以再试一次。
     """
-    ok, data, status = _hub_post_json(HUB_MAIL_SEND_TARGET,
-                                      {"to": to_addr, "subject": subject, "html": html})
-    if not ok:
-        return False, data, "", True
-    if not isinstance(data, dict):
-        return False, "中控邮件返回内容异常", "", True
-    if data.get("status") == "sent":
-        return True, None, "", False
-    err = str(data.get("err") or "")
-    reason = ("投递失败(id=%s)" % data.get("id")) if data.get("status") == "failed" else "中控返回状态异常"
-    return False, "%s：%s" % (reason, err or "无错误描述"), err, False
+    ok, data, status = _hub_request_json("POST", HUB_MAIL_SEND_TARGET, payload, module_label="邮件")
+    if ok:
+        if isinstance(data, dict) and data.get("status") == "sent":
+            return True, None, "", False
+        err = str((data or {}).get("err") or "") if isinstance(data, dict) else ""
+        return False, "中控返回状态异常：%s" % (err or "无错误描述"), err, False
+    return False, str(data), str(data), status not in (0, 502, 503, 504)
+
+
+def _hub_mail_deliver(payload, dedupe_key):
+    """投递统一入口：同信并发挡板 + 临时故障重试一次。"""
+    now = time.time()
+    with _hub_mail_lock:
+        for k, exp in list(_hub_mail_inflight.items()):
+            if exp <= now:
+                _hub_mail_inflight.pop(k, None)
+        if dedupe_key in _hub_mail_inflight:
+            return False, "同一封邮件正在投递中，未重复发送"
+        _hub_mail_inflight[dedupe_key] = now + HUB_MAIL_INFLIGHT_TTL
+    try:
+        ok, msg, err_raw, permanent = _hub_mail_send_once(payload)
+        if ok:
+            return True, None
+        if permanent:
+            return False, msg
+        kind = _hub_classify_mail_err(err_raw or msg)
+        if kind == "bad_to":
+            return False, "收件人邮箱格式不对（中控拒绝）"
+        if kind == "too_large":
+            return False, "邮件正文被中控判为过大，请精简内容后重发（非临时故障，暂不自动重试）"
+        # 502 / 网络抖动：换一个时间点再试一次
+        print(f"[中控邮件] 首次投递失败({err_raw or msg})，{HUB_MAIL_RETRY_WAIT}s 后重试", flush=True)
+        time.sleep(HUB_MAIL_RETRY_WAIT)
+        ok, msg2, _, _ = _hub_mail_send_once(payload)
+        if ok:
+            return True, None
+        return False, "中控邮件投递失败：" + str(msg2)
+    finally:
+        with _hub_mail_lock:
+            _hub_mail_inflight.pop(dedupe_key, None)
 
 
 def hub_send_mail(to_addr, subject, html):
-    """经中控统一出口发信（模板已由应用渲染，中控不做占位符替换）。"""
+    """经中控统一出口发自定义 HTML（SMTP 出口可用；SES 受限账号会拒绝）。"""
     to_addr = (to_addr or "").strip()
     subject = (subject or "").strip()
     html = html or ""
@@ -1561,35 +1600,297 @@ def hub_send_mail(to_addr, subject, html):
     if len(html_bytes) > HUB_MAIL_MAX_HTML_BYTES:
         return False, "邮件正文超过中控 1MB 限制，请精简内容后重发"
     key = hashlib.sha256(("\0".join([to_addr, subject]) + "\0").encode("utf-8") + html_bytes).hexdigest()
-    now = time.time()
-    with _hub_mail_lock:
-        for k, exp in list(_hub_mail_inflight.items()):
-            if exp <= now:
-                _hub_mail_inflight.pop(k, None)
-        if key in _hub_mail_inflight:
-            return False, "同一封邮件正在投递中，未重复发送"
-        _hub_mail_inflight[key] = now + HUB_MAIL_INFLIGHT_TTL
+    return _hub_mail_deliver({"to": to_addr, "subject": subject, "html": html}, key)
+
+
+def hub_send_template_mail(to_addr, subject, template_id, template_data):
+    """经中控模板发信：正文锁在腾讯云，应用只传变量。"""
+    to_addr = (to_addr or "").strip()
+    subject = (subject or "").strip()
+    if not to_addr or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", to_addr):
+        return False, "收件人邮箱格式不对"
+    if not subject:
+        return False, "邮件主题不能为空"
     try:
-        ok, msg, err_raw, permanent = _hub_mail_send_once(to_addr, subject, html)
+        tid = int(template_id)
+    except Exception:
+        return False, "中控模板编号无效"
+    if tid <= 0:
+        return False, "中控模板编号无效"
+    if len(subject) > HUB_MAIL_MAX_SUBJECT_CHARS:
+        subject = subject[:HUB_MAIL_MAX_SUBJECT_CHARS]
+    data = _hub_template_data(template_data)
+    payload = {"to": to_addr, "subject": subject, "templateId": tid, "templateData": data}
+    key = hashlib.sha256(
+        ("\0".join([to_addr, subject, str(tid)]) + "\0").encode("utf-8")
+        + json.dumps(data, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    return _hub_mail_deliver(payload, key)
+
+
+# ==================== 中控邮件模板 ====================
+# 场景 → 中控模板 id 不写死在调用点：绑定关系落在 email_templates 表，
+# 这里只维护「新建模板时叫什么名字」和状态文案。
+HUB_MAIL_TEMPLATES_TARGET = "/open/mail/templates"
+HUB_TEMPLATE_SCENE_LABELS = {
+    "user_register": "注册验证码",
+    "user_reset": "用户密码重置验证码",
+    "admin_reset": "管理员密码重置验证码",
+    "referral_withdrawal": "申请审核结果通知",
+    "feedback_reply": "问题反馈回复",
+    "daily_report": "每日运营数据",
+    "feedback_new": "新反馈通知",
+    "refund_approved": "退款通过通知",
+    "refund_rejected": "退款拒绝通知",
+    "refund_request": "新退款申请通知",
+}
+HUB_TEMPLATE_NAMES_BY_SCENE = {k: "学神助手-" + v for k, v in HUB_TEMPLATE_SCENE_LABELS.items()}
+HUB_TEMPLATE_STATUS_TEXT = {0: "已通过", 1: "审核中", 2: "被拒", 3: "未知"}
+HUB_VAR_DESC = {
+    "code": "验证码",
+    "username": "收件人昵称",
+    "subject": "邮件主题",
+    "from_addr": "发件地址",
+    "amount": "相关金额",
+    "status": "处理状态",
+    "reason": "原因说明",
+    "note": "备注",
+    "title": "标题",
+    "reply_text": "回复内容",
+    "category": "反馈分类",
+    "content": "反馈内容",
+    "date": "统计日期",
+    "order_no": "订单号",
+    "plan_name": "套餐名",
+    "price": "金额",
+    "reg_count": "当日注册人数",
+    "order_count": "当日订单数",
+    "revenue_total": "当日收入",
+    "monthly_count": "本月订单数",
+    "monthly_revenue": "本月收入",
+    "points_count": "当日积分兑换数",
+    "points_revenue": "当日积分收入",
+}
+_hub_tpl_cache = {"at": 0.0, "items": []}
+_hub_tpl_lock = threading.Lock()
+
+
+def _hub_template_data(data):
+    """中控模板变量只收字符串/数字/布尔；None 直接丢掉，对象数组拍平成 JSON 字符串。"""
+    out = {}
+    for k, v in (data or {}).items():
+        if v is None:
+            continue
+        if isinstance(v, bool):
+            out[str(k)] = v
+        elif isinstance(v, (int, float)):
+            out[str(k)] = v
+        elif isinstance(v, (list, dict)):
+            out[str(k)] = json.dumps(v, ensure_ascii=False)
+        else:
+            out[str(k)] = str(v)
+    return out
+
+
+def hub_list_mail_templates(force=False, max_age=60):
+    """拉本应用的中控模板清单。60 秒缓存，避免一次请求里反复打中控。"""
+    now = time.time()
+    with _hub_tpl_lock:
+        if not force and _hub_tpl_cache["items"] and now - _hub_tpl_cache["at"] <= max_age:
+            return True, list(_hub_tpl_cache["items"])
+    ok, data, status = _hub_request_json("GET", HUB_MAIL_TEMPLATES_TARGET, timeout=8, module_label="邮件")
+    if not ok:
+        return False, str(data)
+    items = (data.get("items") if isinstance(data, dict) else None) or []
+    items = [x for x in items if isinstance(x, dict) and x.get("id")]
+    with _hub_tpl_lock:
+        _hub_tpl_cache["at"] = now
+        _hub_tpl_cache["items"] = list(items)
+    return True, items
+
+
+def _hub_tpl_name_for(template):
+    name = (template.get("hub_template_name") or "").strip()
+    if name:
+        return name[:100]
+    scene = (template.get("scene") or "").strip()
+    return (HUB_TEMPLATE_NAMES_BY_SCENE.get(scene)
+            or ("学神助手-" + (template.get("subject") or "邮件模板").strip()[:60]))[:100]
+
+
+def _hub_template_html(template):
+    html = (template.get("body_html") or "").strip()
+    if html:
+        return html
+    text = (template.get("body_text") or "").strip()
+    if not text:
+        return ""
+    return ('<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;'
+            'color:#1f2937;line-height:1.7;white-space:pre-wrap;">' + _sso_html_escape(text) + "</div>")
+
+
+def _hub_vars_note(template):
+    existing = (template.get("hub_vars_note") or "").strip().replace("\\n", "\n")
+    if existing:
+        return existing[:4000]
+    names = [x.strip() for x in (template.get("variables") or "").split(",") if x.strip()]
+    if not names:
+        return ""
+    return "\n".join("%s = %s" % (n, HUB_VAR_DESC.get(n, "模板变量")) for n in names)[:4000]
+
+
+def _hub_tpl_status_of(row):
+    try:
+        status = int(row.get("status"))
+    except Exception:
+        status = 3
+    return status if status in (0, 1, 2, 3) else 3
+
+
+def _store_hub_binding(template_id, row):
+    """把中控返回的模板行写回本地绑定。row 里的 varsNote 是中控原值，保留。"""
+    hub_id = int(row.get("id") or 0)
+    if hub_id <= 0:
+        return
+    db.set_email_template_hub(
+        template_id,
+        hub_id,
+        str(row.get("name") or "")[:100],
+        _hub_tpl_status_of(row),
+        str(row.get("reviewReason") or "")[:500],
+        str(row.get("varsNote") or "") if row.get("varsNote") is not None else None,
+    )
+
+
+def _hub_name_norm(name):
+    text = str(name or "")
+    text = re.sub(r"\{\{.*?\}\}", "", text)
+    text = re.sub(r"[\s\-—－_]+", "", text)
+    return text.replace("日报", "").replace("问题", "").lower()
+
+
+def _match_hub_template(template, items):
+    """先按记录的中控 id，再按约定名字，最后按去掉标点后的名字匹配。"""
+    hub_id = template.get("hub_template_id")
+    if hub_id:
+        for item in items:
+            if int(item.get("id") or 0) == int(hub_id):
+                return item
+    target = _hub_tpl_name_for(template)
+    for item in items:
+        if str(item.get("name") or "").strip() == target:
+            return item
+    norm_target = _hub_name_norm(target)
+    if norm_target:
+        for item in items:
+            if _hub_name_norm(item.get("name")) == norm_target:
+                return item
+    return None
+
+
+def _ensure_hub_template_bound(template, force=False):
+    """发信前确认本地模板已经绑定到中控且状态是最新的。不创建新模板。"""
+    ok, items = hub_list_mail_templates(force=force)
+    if not ok:
+        return False, "拉取中控模板列表失败：%s" % items
+    hit = _match_hub_template(template, items)
+    if not hit:
+        if template.get("hub_template_id"):
+            db.clear_email_template_hub(template["id"], "中控模板不存在或不属于本应用")
+        return False, "中控里没有对应模板，请到「邮件配置 → 邮件模板管理」点「同步中控模板」"
+    _store_hub_binding(template["id"], hit)
+    return True, None
+
+
+def sync_hub_template_bindings():
+    """后台打开/点同步时调用：拉一次清单，绑定未绑定的、更新审核状态。"""
+    ok, items = hub_list_mail_templates(force=True)
+    if not ok:
+        return False, items, {}
+    by_id = {}
+    for item in items:
+        try:
+            by_id[int(item.get("id") or 0)] = item
+        except Exception:
+            pass
+    bound = 0
+    refreshed = 0
+    missing = 0
+    for template in db.list_email_templates():
+        hub_id = template.get("hub_template_id")
+        hit = by_id.get(int(hub_id)) if hub_id else None
+        if hub_id and not hit:
+            db.clear_email_template_hub(template["id"], "中控模板不存在或不属于本应用")
+            missing += 1
+            hub_id = None
+        if not hit:
+            hit = _match_hub_template(template, items)
+            if not hit:
+                continue
+            bound += 1
+        _store_hub_binding(template["id"], hit)
+        if hub_id:
+            refreshed += 1
+    return True, None, {"bound": bound, "refreshed": refreshed, "missing": missing, "total": len(items)}
+
+
+def sync_template_to_hub(template):
+    """后台保存模板时调用：已有绑定就改，没有就按名字认领，认不到才新建（送审）。"""
+    name = _hub_tpl_name_for(template)
+    html = _hub_template_html(template)
+    if not html:
+        return False, "模板正文为空，无法提交中控审核", 0
+    if len(html.encode("utf-8")) > HUB_MAIL_MAX_HTML_BYTES:
+        return False, "模板正文超过中控 1MB 限制", 400
+    payload = {"name": name, "html": html, "varsNote": _hub_vars_note(template)}
+    hub_id = template.get("hub_template_id")
+    if hub_id:
+        ok, data, status = _hub_request_json("PATCH", "%s/%d" % (HUB_MAIL_TEMPLATES_TARGET, int(hub_id)),
+                                             payload, timeout=20, module_label="邮件")
         if ok:
-            return True, None
-        if permanent:
-            return False, msg
-        kind = _hub_classify_mail_err(err_raw or msg)
-        if kind == "bad_to":
-            return False, "收件人邮箱格式不对（中控拒绝）"
-        if kind == "too_large":
-            return False, "邮件正文被中控判为过大，请精简内容后重发（非临时故障，暂不自动重试）"
-        # SMTP 临时故障：钱/token 不计，等 30 秒换一个时间点重试一次
-        print(f"[中控邮件] 首次投递失败({err_raw or msg})，{HUB_MAIL_RETRY_WAIT}s 后重试: {to_addr}", flush=True)
-        time.sleep(HUB_MAIL_RETRY_WAIT)
-        ok, msg2, _, _ = _hub_mail_send_once(to_addr, subject, html)
-        if ok:
-            return True, None
-        return False, "中控邮件投递失败：" + str(msg2)
-    finally:
-        with _hub_mail_lock:
-            _hub_mail_inflight.pop(key, None)
+            _store_hub_binding(template["id"], data if isinstance(data, dict) else {})
+            return True, None, 200
+        if status != 404:
+            return False, str(data), status
+        db.clear_email_template_hub(template["id"], "中控模板不存在，重新创建")
+        _hub_tpl_cache["at"] = 0
+    # 首次绑定：先按名字认领已有模板，避免后台再点一次就多出一条重复模板
+    ok, items = hub_list_mail_templates(force=True)
+    if ok:
+        hit = _match_hub_template(template, items)
+        if hit:
+            ok2, data2, status2 = _hub_request_json(
+                "PATCH", "%s/%d" % (HUB_MAIL_TEMPLATES_TARGET, int(hit.get("id"))), payload,
+                timeout=20, module_label="邮件")
+            if ok2:
+                _store_hub_binding(template["id"], data2 if isinstance(data2, dict) else hit)
+                return True, None, 200
+            return False, str(data2), status2
+    ok, data, status = _hub_request_json("POST", HUB_MAIL_TEMPLATES_TARGET, payload,
+                                         timeout=20, module_label="邮件")
+    if ok:
+        _store_hub_binding(template["id"], data if isinstance(data, dict) else {})
+        return True, None, 200
+    return False, str(data), status
+
+
+def _send_via_hub_template(to_addr, subject, template, variables):
+    """按中控模板发一封；审核状态或绑定不对时给人话错误。"""
+    # 已绑定且状态是「已通过」就直接发，不再每封信都拉一次清单
+    if template.get("hub_template_id") and _hub_tpl_status_of({"status": template.get("hub_status")}) == 0:
+        return hub_send_template_mail(to_addr, subject, int(template.get("hub_template_id")), variables)
+    ok, err = _ensure_hub_template_bound(template, force=True)
+    if not ok:
+        return False, err
+    fresh = db.get_email_template(template["id"]) or template
+    status = _hub_tpl_status_of({"status": fresh.get("hub_status")})
+    if status != 0:
+        label = HUB_TEMPLATE_STATUS_TEXT.get(status, "状态未知")
+        reason = (fresh.get("hub_review_reason") or "").strip()
+        return False, "中控模板《%s》%s%s，暂不能发信" % (
+            fresh.get("hub_template_name") or _hub_tpl_name_for(fresh), label,
+            ("：" + reason) if reason else "")
+    return hub_send_template_mail(to_addr, subject, int(fresh.get("hub_template_id")), variables)
 
 
 def hub_mail_records():
@@ -3091,6 +3392,200 @@ def _render_email_template(text, variables):
     return EMAIL_VAR_PATTERN.sub(_repl, text)
 
 
+# ==================== 邮箱地址校验 ====================
+# 用户填写邮箱时必须确认「这个邮箱真的能收信」，避免验证码发到一个不存在的域名。
+# 校验分三层：格式 -> 常见拼写错误提示 -> 域名是否有收信记录（MX）。
+EMAIL_ADDR_RE = _re.compile(
+    r"^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]{1,64}"
+    r"@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$"
+)
+EMAIL_COMMON_DOMAINS = (
+    "qq.com", "163.com", "126.com", "yeah.net", "sina.com", "sina.cn", "sohu.com",
+    "139.com", "189.cn", "aliyun.com", "foxmail.com", "gmail.com", "outlook.com",
+    "hotmail.com", "live.com", "icloud.com", "me.com", "yahoo.com", "protonmail.com",
+)
+_EMAIL_DOMAIN_MX_CACHE = {}
+_EMAIL_DOMAIN_MX_TTL = 3600
+_EMAIL_DOMAIN_MX_LOCK = threading.Lock()
+_EMAIL_CHECK_HITS = {}
+_EMAIL_CHECK_LOCK = threading.Lock()
+
+
+def normalize_email(raw):
+    """去掉空格、全角符号，返回用户实际要用的邮箱字符串。"""
+    s = str(raw or "")
+    for a, b in (("＠", "@"), ("。", "."), ("．", "."), ("　", ""), (" ", ""), ("\t", ""), ("\r", ""), ("\n", "")):
+        s = s.replace(a, b)
+    return s.strip()
+
+
+def email_syntax_ok(email):
+    if not email or len(email) > 254 or email.count("@") != 1:
+        return False
+    local, domain = email.rsplit("@", 1)
+    if not local or not domain:
+        return False
+    if local.startswith(".") or local.endswith(".") or ".." in local:
+        return False
+    if domain.startswith(".") or domain.endswith(".") or ".." in domain or "_" in domain:
+        return False
+    return bool(EMAIL_ADDR_RE.match(email))
+
+
+def _levenshtein_cap(a, b, cap=2):
+    """带提前退出的编辑距离，只关心是否 <= cap。"""
+    if a == b:
+        return 0
+    if abs(len(a) - len(b)) > cap:
+        return cap + 1
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        row_best = i
+        for j, cb in enumerate(b, 1):
+            v = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (0 if ca == cb else 1))
+            cur.append(v)
+            if v < row_best:
+                row_best = v
+        if row_best > cap:
+            return cap + 1
+        prev = cur
+    return prev[-1]
+
+
+def suggest_email_address(email):
+    """给常见邮箱域名的拼写错误一个建议，例如 gmial.com -> gmail.com。"""
+    if "@" not in email:
+        return ""
+    local, domain = email.rsplit("@", 1)
+    domain = domain.lower().rstrip(".")
+    if not local or not domain or domain in EMAIL_COMMON_DOMAINS:
+        return ""
+    best, best_dist = "", 3
+    for d in EMAIL_COMMON_DOMAINS:
+        dist = _levenshtein_cap(domain, d, 2)
+        if dist < best_dist:
+            best, best_dist = d, dist
+    if best and best_dist <= 2:
+        return local + "@" + best
+    return ""
+
+
+def _resolve_email_domain(domain):
+    """返回 ok / none / unknown。只有明确查不到收信记录时才返回 none。"""
+    domain = (domain or "").strip().lower().rstrip(".")
+    if not domain:
+        return "none"
+    try:
+        mx = subprocess.run(
+            ["dig", "+short", "+time=3", "+tries=1", "MX", domain],
+            capture_output=True, text=True, timeout=8,
+        )
+    except FileNotFoundError:
+        mx = None
+    except Exception:
+        mx = None
+    if mx is not None:
+        out = (mx.stdout or "").strip()
+        if out:
+            # null MX（RFC 7505）：0 . 表示该域名明确不接收邮件
+            for line in out.splitlines():
+                parts = line.split()
+                if parts and parts[-1] == ".":
+                    return "none"
+            return "ok"
+        try:
+            full = subprocess.run(
+                ["dig", "+time=3", "+tries=1", "MX", domain],
+                capture_output=True, text=True, timeout=8,
+            )
+            txt = (full.stdout or "") + (full.stderr or "")
+        except Exception:
+            return "unknown"
+        if "NXDOMAIN" in txt:
+            return "none"
+        if "status: NOERROR" in txt:
+            # 域名存在但没有 MX 记录：实际收不到信，按不可用处理
+            return "none"
+        return "unknown"
+    # 服务器没有 dig 时退回 nslookup
+    try:
+        ns = subprocess.run(["nslookup", "-type=MX", domain], capture_output=True, text=True, timeout=8)
+    except Exception:
+        return "unknown"
+    txt = ((ns.stdout or "") + "\n" + (ns.stderr or "")).lower()
+    if "non-existent domain" in txt or "nxdomain" in txt or "can't find" in txt:
+        return "none"
+    if "mail exchanger" in txt or "mx preference" in txt:
+        return "ok"
+    return "unknown"
+
+
+def email_domain_status(domain):
+    """域名收信状态，缓存 1 小时，避免每次发码都查 DNS。"""
+    domain = (domain or "").strip().lower().rstrip(".")
+    now = time.time()
+    with _EMAIL_DOMAIN_MX_LOCK:
+        hit = _EMAIL_DOMAIN_MX_CACHE.get(domain)
+        if hit and hit[0] > now:
+            return hit[1]
+    status = _resolve_email_domain(domain)
+    with _EMAIL_DOMAIN_MX_LOCK:
+        if len(_EMAIL_DOMAIN_MX_CACHE) > 2000:
+            for k, v in list(_EMAIL_DOMAIN_MX_CACHE.items()):
+                if v[0] <= now:
+                    _EMAIL_DOMAIN_MX_CACHE.pop(k, None)
+        _EMAIL_DOMAIN_MX_CACHE[domain] = (now + _EMAIL_DOMAIN_MX_TTL, status)
+    return status
+
+
+def validate_email_address(email, check_mx=True):
+    """校验邮箱是否可用。
+
+    返回 (ok, 人话错误, 规范化邮箱, 拼写建议)。
+    check_mx=False 只做格式校验，用于已经拿到验证码、只差最终提交的场景。
+    """
+    addr = normalize_email(email)
+    if not addr:
+        return False, "请输入邮箱", "", ""
+    if not email_syntax_ok(addr):
+        if "@" not in addr:
+            return False, "邮箱缺少 @，请检查后重新填写", addr, ""
+        domain = addr.rsplit("@", 1)[1] if "@" in addr else ""
+        if not domain or "." not in domain:
+            return False, "邮箱域名不完整，请填写完整地址（如 name@qq.com）", addr, ""
+        return False, "邮箱格式不正确，请检查 @ 前后的内容", addr, ""
+    if not check_mx:
+        return True, "", addr, ""
+    domain = addr.rsplit("@", 1)[1].lower()
+    status = email_domain_status(domain)
+    if status == "none":
+        suggestion = suggest_email_address(addr)
+        if suggestion:
+            return False, "邮箱域名 %s 不存在或无法接收邮件，您是不是想输入 %s？" % (domain, suggestion), addr, suggestion
+        return False, "邮箱域名 %s 不存在或无法接收邮件，请检查是否拼写错误" % domain, addr, suggestion
+    # unknown 表示 DNS 查询失败：网络问题不该拦住用户，放行
+    return True, "", addr, ""
+
+
+def email_check_allowed(ip, limit=40, window=60):
+    """邮箱即时校验接口的轻量限流，防止被刷来做邮箱枚举。"""
+    now = time.time()
+    key = str(ip or "")
+    with _EMAIL_CHECK_LOCK:
+        hits = [t for t in _EMAIL_CHECK_HITS.get(key, []) if t > now - window]
+        if len(hits) >= limit:
+            _EMAIL_CHECK_HITS[key] = hits
+            return False
+        hits.append(now)
+        _EMAIL_CHECK_HITS[key] = hits
+        if len(_EMAIL_CHECK_HITS) > 5000:
+            for k, v in list(_EMAIL_CHECK_HITS.items()):
+                if not v or v[-1] <= now - window:
+                    _EMAIL_CHECK_HITS.pop(k, None)
+        return True
+
+
 def _html_to_plain(html):
     """将 HTML 转为纯文本（用于邮件纯文本兜底，避免 multipart/alternative 仅含 HTML 单部分时被客户端当作纯文本显示）"""
     if not html:
@@ -3251,7 +3746,6 @@ def send_email(to_addr, subject, body_text=None, body_html=None, template_id=Non
     if not admin or not admin.get("email_enabled"):
         return False, "邮箱功能未启用"
 
-    # 先用模板/场景渲染出成品正文，中控只负责投递成品 html（中控不做占位符替换）
     hub_route = _hub_mail_enabled()
     server = None if hub_route else _pick_mail_server(resend=resend)
     if not hub_route and not server:
@@ -3260,8 +3754,11 @@ def send_email(to_addr, subject, body_text=None, body_html=None, template_id=Non
         return False, "未配置可用的邮件服务器"
 
     variables = variables or {}
-    from_addr_val = ((server or {}).get("from_addr") or "").strip() or ((server or {}).get("smtp_user") or "").strip()
-    variables["from_addr"] = from_addr_val
+    if hub_route:
+        # 中控统一出口：本地不再持有发件地址，页脚变量从后台配置取
+        variables["from_addr"] = (admin.get("email_hub_from_addr") or "").strip()
+    else:
+        variables["from_addr"] = ((server or {}).get("from_addr") or "").strip() or ((server or {}).get("smtp_user") or "").strip()
 
     # 补发场景：优先使用标记为"补发"的模板，否则使用对应场景模板
     if resend and scene and not template_id:
@@ -3269,28 +3766,29 @@ def send_email(to_addr, subject, body_text=None, body_html=None, template_id=Non
         if tpl:
             template_id = tpl.get("id")
 
-    # 如果使用模板
+    # 模板：本地只负责主题和变量；正文在中控模式下由腾讯云模板决定
+    template = None
     if template_id:
         template = db.get_email_template(template_id)
         if not template:
             return False, "模板不存在"
+    elif scene:
+        template = db.get_email_template_by_scene(scene)
+
+    if template:
         subject = _render_email_template(template.get("subject", ""), variables)
         variables["subject"] = subject
         body_text = _render_email_template(template.get("body_text", ""), variables)
         body_html = _render_email_template(template.get("body_html", ""), variables)
-    elif scene:
-        template = db.get_email_template_by_scene(scene)
-        if template:
-            subject = _render_email_template(template.get("subject", ""), variables)
-            variables["subject"] = subject
-            body_text = _render_email_template(template.get("body_text", ""), variables)
-            body_html = _render_email_template(template.get("body_html", ""), variables)
 
     if not subject:
         return False, "邮件主题不能为空"
 
-    # 中控统一出口：发件人、SMTP 配置、失败冷却全由中控管理，应用只交成品
     if hub_route:
+        # 有模板必须按模板发：SES 出口只认审核通过的模板，应用拼的 HTML 会被拒。
+        # 只有测试邮件这种没有模板的临时正文才走 HTML 模式。
+        if template:
+            return _send_via_hub_template(to_addr, subject, template, variables)
         if body_html:
             html = body_html
         elif body_text:
@@ -9579,6 +10077,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(200, {"code": 200, "config": {
                 "enabled": bool(admin.get("email_enabled")),
                 "hub": bool(admin.get("email_hub_enabled")),
+                "hub_from_addr": admin.get("email_hub_from_addr") or "",
                 "test_recipient": admin.get("test_recipient") or "",
                 "servers": servers
             }})
@@ -10687,6 +11186,35 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
         # ========== 用户认证接口 ==========
+        elif path == "/api/auth/check-email":
+            # 登录/注册/找回密码表单里的邮箱即时校验：格式 + 拼写建议 + 域名能否收信 + 是否注册过
+            try:
+                data = json.loads(body or "{}")
+                vtype = (data.get("type") or "register").strip()
+                if vtype not in ("register", "reset"):
+                    vtype = "register"
+                if not email_check_allowed(self._client_ip()):
+                    self._send_json(429, {"code": 429, "msg": "检查太频繁，请稍后再试"})
+                    return
+                addr = normalize_email(data.get("email") or "")
+                if not addr:
+                    self._send_json(200, {"code": 200, "valid": False, "state": "empty", "msg": "请输入邮箱"})
+                    return
+                ok, msg, addr, suggestion = validate_email_address(addr, check_mx=True)
+                if not ok:
+                    self._send_json(200, {"code": 200, "valid": False, "state": "bad_email", "msg": msg, "email": addr, "suggestion": suggestion})
+                    return
+                user = db.get_user_by_email_ci(addr)
+                if vtype == "register" and user:
+                    self._send_json(200, {"code": 200, "valid": False, "state": "registered", "msg": "该邮箱已注册，可直接登录或找回密码", "email": addr})
+                    return
+                if vtype == "reset" and not user:
+                    self._send_json(200, {"code": 200, "valid": False, "state": "not_registered", "msg": "该邮箱还没注册，请检查是否填写正确", "email": addr})
+                    return
+                self._send_json(200, {"code": 200, "valid": True, "state": "ok", "msg": "邮箱可用", "email": addr})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         elif path == "/api/auth/register":
             try:
                 data = json.loads(body)
@@ -10697,6 +11225,10 @@ class Handler(BaseHTTPRequestHandler):
                 code = data.get("code", "").strip()
                 if not all([username, email, password, code]):
                     self._send_json(400, {"code": 400, "msg": "请填写完整信息"})
+                    return
+                ok_email, email_err, email, _email_suggestion = validate_email_address(email, check_mx=False)
+                if not ok_email:
+                    self._send_json(400, {"code": 400, "msg": email_err})
                     return
                 if len(password) < 6:
                     self._send_json(400, {"code": 400, "msg": "密码至少6位"})
@@ -10779,11 +11311,19 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/auth/send-verify":
             try:
                 data = json.loads(body)
-                email = data.get("email", "").strip()
-                vtype = data.get("type", "register")  # register or reset
+                email = normalize_email(data.get("email", ""))
+                vtype = (data.get("type") or "register").strip()
+                if vtype not in ("register", "reset"):
+                    self._send_json(400, {"code": 400, "msg": "验证码类型不正确"})
+                    return
                 req_username = (data.get("username") or "").strip()  # 注册时前端传来的用户名
                 if not email:
                     self._send_json(400, {"code": 400, "msg": "请输入邮箱"})
+                    return
+                # 先做格式校验，再走限流，避免无效请求消耗 DNS 查询
+                ok_email, email_err, email, _email_suggestion = validate_email_address(email, check_mx=False)
+                if not ok_email:
+                    self._send_json(400, {"code": 400, "msg": email_err})
                     return
                 # 安全：验证码发送限流，防止邮件轰炸
                 ok, err_msg = check_verify_code_rate(self._client_ip(), email)
@@ -10794,9 +11334,18 @@ class Handler(BaseHTTPRequestHandler):
                 if not admin or not admin.get("email_enabled"):
                     self._send_json(400, {"code": 400, "msg": "邮件服务未启用，请联系管理员"})
                     return
-                # 如果是注册，检查邮箱是否已被注册
-                if vtype == "register" and db.get_user_by_email(email):
-                    self._send_json(400, {"code": 400, "msg": "该邮箱已被注册"})
+                # 域名能否收信：拦住 gmial.com 这类拼写错误，避免用户等不到验证码
+                ok_email, email_err, email, email_suggestion = validate_email_address(email, check_mx=True)
+                if not ok_email:
+                    self._send_json(400, {"code": 400, "msg": email_err, "suggestion": email_suggestion})
+                    return
+                existing_user = db.get_user_by_email_ci(email)
+                # 注册场景检查邮箱是否已被注册；找回场景检查邮箱是否真的注册过
+                if vtype == "register" and existing_user:
+                    self._send_json(400, {"code": 400, "msg": "该邮箱已被注册，可直接登录或找回密码"})
+                    return
+                if vtype == "reset" and not existing_user:
+                    self._send_json(400, {"code": 400, "msg": "该邮箱还没注册，请检查是否填写正确"})
                     return
                 # 生成验证码
                 code = generate_code(6)
@@ -10830,10 +11379,17 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/auth/resend-verify":
             try:
                 data = json.loads(body)
-                email = data.get("email", "").strip()
-                vtype = data.get("type", "register")  # register or reset
+                email = normalize_email(data.get("email", ""))
+                vtype = (data.get("type") or "register").strip()
+                if vtype not in ("register", "reset"):
+                    self._send_json(400, {"code": 400, "msg": "验证码类型不正确"})
+                    return
                 if not email:
                     self._send_json(400, {"code": 400, "msg": "请输入邮箱"})
+                    return
+                ok_email, email_err, email, _email_suggestion = validate_email_address(email, check_mx=False)
+                if not ok_email:
+                    self._send_json(400, {"code": 400, "msg": email_err})
                     return
                 # 安全：验证码发送限流，防止邮件轰炸
                 ok, err_msg = check_verify_code_rate(self._client_ip(), email)
@@ -10844,9 +11400,17 @@ class Handler(BaseHTTPRequestHandler):
                 if not admin or not admin.get("email_enabled"):
                     self._send_json(400, {"code": 400, "msg": "邮件服务未启用，请联系管理员"})
                     return
-                # 注册场景仍校验邮箱是否已被注册
-                if vtype == "register" and db.get_user_by_email(email):
-                    self._send_json(400, {"code": 400, "msg": "该邮箱已被注册"})
+                ok_email, email_err, email, email_suggestion = validate_email_address(email, check_mx=True)
+                if not ok_email:
+                    self._send_json(400, {"code": 400, "msg": email_err, "suggestion": email_suggestion})
+                    return
+                existing_user = db.get_user_by_email_ci(email)
+                # 注册场景仍校验邮箱是否已被注册；找回场景校验邮箱是否真的注册过
+                if vtype == "register" and existing_user:
+                    self._send_json(400, {"code": 400, "msg": "该邮箱已被注册，可直接登录或找回密码"})
+                    return
+                if vtype == "reset" and not existing_user:
+                    self._send_json(400, {"code": 400, "msg": "该邮箱还没注册，请检查是否填写正确"})
                     return
                 # 重新生成验证码并通过腾讯云邮件服务器补发
                 code = generate_code(6)
@@ -10874,21 +11438,32 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/auth/reset-password":
             try:
                 data = json.loads(body)
-                email = data.get("email", "").strip()
+                email = normalize_email(data.get("email", ""))
                 code = data.get("code", "").strip()
                 # 安全：优先使用前端加密的 new_password_hash，兼容旧版明文 new_password
                 new_password = (data.get("new_password_hash") or data.get("new_password") or "").strip()
                 if not all([email, code, new_password]):
                     self._send_json(400, {"code": 400, "msg": "请填写完整信息"})
                     return
+                ok_email, email_err, email, _email_suggestion = validate_email_address(email, check_mx=False)
+                if not ok_email:
+                    self._send_json(400, {"code": 400, "msg": email_err})
+                    return
                 if len(new_password) < 6:
                     self._send_json(400, {"code": 400, "msg": "密码至少6位"})
                     return
+                user = db.get_user_by_email_ci(email)
+                if not user:
+                    self._send_json(400, {"code": 400, "msg": "该邮箱还没注册，请检查是否填写正确"})
+                    return
                 ok, err = db.check_verify_code(email, code, "reset")
+                if not ok and (user.get("email") or "") != email:
+                    # 历史数据大小写不同时，用数据库里的真实邮箱再校验一次
+                    ok, err = db.check_verify_code(user.get("email") or "", code, "reset")
                 if not ok:
                     self._send_json(400, {"code": 400, "msg": err})
                     return
-                db.update_password(email, hash_password(new_password))
+                db.update_password(user.get("email") or email, hash_password(new_password))
                 self._send_json(200, {"code": 200, "msg": "密码重置成功"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -11599,7 +12174,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/admin/forgot-password":
             try:
                 data = json.loads(body or "{}")
-                email = (data.get("email") or "").strip()
+                email = normalize_email(data.get("email") or "")
                 admin = db.get_admin_config() or {}
                 bound_email = (admin.get("admin_email") or "").strip()
                 if not bound_email:
@@ -11634,7 +12209,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/admin/reset-password":
             try:
                 data = json.loads(body or "{}")
-                email = (data.get("email") or "").strip()
+                email = normalize_email(data.get("email") or "")
                 code = (data.get("code") or "").strip()
                 new_pwd = data.get("new_password", "")
                 admin = db.get_admin_config() or {}
@@ -12202,6 +12777,9 @@ class Handler(BaseHTTPRequestHandler):
                 if "hub" in data:
                     db.execute("UPDATE admin_config SET email_hub_enabled=%s WHERE id=1",
                                (1 if data.get("hub") else 0,))
+                if "hub_from_addr" in data:
+                    db.execute("UPDATE admin_config SET email_hub_from_addr=%s WHERE id=1",
+                               ((data.get("hub_from_addr") or "").strip()[:255],))
                 if "test_recipient" in data:
                     db.update_admin_email({"test_recipient": (data.get("test_recipient") or "").strip()})
                 self._send_json(200, {"code": 200, "msg": "保存成功"})
@@ -12258,9 +12836,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not username:
                     self._send_json(400, {"code": 400, "msg": "管理员用户名不能为空"})
                     return
-                if admin_email and not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", admin_email):
-                    self._send_json(400, {"code": 400, "msg": "管理员邮箱格式不正确"})
-                    return
+                if admin_email:
+                    ok_email, email_err, admin_email, _email_suggestion = validate_email_address(admin_email, check_mx=True)
+                    if not ok_email:
+                        self._send_json(400, {"code": 400, "msg": "管理员找回邮箱不可用：" + email_err})
+                        return
                 if avatar_data and (not avatar_data.startswith("data:image/") or len(avatar_data) > 1024 * 1024):
                     self._send_json(400, {"code": 400, "msg": "头像格式不正确或图片过大，请控制在 1MB 内"})
                     return
@@ -13276,6 +13856,22 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
         # ==================== 邮件模板管理（POST） ====================
+        elif path == "/admin/email-templates/hub-sync":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            ok, err, summary = sync_hub_template_bindings()
+            if not ok:
+                self._send_json(502, {"code": 502, "msg": "同步中控模板失败：%s" % err})
+                return
+            self._send_json(200, {
+                "code": 200,
+                "msg": "已同步：新绑定 %d 条，刷新 %d 条，中控缺失 %d 条" % (
+                    summary.get("bound", 0), summary.get("refreshed", 0), summary.get("missing", 0)),
+                "summary": summary,
+                "templates": db.list_email_templates(),
+            })
+
         elif path == "/admin/email-template":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -13301,10 +13897,26 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 if template_id:
                     db.update_email_template(template_id, scene, subject, body_text, body_html, content_type, variables, is_resend)
-                    self._send_json(200, {"code": 200, "msg": "模板已更新"})
+                    tid = template_id
                 else:
                     tid = db.create_email_template(scene, subject, body_text, body_html, content_type, variables, is_resend)
-                    self._send_json(200, {"code": 200, "msg": "模板已保存", "id": tid})
+                # 模板必须和中控对齐：改正文/新增都会在中控提交审核；同步失败也保留本地改动，界面会给提示
+                tpl = db.get_email_template(tid)
+                hub_ok, hub_err, _hub_status = sync_template_to_hub(tpl)
+                tpl = db.get_email_template(tid)
+                if hub_ok:
+                    hub_label = HUB_TEMPLATE_STATUS_TEXT.get(_hub_tpl_status_of({"status": tpl.get("hub_status")}), "未知")
+                    msg = "模板已保存并同步中控（%s）" % hub_label
+                else:
+                    msg = "模板已保存到本地，但同步中控失败：%s" % hub_err
+                self._send_json(200, {
+                    "code": 200,
+                    "msg": msg,
+                    "id": tid,
+                    "template": tpl,
+                    "hub_synced": bool(hub_ok),
+                    "hub_error": "" if hub_ok else str(hub_err),
+                })
             except ValueError as e:
                 self._send_json(400, {"code": 400, "msg": str(e)})
             except Exception as e:

@@ -870,6 +870,16 @@ class Database:
         self._migrate_email_templates()
         # 确保邮件模板有补发标记字段
         self._add_column_if_missing("email_templates", "is_resend", "is_resend TINYINT DEFAULT 0 COMMENT '是否作为没收到邮件的补发模板'")
+        # 中控邮件模板绑定：场景 → 中控模板 id 的配置就落在这张表里，不写死在代码
+        for _col, _ddl in [
+            ("hub_template_id", "hub_template_id INT NULL COMMENT '中控邮件模板ID（发信时传这个）'"),
+            ("hub_template_name", "hub_template_name VARCHAR(100) DEFAULT '' COMMENT '中控模板名称，沿用原值避免改名触发重审'"),
+            ("hub_status", "hub_status TINYINT NULL COMMENT '中控审核状态 0通过 1审核中 2被拒 3未知'"),
+            ("hub_review_reason", "hub_review_reason VARCHAR(500) DEFAULT '' COMMENT '腾讯云审核意见'"),
+            ("hub_vars_note", "hub_vars_note TEXT COMMENT '中控模板变量说明（保留中控原值）'"),
+            ("hub_synced_at", "hub_synced_at DATETIME NULL COMMENT '最近一次与中控同步的时间'"),
+        ]:
+            self._add_column_if_missing("email_templates", _col, _ddl)
         # 确保 mail_servers 有腾讯云 SES 字段
         for col, dtype, default in [
             ("secret_id", "VARCHAR(255)", "''"),
@@ -1572,6 +1582,7 @@ class Database:
         self._add_column_if_missing("admin_config", "hub_pay_notify_url", "hub_pay_notify_url VARCHAR(255) DEFAULT '' COMMENT '中控支付事件接收地址'")
         # 中控统一出口开关：邮件走 /open/mail/send，模型走 /open/v1/chat/completions；密钥复用上面 Hub 配置
         self._add_column_if_missing("admin_config", "email_hub_enabled", "email_hub_enabled TINYINT DEFAULT 0 COMMENT '邮件走中控统一发信出口开关'")
+        self._add_column_if_missing("admin_config", "email_hub_from_addr", "email_hub_from_addr VARCHAR(255) DEFAULT 'xueshen@mail.openget.cn' COMMENT '中控出口发件地址，仅用于模板里的 from_addr 变量'")
         self._add_column_if_missing("admin_config", "model_hub_enabled", "model_hub_enabled TINYINT DEFAULT 0 COMMENT '模型调用走中控网关开关'")
         # —— 风控管理（只判退款行为：次数 / 退款率 / 下单后短时退款）——
         self._add_column_if_missing("admin_config", "risk_enabled", "risk_enabled TINYINT DEFAULT 1 COMMENT '风控判定总开关'")
@@ -1711,6 +1722,11 @@ class Database:
     def get_user_by_email(self, email):
         ph = _ph()
         return self.fetchone(f"SELECT * FROM users WHERE email = {ph}", (email,))
+
+    def get_user_by_email_ci(self, email):
+        """忽略大小写找邮箱，兼容历史数据里大小写混写的注册记录。"""
+        ph = _ph()
+        return self.fetchone(f"SELECT * FROM users WHERE LOWER(email) = {ph} ORDER BY id ASC LIMIT 1", ((email or "").strip().lower(),))
 
     # ==================== 登录锁定 ====================
     def save_login_lock(self, scope, identifier, username="", email="", client_ip="", fail_count=0, locked_until=None, reason=""):
@@ -6809,8 +6825,12 @@ class Database:
     # ==================== 邮件模板 ====================
 
     def list_email_templates(self):
-        """列出所有邮件模板"""
-        return self.fetchall("SELECT id, scene, subject, body_text, body_html, content_type, variables, is_resend, created_at, updated_at FROM email_templates ORDER BY updated_at DESC")
+        """列出所有邮件模板（含中控绑定信息）"""
+        return self.fetchall(
+            "SELECT id, scene, subject, body_text, body_html, content_type, variables, is_resend, "
+            "hub_template_id, hub_template_name, hub_status, hub_review_reason, hub_vars_note, hub_synced_at, "
+            "created_at, updated_at FROM email_templates ORDER BY updated_at DESC"
+        )
 
     def get_email_template(self, template_id):
         """获取单个邮件模板"""
@@ -6843,6 +6863,32 @@ class Database:
         self.execute(
             f"UPDATE email_templates SET scene={ph}, subject={ph}, body_text={ph}, body_html={ph}, content_type={ph}, variables={ph}, is_resend={ph} WHERE id={ph}",
             (scene, subject, body_text, body_html, content_type, variables, 1 if is_resend else 0, template_id)
+        )
+
+    def set_email_template_hub(self, template_id, hub_template_id, hub_template_name, hub_status,
+                               hub_review_reason="", hub_vars_note=None):
+        """把本地模板与中控模板绑起来，并记录审核状态。hub_vars_note 传 None 表示保留原值。"""
+        ph = _ph()
+        if hub_vars_note is None:
+            self.execute(
+                f"UPDATE email_templates SET hub_template_id={ph}, hub_template_name={ph}, hub_status={ph}, "
+                f"hub_review_reason={ph}, hub_synced_at=NOW() WHERE id={ph}",
+                (hub_template_id, hub_template_name or "", hub_status, hub_review_reason or "", template_id)
+            )
+        else:
+            self.execute(
+                f"UPDATE email_templates SET hub_template_id={ph}, hub_template_name={ph}, hub_status={ph}, "
+                f"hub_review_reason={ph}, hub_vars_note={ph}, hub_synced_at=NOW() WHERE id={ph}",
+                (hub_template_id, hub_template_name or "", hub_status, hub_review_reason or "", hub_vars_note, template_id)
+            )
+
+    def clear_email_template_hub(self, template_id, reason="中控模板不存在"):
+        """中控那边找不到这条模板时，解除绑定，避免一直拿死 id 发信。"""
+        ph = _ph()
+        self.execute(
+            f"UPDATE email_templates SET hub_template_id=NULL, hub_status=NULL, hub_review_reason={ph}, "
+            f"hub_synced_at=NOW() WHERE id={ph}",
+            (reason, template_id)
         )
 
     def delete_email_template(self, template_id):

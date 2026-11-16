@@ -288,6 +288,9 @@
             padding-right: 36px;
         }
         .row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; }
+        .email-hint { min-height: 17px; margin: 5px 0 2px; font-size: 12px; line-height: 1.5; color: var(--c-text-3); }
+        .email-hint.err { color: var(--c-danger); }
+        .email-hint.ok { color: var(--c-success); }
 
         button.primary, button.secondary, .btn {
             display: inline-flex; align-items: center; justify-content: center; gap: 7px;
@@ -3181,6 +3184,7 @@
                     <input id="regEmail" type="email" autocomplete="email" placeholder="请输入邮箱">
                     <button class="code-btn" id="regCodeBtn">发送验证码</button>
                 </div>
+                <div class="email-hint" id="regEmailHint"></div>
                 <a href="javascript:void(0)" class="mini-link" id="regResendBtn">没收到邮件？点击重试</a>
                 <label for="regCode">验证码</label>
                 <input id="regCode" placeholder="请输入邮箱验证码">
@@ -3200,6 +3204,7 @@
                     <input id="resetEmail" type="email" autocomplete="email" placeholder="请输入注册邮箱">
                     <button class="code-btn" id="resetCodeBtn">发送验证码</button>
                 </div>
+                <div class="email-hint" id="resetEmailHint"></div>
                 <a href="javascript:void(0)" class="mini-link" id="resetResendBtn">没收到邮件？点击重试</a>
                 <label for="resetCode">验证码</label>
                 <input id="resetCode" placeholder="请输入邮箱验证码">
@@ -5927,6 +5932,68 @@ await loadPlans();
             setBusy(this, false);
         };
 
+        // ========== 邮箱地址校验 ==========
+        const EMAIL_FORMAT_RE = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~.-]{1,64}@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/;
+        function cleanEmail(v) {
+            return String(v || '').replace(/＠/g, '@').replace(/[。．]/g, '.').replace(/[\s　]/g, '');
+        }
+        function emailFormatOk(v) {
+            if (!v || v.length > 254 || v.split('@').length !== 2) return false;
+            const local = v.split('@')[0];
+            if (!local || /^\.|\.$|\.\./.test(local)) return false;
+            return EMAIL_FORMAT_RE.test(v);
+        }
+        function emailHint(id, text, kind) {
+            const el = $(id);
+            if (!el) return;
+            el.textContent = text || '';
+            el.className = 'email-hint' + (kind ? ' ' + kind : '');
+        }
+        async function checkEmailLive(inputId, hintId, type) {
+            const input = $(inputId);
+            if (!input) return;
+            const email = cleanEmail(input.value);
+            if (!email) { emailHint(hintId, '', ''); return; }
+            if (!emailFormatOk(email)) {
+                emailHint(hintId, email.indexOf('@') < 0 ? '邮箱缺少 @，请填写完整地址' : '邮箱格式不对，请检查 @ 和域名', 'err');
+                return;
+            }
+            emailHint(hintId, '正在检查邮箱...', '');
+            try {
+                const res = await post('/api/auth/check-email', { email: email, type: type });
+                if (res.code !== 200) { emailHint(hintId, '', ''); return; }
+                if (res.valid) {
+                    emailHint(hintId, type === 'reset' ? '邮箱已注册，可以发送验证码' : '邮箱格式正确，可以发送验证码', 'ok');
+                } else {
+                    emailHint(hintId, res.msg || '这个邮箱不可用，请检查后重试', 'err');
+                }
+            } catch (_) { emailHint(hintId, '', ''); }
+        }
+        function bindEmailCheck(inputId, hintId, type) {
+            const input = $(inputId);
+            if (!input) return;
+            let timer = null;
+            input.addEventListener('blur', function () {
+                clearTimeout(timer);
+                const fixed = cleanEmail(input.value);
+                if (fixed && fixed !== input.value) input.value = fixed;
+                checkEmailLive(inputId, hintId, type);
+            });
+            input.addEventListener('input', function () {
+                clearTimeout(timer);
+                const v = cleanEmail(input.value);
+                if (!v) { emailHint(hintId, '', ''); return; }
+                if (!emailFormatOk(v)) {
+                    emailHint(hintId, v.indexOf('@') < 0 ? '邮箱缺少 @，请填写完整地址' : '邮箱格式不对，请检查 @ 和域名', 'err');
+                    return;
+                }
+                emailHint(hintId, '', '');
+                timer = setTimeout(function () { checkEmailLive(inputId, hintId, type); }, 900);
+            });
+        }
+        bindEmailCheck('regEmail', 'regEmailHint', 'register');
+        bindEmailCheck('resetEmail', 'resetEmailHint', 'reset');
+
         $('loginBtn').onclick = async function () {
             const username = $('loginUser').value.trim();
             const password = $('loginPwd').value.trim();
@@ -5950,8 +6017,10 @@ await loadPlans();
         };
 
         $('regCodeBtn').onclick = async function () {
-            const email = $('regEmail').value.trim();
+            const email = cleanEmail($('regEmail').value);
             if (!email) return msg('regMsg', '请先填写邮箱', false);
+            if (!emailFormatOk(email)) return msg('regMsg', email.indexOf('@') < 0 ? '邮箱缺少 @，请填写完整地址' : '邮箱格式不对，请检查 @ 和域名', false);
+            $('regEmail').value = email;
             const regUser = $('regUser').value.trim();
             if (!regUser) return msg('regMsg', '请先填写用户名', false);
             setBusy(this, true, '发送中...');
@@ -5964,12 +6033,15 @@ await loadPlans();
 
         $('regBtn').onclick = async function () {
             const rawPwd = $('regPwd').value.trim();
+            const regEmail = cleanEmail($('regEmail').value);
             const data = {
                 username: $('regUser').value.trim(),
-                email: $('regEmail').value.trim(),
+                email: regEmail,
                 code: $('regCode').value.trim()
             };
             if (!data.username || !data.email || !data.code || !rawPwd) return msg('regMsg', '请填写完整注册信息', false);
+            if (!emailFormatOk(data.email)) return msg('regMsg', data.email.indexOf('@') < 0 ? '邮箱缺少 @，请填写完整地址' : '邮箱格式不对，请检查 @ 和域名', false);
+            $('regEmail').value = regEmail;
             if (pendingInviteCode) data.invite_code = pendingInviteCode;
             setBusy(this, true, '注册中...');
             try {
@@ -5988,8 +6060,10 @@ await loadPlans();
         };
 
         $('resetCodeBtn').onclick = async function () {
-            const email = $('resetEmail').value.trim();
+            const email = cleanEmail($('resetEmail').value);
             if (!email) return msg('resetMsg', '请先填写邮箱', false);
+            if (!emailFormatOk(email)) return msg('resetMsg', email.indexOf('@') < 0 ? '邮箱缺少 @，请填写完整地址' : '邮箱格式不对，请检查 @ 和域名', false);
+            $('resetEmail').value = email;
             setBusy(this, true, '发送中...');
             try {
                 const res = await post('/api/auth/send-verify', { email, type: 'reset' });
@@ -5999,9 +6073,11 @@ await loadPlans();
         };
 
         $('regResendBtn').onclick = async function () {
-            const email = $('regEmail').value.trim();
+            const email = cleanEmail($('regEmail').value);
             const regUser = $('regUser').value.trim();
             if (!email) return msg('regMsg', '请先填写邮箱', false);
+            if (!emailFormatOk(email)) return msg('regMsg', email.indexOf('@') < 0 ? '邮箱缺少 @，请填写完整地址' : '邮箱格式不对，请检查 @ 和域名', false);
+            $('regEmail').value = email;
             setBusy(this, true, '重发中...');
             try {
                 const res = await post('/api/auth/resend-verify', { email, type: 'register', username: regUser });
@@ -6011,8 +6087,10 @@ await loadPlans();
         };
 
         $('resetResendBtn').onclick = async function () {
-            const email = $('resetEmail').value.trim();
+            const email = cleanEmail($('resetEmail').value);
             if (!email) return msg('resetMsg', '请先填写邮箱', false);
+            if (!emailFormatOk(email)) return msg('resetMsg', email.indexOf('@') < 0 ? '邮箱缺少 @，请填写完整地址' : '邮箱格式不对，请检查 @ 和域名', false);
+            $('resetEmail').value = email;
             setBusy(this, true, '重发中...');
             try {
                 const res = await post('/api/auth/resend-verify', { email, type: 'reset' });
@@ -6023,11 +6101,14 @@ await loadPlans();
 
         $('resetBtn').onclick = async function () {
             const rawPwd = $('resetPwd').value.trim();
+            const resetEmail = cleanEmail($('resetEmail').value);
             const data = {
-                email: $('resetEmail').value.trim(),
+                email: resetEmail,
                 code: $('resetCode').value.trim()
             };
             if (!data.email || !data.code || !rawPwd) return msg('resetMsg', '请填写完整重置信息', false);
+            if (!emailFormatOk(data.email)) return msg('resetMsg', data.email.indexOf('@') < 0 ? '邮箱缺少 @，请填写完整地址' : '邮箱格式不对，请检查 @ 和域名', false);
+            $('resetEmail').value = resetEmail;
             setBusy(this, true, '重置中...');
             try {
                 // 安全：密码前端 SHA-256 加密传输
