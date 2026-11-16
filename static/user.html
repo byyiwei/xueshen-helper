@@ -3026,14 +3026,49 @@
             .ht-desc { margin-top: 1px; }
         }
 
-        /* 登录页滑块与表单同宽，避免尺寸忽大忽小 */
-        #loginSlider .slider-verify {
+        /* ===================== 滑块验证弹窗 ===================== */
+        .verify-modal {
+            position: fixed; inset: 0; z-index: 90;
+            display: none; align-items: center; justify-content: center;
+            padding: 18px;
+        }
+        .verify-modal.open { display: flex; }
+        body.verify-open { overflow: hidden; }
+        .verify-modal-mask {
+            position: absolute; inset: 0;
+            background: rgba(15, 23, 42, .5);
+            backdrop-filter: blur(3px);
+        }
+        .verify-modal-card {
+            position: relative;
+            width: min(420px, 100%);
+            padding: 18px 20px 20px;
+            background: var(--c-surface);
+            border: 1px solid var(--c-border);
+            border-radius: var(--c-radius-lg);
+            box-shadow: var(--c-shadow-lg);
+            animation: rise .18s ease both;
+        }
+        .verify-modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+        .verify-modal-head h3 { margin: 0; font-size: 15px; font-weight: 700; color: var(--c-text); }
+        .verify-modal-close {
+            width: 32px; height: 32px; border: 0; border-radius: 8px;
+            display: grid; place-items: center;
+            background: transparent; color: var(--c-text-3); cursor: pointer;
+            transition: background .16s, color .16s;
+        }
+        .verify-modal-close:hover { background: var(--c-surface-2); color: var(--c-text); }
+        .verify-modal-sub { margin: 4px 0 12px; font-size: 12.5px; line-height: 1.6; color: var(--c-text-3); }
+        #loginSliderModal .slider-verify {
             max-width: 100% !important;
             width: 100% !important;
-            margin: 14px 0 2px !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: transparent;
+            border: 0;
+            box-shadow: none;
         }
-        #loginSlider .hub-box { max-width: 100% !important; }
-        #loginSlider .hub-skeleton { padding: 30px 0; }
+        #loginSliderModal .hub-box { max-width: 100% !important; }
 
         /* ===================== 题库工具结束 ===================== */
     </style>
@@ -3175,7 +3210,6 @@
                     <input id="loginPwd" type="password" autocomplete="current-password" placeholder="请输入密码">
                     <span class="pwd-toggle" data-target="loginPwd">显示</span>
                 </div>
-                <div id="loginSlider"></div>
                 <button class="primary" id="loginBtn">登录</button>
                 <div class="links">
                     <a href="javascript:void(0)" data-jump="register">没有账号？去注册</a>
@@ -3246,6 +3280,20 @@
             </footer>
         </section>
     </main>
+
+    <div id="verifyModal" class="verify-modal">
+        <div class="verify-modal-mask"></div>
+        <div class="verify-modal-card" role="dialog" aria-modal="true" aria-labelledby="verifyModalTitle">
+            <div class="verify-modal-head">
+                <h3 id="verifyModalTitle">安全验证</h3>
+                <button type="button" class="verify-modal-close" id="verifyModalClose" aria-label="关闭验证弹窗">
+                    <svg class="ui-icon sm" aria-hidden="true"><use href="#i-x"></use></svg>
+                </button>
+            </div>
+            <p class="verify-modal-sub">完成滑块验证后会自动继续登录</p>
+            <div id="loginSliderModal"></div>
+        </div>
+    </div>
 
     <main id="userApp" class="user-app">
         <!-- 移动端侧滑抽屉背景遮罩 -->
@@ -4620,6 +4668,52 @@
             }
         }
         let loginSlider = null;
+        let pendingLogin = false;
+        function loginSliderReady() {
+            return !!(loginSlider && loginSlider.verified && loginSlider.sliderToken);
+        }
+        function openVerifyModal() {
+            const m = $('verifyModal');
+            if (!m) return;
+            m.classList.add('open');
+            document.body.classList.add('verify-open');
+        }
+        function closeVerifyModal() {
+            const m = $('verifyModal');
+            if (m) m.classList.remove('open');
+            document.body.classList.remove('verify-open');
+        }
+        function onLoginSliderMessage(text, ok) {
+            if (ok && pendingLogin) {
+                pendingLogin = false;
+                closeVerifyModal();
+                submitLogin();
+                return;
+            }
+            msg('loginMsg', text, ok);
+        }
+        function ensureLoginSlider() {
+            if (!loginSlider) {
+                loginSlider = new HubSlider($('loginSliderModal'), 'user', { onMessage: onLoginSliderMessage });
+                return;
+            }
+            loginSlider.reload();
+        }
+        function dismissVerifyModal() {
+            pendingLogin = false;
+            closeVerifyModal();
+        }
+        function bindVerifyModal() {
+            const m = $('verifyModal');
+            if (!m) return;
+            const mask = m.querySelector('.verify-modal-mask');
+            const closeBtn = $('verifyModalClose');
+            if (mask) mask.addEventListener('click', dismissVerifyModal);
+            if (closeBtn) closeBtn.addEventListener('click', dismissVerifyModal);
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && m.classList.contains('open')) dismissVerifyModal();
+            });
+        }
         function saveSession(token, user) {
             localStorage.setItem(TOKEN_KEY, token);
             localStorage.setItem(USER_KEY, JSON.stringify(user || {}));
@@ -4680,7 +4774,6 @@
             if (el) el.classList.add('active');
             const url = name === 'login' ? '/login' : name === 'register' ? '/register' : name === 'forgot' ? '/forgot' : '/user';
             history.replaceState(null, '', url);
-            if (name === 'login' && loginSlider) loginSlider.reload();
         }
         function openMobileSidebar() {
             document.body.classList.add('sidebar-open');
@@ -6003,13 +6096,13 @@ await loadPlans();
         bindEmailCheck('regEmail', 'regEmailHint', 'register');
         bindEmailCheck('resetEmail', 'resetEmailHint', 'reset');
 
-        $('loginBtn').onclick = async function () {
+        async function submitLogin() {
             const username = $('loginUser').value.trim();
             const password = $('loginPwd').value.trim();
             if (!username || !password) return msg('loginMsg', '请填写用户名和密码', false);
-            const sliderOk = await loginSlider.ensureVerified();
-            if (!sliderOk) { loginSlider.reload(); return msg('loginMsg', '请先完成滑块验证', false); }
-            setBusy(this, true, '登录中...');
+            if (!loginSlider || !loginSlider.sliderToken) { msg('loginMsg', '请先完成滑块验证', false); return; }
+            const btn = $('loginBtn');
+            setBusy(btn, true, '登录中...');
             try {
                 // 安全：密码前端 SHA-256 加密传输，避免明文被抓包
                 const encoder = new TextEncoder();
@@ -6017,12 +6110,32 @@ await loadPlans();
                 const passwordHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
                 const res = await post('/api/auth/login', { username, password_hash: passwordHash, login_scene: 'web', slider_token: loginSlider.getToken() });
                 if (res.code === 200) {
+                    // 滑块票据是一次性的，登录成功后清掉，下次登录重新弹出验证
+                    loginSlider.verified = false;
+                    loginSlider.sliderToken = '';
+                    loginSlider.token = '';
                     saveSession(res.token, res.user);
                     msg('loginMsg', '登录成功', true);
                     setTimeout(showDashboard, 350);
-                } else { await loginSlider.reload(); msg('loginMsg', res.msg || '登录失败，请重新完成滑块验证', false); }
-            } catch (_) { await loginSlider.reload(); msg('loginMsg', '网络请求失败，请重新完成滑块验证', false); }
-            setBusy(this, false);
+                } else {
+                    await loginSlider.reload();
+                    msg('loginMsg', res.msg || '登录失败，请重新完成滑块验证', false);
+                }
+            } catch (_) {
+                await loginSlider.reload();
+                msg('loginMsg', '网络请求失败，请重新完成滑块验证', false);
+            }
+            setBusy(btn, false);
+        }
+
+        $('loginBtn').onclick = async function () {
+            const username = $('loginUser').value.trim();
+            const password = $('loginPwd').value.trim();
+            if (!username || !password) return msg('loginMsg', '请填写用户名和密码', false);
+            if (loginSliderReady()) { submitLogin(); return; }
+            pendingLogin = true;
+            openVerifyModal();
+            ensureLoginSlider();
         };
 
         $('regCodeBtn').onclick = async function () {
@@ -7395,7 +7508,7 @@ await loadPlans();
         });
 
         startByPath();
-        loginSlider = new HubSlider($('loginSlider'), 'user', { onMessage: (t, ok) => msg('loginMsg', t, ok) });
+        bindVerifyModal();
 
         // ===== 主题切换（0-Emoji，纯矢量 SVG 驱动） =====
         var themeIcons = {
