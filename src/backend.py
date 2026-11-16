@@ -3735,23 +3735,35 @@ def _tencent_ses_send(server, to_addr, subject, body_html=None, body_text=None):
         return False, f"腾讯云 SES 请求失败: {str(e)}"
 
 
-def send_email(to_addr, subject, body_text=None, body_html=None, template_id=None, scene=None, variables=None, resend=False):
+def send_email(to_addr, subject, body_text=None, body_html=None, template_id=None, scene=None, variables=None, resend=False, channel=None):
     """发送邮件，支持模板和变量替换
     template_id: 使用指定模板ID
     scene: 使用指定场景的模板（user_register/user_reset/admin_reset）
     variables: 变量字典，如 {"code": "123456"}
     resend: 是否为"没收到邮件"补发，True 时强制走腾讯云邮件服务器
+    channel: None=按后台开关自动选路；"hub"=强制中控；"smtp"=强制本地 SMTP（测试用）
     """
     admin = db.get_admin_config()
     if not admin or not admin.get("email_enabled"):
         return False, "邮箱功能未启用"
 
-    hub_route = _hub_mail_enabled()
-    server = None if hub_route else _pick_mail_server(resend=resend)
-    if not hub_route and not server:
-        if resend:
-            return False, "未配置已启用的邮件服务器，无法补发"
-        return False, "未配置可用的邮件服务器"
+    if channel == "hub":
+        hub_route = True
+    elif channel == "smtp":
+        hub_route = False
+    else:
+        hub_route = _hub_mail_enabled()
+    if hub_route:
+        server = None
+    else:
+        # 自动选路时遵守 SMTP 开关；测试按钮强制指定通道时不受开关限制
+        if channel is None and not admin.get("email_smtp_enabled", 1):
+            return False, "本地 SMTP 邮件已停用，请在后台启用，或改用中控邮件"
+        server = _pick_mail_server(resend=resend)
+        if not server:
+            if resend:
+                return False, "未配置已启用的邮件服务器，无法补发"
+            return False, "未配置可用的邮件服务器"
 
     variables = variables or {}
     if hub_route:
@@ -10076,6 +10088,7 @@ class Handler(BaseHTTPRequestHandler):
             servers = db.list_mail_servers()
             self._send_json(200, {"code": 200, "config": {
                 "enabled": bool(admin.get("email_enabled")),
+                "smtp": bool(admin.get("email_smtp_enabled", 1)),
                 "hub": bool(admin.get("email_hub_enabled")),
                 "hub_from_addr": admin.get("email_hub_from_addr") or "",
                 "test_recipient": admin.get("test_recipient") or "",
@@ -12774,6 +12787,9 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(body or "{}")
                 if "enabled" in data:
                     db.set_email_enabled(bool(data.get("enabled")))
+                if "smtp" in data:
+                    db.execute("UPDATE admin_config SET email_smtp_enabled=%s WHERE id=1",
+                               (1 if data.get("smtp") else 0,))
                 if "hub" in data:
                     db.execute("UPDATE admin_config SET email_hub_enabled=%s WHERE id=1",
                                (1 if data.get("hub") else 0,))
@@ -13359,22 +13375,32 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
             admin = db.get_admin_config()
-            to_addr = (admin.get("test_recipient") or "").strip()
+            data = json.loads(body or "{}")
+            to_addr = (data.get("to") or admin.get("test_recipient") or "").strip()
             if not to_addr:
                 self._send_json(400, {"code": 400, "msg": "请先配置测试收件邮箱"})
                 return
-            data = json.loads(body or "{}")
             template_id = data.get("template_id")
             variables = data.get("variables", {})
+            channel = (data.get("channel") or "").strip() or None
+            if channel not in ("hub", "smtp"):
+                channel = None
             if template_id:
-                success, err = send_email(to_addr, "", template_id=template_id, variables=variables)
+                success, err = send_email(to_addr, "", template_id=template_id, variables=variables, channel=channel)
             else:
+                route_text = "中控" if channel == "hub" else ("本地 SMTP" if channel == "smtp" else "当前发信通道")
                 success, err = send_email(
                     to_addr, "学神助手 - 邮件测试",
-                    body_html=f"<p>这是一封测试邮件。</p><p>如果您的邮箱收到了这封邮件，说明 SMTP 配置正确。</p><p>发送时间：{time.strftime('%Y-%m-%d %H:%M:%S')}</p>"
+                    body_html=f"<p>这是一封测试邮件。</p><p>如果您的邮箱收到了这封邮件，说明{route_text}配置正确。</p><p>发送时间：{time.strftime('%Y-%m-%d %H:%M:%S')}</p>",
+                    channel=channel
                 )
             if success:
-                self._send_json(200, {"code": 200, "msg": "测试邮件已发送"})
+                tip = "测试邮件已发送"
+                if channel == "hub":
+                    tip = "测试邮件已通过中控发送"
+                elif channel == "smtp":
+                    tip = "测试邮件已通过本地 SMTP 发送"
+                self._send_json(200, {"code": 200, "msg": tip})
             else:
                 self._send_json(500, {"code": 500, "msg": err})
 

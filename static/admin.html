@@ -2607,9 +2607,22 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
 
           <div class="card">
             <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
-              <h3>中控邮件出口（Hub 统一发信）</h3>
+              <h3>邮件功能</h3>
+              <label style="font-size:13px;color:var(--text2);display:flex;align-items:center;gap:8px;cursor:pointer">启用邮件功能
+                <div class="toggle" :class="emailConfig.enabled?'on':''" @click="toggleEmailEnabled"></div>
+              </label>
+            </div>
+            <div class="card-body">
+              <p style="font-size:12.5px;color:var(--text3);line-height:1.8;margin:0">总开关：关闭后注册验证码、找回密码、通知类邮件全部停止发送。开启后还需要在下方选择发信通道。</p>
+              <p style="font-size:12.5px;color:var(--text2);line-height:1.8;margin:6px 0 0">当前通道：<b>{{ !emailConfig.enabled ? '未启用' : (emailConfig.hub ? '中控邮件' : (emailConfig.smtp ? '本地 SMTP' : '没有可用通道')) }}</b>（中控邮件开启时优先走中控，关闭后自动改走本地 SMTP）</p>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+              <h3>中控邮件（Hub 统一发信）</h3>
               <div style="display:flex;align-items:center;gap:14px">
-                <label style="font-size:13px;color:var(--text2);display:flex;align-items:center;gap:8px;cursor:pointer" title="开启后所有邮件交中控 /open/mail/send 投递：SMTP 配置、发信人、失败冷却由中控管理，下方邮件服务器不再使用">走中控出口发信
+                <label style="font-size:13px;color:var(--text2);display:flex;align-items:center;gap:8px;cursor:pointer" title="开启后所有邮件交中控 /open/mail/send 投递：SMTP 配置、发信人、失败冷却由中控管理，本地邮件服务器不再使用">启用中控邮件
                   <div class="toggle" :class="emailConfig.hub?'on':''" @click="toggleEmailHub"></div>
                 </label>
                 <button class="btn btn-secondary btn-sm" @click="loadMailHubRecords">查看发信流水</button>
@@ -2620,21 +2633,22 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                 <div class="form-group"><label>发件地址（用于邮件页脚）</label><input v-model="emailConfig.hub_from_addr" placeholder="xueshen@mail.openget.cn"></div>
                 <div class="form-group" style="justify-content:flex-end;display:flex"><button class="btn btn-secondary btn-sm" @click="saveEmailHubFromAddr">保存</button></div>
               </div>
-              <p style="font-size:12px;color:var(--text3);line-height:1.7;margin:0">密钥只存服务端（环境变量 <code>HUB_APP_SECRET</code>，或复用「系统配置 → 单点登录」的 App Secret），后台界面不出现明文。403 表示应用未开启「邮件」能力，请到中控应用详情的能力开关里打开。</p>
+              <p style="font-size:12px;color:var(--text3);line-height:1.7;margin:0">开启后所有邮件由中控投递，本地 SMTP 服务器不会被使用；关闭后自动改回本地 SMTP。密钥只存服务端（环境变量 <code>HUB_APP_SECRET</code>，或复用「系统配置 → 单点登录」的 App Secret），后台界面不出现明文。403 表示应用未开启「邮件」能力，请到中控应用详情的能力开关里打开。</p>
             </div>
           </div>
 
           <div class="card">
             <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
-              <h3>邮件服务器（多服务器 + 权重）</h3>
+              <h3>本地 SMTP 邮件服务器（多服务器 + 权重）</h3>
               <div style="display:flex;align-items:center;gap:14px">
-                <label style="font-size:13px;color:var(--text2);display:flex;align-items:center;gap:8px;cursor:pointer">启用邮件功能
-                  <div class="toggle" :class="emailConfig.enabled?'on':''" @click="toggleEmailEnabled"></div>
+                <label style="font-size:13px;color:var(--text2);display:flex;align-items:center;gap:8px;cursor:pointer">启用本地 SMTP
+                  <div class="toggle" :class="emailConfig.smtp?'on':''" @click="toggleEmailSmtp"></div>
                 </label>
                 <button class="btn btn-primary btn-sm" @click="openServerForm(null)">+ 添加服务器</button>
               </div>
             </div>
             <div class="card-body">
+              <div v-if="emailConfig.hub" style="font-size:12.5px;color:var(--warning);background:var(--warning-soft,#fffbeb);border:1px solid rgba(245,158,11,.28);border-radius:8px;padding:8px 12px;margin-bottom:12px">中控邮件已开启，当前邮件优先走中控；关闭中控邮件后这里才会生效。</div>
               <div v-if="mailServers.length===0" class="empty-state">
                 <div class="icon"><svg class="ui-icon md"><use href="#i-mail"></use></svg></div>
                 <p>暂无邮件服务器，请点击「添加服务器」</p>
@@ -2657,10 +2671,20 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                   <div style="font-size:12px;color:var(--text3);margin-top:6px">{{s.smtp_host}}:{{s.smtp_port}} · {{s.from_addr}}</div>
                 </div>
               </div>
-              <div class="form-row" style="margin-top:14px">
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h3>发信测试</h3></div>
+            <div class="card-body">
+              <div class="form-row">
                 <div class="form-group"><label>测试收件邮箱</label><input v-model="emailConfig.test_recipient" placeholder="测试邮件发送到这个邮箱"></div>
-                <div class="form-group" style="justify-content:flex-end;display:flex"><button class="btn btn-secondary" @click="testEmail">发送测试邮件</button></div>
+                <div class="form-group" style="justify-content:flex-end;display:flex;gap:8px;flex-wrap:wrap">
+                  <button class="btn btn-secondary" @click="testEmail('hub')">测试中控发信</button>
+                  <button class="btn btn-secondary" @click="testEmail('smtp')">测试 SMTP 发信</button>
+                </div>
               </div>
+              <p style="font-size:12px;color:var(--text3);line-height:1.7;margin:0">两个按钮会临时绕过通道开关，直接指定中控或本地 SMTP 发送，方便在启用前先验证配置。</p>
             </div>
           </div>
 
@@ -7817,7 +7841,7 @@ createApp({
     const riskUsers=ref([]);
     const riskScanning=ref(false);
     const riskSaving=ref(false);
-    const emailConfig=ref({enabled:false,hub:false,hub_from_addr:'',test_recipient:''});
+    const emailConfig=ref({enabled:false,smtp:true,hub:false,hub_from_addr:'',test_recipient:''});
     const showMailHubRecords=ref(false);
     const mailHubRecords=ref([]);
     const mailHubRecordsLoading=ref(false);
@@ -8948,7 +8972,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         const res=await fetch('/admin/email-config',{headers:{'Authorization':token.value}});
         const data=await res.json();
         if(data.code===200&&data.config){
-          emailConfig.value={enabled:!!data.config.enabled,hub:!!data.config.hub,hub_from_addr:data.config.hub_from_addr||'',test_recipient:data.config.test_recipient||''};
+          emailConfig.value={enabled:!!data.config.enabled,smtp:data.config.smtp!==false,hub:!!data.config.hub,hub_from_addr:data.config.hub_from_addr||'',test_recipient:data.config.test_recipient||''};
           mailServers.value=data.config.servers||[];
         }
       }catch(e){/* ignore */}
@@ -8962,12 +8986,21 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         else showMsg(data.msg||'保存失败','error');
       }catch(e){showMsg('请求失败: '+e,'error');}
     }
+    async function toggleEmailSmtp(){
+      emailConfig.value.smtp=!emailConfig.value.smtp;
+      try{
+        const res=await fetch('/admin/email-config',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({smtp:emailConfig.value.smtp})});
+        const data=await res.json();
+        if(data.code===200)showMsg(emailConfig.value.smtp?'本地 SMTP 邮件已启用':'本地 SMTP 邮件已停用');
+        else{emailConfig.value.smtp=!emailConfig.value.smtp;showMsg(data.msg||'保存失败','error');}
+      }catch(e){emailConfig.value.smtp=!emailConfig.value.smtp;showMsg('请求失败: '+e,'error');}
+    }
     async function toggleEmailHub(){
       emailConfig.value.hub=!emailConfig.value.hub;
       try{
         const res=await fetch('/admin/email-config',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({hub:emailConfig.value.hub})});
         const data=await res.json();
-        if(data.code===200)showMsg(emailConfig.value.hub?'发信已改走中控统一出口':'发信已切回本地邮件服务器');
+        if(data.code===200)showMsg(emailConfig.value.hub?'中控邮件已启用，发信优先走中控':'中控邮件已关闭，邮件改走本地 SMTP');
         else{emailConfig.value.hub=!emailConfig.value.hub;showMsg(data.msg||'保存失败','error');}
       }catch(e){emailConfig.value.hub=!emailConfig.value.hub;showMsg('请求失败: '+e,'error');}
     }
@@ -9144,13 +9177,15 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         else showMsg(data.msg||'保存失败','error');
       }catch(e){showMsg('请求失败: '+e,'error');}
     }
-    async function testEmail(){
+    async function testEmail(channel){
+      const to=(emailConfig.value.test_recipient||'').trim();
+      if(!to)return showMsg('请先填写测试收件邮箱','error');
       try{
-        const res=await fetch('/admin/test-email',{method:'POST',headers:{'Authorization':token.value}});
+        const res=await fetch('/admin/test-email',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({channel:channel||null,to:to})});
         const data=await res.json();
         if(data.code===403){logout();showMsg('登录已过期','error');return;}
-        if(data.code===200)showMsg('测试邮件发送成功，请查收');
-        else showMsg(data.msg||'发送失败','error');
+        if(data.code===200)showMsg(data.msg||'测试邮件发送成功，请查收');
+        else showMsg(data.msg||'发送失败','error',6000);
       }catch(e){showMsg('请求失败: '+e,'error');}
     }
     async function loadEmailTemplates(){
@@ -11785,7 +11820,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
 
     return{
        loading,page,loginMode,themeMode,themeLabels,themeIcons,cycleTheme,breadcrumbItems,navigateBreadcrumb,toasts,removeToast,toasts,removeToast,toasts,removeToast,config,emailConfig,emailTemplates,hubTplSyncing,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,SCENE_ICONS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
-       mailServers,showServerForm,mailServerForm,showSmtpPass,mailServerTotalWeight,mailServerWeightPercent,toggleEmailEnabled,openServerForm,saveMailServer,deleteMailServer,
+       mailServers,showServerForm,mailServerForm,showSmtpPass,mailServerTotalWeight,mailServerWeightPercent,toggleEmailEnabled,toggleEmailSmtp,openServerForm,saveMailServer,deleteMailServer,
        showMailHubRecords,mailHubRecords,mailHubRecordsLoading,mailHubRecordsError,toggleEmailHub,loadMailHubRecords,modelHubConfig,loadModelHubConfig,toggleModelHub,barW,
        loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,latestScriptVersion,userSearch,userBanFilter,userSortBy,userSortOrder,ipSearch,ipSearchList,ipSearchLoading,loadUsersByIp,gotoIpSearch,gotoIpSearchFromOrder,showUserModal,userForm,gotoUserSearch,
         showHtmlPreview,htmlPreviewFrame,htmlPreviewData,toggleHtmlPreview,updateHtmlPreview,switchToHtml,onHtmlInput,syncPlainFromHtml,

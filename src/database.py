@@ -1582,6 +1582,7 @@ class Database:
         self._add_column_if_missing("admin_config", "hub_pay_notify_url", "hub_pay_notify_url VARCHAR(255) DEFAULT '' COMMENT '中控支付事件接收地址'")
         # 中控统一出口开关：邮件走 /open/mail/send，模型走 /open/v1/chat/completions；密钥复用上面 Hub 配置
         self._add_column_if_missing("admin_config", "email_hub_enabled", "email_hub_enabled TINYINT DEFAULT 0 COMMENT '邮件走中控统一发信出口开关'")
+        self._add_column_if_missing("admin_config", "email_smtp_enabled", "email_smtp_enabled TINYINT DEFAULT 1 COMMENT '本地 SMTP 邮件服务器开关，中控关闭时生效'")
         self._add_column_if_missing("admin_config", "email_hub_from_addr", "email_hub_from_addr VARCHAR(255) DEFAULT 'xueshen@mail.openget.cn' COMMENT '中控出口发件地址，仅用于模板里的 from_addr 变量'")
         self._add_column_if_missing("admin_config", "model_hub_enabled", "model_hub_enabled TINYINT DEFAULT 0 COMMENT '模型调用走中控网关开关'")
         # —— 风控管理（只判退款行为：次数 / 退款率 / 下单后短时退款）——
