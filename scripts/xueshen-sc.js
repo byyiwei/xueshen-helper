@@ -9513,7 +9513,7 @@
                 const outOfRange = [...letters].filter(c => c.charCodeAt(0) - 65 >= optionKeys.length);
                 if (outOfRange.length) {
                   // 字母越界时先看整串是不是某个选项正文的开头（RCB → RCB模型），命中唯一一项就按正文点
-                  const letterPrefixHit = /^[A-Z]{2,}$/.test(letters) ? optionKeys.filter((k) => {
+                  const letterPrefixHit = /^[A-Z]+$/.test(letters) ? optionKeys.filter((k) => {
                     const body = this.removeHtml(k).normalize("NFKC").trim().replace(/^[A-Za-z][.、．)）:：\s]+/, "").trim().toUpperCase();
                     return body.startsWith(letters);
                   }) : [];
