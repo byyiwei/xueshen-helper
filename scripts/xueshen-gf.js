@@ -8889,7 +8889,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           // 答案拿到了但页面上点不上：把题目节点和控件数量报回去，才能判断是页面改版还是选项是图片
           const reportFillFail = (question) => {
             const el = question && question.element;
-            const isChoice = ["0", "1"].includes(String((question && question.type) || ""));
+            const isChoice = ["0", "1", "3"].includes(String((question && question.type) || ""));
             const controls = el && el.querySelectorAll ? el.querySelectorAll('input, textarea, [contenteditable="true"]') : [];
             const hoverOptions = el && el.querySelectorAll ? el.querySelectorAll('.stem_answer > div[onclick*="addChoice"]') : [];
             const answerText = ((question && question.answer && question.answer.answer) || []).join("|");
@@ -9478,10 +9478,27 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         if (question.type === "0" || question.type === "1") {
           const optionKeys = Object.keys(question.options);
           const targets = new Set();
-          const answers = question.answer.answer || [];
+          let answers = question.answer.answer || [];
           if (!answers.length) return false;
+          const cleanChoiceAnswer = (raw) => String(raw == null ? "" : raw)
+            .replace(/^\s*(?:正确|参考|标准)?答案\s*[:：]\s*/i, "")
+            .replace(/^\s*(?:正确|参考|标准)答案\s*(?:是|为)\s*/i, "")
+            .replace(/^\s*答案\s+(?=\S)/i, "")
+            .trim();
+          // 答案被题库拆成多个字母（如 "R|C|B"）时，先拼回整串看是否正好是某个选项的正文（RCB模型）。
+          // 拆开的字母越界时按字母点必然失败，这种题目要回到选项正文匹配。
+          if (question.type === "0" && answers.length > 1) {
+            const compact = answers.map(a => String(a == null ? "" : a).replace(/[\s,，、;；|]+/g, "")).join("").toUpperCase();
+            if (/^[A-Z]{2,}$/.test(compact)) {
+              const compactHit = optionKeys.filter((k) => {
+                const body = this.removeHtml(k).normalize("NFKC").trim().replace(/^[A-Za-z][.、．)）:：\s]+/, "").trim().toUpperCase();
+                return body.startsWith(compact);
+              });
+              if (compactHit.length === 1) answers = [compact];
+            }
+          }
           for (const answer of answers) {
-            const clearAnswer = this.removeHtml(String(answer));
+            const clearAnswer = cleanChoiceAnswer(this.removeHtml(String(answer)));
             const text = String(clearAnswer).normalize("NFKC").trim();
             let matches = optionKeys.filter(k => k === clearAnswer);
             if (!matches.length) {
@@ -9498,6 +9515,15 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 const validLetters = [...letters].filter(c => c.charCodeAt(0) - 65 < optionKeys.length);
                 const outOfRange = [...letters].filter(c => c.charCodeAt(0) - 65 >= optionKeys.length);
                 if (outOfRange.length) {
+                  // 字母越界时先看整串是不是某个选项正文的开头（RCB → RCB模型），命中唯一一项就按正文点
+                  const letterPrefixHit = /^[A-Z]{2,}$/.test(letters) ? optionKeys.filter((k) => {
+                    const body = this.removeHtml(k).normalize("NFKC").trim().replace(/^[A-Za-z][.、．)）:：\s]+/, "").trim().toUpperCase();
+                    return body.startsWith(letters);
+                  }) : [];
+                  if (letterPrefixHit.length === 1) {
+                    targets.add(letterPrefixHit[0]);
+                    continue;
+                  }
                   // 页面选项比答案少：常见于老师把几个选项一起粘进了同一个选项框，
                   // 页面上本来就点不到这些选项。多选就把能点的部分填上，别整题放弃；
                   // 单选拿不准时仍放弃，避免选错。
@@ -9594,6 +9620,16 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               filled = this.selectChoiceOption(optionElement);
               break;
             }
+          }
+          if (!filled) {
+            // 页面改版后 aria-label / span[data] 不一定还在：最后按选项文字「对 / 错」兜底
+            const judgeTexts = answer === "true"
+              ? ["对", "正确", "是", "√", "✓", "true", "t"]
+              : ["错", "错误", "否", "×", "✗", "false", "f"];
+            const hitKeys = Object.keys(question.options).filter((k) =>
+              judgeTexts.some((t) => this.optionTextMatches(k, t, true))
+            );
+            if (hitKeys.length === 1) filled = this.selectChoiceOption(question.options[hitKeys[0]]);
           }
         } else if (question.type === "4" || question.type === "5" || question.type === "6" || question.type === "7" || question.type === "9" || question.type === "26") {
           const textareaElement = question.element.querySelector("textarea");
