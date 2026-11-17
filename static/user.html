@@ -1290,6 +1290,85 @@
             border: 1px solid var(--c-brand-ring);
             border-radius: 14px 4px 14px 14px;
         }
+        /* 微信式引用 */
+        .fb-quote {
+            margin-bottom: 6px;
+            padding: 6px 8px;
+            border-left: 3px solid rgba(148, 163, 184, .85);
+            background: rgba(148, 163, 184, .16);
+            border-radius: 5px;
+            font-size: 12px;
+            color: var(--c-text-2);
+        }
+        .fb-quote-name {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--c-text-3);
+            margin-bottom: 2px;
+        }
+        .fb-quote-content {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            max-height: 72px;
+            overflow: hidden;
+        }
+        .fb-quote-msg {
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+        .fb-quote-action {
+            margin-top: 3px;
+        }
+        .fb-quote-action.admin {
+            text-align: right;
+        }
+        .fb-quote-btn {
+            border: none;
+            background: transparent;
+            padding: 0;
+            font-size: 11.5px;
+            color: var(--c-text-3);
+            cursor: pointer;
+        }
+        .fb-quote-btn:hover {
+            color: var(--c-brand);
+        }
+        .fb-quote-preview {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 8px 10px;
+            border-left: 3px solid var(--c-brand);
+            background: var(--c-surface-2);
+            border-radius: 8px;
+        }
+        .fb-quote-preview-main {
+            flex: 1;
+            min-width: 0;
+        }
+        .fb-quote-preview-name {
+            font-size: 11.5px;
+            color: var(--c-text-3);
+            margin-bottom: 2px;
+        }
+        .fb-quote-preview-text {
+            font-size: 12.5px;
+            line-height: 1.5;
+            color: var(--c-text-2);
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            max-height: 66px;
+            overflow: hidden;
+        }
+        .fb-quote-remove {
+            flex: 0 0 auto;
+            border: none;
+            background: transparent;
+            color: var(--c-text-3);
+            cursor: pointer;
+            padding: 0;
+            display: inline-flex;
+        }
         /* 反馈附件 */
         .fb-attach-bar {
             display: flex;
@@ -3859,6 +3938,7 @@
                                 </div>
                                 <div id="fbChatBody"></div>
                                 <div id="fbChatReplyArea" style="margin-top:14px;border-top:1px solid var(--c-border);padding-top:14px">
+                                    <div id="fbQuoteBar" style="display:none;margin-bottom:8px"></div>
                                     <div id="fbChatAttachBar" class="fb-attach-bar" style="display:none"></div>
                                     <textarea id="fbChatInput" rows="3" maxlength="2000" placeholder="输入追问内容，管理员将继续跟进..." style="width:100%;font-size:13px;resize:vertical;line-height:1.5;box-sizing:border-box"></textarea>
                                     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px">
@@ -5261,7 +5341,11 @@
                 const res = await fetch('/api/payment/methods');
                 const data = await res.json();
                 payMethodsList = data.methods || [];
-                // 默认微信支付
+                // 后台可以指定默认支付方式；没指定、或指定项当前不可用时按可用顺序取第一项
+                const adminDefault = String(data.default_method || '');
+                if (adminDefault && payMethodsList.some(m => m.value === adminDefault)) {
+                    currentPayMethod = adminDefault;
+                }
                 if (payMethodsList.length && !payMethodsList.find(m => m.value === currentPayMethod)) {
                     currentPayMethod = (payMethodsList[0] || {}).value || 'wechat';
                 }
@@ -6602,6 +6686,8 @@ await loadPlans();
         let fbCurrentChat = null;
         let fbPendingAttachments = [];
         let fbUploadingCount = 0;
+        let fbQuote = null; // 微信式引用：{sender,name,content}
+        let fbQuoteSources = {}; // 当前聊天里可被引用的消息
         const FB_ATTACH_MAX_FILES = 6;
         const FB_ATTACH_MAX_BYTES = 15 * 1024 * 1024;
         // 新建反馈时先暂存在内存里的文件，提交成功后再上传
@@ -6819,6 +6905,8 @@ await loadPlans();
             // 之前上传但还没发送的附件，重新打开时继续留在待发送区
             fbPendingAttachments = (f.pending_attachments || []).filter(a => (a.role || 'user') === 'user');
             fbUploadingCount = 0;
+            fbQuote = null;
+            fbRenderQuoteBar();
             fbSetPendingBar();
             fbUpdateAttachTip();
 
@@ -6852,6 +6940,8 @@ await loadPlans();
             fbCurrentChat = null;
             fbPendingAttachments = [];
             fbUploadingCount = 0;
+            fbQuote = null;
+            fbRenderQuoteBar();
             fbSetPendingBar();
             document.querySelectorAll('#fbList .fb-list-item').forEach(item => item.classList.remove('active'));
             if ($('fbChatView')) $('fbChatView').style.display = 'none';
@@ -6864,18 +6954,24 @@ await loadPlans();
             if (!body) return;
             const replies = f.replies || [];
             let html = '';
+            fbQuoteSources = {};
             // 初始反馈（用户消息，右侧）
             const time0 = (f.created_at || '').replace('T', ' ').substring(0, 16);
-            html += fbChatBubble('user', f.content, time0, f.attachments);
+            if (f.content) fbQuoteSources.root = { sender: 'user', name: '我', content: f.content };
+            html += fbChatBubble('user', f.content, time0, f.attachments, null, 'root');
             // 旧数据兼容：有 admin_reply 但 replies 为空
             if (f.admin_reply && replies.length === 0) {
                 const tr = (f.replied_at || '').replace('T', ' ').substring(0, 16);
-                html += fbChatBubble('admin', f.admin_reply, tr);
+                fbQuoteSources.legacy = { sender: 'admin', name: '管理员', content: f.admin_reply };
+                html += fbChatBubble('admin', f.admin_reply, tr, null, null, 'legacy');
             }
             // 对话记录
             replies.forEach(rp => {
                 const t = (rp.created_at || '').replace('T', ' ').substring(0, 16);
-                html += fbChatBubble(rp.sender, rp.content, t, rp.attachments);
+                const qKey = 'rp' + rp.id;
+                if (rp.content) fbQuoteSources[qKey] = { sender: rp.sender, name: rp.sender === 'admin' ? '管理员' : '我', content: rp.content };
+                const q = rp.quote_content ? { sender: rp.quote_sender, name: rp.quote_sender === 'admin' ? '管理员' : '我', content: rp.quote_content } : null;
+                html += fbChatBubble(rp.sender, rp.content, t, rp.attachments, q, qKey);
             });
             if (f.status === 'closed' && !replies.length && !f.admin_reply) {
                 html += '<div style="text-align:center;color:var(--c-text-3);font-size:12px;padding:12px">该反馈已关闭</div>';
@@ -6905,7 +7001,7 @@ await loadPlans();
                 const size = fbFormatSize(a.size);
                 if (a.is_image && a.url) {
                     return `<div>
-                        <a href="${escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer"><img class="fb-attach-img" src="${escapeHtml(a.url)}" alt="${name}"></a>
+                        <a href="${escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer" data-fb-img="1"><img class="fb-attach-img" src="${escapeHtml(a.url)}" alt="${name}"></a>
                         <div class="fb-attach-actions">
                             <button type="button" class="fb-attach-action" data-fb-copy-img="${a.id}" data-url="${escapeHtml(a.url)}">复制图片</button>
                             <button type="button" class="fb-attach-action" data-fb-dl="${a.id}" data-name="${name}">下载</button>
@@ -6924,7 +7020,7 @@ await loadPlans();
             return `<div class="fb-attach-list">${items}</div>`;
         }
 
-        function fbChatBubble(sender, content, time, attachments) {
+        function fbChatBubble(sender, content, time, attachments, quote, quoteKey) {
             const isAdmin = sender === 'admin';
             const avatar = isAdmin
                 ? `<div class="fb-avatar admin" title="管理员"><svg class="ui-icon sm"><use href="#i-shield"></use></svg></div>`
@@ -6932,13 +7028,21 @@ await loadPlans();
             const label = isAdmin ? '管理员 · ' + time : time + ' · 我';
             const labelClass = isAdmin ? 'fb-sender-label admin' : 'fb-sender-label user';
             const bubbleClass = isAdmin ? 'fb-bubble admin' : 'fb-bubble user';
-            const bubble = content ? `<div class="${bubbleClass}">${escapeHtml(content)}</div>` : '';
+            const quoteHtml = (quote && quote.content)
+                ? `<div class="fb-quote"><div class="fb-quote-name">${escapeHtml(quote.name || '')}</div><div class="fb-quote-content">${escapeHtml(quote.content)}</div></div>`
+                : '';
+            const bodyHtml = quoteHtml + (content ? `<div class="fb-quote-msg">${escapeHtml(content)}</div>` : '');
+            const bubble = bodyHtml ? `<div class="${bubbleClass}">${bodyHtml}</div>` : '';
+            const quoteBtn = content
+                ? `<div class="fb-quote-action ${isAdmin ? 'admin' : 'user'}"><button type="button" class="fb-quote-btn" data-fb-quote="${escapeHtml(quoteKey || '')}">引用</button></div>`
+                : '';
 
             return `<div class="fb-msg-row ${isAdmin ? 'admin' : 'user'}">
                 ${avatar}
                 <div class="fb-msg-content" style="flex:1;min-width:0">
                     <div class="${labelClass}">${label}</div>
                     ${bubble}
+                    ${quoteBtn}
                     ${fbAttachmentsHtml(attachments)}
                 </div>
             </div>`;
@@ -6948,6 +7052,26 @@ await loadPlans();
             const tip = $('fbChatAttachTip');
             if (!tip) return;
             tip.textContent = fbUploadingCount > 0 ? `正在上传 ${fbUploadingCount} 个...` : '支持粘贴截图';
+        }
+
+        function fbRenderQuoteBar() {
+            const bar = $('fbQuoteBar');
+            if (!bar) return;
+            if (!fbQuote) {
+                bar.style.display = 'none';
+                bar.innerHTML = '';
+                return;
+            }
+            bar.style.display = 'block';
+            bar.innerHTML = `<div class="fb-quote-preview">
+                <div class="fb-quote-preview-main">
+                    <div class="fb-quote-preview-name">引用 ${escapeHtml(fbQuote.name || '消息')}</div>
+                    <div class="fb-quote-preview-text">${escapeHtml(fbQuote.content)}</div>
+                </div>
+                <button type="button" class="fb-quote-remove" data-fb-quote-clear="1" title="取消引用">
+                    <svg class="ui-icon xs" viewBox="0 0 24 24"><use href="#i-x"></use></svg>
+                </button>
+            </div>`;
         }
 
         function fbSetPendingBar() {
@@ -7110,8 +7234,26 @@ await loadPlans();
             }
         }
 
-        // 附件操作（复制图片 / 下载）
+        // 附件操作（复制图片 / 下载）+ 引用 + 图片新窗口打开
         $('fbChatBody').addEventListener('click', function (e) {
+            const quoteBtn = e.target.closest('[data-fb-quote]');
+            if (quoteBtn) {
+                e.preventDefault();
+                const src = fbQuoteSources[quoteBtn.dataset.fbQuote];
+                if (src) {
+                    fbQuote = src;
+                    fbRenderQuoteBar();
+                    const ta = $('fbChatInput');
+                    if (ta) ta.focus();
+                }
+                return;
+            }
+            const imgLink = e.target.closest('a[data-fb-img]');
+            if (imgLink) {
+                e.preventDefault();
+                window.open(imgLink.href, '_blank', 'noopener');
+                return;
+            }
             const copyBtn = e.target.closest('[data-fb-copy-img]');
             if (copyBtn) {
                 e.preventDefault();
@@ -7122,6 +7264,14 @@ await loadPlans();
             if (dlBtn) {
                 e.preventDefault();
                 fbDownloadAttachment(parseInt(dlBtn.dataset.fbDl), dlBtn.dataset.name);
+            }
+        });
+
+        // 取消引用
+        $('fbQuoteBar').addEventListener('click', function (e) {
+            if (e.target.closest('[data-fb-quote-clear]')) {
+                fbQuote = null;
+                fbRenderQuoteBar();
             }
         });
 
@@ -7255,13 +7405,17 @@ await loadPlans();
                     body: JSON.stringify({
                         feedback_id: fbCurrentChat.id,
                         content,
-                        attachment_ids: fbPendingAttachments.map(a => a.id)
+                        attachment_ids: fbPendingAttachments.map(a => a.id),
+                        quote_sender: fbQuote ? fbQuote.sender : '',
+                        quote_content: fbQuote ? fbQuote.content : ''
                     })
                 });
                 const d = await res.json().catch(() => ({}));
                 if (d.code === 200) {
                     $('fbChatInput').value = '';
                     fbPendingAttachments = [];
+                    fbQuote = null;
+                    fbRenderQuoteBar();
                     fbSetPendingBar();
                     showToast('追问发送成功！');
                     await loadFeedback();

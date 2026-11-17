@@ -526,6 +526,8 @@ class Database:
             self.execute("ALTER TABLE admin_config ADD COLUMN test_recipient VARCHAR(255)")
         self._add_column_if_missing("admin_config", "log_retention_days", "log_retention_days INT DEFAULT 0")
         self._add_column_if_missing("admin_config", "log_cleanup_last_at", "log_cleanup_last_at DATETIME NULL COMMENT '上次日志清理时间（用于24小时定时判断，持久化避免重启重置）'")
+        # 用户购买套餐时默认选中的支付方式：空=按可用顺序自动选，wechat/alipay/xianyu=指定
+        self._add_column_if_missing("admin_config", "pay_default_method", "pay_default_method VARCHAR(16) DEFAULT '' COMMENT '用户购买页默认支付方式'")
 
         # 管理员登录会话：落库保存，服务重启/发版后已登录的后台不会被踢下线
         self.execute("""
@@ -924,6 +926,9 @@ class Database:
                 INDEX idx_feedback_id (feedback_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """)
+        # 微信式引用：回复可以带上被引用消息的发送者和内容快照
+        self._add_column_if_missing("feedback_replies", "quote_sender", "quote_sender VARCHAR(10) DEFAULT '' COMMENT '被引用消息发送者 user/admin'")
+        self._add_column_if_missing("feedback_replies", "quote_content", "quote_content TEXT COMMENT '被引用消息内容快照'")
 
         # 反馈附件表：文件字节存中控对象存储，这里只记元数据
         self.execute("""
@@ -5189,12 +5194,12 @@ class Database:
         self.execute(f"UPDATE user_feedback SET admin_reply={ph}, replied_at=NOW(), status='resolved' WHERE id={ph}", (reply_text, fid))
         return True
 
-    def add_feedback_reply(self, feedback_id, sender, content):
+    def add_feedback_reply(self, feedback_id, sender, content, quote_sender="", quote_content=""):
         """添加一条对话记录"""
         ph = _ph()
         self.execute(
-            f"INSERT INTO feedback_replies (feedback_id, sender, content) VALUES ({ph},{ph},{ph})",
-            (feedback_id, sender, content)
+            f"INSERT INTO feedback_replies (feedback_id, sender, content, quote_sender, quote_content) VALUES ({ph},{ph},{ph},{ph},{ph})",
+            (feedback_id, sender, content, quote_sender or "", quote_content or "")
         )
         return True
 
@@ -5206,15 +5211,15 @@ class Database:
             (feedback_id,)
         ) or []
 
-    def add_feedback_reply_with_id(self, feedback_id, sender, content):
+    def add_feedback_reply_with_id(self, feedback_id, sender, content, quote_sender="", quote_content=""):
         """添加对话记录并返回新记录ID（附件要挂到这条回复上，必须拿到ID）"""
         ph = _ph()
         conn = self._new_mysql_conn()
         try:
             cursor = conn.cursor()
             cursor.execute(
-                f"INSERT INTO feedback_replies (feedback_id, sender, content) VALUES ({ph},{ph},{ph})",
-                (feedback_id, sender, content)
+                f"INSERT INTO feedback_replies (feedback_id, sender, content, quote_sender, quote_content) VALUES ({ph},{ph},{ph},{ph},{ph})",
+                (feedback_id, sender, content, quote_sender or "", quote_content or "")
             )
             conn.commit()
             return int(getattr(cursor, "lastrowid", 0) or 0)

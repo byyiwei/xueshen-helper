@@ -9757,7 +9757,11 @@ class Handler(BaseHTTPRequestHandler):
                     methods.append({"value": "alipay", "label": "支付宝支付", "channels": alipay_channels})
                 if admin.get("xianyu_enabled"):
                     methods.append({"value": "xianyu", "label": admin.get("card_pay_name") or "卡密激活", "icon": admin.get("card_pay_icon") or "🔑"})
-                self._send_json(200, {"code": 200, "methods": methods})
+                # 后台设置的默认支付方式；不可用时前端会回退到第一个可用项
+                default_method = str(admin.get("pay_default_method") or "").strip()
+                if default_method and not any(m.get("value") == default_method for m in methods):
+                    default_method = ""
+                self._send_json(200, {"code": 200, "methods": methods, "default_method": default_method})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/api/payment/order-status":
@@ -10290,6 +10294,7 @@ class Handler(BaseHTTPRequestHandler):
                 "zhifufm_weight": int(admin.get("zhifufm_weight") or 100),
                 "sandpay_weight": int(admin.get("sandpay_weight") or 100),
                 "epay_weight": int(admin.get("epay_weight") or 100),
+                "pay_default_method": admin.get("pay_default_method") or "",
                 "refund_days_limit": int(admin.get("refund_days_limit") or 7),
                 "auto_refund_enabled": bool(admin.get("auto_refund_enabled")),
                 "auto_refund_audit": bool(admin.get("auto_refund_audit")),
@@ -11823,6 +11828,12 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(body or "{}")
                 feedback_id = int(data.get("feedback_id") or 0)
                 content = (data.get("content") or "").strip()
+                quote_sender = str(data.get("quote_sender") or "").strip().lower()
+                if quote_sender not in ("user", "admin"):
+                    quote_sender = ""
+                quote_content = str(data.get("quote_content") or "").strip()[:500]
+                if not quote_sender:
+                    quote_content = ""
                 raw_att_ids = data.get("attachment_ids") or []
                 if not isinstance(raw_att_ids, list):
                     raw_att_ids = []
@@ -11847,7 +11858,7 @@ class Handler(BaseHTTPRequestHandler):
                 if raw_att_ids and not att_ids:
                     self._send_json(400, {"code": 400, "msg": "附件已失效，请重新上传后再发送"})
                     return
-                reply_id = db.add_feedback_reply_with_id(feedback_id, "user", content)
+                reply_id = db.add_feedback_reply_with_id(feedback_id, "user", content, quote_sender, quote_content)
                 if att_ids:
                     db.link_feedback_attachments(att_ids, feedback_id, reply_id, "user")
                 db.update_feedback_status(feedback_id, "processing")
@@ -13113,6 +13124,9 @@ class Handler(BaseHTTPRequestHandler):
                 auto_max = data.get("auto_refund_max_hours")
                 auto_max = 24 if auto_max is None or auto_max == "" else int(auto_max)
                 auto_max = max(auto_min, max(0, auto_max))
+                default_method = str(data.get("pay_default_method") or "").strip().lower()
+                if default_method not in ("", "wechat", "alipay", "xianyu"):
+                    default_method = ""
                 ph = "%s"
                 db.execute(
                     f"""UPDATE admin_config SET
@@ -13128,6 +13142,7 @@ class Handler(BaseHTTPRequestHandler):
                         epay_notify_url = {ph}, epay_return_url = {ph},
                         alipay_weight = {ph}, wechat_weight = {ph}, zhifufm_weight = {ph}, sandpay_weight = {ph}, epay_weight = {ph},
                         refund_days_limit = {ph},
+                        pay_default_method = {ph},
                         auto_refund_enabled = {ph}, auto_refund_audit = {ph},
                         auto_refund_min_hours = {ph}, auto_refund_max_hours = {ph}
                     WHERE id = 1""",
@@ -13171,6 +13186,7 @@ class Handler(BaseHTTPRequestHandler):
                         max(0, min(1000, int(data.get("sandpay_weight") or 100))),
                         max(0, min(1000, int(data.get("epay_weight") or 100))),
                         max(0, int(data.get("refund_days_limit") or 7)),
+                        default_method,
                         1 if data.get("auto_refund_enabled") else 0,
                         1 if data.get("auto_refund_audit") else 0,
                         auto_min,
@@ -13618,6 +13634,12 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(body or "{}")
                 fid = int(data.get("id") or 0)
                 reply_text = (data.get("reply_text") or "").strip()
+                quote_sender = str(data.get("quote_sender") or "").strip().lower()
+                if quote_sender not in ("user", "admin"):
+                    quote_sender = ""
+                quote_content = str(data.get("quote_content") or "").strip()[:500]
+                if not quote_sender:
+                    quote_content = ""
                 raw_att_ids = data.get("attachment_ids") or []
                 if not isinstance(raw_att_ids, list):
                     raw_att_ids = []
@@ -13671,7 +13693,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 # 保存回复（兼容旧字段 + 新对话表）
                 db.reply_feedback(fid, reply_text)
-                reply_id = db.add_feedback_reply_with_id(fid, "admin", reply_text)
+                reply_id = db.add_feedback_reply_with_id(fid, "admin", reply_text, quote_sender, quote_content)
                 if att_ids:
                     db.link_feedback_attachments(att_ids, fid, reply_id, "admin")
                 self._send_json(200, {"code": 200, "msg": "回复成功，邮件已发送"})

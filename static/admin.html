@@ -3312,6 +3312,18 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
               </div>
             </div>
           </div>
+          <div style="border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:16px;background:var(--card);display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+            <div style="min-width:240px;flex:1">
+              <div style="font-size:15px;font-weight:600;margin-bottom:4px">用户购买默认支付方式</div>
+              <div style="font-size:12px;color:var(--text3);line-height:1.6">打开套餐购买页时默认选中这一项。选「自动」按当前可用顺序取第一项；指定的方式未启用时会自动回退。</div>
+            </div>
+            <select v-model="payApiConfig.pay_default_method" style="min-width:200px;padding:9px 12px;font-size:13.5px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text1)">
+              <option value="">自动（按可用顺序）</option>
+              <option value="wechat">微信支付</option>
+              <option value="alipay">支付宝支付</option>
+              <option value="xianyu">卡密激活</option>
+            </select>
+          </div>
           <div class="collapsible-section">
             <div class="section-title" @click="togglePayApiSection('alipay')">
               <span class="st-text">支付宝官方</span>
@@ -7179,10 +7191,13 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                   <div style="flex:1;min-width:0;text-align:left">
                     <div style="font-size:11px;color:#10b981;margin-bottom:3px">{{feedbackDetail.username}} · {{String(feedbackDetail.created_at||'').replace('T',' ').substring(0,16)}}</div>
                     <div style="display:inline-block;padding:10px 14px;background:rgba(16,185,129,.1);border-radius:4px 14px 14px 14px;font-size:13px;color:var(--text);line-height:1.6;white-space:pre-wrap;text-align:left;max-width:85%;overflow-wrap:anywhere;word-break:break-word">{{feedbackDetail.content}}</div>
+                    <div v-if="feedbackDetail.content" style="margin-top:3px;font-size:11.5px;text-align:left">
+                      <a href="javascript:;" style="color:var(--text3);text-decoration:none" @click.prevent="fbSetQuote('user',feedbackDetail.username,feedbackDetail.content)">引用</a>
+                    </div>
                     <div v-if="feedbackDetail.attachments && feedbackDetail.attachments.length" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;justify-content:flex-start">
                       <div v-for="at in feedbackDetail.attachments" :key="at.id">
                         <template v-if="at.is_image && at.url">
-                          <a :href="at.url" target="_blank" rel="noopener noreferrer"><img :src="at.url" :alt="at.filename" style="display:block;width:140px;max-width:100%;height:auto;border-radius:10px;border:1px solid var(--border);background:var(--bg2)"></a>
+                          <a :href="at.url" target="_blank" rel="noopener noreferrer" @click="openFeedbackImage(at.url,$event)"><img :src="at.url" :alt="at.filename" style="display:block;width:140px;max-width:100%;height:auto;border-radius:10px;border:1px solid var(--border);background:var(--bg2)"></a>
                           <div style="display:flex;gap:10px;margin-top:4px;font-size:11.5px;justify-content:flex-start">
                             <a href="javascript:;" style="color:var(--accent2);font-weight:600;text-decoration:none" @click.prevent="copyAdminFbImage(at)">复制图片</a>
                             <a href="javascript:;" style="color:var(--accent2);font-weight:600;text-decoration:none" @click.prevent="downloadAdminFbAttachment(at)">下载</a>
@@ -7207,6 +7222,9 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                   <div style="flex:1;min-width:0;text-align:right">
                     <div style="font-size:11px;color:#3b82f6;margin-bottom:3px">管理员 · {{String(feedbackDetail.replied_at||'').replace('T',' ').substring(0,16)}}</div>
                     <div style="display:inline-block;padding:10px 14px;background:rgba(59,130,246,.1);border-radius:14px 4px 14px 14px;font-size:13px;color:var(--text);line-height:1.6;white-space:pre-wrap;text-align:left;max-width:85%;overflow-wrap:anywhere;word-break:break-word">{{feedbackDetail.admin_reply}}</div>
+                    <div v-if="feedbackDetail.admin_reply" style="margin-top:3px;font-size:11.5px;text-align:right">
+                      <a href="javascript:;" style="color:var(--text3);text-decoration:none" @click.prevent="fbSetQuote('admin','管理员',feedbackDetail.admin_reply)">引用</a>
+                    </div>
                   </div>
                 </div>
                 <!-- 对话记录 -->
@@ -7214,11 +7232,17 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                   <div :style="{flex:'0 0 32px',height:'32px',borderRadius:'50%',background:rp.sender==='admin'?'linear-gradient(135deg,#3b82f6,#2563eb)':'linear-gradient(135deg,#10b981,#059669)',display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontSize:'12px',fontWeight:'600'}">{{rp.sender==='admin'?'管':(feedbackDetail.username||'').charAt(0).toUpperCase()}}</div>
                   <div :style="{flex:'1',minWidth:'0',textAlign:rp.sender==='admin'?'right':'left'}">
                     <div :style="{fontSize:'11px',color:rp.sender==='admin'?'#3b82f6':'#10b981',marginBottom:'3px'}">{{rp.sender==='admin'?'管理员':feedbackDetail.username}} · {{String(rp.created_at||'').replace('T',' ').substring(0,16)}}</div>
-                    <div v-if="rp.content" :style="{display:'inline-block',padding:'10px 14px',background:rp.sender==='admin'?'rgba(59,130,246,.1)':'rgba(16,185,129,.1)',borderRadius:rp.sender==='admin'?'14px 4px 14px 14px':'4px 14px 14px 14px',fontSize:'13px',color:'var(--text)',lineHeight:'1.6',whiteSpace:'pre-wrap',maxWidth:'85%',textAlign:'left',overflowWrap:'anywhere',wordBreak:'break-word'}">{{rp.content}}</div>
+                    <div v-if="rp.content || rp.quote_content" :style="{display:'inline-block',padding:'10px 14px',background:rp.sender==='admin'?'rgba(59,130,246,.1)':'rgba(16,185,129,.1)',borderRadius:rp.sender==='admin'?'14px 4px 14px 14px':'4px 14px 14px 14px',fontSize:'13px',color:'var(--text)',lineHeight:'1.6',maxWidth:'85%',textAlign:'left',overflowWrap:'anywhere',wordBreak:'break-word'}">
+                      <div v-if="rp.quote_content" style="margin-bottom:6px;padding:6px 8px;border-left:3px solid rgba(148,163,184,.8);background:rgba(148,163,184,.16);border-radius:4px;font-size:12px;color:var(--text2);white-space:pre-wrap">{{rp.quote_sender==='admin'?'管理员':feedbackDetail.username}}：{{rp.quote_content}}</div>
+                      <div v-if="rp.content" style="white-space:pre-wrap">{{rp.content}}</div>
+                    </div>
+                    <div v-if="rp.content" :style="{marginTop:'3px',fontSize:'11.5px',textAlign:rp.sender==='admin'?'right':'left'}">
+                      <a href="javascript:;" style="color:var(--text3);text-decoration:none" @click.prevent="fbSetQuote(rp.sender,rp.sender==='admin'?'管理员':feedbackDetail.username,rp.content)">引用</a>
+                    </div>
                     <div v-if="rp.attachments && rp.attachments.length" :style="{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'8px',justifyContent:rp.sender==='admin'?'flex-end':'flex-start'}">
                       <div v-for="at in rp.attachments" :key="at.id">
                         <template v-if="at.is_image && at.url">
-                          <a :href="at.url" target="_blank" rel="noopener noreferrer"><img :src="at.url" :alt="at.filename" style="display:block;width:140px;max-width:100%;height:auto;border-radius:10px;border:1px solid var(--border);background:var(--bg2)"></a>
+                          <a :href="at.url" target="_blank" rel="noopener noreferrer" @click="openFeedbackImage(at.url,$event)"><img :src="at.url" :alt="at.filename" style="display:block;width:140px;max-width:100%;height:auto;border-radius:10px;border:1px solid var(--border);background:var(--bg2)"></a>
                           <div style="display:flex;gap:10px;margin-top:4px;font-size:11.5px">
                             <a href="javascript:;" style="color:var(--accent2);font-weight:600;text-decoration:none" @click.prevent="copyAdminFbImage(at)">复制图片</a>
                             <a href="javascript:;" style="color:var(--accent2);font-weight:600;text-decoration:none" @click.prevent="downloadAdminFbAttachment(at)">下载</a>
@@ -7240,6 +7264,13 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
               </div>
               <!-- 回复表单 -->
               <div v-if="feedbackDetail.status!=='closed'">
+                <div v-if="fbQuote" style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px;padding:8px 10px;border-left:3px solid var(--accent2);background:var(--bg2);border-radius:8px">
+                  <div style="flex:1;min-width:0">
+                    <div style="font-size:11.5px;color:var(--text3);margin-bottom:2px">引用 {{fbQuote.name||'消息'}}</div>
+                    <div style="font-size:12.5px;color:var(--text2);line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere">{{fbQuote.content}}</div>
+                  </div>
+                  <button type="button" title="取消引用" style="border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0;display:inline-flex;flex:0 0 auto" @click="fbClearQuote"><svg class="ui-icon xs"><use href="#i-x"></use></svg></button>
+                </div>
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
                   <label style="font-size:13px;display:block">回复内容（将发送邮件到 {{feedbackDetail.email||'用户邮箱'}}）</label>
                   <button class="btn" style="padding:3px 12px;font-size:12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;border:none;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:4px" @click="aiPolishReply" :disabled="aiPolishing">
@@ -7255,7 +7286,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                     <button type="button" style="border:none;background:transparent;color:var(--text3);cursor:pointer;padding:0 2px;display:inline-flex" title="移除" @click="removeAdminFbAttachment(i)"><svg class="ui-icon xs"><use href="#i-x"></use></svg></button>
                   </div>
                 </div>
-                <textarea v-model="feedbackReplyText" rows="3" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;resize:vertical;line-height:1.6" placeholder="输入回复内容..." @paste="onAdminFbPaste"></textarea>
+                <textarea id="fbReplyTextarea" v-model="feedbackReplyText" rows="3" style="width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:13px;resize:vertical;line-height:1.6" placeholder="输入回复内容..." @paste="onAdminFbPaste"></textarea>
                 <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
                   <label style="display:inline-flex;align-items:center;gap:5px;padding:4px 0;font-size:12.5px;font-weight:600;color:var(--text2);cursor:pointer">
                     <svg class="ui-icon sm"><use href="#i-file-text"></use></svg> 图片/附件
@@ -7960,6 +7991,7 @@ createApp({
       // 易支付
       epay_enabled:false,epay_api_url:'',epay_pid:'',epay_key:'',epay_notify_url:'',epay_return_url:'',
       alipay_weight:100,wechat_weight:100,zhifufm_weight:100,sandpay_weight:100,epay_weight:100,
+      pay_default_method:'',
       refund_days_limit:7,
       auto_refund_enabled:false,auto_refund_audit:false,auto_refund_min_hours:0,auto_refund_max_hours:24
     });
@@ -10205,6 +10237,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     const cardPayLabel=ref('卡密');
     const feedbackDetail=ref(null);
     const feedbackReplyText=ref('');
+    const fbQuote=ref(null);
     const aiPolishing=ref(false);
     const fbAttachList=ref([]);
     const fbUploadingCount=ref(0);
@@ -11233,6 +11266,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         if(d.code===200){
           feedbackDetail.value=d.feedback;
           feedbackReplyText.value='';
+          fbQuote.value=null;
           fbAttachList.value=(d.feedback.pending_attachments||[]).filter(a=>a.role==='admin');
           fbUploadingCount.value=0;
           scrollFbChatToBottom();
@@ -11318,6 +11352,20 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         catch(__){showMsg('复制失败，请右键图片复制','error');}
       }
     }
+    function fbSetQuote(sender,name,content){
+      const text=String(content||'').trim();
+      if(!text){showMsg('这条消息没有文字内容，无法引用','error');return;}
+      fbQuote.value={sender:sender==='admin'?'admin':'user',name:name||'',content:text.slice(0,500)};
+      Vue.nextTick(function(){
+        const ta=document.getElementById('fbReplyTextarea');
+        if(ta)ta.focus();
+      });
+    }
+    function fbClearQuote(){fbQuote.value=null;}
+    function openFeedbackImage(url,e){
+      if(e)e.preventDefault();
+      if(url)window.open(url,'_blank','noopener');
+    }
     async function replyFeedback(){
       if(!feedbackDetail.value)return;
       if(!feedbackReplyText.value.trim()&&!fbAttachList.value.length){showMsg('请输入回复内容或添加附件','error');return;}
@@ -11326,7 +11374,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         const res=await safeFetch('/admin/feedback/reply',{
           method:'POST',
           headers:{'Content-Type':'application/json','Authorization':token.value},
-          body:JSON.stringify({id:feedbackDetail.value.id,reply_text:feedbackReplyText.value.trim(),attachment_ids:fbAttachList.value.map(a=>a.id)})
+          body:JSON.stringify({id:feedbackDetail.value.id,reply_text:feedbackReplyText.value.trim(),attachment_ids:fbAttachList.value.map(a=>a.id),quote_sender:fbQuote.value?fbQuote.value.sender:'',quote_content:fbQuote.value?fbQuote.value.content:''})
         });
         const d=await res.json();
         if(d.code===200){
@@ -11882,6 +11930,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       fxStatusText,fxStatusColor,fxLogTypeText,fxBatchStatusText,fxBatchStatusColor,fxGrantText,fxMoney,fxTimeShort,fxTimeFull,fxDiscountPct,fxDriftBad,fxGotoBatches,
       fxRev,fxRevStart,fxRevEnd,loadFxRevenue,setFxRevRange,fxRevQuick,fxRevRangeLabel,fxRevMoney,fxRevDriftText,fxRevMax,fxRevY,fxRevBarX,fxRevBarW,fxRevTick,fxRevGoto,
        feedbackList,feedbackFilter,feedbackPage,feedbackTotalPages,feedbackTotal,feedbackPendingCount,feedbackDetail,feedbackReplyText,
+        fbQuote,fbSetQuote,fbClearQuote,openFeedbackImage,
         loadFeedbackList,feedbackSearch,viewFeedbackDetail,replyFeedback,updateFeedbackStatus,feedbackPrev,feedbackNext,
     fbAttachList,fbUploadingCount,onAdminFbFiles,onAdminFbPaste,removeAdminFbAttachment,downloadAdminFbAttachment,copyAdminFbImage,adminFbSize,
     feedbackAutoCloseDays,loadFeedbackAutoClose,saveFeedbackAutoClose,cardPayLabel,
