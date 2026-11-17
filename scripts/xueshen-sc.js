@@ -11546,6 +11546,12 @@
                 handled = true;
               }
             }
+            if (!handled && !this.AI_ALLOW_QUESTION_TYPE.includes(question.type)) {
+              // 平台题型字段缺失或给了冷门名称（材料题、组合题等）时不要直接判「不支持」：
+              // 页面有复选/单选控件就按控件推断，有多个选项就按单选，能答先答，避免误报。
+              if (detectMultiChoiceDom(question.element)) question.type = "多选题";
+              else if ((question.element && question.element.querySelector && question.element.querySelector("input[type='radio'], [role='radio']")) || (question.optionsText || []).length >= 2) question.type = "单选题";
+            }
             if (!handled) {
               if (this.AI_ALLOW_QUESTION_TYPE.includes(question.type)) {
                 const aiQuestion = {
