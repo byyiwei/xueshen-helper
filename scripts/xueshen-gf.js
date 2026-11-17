@@ -9678,10 +9678,43 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             if (!matches.length) {
               const imgs = collectImgSrcs(answer);
               matches = optionKeys.filter(k => imgSrcsMatch(imgs, collectImgSrcs(k).concat(collectImgSrcs(question.options[k]))));
-              if (matches.length !== 1) {
-                question.__xsFillReason = "answer_not_matched";
-                return false;
-              }
+            }
+            if (!matches.length && question.type === "1") {
+              // 多选题个别答案和页面写法有细小差异（西北/东北、缺括号、被截断）时，
+              // 按相似度找唯一最接近的选项，避免整道题因为一个字的差别放弃。
+              const normBody = (v) => this.clearMark(this.removeHtml(String(v || "")).replace(/^[A-Za-z][.、．)）:：\s]+/, "")).toLowerCase();
+              const nAnswer = normBody(answer);
+              const bigrams = (s) => {
+                const out = new Set();
+                for (let i = 0; i < s.length - 1; i++) out.add(s.slice(i, i + 2));
+                return out;
+              };
+              const sim = (a, b) => {
+                if (!a || !b) return 0;
+                if (a === b) return 1;
+                if (a.includes(b) || b.includes(a)) return Math.min(a.length, b.length) / Math.max(a.length, b.length) + 0.3;
+                const A = bigrams(a);
+                const B = bigrams(b);
+                let inter = 0;
+                A.forEach((x) => { if (B.has(x)) inter += 1; });
+                return (2 * inter) / ((A.size + B.size) || 1);
+              };
+              let best = "", bestScore = 0, secondScore = 0;
+              optionKeys.forEach((k) => {
+                const score = sim(nAnswer, normBody(k));
+                if (score > bestScore) {
+                  secondScore = bestScore;
+                  bestScore = score;
+                  best = k;
+                } else if (score > secondScore) {
+                  secondScore = score;
+                }
+              });
+              if (best && bestScore >= 0.55 && (bestScore - secondScore) >= 0.1) matches = [best];
+            }
+            if (matches.length !== 1) {
+              question.__xsFillReason = "answer_not_matched";
+              return false;
             }
             matches.forEach(k => targets.add(k));
           }
