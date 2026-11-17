@@ -9569,6 +9569,14 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 }
               }
             }
+            if (!matches.length && /^(?:正确|错误)$/.test(text)) {
+              // 判断题式答案混进单选题（题库只回「正确/错误」）：选项正文里唯一含有该词的才填
+              const judgeHit = optionKeys.filter((k) => {
+                const body = this.removeHtml(k).normalize("NFKC").trim().replace(/^[A-Za-z][.、．)）:：\s]+/, "").trim();
+                return body.includes(text);
+              });
+              if (judgeHit.length === 1) matches = judgeHit;
+            }
             if (!matches.length) {
               const imgs = collectImgSrcs(answer);
               matches = optionKeys.filter(k => imgSrcsMatch(imgs, collectImgSrcs(k).concat(collectImgSrcs(question.options[k]))));
