@@ -11331,9 +11331,12 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         const d=await res.json();
         if(d.code===200){
           showMsg('回复成功，邮件已发送','success');
-          feedbackDetail.value=null;
+          const fid=feedbackDetail.value.id;
           feedbackReplyText.value='';
           fbAttachList.value=[];
+          fbUploadingCount.value=0;
+          // 对话框保持打开，重新拉这一条反馈即可：聊天记录由 Vue 响应式渲染，不需要关掉重开
+          await viewFeedbackDetail(fid);
           loadFeedbackList();
         }else{showMsg(d.msg||'回复失败','error');}
       }catch(_){showMsg('网络错误','error');}
