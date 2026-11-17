@@ -8896,11 +8896,11 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             window.__XSReportPageIssue && window.__XSReportPageIssue({
               page_type: "cx-" + this.type,
               stage: "fill",
-              reason_code: "answer_fill_failed",
+              reason_code: (question && question.__xsFillReason) || "answer_fill_failed",
               selector: isChoice
                 ? (hoverOptions.length ? '.stem_answer > div[onclick*="addChoice"]' : '.answerBg input[type="radio"], .answerBg input[type="checkbox"]')
                 : "textarea / input / contenteditable",
-              expected: isChoice ? "选项按钮可点击并回读为已选中" : "文本框可写入并回读",
+              expected: (question && question.__xsFillReason) ? "答案内容能匹配页面选项" : (isChoice ? "选项按钮可点击并回读为已选中" : "文本框可写入并回读"),
               found: {
                 type: String((question && question.type) || ""),
                 options: ((question && question.optionsText) || []).length,
@@ -9475,7 +9475,10 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         var _a;
         if (!this._window) return false;
         let filled = false;
+        question.__xsFillReason = "";
         const cleanChoiceAnswer = (raw) => String(raw == null ? "" : raw)
+          .split(/\r?\n/)[0]
+          .replace(/[*_`#>]/g, "")
           .replace(/^\s*(?:正确|参考|标准)?答案\s*[:：]\s*/i, "")
           .replace(/^\s*(?:正确|参考|标准)答案\s*(?:是|为)\s*/i, "")
           .replace(/^\s*答案\s+(?=\S)/i, "")
@@ -9495,6 +9498,14 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 return body.startsWith(compact);
               });
               if (compactHit.length === 1) answers = [compact];
+            } else if (compact) {
+              // 答案被拆成数字/符号（如 "0|1"，选项正文是 [0,1]）：去掉标点后整串比对
+              const compactMark = this.clearMark(compact);
+              const markHit = compactMark ? optionKeys.filter((k) => {
+                const body = this.clearMark(this.removeHtml(k).replace(/^[A-Za-z][.、．)）:：\s]+/, ""));
+                return body && body.toUpperCase() === compactMark.toUpperCase();
+              }) : [];
+              if (markHit.length === 1) answers = [markHit[0]];
             }
           }
           for (const answer of answers) {
@@ -9552,17 +9563,26 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 matches = [...new Set(validLetters.map(c => optionKeys[c.charCodeAt(0) - 65]))];
               } else {
                 matches = textMatches;
-                if (matches.length > 1) return false;
+                if (matches.length > 1) {
+                  question.__xsFillReason = "answer_ambiguous";
+                  return false;
+                }
               }
             }
             if (!matches.length) {
               const imgs = collectImgSrcs(answer);
               matches = optionKeys.filter(k => imgSrcsMatch(imgs, collectImgSrcs(k).concat(collectImgSrcs(question.options[k]))));
-              if (matches.length !== 1) return false;
+              if (matches.length !== 1) {
+                question.__xsFillReason = "answer_not_matched";
+                return false;
+              }
             }
             matches.forEach(k => targets.add(k));
           }
-          if (!targets.size || (question.type === "0" && targets.size !== 1)) return false;
+          if (!targets.size || (question.type === "0" && targets.size !== 1)) {
+            question.__xsFillReason = "answer_not_matched";
+            return false;
+          }
           // 先清理旧答案，再逐项选择；只有最终选中集合完全一致才算填充成功。
           for (const key of optionKeys) {
             if (!targets.has(key) && this.isChoiceOptionSelected(question.options[key])) {
@@ -9616,6 +9636,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             }
           }
           if (!answer) {
+            question.__xsFillReason = "answer_invalid";
             this.log.insertLog(
               `判断题答案无法判定对错，本题不填：${rawJudge || "空"}`,
               "warning"
