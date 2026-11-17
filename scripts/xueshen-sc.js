@@ -9691,8 +9691,38 @@
               } else {
                 matches = textMatches;
                 if (matches.length > 1) {
-                  question.__xsFillReason = "answer_ambiguous";
-                  return false;
+                  // 几个选项只差标点/星号时（Like "*x*" 的四种写法、[字段]=1 与 =true），
+                  // clearMark 会把差异全抹掉导致全部命中。按保留符号的相似度挑唯一最接近的，
+                  // 不能一概判成「答案有歧义」直接放弃。
+                  const normKeep = (v) => this.removeHtml(String(v || ""))
+                    .replace(/^[A-Za-z][.、．)）:\s]+/, "")
+                    .normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+                  const target = normKeep(answer);
+                  const grams = (s) => {
+                    const out = new Set();
+                    if (s.length === 1) out.add(s);
+                    for (let i = 0; i < s.length - 1; i++) out.add(s.slice(i, i + 2));
+                    return out;
+                  };
+                  const score = (a, b) => {
+                    if (!a || !b) return 0;
+                    if (a === b) return 1;
+                    const A = grams(a);
+                    const B = grams(b);
+                    let inter = 0;
+                    A.forEach((x) => { if (B.has(x)) inter += 1; });
+                    return (2 * inter) / ((A.size + B.size) || 1);
+                  };
+                  const ranked = matches.map((k) => ({ k, s: score(target, normKeep(k)) }))
+                    .sort((x, y) => y.s - x.s);
+                  const top = ranked[0];
+                  const second = ranked[1] ? ranked[1].s : 0;
+                  if (top && top.s >= 0.8 && top.s - second >= 0.05) {
+                    matches = [top.k];
+                  } else {
+                    question.__xsFillReason = "answer_ambiguous";
+                    return false;
+                  }
                 }
               }
             }
