@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.0.21",
+    "version": "6.0.22",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.0.21 支持超星新版作业页复合选择题；修复英文单词答案填不上；页面改版自动上报"
+    "changelog": "v6.0.22 修复字母开头选项被误拆、答案前缀与判断题填充；勾选后重新回读；智慧树题型缺失时按选项推断"
   },
   "xueshen-gf": {
-    "version": "6.0.21",
+    "version": "6.0.22",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.0.21 支持超星新版作业页复合选择题；修复英文单词答案填不上；页面改版自动上报"
+    "changelog": "v6.0.22 修复字母开头选项被误拆、答案前缀与判断题填充；勾选后重新回读；智慧树题型缺失时按选项推断"
   }
 }

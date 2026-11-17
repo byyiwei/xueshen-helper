@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.21
+// @version      6.0.22
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -15,6 +15,11 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.22 (2026-11-17)
+// @changelog    1. 修复选项正文以字母开头的答案被拆成字母导致填不上：OCR文字识别、BLEU 值、AQ、PPT大纲结构 等现在按正文匹配
+// @changelog    2. 修复判断题答案写成「答案：B」时整题放弃；答案只给「正确/错误」时按选项正文唯一匹配
+// @changelog    3. 选择题勾选后页面重渲染导致回读失败，改为重新读取页面确认
+// @changelog    4. 智慧树题型识别失败时按页面选项推断，不再直接提示「该题型暂不支持」
 // @changelog    v6.0.21 (2026-11-16)
 // @changelog    1. 支持超星新版作业页的复合选择题：大题里的小题逐题识别、逐题作答，阅读题自动带上短文，不再整页只识别成两道空题
 // @changelog    2. 修复英文单词答案填不上：peak、migration 这类答案不再被当成选项字母，也不会和 immigration 这种相似选项判成多义而放弃
