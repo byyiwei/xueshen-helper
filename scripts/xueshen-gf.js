@@ -2955,7 +2955,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                         style: { "cursor": "pointer" },
                         onClick: ($event) => copyAnswer($event, (_b = (_a = vue.unref(questionList)[index - 1].answer) == null ? void 0 : _a.answer) == null ? void 0 : _b.join())
                       }, null, 8, _hoisted_15),
-                      ((_c = vue.unref(questionList)[index - 1].answer) == null ? void 0 : _c.code) === 0 ? (vue.openBlock(), vue.createElementBlock("div", _hoisted_16, "有答案（不完全匹配），请手动选择")) : vue.createCommentVNode("", true),
+                      ((_c = vue.unref(questionList)[index - 1].answer) == null ? void 0 : _c.code) === 0 && ((_c = vue.unref(questionList)[index - 1].answer) == null ? void 0 : _c.src) === "pick" ? (vue.openBlock(), vue.createElementBlock("div", _hoisted_16, "题库有多道相似题，请手动选择")) : vue.createCommentVNode("", true),
                       ((_d = vue.unref(questionList)[index - 1].answer) == null ? void 0 : _d.msg) ? (vue.openBlock(), vue.createElementBlock("div", {
                         key: 1,
                         style: { "color": "var(--t-text3)", "font-size": "12px", "margin-top": "2px", "word-break": "break-all" }
@@ -10207,37 +10207,32 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     }
   };
   const watchJobReport = (iframeWindow) => {
-    var _a;
-    const prototype = (_a = iframeWindow == null ? void 0 : iframeWindow.XMLHttpRequest) == null ? void 0 : _a.prototype;
-    if (!prototype) {
-      return { result: Promise.resolve(false), restore: () => {} };
-    }
-    const originalOpen = prototype.open;
-    const originalSend = prototype.send;
+    // [NATIVE-SAFE] 不再覆盖 iframeWindow.XMLHttpRequest.prototype.open/send。
+    // 改为 PerformanceObserver 侦测 /ananas/job 请求发生即视为上报已提交，再结合
+    // 已有的 waitJobIconFinished（图标变为 ans-job-finished）作为完成确认，避免改动原生接口。
     let reportSettled = null;
     const result = new Promise((resolve) => {
       reportSettled = resolve;
     });
-    prototype.open = function(method, url2, ...rest) {
-      this.__xsJobRequestUrl = typeof url2 === "string" ? url2 : "";
-      return originalOpen.call(this, method, url2, ...rest);
-    };
-    prototype.send = function(...args) {
-      if (String(this.__xsJobRequestUrl || "").includes("/ananas/job")) {
-        this.addEventListener("load", () => {
-          try { reportSettled(parseJobReport(this.responseText)); } catch (_) { reportSettled(false); }
+    if (!iframeWindow) {
+      return { result: Promise.resolve(false), restore: () => {} };
+    }
+    try {
+      const PO = iframeWindow.PerformanceObserver || (typeof PerformanceObserver !== "undefined" ? PerformanceObserver : null);
+      if (PO) {
+        const po = new PO((list) => {
+          for (const entry of list.getEntries()) {
+            try {
+              const name = entry && entry.name ? String(entry.name) : "";
+              if (name.includes("/ananas/job")) { reportSettled(true); return; }
+            } catch (_) {}
+          }
         });
-        this.addEventListener("error", () => { try { reportSettled(false); } catch (_) {} });
+        po.observe({ entryTypes: ["resource"] });
+        return { result, restore: () => { try { po.disconnect(); } catch (_) {} } };
       }
-      return originalSend.apply(this, args);
-    };
-    return {
-      result,
-      restore: () => {
-        prototype.open = originalOpen;
-        prototype.send = originalSend;
-      }
-    };
+    } catch (_) {}
+    return { result: Promise.resolve(false), restore: () => {} };
   };
   const waitJobIconFinished = async (target, timeoutSec) => {
     const taskContainer = jobContainerOf(target);
@@ -11492,14 +11487,26 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               found: {
                 type: String((question && question.type) || ""),
                 options: ((question && question.optionsText) || []).length,
-                controls: controls.length
+                controls: controls.length,
+                option_nodes: (question && question.__xsOptionCount) || 0,
+                option_selector: (question && question.__xsOptionSelector) || "",
+                clicked: !!(question && question.__xsClicked)
               },
               nodes: el ? [el] : []
             });
           };
-          // 一屏一题：页面渲染的题目节点比接口题目少，切题后必须等新题渲染出来
+          // 一屏一题：页面渲染的题目节点比接口题目少，切题后必须等新题渲染出来。
+          // 另外智慧树新版会把 5 道题的节点都渲染出来但只显示 1 道（其余隐藏），
+          // 这时节点数等于题目数，只看数量会误判成非分页，导致去点隐藏节点点不动。
           const nodeCount = this._document ? this._document.querySelectorAll(".subject_node").length : 0;
-          const pagedMode = nodeCount > 0 && nodeCount < this.questions.length;
+          const visibleNodeCount = this._document
+            ? Array.from(this._document.querySelectorAll(".subject_node")).filter((n) => {
+                const rect = n.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+              }).length
+            : 0;
+          const pagedMode = nodeCount > 0
+            && (nodeCount < this.questions.length || (nodeCount > 1 && visibleNodeCount < nodeCount));
           for (const [index, question] of this.questions.entries()) {
             this.questionStore.currentQuestionIndex = index;
             let fillFailed = false;
@@ -11606,11 +11613,17 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                   page_type: "zhs-web",
                   stage: "detect_type",
                   reason_code: "unsupported_type",
-                  selector: "题型 " + String(question.type || ""),
+                  // 题型为空时把 id / 控件类型一并带上，否则后台只看到“题型”两个字，没法定位
+                  selector: "题型 " + (String(question.type || "") || "(未识别)")
+                    + (question.typeId ? (" id=" + question.typeId) : "")
+                    + (question.controls ? (" 控件=" + question.controls) : ""),
                   expected: "题型在当前脚本的支持列表内",
                   found: {
                     type: String(question.type || ""),
-                    options: (question.optionsText || []).length
+                    type_id: String(question.typeId || ""),
+                    controls: String(question.controls || ""),
+                    options: (question.optionsText || []).length,
+                    stem: String(question.title || "").slice(0, 40)
                   },
                   nodes: question.element ? [question.element] : []
                 });
@@ -11686,7 +11699,13 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         // （和 OCS 每轮重新抓当前题的做法一致），并按文本记住答过的题，避免重复点。
         const allNodes = Array.from(document.querySelectorAll(".subject_node"));
         const total = (this.questions && this.questions.length) || 0;
-        const paged = total > 0 && allNodes.length > 0 && allNodes.length < total;
+        // 节点数等于题目数、但同一时刻只显示一道时，也必须走「取当前可见那道题」的分页逻辑
+        const visibleNodes = allNodes.filter((n) => {
+          const rect = n.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        });
+        const paged = total > 0 && allNodes.length > 0
+          && (allNodes.length < total || (allNodes.length > 1 && visibleNodes.length < allNodes.length));
         let subjectNode = allNodes[index];
         if (paged) {
           const normNode = (n) => this.removeHtml(n.innerHTML).replace(/\s+/g, "").slice(0, 40);
@@ -11700,66 +11719,182 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           done.add(normNode(subjectNode));
         }
         if (!subjectNode) return false;
-        const optionsDOM = subjectNode.querySelectorAll(".node_detail");
+        // 不同版本/页面的选项结构不一样：作业页是 .node_detail，
+        // stuExamWeb 考试页有的只有 .nodeLab > label > input。写死 .node_detail 时
+        // 考试页一个选项都取不到，答案拿到了也点不上（异常页 zhs-web 的那类上报）。
+        const collectOptionNodes = () => {
+          const selectors = [".node_detail", ".nodeLab", "label", ".option_item"];
+          for (const sel of selectors) {
+            const list = Array.from(subjectNode.querySelectorAll(sel)).filter((n) => this.removeHtml(n.innerHTML).trim());
+            if (list.length >= 2) {
+              // 去掉被其他命中项包住的内层节点，避免 .nodeLab 和它的 label 重复计数
+              const outer = list.filter((n) => !list.some((m) => m !== n && n.contains(m)));
+              const picked = outer.length >= 2 ? outer : list;
+              question.__xsOptionSelector = sel;
+              return picked;
+            }
+          }
+          question.__xsOptionSelector = "";
+          return [];
+        };
+        const optionsDOM = collectOptionNodes();
+        question.__xsOptionCount = optionsDOM.length;
+        question.__xsClicked = false;
+        // 选项正文优先取正文节点，避免把 A./B. 序号算进正文，判断题也能按“对/错”识别
+        const optionRawText = (el) => {
+          const inner = el.querySelector && el.querySelector(".node_detail, .label");
+          return this.removeHtml((inner || el).innerHTML);
+        };
+        const clickOption = (el) => {
+          if (!el) return;
+          const input = el.matches && el.matches("input")
+            ? el
+            : (el.querySelector && el.querySelector("input[type='radio'], input[type='checkbox']"));
+          try {
+            (input || el).click();
+          } catch (_) {
+            try {
+              el.click();
+            } catch (_) {}
+          }
+          question.__xsClicked = true;
+        };
         const normalizeOptText = (str) => String(str ?? "").replace(/^[A-Z][.、．]\s*/i, "").replace(/\s+/g, "").replace(/[^\p{L}\p{N}√×]/gu, "").toLowerCase();
         if (question.type === "单选题" || question.type === "多选题" || /多选|X型|不定项/.test(question.type || "")) {
           // 先把命中的选项序号收齐再去点，避免同一选项被点两次（多选题再点一次会取消勾选，
           // 表现就是「多选题只答一个」）
-          const pickedIdx = new Set();
+          let pickedIdx = new Set();
           const answerList = normalizeChoiceAnswerList(question.answer.answer);
-          answerList.forEach((answer) => {
-            // 字母答案映射：A / ABD / A,B,D → 按选项序号勾选
-            const letterText = String(answer || "").trim();
-            let letters = [];
-            const prefixed = letterText.match(/^([A-Za-z])\s*[.、．)）:：]\s*(\S[\s\S]*)$/);
-            if (prefixed) {
-              const pIdx = prefixed[1].toUpperCase().charCodeAt(0) - 65;
-              const pOpt = optionsDOM[pIdx];
-              const pOptText = pOpt ? normalizeOptText(this.removeHtml(pOpt.innerHTML)) : "";
-              const pBody = normalizeOptText(prefixed[2]);
-              // 字母与选项正文对得上才按字母点，防止选项顺序被打乱时点错
-              if (!pOptText || !pBody || pOptText.includes(pBody) || pBody.includes(pOptText)) letters = [prefixed[1].toUpperCase()];
-            } else if (/^[A-Za-z]$/.test(letterText)) letters = [letterText.toUpperCase()];
-            else if (/^[A-Za-z]{2,12}$/.test(letterText)) letters = letterText.toUpperCase().split("");
-            else if (/^[A-Z](?:[\s,，、;；|]+[A-Z])+$/i.test(letterText)) letters = letterText.toUpperCase().split(/[\s,，、;；|]+/).filter(Boolean);
-            optionsDOM.forEach((optionDOM, optIdx) => {
-              if (letters.length) {
-                if (letters.includes(String.fromCharCode(65 + optIdx))) pickedIdx.add(optIdx);
-                return;
+          // 用一批答案去选项里找匹配，返回命中的选项下标集合
+          const matchBy = (list) => {
+            const hit = new Set();
+            list.forEach((answer) => {
+              // 字母答案映射：A / ABD / A,B,D → 按选项序号勾选
+              const letterText = String(answer || "").trim();
+              let letters = [];
+              const prefixed = letterText.match(/^([A-Za-z])\s*[.、．)）:：]\s*(\S[\s\S]*)$/);
+              if (prefixed) {
+                const pIdx = prefixed[1].toUpperCase().charCodeAt(0) - 65;
+                const pOpt = optionsDOM[pIdx];
+                const pOptText = pOpt ? normalizeOptText(this.removeHtml(pOpt.innerHTML)) : "";
+                const pBody = normalizeOptText(prefixed[2]);
+                // 字母与选项正文对得上才按字母点，防止选项顺序被打乱时点错
+                if (!pOptText || !pBody || pOptText.includes(pBody) || pBody.includes(pOptText)) letters = [prefixed[1].toUpperCase()];
+              } else if (/^[A-Za-z]$/.test(letterText)) letters = [letterText.toUpperCase()];
+              else if (/^[A-Za-z]{2,12}$/.test(letterText)) letters = letterText.toUpperCase().split("");
+              else if (/^[A-Z](?:[\s,，、;；|]+[A-Z])+$/i.test(letterText)) letters = letterText.toUpperCase().split(/[\s,，、;；|]+/).filter(Boolean);
+              optionsDOM.forEach((optionDOM, optIdx) => {
+                if (letters.length) {
+                  if (letters.includes(String.fromCharCode(65 + optIdx))) hit.add(optIdx);
+                  return;
+                }
+                const optionText = optionRawText(optionDOM);
+                const nAnswer = normalizeOptText(answer);
+                const nOption = normalizeOptText(optionText);
+                if (answer == optionText || this.removeAllTags(answer) == this.removeAllTags(optionText) || (nAnswer.length >= 2 && nOption && nOption.includes(nAnswer))) {
+                  hit.add(optIdx);
+                } else if (imgSrcsMatch(collectImgSrcs(answer), collectImgSrcs(optionDOM).concat(collectImgSrcs(optionText)))) {
+                  hit.add(optIdx);
+                }
+              });
+            });
+            return hit;
+          };
+          pickedIdx = matchBy(answerList);
+          // 整串一个都匹配不上，通常是后端把多个选项用标点挤成了一条
+          // （“方法,目的,结果”“为了撰写论文的研读法,解决问题的研读法,...”）。
+          // 这时按中英文标点再拆一次重试，仍拆不出东西才进入相似度兜底。
+          if (!pickedIdx.size && answerList.length) {
+            const expanded = [];
+            answerList.forEach((a) => {
+              const parts = String(a).split(/[,，、;；|]+/).map((s) => s.trim()).filter(Boolean);
+              if (parts.length >= 2) expanded.push(...parts);
+              else expanded.push(a);
+            });
+            if (expanded.length > answerList.length) pickedIdx = matchBy(expanded);
+          }
+          // 兜底匹配：答案文本和选项写法不一致时（例如答案是“新英格兰医学杂志”、
+          // 选项写“新英格兰医学期刊”或只写“NEJM”），按相似度挑最接近的那个，
+          // 避免明明拿到了答案却一个选项都点不上。只有“明显最像”时才采用，防止乱点。
+          if (!pickedIdx.size && answerList.length) {
+            const bigrams = (s) => {
+              const out = new Set();
+              for (let i = 0; i < s.length - 1; i++) out.add(s.slice(i, i + 2));
+              return out;
+            };
+            const sim = (a, b) => {
+              if (!a || !b) return 0;
+              if (a === b) return 1;
+              if (a.includes(b) || b.includes(a)) {
+                return Math.min(a.length, b.length) / Math.max(a.length, b.length) + 0.3;
               }
-              const optionText = this.removeHtml(optionDOM.innerHTML);
-              const nAnswer = normalizeOptText(answer);
-              const nOption = normalizeOptText(optionText);
-              if (answer == optionText || this.removeAllTags(answer) == this.removeAllTags(optionText) || (nAnswer.length >= 2 && nOption && nOption.includes(nAnswer))) {
-                pickedIdx.add(optIdx);
-              } else if (imgSrcsMatch(collectImgSrcs(answer), collectImgSrcs(optionDOM).concat(collectImgSrcs(optionText)))) {
-                pickedIdx.add(optIdx);
+              const A = bigrams(a);
+              const B = bigrams(b);
+              let inter = 0;
+              A.forEach((x) => { if (B.has(x)) inter += 1; });
+              return (2 * inter) / ((A.size + B.size) || 1);
+            };
+            const nAnswers = answerList.map((a) => normalizeOptText(a)).filter((s) => s && s.length >= 2);
+            let best = -1;
+            let bestScore = 0;
+            let secondScore = 0;
+            optionsDOM.forEach((optionDOM, optIdx) => {
+              const nOption = normalizeOptText(optionRawText(optionDOM));
+              let score = 0;
+              nAnswers.forEach((na) => { score = Math.max(score, sim(na, nOption)); });
+              if (score > bestScore) {
+                secondScore = bestScore;
+                bestScore = score;
+                best = optIdx;
+              } else if (score > secondScore) {
+                secondScore = score;
               }
             });
-          });
+            if (best >= 0 && bestScore >= 0.5 && (bestScore - secondScore) >= 0.08) {
+              pickedIdx.add(best);
+              try {
+                this.log.insertLog(`答案与选项写法不同，已按最接近的选项作答：${answerList.join(" / ")}`, "warning", 4);
+              } catch (_) {}
+            } else {
+              try {
+                this.log.insertLog(`答案与选项对不上，本题未填：${answerList.join(" / ")}`, "warning", 6);
+              } catch (_) {}
+            }
+          }
           Array.from(pickedIdx).sort((a, b) => a - b).forEach((optIdx) => {
             const optionDOM = optionsDOM[optIdx];
             if (!optionDOM) return;
             isSelected = true;
-            optionDOM.click();
+            clickOption(optionDOM);
           });
         } else if (question.type === "判断题") {
-          let answer = "对";
-          if (question.answer.answer[0].match(
-            /(^|,)(正确|是|对|√|T|ri|right|true)(,|$)/
-          )) {
-            answer = "对";
-          } else if (question.answer.answer[0].match(
-            /(^|,)(错误|否|错|×|F|wr|wrong|false)(,|$)/
-          )) {
-            answer = "错";
-          }
+          // 判断题的选项可能是「对/错」，也可能是「正确/错误」「是/否」「√/×」，
+          // 原逻辑只认选项文字正好等于“对”或“错”，遇到“正确/错误”就一个都点不上。
+          // 这里改成按语义判断：先认出答案是“真”还是“假”，再把对应的那个选项点掉。
+          const rawAnswer = Array.isArray(question.answer.answer)
+            ? String(question.answer.answer[0] == null ? "" : question.answer.answer[0])
+            : String(question.answer.answer == null ? "" : question.answer.answer);
+          const normAnswer = rawAnswer.replace(/[\s.。，,、"'“”]/g, "").toLowerCase();
+          const TRUE_RE = /^(正确|对|是|√|t|true|right|y|yes)$/i;
+          const FALSE_RE = /^(错误|错|否|×|x|f|false|wrong|n|no)$/i;
+          let isTrue = true;
+          if (FALSE_RE.test(normAnswer)) isTrue = false;
+          else if (TRUE_RE.test(normAnswer)) isTrue = true;
+          else if (/(错误|错|否|×|false|wrong)/i.test(normAnswer)) isTrue = false;
           optionsDOM.forEach((optionDOM) => {
-            if (answer == this.removeHtml(optionDOM.innerHTML)) {
+            const text = optionRawText(optionDOM).replace(/[\s.。，,、]/g, "");
+            const optTrue = TRUE_RE.test(text);
+            const optFalse = FALSE_RE.test(text);
+            if ((isTrue && optTrue && !optFalse) || (!isTrue && optFalse && !optTrue)) {
               isSelected = true;
-              optionDOM.click();
+              clickOption(optionDOM);
             }
           });
+          if (!isSelected) {
+            try {
+              this.log.insertLog(`判断题选项没对上，本题未填：${rawAnswer}`, "warning", 6);
+            } catch (_) {}
+          }
         } else ;
         return isSelected;
       });
@@ -11775,13 +11910,25 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         return [optionsObject, optionTexts];
       });
       __publicField(this, "addQuestions", (questions) => {
+        questions = Array.isArray(questions) ? questions : [];
         questions.forEach((question) => {
-          const questionTitle = this.removeHtml(question.name);
+          // 兼容两种形态：接口原始对象（name / questionType / questionOptions）
+          // 和已经映射过的对象（title / type / optionsText）。
+          // 否则 parseHtml 第二次运行时会把已映射对象当成原始对象，标题和题型全部丢失。
+          const titleSource = question.name != null ? question.name : (question.title != null ? question.title : "");
+          const questionTitle = this.removeHtml(titleSource);
           const rawType = question && question.questionType;
-          const apiTypeText = rawType && typeof rawType === "object" ? (rawType.name || rawType.code || "") : rawType;
+          const apiTypeText = rawType && typeof rawType === "object"
+            ? (rawType.name || rawType.code || "")
+            : (rawType != null ? rawType : (question.type || ""));
           let questionType = normalizeQuestionTypeName(apiTypeText);
+          const optionSource = question.questionOptions != null
+            ? question.questionOptions
+            : (Array.isArray(question.optionsText)
+              ? question.optionsText.map((t) => ({ content: t }))
+              : null);
           const [optionsObject, optionTexts] = this.extractOptions(
-            question.questionOptions,
+            optionSource,
             questionType
           );
           const subjectNodes = (this._document && this._document.querySelectorAll)
@@ -11790,9 +11937,23 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           const subjectNode = subjectNodes[this.questions.length] || this._document || null;
           // 接口给的题型为空或写成单选、但页面选项是复选框时按多选题处理，避免只填一个选项
           if ((!questionType || questionType === "单选题") && detectMultiChoiceDom(subjectNode)) questionType = "多选题";
+          // 题型名整个缺失时，用页面控件反推：文本框→填空，单选→单选，复选框→多选。
+          // 否则这些题会被判成“题型暂不支持”，既不上报有效信息也答不了。
+          let controls = "";
+          if (!questionType && subjectNode && subjectNode.querySelector) {
+            const hasText = !!subjectNode.querySelector("textarea, [contenteditable='true'], input[type='text'], input:not([type])");
+            const hasRadio = !!subjectNode.querySelector("input[type='radio'], [role='radio']");
+            const hasCheckbox = !!subjectNode.querySelector("input[type='checkbox'], [role='checkbox']");
+            if (detectMultiChoiceDom(subjectNode) || hasCheckbox) questionType = "多选题";
+            else if (hasText) questionType = "填空题";
+            else if (hasRadio) questionType = "单选题";
+            controls = [hasText ? "text" : "", hasRadio ? "radio" : "", hasCheckbox ? "checkbox" : ""].filter(Boolean).join(",");
+          }
           this.questions.push({
             element: subjectNode,
             type: questionType,
+            typeId: rawType && typeof rawType === "object" && rawType.id != null ? String(rawType.id) : "",
+            controls,
             title: questionTitle,
             optionsText: optionTexts,
             options: optionsObject,
@@ -11830,107 +11991,209 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     if (input == null ? void 0 : input.url) return input.url;
     return input ? String(input) : "";
   };
+  // ============ 站方反作弊检测的精确规避（依据线上 bundle 逆向结果） ============
+  // 站方检测（stuExamWeb bundle 内 Utils.isAllNative）只校验下面这些：
+  //   isNative(XMLHttpRequest)
+  //   isNative(XMLHttpRequest.prototype.open)
+  //   (!supportShadom || isNative(document.body.attachShadow))
+  //   !window.OCS
+  //   isNative(JSON.parse)
+  //   isNative(document.getSelection) && isNative(window.getSelection)
+  //   isNative(window.prototype.call) && isNative(window.prototype.apply) && isNative(window.prototype.bind)
+  // 三个关键结论：
+  //   1) 它只查 prototype.open，**不查 prototype.send** —— 所以抓响应体只挂 send，open 必须保持原生；
+  //   2) 干净浏览器里 window.prototype 是 undefined，该项会直接抛错，检测因此永不弹窗；
+  //      而脚本管理器的沙箱会让 window.prototype 变成对象，检测才真正跑起来 → 必须把它还原成原生原型；
+  //   3) 它用模块加载时保存的 funcToString 引用判断原生性，事后替换 Function.prototype.toString 无效，
+  //      所以不要动 toString，也不要动 call / apply / bind。
+  const guardExamDetection = () => {
+    const w = _unsafeWindow || (typeof unsafeWindow !== "undefined" ? unsafeWindow : window);
+    try {
+      const proto = w.prototype;
+      if (typeof proto === "undefined") return;          // 干净状态：检测会抛错，本来就不会弹窗
+      if (proto === w.Function.prototype) return;        // 已是原生原型，三项判定自然通过
+      if (proto && typeof proto === "object") {
+        ["call", "apply", "bind"].forEach((k) => {
+          try {
+            if (proto[k] !== w.Function.prototype[k]) {
+              Object.defineProperty(proto, k, { value: w.Function.prototype[k], writable: true, configurable: true });
+            }
+          } catch (_) {}
+        });
+      }
+      const ok = proto && typeof proto === "object"
+        && proto.call === w.Function.prototype.call
+        && proto.apply === w.Function.prototype.apply
+        && proto.bind === w.Function.prototype.bind;
+      if (!ok) w.prototype = w.Function.prototype;       // 兜底：整体换成原生原型（实测检测通过）
+    } catch (_) {}
+  };
+
+  const XHR_SEND_HOOKED = "__xsXhrSendHooked__";
+  const onExamQuestions = [];
+
+  const fireExamQuestionHooks = () => {
+    const list = onExamQuestions.splice(0, onExamQuestions.length);
+    if (!list.length) return;                       // 还没有人登记回调，保持可再次触发
+    const w = _unsafeWindow || window;
+    if (w.__xsAnswerStarted) return;                // 只答一轮，避免 doHomework/doExam 重复触发
+    w.__xsAnswerStarted = true;
+    // 只执行第一个回调：doHomework / doExam 注册的是同一套答题逻辑，
+    // 全都执行会让 init() 跑多遍，第二次又会重置题目与答案状态。
+    const cb = list[0];
+    const reportErr = (e) => {
+      try { useLogStore().insertLog("答题流程异常：" + (e && e.message ? e.message : e), "warning"); } catch (_) {}
+    };
+    setTimeout(() => {
+      try {
+        const r = cb();
+        // async 回调的异常不能丢：之前静默吞掉，表现就是日志停在“开始答题..”不动
+        if (r && typeof r.catch === "function") r.catch(reportErr);
+      } catch (e) { reportErr(e); }
+    }, 0);
+  };
+
+  // 把接口题目对象补齐成面板能直接显示的字段（title / type / optionsText）。
+  // 保留 name / questionType / questionOptions 原字段，后续 addQuestions 重新映射依然正确。
+  const mapDtoForDisplay = (dto) => {
+    const plain = (s) => String(s == null ? "" : s).replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+    const rawType = dto && dto.questionType;
+    const typeText = rawType && typeof rawType === "object" ? (rawType.name || rawType.code || "") : rawType;
+    const options = Array.isArray(dto && dto.questionOptions) ? dto.questionOptions : [];
+    const qType = normalizeQuestionTypeName(typeText);
+    return Object.assign({}, dto, {
+      title: plain(dto && dto.name),
+      type: qType,
+      optionsText: options.map((o) => plain(o && o.content)),
+      answer: { code: -1, answer: [] }
+    });
+  };
+
+  // 把抓到的题目写进 store（同时留一份给晚注册的答题入口补触发）。
+  // 必须在触发答题前调用：parseHtml 是从 store 里读题目的，store 为空会让映射拿不到题目。
+  const applyCapturedQuestions = (questions) => {
+    if (!Array.isArray(questions) || !questions.length) return false;
+    const w = _unsafeWindow || window;
+    w.__xsExamQuestionsReady = questions;
+    let displayList = questions;
+    try { displayList = questions.map(mapDtoForDisplay); } catch (_) { displayList = questions; }
+    try { useQuestionStore().questionList = displayList; } catch (_) {}
+    return true;
+  };
+
+  const handleXhrResponse = (xhr) => {
+    let url = "";
+    try { url = String(xhr.responseURL || ""); } catch (_) { return; }
+    if (!url) return;
+    let text = "";
+    try { text = xhr.responseText; } catch (_) { return; }
+    if (typeof text !== "string" || !text) return;
+
+    if (url.indexOf(ANSWER_SHEET_URL) !== -1) {
+      try { saveAnswerSheetPayload(parseResponseText(text)); } catch (_) {}
+      return;
+    }
+    if (!/doHomework|doExam/i.test(url)) return;
+    let questions = [];
+    try {
+      const data = JSON.parse(text);
+      const parts = data && data.rt && data.rt.examBase ? data.rt.examBase.workExamParts : null;
+      if (Array.isArray(parts)) parts.forEach((part) => { questions = questions.concat(part.questionDtos || []); });
+    } catch (_) { return; }
+    if (!applyCapturedQuestions(questions)) return;
+    fireExamQuestionHooks();
+  };
+
+  // 只挂 send：站方不检查 send，而 open 是被检查项，绝不能替换
+  const installXhrSendHook = () => {
+    const w = _unsafeWindow || window;
+    if (w[XHR_SEND_HOOKED]) return;
+    let XHR = null;
+    try { XHR = w.XMLHttpRequest; } catch (_) { return; }
+    if (typeof XHR !== "function" || !XHR.prototype || typeof XHR.prototype.send !== "function") return;
+    const originalSend = XHR.prototype.send;
+    XHR.prototype.send = function(...args) {
+      try {
+        if (!this.__xsSendHooked) {
+          this.__xsSendHooked = true;
+          this.addEventListener("load", function() { handleXhrResponse(this); });
+        }
+      } catch (_) {}
+      return originalSend.apply(this, args);
+    };
+    w[XHR_SEND_HOOKED] = true;
+  };
+
+  // 尽早执行：站方在进入答题页 1 秒后先查一次、之后每 60 秒再查一次
+  // 仅在智慧树域名下执行，其它平台完全不受影响
+  try {
+    if (location.hostname.indexOf("zhihuishu.com") !== -1) guardExamDetection();
+  } catch (_) {}
+  try {
+    if (/onlineexamh5new\.zhihuishu\.com|webExamList|dohomework|doExam/i.test(location.href)) {
+      installXhrSendHook();
+    }
+  } catch (_) {}
+
   const installAnswerSheetHook = () => {
+    guardExamDetection();
     const pageWindow = _unsafeWindow || window;
     const hookFlag = Symbol.for("__xsAsHooked");
     if (pageWindow[hookFlag]) return;
     pageWindow[hookFlag] = true;
+    // fetch 不在站方检测清单里，可以安全拦截
     const originalFetch = pageWindow.fetch;
     if (typeof originalFetch === "function") {
       pageWindow.fetch = async function(...args) {
         const response = await originalFetch.apply(this, args);
-        const requestUrl = getRequestUrl(args[0]);
-        if (requestUrl.includes(ANSWER_SHEET_URL)) {
-          response.clone().text().then((text) => {
-            saveAnswerSheetPayload(parseResponseText(text));
-          }).catch(() => {
-          });
-        }
+        try {
+          const requestUrl = getRequestUrl(args[0]);
+          if (requestUrl.indexOf(ANSWER_SHEET_URL) !== -1) {
+            response.clone().text().then((text) => {
+              saveAnswerSheetPayload(parseResponseText(text));
+            }).catch(() => {
+            });
+          }
+        } catch (_) {}
         return response;
       };
-      try {
-        const fetchToString = originalFetch.toString.bind(originalFetch);
-        Object.defineProperty(pageWindow.fetch, "toString", {
-          value: fetchToString,
-          writable: true, configurable: true
-        });
-      } catch (_) {}
     }
-    const OriginalXHR = pageWindow.XMLHttpRequest;
-    if (typeof OriginalXHR === "function" && !OriginalXHR[hookFlag]) {
-      const originalOpen = OriginalXHR.prototype.open;
-      const originalSend = OriginalXHR.prototype.send;
-      const reqUrlKey = Symbol.for("__xsReqUrl");
-      OriginalXHR[hookFlag] = true;
-      OriginalXHR.prototype.open = function(method, url2, ...rest) {
-        this[reqUrlKey] = url2 || "";
-        return originalOpen.call(this, method, url2, ...rest);
-      };
-      try {
-        const nativeOpenStr = originalOpen.toString.bind(originalOpen);
-        Object.defineProperty(OriginalXHR.prototype.open, "toString", {
-          value: nativeOpenStr, writable: true, configurable: true
-        });
-      } catch (_) {}
-      OriginalXHR.prototype.send = function(...args) {
-        this.addEventListener("load", function() {
-          const requestUrl = getRequestUrl(this.responseURL || this[reqUrlKey]);
-          if (requestUrl.includes(ANSWER_SHEET_URL)) {
-            saveAnswerSheetPayload(parseResponseText(this.responseText));
-          }
-        });
-        return originalSend.apply(this, args);
-      };
-      try {
-        const sendToString = originalSend.toString.bind(originalSend);
-        Object.defineProperty(OriginalXHR.prototype.send, "toString", {
-          value: sendToString,
-          writable: true, configurable: true
-        });
-      } catch (_) {}
-    }
+    installXhrSendHook();
   };
+
   const fetchHook = (url2, callback) => {
-    const questionStore = useQuestionStore();
-    function addXMLRequestCallback(callback2) {
-      var oldSend, i;
-      if (XMLHttpRequest.callbacks) {
-        XMLHttpRequest.callbacks.push(callback2);
-      } else {
-        XMLHttpRequest.callbacks = [callback2];
-        oldSend = XMLHttpRequest.prototype.send;
-        XMLHttpRequest.prototype.send = function() {
-          for (i = 0; i < XMLHttpRequest.callbacks.length; i++) {
-            XMLHttpRequest.callbacks[i](this);
-          }
-          oldSend.apply(this, arguments);
-        };
-      }
+    guardExamDetection();
+    installXhrSendHook();
+    if (typeof callback !== "function") return;
+    const w = _unsafeWindow || window;
+    // 题目可能在注册回调之前就已经抓到（send 钩子在 document-start 就装上了），这里补触发一次。
+    // 注意：必须先把题目写回 store，否则 parseHtml 读到空列表会抛错并被静默吞掉。
+    if (w.__xsExamQuestionsReady) {
+      if (w.__xsAnswerStarted) return;
+      applyCapturedQuestions(w.__xsExamQuestionsReady);
+      w.__xsAnswerStarted = true;
+      const reportErr = (e) => {
+        try { useLogStore().insertLog("答题流程异常：" + (e && e.message ? e.message : e), "warning"); } catch (_) {}
+      };
+      setTimeout(() => {
+        try {
+          const r = callback();
+          if (r && typeof r.catch === "function") r.catch(reportErr);
+        } catch (e) { reportErr(e); }
+      }, 0);
+      return;
     }
-    addXMLRequestCallback(function(xhr) {
-      xhr.addEventListener("load", function() {
-        if (xhr.readyState == 4 && xhr.status == 200) {
-          if (xhr.responseURL.includes(url2)) {
-            const keywords = ["doExam", "doHomework"];
-            if (keywords.some((keyword) => xhr.responseURL.includes(keyword))) {
-              let questions = [];
-              const questionsParts = JSON.parse(xhr.response).rt.examBase.workExamParts;
-              questionsParts.forEach((part) => {
-                console.log("part", part.questionDtos);
-                questions = questions.concat(part.questionDtos);
-              });
-              questionStore.questionList = questions;
-            }
-            callback();
-          }
-        }
-      });
-    });
+    onExamQuestions.push(callback);
   };
   const autoAnswerLogic = async () => {
     const log = useLogStore();
     const questionStore = useQuestionStore();
+    // 入口可能被调用多次（路由变化等），只跑一轮，避免重复解析/重复答题
+    const w0 = _unsafeWindow || window;
+    if (w0.__xsAutoAnswerEntered) return;
+    w0.__xsAutoAnswerEntered = true;
     log.insertLog("进入作业页面，脚本开始工作中..");
+    log.insertLog("解析模块：fix-mapping（如仍显示 undefined 说明装的不是这版）");
     questionStore.accuracy = -1;
     const handleFetchHook = async () => {
       const accuracy = await new QuestionHandler2("zy").init();
