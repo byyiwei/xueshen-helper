@@ -4905,6 +4905,60 @@ def is_pure_image_answer(answer):
     text_only = re.sub(r"[\s\u3000\r\n\t，。！？、；：,.!?;:\-—_【】\[\]（）()\"'“”‘’《》]", "", text_only)
     return len(text_only.strip()) < 2
 
+_REASONING_ONLY_RE = re.compile(
+    r"^\s*(?:"
+    r"we\s+(?:need|should|must|can|will|are\s+given)|the\s+(?:user|question)|let\s+me|let'?s|"
+    r"i\s+(?:need|should|will|think|can)|need\s+to|to\s+answer|first[,\s]|looking\s+at|"
+    r"based\s+on\s+the|okay(?![a-z])|ok[,\s]|sure(?![a-z])|hmm(?![a-z])|thinking|step[-\s]?by[-\s]?step|"
+    r"given\s+the|analysis(?![a-z])|"
+    r"我们需要|让我们|让我|首先|根据题意|题目要求|分析一下|先看|我需要|我们要"
+    r")",
+    re.I,
+)
+
+
+def _answer_hits_options(question, answer):
+    """答案（含多选 JSON 数组）是否至少对应一个页面选项；无选项题不参与判断。"""
+    options = [str(o).strip() for o in extract_options_from_question(question) if str(o).strip()]
+    if not options:
+        return True
+    items = [str(x).strip() for x in _answer_items(answer) if str(x).strip()]
+    if not items:
+        return False
+
+    def norm(v):
+        v = re.sub(r"^[A-Za-z][.、．)）:：]\s*", "", str(v or ""))
+        return re.sub(r"[\s　，。！？；：,.!?;:\-—_【】\[\]（）()\"'“”‘’]+", "", v).lower()
+
+    option_norms = [norm(o) for o in options if norm(o)]
+    for item in items:
+        if re.fullmatch(r"[A-Za-z](?:[\s、,，&+与和/|]*[A-Za-z]){0,11}", item):
+            letters = re.sub(r"[\s、,，&+与和/|]+", "", item).upper()
+            if not all(ord(c) - 65 < len(options) for c in letters):
+                return False
+            continue
+        n_item = norm(item)
+        if not n_item:
+            return False
+        if not any(n_item == no or (len(n_item) >= 2 and n_item in no) for no in option_norms):
+            return False
+    return True
+
+
+def _is_reasoning_only_choice_answer(question, answer):
+    """选项题只返回「思考过程/元话术」时判为无效，让任务池换下一个模型重试。
+
+    典型：`We need answer. Need identify task3? The` —— 既不是选项字母也不是选项正文，
+    下发后脚本对不上任何选项，报「答案拿到了但填不上」，同时污染题库。
+    """
+    if not extract_options_from_question(question):
+        return False
+    text = str(answer or "").strip()
+    if not text or _answer_hits_options(question, answer):
+        return False
+    return bool(_REASONING_ONLY_RE.search(text))
+
+
 def save_question_bank_answer(question, answer, model_name="", provider_name=""):
     if not answer:
         return
@@ -4917,6 +4971,9 @@ def save_question_bank_answer(question, answer, model_name="", provider_name="")
         return
     if _is_garbage_bank_answer(answer, question):
         print(f"[题库入库] 垃圾答案跳过，不写入题库 model={model_name} answer={str(answer)[:80]}", flush=True)
+        return
+    if _is_reasoning_only_choice_answer(question, answer):
+        print(f"[题库入库] 思考过程型答案跳过，不写入题库 model={model_name} answer={str(answer)[:80]}", flush=True)
         return
     if _is_truncated_multi_answer(question, answer, fresh=True):
         print(f"[题库入库] 多选答案不完整，跳过入库 model={model_name} answer={str(answer)[:80]}", flush=True)
@@ -6763,7 +6820,7 @@ def _run_ai_task(task):
         attempts += 1
         if answer:
             answer = normalize_ai_answer(question, answer)
-            if answer and not _is_truncated_multi_answer(question, answer, fresh=True) and not _is_garbage_bank_answer(answer, question):
+            if answer and not _is_truncated_multi_answer(question, answer, fresh=True) and not _is_garbage_bank_answer(answer, question) and not _is_reasoning_only_choice_answer(question, answer):
                 record_model_token_usage(model_name, tokens)
                 cache_key = make_ai_cache_key(question, "auto")
                 set_ai_cache(cache_key, answer, model_name, provider_name)
@@ -15084,7 +15141,7 @@ class Handler(BaseHTTPRequestHandler):
                     if needs_solution_process(question) and not _looks_like_process_answer(answer):
                         print(f"[AI缓存命中但缺少过程，改走AI] mode={model_mode} answer={str(answer)[:80]}", flush=True)
                         cached = None
-                    elif answer and (_is_truncated_multi_answer(question, answer, fresh=True) or _is_garbage_bank_answer(answer, question)):
+                    elif answer and (_is_truncated_multi_answer(question, answer, fresh=True) or _is_garbage_bank_answer(answer, question) or _is_reasoning_only_choice_answer(question, answer)):
                         print(f"[AI缓存命中但答案不可用，改走AI] mode={model_mode} answer={str(answer)[:80]}", flush=True)
                         cached = None
                     elif not answer:
@@ -15160,7 +15217,7 @@ class Handler(BaseHTTPRequestHandler):
                         self._send_json(500, {"code": 500, "msg": err})
                         return
                     status = "success"
-                    bad_answer = _is_truncated_multi_answer(question, answer, fresh=True) or _is_garbage_bank_answer(answer, question)
+                    bad_answer = _is_truncated_multi_answer(question, answer, fresh=True) or _is_garbage_bank_answer(answer, question) or _is_reasoning_only_choice_answer(question, answer)
                     if bad_answer:
                         # 兜底话术/截断答案不下发给脚本：发了用户就会把它填进答题框，
                         # 返回 500 让脚本走「未查到答案」的正规兜底（不扣题数、不写缓存、不入库）
