@@ -9475,16 +9475,16 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         var _a;
         if (!this._window) return false;
         let filled = false;
+        const cleanChoiceAnswer = (raw) => String(raw == null ? "" : raw)
+          .replace(/^\s*(?:正确|参考|标准)?答案\s*[:：]\s*/i, "")
+          .replace(/^\s*(?:正确|参考|标准)答案\s*(?:是|为)\s*/i, "")
+          .replace(/^\s*答案\s+(?=\S)/i, "")
+          .trim();
         if (question.type === "0" || question.type === "1") {
           const optionKeys = Object.keys(question.options);
           const targets = new Set();
           let answers = question.answer.answer || [];
           if (!answers.length) return false;
-          const cleanChoiceAnswer = (raw) => String(raw == null ? "" : raw)
-            .replace(/^\s*(?:正确|参考|标准)?答案\s*[:：]\s*/i, "")
-            .replace(/^\s*(?:正确|参考|标准)答案\s*(?:是|为)\s*/i, "")
-            .replace(/^\s*答案\s+(?=\S)/i, "")
-            .trim();
           // 答案被题库拆成多个字母（如 "R|C|B"）时，先拼回整串看是否正好是某个选项的正文（RCB模型）。
           // 拆开的字母越界时按字母点必然失败，这种题目要回到选项正文匹配。
           if (question.type === "0" && answers.length > 1) {
@@ -9575,7 +9575,16 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             }
           }
           for (const key of targets) this.selectChoiceOption(question.options[key]);
-          filled = optionKeys.every(key => this.isChoiceOptionSelected(question.options[key]) === targets.has(key));
+          // 勾选后页面可能重渲染，缓存节点已脱离文档，回读会误判为没点上；按同一顺序重新取一次 DOM 再读
+          const liveOptionList = [...question.element.querySelectorAll(
+            ["zj"].includes(this.type) ? '[class*="before-after"]' : ".answerBg"
+          )];
+          const optionSelectedNow = (key) => {
+            const idx = optionKeys.indexOf(key);
+            const live = liveOptionList[idx];
+            return this.isChoiceOptionSelected(live || question.options[key]);
+          };
+          filled = optionKeys.every(key => optionSelectedNow(key) === targets.has(key));
         } else if (question.type === "2") {
           const blankFields = this.getBlankFields(question.element);
           if (blankFields.length === 0) return false;
@@ -9594,10 +9603,21 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           const expect = Math.min(blankFields.length, blankAnswers.length);
           filled = blankFilled > 0 && blankFilled === expect;
         } else if (question.type === "3") {
-          const answer = this.resolveJudgeAnswer(question.answer.answer[0]);
+          const rawJudge = cleanChoiceAnswer(String(question.answer.answer[0] == null ? "" : question.answer.answer[0]));
+          let answer = this.resolveJudgeAnswer(rawJudge);
+          // 判断题答案可能是选项字母（页面 A=对、B=错），按字母定位到选项文字再判断对错
+          if (!answer && /^[A-Za-z]$/.test(rawJudge)) {
+            const judgeKeys = Object.keys(question.options);
+            const judgeIdx = rawJudge.toUpperCase().charCodeAt(0) - 65;
+            if (judgeIdx >= 0 && judgeIdx < judgeKeys.length) {
+              const judgeText = this.removeHtml(judgeKeys[judgeIdx]).replace(/^[A-Za-z][.、．)）:：\s]+/, "").trim();
+              if (/(错|错误|否|×|✗)/.test(judgeText) || /^(?:false|f)$/i.test(judgeText)) answer = "false";
+              else if (/(对|正确|是|√|✓)/.test(judgeText) || /^(?:true|t)$/i.test(judgeText)) answer = "true";
+            }
+          }
           if (!answer) {
             this.log.insertLog(
-              `判断题答案无法判定对错，本题不填：${question.answer.answer[0] || "空"}`,
+              `判断题答案无法判定对错，本题不填：${rawJudge || "空"}`,
               "warning"
             );
             return false;
