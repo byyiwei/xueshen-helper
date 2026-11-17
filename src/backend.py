@@ -5223,6 +5223,23 @@ def normalize_ai_answer(question, answer):
                 pass
     options = extract_options_from_question(question)
     is_multi = _is_multiple_choice_type(parse_question_payload(question).get("question_type"))
+    # 答案正文就是选项本身时（选项里带大写字母：OCR文字识别、BLEU 值、AQ、BP），
+    # 必须优先返回选项原文。否则后面「单选多字母取首字母」会把 BP 变成 B 号选项，
+    # 把 AQ 变成 A 号选项，整题点错或点不上。
+    if options:
+        def _norm_opt(v):
+            t0 = re.sub(r"^[A-Za-z][.、．)）:：]\s*", "", str(v or ""))
+            return re.sub(r"[\s　，。！？；：,.!?;:\-—_【】\[\]（）()\"'“”‘’]+", "", t0).lower()
+        _t = _norm_opt(text)
+        if _t:
+            _exact = [opt for opt in options if _norm_opt(opt) == _t]
+            if len(_exact) == 1:
+                return _exact[0]
+            _letters_only = bool(re.fullmatch(r"[A-Za-z](?:[\s、,，&+与和/|]*[A-Za-z]){0,11}", text))
+            if not _letters_only:
+                _hits = [opt for opt in options if _norm_opt(opt) and len(_t) >= 2 and _t in _norm_opt(opt)]
+                if len(_hits) == 1:
+                    return _hits[0]
 
     if options:
         def _letters_to_answer(letter_text):
@@ -5304,8 +5321,8 @@ def normalize_ai_answer(question, answer):
                 else:
                     if 0 <= idx < len(options):
                         return options[idx]
-                    if rest:
-                        return rest
+                    # 字母超出选项范围说明这不是选项字母（如 "J.古德"），保留原文交给正文匹配
+                    return text
         else:
             # 多选：A、B、D / A. B. C. 等残留格式仍按字母展开
             m = re.match(r"^\s*([A-Z])(?:\s*[:：.．、)\）]|[\s]+)(.*)$", text, re.I)
