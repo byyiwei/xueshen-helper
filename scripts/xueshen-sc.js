@@ -2715,7 +2715,7 @@
     const hook = getQuestionFillHook();
     if (!question || !hook || !hook.questions || !hook.questions[index]) return false;
     const real = hook.questions[index];
-    const answer = normalizeLocalBackendAnswers(candidate && candidate.answer);
+    const answer = normalizeLocalBackendAnswers(candidate && candidate.answer, real.optionsText);
     if (!answer.length) return false;
     real.answer = { code: 1, answer, src: "bank" };
     question.answer = { code: 1, answer, src: "bank" };
@@ -3327,6 +3327,55 @@
     const hit = XS_TYPE_RULES.find((rule) => rule.keywords.some((keyword) => raw.includes(keyword)));
     return hit ? hit.name : raw;
   };
+  // 把答案规范成字符串数组：支持数组、单条文本、"A,B,D"、"ABD"、"D.甲 E.乙" 等形态。
+  // 注意：同名的函数原先只定义在另一个函数的局部作用域里，QuestionHandler2.fillQuestion 调不到，
+  // 会抛 ReferenceError 让答案永远填不上（日志表现就是“开始答题..”后什么都没有），所以模块级再提供一份。
+  const normalizeChoiceAnswerList = (answers) => {
+    // 先拍平：支持数组、嵌套、以及后端把多选答案塞成字符串的形态，
+    // 例如 "[\"真实性\", \"严谨性\", \"规范性\"]" —— 不拆开的话会被当成一整条文本，匹配不到任何选项。
+    const flatten = (v) => {
+      if (Array.isArray(v)) return v.reduce((acc, x) => acc.concat(flatten(x)), []);
+      const s = String(v == null ? "" : v).trim();
+      if (!s) return [];
+      if ((s.startsWith("[") && s.endsWith("]")) || (s.startsWith("（") && s.endsWith("）"))) {
+        try {
+          const parsed = JSON.parse(s);
+          if (Array.isArray(parsed)) return parsed.reduce((acc, x) => acc.concat(flatten(x)), []);
+        } catch (_) {}
+        const inner = s.slice(1, -1).trim();
+        if (inner) {
+          return inner.split(/[,，、;；]+/)
+            .map((x) => x.replace(/^[\s'"]+|[\s'"]+$/g, "").trim())
+            .filter(Boolean)
+            .reduce((acc, x) => acc.concat(flatten(x)), []);
+        }
+      }
+      return [s];
+    };
+    const list = flatten(answers);
+    const splitItem = (text) => {
+      const parts = text.split(/(?=[A-Za-z]\s*[.、．)）:：]\s*\S)/)
+        .map((s) => s.replace(/^[,，、;；\s]+/, "").trim())
+        .filter(Boolean);
+      const allPrefixed = parts.length > 1 && parts.every((p) => /^[A-Za-z]\s*[.、．)）:：]/.test(p));
+      if (allPrefixed) return parts;
+      // 英文答案常用英文逗号/分号并列多个选项，例如
+      // "ARTICLE ATTRIBUTE,ARTICLE TYPE,TEXT AVAILABILITY"。
+      // 只按英文标点拆，中文逗号不拆（中文答案里的“，”往往是句子停顿，拆开会答错）。
+      if (/[,;|]/.test(text)) {
+        const pieces = text.split(/[,;|]+/).map((s) => s.trim()).filter(Boolean);
+        if (pieces.length >= 2 && pieces.every((p) => p.length >= 2)) return pieces;
+      }
+      return [text];
+    };
+    const out = [];
+    list.forEach((item) => {
+      splitItem(item).forEach((part) => {
+        if (!out.includes(part)) out.push(part);
+      });
+    });
+    return out;
+  };
   // 题型文字缺失或不准时的兜底：题目区域内出现复选框样式就按多选题处理，
   // 否则多选会被当成单选，只填一个选项
   const detectMultiChoiceDom = (root) => {
@@ -3356,7 +3405,18 @@
     const kept = items.filter((x) => !_isRefusalAnswer(x));
     return kept.length ? kept : items;
   };
-  const normalizeLocalBackendAnswers = (answer) => {
+  const normalizeLocalBackendAnswers = (answer, optionTexts) => {
+    // 选项正文里本来就带大写字母（OCR文字识别、BLEU 值、PPT大纲、AQ…），
+    // 旧逻辑按「开头字母 + 中文说明」把它拆成单选字母，一道题变成多个目标后整题放弃。
+    // 有选项时先比对正文：整段就是某个选项，就按正文交给填充，绝不拆字母。
+    const optionList = Array.isArray(optionTexts) ? optionTexts.map((x) => String(x == null ? "" : x)).filter(Boolean) : [];
+    const optionNorms = optionList.map((s) => String(s).normalize("NFKC").replace(/\s+/g, "").replace(/^[A-Za-z][.、．)）:：]/, "").toLowerCase()).filter(Boolean);
+    const normAnswerText = (s) => String(s == null ? "" : s).normalize("NFKC").replace(/\s+/g, "").replace(/^[A-Za-z][.、．)）:：]/, "").toLowerCase();
+    const wholeIsOption = (raw) => {
+      const t = normAnswerText(raw);
+      return Boolean(t) && optionNorms.some((o) => o === t || (t.length >= 2 && o.includes(t)));
+    };
+    const validLetterSeq = (letters) => !optionNorms.length || letters.every((c) => c.charCodeAt(0) - 65 < optionNorms.length);
     if (Array.isArray(answer)) return _filterRefusalAnswers(answer.map((x) => String(x).trim()).filter(Boolean));
     const text = String(answer || "").replace(/。$/, "").trim();
     if (!text) return [];
@@ -3379,7 +3439,9 @@
     // 处理无分隔符的连续字母序列，如 "ABCD"/"ABCDE" → ["A","B","C","D","E"]
     // 只拆「全大写 + 严格递增」：小写词（apple）与乱序大写词（HTTP、DNA）都是填空/简答内容，
     // 拆成字母会点错选项；多选答案按字母序给，乱序说明它是一个词。
-    if (/^[A-Z]{2,10}$/.test(text) && [...text].every((c, i) => i === 0 || c > text[i - 1])) {
+    // 另外：整段就是选项正文（BP/AQ/OCR…）或字母超出页面选项数时也不拆。
+    if (/^[A-Z]{2,10}$/.test(text) && !wholeIsOption(text) && validLetterSeq(text.split("")) &&
+        [...text].every((c, i) => i === 0 || c > text[i - 1])) {
       return text.split("").filter(Boolean);
     }
     // "A 正确" / "A、C 正确"：开头是选项字母、后面紧跟中文说明时按字母取，别整句丢给匹配。
@@ -3387,11 +3449,14 @@
     const headLetters = (text.match(/^[A-Z](?:[\s、,，]?\s*[A-Z])*(?=[^A-Za-z]|$)/) || [""])[0];
     const headSeq = headLetters.replace(/[\s、,，]+/g, "").split("").filter(Boolean);
     const headTail = text.slice(headLetters.length);
-    if (headSeq.length && text.length <= 12 && /^[\s、,，(（:：.。-]*[\u4e00-\u9fff]/.test(headTail)) {
+    if (headSeq.length && !wholeIsOption(text) && validLetterSeq(headSeq) && text.length <= 12 && /^[\s、,，(（:：.。-]*[一-鿿]/.test(headTail)) {
       return headSeq;
     }
-    if (/^[A-Z](?:[\s,，、;；|]+[A-Z])+$/.test(text.toUpperCase())) {
-      return text.toUpperCase().split(/[\s,，、;；|]+/).filter(Boolean);
+    if (!wholeIsOption(text) && /^[A-Z](?:[\s,，、;；|]+[A-Z])+$/.test(text.toUpperCase())) {
+      const seq = text.toUpperCase().split(/[\s,，、;；|]+/).filter(Boolean);
+      if (validLetterSeq(seq)) return seq;
+      // 字母越界（页面没那么多选项）说明这不是字母答案，保留原文按正文匹配
+      return _filterRefusalAnswers([text]);
     }
     // 文本答案不再按分隔符拆分（选项内容可能包含任何标点），保留完整字符串由 fillChoice 子串匹配
     return _filterRefusalAnswers([text]);
@@ -3714,7 +3779,7 @@
           resolve({
             code: 1,
             data: {
-              answer: normalizeLocalBackendAnswers(obj.data.answer),
+              answer: normalizeLocalBackendAnswers(obj.data.answer, question.optionsText),
               src: obj.data.bank ? "bank" : obj.data.cache ? "cache" : obj.data.multimatch ? "pick" : "ai",
               multimatch: !!obj.data.multimatch && candidates.length > 0,
               candidates,
@@ -18512,7 +18577,7 @@ const XS_EXT = (() => {
     // ---------- 题库 / AI 先答 ----------
     function mapBackendAnswer(question, answers) {
       const picked = [];
-      const list = typeof normalizeLocalBackendAnswers === "function" ? normalizeLocalBackendAnswers(answers) : [].concat(answers || []);
+      const list = typeof normalizeLocalBackendAnswers === "function" ? normalizeLocalBackendAnswers(answers, question.options.map((o) => o.content)) : [].concat(answers || []);
       for (const raw of list) {
         const text = String(raw == null ? "" : raw).trim();
         if (!text) continue;
