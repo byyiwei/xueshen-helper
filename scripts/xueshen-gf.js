@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.21
+// @version      6.0.22
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
@@ -15,6 +15,11 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.22 (2026-11-17)
+// @changelog    1. 修复选项正文以字母开头的答案被拆成字母导致填不上：OCR文字识别、BLEU 值、AQ、PPT大纲结构 等现在按正文匹配
+// @changelog    2. 修复判断题答案写成「答案：B」时整题放弃；答案只给「正确/错误」时按选项正文唯一匹配
+// @changelog    3. 选择题勾选后页面重渲染导致回读失败，改为重新读取页面确认
+// @changelog    4. 智慧树题型识别失败时按页面选项推断，不再直接提示「该题型暂不支持」
 // @changelog    v6.0.21 (2026-11-16)
 // @changelog    1. 支持超星新版作业页的复合选择题：大题里的小题逐题识别、逐题作答，阅读题自动带上短文，不再整页只识别成两道空题
 // @changelog    2. 修复英文单词答案填不上：peak、migration 这类答案不再被当成选项字母，也不会和 immigration 这种相似选项判成多义而放弃
@@ -2716,7 +2721,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     const hook = getQuestionFillHook();
     if (!question || !hook || !hook.questions || !hook.questions[index]) return false;
     const real = hook.questions[index];
-    const answer = normalizeLocalBackendAnswers(candidate && candidate.answer);
+    const answer = normalizeLocalBackendAnswers(candidate && candidate.answer, real.optionsText);
     if (!answer.length) return false;
     real.answer = { code: 1, answer, src: "bank" };
     question.answer = { code: 1, answer, src: "bank" };
@@ -3328,6 +3333,55 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     const hit = XS_TYPE_RULES.find((rule) => rule.keywords.some((keyword) => raw.includes(keyword)));
     return hit ? hit.name : raw;
   };
+  // 把答案规范成字符串数组：支持数组、单条文本、"A,B,D"、"ABD"、"D.甲 E.乙" 等形态。
+  // 注意：同名的函数原先只定义在另一个函数的局部作用域里，QuestionHandler2.fillQuestion 调不到，
+  // 会抛 ReferenceError 让答案永远填不上（日志表现就是“开始答题..”后什么都没有），所以模块级再提供一份。
+  const normalizeChoiceAnswerList = (answers) => {
+    // 先拍平：支持数组、嵌套、以及后端把多选答案塞成字符串的形态，
+    // 例如 "[\"真实性\", \"严谨性\", \"规范性\"]" —— 不拆开的话会被当成一整条文本，匹配不到任何选项。
+    const flatten = (v) => {
+      if (Array.isArray(v)) return v.reduce((acc, x) => acc.concat(flatten(x)), []);
+      const s = String(v == null ? "" : v).trim();
+      if (!s) return [];
+      if ((s.startsWith("[") && s.endsWith("]")) || (s.startsWith("（") && s.endsWith("）"))) {
+        try {
+          const parsed = JSON.parse(s);
+          if (Array.isArray(parsed)) return parsed.reduce((acc, x) => acc.concat(flatten(x)), []);
+        } catch (_) {}
+        const inner = s.slice(1, -1).trim();
+        if (inner) {
+          return inner.split(/[,，、;；]+/)
+            .map((x) => x.replace(/^[\s'"]+|[\s'"]+$/g, "").trim())
+            .filter(Boolean)
+            .reduce((acc, x) => acc.concat(flatten(x)), []);
+        }
+      }
+      return [s];
+    };
+    const list = flatten(answers);
+    const splitItem = (text) => {
+      const parts = text.split(/(?=[A-Za-z]\s*[.、．)）:：]\s*\S)/)
+        .map((s) => s.replace(/^[,，、;；\s]+/, "").trim())
+        .filter(Boolean);
+      const allPrefixed = parts.length > 1 && parts.every((p) => /^[A-Za-z]\s*[.、．)）:：]/.test(p));
+      if (allPrefixed) return parts;
+      // 英文答案常用英文逗号/分号并列多个选项，例如
+      // "ARTICLE ATTRIBUTE,ARTICLE TYPE,TEXT AVAILABILITY"。
+      // 只按英文标点拆，中文逗号不拆（中文答案里的“，”往往是句子停顿，拆开会答错）。
+      if (/[,;|]/.test(text)) {
+        const pieces = text.split(/[,;|]+/).map((s) => s.trim()).filter(Boolean);
+        if (pieces.length >= 2 && pieces.every((p) => p.length >= 2)) return pieces;
+      }
+      return [text];
+    };
+    const out = [];
+    list.forEach((item) => {
+      splitItem(item).forEach((part) => {
+        if (!out.includes(part)) out.push(part);
+      });
+    });
+    return out;
+  };
   // 题型文字缺失或不准时的兜底：题目区域内出现复选框样式就按多选题处理，
   // 否则多选会被当成单选，只填一个选项
   const detectMultiChoiceDom = (root) => {
@@ -3357,7 +3411,18 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     const kept = items.filter((x) => !_isRefusalAnswer(x));
     return kept.length ? kept : items;
   };
-  const normalizeLocalBackendAnswers = (answer) => {
+  const normalizeLocalBackendAnswers = (answer, optionTexts) => {
+    // 选项正文里本来就带大写字母（OCR文字识别、BLEU 值、PPT大纲、AQ…），
+    // 旧逻辑按「开头字母 + 中文说明」把它拆成单选字母，一道题变成多个目标后整题放弃。
+    // 有选项时先比对正文：整段就是某个选项，就按正文交给填充，绝不拆字母。
+    const optionList = Array.isArray(optionTexts) ? optionTexts.map((x) => String(x == null ? "" : x)).filter(Boolean) : [];
+    const optionNorms = optionList.map((s) => String(s).normalize("NFKC").replace(/\s+/g, "").replace(/^[A-Za-z][.、．)）:：]/, "").toLowerCase()).filter(Boolean);
+    const normAnswerText = (s) => String(s == null ? "" : s).normalize("NFKC").replace(/\s+/g, "").replace(/^[A-Za-z][.、．)）:：]/, "").toLowerCase();
+    const wholeIsOption = (raw) => {
+      const t = normAnswerText(raw);
+      return Boolean(t) && optionNorms.some((o) => o === t || (t.length >= 2 && o.includes(t)));
+    };
+    const validLetterSeq = (letters) => !optionNorms.length || letters.every((c) => c.charCodeAt(0) - 65 < optionNorms.length);
     if (Array.isArray(answer)) return _filterRefusalAnswers(answer.map((x) => String(x).trim()).filter(Boolean));
     const text = String(answer || "").replace(/。$/, "").trim();
     if (!text) return [];
@@ -3380,7 +3445,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     // 处理无分隔符的连续字母序列，如 "ABCD"/"ABCDE" → ["A","B","C","D","E"]
     // 只拆「全大写 + 严格递增」：小写词（apple）与乱序大写词（HTTP、DNA）都是填空/简答内容，
     // 拆成字母会点错选项；多选答案按字母序给，乱序说明它是一个词。
-    if (/^[A-Z]{2,10}$/.test(text) && [...text].every((c, i) => i === 0 || c > text[i - 1])) {
+    // 另外：整段就是选项正文（BP/AQ/OCR…）或字母超出页面选项数时也不拆。
+    if (/^[A-Z]{2,10}$/.test(text) && !wholeIsOption(text) && validLetterSeq(text.split("")) &&
+        [...text].every((c, i) => i === 0 || c > text[i - 1])) {
       return text.split("").filter(Boolean);
     }
     // "A 正确" / "A、C 正确"：开头是选项字母、后面紧跟中文说明时按字母取，别整句丢给匹配。
@@ -3388,11 +3455,14 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     const headLetters = (text.match(/^[A-Z](?:[\s、,，]?\s*[A-Z])*(?=[^A-Za-z]|$)/) || [""])[0];
     const headSeq = headLetters.replace(/[\s、,，]+/g, "").split("").filter(Boolean);
     const headTail = text.slice(headLetters.length);
-    if (headSeq.length && text.length <= 12 && /^[\s、,，(（:：.。-]*[\u4e00-\u9fff]/.test(headTail)) {
+    if (headSeq.length && !wholeIsOption(text) && validLetterSeq(headSeq) && text.length <= 12 && /^[\s、,，(（:：.。-]*[一-鿿]/.test(headTail)) {
       return headSeq;
     }
-    if (/^[A-Z](?:[\s,，、;；|]+[A-Z])+$/.test(text.toUpperCase())) {
-      return text.toUpperCase().split(/[\s,，、;；|]+/).filter(Boolean);
+    if (!wholeIsOption(text) && /^[A-Z](?:[\s,，、;；|]+[A-Z])+$/.test(text.toUpperCase())) {
+      const seq = text.toUpperCase().split(/[\s,，、;；|]+/).filter(Boolean);
+      if (validLetterSeq(seq)) return seq;
+      // 字母越界（页面没那么多选项）说明这不是字母答案，保留原文按正文匹配
+      return _filterRefusalAnswers([text]);
     }
     // 文本答案不再按分隔符拆分（选项内容可能包含任何标点），保留完整字符串由 fillChoice 子串匹配
     return _filterRefusalAnswers([text]);
@@ -3715,7 +3785,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           resolve({
             code: 1,
             data: {
-              answer: normalizeLocalBackendAnswers(obj.data.answer),
+              answer: normalizeLocalBackendAnswers(obj.data.answer, question.optionsText),
               src: obj.data.bank ? "bank" : obj.data.cache ? "cache" : obj.data.multimatch ? "pick" : "ai",
               multimatch: !!obj.data.multimatch && candidates.length > 0,
               candidates,
@@ -8889,18 +8959,18 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           // 答案拿到了但页面上点不上：把题目节点和控件数量报回去，才能判断是页面改版还是选项是图片
           const reportFillFail = (question) => {
             const el = question && question.element;
-            const isChoice = ["0", "1"].includes(String((question && question.type) || ""));
+            const isChoice = ["0", "1", "3"].includes(String((question && question.type) || ""));
             const controls = el && el.querySelectorAll ? el.querySelectorAll('input, textarea, [contenteditable="true"]') : [];
             const hoverOptions = el && el.querySelectorAll ? el.querySelectorAll('.stem_answer > div[onclick*="addChoice"]') : [];
             const answerText = ((question && question.answer && question.answer.answer) || []).join("|");
             window.__XSReportPageIssue && window.__XSReportPageIssue({
               page_type: "cx-" + this.type,
               stage: "fill",
-              reason_code: "answer_fill_failed",
+              reason_code: (question && question.__xsFillReason) || "answer_fill_failed",
               selector: isChoice
                 ? (hoverOptions.length ? '.stem_answer > div[onclick*="addChoice"]' : '.answerBg input[type="radio"], .answerBg input[type="checkbox"]')
-                : "textarea / contenteditable",
-              expected: isChoice ? "选项按钮可点击并回读为已选中" : "文本框可写入并回读",
+                : "textarea / input / contenteditable",
+              expected: (question && question.__xsFillReason) ? "答案内容能匹配页面选项" : (isChoice ? "选项按钮可点击并回读为已选中" : "文本框可写入并回读"),
               found: {
                 type: String((question && question.type) || ""),
                 options: ((question && question.optionsText) || []).length,
@@ -9275,6 +9345,57 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         });
         return flat.slice(0, blankCount);
       });
+      __publicField(this, "getBlankFields", (root) => {
+        // 超星填空题常用 input.tkInput / .Zy_ulTk 里的文本框，只有部分题目用 textarea；
+        // 旧逻辑只找 textarea，页面是 input 时整题放弃（答案拿到了但填不上）。
+        if (!root || !root.querySelectorAll) return [];
+        const visible = (el) => {
+          if (el.disabled || el.readOnly) return false;
+          try {
+            if (el.getClientRects && el.getClientRects().length === 0) return false;
+            const win = el.ownerDocument && el.ownerDocument.defaultView;
+            const style = win && win.getComputedStyle(el);
+            if (style && (style.display === "none" || style.visibility === "hidden")) return false;
+          } catch (_) {
+          }
+          return true;
+        };
+        const fields = [...root.querySelectorAll("textarea, input")].filter((el) => {
+          const tag = String(el.tagName || "").toLowerCase();
+          if (tag === "input") {
+            const type = String(el.getAttribute("type") || "text").toLowerCase();
+            if (!["text", "search", "tel", "number", ""].includes(type)) return false;
+          }
+          return visible(el);
+        });
+        if (fields.length) return fields;
+        return [...root.querySelectorAll('[contenteditable="true"]')].filter(visible);
+      });
+      __publicField(this, "fillBlankField", (field, rawText) => {
+        const text = String(rawText == null ? "" : rawText);
+        if (!field || !text) return false;
+        const tag = String(field.tagName || "").toLowerCase();
+        if (tag === "textarea") return this.fillUeditor(field, text);
+        const win = (field.ownerDocument && field.ownerDocument.defaultView) || this._window;
+        try {
+          const EventType2 = (win && win.Event) || Event;
+          if (field.isContentEditable) {
+            field.focus();
+            field.textContent = text;
+            field.dispatchEvent(new EventType2("input", { bubbles: true }));
+            return String(field.textContent || "").trim() === text.trim();
+          }
+          // 有些页面用框架接管 value，直接赋值不触发监听，走原型 setter 更稳
+          const desc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field) || {}, "value");
+          if (desc && desc.set) desc.set.call(field, text);
+          else field.value = text;
+          field.dispatchEvent(new EventType2("input", { bubbles: true }));
+          field.dispatchEvent(new EventType2("change", { bubbles: true }));
+          return String(field.value || "").trim() === text.trim();
+        } catch (_) {
+          return false;
+        }
+      });
       __publicField(this, "resolveJudgeAnswer", (rawAnswer) => {
         const text = String(rawAnswer == null ? "" : rawAnswer).replace(/\s+/g, "");
         if (!text) return "";
@@ -9424,13 +9545,41 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         var _a;
         if (!this._window) return false;
         let filled = false;
+        question.__xsFillReason = "";
+        const cleanChoiceAnswer = (raw) => String(raw == null ? "" : raw)
+          .split(/\r?\n/)[0]
+          .replace(/[*_`#>]/g, "")
+          .replace(/^\s*(?:正确|参考|标准)?答案\s*[:：]\s*/i, "")
+          .replace(/^\s*(?:正确|参考|标准)答案\s*(?:是|为)\s*/i, "")
+          .replace(/^\s*答案\s+(?=\S)/i, "")
+          .trim();
         if (question.type === "0" || question.type === "1") {
           const optionKeys = Object.keys(question.options);
           const targets = new Set();
-          const answers = question.answer.answer || [];
+          let answers = question.answer.answer || [];
           if (!answers.length) return false;
+          // 答案被题库拆成多个字母（如 "R|C|B"）时，先拼回整串看是否正好是某个选项的正文（RCB模型）。
+          // 拆开的字母越界时按字母点必然失败，这种题目要回到选项正文匹配。
+          if (question.type === "0" && answers.length > 1) {
+            const compact = answers.map(a => String(a == null ? "" : a).replace(/[\s,，、;；|]+/g, "")).join("").toUpperCase();
+            if (/^[A-Z]{2,}$/.test(compact)) {
+              const compactHit = optionKeys.filter((k) => {
+                const body = this.removeHtml(k).normalize("NFKC").trim().replace(/^[A-Za-z][.、．)）:：\s]+/, "").trim().toUpperCase();
+                return body.startsWith(compact);
+              });
+              if (compactHit.length === 1) answers = [compact];
+            } else if (compact) {
+              // 答案被拆成数字/符号（如 "0|1"，选项正文是 [0,1]）：去掉标点后整串比对
+              const compactMark = this.clearMark(compact);
+              const markHit = compactMark ? optionKeys.filter((k) => {
+                const body = this.clearMark(this.removeHtml(k).replace(/^[A-Za-z][.、．)）:：\s]+/, ""));
+                return body && body.toUpperCase() === compactMark.toUpperCase();
+              }) : [];
+              if (markHit.length === 1) answers = [markHit[0]];
+            }
+          }
           for (const answer of answers) {
-            const clearAnswer = this.removeHtml(String(answer));
+            const clearAnswer = cleanChoiceAnswer(this.removeHtml(String(answer)));
             const text = String(clearAnswer).normalize("NFKC").trim();
             let matches = optionKeys.filter(k => k === clearAnswer);
             if (!matches.length) {
@@ -9444,21 +9593,74 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 : optionKeys.filter(k => this.optionTextMatches(k, clearAnswer) || this.optionTextMatches(k, answer));
               if (textMatches.length === 1 && letters.length > 1) matches = textMatches;
               else if (/^[A-Z]+$/.test(letters)) {
-                if ([...letters].some(c => c.charCodeAt(0) - 65 >= optionKeys.length)) return false;
-                matches = [...new Set([...letters].map(c => optionKeys[c.charCodeAt(0) - 65]))];
+                const validLetters = [...letters].filter(c => c.charCodeAt(0) - 65 < optionKeys.length);
+                const outOfRange = [...letters].filter(c => c.charCodeAt(0) - 65 >= optionKeys.length);
+                if (outOfRange.length) {
+                  // 字母越界时先看整串是不是某个选项正文的开头（RCB → RCB模型），命中唯一一项就按正文点
+                  const letterPrefixHit = /^[A-Z]+$/.test(letters) ? optionKeys.filter((k) => {
+                    const body = this.removeHtml(k).normalize("NFKC").trim().replace(/^[A-Za-z][.、．)）:：\s]+/, "").trim().toUpperCase();
+                    return body.startsWith(letters);
+                  }) : [];
+                  if (letterPrefixHit.length === 1) {
+                    targets.add(letterPrefixHit[0]);
+                    continue;
+                  }
+                  // 页面选项比答案少：常见于老师把几个选项一起粘进了同一个选项框，
+                  // 页面上本来就点不到这些选项。多选就把能点的部分填上，别整题放弃；
+                  // 单选拿不准时仍放弃，避免选错。
+                  if (question.type !== "1" || !validLetters.length) return false;
+                  this.log.insertLog(
+                    `答案含页面没有的选项 ${outOfRange.join("")}，本题只填 ${validLetters.join("")}`,
+                    "warning"
+                  );
+                  // 这类页面不是脚本解析坏了，是题目本身少放了选项框；上报一条，后台能直接看到
+                  window.__XSReportPageIssue && window.__XSReportPageIssue({
+                    page_type: "cx-" + this.type,
+                    stage: "fill",
+                    reason_code: "answer_option_out_of_range",
+                    selector: ".answerBg",
+                    expected: "答案里的每个选项字母都能在页面上找到",
+                    found: {
+                      options: optionKeys.length,
+                      answer: [...letters].join(""),
+                      missing: outOfRange.join(""),
+                      options_preview: (question.optionsText || []).join(" | ").slice(0, 40)
+                    },
+                    signature: String((question.element && (question.element.id || question.element.getAttribute("data"))) || "").slice(0, 40),
+                    nodes: question.element ? [question.element] : []
+                  });
+                }
+                matches = [...new Set(validLetters.map(c => optionKeys[c.charCodeAt(0) - 65]))];
               } else {
                 matches = textMatches;
-                if (matches.length > 1) return false;
+                if (matches.length > 1) {
+                  question.__xsFillReason = "answer_ambiguous";
+                  return false;
+                }
               }
+            }
+            if (!matches.length && /^(?:正确|错误)$/.test(text)) {
+              // 判断题式答案混进单选题（题库只回「正确/错误」）：选项正文里唯一含有该词的才填
+              const judgeHit = optionKeys.filter((k) => {
+                const body = this.removeHtml(k).normalize("NFKC").trim().replace(/^[A-Za-z][.、．)）:：\s]+/, "").trim();
+                return body.includes(text);
+              });
+              if (judgeHit.length === 1) matches = judgeHit;
             }
             if (!matches.length) {
               const imgs = collectImgSrcs(answer);
               matches = optionKeys.filter(k => imgSrcsMatch(imgs, collectImgSrcs(k).concat(collectImgSrcs(question.options[k]))));
-              if (matches.length !== 1) return false;
+              if (matches.length !== 1) {
+                question.__xsFillReason = "answer_not_matched";
+                return false;
+              }
             }
             matches.forEach(k => targets.add(k));
           }
-          if (!targets.size || (question.type === "0" && targets.size !== 1)) return false;
+          if (!targets.size || (question.type === "0" && targets.size !== 1)) {
+            question.__xsFillReason = "answer_not_matched";
+            return false;
+          }
           // 先清理旧答案，再逐项选择；只有最终选中集合完全一致才算填充成功。
           for (const key of optionKeys) {
             if (!targets.has(key) && this.isChoiceOptionSelected(question.options[key])) {
@@ -9471,26 +9673,50 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             }
           }
           for (const key of targets) this.selectChoiceOption(question.options[key]);
-          filled = optionKeys.every(key => this.isChoiceOptionSelected(question.options[key]) === targets.has(key));
+          // 勾选后页面可能重渲染，缓存节点已脱离文档，回读会误判为没点上；按同一顺序重新取一次 DOM 再读
+          const liveOptionList = [...question.element.querySelectorAll(
+            ["zj"].includes(this.type) ? '[class*="before-after"]' : ".answerBg"
+          )];
+          const optionSelectedNow = (key) => {
+            const idx = optionKeys.indexOf(key);
+            const live = liveOptionList[idx];
+            return this.isChoiceOptionSelected(live || question.options[key]);
+          };
+          filled = optionKeys.every(key => optionSelectedNow(key) === targets.has(key));
         } else if (question.type === "2") {
-          const textareaElements = question.element.querySelectorAll("textarea");
-          if (textareaElements.length === 0) return false;
+          const blankFields = this.getBlankFields(question.element);
+          if (blankFields.length === 0) return false;
           const blankAnswers = this.resolveBlankAnswers(
             question.answer.answer,
-            textareaElements.length
+            blankFields.length
           );
+          if (!blankAnswers.length) return false;
           let blankFilled = 0;
-          textareaElements.forEach((textareaElement, index) => {
+          blankFields.forEach((field, index) => {
             const blankAnswer = blankAnswers[index];
             if (!blankAnswer) return;
-            if (this.fillUeditor(textareaElement, blankAnswer)) blankFilled += 1;
+            if (this.fillBlankField(field, blankAnswer)) blankFilled += 1;
           });
-          filled = blankFilled > 0 && blankFilled === textareaElements.length;
+          // 答案数和空数不一致时，填上能对上的部分也算成功，避免整题空白
+          const expect = Math.min(blankFields.length, blankAnswers.length);
+          filled = blankFilled > 0 && blankFilled === expect;
         } else if (question.type === "3") {
-          const answer = this.resolveJudgeAnswer(question.answer.answer[0]);
+          const rawJudge = cleanChoiceAnswer(String(question.answer.answer[0] == null ? "" : question.answer.answer[0]));
+          let answer = this.resolveJudgeAnswer(rawJudge);
+          // 判断题答案可能是选项字母（页面 A=对、B=错），按字母定位到选项文字再判断对错
+          if (!answer && /^[A-Za-z]$/.test(rawJudge)) {
+            const judgeKeys = Object.keys(question.options);
+            const judgeIdx = rawJudge.toUpperCase().charCodeAt(0) - 65;
+            if (judgeIdx >= 0 && judgeIdx < judgeKeys.length) {
+              const judgeText = this.removeHtml(judgeKeys[judgeIdx]).replace(/^[A-Za-z][.、．)）:：\s]+/, "").trim();
+              if (/(错|错误|否|×|✗)/.test(judgeText) || /^(?:false|f)$/i.test(judgeText)) answer = "false";
+              else if (/(对|正确|是|√|✓)/.test(judgeText) || /^(?:true|t)$/i.test(judgeText)) answer = "true";
+            }
+          }
           if (!answer) {
+            question.__xsFillReason = "answer_invalid";
             this.log.insertLog(
-              `判断题答案无法判定对错，本题不填：${question.answer.answer[0] || "空"}`,
+              `判断题答案无法判定对错，本题不填：${rawJudge || "空"}`,
               "warning"
             );
             return false;
@@ -9513,6 +9739,16 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               filled = this.selectChoiceOption(optionElement);
               break;
             }
+          }
+          if (!filled) {
+            // 页面改版后 aria-label / span[data] 不一定还在：最后按选项文字「对 / 错」兜底
+            const judgeTexts = answer === "true"
+              ? ["对", "正确", "是", "√", "✓", "true", "t"]
+              : ["错", "错误", "否", "×", "✗", "false", "f"];
+            const hitKeys = Object.keys(question.options).filter((k) =>
+              judgeTexts.some((t) => this.optionTextMatches(k, t, true))
+            );
+            if (hitKeys.length === 1) filled = this.selectChoiceOption(question.options[hitKeys[0]]);
           }
         } else if (question.type === "4" || question.type === "5" || question.type === "6" || question.type === "7" || question.type === "9" || question.type === "26") {
           const textareaElement = question.element.querySelector("textarea");
@@ -11317,6 +11553,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 };
                 handled = true;
               }
+            }
+            if (!handled && !this.AI_ALLOW_QUESTION_TYPE.includes(question.type)) {
+              // 平台题型字段缺失或给了冷门名称（材料题、组合题等）时不要直接判「不支持」：
+              // 页面有复选/单选控件就按控件推断，有多个选项就按单选，能答先答，避免误报。
+              if (detectMultiChoiceDom(question.element)) question.type = "多选题";
+              else if ((question.element && question.element.querySelector && question.element.querySelector("input[type='radio'], [role='radio']")) || (question.optionsText || []).length >= 2) question.type = "单选题";
             }
             if (!handled) {
               if (this.AI_ALLOW_QUESTION_TYPE.includes(question.type)) {
@@ -18349,7 +18591,7 @@ const XS_EXT = (() => {
     // ---------- 题库 / AI 先答 ----------
     function mapBackendAnswer(question, answers) {
       const picked = [];
-      const list = typeof normalizeLocalBackendAnswers === "function" ? normalizeLocalBackendAnswers(answers) : [].concat(answers || []);
+      const list = typeof normalizeLocalBackendAnswers === "function" ? normalizeLocalBackendAnswers(answers, question.options.map((o) => o.content)) : [].concat(answers || []);
       for (const raw of list) {
         const text = String(raw == null ? "" : raw).trim();
         if (!text) continue;
