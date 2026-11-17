@@ -9109,7 +9109,13 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             "没有解析到题目，请检查是否进入正确页面...",
             "warning"
           );
-          window.__XSReportPageIssue && window.__XSReportPageIssue({
+          // 老师还没建好/发布测验时，页面本身就没有题目（常见文案「教师未创建完成该测验」）。
+          // 这不是脚本解析失败，别当成异常上报，否则同一页会反复刷记录。
+          const pageText = String(
+            (this._document && this._document.body && this._document.body.innerText) || ""
+          ).slice(0, 2000);
+          const emptyQuiz = /(教师未创建|未创建完成|暂无(?:试题|题目|测验)|尚未(?:发布|创建)|未发布|没有题目)/.test(pageText);
+          window.__XSReportPageIssue && !emptyQuiz && window.__XSReportPageIssue({
             page_type: "cx-" + this.type,
             stage: "parse",
             reason_code: "no_container",
@@ -9257,11 +9263,22 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         if (inputs.some((input) => this.isChoiceInputChecked(input))) return true;
         if (optionContainer.getAttribute("aria-checked") === "true") return true;
         const tokens = String(optionContainer.className || "").toLowerCase().split(/\s+/);
-        if (tokens.some((t) => t === "is-checked" || t === "ischecked" || t === "checked")) return true;
-        if (["ks"].includes(this.type)) {
-          return Boolean(
-            optionContainer.querySelector(".check_answer, .check_answer_dx")
+        if (tokens.some((t) => t === "is-checked" || t === "ischecked" || t === "checked" ||
+          t === "check_answer" || t === "check-answer" || t === "selected")) return true;
+        // 章节测验（学习页面内嵌）的选择题没有 radio，勾选后只在选项里挂一个对勾节点。
+        // 以前只在考试(ks)里认这个标记，章节测验勾上了也回读成没选：误报填不上，重试时再点一次还会取消勾选。
+        // 对勾节点可能是常驻但隐藏的，只认真正显示出来的那个。
+        if (["ks"].includes(this.type) && optionContainer.querySelector(".check_answer, .check_answer_dx")) return true;
+        if (optionContainer.querySelector) {
+          const marks = optionContainer.querySelectorAll(
+            ".check_answer, .check_answer_dx, [class*='check_answer'], [class*='check-answer']"
           );
+          for (const mark of marks) {
+            try {
+              if (mark.getClientRects && mark.getClientRects().length > 0) return true;
+            } catch (_) {
+            }
+          }
         }
         return false;
       });
@@ -9287,6 +9304,14 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         }
         tryClick(optionContainer.querySelector && optionContainer.querySelector(".fl.before, a.before, label, .answer_p, span"));
         if (this.isChoiceOptionSelected(optionContainer)) return true;
+        // 学习页面内嵌的章节测验把点击事件绑在选项正文或整行 li 上，只点字母链可能没反应
+        tryClick(optionContainer.querySelector && optionContainer.querySelector(".after, .fl.after"));
+        if (this.isChoiceOptionSelected(optionContainer)) return true;
+        const row = optionContainer.closest && optionContainer.closest("li, .Zy_ulTop > li");
+        if (row && row !== optionContainer) {
+          tryClick(row);
+          if (this.isChoiceOptionSelected(optionContainer)) return true;
+        }
         try {
           (_a = optionContainer.dispatchEvent) == null ? void 0 : _a.call(optionContainer, new this._window.MouseEvent("click", { bubbles: true }));
         } catch (_) {
@@ -9302,6 +9327,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         // 英文答案 peak / migration 会被砍成 eak / igration：peak 因为太短匹配不上，
         // migration 只能靠包含关系勉强命中，换个选项写法就漏。
         const stripLead = (s) => String(s || "").replace(/^[A-Za-z][.、．)）:\s]+/, "").trim();
+        // 数值选项里的正负号、大小号是有意义的：clearMark 会把标点符号全删掉，
+        // "-30kJ" 和 "+30kJ" 归一化后一模一样，单选题会被误判成 answer_ambiguous。
+        // 先用「保留符号、只去空白」的口径比对，能唯一命中的直接返回。
+        const keepSign = (s) => String(s || "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+        if (keepSign(rawAns) === keepSign(rawOpt) ||
+            keepSign(stripLead(rawAns)) === keepSign(stripLead(rawOpt))) return true;
         const a = this.clearMark(rawAns);
         const b = this.clearMark(rawOpt);
         const a2 = this.clearMark(stripLead(rawAns));
@@ -9347,7 +9378,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         if (list.length >= blankCount) return list.slice(0, blankCount);
         const flat = [];
         list.forEach((a) => {
-          a.split(/[,，、;；|]+/).forEach((piece) => {
+          // 三个空的答案常写成「A＞B＞C」，以前只认逗号分号，整串塞进第一个空
+          a.split(/[,，、;；|＞→]+/).forEach((piece) => {
             const trimmed = piece.trim();
             if (trimmed) flat.push(trimmed);
           });
@@ -9738,9 +9770,11 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           const liveOptionList = [...question.element.querySelectorAll(
             ["zj"].includes(this.type) ? '[class*="before-after"]' : ".answerBg"
           )];
+          // 选完后 class 被整段换掉时，重取的节点数会和题目选项数对不上，按位置读会错位
+          const liveAligned = liveOptionList.length === optionKeys.length;
           const optionSelectedNow = (key) => {
             const idx = optionKeys.indexOf(key);
-            const live = liveOptionList[idx];
+            const live = liveAligned ? liveOptionList[idx] : null;
             return this.isChoiceOptionSelected(live || question.options[key]);
           };
           filled = optionKeys.every(key => optionSelectedNow(key) === targets.has(key));
