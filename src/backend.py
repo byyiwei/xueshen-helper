@@ -4688,16 +4688,28 @@ def _rank_bank_candidates(question, rows, limit=MATCH_MANUAL_LIMIT):
         scored.append((_match_score(info, row), row))
     # 分数并列时，命中次数多 / 更新更近的靠前，用户看到的第一条更可能是对的
     scored.sort(key=lambda x: (x[0], int(x[1].get("hit_count") or 0), str(x[1].get("updated_at") or x[1].get("created_at") or "")), reverse=True)
-    out, seen = [], set()
+    # 同一道题在题库里可能有多个答案版本（不同模型先后入库）。旧逻辑按更新时间取最新，
+    # 后出现的错误答案会把先前的正确答案顶掉。改为：优先用得多的，次数相同取最早入库的。
+    groups = {}
     for score, row in scored:
-        key = (row.get("question_text") or "") + "\n" + (row.get("options_text") or "")
-        if key in seen:
+        key = row.get("matching_key") or ((row.get("question_text") or "") + "|" + (row.get("options_text") or ""))
+        cur = groups.get(key)
+        if cur is None:
+            groups[key] = [score, row]
             continue
-        seen.add(key)
-        out.append((score, row))
-        if len(out) >= limit:
-            break
-    return out
+        cur_score, cur_row = cur
+        cur_hits = int(cur_row.get("hit_count") or 0)
+        row_hits = int(row.get("hit_count") or 0)
+        if row_hits > cur_hits or (row_hits == cur_hits and str(row.get("created_at") or "") < str(cur_row.get("created_at") or "")):
+            groups[key] = [max(cur_score, score), row]
+        else:
+            cur[0] = max(cur_score, score)
+    out = sorted(
+        ((score, row) for score, row in groups.values()),
+        key=lambda x: (x[0], int(x[1].get("hit_count") or 0)),
+        reverse=True
+    )
+    return out[:limit]
 
 
 def _build_match_candidates(question, ranked):
@@ -4913,6 +4925,18 @@ def save_question_bank_answer(question, answer, model_name="", provider_name="")
     qhash = make_question_hash(question, answer)
     mkey = make_matching_key(question)
     stem = make_match_stem(question)
+    # 同一道题只保留一个答案版本：已有不同答案时不再入库，避免正确答案被后来的错误答案顶掉。
+    # 需要纠正时用后台的「编辑答案」，而不是靠再答一次覆盖。
+    if mkey:
+        try:
+            existing_rows = db.get_question_bank_by_matching_key(mkey)
+        except Exception:
+            existing_rows = []
+        for _row in existing_rows:
+            _old = normalize_answer_for_hash(_row.get("answer", ""))
+            if _old and _old != normalize_answer_for_hash(answer):
+                print(f"[题库入库] 同题已有不同答案，保留已有版本 answer={str(_row.get('answer',''))[:60]} skip={str(answer)[:60]}", flush=True)
+                return
     # is_image 检测：images 数组 + question/options 中的 <img> 标签
     is_img = 0
     if info.get("images") and any(str(x).strip() for x in info["images"] if x):
@@ -5354,6 +5378,17 @@ def normalize_ai_answer(question, answer):
             if ans_lines:
                 return ans_lines[-1].strip()
 
+    # 文本答案能唯一对上某个选项正文（"J.古德" → "I.J.古德"）时直接返回选项原文，
+    # 脚本按正文匹配即可；对上多个或对不上就保留原样，不猜。
+    if options:
+        def _norm_opt(v):
+            t0 = re.sub(r"^[A-Za-z][.、．)）:：]\s*", "", str(v or ""))
+            return re.sub(r"[\s　，。！？；：,.!?;:\-—_【】\[\]（）()\"'“”‘’]+", "", t0).lower()
+        _t = _norm_opt(text)
+        if _t:
+            _hits = [opt for opt in options if _norm_opt(opt) and (_norm_opt(opt) == _t or (len(_t) >= 2 and _t in _norm_opt(opt)))]
+            if len(_hits) == 1:
+                return _hits[0]
     # 普通返回：去掉可能的选项字母前缀，但不要误删 Thinking 的首字母。
     cleaned = re.sub(r"^\s*[A-Z]\s*[:：、.．)]\s*", "", text).strip()
     return cleaned or text
