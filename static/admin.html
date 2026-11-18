@@ -913,6 +913,21 @@ html[data-theme="light"] .ip-badge.flag { color: #b45309; }
 .hub-box .puzzle-bg { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
 .hub-box .puzzle-piece-img, .puzzle-piece { position: absolute; left: 0; top: 0; max-width: none; user-select: none; -webkit-user-drag: none; box-shadow: 0 8px 20px rgba(59, 130, 246, 0.32); border-radius: 4px; }
 .hub-box.busy { opacity: 0.6; }
+.hub-box.click-mode { height: auto; background: var(--bg4); overflow: hidden; }
+.hub-box .captcha-click-img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; cursor: crosshair; }
+.captcha-prompt { margin: 0 0 8px; font-size: 12px; line-height: 1.55; color: var(--text2); font-weight: 600; }
+.captcha-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.captcha-count { font-size: 12px; color: var(--text3); }
+.captcha-marker {
+  position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px;
+  border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.captcha-grid { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); }
+.captcha-grid-cell { border: 1px dashed rgba(255,255,255,0.22); background: transparent; cursor: pointer; padding: 0; }
+.captcha-grid-cell:hover { background: rgba(255,255,255,0.08); }
+.captcha-grid-cell.sel { background: rgba(59,130,246,0.32); border-color: var(--accent); }
 .hub-skeleton { color: var(--text3); font-size: 12px; text-align: center; padding: 22px 0; }
 .puzzle-gap { position: absolute; border: 2px dashed rgba(255,255,255,0.4); border-radius: 4px; }
 .puzzle-track { position: relative; height: 42px; border-radius: 999px; background: rgba(15, 23, 36, 0.9); border: 1px solid var(--border); overflow: hidden; }
@@ -1509,21 +1524,40 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
       <div class="form-group"><input type="password" v-model="loginForm.password" placeholder="管理密码" autocomplete="current-password" @keydown.enter="doLogin"></div>
       <div :class="['slider-verify',adminSlider.verified&&'done']">
         <div class="slider-top">
-          <span>滑块验证</span>
-          <span class="slider-state">{{adminSlider.verified?'验证通过':(adminSlider.token?'拖动拼图到缺口':'加载中…')}}</span>
+          <span>人机验证</span>
+          <span class="slider-state">{{adminSlider.verified?'验证通过':(adminSlider.loading?'加载中…':(adminSlider.token?(adminSlider.kind==='slider'?'拖动拼图到缺口':'请按提示完成验证'):'加载中…'))}}</span>
         </div>
-        <div class="hub-box" :class="{busy:adminSlider.loading}">
-          <template v-if="adminSlider.bg">
-            <img class="puzzle-bg" :src="adminSlider.bg" draggable="false">
-            <img class="puzzle-piece-img" :src="adminSlider.piece" draggable="false"
-              :style="{left:(adminSlider.x/adminSlider.w*100)+'%',top:(adminSlider.pieceY/adminSlider.h*100)+'%',width:(adminSlider.pieceSize/adminSlider.w*100)+'%',height:(adminSlider.pieceSize/adminSlider.h*100)+'%'}">
+        <div class="captcha-prompt" v-if="adminSlider.kind!=='slider'&&adminSlider.prompt">{{adminSlider.prompt}}</div>
+        <div class="hub-box" :class="{busy:adminSlider.loading,'click-mode':adminSlider.kind!=='slider'}">
+          <template v-if="adminSlider.kind==='slider'">
+            <template v-if="adminSlider.bg">
+              <img class="puzzle-bg" :src="adminSlider.bg" draggable="false">
+              <img class="puzzle-piece-img" :src="adminSlider.piece" draggable="false"
+                :style="{left:(adminSlider.x/adminSlider.w*100)+'%',top:(adminSlider.pieceY/adminSlider.h*100)+'%',width:(adminSlider.pieceSize/adminSlider.w*100)+'%',height:(adminSlider.pieceSize/adminSlider.h*100)+'%'}">
+            </template>
+            <div v-else class="hub-skeleton">正在加载验证图…</div>
+          </template>
+          <template v-else-if="adminSlider.image">
+            <img class="captcha-click-img" :src="adminSlider.image" draggable="false" @click="adminCaptchaClick">
+            <span v-for="(p,i) in adminSlider.points" :key="'pt'+i" class="captcha-marker"
+              :style="{left:(p.x/adminSlider.w*100)+'%',top:(p.y/adminSlider.h*100)+'%'}"
+              @click.stop="adminCaptchaRemove(i)">{{i+1}}</span>
+            <div class="captcha-grid" v-if="adminSlider.kind==='grid'">
+              <button v-for="c in 9" :key="'gc'+c" type="button"
+                :class="['captcha-grid-cell',adminSlider.cells.indexOf(c-1)>=0&&'sel']"
+                @click.stop="adminCaptchaCell(c-1)"></button>
+            </div>
           </template>
           <div v-else class="hub-skeleton">正在加载验证图…</div>
         </div>
-        <div class="puzzle-track">
+        <div class="puzzle-track" v-if="adminSlider.kind==='slider'">
           <div class="puzzle-progress" :style="{width:(adminSlider.x/(adminSlider.w-adminSlider.pieceSize)*100)+'%'}"></div>
           <span class="puzzle-tip">{{adminSlider.verified?'验证通过':'按住滑块，拖动完成拼图'}}</span>
           <button type="button" class="puzzle-thumb" :style="{left:'calc((100% - 36px) * '+(adminSlider.x/(adminSlider.w-adminSlider.pieceSize))+')'}" @mousedown="beginAdminPuzzle" @touchstart.prevent="beginAdminPuzzle">›</button>
+        </div>
+        <div class="captcha-actions" v-if="adminSlider.kind!=='slider'&&!adminSlider.verified">
+          <span class="captcha-count">{{adminSlider.kind==='grid'?(adminSlider.cells.length?'已选 '+adminSlider.cells.length+' 格':'点选格子后再确认'):(adminSlider.points.length?'已点选 '+adminSlider.points.length+(adminCaptchaTotal?'/'+adminCaptchaTotal:'')+' 个':'点选图片后再确认')}}</span>
+          <button type="button" class="btn btn-secondary btn-sm" :disabled="adminSlider.loading||(adminSlider.kind==='grid'?!adminSlider.cells.length:!adminSlider.points.length)" @click="verifyAdminSlider">确认验证</button>
         </div>
       </div>
       <button class="btn btn-primary" style="width:100%" @click="doLogin">登 录</button>
@@ -8249,7 +8283,15 @@ createApp({
     const d7ago=fmtLocalDate(new Date(Date.now()-7*86400000));
     const d30ago=fmtLocalDate(new Date(Date.now()-30*86400000));
     const d90ago=fmtLocalDate(new Date(Date.now()-90*86400000));
-    const adminSlider=reactive({token:'',bg:'',piece:'',pieceY:0,pieceSize:44,w:620,h:310,x:0,sliderToken:'',verified:false,loading:false,dragging:false,trackEl:null});
+    const adminSlider=reactive({token:'',kind:'slider',bg:'',piece:'',image:'',prompt:'',points:[],cells:[],pieceY:0,pieceSize:44,w:620,h:310,x:0,sliderToken:'',verified:false,loading:false,dragging:false,trackEl:null});
+    function adminCaptchaExpected(){
+      const p=String(adminSlider.prompt||'').replace(/^[^：:]*[：:]/,'').trim();
+      if(!p)return 0;
+      if((adminSlider.kind||'')==='iconClick')return p.split(/[、,，]/).map(s=>s.trim()).filter(Boolean).length;
+      if((adminSlider.kind||'')==='textClick')return Array.from(p.replace(/\s+/g,'')).length;
+      return 0;
+    }
+    const adminCaptchaTotal=computed(()=>adminCaptchaExpected());
     const providerReadyCount=ref(0);
     const providerTotalCount=ref(0);
 
@@ -8313,31 +8355,61 @@ createApp({
     // Auth
     async function initAdminSlider(){
       adminSlider.loading=true;
-      Object.assign(adminSlider,{x:0,sliderToken:'',verified:false,dragging:false,token:'',bg:'',piece:''});
+      Object.assign(adminSlider,{x:0,sliderToken:'',verified:false,dragging:false,token:'',kind:'slider',bg:'',piece:'',image:'',prompt:'',points:[],cells:[]});
       try{
         const res=await fetch('/captcha/new?scope=admin');
         const data=await res.json();
         const c=data.captcha||{};
         if(data.code!==200||!c.token){showMsg(data.msg||'验证图加载失败，稍后重试','error',4000);return;}
-        Object.assign(adminSlider,{token:c.token,bg:c.bg,piece:c.piece,pieceY:Number(c.pieceY)||0,pieceSize:Number(c.pieceSize)||44,w:Number(c.w)||620,h:Number(c.h)||310,x:0,sliderToken:'',verified:false});
-      }catch(e){showMsg('滑块验证初始化失败，请刷新页面','error',5000);}
+        Object.assign(adminSlider,{token:c.token,kind:c.kind||'slider',bg:c.bg,piece:c.piece,image:c.image||'',prompt:c.prompt||'',points:[],cells:[],pieceY:Number(c.pieceY)||0,pieceSize:Number(c.pieceSize)||44,w:Number(c.w)||620,h:Number(c.h)||310,x:0,sliderToken:'',verified:false});
+      }catch(e){showMsg('人机验证初始化失败，请刷新页面','error',5000);}
       finally{adminSlider.loading=false;}
     }
     async function resetAdminSlider(message){
-      Object.assign(adminSlider,{token:'',bg:'',piece:'',x:0,sliderToken:'',verified:false,dragging:false});
+      Object.assign(adminSlider,{token:'',kind:'slider',bg:'',piece:'',image:'',prompt:'',points:[],cells:[],x:0,sliderToken:'',verified:false,dragging:false});
       if(message)showMsg(message,'error',2200);
       await initAdminSlider();
     }
     async function verifyAdminSlider(){
-      if(adminSlider.verified||!adminSlider.token)return;
+      if(adminSlider.verified||!adminSlider.token||adminSlider.loading)return;
+      const kind=adminSlider.kind||'slider';
+      if(kind==='grid'&&!adminSlider.cells.length){showMsg('请先选出正确的格子','error',1800);return;}
+      if(kind!=='slider'&&kind!=='grid'&&!adminSlider.points.length){showMsg('请先在图片上点选','error',1800);return;}
       adminSlider.loading=true;
+      const payload={token:adminSlider.token,scope:'admin',kind};
+      if(kind==='slider')payload.x=adminSlider.x;
+      else if(kind==='grid')payload.answer={cells:adminSlider.cells.slice()};
+      else payload.answer={points:adminSlider.points.map(p=>({x:p.x,y:p.y}))};
       try{
-        const res=await fetch('/captcha/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:adminSlider.token,x:adminSlider.x,scope:'admin'})});
+        const res=await fetch('/captcha/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
         const data=await res.json();
-        if(data.code===200&&data.token){adminSlider.sliderToken=data.token;adminSlider.verified=true;showMsg('滑块验证通过','success',1200);}
-        else{await resetAdminSlider(data.msg||'滑块没对准，已换新图');}
-      }catch(e){await resetAdminSlider('滑块验证失败，已换新图');}
+        if(data.code===200&&data.token){adminSlider.sliderToken=data.token;adminSlider.verified=true;showMsg('人机验证通过','success',1200);}
+        else{await resetAdminSlider(data.msg||'验证未通过，已换新图');}
+      }catch(e){await resetAdminSlider('人机验证失败，已换新图');}
       finally{adminSlider.loading=false;}
+    }
+    function adminCaptchaClick(e){
+      const kind=adminSlider.kind||'slider';
+      if(kind==='grid'||adminSlider.verified||adminSlider.loading||!adminSlider.token)return;
+      const expected=adminCaptchaExpected();
+      const limit=expected>0?expected:6;
+      if(adminSlider.points.length>=limit){showMsg(expected>0?'已点选全部目标，可点击数字取消后重选':'最多点选 6 个位置','error',1800);return;}
+      const rect=e.currentTarget.getBoundingClientRect();
+      if(!rect.width||!rect.height)return;
+      const px=Math.round((e.clientX-rect.left)/rect.width*adminSlider.w);
+      const py=Math.round((e.clientY-rect.top)/rect.height*adminSlider.h);
+      if(px<0||py<0||px>adminSlider.w||py>adminSlider.h)return;
+      adminSlider.points.push({x:px,y:py});
+      if(expected>0&&adminSlider.points.length===expected)setTimeout(()=>{if(!adminSlider.verified&&adminSlider.token&&adminSlider.points.length===expected)verifyAdminSlider();},220);
+    }
+    function adminCaptchaRemove(i){
+      if(adminSlider.verified)return;
+      adminSlider.points.splice(i,1);
+    }
+    function adminCaptchaCell(i){
+      if(adminSlider.verified)return;
+      const at=adminSlider.cells.indexOf(i);
+      if(at>=0)adminSlider.cells.splice(at,1);else adminSlider.cells.push(i);
     }
     async function ensureAdminSliderVerified(){
       if(adminSlider.verified&&adminSlider.sliderToken)return true;
@@ -8345,7 +8417,7 @@ createApp({
         for(let i=0;i<20&&adminSlider.loading;i++)await new Promise(r=>setTimeout(r,100));
         if(adminSlider.verified&&adminSlider.sliderToken)return true;
       }
-      if(adminSlider.token){
+      if(adminSlider.token&&(adminSlider.kind||'slider')==='slider'){
         await verifyAdminSlider();
         return !!(adminSlider.verified&&adminSlider.sliderToken);
       }
@@ -8380,13 +8452,13 @@ createApp({
     async function doLogin(){
       if(!loginForm.username||!loginForm.password)return showMsg('请输入管理员用户名和密码','error');
       const sliderOk=await ensureAdminSliderVerified();
-      if(!sliderOk){await resetAdminSlider('请重新完成滑块验证');return;}
+      if(!sliderOk){showMsg('请先完成人机验证','error',2200);return;}
       try{
         const res=await fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:loginForm.username,password:loginForm.password,slider_token:adminSlider.sliderToken})});
         const data=await res.json();
         if(data.code===200){token.value=data.token;localStorage.setItem('ne21_admin_token',token.value);const start=readHashPage()||'dashboard';page.value=start;loadAll();if(start!=='dashboard')loadPageData(start);}
-        else{loginForm.password='';await resetAdminSlider(data.msg||'用户名或密码错误，请重新完成滑块验证');}
-      }catch(e){await resetAdminSlider('请求失败，请重新完成滑块验证');}
+        else{loginForm.password='';await resetAdminSlider(data.msg||'用户名或密码错误，请重新完成人机验证');}
+      }catch(e){await resetAdminSlider('请求失败，请重新完成人机验证');}
     }
     function emailLooksOk(v){
       v=String(v||'').replace(/＠/g,'@').replace(/[。．]/g,'.').replace(/[\s　]/g,'');
@@ -12176,7 +12248,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
        loading,page,loginMode,themeMode,themeLabels,themeIcons,cycleTheme,breadcrumbItems,navigateBreadcrumb,toasts,removeToast,toasts,removeToast,toasts,removeToast,config,emailConfig,emailTemplates,hubTplSyncing,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,SCENE_ICONS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
        mailServers,showServerForm,mailServerForm,showSmtpPass,mailServerTotalWeight,mailServerWeightPercent,toggleEmailEnabled,toggleEmailSmtp,openServerForm,saveMailServer,deleteMailServer,
        showMailHubRecords,mailHubRecords,mailHubRecordsLoading,mailHubRecordsError,toggleEmailHub,loadMailHubRecords,modelHubConfig,loadModelHubConfig,toggleModelHub,barW,
-       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,latestScriptVersion,userPage,userTotal,userTotalPages,userPageSize,userSearch,userBanFilter,userSortBy,userSortOrder,ipSearch,ipSearchList,ipSearchLoading,ipSearchPage,ipSearchTotal,ipSearchTotalPages,loadUsersByIp,gotoIpSearch,gotoIpSearchFromOrder,showUserModal,userForm,gotoUserSearch,
+       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,adminCaptchaTotal,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,latestScriptVersion,userPage,userTotal,userTotalPages,userPageSize,userSearch,userBanFilter,userSortBy,userSortOrder,ipSearch,ipSearchList,ipSearchLoading,ipSearchPage,ipSearchTotal,ipSearchTotalPages,loadUsersByIp,gotoIpSearch,gotoIpSearchFromOrder,showUserModal,userForm,gotoUserSearch,
         showHtmlPreview,htmlPreviewFrame,htmlPreviewData,toggleHtmlPreview,updateHtmlPreview,switchToHtml,onHtmlInput,syncPlainFromHtml,
        paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,hubPayConfig,planForm,
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,
@@ -12191,7 +12263,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       customUsersPage,customUsersTotalPages,customUsersLoading,loadCustomModelUsersPage,
       oldUserRechargeExpanded,oldUserRechargeDetails,oldUserRechargePage,oldUserRechargeTotal,oldUserRechargeTotalPages,oldUserRechargeSum,oldUserRechargeLoading,toggleOldUserRecharge,loadOldUserRechargeDetails,
       questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,deleteQuestionBankItem,bankTypeOptions,bankModelOptions,loadBankModels,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,ssoConfig,ssoSaving,showSsoSecret,ssoCallbackUrl,riskConfig,riskWhitelistText,riskUsers,riskScanning,riskSaving,riskFilter,riskPage,riskTotal,riskTotalPages,resetRiskFilter,
-      doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,saveEmailHubFromAddr,hubTplStatusText,syncHubTemplates,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
+      doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,saveEmailHubFromAddr,hubTplStatusText,syncHubTemplates,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,adminCaptchaClick,adminCaptchaRemove,adminCaptchaCell,
       loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadSsoConfig,saveSsoConfig,copySsoUrl,loadRiskConfig,saveRiskConfig,scanRisk,riskBan,riskAddWhitelist,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,
       savePaymentConfig,savePayApiConfig,saveHubPayConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,movePlan,openUserEdit,saveUserAdmin,
       toggleProvider,collapseAllProviders,togglePayApiSection,

@@ -2331,7 +2331,7 @@ def _hub_captcha_request(target, body_bytes, timeout=10):
     """带 hub-v1 签名 POST 到中控滑块接口。返回 (ok, parsed_or_err, http_status)。"""
     app_key, app_secret, base_url = _captcha_hub_creds()
     if not app_secret:
-        return False, "服务端未配置中控密钥，无法进行滑块验证", 0
+        return False, "服务端未配置中控密钥，无法进行人机验证", 0
     headers = _hub_sign_headers("POST", target, body_bytes, app_key, app_secret)
     headers["Content-Type"] = "application/json"
     req = urllib.request.Request(base_url.rstrip("/") + target, data=body_bytes, headers=headers, method="POST")
@@ -2344,14 +2344,30 @@ def _hub_captcha_request(target, body_bytes, timeout=10):
         except Exception:
             err = {}
         if e.code == 403:
-            return False, "应用未开启「滑块验证」能力，请到中控应用详情打开开关", e.code
+            return False, "应用未开启「人机验证」能力，请到中控应用详情打开开关", e.code
         return False, (err.get("message") or "中控拒绝（HTTP %d）" % e.code), e.code
     except Exception as e:
         return False, "无法连接中控：" + str(e), 0
 
 
+CAPTCHA_KINDS = ("slider", "iconClick", "textClick", "grid")
+
+
+def _captcha_gen_payload_ok(data):
+    """中控生成结果是否完整。四种玩法字段不同：
+    slider 要 bg+piece，另外三种要 image+prompt（prompt 原样展示给用户）。"""
+    if not isinstance(data, dict) or not data.get("token"):
+        return False
+    kind = str(data.get("kind") or "slider")
+    if kind == "slider":
+        return bool(data.get("bg") and data.get("piece"))
+    if kind in ("iconClick", "textClick", "grid"):
+        return bool(data.get("image") and data.get("prompt"))
+    return False
+
+
 def _hub_captcha_gen():
-    """调中控生成滑块素材。返回 (ok, data_or_err)。缺口真实 x 永不出现在 data 里。
+    """调中控生成人机验证素材。返回 (ok, data_or_err)。答案（缺口 x / 点选坐标）只留在中控。
 
     中控偶发返回 200 但内容不完整（网关抖动/临时限流），这里自动重试一次；
     鉴权失败（403）这类确定性错误不重试，避免拖慢页面。
@@ -2360,7 +2376,7 @@ def _hub_captcha_gen():
     for attempt in range(2):
         ok, data, status = _hub_captcha_request(CAPTCHA_GEN_TARGET, b"")
         if ok:
-            if isinstance(data, dict) and data.get("token") and data.get("bg") and data.get("piece"):
+            if _captcha_gen_payload_ok(data):
                 return True, data
             last_err = "中控返回内容异常"
         else:
@@ -2372,15 +2388,25 @@ def _hub_captcha_gen():
     return False, last_err
 
 
-def _hub_captcha_verify(token, x):
-    """调中控校验拖动位置。成功返回 (True, ticket, '')，失败 (False, None, 人话)。"""
-    body = json.dumps({"token": token, "x": int(x)}, ensure_ascii=False).encode("utf-8")
-    ok, data, status = _hub_captcha_request(CAPTCHA_VERIFY_TARGET, body)
+def _hub_captcha_verify(token, kind="slider", x=None, answer=None):
+    """调中控校验。成功返回 (True, ticket, '')，失败 (False, None, 人话)。
+
+    滑块回传最终 x；图标点选 / 文字点选回传点位像素坐标；九宫格回传格子编号。
+    """
+    kind = kind if kind in CAPTCHA_KINDS else "slider"
+    body = {"token": token}
+    if kind == "slider":
+        body["x"] = int(x)
+    else:
+        body["kind"] = kind
+        body["answer"] = answer or {}
+    raw = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    ok, data, status = _hub_captcha_request(CAPTCHA_VERIFY_TARGET, raw)
     if ok and isinstance(data, dict) and data.get("ok") and data.get("ticket"):
         return True, data["ticket"], ""
     if status in (404, 400):
-        return False, None, "滑块位置不正确或已过期，请重新拖动"
-    return False, None, (data if isinstance(data, str) else "滑块验证失败，请重试")
+        return False, None, "验证不正确或已过期，请重新完成验证"
+    return False, None, (data if isinstance(data, str) else "人机验证失败，请重试")
 
 
 def _hub_captcha_check(ticket):
@@ -2389,7 +2415,7 @@ def _hub_captcha_check(ticket):
     ok, data, _status = _hub_captcha_request(CAPTCHA_CHECK_TARGET, body)
     if ok and isinstance(data, dict) and data.get("ok"):
         return True, ""
-    return False, "票据无效或已使用，请重新完成滑块"
+    return False, "票据无效或已使用，请重新完成验证"
 
 
 def _remember_captcha_scope(hub_token, scope):
@@ -9658,9 +9684,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(503, {"code": 503, "msg": data})
                 return
             _remember_captcha_scope(data.get("token"), scope)
+            kind = str(data.get("kind") or "slider")
             self._send_json(200, {"code": 200, "captcha": {
-                "token": data.get("token"), "bg": data.get("bg"), "piece": data.get("piece"),
+                "token": data.get("token"), "kind": kind,
+                # 滑块
+                "bg": data.get("bg"), "piece": data.get("piece"),
                 "pieceY": data.get("pieceY"), "pieceSize": data.get("pieceSize"),
+                # 图标点选 / 文字点选 / 九宫格
+                "image": data.get("image"), "prompt": data.get("prompt"),
                 "w": data.get("w"), "h": data.get("h"), "ttl": data.get("ttl"),
             }})
         elif path == "/api/v1/cx/task":
@@ -11609,15 +11640,53 @@ class Handler(BaseHTTPRequestHandler):
                 scope = _take_captcha_scope(hub_token)
                 if scope not in CAPTCHA_VALID_SCOPES:
                     scope = "user"
-                try:
-                    x = int(round(float(data.get("x"))))
-                except (TypeError, ValueError):
-                    self._send_json(400, {"code": 400, "msg": "滑块位置无效"})
-                    return
+                kind = str(data.get("kind") or "slider").strip()
+                if kind not in CAPTCHA_KINDS:
+                    kind = "slider"
                 if not hub_token:
-                    self._send_json(400, {"code": 400, "msg": "缺少验证码，请重新完成滑块"})
+                    self._send_json(400, {"code": 400, "msg": "缺少验证码，请重新完成验证"})
                     return
-                vok, ticket, verr = _hub_captcha_verify(hub_token, x)
+                x = None
+                answer = None
+                if kind == "slider":
+                    try:
+                        x = int(round(float(data.get("x"))))
+                    except (TypeError, ValueError):
+                        self._send_json(400, {"code": 400, "msg": "滑块位置无效"})
+                        return
+                    if x < 0 or x > 20000:
+                        self._send_json(400, {"code": 400, "msg": "滑块位置无效"})
+                        return
+                elif kind in ("iconClick", "textClick"):
+                    raw = data.get("answer")
+                    pts = raw.get("points") if isinstance(raw, dict) else None
+                    if not isinstance(pts, list) or not (1 <= len(pts) <= 10):
+                        self._send_json(400, {"code": 400, "msg": "请先在图片上点选"})
+                        return
+                    points = []
+                    try:
+                        for p in pts:
+                            px = int(round(float(p.get("x"))))
+                            py = int(round(float(p.get("y"))))
+                            if px < 0 or py < 0 or px > 20000 or py > 20000:
+                                raise ValueError("out of range")
+                            points.append({"x": px, "y": py})
+                    except (TypeError, ValueError, AttributeError):
+                        self._send_json(400, {"code": 400, "msg": "点选位置无效"})
+                        return
+                    answer = {"points": points}
+                else:  # grid
+                    raw = data.get("answer")
+                    cells = raw.get("cells") if isinstance(raw, dict) else None
+                    try:
+                        cells = sorted({int(c) for c in (cells or [])})
+                    except (TypeError, ValueError):
+                        cells = []
+                    if not cells or len(cells) > 9 or cells[0] < 0 or cells[-1] > 8:
+                        self._send_json(400, {"code": 400, "msg": "请先选出正确的格子"})
+                        return
+                    answer = {"cells": cells}
+                vok, ticket, verr = _hub_captcha_verify(hub_token, kind, x, answer)
                 if not vok:
                     self._send_json(400, {"code": 400, "msg": verr})
                     return
@@ -11711,7 +11780,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(400, {"code": 400, "msg": "请填写用户名/邮箱和密码"})
                     return
                 if data.get("login_scene") == "web" and not consume_slider_token(data.get("slider_token"), "user", self._client_ip()):
-                    self._send_json(400, {"code": 400, "msg": "请先完成滑块验证"})
+                    self._send_json(400, {"code": 400, "msg": "请先完成人机验证"})
                     return
                 allowed, retry_after = check_login_rate("user", self._client_ip(), username)
                 if not allowed:
@@ -11773,7 +11842,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 # 安全：先过中控滑块，再发验证码，避免被脚本刷邮件
                 if not consume_slider_token(data.get("slider_token"), "email", self._client_ip()):
-                    self._send_json(400, {"code": 400, "msg": "请先完成滑块验证"})
+                    self._send_json(400, {"code": 400, "msg": "请先完成人机验证"})
                     return
                 # 安全：验证码发送限流，防止邮件轰炸
                 ok, err_msg = check_verify_code_rate(self._client_ip(), email)
@@ -11843,7 +11912,7 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 # 安全：先过中控滑块，再补发验证码，避免被脚本刷邮件
                 if not consume_slider_token(data.get("slider_token"), "email", self._client_ip()):
-                    self._send_json(400, {"code": 400, "msg": "请先完成滑块验证"})
+                    self._send_json(400, {"code": 400, "msg": "请先完成人机验证"})
                     return
                 # 安全：验证码发送限流，防止邮件轰炸
                 ok, err_msg = check_verify_code_rate(self._client_ip(), email)
@@ -12313,7 +12382,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body or "{}")
                 if not consume_slider_token(data.get("slider_token"), "money", self._client_ip()):
-                    self._send_json(400, {"code": 400, "msg": "请先完成滑块验证"})
+                    self._send_json(400, {"code": 400, "msg": "请先完成人机验证"})
                     return
                 cfg = db.get_admin_config() or {}
                 if not int(cfg.get("referral_enabled") or 0):
@@ -12349,7 +12418,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 data = json.loads(body or "{}")
                 if not consume_slider_token(data.get("slider_token"), "money", self._client_ip()):
-                    self._send_json(400, {"code": 400, "msg": "请先完成滑块验证"})
+                    self._send_json(400, {"code": 400, "msg": "请先完成人机验证"})
                     return
                 ok, msg, row = db.exchange_commission_for_points(
                     user["username"], data.get("amount"), (data.get("request_no") or "").strip()
@@ -12608,7 +12677,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(400, {"code": 400, "msg": "请输入管理员用户名和密码"})
                     return
                 if not consume_slider_token(data.get("slider_token"), "admin", self._client_ip()):
-                    self._send_json(400, {"code": 400, "msg": "请先完成滑块验证"})
+                    self._send_json(400, {"code": 400, "msg": "请先完成人机验证"})
                     return
                 allowed, retry_after = check_login_rate("admin", self._client_ip(), username)
                 if not allowed:

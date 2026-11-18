@@ -1814,6 +1814,83 @@
         }
         .hub-box.busy { opacity: .6; }
         .hub-skeleton { color: var(--c-text-3); font-size: 12px; text-align: center; padding: 40px 0; }
+        /* 图标点选 / 文字点选 / 九宫格 */
+        .hub-box.click-mode {
+            aspect-ratio: auto;
+            max-width: 100% !important;
+            background: var(--c-surface-3);
+        }
+        .hub-box .captcha-click-img {
+            display: block;
+            width: 100% !important;
+            height: auto !important;
+            border-radius: 6px;
+            user-select: none;
+            -webkit-user-drag: none;
+            cursor: crosshair;
+        }
+        .captcha-prompt {
+            display: none;
+            margin: 0 0 8px;
+            font-size: 12.5px;
+            line-height: 1.55;
+            color: var(--c-text-2);
+            font-weight: 600;
+        }
+        .captcha-prompt.show { display: block; }
+        .captcha-actions {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 8px;
+        }
+        .captcha-actions.show { display: flex; }
+        .captcha-count { font-size: 12px; color: var(--c-text-3); }
+        .captcha-submit {
+            flex-shrink: 0;
+            height: 32px;
+            padding: 0 14px;
+            border-radius: 999px;
+            border: 0;
+            background: var(--c-brand);
+            color: #fff;
+            font-size: 12.5px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: opacity .15s;
+        }
+        .captcha-submit:hover { opacity: .88; }
+        .captcha-submit:disabled { opacity: .45; cursor: not-allowed; }
+        .captcha-markers { position: absolute; inset: 0; pointer-events: none; }
+        .captcha-marker {
+            position: absolute;
+            width: 22px; height: 22px;
+            margin: -11px 0 0 -11px;
+            border-radius: 50%;
+            background: var(--c-brand);
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: auto;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(16, 24, 40, .35);
+        }
+        .captcha-grid { position: absolute; inset: 0; display: grid; }
+        .captcha-grid-cell {
+            border: 1px dashed rgba(255, 255, 255, .22);
+            background: transparent;
+            cursor: pointer;
+            padding: 0;
+        }
+        .captcha-grid-cell:hover { background: rgba(255, 255, 255, .08); }
+        .captcha-grid-cell.sel {
+            background: rgba(47, 107, 255, .3);
+            border-color: var(--c-brand);
+        }
 
         /* ===================== 推广返利专区现代化布局 ===================== */
         .promo-hero-grid {
@@ -3369,7 +3446,7 @@
                     <svg class="ui-icon sm" aria-hidden="true"><use href="#i-x"></use></svg>
                 </button>
             </div>
-            <p class="verify-modal-sub">完成滑块验证后会自动继续登录</p>
+            <p class="verify-modal-sub">完成人机验证后会自动继续登录</p>
             <div id="loginSliderModal"></div>
         </div>
     </div>
@@ -3383,7 +3460,7 @@
                     <svg class="ui-icon sm" aria-hidden="true"><use href="#i-x"></use></svg>
                 </button>
             </div>
-            <p class="verify-modal-sub">完成滑块验证后会自动发送邮箱验证码</p>
+            <p class="verify-modal-sub">完成人机验证后会自动发送邮箱验证码</p>
             <div id="codeSliderModal"></div>
         </div>
     </div>
@@ -4615,6 +4692,8 @@
                 this._seq = (HubSlider._seq = (HubSlider._seq || 0) + 1);
                 this.token = ''; this.bg = ''; this.piece = ''; this.pieceEl = null;
                 this.pieceY = 0; this.pieceSize = 44; this.w = 620; this.h = 310;
+                this.kind = 'slider'; this.image = ''; this.prompt = '';
+                this.points = []; this.cells = []; this.gridCols = 3; this.gridRows = 3;
                 this.x = 0; this.sliderToken = ''; this.verified = false; this.loading = false; this.dragging = false;
                 this._build();
                 const self = this;
@@ -4626,27 +4705,39 @@
                 const u = (n) => this._uid(n);
                 this.container.innerHTML =
                     '<div class="slider-verify">' +
-                    '<div class="slider-top"><span>滑块验证</span><span class="slider-state" id="' + u('state') + '">拖动拼图到缺口</span></div>' +
+                    '<div class="slider-top"><span>人机验证</span><span class="slider-state" id="' + u('state') + '">加载中…</span></div>' +
+                    '<div class="captcha-prompt" id="' + u('prompt') + '"></div>' +
                     '<div class="puzzle-box hub-box" id="' + u('box') + '"><div class="hub-skeleton">正在加载验证图…</div></div>' +
                     '<div class="puzzle-track" id="' + u('track') + '">' +
                     '<div class="puzzle-progress" id="' + u('progress') + '"></div>' +
                     '<span class="puzzle-tip" id="' + u('tip') + '">按住滑块，拖动完成拼图</span>' +
                     '<button type="button" class="puzzle-thumb" id="' + u('thumb') + '"><svg class="ui-icon sm" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg></button>' +
+                    '</div>' +
+                    '<div class="captcha-actions" id="' + u('actions') + '">' +
+                    '<span class="captcha-count" id="' + u('count') + '">点选图片后再确认</span>' +
+                    '<button type="button" class="captcha-submit" id="' + u('submit') + '">确认验证</button>' +
                     '</div></div>';
                 this.wrap = this.container.querySelector('.slider-verify');
                 this.box = $(u('box')); this.state = $(u('state')); this.track = $(u('track'));
                 this.progress = $(u('progress')); this.tip = $(u('tip')); this.thumb = $(u('thumb'));
+                this.promptEl = $(u('prompt')); this.actions = $(u('actions'));
+                this.countEl = $(u('count')); this.submit = $(u('submit'));
                 const self = this;
                 this.thumb.addEventListener('mousedown', function (e) { self._begin(e); });
                 this.thumb.addEventListener('touchstart', function (e) { e.preventDefault(); self._begin(e); }, { passive: false });
+                this.submit.addEventListener('click', function () { self.verify(); });
             }
             async reload() {
                 this.loading = true;
                 this.token = ''; this.sliderToken = ''; this.verified = false; this.x = 0; this.pieceEl = null;
+                this.kind = 'slider'; this.image = ''; this.prompt = '';
+                this.points = []; this.cells = [];
                 this.wrap.classList.remove('done');
-                this.box.classList.remove('busy');
+                this.box.classList.remove('busy', 'click-mode');
+                this.promptEl.classList.remove('show'); this.actions.classList.remove('show');
+                this.track.style.display = '';
                 this.box.innerHTML = '<div class="hub-skeleton">正在加载验证图…</div>';
-                this.state.textContent = '拖动拼图到缺口';
+                this.state.textContent = '加载中…';
                 this.tip.textContent = '按住滑块，拖动完成拼图';
                 try {
                     const res = await fetch('/captcha/new?scope=' + encodeURIComponent(this.scope));
@@ -4656,7 +4747,9 @@
                         return;
                     }
                     const c = data.captcha;
+                    this.kind = c.kind || 'slider';
                     this.token = c.token; this.bg = c.bg; this.piece = c.piece;
+                    this.image = c.image || ''; this.prompt = c.prompt || '';
                     this.pieceY = Number(c.pieceY) || 0; this.pieceSize = Number(c.pieceSize) || 44;
                     this.w = Number(c.w) || 620; this.h = Number(c.h) || 310;
                     this._render();
@@ -4665,6 +4758,12 @@
                 } finally { this.loading = false; }
             }
             _render() {
+                if (this.kind !== 'slider') { this._renderClick(); return; }
+                this.box.classList.remove('click-mode');
+                this.promptEl.classList.remove('show');
+                this.actions.classList.remove('show');
+                this.track.style.display = '';
+                this.state.textContent = '拖动拼图到缺口';
                 const pid = this._uid('piece');
                 this.box.innerHTML = '<img class="puzzle-bg" src="' + this.bg + '" draggable="false">' +
                     '<img class="puzzle-piece-img" id="' + pid + '" src="' + this.piece + '" draggable="false">';
@@ -4703,6 +4802,110 @@
                 this.progress.style.width = (frac * 100) + '%';
                 this.thumb.style.left = 'calc((100% - 32px) * ' + frac + ')';
             }
+            _renderClick() {
+                this.track.style.display = 'none';
+                this.promptEl.textContent = this.prompt || '';
+                this.promptEl.classList.add('show');
+                this.actions.classList.add('show');
+                this.box.classList.add('click-mode');
+                this.state.textContent = this.kind === 'grid' ? '请选出正确的格子' : '请按提示点选图片';
+                this.countEl.textContent = '点选后再确认';
+                this.submit.disabled = true;
+                if (this.kind === 'grid') {
+                    let cellHtml = '';
+                    for (let i = 0; i < 9; i++) cellHtml += '<button type="button" class="captcha-grid-cell" data-cell="' + i + '"></button>';
+                    this.box.innerHTML = '<img class="captcha-click-img" src="' + this.image + '" draggable="false">' +
+                        '<div class="captcha-grid" style="grid-template-columns:repeat(' + this.gridCols + ',1fr);grid-template-rows:repeat(' + this.gridRows + ',1fr)">' + cellHtml + '</div>';
+                    const self = this;
+                    Array.prototype.forEach.call(this.box.querySelectorAll('.captcha-grid-cell'), function (btn) {
+                        btn.addEventListener('click', function () { self._toggleCell(Number(btn.getAttribute('data-cell'))); });
+                    });
+                } else {
+                    this.box.innerHTML = '<img class="captcha-click-img" src="' + this.image + '" draggable="false">' +
+                        '<div class="captcha-markers" id="' + this._uid('markers') + '"></div>';
+                    const img = this.box.querySelector('.captcha-click-img');
+                    const self = this;
+                    img.addEventListener('click', function (e) { self._clickImage(e); });
+                }
+                this._syncMarkers();
+            }
+            _expectedClicks() {
+                // 中控提示词：「依次点击：苹果、香蕉、橘子」或「依次点击：春风得意」，
+                // 从提示里数出需要点的个数，够数就自动提交，少点/多点中控都会判错。
+                const p = String(this.prompt || '').replace(/^[^：:]*[：:]/, '').trim();
+                if (!p) return 0;
+                if (this.kind === 'iconClick') return p.split(/[、,，]/).map(function (s) { return s.trim(); }).filter(Boolean).length;
+                if (this.kind === 'textClick') return Array.from(p.replace(/\s+/g, '')).length;
+                return 0;
+            }
+            _clickImage(e) {
+                if (this.verified || !this.token) return;
+                const expected = this._expectedClicks();
+                const limit = expected > 0 ? expected : 6;
+                if (this.points.length >= limit) {
+                    this.notice(expected > 0 ? '已点选全部目标，可点击数字取消后重选' : '最多点选 6 个位置', false);
+                    return;
+                }
+                const img = e.currentTarget;
+                const rect = img.getBoundingClientRect();
+                if (!rect.width || !rect.height) return;
+                // 按图片真实像素回传，不能传 CSS 像素
+                const px = Math.round((e.clientX - rect.left) / rect.width * this.w);
+                const py = Math.round((e.clientY - rect.top) / rect.height * this.h);
+                if (px < 0 || py < 0 || px > this.w || py > this.h) return;
+                this.points.push({ x: px, y: py });
+                this._syncMarkers();
+                if (expected > 0 && this.points.length === expected) {
+                    const self = this;
+                    setTimeout(function () {
+                        if (!self.verified && self.token && self.points.length === expected) self.verify();
+                    }, 220);
+                }
+            }
+            _removePoint(i) {
+                if (this.verified) return;
+                this.points.splice(i, 1);
+                this._syncMarkers();
+            }
+            _toggleCell(i) {
+                if (this.verified) return;
+                const at = this.cells.indexOf(i);
+                if (at >= 0) this.cells.splice(at, 1); else this.cells.push(i);
+                this._syncMarkers();
+            }
+            _syncMarkers() {
+                if (this.kind === 'grid') {
+                    const self = this;
+                    Array.prototype.forEach.call(this.box.querySelectorAll('.captcha-grid-cell'), function (btn) {
+                        const idx = Number(btn.getAttribute('data-cell'));
+                        btn.classList.toggle('sel', self.cells.indexOf(idx) >= 0);
+                    });
+                    const n = this.cells.length;
+                    this.countEl.textContent = n ? ('已选 ' + n + ' 格') : '点选格子后再确认';
+                    this.submit.disabled = !n;
+                    return;
+                }
+                const wrap = $(this._uid('markers'));
+                if (!wrap) return;
+                const self = this;
+                wrap.innerHTML = '';
+                this.points.forEach(function (p, i) {
+                    const el = document.createElement('span');
+                    el.className = 'captcha-marker';
+                    el.style.left = (p.x / self.w * 100) + '%';
+                    el.style.top = (p.y / self.h * 100) + '%';
+                    el.textContent = String(i + 1);
+                    el.title = '点击取消这个点';
+                    el.addEventListener('click', function (e) { e.stopPropagation(); self._removePoint(i); });
+                    wrap.appendChild(el);
+                });
+                const n = this.points.length;
+                const total = this._expectedClicks();
+                this.countEl.textContent = n
+                    ? ('已点选 ' + n + (total ? '/' + total : '') + ' 个')
+                    : (total ? ('请依次点选 ' + total + ' 个目标') : '点选图片后再确认');
+                this.submit.disabled = !n;
+            }
             _begin(e) {
                 if (this.verified || !this.token) return;
                 this.dragging = true;
@@ -4734,23 +4937,32 @@
                 move(e);
             }
             async verify() {
-                if (this.verified || !this.token) return;
+                if (this.verified || !this.token || this.loading) return;
+                if (this.kind !== 'slider' && !(this.kind === 'grid' ? this.cells.length : this.points.length)) {
+                    this.notice('请先点选图片完成验证', false);
+                    return;
+                }
                 this.loading = true;
                 this.box.classList.add('busy');
+                const payload = { token: this.token, scope: this.scope, kind: this.kind };
+                if (this.kind === 'slider') payload.x = this.x;
+                else if (this.kind === 'grid') payload.answer = { cells: this.cells.slice() };
+                else payload.answer = { points: this.points.map(function (p) { return { x: p.x, y: p.y }; }) };
                 try {
-                    const res = await fetch('/captcha/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: this.token, x: this.x, scope: this.scope }) });
+                    const res = await fetch('/captcha/check', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
                     const data = await res.json();
                     if (data.code === 200 && data.token) {
                         this.sliderToken = data.token; this.verified = true;
                         this.state.textContent = '验证通过'; this.tip.textContent = '验证通过';
+                        this.actions.classList.remove('show');
                         this.wrap.classList.add('done');
-                        this.notice('滑块验证通过', true);
+                        this.notice('人机验证通过', true);
                     } else {
-                        this.notice(data.msg || '滑块没对准，已换新图', false);
+                        this.notice(data.msg || '验证未通过，已换新图', false);
                         await this.reload();
                     }
                 } catch (_) {
-                    this.notice('滑块验证失败，已换新图', false);
+                    this.notice('验证失败，已换新图', false);
                     await this.reload();
                 } finally { this.loading = false; this.box.classList.remove('busy'); }
             }
@@ -4839,7 +5051,7 @@
                 if (sliderToken) runCodeSend(task, sliderToken);
                 return;
             }
-            if (pendingCode) msg(pendingCode.msgEl, text || '请完成滑块验证', false);
+            if (pendingCode) msg(pendingCode.msgEl, text || '请完成人机验证', false);
         }
         async function runCodeSend(task, sliderToken) {
             setBusy(task.btn, true, task.busyText || '发送中...');
@@ -6268,7 +6480,7 @@ await loadPlans();
             const username = $('loginUser').value.trim();
             const password = $('loginPwd').value.trim();
             if (!username || !password) return msg('loginMsg', '请填写用户名和密码', false);
-            if (!loginSlider || !loginSlider.sliderToken) { msg('loginMsg', '请先完成滑块验证', false); return; }
+            if (!loginSlider || !loginSlider.sliderToken) { msg('loginMsg', '请先完成人机验证', false); return; }
             const btn = $('loginBtn');
             setBusy(btn, true, '登录中...');
             try {
@@ -6287,11 +6499,11 @@ await loadPlans();
                     setTimeout(showDashboard, 350);
                 } else {
                     await loginSlider.reload();
-                    msg('loginMsg', res.msg || '登录失败，请重新完成滑块验证', false);
+                    msg('loginMsg', res.msg || '登录失败，请重新完成人机验证', false);
                 }
             } catch (_) {
                 await loginSlider.reload();
-                msg('loginMsg', '网络请求失败，请重新完成滑块验证', false);
+                msg('loginMsg', '网络请求失败，请重新完成人机验证', false);
             }
             setBusy(btn, false);
         }
@@ -6648,7 +6860,7 @@ await loadPlans();
             const points = exchangePoints(amount);
             if (points < 1) return msg('promoExchangeMsg', '兑换金额不足 1 题，请提高金额', false);
             if (!confirm('确认用 ¥' + amount.toFixed(2) + ' 佣金兑换 ' + points + ' 题？题数即时到账、不可折现。')) return;
-            if (!moneySliderE || !(await moneySliderE.ensureVerified())) { if (moneySliderE) moneySliderE.reload(); return msg('promoExchangeMsg', '请先完成滑块验证', false); }
+            if (!moneySliderE || !(await moneySliderE.ensureVerified())) { if (moneySliderE) moneySliderE.reload(); return msg('promoExchangeMsg', '请先完成人机验证', false); }
             const sliderToken = moneySliderE.getToken();
             const btn = this;
             setBusy(btn, true, '兑换中...');
@@ -6728,7 +6940,7 @@ await loadPlans();
             else { payAccount = $('promoWechatAccount').value.trim(); qr = promoWechatQr; }
             if (!payAccount) return msg('promoWithdrawMsg', '请先完善' + (method === 'alipay' ? '支付宝' : '微信') + '收款账号', false);
             if (!qr) return msg('promoWithdrawMsg', '请先上传' + (method === 'alipay' ? '支付宝' : '微信') + '收款二维码', false);
-            if (!moneySliderW || !(await moneySliderW.ensureVerified())) { if (moneySliderW) moneySliderW.reload(); return msg('promoWithdrawMsg', '请先完成滑块验证', false); }
+            if (!moneySliderW || !(await moneySliderW.ensureVerified())) { if (moneySliderW) moneySliderW.reload(); return msg('promoWithdrawMsg', '请先完成人机验证', false); }
             const wSliderToken = moneySliderW.getToken();
             setBusy(this, true, '提交中...');
             try {
