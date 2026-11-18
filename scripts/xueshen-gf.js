@@ -2023,7 +2023,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
   };
   const guessIssuePageType = (question) => {
     const wt = question && question.workType;
-    if (wt) return "cx-" + wt;
+    if (wt) return wt === "zhs" ? "zhs-web" : "cx-" + wt;
     const host = location.hostname || "";
     if (/zhihuishu\.com$/i.test(host)) return "zhs-web";
     if (/chaoxing\.com$/i.test(host)) return "cx-zy";
@@ -14359,6 +14359,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       });
     };
     const isChoiceType = (type) => ["单选题", "多选题", "判断题"].includes(type);
+    // 填空/主观题只要页面确实有输入框，也可以交给 AI 写；没有输入框就不算支持，避免白花次数
+    const isFillBlankType = (type) => ["填空题", "简答题", "论述题", "计算题"].includes(type);
+    const hasFillInputs = (el) => !!(el && el.querySelector && el.querySelector("input, textarea, .fillAnswer input, .fillAnswer textarea"));
     const fillBlank = (question, answers) => {
       const inputs = Array.from(
         question.element.querySelectorAll("input, textarea, .fillAnswer input, .fillAnswer textarea")
@@ -14687,7 +14690,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         }
       }
       if (!handled) {
-        if (isChoiceType(question.type)) {
+        if (isChoiceType(question.type) || (isFillBlankType(question.type) && hasFillInputs(question.element))) {
           const aiAnswerData = await getAIAnswer(apiQuestion);
           if (aiAnswerData.code === 1) {
             question.answer = { code: 2, answer: aiAnswerData.data.answer, src: aiAnswerData.data.src || "ai" };
