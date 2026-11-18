@@ -255,7 +255,10 @@ def _vision_rank(model_name):
     return 50
 
 DASHBOARD_CACHE = {"time": 0, "data": None}
-DASHBOARD_CACHE_SECONDS = 30
+DASHBOARD_CACHE_SECONDS = 60
+# 上一周期的对比数据变化很慢，单独缓存 5 分钟，避免每次刷新首页都重算昨天整天
+PREV_DASHBOARD_CACHE = {"key": "", "time": 0, "data": None}
+PREV_DASHBOARD_CACHE_SECONDS = 300
 # 官网直营营收口径：代理商充值（plan_type='dist_recharge'）是压在平台的预存款、属于负债，
 # 不能算进直营收入；分销那套钱单独在「代理商分销 · 收入统计」里按流水出。
 # 卡密激活也往 payment_orders 写一行，代理卡那行 price 恒为 0（是核销不是销售），
@@ -7801,40 +7804,73 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
         SELECT COUNT(*) AS cnt FROM ai_answer_tasks
         WHERE status IN ('queued','running','waiting')
     """
-    conn = db._new_mysql_conn()
-    try:
-        cursor = conn.cursor()
-        cursor.execute(card_sql, (sd, ed_next, sd, ed_next))
-        card_stats = cursor.fetchone() or {}
-        cursor.execute(active_sql, (sd, ed_next, sd, ed_next))
-        active_stats = cursor.fetchone() or {}
-        # 上一等长周期：只取涨跌需要的关键指标
+    # 首页统计的几条查询互不依赖，分头并发查：整体耗时按最慢的一条算，
+    # 而不是「当前周期 + 上一周期」十几条查询全部相加。
+    def _fetch(sql, params):
+        conn = db._new_mysql_conn()
         try:
-            cursor.execute(card_sql, (prev_sd, prev_ed_next, prev_sd, prev_ed_next))
-            prev_card_stats = cursor.fetchone() or {}
-            cursor.execute(active_sql, (prev_sd, prev_ed_next, prev_sd, prev_ed_next))
-            prev_active_stats = cursor.fetchone() or {}
-            cursor.execute(revenue_sql, (prev_sd, prev_ed_next))
-            prev_rev_stats = cursor.fetchone() or {}
-        except Exception:
-            prev_card_stats, prev_active_stats, prev_rev_stats = {}, {}, {}
-        cursor.execute(trend_sql, (sd, ed_next))
-        trend_rows = cursor.fetchall()
-        cursor.execute(model_sql, (sd, ed_next))
-        model_rows = cursor.fetchall()
-        cursor.execute(revenue_sql, (sd, ed_next))
-        rev_stats = cursor.fetchone() or {}
-        cursor.execute(revenue_trend_sql, (sd, ed_next))
-        rev_trend_rows = cursor.fetchall()
-        cursor.execute(refund_pending_sql)
-        refund_pending_row = cursor.fetchone() or {}
-        try:
-            cursor.execute(ai_task_pending_sql)
-            ai_task_pending_row = cursor.fetchone() or {}
-        except Exception:
-            ai_task_pending_row = {}
-    finally:
-        conn.close()
+            cursor = conn.cursor()
+            cursor.execute(sql, params)
+            return cursor.fetchall() or []
+        finally:
+            conn.close()
+
+    current_jobs = {
+        "card": (card_sql, (sd, ed_next, sd, ed_next)),
+        "active": (active_sql, (sd, ed_next, sd, ed_next)),
+        "trend": (trend_sql, (sd, ed_next)),
+        "model": (model_sql, (sd, ed_next)),
+        "revenue": (revenue_sql, (sd, ed_next)),
+        "rev_trend": (revenue_trend_sql, (sd, ed_next)),
+        "refund": (refund_pending_sql, ()),
+        "pending": (ai_task_pending_sql, ()),
+    }
+    prev_key = prev_sd + "_" + prev_ed_next
+    prev_cached = None
+    if (PREV_DASHBOARD_CACHE.get("data") and PREV_DASHBOARD_CACHE.get("key") == prev_key
+            and time.time() - PREV_DASHBOARD_CACHE.get("time", 0) < PREV_DASHBOARD_CACHE_SECONDS):
+        prev_cached = PREV_DASHBOARD_CACHE["data"]
+    prev_jobs = {
+        "card": (card_sql, (prev_sd, prev_ed_next, prev_sd, prev_ed_next)),
+        "active": (active_sql, (prev_sd, prev_ed_next, prev_sd, prev_ed_next)),
+        "revenue": (revenue_sql, (prev_sd, prev_ed_next)),
+    }
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        current_futs = {name: ex.submit(_fetch, sql, params) for name, (sql, params) in current_jobs.items()}
+        prev_futs = {} if prev_cached is not None else {
+            name: ex.submit(_fetch, sql, params) for name, (sql, params) in prev_jobs.items()
+        }
+        current = {}
+        for name, fut in current_futs.items():
+            try:
+                current[name] = fut.result()
+            except Exception:
+                # 任务池表异常时首页其它统计照常显示
+                if name == "pending":
+                    current[name] = []
+                else:
+                    raise
+        if prev_cached is not None:
+            prev = prev_cached
+        else:
+            # 上一周期只用于「较上期」涨跌，查失败不影响当前数据
+            try:
+                prev = {name: fut.result() for name, fut in prev_futs.items()}
+            except Exception:
+                prev = {}
+            if prev:
+                PREV_DASHBOARD_CACHE.update({"key": prev_key, "time": time.time(), "data": prev})
+    card_stats = (current.get("card") or [{}])[0]
+    active_stats = (current.get("active") or [{}])[0]
+    prev_card_stats = (prev.get("card") or [{}])[0]
+    prev_active_stats = (prev.get("active") or [{}])[0]
+    prev_rev_stats = (prev.get("revenue") or [{}])[0]
+    trend_rows = current.get("trend") or []
+    model_rows = current.get("model") or []
+    rev_stats = (current.get("revenue") or [{}])[0]
+    rev_trend_rows = current.get("rev_trend") or []
+    refund_pending_row = (current.get("refund") or [{}])[0]
+    ai_task_pending_row = (current.get("pending") or [{}])[0]
     trend_map = {str(r.get("day"))[:10]: r for r in trend_rows}
     rev_trend_map = {str(r.get("day"))[:10]: r for r in rev_trend_rows}
     trend = []
