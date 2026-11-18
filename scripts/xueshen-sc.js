@@ -8997,7 +8997,17 @@
                   blank_fields: (question && question.__xsBlankFields) || 0,
                   blank_answers: (question && question.__xsBlankAnswers) || 0,
                   blank_filled: (question && question.__xsBlankFilled) || 0,
-                  blank_readonly: (question && question.__xsBlankReadonly) || 0
+                  blank_readonly: (question && question.__xsBlankReadonly) || 0,
+                  // 填空一个输入框都找不到时，把最像输入框的节点结构带回后台，才能确定是 iframe 编辑器还是新容器
+                  blank_html: (() => {
+                    try {
+                      const cand = el && el.querySelector('textarea, input:not([type="hidden"]), [contenteditable="true"], [class*="blank"], [class*="tk"], iframe');
+                      return cand && cand.outerHTML ? String(cand.outerHTML).replace(/\s+/g, " ").slice(0, 300) : "";
+                    } catch (_) {
+                      return "";
+                    }
+                  })(),
+                  iframes: el && el.querySelectorAll ? el.querySelectorAll("iframe").length : 0
                 } : {})
               },
               // 同一页可能有多道题填不上，签名带上题目 id，60 秒去重时才不会只留下第一道
@@ -11692,7 +11702,17 @@
               found: {
                 type: String((question && question.type) || ""),
                 options: ((question && question.optionsText) || []).length,
-                controls: controls.length
+                controls: controls.length,
+                // 智慧树填空/问答填不上时同样把首个输入候选的结构带回后台
+                blank_html: (() => {
+                  try {
+                    const cand = el && el.querySelector('textarea, input:not([type="hidden"]), [contenteditable="true"], iframe');
+                    return cand && cand.outerHTML ? String(cand.outerHTML).replace(/\s+/g, " ").slice(0, 300) : "";
+                  } catch (_) {
+                    return "";
+                  }
+                })(),
+                iframes: el && el.querySelectorAll ? el.querySelectorAll("iframe").length : 0
               },
               nodes: el ? [el] : []
             });
