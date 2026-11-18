@@ -10040,6 +10040,14 @@ class Handler(BaseHTTPRequestHandler):
                         item["username"] = meta.get("username") or ""
                         item["has_image"] = meta.get("has_image", item.get("has_image", False))
                         item["attempts"] = meta.get("attempts", item.get("attempts", 0))
+                    elif not item.get("username"):
+                        # 正在调用的任务不在这批排队数据里时，单独补一次用户名
+                        try:
+                            row = db.get_ai_answer_task(task_id=int(item.get("task_id") or 0))
+                            if row:
+                                item["username"] = str(row.get("username") or "")
+                        except Exception:
+                            pass
                 self._send_json(200, {
                     "code": 200,
                     "now": now,
@@ -10070,9 +10078,13 @@ class Handler(BaseHTTPRequestHandler):
                 status = str(q.get("status", [""])[0] or "").strip()
                 date_from = str(q.get("date_from", [""])[0] or "").strip()
                 date_to = str(q.get("date_to", [""])[0] or "").strip()
+                has_image = str(q.get("has_image", [""])[0] or "").strip()
+                if has_image not in ("0", "1"):
+                    has_image = ""
                 rows, total = db.list_ai_answer_tasks(
                     status=status, page=page, page_size=20,
                     keyword=keyword, date_from=date_from, date_to=date_to, order="recent",
+                    has_image=has_image,
                 )
                 for r in rows:
                     for k in ("created_at", "updated_at", "solved_at", "next_retry_at"):

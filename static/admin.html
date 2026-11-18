@@ -1168,6 +1168,8 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
 .run-state::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 .run-state.switching { background: var(--warn-subtle); color: var(--warning); }
 .run-tag { font-size: 10.5px; padding: 1px 7px; border: 1px solid var(--border2); border-radius: 9px; color: var(--text2); }
+.run-user { display: inline-flex; align-items: center; max-width: 150px; padding: 1px 8px; border-radius: 9px; background: var(--bg3); color: var(--text2); font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tag-img { display: inline-flex; align-items: center; padding: 0 5px; margin-right: 5px; border-radius: 4px; background: var(--accent-subtle); color: var(--accent); font-size: 10.5px; line-height: 17px; vertical-align: 1px; }
 .run-elapsed { margin-left: auto; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 12px; color: var(--text2); font-variant-numeric: tabular-nums; }
 .run-elapsed b { font-weight: 600; color: var(--text); }
 .run-question { margin: 9px 0 13px; font-size: 13px; line-height: 1.55; color: var(--text); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
@@ -4747,6 +4749,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                   <article class="run-card" v-for="card in aiLiveRunning" :key="card.task_id">
                     <div class="run-top">
                       <span class="run-id">#{{card.task_id}}</span>
+                      <span class="run-user" :title="'提交用户：'+(card.username||'未知')">{{card.username||'匿名用户'}}</span>
                       <span class="run-state" :class="{switching:card.status!=='calling'}">{{card.status==='calling'?'正在调用':'切换模型'}}</span>
                       <span class="run-tag" v-if="card.has_image">识图</span>
                       <span class="run-elapsed"><b>{{liveDuration(liveElapsed(card.status==='calling'?(card.attempt_started_at||card.started_at):card.started_at))}}</b><span v-if="card.status==='calling'&&card.budget_seconds"> / {{card.budget_seconds}}s</span></span>
@@ -4792,7 +4795,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                       <span class="queue-dot" :class="{queued:t.status==='queued'}"></span>
                       <div class="queue-body">
                         <div class="queue-q" :title="t.question">#{{t.id}} {{t.question||'（空题目）'}}</div>
-                        <div class="queue-meta">{{aiTaskStatusText(t.status)}} · 第 {{t.round_no||0}} 轮 · 已试 {{t.attempts||0}} 次</div>
+                        <div class="queue-meta">{{t.username||'匿名用户'}} · {{aiTaskStatusText(t.status)}} · 第 {{t.round_no||0}} 轮 · 已试 {{t.attempts||0}} 次</div>
                       </div>
                       <span class="queue-countdown" :class="{queued:t.status==='queued'}" v-if="t.status==='waiting'">{{(t.retry_in===null||t.retry_in===undefined)?'待重试':formatCountdown(queueCountdown(t))}}</span>
                       <span class="queue-countdown queued" v-else>就绪</span>
@@ -4838,12 +4841,13 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
             <div class="card-body" style="padding:0;overflow-x:auto">
               <table class="data-table">
                 <thead><tr>
-                  <th style="width:60px">ID</th><th style="width:80px">状态</th><th>题目</th><th style="width:60px">图片</th><th style="width:60px">轮次</th><th style="width:70px">尝试</th><th>最后错误</th><th style="width:150px">下次重试/完成</th><th style="width:190px">操作</th>
+                  <th style="width:60px">ID</th><th style="width:80px">状态</th><th style="width:110px">用户</th><th>题目</th><th style="width:60px">图片</th><th style="width:60px">轮次</th><th style="width:70px">尝试</th><th>最后错误</th><th style="width:150px">下次重试/完成</th><th style="width:190px">操作</th>
                 </tr></thead>
                 <tbody>
                   <tr v-for="r in aiTaskList" :key="r.id">
                     <td>{{r.id}}</td>
                     <td><span :style="aiTaskStatusStyle(r.status)">{{aiTaskStatusText(r.status)}}</span></td>
+                    <td style="font-size:12.5px;color:var(--text2);max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="r.username">{{r.username||'-'}}</td>
                     <td style="font-size:12.5px;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="r.question_text">{{r.question_text||'-'}}</td>
                     <td>{{r.has_image?'是':'-'}}</td>
                     <td>{{r.round_no||0}}</td>
@@ -4856,7 +4860,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                       <button class="btn btn-secondary" style="padding:3px 8px;font-size:12px;margin-left:4px;color:var(--danger)" @click="aiTaskAction(r,'delete')">删除</button>
                     </td>
                   </tr>
-                  <tr v-if="aiTaskList.length===0"><td colspan="9" style="padding:0"><div class="state-box"><div class="state-icon"><svg class="ui-icon md"><use href="#i-clock"></use></svg></div><div class="state-title">当前筛选没有任务</div><div class="state-desc">换一个状态筛选，或等脚本提交新的答题任务。</div></div></td></tr>
+                  <tr v-if="aiTaskList.length===0"><td colspan="10" style="padding:0"><div class="state-box"><div class="state-icon"><svg class="ui-icon md"><use href="#i-clock"></use></svg></div><div class="state-title">当前筛选没有任务</div><div class="state-desc">换一个状态筛选，或等脚本提交新的答题任务。</div></div></td></tr>
                 </tbody>
               </table>
             </div>
@@ -4889,6 +4893,11 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                   <option value="running">运行中</option>
                   <option value="queued">排队中</option>
                 </select>
+                <select v-model="aiHistoryHasImage" @change="loadAiTaskHistory(1)">
+                  <option value="">全部题目</option>
+                  <option value="1">含图片</option>
+                  <option value="0">纯文字</option>
+                </select>
                 <input class="history-date" type="date" v-model="aiHistoryFrom" title="开始日期">
                 <span style="font-size:12px;color:var(--text3)">至</span>
                 <input class="history-date" type="date" v-model="aiHistoryTo" title="结束日期">
@@ -4905,7 +4914,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                   <tr v-for="r in aiHistoryRows" :key="'h'+r.id">
                     <td style="font-size:12px;color:var(--text3);white-space:nowrap">{{String(r.created_at||'').replace('T',' ').substring(0,16)}}</td>
                     <td style="font-size:12.5px;color:var(--text2)">{{r.username||'-'}}</td>
-                    <td style="font-size:12.5px;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="r.question_text">{{r.question_text||'-'}}</td>
+                    <td style="font-size:12.5px;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" :title="r.question_text"><span v-if="r.has_image" class="tag-img" title="题目含图片">图</span>{{r.question_text||'-'}}</td>
                     <td><span :style="aiTaskStatusStyle(r.status)">{{aiTaskStatusText(r.status)}}</span></td>
                     <td class="history-answer-cell">
                       <div v-if="r.answer" class="history-answer-preview" :title="r.answer">{{r.answer}}</div>
@@ -10208,6 +10217,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     const aiHistoryRows=ref([]);
     const aiHistoryKeyword=ref('');
     const aiHistoryStatus=ref('');
+    const aiHistoryHasImage=ref('');
     const aiHistoryFrom=ref('');
     const aiHistoryTo=ref('');
     const aiHistoryPage=ref(1);
@@ -11044,6 +11054,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         const params=new URLSearchParams({page:String(Math.max(1,page)),page_size:'20'});
         if(aiHistoryKeyword.value.trim())params.set('keyword',aiHistoryKeyword.value.trim());
         if(aiHistoryStatus.value)params.set('status',aiHistoryStatus.value);
+        if(aiHistoryHasImage.value!=='')params.set('has_image',aiHistoryHasImage.value);
         if(aiHistoryFrom.value)params.set('date_from',aiHistoryFrom.value);
         if(aiHistoryTo.value)params.set('date_to',aiHistoryTo.value);
         const res=await safeFetch('/admin/ai-tasks/history?'+params.toString(),{headers:{'Authorization':token.value}});
@@ -11060,6 +11071,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     function resetAiTaskHistory(){
       aiHistoryKeyword.value='';
       aiHistoryStatus.value='';
+      aiHistoryHasImage.value='';
       aiHistoryFrom.value='';
       aiHistoryTo.value='';
       loadAiTaskHistory(1);
@@ -11939,7 +11951,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     modelStatsDays,modelStatsRows,modelStatsLoading,modelStatsFilter,modelStatsKeyword,modelStatsFilteredRows,modelStatusText,modelStatusStyle,loadModelStats,disableModel,
     modelStatsSort,modelStatsCompact,toggleModelStatsSort,sortMark,
     aiTaskList,aiTaskTab,aiTaskFilter,aiTaskPage,aiTaskTotal,aiTaskTotalPages,aiTaskCounts,loadAiTasks,aiTaskAction,aiTaskStatusText,aiTaskStatusStyle,
-    aiHistoryRows,aiHistoryKeyword,aiHistoryStatus,aiHistoryFrom,aiHistoryTo,aiHistoryPage,aiHistoryTotal,aiHistoryTotalPages,aiHistoryLoading,loadAiTaskHistory,resetAiTaskHistory,
+    aiHistoryRows,aiHistoryKeyword,aiHistoryStatus,aiHistoryHasImage,aiHistoryFrom,aiHistoryTo,aiHistoryPage,aiHistoryTotal,aiHistoryTotalPages,aiHistoryLoading,loadAiTaskHistory,resetAiTaskHistory,
     aiTaskDetail,aiTaskDetailLoading,openAiTaskDetail,traceStatusText,
     aiLiveRunning,aiLiveQueue,aiLiveEvents,aiLiveCounts,aiLiveWorkers,aiLiveClock,aiLiveConnected,loadAiTasksLive,startAiTaskLive,stopAiTaskLive,
     liveElapsed,liveDuration,formatCountdown,queueCountdown,eventAgo,relayClass,relayLabel,liveProgress,

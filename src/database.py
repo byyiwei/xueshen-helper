@@ -4888,7 +4888,7 @@ class Database:
         params = list(clean.values()) + [int(task_id)]
         self.execute(f"UPDATE ai_answer_tasks SET {sets} WHERE id={ph}", tuple(params))
 
-    def list_ai_answer_tasks(self, status="", page=1, page_size=20, keyword="", date_from="", date_to="", order="priority"):
+    def list_ai_answer_tasks(self, status="", page=1, page_size=20, keyword="", date_from="", date_to="", order="priority", has_image=""):
         ph = _ph()
         page = max(1, int(page or 1))
         page_size = min(max(1, int(page_size or 20)), 100)
@@ -4899,6 +4899,9 @@ class Database:
         elif status:
             conds.append(f"status={ph}")
             params.append(status)
+        if str(has_image) in ("0", "1"):
+            conds.append(f"has_image={ph}")
+            params.append(int(has_image))
         keyword = str(keyword or "").strip()
         if keyword:
             like = f"%{keyword}%"
