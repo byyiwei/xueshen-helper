@@ -2351,13 +2351,25 @@ def _hub_captcha_request(target, body_bytes, timeout=10):
 
 
 def _hub_captcha_gen():
-    """调中控生成滑块素材。返回 (ok, data_or_err)。缺口真实 x 永不出现在 data 里。"""
-    ok, data, _status = _hub_captcha_request(CAPTCHA_GEN_TARGET, b"")
-    if not ok:
-        return False, data
-    if isinstance(data, dict) and data.get("token") and data.get("bg") and data.get("piece"):
-        return True, data
-    return False, "中控返回内容异常"
+    """调中控生成滑块素材。返回 (ok, data_or_err)。缺口真实 x 永不出现在 data 里。
+
+    中控偶发返回 200 但内容不完整（网关抖动/临时限流），这里自动重试一次；
+    鉴权失败（403）这类确定性错误不重试，避免拖慢页面。
+    """
+    last_err = "中控返回内容异常"
+    for attempt in range(2):
+        ok, data, status = _hub_captcha_request(CAPTCHA_GEN_TARGET, b"")
+        if ok:
+            if isinstance(data, dict) and data.get("token") and data.get("bg") and data.get("piece"):
+                return True, data
+            last_err = "中控返回内容异常"
+        else:
+            last_err = data
+            if status in (403, 404):
+                break
+        if attempt == 0:
+            time.sleep(0.5)
+    return False, last_err
 
 
 def _hub_captcha_verify(token, x):
@@ -4962,6 +4974,90 @@ def _is_reasoning_only_choice_answer(question, answer):
     return bool(_REASONING_ONLY_RE.search(text))
 
 
+# 题库答案和页面选项对不上时的纠正队列：
+# 请求线程发现「精确命中的题库答案不可用」就登记旧记录，AI 答出来后再按原记录原地覆盖。
+# 只在内存里排队：服务重启后没纠正成功也不影响答题，后台还可以人工改答案。
+BANK_FIX_PENDING = {}
+BANK_FIX_LOCK = threading.Lock()
+BANK_FIX_TTL = 6 * 3600
+BANK_FIX_MAX = 500
+
+
+def _mark_bank_answer_stale(question, bank_row):
+    """登记一条待纠正的题库记录（只用于指纹精确命中的题）。"""
+    if not bank_row:
+        return
+    old_hash = str(bank_row.get("question_hash") or "").strip()
+    old_answer = str(bank_row.get("answer") or "").strip()
+    if not old_hash or not old_answer:
+        return
+    mkey = make_matching_key(question)
+    if not mkey:
+        return
+    now = time.time()
+    with BANK_FIX_LOCK:
+        for key, item in list(BANK_FIX_PENDING.items()):
+            if float(item.get("expires") or 0) < now:
+                BANK_FIX_PENDING.pop(key, None)
+        if len(BANK_FIX_PENDING) >= BANK_FIX_MAX:
+            for key in list(BANK_FIX_PENDING)[: len(BANK_FIX_PENDING) - BANK_FIX_MAX + 1]:
+                BANK_FIX_PENDING.pop(key, None)
+        BANK_FIX_PENDING[mkey] = {
+            "hash": old_hash,
+            "answer": normalize_answer_for_hash(old_answer),
+            "expires": now + BANK_FIX_TTL,
+        }
+    print(f"[题库纠正] 已登记待纠正 hash={old_hash[:12]} answer={old_answer[:60]}", flush=True)
+
+
+def _apply_bank_answer_fix(question, answer, model_name="", provider_name=""):
+    """AI 给出可用答案后，原地覆盖之前命中但填不上/对不上的题库记录。
+
+    题库指纹包含答案，直接 upsert 会新增一条、旧错误答案还在；这里按旧记录原地更新指纹。
+    只有 AI 答案确实能对上页面选项时才覆盖，避免把错误答案换成另一个错误答案。
+    """
+    if not answer:
+        return False
+    mkey = make_matching_key(question)
+    if not mkey:
+        return False
+    with BANK_FIX_LOCK:
+        item = BANK_FIX_PENDING.pop(mkey, None)
+    if not item:
+        return False
+    if float(item.get("expires") or 0) < time.time():
+        return False
+    if not _answer_hits_options(question, answer):
+        print(f"[题库纠正] AI 答案仍对不上页面选项，保留原记录 mkey={mkey[:12]}", flush=True)
+        return False
+    old_hash = str(item.get("hash") or "")
+    try:
+        row = db.get_question_answer_by_hash(old_hash)
+    except Exception as e:
+        print(f"[题库纠正] 读取原记录失败: {e}", flush=True)
+        return False
+    if not row:
+        return False
+    # 后台可能已经人工改过答案：当前值和登记时不一致就不再覆盖
+    if normalize_answer_for_hash(row.get("answer", "")) != item.get("answer"):
+        print(f"[题库纠正] 原记录已被修改，跳过 hash={old_hash[:12]}", flush=True)
+        return False
+    new_hash = make_question_hash(question, answer)
+    try:
+        result = db.update_question_bank_answer(
+            old_hash, new_hash, answer, model_name or "", provider_name or "",
+            matching_key=mkey, match_stem=make_match_stem(question),
+        )
+    except Exception as e:
+        print(f"[题库纠正] 覆盖失败: {e}", flush=True)
+        return False
+    if result in ("updated", "merged"):
+        print(f"[题库纠正] 已覆盖旧答案 {old_hash[:12]} -> {new_hash[:12]} model={model_name}", flush=True)
+        return True
+    print(f"[题库纠正] 原记录不存在，跳过 hash={old_hash[:12]}", flush=True)
+    return False
+
+
 def save_question_bank_answer(question, answer, model_name="", provider_name=""):
     if not answer:
         return
@@ -6833,7 +6929,8 @@ def _run_ai_task(task):
                 record_model_token_usage(model_name, tokens)
                 cache_key = make_ai_cache_key(question, "auto")
                 set_ai_cache(cache_key, answer, model_name, provider_name)
-                save_question_bank_answer(question, answer, model_name, provider_name)
+                if not _apply_bank_answer_fix(question, answer, model_name, provider_name):
+                    save_question_bank_answer(question, answer, model_name, provider_name)
                 db.update_ai_answer_task(
                     task_id, status="solved", answer=answer,
                     answer_model=model_name, answer_provider=provider_name,
@@ -15347,10 +15444,20 @@ class Handler(BaseHTTPRequestHandler):
                         print(f"[题库相似题] 自动选最优 hash={question_hash[:12]} score={similar_score:.3f}", flush=True)
                 if bank_row and not use_custom and not skip_bank:
                     answer = normalize_ai_answer(question, bank_row.get("answer", ""))
-                    if answer and (_is_truncated_multi_answer(question, answer) or _is_garbage_bank_answer(answer, question)):
-                        print(f"[题库命中但答案不可用，改走AI] hash={question_hash[:12]} answer={str(answer)[:80]}", flush=True)
+                    bank_mismatch = bool(answer) and not _answer_hits_options(question, answer)
+                    if answer and (_is_truncated_multi_answer(question, answer) or _is_garbage_bank_answer(answer, question) or bank_mismatch):
+                        if bank_mismatch:
+                            print(f"[题库命中但答案对不上选项，改走AI] hash={question_hash[:12]} answer={str(answer)[:80]}", flush=True)
+                        else:
+                            print(f"[题库命中但答案不可用，改走AI] hash={question_hash[:12]} answer={str(answer)[:80]}", flush=True)
+                        # 只有精确命中的记录才能安全覆盖；相似题是另一道题，不能动
+                        if not bank_only and (bank_method or "") == "hash":
+                            _mark_bank_answer_stale(question, bank_row)
                         bank_row = None
+                        # 回退到「未命中」身份，避免把错误题库指纹带进后续扣点/日志
+                        question_hash = question_key
                         _bank_log["matched"] = False
+                        _bank_log["matched_hash"] = ""
                     elif not answer:
                         err = "题库答案为空"
                         print(f"[题库命中但答案为空] hash={question_hash[:12]}", flush=True)
@@ -15428,6 +15535,8 @@ class Handler(BaseHTTPRequestHandler):
                         resolved_model = cached.get("model") or resolved_model or model
                         provider_name = cached.get("provider") or provider_name
                         status = "success"
+                        if not use_custom:
+                            _apply_bank_answer_fix(question, answer, resolved_model, provider_name)
                         ok_quota, quota_msg, ent_after = consume_answer_quota(user["username"], question_hash, question_key)
                         if not ok_quota:
                             err = quota_msg
@@ -15505,7 +15614,10 @@ class Handler(BaseHTTPRequestHandler):
                         set_ai_cache(cache_key, answer, resolved_model, provider_name)
                         # 自有模型产生的答案不写入共享题库，避免影响其它用户
                         if not use_custom:
-                            save_question_bank_answer(question, answer, resolved_model, provider_name)
+                            # 如果这次是因为题库答案对不上选项才改问 AI，直接覆盖那条旧记录；
+                            # 覆盖成功后不再走 upsert，避免同题留下两个答案版本。
+                            if not _apply_bank_answer_fix(question, answer, resolved_model, provider_name):
+                                save_question_bank_answer(question, answer, resolved_model, provider_name)
                     if use_custom:
                         quota_msg = "自有模型已作答，本次未消耗题数"
                     else:
