@@ -8982,6 +8982,14 @@
                 options_preview: ((question && question.optionsText) || []).join(" | ").slice(0, 40),
                 option_nodes: (question && question.__xsOptionCount) || 0,
                 option_selector: (question && question.__xsOptionSelector) || "",
+                option_html: (() => {
+                  try {
+                    const first = Object.values((question && question.options) || {})[0];
+                    return first && first.outerHTML ? String(first.outerHTML).replace(/\s+/g, " ").slice(0, 400) : "";
+                  } catch (_) {
+                    return "";
+                  }
+                })(),
                 clicked: !!(question && question.__xsClicked),
                 ...(String((question && question.type) || "") === "2" ? {
                   blank_fields: (question && question.__xsBlankFields) || 0,
@@ -9186,6 +9194,11 @@
         if (["ks"].includes(this.type)) {
           return optionElement.closest(".answerBg") || optionElement;
         }
+        if (["zj"].includes(this.type)) {
+          // 学习页面内嵌的新版章节测验把点击事件和选中对勾挂在整行 li 上，
+          // before-after 只是行内一层；只认 before-after 会点不中也回读不到已选
+          return optionElement.closest("li") || optionElement;
+        }
         return optionElement;
       });
       __publicField(this, "getCxQuestionTypeFromCode", (code) => {
@@ -9257,41 +9270,44 @@
         ].join("|");
       });
       __publicField(this, "isChoiceOptionSelected", (optionElement) => {
-        var _a;
         const optionContainer = this.getChoiceOptionContainer(optionElement);
         if (!optionContainer) return false;
+        // 选中标记有时挂在选项外层整行（li）上而不是选项本身，两层都要看
+        const row = (optionContainer.closest && optionContainer.closest("li")) || optionContainer;
+        const scopes = row !== optionContainer ? [optionContainer, row] : [optionContainer];
         // 原生 radio/checkbox 的 checked（property 或属性）与 aria-checked 是通用信号，先读它们：
         // 认不出已选会导致对已选项目再点一次，反而把它取消掉
         const inputs = this.getChoiceOptionInputs(optionContainer);
         if (inputs.some((input) => this.isChoiceInputChecked(input))) return true;
-        if (optionContainer.getAttribute("aria-checked") === "true") return true;
-        const tokens = String(optionContainer.className || "").toLowerCase().split(/\s+/);
-        if (tokens.some((t) => t === "is-checked" || t === "ischecked" || t === "checked" ||
-          t === "check_answer" || t === "check-answer" || t === "selected")) return true;
-        // 章节测验（学习页面内嵌）的选择题没有 radio，勾选后只在选项里挂一个对勾节点。
-        // 以前只在考试(ks)里认这个标记，章节测验勾上了也回读成没选：误报填不上，重试时再点一次还会取消勾选。
-        // 对勾节点可能是常驻但隐藏的，只认真正显示出来的那个。
-        if (["ks"].includes(this.type) && optionContainer.querySelector(".check_answer, .check_answer_dx")) return true;
-        if (optionContainer.querySelector) {
-          const marks = optionContainer.querySelectorAll(
-            ".check_answer, .check_answer_dx, [class*='check_answer'], [class*='check-answer']"
-          );
-          for (const mark of marks) {
-            try {
-              if (mark.getClientRects && mark.getClientRects().length > 0) return true;
-            } catch (_) {
+        const isMarked = (node) => {
+          if (!node) return false;
+          if (node.getAttribute && node.getAttribute("aria-checked") === "true") return true;
+          const tokens = String(node.className || "").toLowerCase().split(/\s+/);
+          if (tokens.some((t) => t === "is-checked" || t === "ischecked" || t === "checked" ||
+            t === "check_answer" || t === "check-answer" || t === "selected")) return true;
+          if (node.querySelector) {
+            const marks = node.querySelectorAll(
+              ".check_answer, .check_answer_dx, [class*='check_answer'], [class*='check-answer']"
+            );
+            for (const mark of marks) {
+              try {
+                if (mark.getClientRects && mark.getClientRects().length > 0) return true;
+              } catch (_) {
+              }
             }
           }
-        }
-        return false;
+          return false;
+        };
+        return scopes.some(isMarked);
       });
       __publicField(this, "selectChoiceOption", (optionElement) => {
-        var _a;
         const optionContainer = this.getChoiceOptionContainer(optionElement);
         if (!optionContainer) return false;
         if (this.isChoiceOptionSelected(optionContainer)) return true;
+        const clicked = new Set();
         const tryClick = (el) => {
-          if (!el) return;
+          if (!el || clicked.has(el)) return;
+          clicked.add(el);
           try {
             el.click();
           } catch (_) {
@@ -9299,6 +9315,11 @@
         };
         // 超星章节/作业常把事件绑在字母链或 input 上，只点外层 li 可能没反应
         tryClick(optionContainer);
+        if (this.isChoiceOptionSelected(optionContainer)) return true;
+        // zj 版整行 li 是容器，真正绑点击的通常是行内的 before-after
+        tryClick(optionContainer !== optionElement
+          ? (optionContainer.querySelector && optionContainer.querySelector(".before-after")) || optionElement
+          : optionElement);
         if (this.isChoiceOptionSelected(optionContainer)) return true;
         const inputs = this.getChoiceOptionInputs(optionContainer);
         for (const input of inputs) {
@@ -9310,13 +9331,15 @@
         // 学习页面内嵌的章节测验把点击事件绑在选项正文或整行 li 上，只点字母链可能没反应
         tryClick(optionContainer.querySelector && optionContainer.querySelector(".after, .fl.after"));
         if (this.isChoiceOptionSelected(optionContainer)) return true;
-        const row = optionContainer.closest && optionContainer.closest("li, .Zy_ulTop > li");
+        tryClick(optionContainer.querySelector && optionContainer.querySelector(".check_answer, .check_answer_dx, [class*='check_answer'], [class*='check-answer']"));
+        if (this.isChoiceOptionSelected(optionContainer)) return true;
+        const row = optionContainer.closest && optionContainer.closest("li");
         if (row && row !== optionContainer) {
           tryClick(row);
           if (this.isChoiceOptionSelected(optionContainer)) return true;
         }
         try {
-          (_a = optionContainer.dispatchEvent) == null ? void 0 : _a.call(optionContainer, new this._window.MouseEvent("click", { bubbles: true }));
+          optionContainer.dispatchEvent && optionContainer.dispatchEvent(new this._window.MouseEvent("click", { bubbles: true }));
         } catch (_) {
         }
         return this.isChoiceOptionSelected(optionContainer);
@@ -9795,6 +9818,11 @@
               if (this.isChoiceOptionSelected(question.options[key])) {
                 const input = this.getChoiceOptionInputs(container).find(i => this.isChoiceInputChecked(i));
                 try { if (input) input.click(); } catch (_) {}
+                // 整行 li 没有绑定事件时，补点行内的 before-after
+                if (this.isChoiceOptionSelected(question.options[key])) {
+                  const inner = container.querySelector && container.querySelector(".before-after");
+                  try { if (inner) inner.click(); } catch (_) {}
+                }
               }
             }
           }
