@@ -387,7 +387,7 @@ class Database:
         self.conn = None
         self._pool = PooledDB(
             creator=pymysql,
-            maxconnections=12,   # 池内最大连接数（须小于 MySQL max_connections）
+            maxconnections=18,   # 池内最大连接数（须小于 MySQL max_connections；10 个答题线程 + 网页请求共用）
             mincached=2,         # 启动时预热连接
             maxcached=8,
             blocking=True,       # 池满时等待，而非直接报错

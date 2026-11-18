@@ -6579,7 +6579,7 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip="", budget=0
 # ==================== 后台答题任务池 ====================
 # 用户请求只负责提交任务/领取结果，模型在后台线程里一轮一轮地跑，不设总时长。
 # 同一道题按指纹去重：多人同时问只跑一次，成功后写 AI 缓存和题库。
-AI_TASK_WORKERS = 6
+AI_TASK_WORKERS = 10
 AI_TASK_ROUND_WAIT = (120, 300, 900, 1800, 3600)
 AI_TASK_CLAIM_LOCK = threading.Lock()
 AI_TASK_WORKER_STARTED = False
