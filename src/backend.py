@@ -258,7 +258,7 @@ DASHBOARD_CACHE = {"time": 0, "data": None}
 DASHBOARD_CACHE_SECONDS = 60
 # 上一周期的对比数据变化很慢，单独缓存 5 分钟，避免每次刷新首页都重算昨天整天
 PREV_DASHBOARD_CACHE = {"key": "", "time": 0, "data": None}
-PREV_DASHBOARD_CACHE_SECONDS = 300
+PREV_DASHBOARD_CACHE_SECONDS = 1800
 # 官网直营营收口径：代理商充值（plan_type='dist_recharge'）是压在平台的预存款、属于负债，
 # 不能算进直营收入；分销那套钱单独在「代理商分销 · 收入统计」里按流水出。
 # 卡密激活也往 payment_orders 写一行，代理卡那行 price 恒为 0（是核销不是销售），
