@@ -5634,14 +5634,15 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
             </div>
 
             <div class="card">
-              <div class="card-header"><h3>异常明细</h3><span v-if="pageIssues.total">共 {{pageIssues.total}} 条 · 第 {{pageIssues.page}}/{{pageIssueTotalPages}} 页</span></div>
+              <div class="card-header"><h3>异常明细</h3><span v-if="pageIssues.total">共 {{pageIssues.total}} 条 · 第 {{pageIssues.page}}/{{pageIssueTotalPages}} 页</span><button class="btn btn-secondary btn-sm" style="margin-left:auto" :disabled="!pageIssueSelected.length" @click="deletePageIssues(pageIssueSelected)">删除选中{{pageIssueSelected.length?'（'+pageIssueSelected.length+'）':''}}</button></div>
               <div class="card-body" style="overflow-x:auto">
-                <table class="data-table" style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:980px">
+                <table class="data-table" style="width:100%;border-collapse:collapse;font-size:12.5px;min-width:1020px">
                   <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left">
-                    <th style="padding:8px;width:145px">时间</th><th style="padding:8px;width:100px">用户</th><th style="padding:8px;width:130px">页面</th><th style="padding:8px;width:110px">环节</th><th style="padding:8px;width:150px">原因</th><th style="padding:8px">选择器</th><th style="padding:8px;width:80px">脚本版</th><th style="padding:8px;width:70px">操作</th>
+                    <th style="padding:8px;width:36px"><input type="checkbox" :checked="pageIssues.rows.length&&pageIssueSelected.length===pageIssues.rows.length" @change="toggleAllPageIssues()" style="cursor:pointer"></th><th style="padding:8px;width:145px">时间</th><th style="padding:8px;width:100px">用户</th><th style="padding:8px;width:130px">页面</th><th style="padding:8px;width:110px">环节</th><th style="padding:8px;width:150px">原因</th><th style="padding:8px">选择器</th><th style="padding:8px;width:80px">脚本版</th><th style="padding:8px;width:110px">操作</th>
                   </tr></thead>
                   <tbody>
                     <tr v-for="r in pageIssues.rows" :key="r.id" style="border-bottom:1px solid var(--border)">
+                      <td style="padding:8px"><input type="checkbox" :checked="pageIssueSelected.includes(r.id)" @change="togglePageIssue(r.id)" style="cursor:pointer"></td>
                       <td style="padding:8px;color:var(--text3);white-space:nowrap">{{r.created_at}}</td>
                       <td style="padding:8px;color:var(--text2)">{{r.username||'-'}}</td>
                       <td style="padding:8px;white-space:nowrap">{{r.page_type_name}}</td>
@@ -5649,9 +5650,9 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                       <td style="padding:8px;color:var(--danger);white-space:nowrap">{{r.reason_name}}</td>
                       <td style="padding:8px;color:var(--text2);word-break:break-all">{{r.selector||'-'}}</td>
                       <td style="padding:8px;color:var(--text3)">{{r.script_version||'-'}}</td>
-                      <td><button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;white-space:nowrap" @click="pageIssueDetail=r">查看</button></td>
+                      <td style="padding:8px;white-space:nowrap"><button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;" @click="pageIssueDetail=r">查看</button><button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;margin-left:6px" @click="deletePageIssues([r.id])">删除</button></td>
                     </tr>
-                    <tr v-if="!pageIssues.rows.length"><td colspan="8" style="padding:24px;text-align:center;color:var(--text3)">区间内没有异常记录</td></tr>
+                    <tr v-if="!pageIssues.rows.length"><td colspan="9" style="padding:24px;text-align:center;color:var(--text3)">区间内没有异常记录</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -8998,11 +8999,39 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         if(pageIssueFilter.keyword.trim())qs.set('keyword',pageIssueFilter.keyword.trim());
         const res=await safeFetch('/admin/page-issues?'+qs.toString(),{headers:{'Authorization':token.value}});
         const data=await res.json();
-        if(data.code===200){pageIssues.value=data.data||null;}
+        if(data.code===200){pageIssues.value=data.data||null;pageIssueSelected.value=[];}
         else if(data.code===403){logout();showMsg('登录已过期','error');}
         else showMsg(data.msg||'获取页面异常失败','error');
       }catch(e){showMsg('获取页面异常失败: '+(e.message||e),'error',6000);}
       finally{pageIssueLoading.value=false;}
+    }
+    // 异常记录处理完就删：勾选后批量删除，避免列表越堆越长
+    const pageIssueSelected=ref([]);
+    function togglePageIssue(id){
+      const list=pageIssueSelected.value.slice();
+      const i=list.indexOf(id);
+      if(i>=0)list.splice(i,1);else list.push(id);
+      pageIssueSelected.value=list;
+    }
+    function toggleAllPageIssues(){
+      const ids=((pageIssues.value&&pageIssues.value.rows)||[]).map(r=>r.id);
+      const all=ids.length&&ids.every(id=>pageIssueSelected.value.includes(id));
+      pageIssueSelected.value=all?[]:ids;
+    }
+    async function deletePageIssues(ids){
+      const list=(ids||[]).filter(x=>x);
+      if(!list.length){showMsg('先勾选要删除的记录','error');return;}
+      if(!confirm(`确定删除选中的 ${list.length} 条页面异常记录？删除后不可恢复。`))return;
+      try{
+        const res=await safeFetch('/admin/page-issues/delete',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({ids:list})});
+        const data=await res.json();
+        if(data.code===200){
+          showMsg(data.msg||'已删除');
+          pageIssueSelected.value=[];
+          loadPageIssues((pageIssues.value&&pageIssues.value.page)||1);
+        }else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'删除失败','error');
+      }catch(e){showMsg('删除失败: '+(e.message||e),'error',6000);}
     }
     // 折线只画有答题的那几天，横坐标仍按区间天数排，空白天留缺口而不是把曲线压扁
     function ansTrendRows(){
@@ -12327,7 +12356,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       bankLogs,bankLogLoading,bankLogFilter,bankLogTotal,expandedBankLogs,
       bankAnalysis,bankAnalysisLoading,bankAnalysisFilter,loadBankAnalysis,setBankAnalysisRange,
       answerStats,answerStatsLoading,answerStatsFilter,loadAnswerStats,setAnswerStatRange,ansTrendRows,ansTrendX,ansTrendY,ansTrendPoints,
-      pageIssues,pageIssueLoading,pageIssueFilter,pageIssueDetail,pageIssueTotalPages,loadPageIssues,setPageIssueRange,
+      pageIssues,pageIssueLoading,pageIssueFilter,pageIssueDetail,pageIssueTotalPages,loadPageIssues,setPageIssueRange,pageIssueSelected,togglePageIssue,toggleAllPageIssues,deletePageIssues,
       answerRows,answerRowsTotal,answerRowsPage,answerRowsPageSize,answerRowsLoading,answerRowsLoaded,loadAnswerRows,
       userAnalysis,userAnalysisLoading,userAnalysisFilter,loadUserAnalysis,setUserAnalysisRange,pct,
       returningUsersPage,returningUsersTotalPages,returningUsersLoading,loadReturningUsersPage,

@@ -12955,6 +12955,19 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        elif path == "/admin/page-issues/delete":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                ids = data.get("ids") if isinstance(data.get("ids"), list) else []
+                deleted = db.delete_page_issue_logs(ids)
+                self._audit("page_issues.delete", str(deleted), "删除已处理的页面异常记录")
+                self._send_json(200, {"code": 200, "msg": f"已删除 {deleted} 条", "deleted": deleted})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         elif path == "/admin/ai-task-workers":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})

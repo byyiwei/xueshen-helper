@@ -5571,6 +5571,26 @@ class Database:
         row = self.fetchone(sql, tuple(params))
         return int(row.get("total", 0) if row else 0)
 
+    def delete_page_issue_logs(self, ids):
+        """按 id 删除页面异常记录（只删 page_snapshot/page_issue，避免误删其它日志）。"""
+        clean_ids = []
+        for raw in ids or []:
+            try:
+                n = int(raw)
+            except (TypeError, ValueError):
+                continue
+            if n > 0:
+                clean_ids.append(n)
+        clean_ids = list(dict.fromkeys(clean_ids))[:500]
+        if not clean_ids:
+            return 0
+        ph = _ph()
+        placeholders = ", ".join(ph for _ in clean_ids)
+        sql = ("DELETE FROM script_event_logs WHERE event_type IN ('page_snapshot','page_issue') "
+               f"AND id IN ({placeholders})")
+        cur = self.execute(sql, tuple(clean_ids))
+        return int(cur.rowcount or 0) if cur is not None else 0
+
     def list_answer_summaries(self, date_from="", date_to="", username="", limit=3000, offset=0):
         """取「一卷一报」的答题小结原始行（event_type=answer_summary）。
 
