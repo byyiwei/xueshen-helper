@@ -8971,7 +8971,9 @@
               stage: "fill",
               reason_code: (question && question.__xsFillReason) || "answer_fill_failed",
               selector: isChoice
-                ? (hoverOptions.length ? '.stem_answer > div[onclick*="addChoice"]' : '.answerBg input[type="radio"], .answerBg input[type="checkbox"]')
+                ? (["zj"].includes(this.type)
+                  ? '[class*="before-after"]'
+                  : (hoverOptions.length ? '.stem_answer > div[onclick*="addChoice"]' : '.answerBg input[type="radio"], .answerBg input[type="checkbox"]'))
                 : "textarea / input / contenteditable",
               expected: (question && question.__xsFillReason) ? "答案内容能匹配页面选项" : (isChoice ? "选项按钮可点击并回读为已选中" : "文本框可写入并回读"),
               found: {
@@ -9314,8 +9316,18 @@
           }
         };
         // 超星章节/作业常把事件绑在字母链或 input 上，只点外层 li 可能没反应
+        const reactScope = (optionContainer.closest && (optionContainer.closest("ul") || optionContainer.closest(".answerBg"))) || optionContainer;
+        let htmlBefore = "";
+        try { htmlBefore = String(reactScope.outerHTML || ""); } catch (_) { }
         tryClick(optionContainer);
         if (this.isChoiceOptionSelected(optionContainer)) return true;
+        // 页面已经响应（class / 子节点变化）但认不出「已选」标记时也要立即收手：
+        // addChoice 这类切换式选项再点一次会把刚选中的又取消，最终整题空着并误报「点不到」。
+        if (htmlBefore) {
+          let htmlAfter = "";
+          try { htmlAfter = String(reactScope.outerHTML || ""); } catch (_) { }
+          if (htmlAfter && htmlAfter !== htmlBefore) return true;
+        }
         // zj 版整行 li 是容器，真正绑点击的通常是行内的 before-after
         tryClick(optionContainer !== optionElement
           ? (optionContainer.querySelector && optionContainer.querySelector(".before-after")) || optionElement
@@ -9846,7 +9858,14 @@
               }
             }
           }
-          for (const key of targets) this.selectChoiceOption(question.options[key]);
+          for (const key of targets) {
+            const chosen = this.selectChoiceOption(question.options[key]);
+            // 点击生效但页面用我们不认识的标记，也按已选处理，避免明明选上了还上报失败、重复点把答案取消
+            if (chosen && !this.isChoiceOptionSelected(question.options[key])) {
+              if (!question.__xsTrustedSelected) question.__xsTrustedSelected = new Set();
+              question.__xsTrustedSelected.add(key);
+            }
+          }
           // 勾选后页面可能重渲染，缓存节点已脱离文档，回读会误判为没点上；按同一顺序重新取一次 DOM 再读
           const liveOptionList = [...question.element.querySelectorAll(
             ["zj"].includes(this.type) ? '[class*="before-after"]' : ".answerBg"
@@ -9856,7 +9875,8 @@
           const optionSelectedNow = (key) => {
             const idx = optionKeys.indexOf(key);
             const live = liveAligned ? liveOptionList[idx] : null;
-            return this.isChoiceOptionSelected(live || question.options[key]);
+            if (this.isChoiceOptionSelected(live || question.options[key])) return true;
+            return !!(question.__xsTrustedSelected && question.__xsTrustedSelected.has(key));
           };
           filled = optionKeys.every(key => optionSelectedNow(key) === targets.has(key));
         } else if (question.type === "2") {

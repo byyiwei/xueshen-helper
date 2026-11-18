@@ -2418,6 +2418,36 @@ def _hub_captcha_check(ticket):
     return False, "票据无效或已使用，请重新完成验证"
 
 
+CAPTCHA_FLAG_COLUMNS = {
+    "login": "captcha_login_enabled",
+    "register": "captcha_register_enabled",
+    "reset": "captcha_reset_enabled",
+    "withdraw": "captcha_withdraw_enabled",
+    "exchange": "captcha_exchange_enabled",
+    "admin": "captcha_admin_login_enabled",
+}
+
+
+def get_captcha_flags():
+    """各入口人机验证开关。字段缺失或读取失败时按开启处理，避免误放行。"""
+    try:
+        cfg = db.get_admin_config() or {}
+    except Exception:
+        return {key: True for key in CAPTCHA_FLAG_COLUMNS}
+    flags = {}
+    for key, col in CAPTCHA_FLAG_COLUMNS.items():
+        val = cfg.get(col)
+        try:
+            flags[key] = True if val is None else bool(int(val))
+        except (TypeError, ValueError):
+            flags[key] = True
+    return flags
+
+
+def captcha_required(action):
+    return get_captcha_flags().get(action, True)
+
+
 def _remember_captcha_scope(hub_token, scope):
     if not hub_token:
         return
@@ -9674,6 +9704,9 @@ class Handler(BaseHTTPRequestHandler):
             if scope not in ("user", "admin"):
                 scope = "user"
             self._send_json(200, {"code": 200, "captcha": create_slider_captcha(scope, self._client_ip())})
+        elif path == "/api/captcha/flags":
+            # 公开只读开关状态：登录页/注册页据此决定要不要弹人机验证
+            self._send_json(200, {"code": 200, "flags": get_captcha_flags()})
         elif path == "/captcha/new":
             qs = parse_qs(parsed.query)
             scope = qs.get("scope", ["user"])[0]
@@ -10442,6 +10475,11 @@ class Handler(BaseHTTPRequestHandler):
                 "base_url": cfg.get("sso_base_url") or "",
                 "app_secret": "********" if secret else "",
             }})
+        elif path == "/admin/captcha-flags":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            self._send_json(200, {"code": 200, "flags": get_captcha_flags()})
         elif path == "/admin/model-config":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -11779,7 +11817,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not all([username, password]):
                     self._send_json(400, {"code": 400, "msg": "请填写用户名/邮箱和密码"})
                     return
-                if data.get("login_scene") == "web" and not consume_slider_token(data.get("slider_token"), "user", self._client_ip()):
+                if data.get("login_scene") == "web" and captcha_required("login") and not consume_slider_token(data.get("slider_token"), "user", self._client_ip()):
                     self._send_json(400, {"code": 400, "msg": "请先完成人机验证"})
                     return
                 allowed, retry_after = check_login_rate("user", self._client_ip(), username)
@@ -11841,7 +11879,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(400, {"code": 400, "msg": email_err})
                     return
                 # 安全：先过中控滑块，再发验证码，避免被脚本刷邮件
-                if not consume_slider_token(data.get("slider_token"), "email", self._client_ip()):
+                if captcha_required("reset" if vtype == "reset" else "register") and not consume_slider_token(data.get("slider_token"), "email", self._client_ip()):
                     self._send_json(400, {"code": 400, "msg": "请先完成人机验证"})
                     return
                 # 安全：验证码发送限流，防止邮件轰炸
@@ -11911,7 +11949,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(400, {"code": 400, "msg": email_err})
                     return
                 # 安全：先过中控滑块，再补发验证码，避免被脚本刷邮件
-                if not consume_slider_token(data.get("slider_token"), "email", self._client_ip()):
+                if captcha_required("reset" if vtype == "reset" else "register") and not consume_slider_token(data.get("slider_token"), "email", self._client_ip()):
                     self._send_json(400, {"code": 400, "msg": "请先完成人机验证"})
                     return
                 # 安全：验证码发送限流，防止邮件轰炸
@@ -12381,7 +12419,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 data = json.loads(body or "{}")
-                if not consume_slider_token(data.get("slider_token"), "money", self._client_ip()):
+                if captcha_required("withdraw") and not consume_slider_token(data.get("slider_token"), "money", self._client_ip()):
                     self._send_json(400, {"code": 400, "msg": "请先完成人机验证"})
                     return
                 cfg = db.get_admin_config() or {}
@@ -12417,7 +12455,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 data = json.loads(body or "{}")
-                if not consume_slider_token(data.get("slider_token"), "money", self._client_ip()):
+                if captcha_required("exchange") and not consume_slider_token(data.get("slider_token"), "money", self._client_ip()):
                     self._send_json(400, {"code": 400, "msg": "请先完成人机验证"})
                     return
                 ok, msg, row = db.exchange_commission_for_points(
@@ -12676,7 +12714,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not username or not pwd:
                     self._send_json(400, {"code": 400, "msg": "请输入管理员用户名和密码"})
                     return
-                if not consume_slider_token(data.get("slider_token"), "admin", self._client_ip()):
+                if captcha_required("admin") and not consume_slider_token(data.get("slider_token"), "admin", self._client_ip()):
                     self._send_json(400, {"code": 400, "msg": "请先完成人机验证"})
                     return
                 allowed, retry_after = check_login_rate("admin", self._client_ip(), username)
@@ -12832,6 +12870,20 @@ class Handler(BaseHTTPRequestHandler):
                 if secret_in and secret_in != "********":
                     db.execute("UPDATE admin_config SET sso_app_secret=%s WHERE id=1", (secret_in.strip(),))
                 self._send_json(200, {"code": 200, "msg": "已保存"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/captcha-flags":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                raw = data.get("flags") if isinstance(data.get("flags"), dict) else data
+                flags = {k: bool(raw.get(k)) for k in CAPTCHA_FLAG_COLUMNS if k in raw}
+                db.set_captcha_flags(flags)
+                self._audit("captcha.flags", ",".join(k for k, v in flags.items() if v), "修改人机验证开关")
+                self._send_json(200, {"code": 200, "msg": "已保存", "flags": get_captcha_flags()})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 

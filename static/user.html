@@ -1891,6 +1891,15 @@
             background: rgba(47, 107, 255, .3);
             border-color: var(--c-brand);
         }
+        .captcha-feedback {
+            margin-top: 6px;
+            min-height: 18px;
+            font-size: 12px;
+            line-height: 1.5;
+            color: var(--c-text-3);
+        }
+        .captcha-feedback.ok { color: var(--c-success); font-weight: 600; }
+        .captcha-feedback.err { color: #e5484d; font-weight: 600; }
 
         /* ===================== 推广返利专区现代化布局 ===================== */
         .promo-hero-grid {
@@ -4631,6 +4640,21 @@
         let profileTimer = null;
         let initialUserSection = '';
         let moneySliderE = null, moneySliderW = null;
+        // 各入口人机验证开关，由后台「系统设置 → 人机验证开关」控制
+        const captchaFlags = { login: true, register: true, reset: true, withdraw: true, exchange: true, admin: true };
+        async function loadCaptchaFlags() {
+            try {
+                const res = await fetch('/api/captcha/flags');
+                const data = await res.json();
+                if (data && data.code === 200 && data.flags) Object.assign(captchaFlags, data.flags);
+            } catch (_) { }
+            syncCaptchaVisibility();
+        }
+        function syncCaptchaVisibility() {
+            const setHidden = (id, on) => { const el = $(id); if (el) el.style.display = on ? '' : 'none'; };
+            setHidden('moneySliderE', captchaFlags.exchange);
+            setHidden('moneySliderW', captchaFlags.withdraw);
+        }
 
         function $(id) { return document.getElementById(id); }
         function escapeHtml(s) {
@@ -4716,12 +4740,14 @@
                     '<div class="captcha-actions" id="' + u('actions') + '">' +
                     '<span class="captcha-count" id="' + u('count') + '">点选图片后再确认</span>' +
                     '<button type="button" class="captcha-submit" id="' + u('submit') + '">确认验证</button>' +
-                    '</div></div>';
+                    '</div>' +
+                    '<div class="captcha-feedback" id="' + u('feedback') + '"></div></div>';
                 this.wrap = this.container.querySelector('.slider-verify');
                 this.box = $(u('box')); this.state = $(u('state')); this.track = $(u('track'));
                 this.progress = $(u('progress')); this.tip = $(u('tip')); this.thumb = $(u('thumb'));
                 this.promptEl = $(u('prompt')); this.actions = $(u('actions'));
                 this.countEl = $(u('count')); this.submit = $(u('submit'));
+                this.feedbackEl = $(u('feedback')); this._keepFeedback = false;
                 const self = this;
                 this.thumb.addEventListener('mousedown', function (e) { self._begin(e); });
                 this.thumb.addEventListener('touchstart', function (e) { e.preventDefault(); self._begin(e); }, { passive: false });
@@ -4729,6 +4755,8 @@
             }
             async reload() {
                 this.loading = true;
+                if (!this._keepFeedback) this._feedback('', false);
+                this._keepFeedback = false;
                 this.token = ''; this.sliderToken = ''; this.verified = false; this.x = 0; this.pieceEl = null;
                 this.kind = 'slider'; this.image = ''; this.prompt = '';
                 this.points = []; this.cells = [];
@@ -4828,6 +4856,11 @@
                     img.addEventListener('click', function (e) { self._clickImage(e); });
                 }
                 this._syncMarkers();
+            }
+            _feedback(text, ok) {
+                if (!this.feedbackEl) return;
+                this.feedbackEl.textContent = text || '';
+                this.feedbackEl.className = 'captcha-feedback' + (text ? (ok ? ' ok' : ' err') : '');
             }
             _expectedClicks() {
                 // 中控提示词：「依次点击：苹果、香蕉、橘子」或「依次点击：春风得意」，
@@ -4939,6 +4972,7 @@
             async verify() {
                 if (this.verified || !this.token || this.loading) return;
                 if (this.kind !== 'slider' && !(this.kind === 'grid' ? this.cells.length : this.points.length)) {
+                    this._feedback('请先点选图片完成验证', false);
                     this.notice('请先点选图片完成验证', false);
                     return;
                 }
@@ -4956,13 +4990,22 @@
                         this.state.textContent = '验证通过'; this.tip.textContent = '验证通过';
                         this.actions.classList.remove('show');
                         this.wrap.classList.add('done');
+                        this._feedback('验证通过', true);
                         this.notice('人机验证通过', true);
                     } else {
-                        this.notice(data.msg || '验证未通过，已换新图', false);
+                        const failMsg = data.msg || '验证未通过，已换新图';
+                        this._feedback(failMsg, false);
+                        this.notice(failMsg, false);
+                        // 先让用户看清失败原因，再换新图，否则提示一闪而过像什么都没发生
+                        this._keepFeedback = true;
+                        await new Promise(r => setTimeout(r, 900));
                         await this.reload();
                     }
                 } catch (_) {
+                    this._feedback('验证失败，已换新图', false);
                     this.notice('验证失败，已换新图', false);
+                    this._keepFeedback = true;
+                    await new Promise(r => setTimeout(r, 900));
                     await this.reload();
                 } finally { this.loading = false; this.box.classList.remove('busy'); }
             }
@@ -4992,8 +5035,8 @@
         function onLoginSliderMessage(text, ok) {
             if (ok && pendingLogin) {
                 pendingLogin = false;
-                closeVerifyModal();
-                submitLogin();
+                // 停留 600ms 让「验证通过」看得见，再关闭弹窗继续登录
+                setTimeout(function () { closeVerifyModal(); submitLogin(); }, 600);
                 return;
             }
             msg('loginMsg', text, ok);
@@ -5046,9 +5089,12 @@
                 const task = pendingCode;
                 pendingCode = null;
                 const sliderToken = codeSlider ? codeSlider.getToken() : '';
-                closeCodeVerifyModal();
-                if (codeSlider) { codeSlider.verified = false; codeSlider.sliderToken = ''; codeSlider.token = ''; }
-                if (sliderToken) runCodeSend(task, sliderToken);
+                // 停留 600ms 让「验证通过」看得见，再关闭弹窗发送验证码
+                setTimeout(function () {
+                    closeCodeVerifyModal();
+                    if (codeSlider) { codeSlider.verified = false; codeSlider.sliderToken = ''; codeSlider.token = ''; }
+                    if (sliderToken) runCodeSend(task, sliderToken);
+                }, 600);
                 return;
             }
             if (pendingCode) msg(pendingCode.msgEl, text || '请完成人机验证', false);
@@ -5067,6 +5113,12 @@
             }
         }
         function startCodeVerify(task) {
+            const isReset = !!(task.payload && task.payload.type === 'reset');
+            if (!(isReset ? captchaFlags.reset : captchaFlags.register)) {
+                // 后台已关闭该入口的人机验证，直接发码
+                runCodeSend(task, '');
+                return;
+            }
             if (!openCodeVerifyModal()) {
                 // 理论上不会发生；弹窗缺失时不把发送流程卡死，交给后端判断
                 runCodeSend(task, '');
@@ -5249,10 +5301,11 @@
             if (name === 'payment-info') loadPaymentInfo();
         }
         function ensureMoneySliders() {
-            if (!moneySliderE && $('moneySliderE')) moneySliderE = new HubSlider($('moneySliderE'), 'money', { onMessage: (t, ok) => msg('promoExchangeMsg', t, ok) });
-            else if (moneySliderE && !moneySliderE.verified) moneySliderE.reload();
-            if (!moneySliderW && $('moneySliderW')) moneySliderW = new HubSlider($('moneySliderW'), 'money', { onMessage: (t, ok) => msg('promoWithdrawMsg', t, ok) });
-            else if (moneySliderW && !moneySliderW.verified) moneySliderW.reload();
+            if (captchaFlags.exchange && !moneySliderE && $('moneySliderE')) moneySliderE = new HubSlider($('moneySliderE'), 'money', { onMessage: (t, ok) => msg('promoExchangeMsg', t, ok) });
+            else if (captchaFlags.exchange && moneySliderE && !moneySliderE.verified) moneySliderE.reload();
+            if (captchaFlags.withdraw && !moneySliderW && $('moneySliderW')) moneySliderW = new HubSlider($('moneySliderW'), 'money', { onMessage: (t, ok) => msg('promoWithdrawMsg', t, ok) });
+            else if (captchaFlags.withdraw && moneySliderW && !moneySliderW.verified) moneySliderW.reload();
+            syncCaptchaVisibility();
         }
         let dashboardTimer = null;
         async function loadDashboard() {
@@ -6480,7 +6533,8 @@ await loadPlans();
             const username = $('loginUser').value.trim();
             const password = $('loginPwd').value.trim();
             if (!username || !password) return msg('loginMsg', '请填写用户名和密码', false);
-            if (!loginSlider || !loginSlider.sliderToken) { msg('loginMsg', '请先完成人机验证', false); return; }
+            const needCaptcha = !!captchaFlags.login;
+            if (needCaptcha && (!loginSlider || !loginSlider.sliderToken)) { msg('loginMsg', '请先完成人机验证', false); return; }
             const btn = $('loginBtn');
             setBusy(btn, true, '登录中...');
             try {
@@ -6488,21 +6542,23 @@ await loadPlans();
                 const encoder = new TextEncoder();
                 const hashBuf = await crypto.subtle.digest('SHA-256', encoder.encode(password));
                 const passwordHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
-                const res = await post('/api/auth/login', { username, password_hash: passwordHash, login_scene: 'web', slider_token: loginSlider.getToken() });
+                const res = await post('/api/auth/login', { username, password_hash: passwordHash, login_scene: 'web', slider_token: needCaptcha ? loginSlider.getToken() : '' });
                 if (res.code === 200) {
                     // 滑块票据是一次性的，登录成功后清掉，下次登录重新弹出验证
-                    loginSlider.verified = false;
-                    loginSlider.sliderToken = '';
-                    loginSlider.token = '';
+                    if (loginSlider) {
+                        loginSlider.verified = false;
+                        loginSlider.sliderToken = '';
+                        loginSlider.token = '';
+                    }
                     saveSession(res.token, res.user);
                     msg('loginMsg', '登录成功', true);
                     setTimeout(showDashboard, 350);
                 } else {
-                    await loginSlider.reload();
+                    if (needCaptcha && loginSlider) await loginSlider.reload();
                     msg('loginMsg', res.msg || '登录失败，请重新完成人机验证', false);
                 }
             } catch (_) {
-                await loginSlider.reload();
+                if (needCaptcha && loginSlider) await loginSlider.reload();
                 msg('loginMsg', '网络请求失败，请重新完成人机验证', false);
             }
             setBusy(btn, false);
@@ -6512,7 +6568,7 @@ await loadPlans();
             const username = $('loginUser').value.trim();
             const password = $('loginPwd').value.trim();
             if (!username || !password) return msg('loginMsg', '请填写用户名和密码', false);
-            if (loginSliderReady()) { submitLogin(); return; }
+            if (loginSliderReady() || !captchaFlags.login) { submitLogin(); return; }
             pendingLogin = true;
             openVerifyModal();
             ensureLoginSlider();
@@ -6860,8 +6916,11 @@ await loadPlans();
             const points = exchangePoints(amount);
             if (points < 1) return msg('promoExchangeMsg', '兑换金额不足 1 题，请提高金额', false);
             if (!confirm('确认用 ¥' + amount.toFixed(2) + ' 佣金兑换 ' + points + ' 题？题数即时到账、不可折现。')) return;
-            if (!moneySliderE || !(await moneySliderE.ensureVerified())) { if (moneySliderE) moneySliderE.reload(); return msg('promoExchangeMsg', '请先完成人机验证', false); }
-            const sliderToken = moneySliderE.getToken();
+            let sliderToken = '';
+            if (captchaFlags.exchange) {
+                if (!moneySliderE || !(await moneySliderE.ensureVerified())) { if (moneySliderE) moneySliderE.reload(); return msg('promoExchangeMsg', '请先完成人机验证', false); }
+                sliderToken = moneySliderE.getToken();
+            }
             const btn = this;
             setBusy(btn, true, '兑换中...');
             try {
@@ -6876,8 +6935,8 @@ await loadPlans();
                     if (typeof fillProfile === 'function') fillProfile(res.profile);
                     loadPromotion();
                 }
-                await moneySliderE.reload();
-            } catch (_) { msg('promoExchangeMsg', '网络错误', false); await moneySliderE.reload(); }
+                if (captchaFlags.exchange && moneySliderE) await moneySliderE.reload();
+            } catch (_) { msg('promoExchangeMsg', '网络错误', false); if (captchaFlags.exchange && moneySliderE) await moneySliderE.reload(); }
             setBusy(btn, false);
         };
         function readFileAsDataURL(file) {
@@ -6940,15 +6999,18 @@ await loadPlans();
             else { payAccount = $('promoWechatAccount').value.trim(); qr = promoWechatQr; }
             if (!payAccount) return msg('promoWithdrawMsg', '请先完善' + (method === 'alipay' ? '支付宝' : '微信') + '收款账号', false);
             if (!qr) return msg('promoWithdrawMsg', '请先上传' + (method === 'alipay' ? '支付宝' : '微信') + '收款二维码', false);
-            if (!moneySliderW || !(await moneySliderW.ensureVerified())) { if (moneySliderW) moneySliderW.reload(); return msg('promoWithdrawMsg', '请先完成人机验证', false); }
-            const wSliderToken = moneySliderW.getToken();
+            let wSliderToken = '';
+            if (captchaFlags.withdraw) {
+                if (!moneySliderW || !(await moneySliderW.ensureVerified())) { if (moneySliderW) moneySliderW.reload(); return msg('promoWithdrawMsg', '请先完成人机验证', false); }
+                wSliderToken = moneySliderW.getToken();
+            }
             setBusy(this, true, '提交中...');
             try {
                 const res = await post('/api/promotion/withdraw', { amount, pay_method: method, pay_account: payAccount, qr_code: qr, slider_token: wSliderToken }, localStorage.getItem(TOKEN_KEY));
                 msg('promoWithdrawMsg', res.msg || '提交失败', res.code === 200);
                 if (res.code === 200) { $('promoWithdrawAmount').value = ''; loadPromotion(); }
-                await moneySliderW.reload();
-            } catch (_) { msg('promoWithdrawMsg', '网络错误', false); await moneySliderW.reload(); }
+                if (captchaFlags.withdraw && moneySliderW) await moneySliderW.reload();
+            } catch (_) { msg('promoWithdrawMsg', '网络错误', false); if (captchaFlags.withdraw && moneySliderW) await moneySliderW.reload(); }
             setBusy(this, false);
         };
 
@@ -7940,6 +8002,7 @@ await loadPlans();
         startByPath();
         bindVerifyModal();
         bindCodeVerifyModal();
+        loadCaptchaFlags();
 
         // ===== 主题切换（0-Emoji，纯矢量 SVG 驱动） =====
         var themeIcons = {

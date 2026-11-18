@@ -530,6 +530,16 @@ class Database:
         self._add_column_if_missing("admin_config", "pay_default_method", "pay_default_method VARCHAR(16) DEFAULT '' COMMENT '用户购买页默认支付方式'")
         # 后台答题线程数，可在管理后台实时调整（2-30，默认 10）
         self._add_column_if_missing("admin_config", "ai_task_workers", "ai_task_workers INT DEFAULT 10 COMMENT '答题任务后台工作线程数'")
+        # 各入口人机验证开关：默认全开，后台可单独关闭某一入口的验证码
+        for _col, _cmt in (
+            ("captcha_login_enabled", "用户登录人机验证"),
+            ("captcha_register_enabled", "注册发送验证码人机验证"),
+            ("captcha_reset_enabled", "找回密码发送验证码人机验证"),
+            ("captcha_withdraw_enabled", "佣金提现人机验证"),
+            ("captcha_exchange_enabled", "佣金兑换人机验证"),
+            ("captcha_admin_login_enabled", "管理后台登录人机验证"),
+        ):
+            self._add_column_if_missing("admin_config", _col, f"{_col} TINYINT DEFAULT 1 COMMENT '{_cmt}'")
 
         # 管理员登录会话：落库保存，服务重启/发版后已登录的后台不会被踢下线
         self.execute("""
@@ -5381,6 +5391,25 @@ class Database:
         """保存答题线程数，供后台页面调整后持久化。"""
         ph = _ph()
         self.execute(f"UPDATE admin_config SET ai_task_workers = {ph} WHERE id = 1", (int(workers),))
+
+    def set_captcha_flags(self, flags):
+        """保存各入口人机验证开关。flags 形如 {"login": True, "withdraw": False}。"""
+        columns = {
+            "login": "captcha_login_enabled",
+            "register": "captcha_register_enabled",
+            "reset": "captcha_reset_enabled",
+            "withdraw": "captcha_withdraw_enabled",
+            "exchange": "captcha_exchange_enabled",
+            "admin": "captcha_admin_login_enabled",
+        }
+        ph = _ph()
+        sets, params = [], []
+        for key, col in columns.items():
+            if key in flags:
+                sets.append(f"{col} = {ph}")
+                params.append(1 if flags.get(key) else 0)
+        if sets:
+            self.execute(f"UPDATE admin_config SET {', '.join(sets)} WHERE id = 1", tuple(params))
 
     def update_admin_password(self, password_hash):
         ph = _ph()

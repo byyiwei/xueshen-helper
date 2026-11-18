@@ -918,6 +918,13 @@ html[data-theme="light"] .ip-badge.flag { color: #b45309; }
 .captcha-prompt { margin: 0 0 8px; font-size: 12px; line-height: 1.55; color: var(--text2); font-weight: 600; }
 .captcha-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
 .captcha-count { font-size: 12px; color: var(--text3); }
+.captcha-flag-list { display: flex; flex-direction: column; gap: 10px; }
+.captcha-flag-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 11px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg4);
+}
+.captcha-flag-row b { display: block; font-size: 13px; color: var(--text); margin-bottom: 2px; }
+.captcha-flag-row span { display: block; font-size: 11.5px; color: var(--text3); }
 .captcha-marker {
   position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px;
   border-radius: 50%; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700;
@@ -1522,7 +1529,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
       <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
       <div class="form-group"><input type="text" v-model="loginForm.username" placeholder="管理员用户名" autocomplete="username"></div>
       <div class="form-group"><input type="password" v-model="loginForm.password" placeholder="管理密码" autocomplete="current-password" @keydown.enter="doLogin"></div>
-      <div :class="['slider-verify',adminSlider.verified&&'done']">
+      <div :class="['slider-verify',adminSlider.verified&&'done']" v-if="captchaFlags.admin">
         <div class="slider-top">
           <span>人机验证</span>
           <span class="slider-state">{{adminSlider.verified?'验证通过':(adminSlider.loading?'加载中…':(adminSlider.token?(adminSlider.kind==='slider'?'拖动拼图到缺口':'请按提示完成验证'):'加载中…'))}}</span>
@@ -1824,7 +1831,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
             <div class="menu-item" :class="{active:page==='audit-logs'}" @click="page='audit-logs';loadAuditLogs(1)">
               <svg class="ui-icon sm"><use href="#i-file-text"></use></svg>操作审计
             </div>
-            <div class="menu-item" :class="{active:page==='db-config'}" @click="page='db-config';loadDbConfig()">
+            <div class="menu-item" :class="{active:page==='db-config'}" @click="page='db-config';loadDbConfig();loadCaptchaFlags()">
               <svg class="ui-icon sm"><use href="#i-database"></use></svg>系统设置
             </div>
           </div>
@@ -2247,6 +2254,45 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                 <div class="pwd-wrap">
                   <input v-model="dbConfig.password" :type="showDbPass?'text':'password'" placeholder="留空或保持 ******** 表示不修改">
                   <span class="pwd-eye" @click="showDbPass=!showDbPass"><svg class="ui-icon sm"><use :href="showDbPass?'#i-eye-off':'#i-eye'"></use></svg></span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card" style="margin-top:16px">
+            <div class="card-header">
+              <h3><svg class="ui-icon sm"><use href="#i-shield"></use></svg> 人机验证开关</h3>
+              <div class="provider-actions">
+                <button class="btn btn-primary btn-sm" :disabled="captchaFlagsSaving" @click="saveCaptchaFlags()">{{captchaFlagsSaving?'保存中...':'保存'}}</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="info-tips" style="margin-bottom:14px">
+                <div class="tip-row"><span class="tip-num">i</span><span class="tip-text">关掉某一项后，该入口不再弹出验证码，提交时直接放行；保存后立即生效。滑块、图标点选、九宫格、文字点选由中控应用配置决定，这里只控制开/关。</span></div>
+              </div>
+              <div class="captcha-flag-list">
+                <div class="captcha-flag-row">
+                  <div><b>用户登录</b><span>用户中心账号密码登录</span></div>
+                  <div class="toggle" :class="captchaFlags.login?'on':''" @click="captchaFlags.login=!captchaFlags.login"></div>
+                </div>
+                <div class="captcha-flag-row">
+                  <div><b>注册发送验证码</b><span>注册时点「发送验证码」</span></div>
+                  <div class="toggle" :class="captchaFlags.register?'on':''" @click="captchaFlags.register=!captchaFlags.register"></div>
+                </div>
+                <div class="captcha-flag-row">
+                  <div><b>找回密码发送验证码</b><span>找回密码时点「发送验证码」</span></div>
+                  <div class="toggle" :class="captchaFlags.reset?'on':''" @click="captchaFlags.reset=!captchaFlags.reset"></div>
+                </div>
+                <div class="captcha-flag-row">
+                  <div><b>佣金提现</b><span>推广返利提现提交</span></div>
+                  <div class="toggle" :class="captchaFlags.withdraw?'on':''" @click="captchaFlags.withdraw=!captchaFlags.withdraw"></div>
+                </div>
+                <div class="captcha-flag-row">
+                  <div><b>佣金兑换</b><span>佣金兑换题数提交</span></div>
+                  <div class="toggle" :class="captchaFlags.exchange?'on':''" @click="captchaFlags.exchange=!captchaFlags.exchange"></div>
+                </div>
+                <div class="captcha-flag-row">
+                  <div><b>管理后台登录</b><span>后台账号密码登录（关闭后下次登录直接放行）</span></div>
+                  <div class="toggle" :class="captchaFlags.admin?'on':''" @click="captchaFlags.admin=!captchaFlags.admin"></div>
                 </div>
               </div>
             </div>
@@ -8292,6 +8338,27 @@ createApp({
       return 0;
     }
     const adminCaptchaTotal=computed(()=>adminCaptchaExpected());
+    // 各入口人机验证开关（公开接口只读；后台登录页据此决定是否显示验证码）
+    const captchaFlags=ref({login:true,register:true,reset:true,withdraw:true,exchange:true,admin:true});
+    const captchaFlagsSaving=ref(false);
+    async function loadCaptchaFlags(){
+      try{
+        const res=await fetch('/api/captcha/flags');
+        const data=await res.json();
+        if(data.code===200&&data.flags)captchaFlags.value=Object.assign({},captchaFlags.value,data.flags);
+      }catch(e){}
+    }
+    async function saveCaptchaFlags(){
+      captchaFlagsSaving.value=true;
+      try{
+        const res=await fetch('/admin/captcha-flags',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({flags:captchaFlags.value})});
+        const data=await res.json();
+        if(data.code===200){if(data.flags)captchaFlags.value=Object.assign({},captchaFlags.value,data.flags);showMsg('人机验证开关已保存');}
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'保存失败','error');
+      }catch(e){showMsg('保存失败: '+e,'error');}
+      finally{captchaFlagsSaving.value=false;}
+    }
     const providerReadyCount=ref(0);
     const providerTotalCount=ref(0);
 
@@ -8451,14 +8518,18 @@ createApp({
     }
     async function doLogin(){
       if(!loginForm.username||!loginForm.password)return showMsg('请输入管理员用户名和密码','error');
-      const sliderOk=await ensureAdminSliderVerified();
-      if(!sliderOk){showMsg('请先完成人机验证','error',2200);return;}
+      let sliderToken='';
+      if(captchaFlags.value.admin){
+        const sliderOk=await ensureAdminSliderVerified();
+        if(!sliderOk){showMsg('请先完成人机验证','error',2200);return;}
+        sliderToken=adminSlider.sliderToken;
+      }
       try{
-        const res=await fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:loginForm.username,password:loginForm.password,slider_token:adminSlider.sliderToken})});
+        const res=await fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:loginForm.username,password:loginForm.password,slider_token:sliderToken})});
         const data=await res.json();
         if(data.code===200){token.value=data.token;localStorage.setItem('ne21_admin_token',token.value);const start=readHashPage()||'dashboard';page.value=start;loadAll();if(start!=='dashboard')loadPageData(start);}
-        else{loginForm.password='';await resetAdminSlider(data.msg||'用户名或密码错误，请重新完成人机验证');}
-      }catch(e){await resetAdminSlider('请求失败，请重新完成人机验证');}
+        else{loginForm.password='';if(captchaFlags.value.admin)await resetAdminSlider(data.msg||'用户名或密码错误，请重新完成人机验证');else showMsg(data.msg||'用户名或密码错误','error');}
+      }catch(e){if(captchaFlags.value.admin)await resetAdminSlider('请求失败，请重新完成人机验证');else showMsg('请求失败: '+e,'error');}
     }
     function emailLooksOk(v){
       v=String(v||'').replace(/＠/g,'@').replace(/[。．]/g,'.').replace(/[\s　]/g,'');
@@ -10286,7 +10357,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       distributor:{title:'代理商分销',icon:'i-flag',items:[{page:'distributor',label:'代理商',icon:'i-users',load:loadFxList},{page:'distributor-templates',label:'卡密模板',icon:'i-layers',load:()=>{loadFxOptions();loadFxTemplates();}},{page:'distributor-batches',label:'批次与卡密',icon:'i-package',load:()=>{loadFxOptions();loadFxBatches(1);}},{page:'distributor-withdrawals',label:'提现审核',icon:'i-wallet',load:()=>{loadFxOptions();loadFxWds(1);}},{page:'distributor-revenue',label:'收入统计',icon:'i-trending-up',load:loadFxRevenue},{page:'distributor-config',label:'分销配置',icon:'i-sliders',load:loadFxConfig}]},
       logs:{title:'日志监控',icon:'i-terminal',items:[{page:'script-logs',label:'脚本日志',icon:'i-terminal',load:loadScriptLogs},{page:'page-issues',label:'页面异常',icon:'i-alert-triangle',load:()=>loadPageIssues(1)},{page:'log-cleanup',label:'日志清理',icon:'i-trash-2',load:loadLogCleanup},{page:'daily-report',label:'每日数据邮件',icon:'i-mail',load:()=>{loadDailyReport();loadEmailTemplates();}}]},
       models:{title:'模型服务',icon:'i-cpu',items:[{page:'ai-config',label:'模型配置',icon:'i-bot',load:loadConfig},{page:'ai-logs',label:'模型日志',icon:'i-activity',load:loadAiLogs},{page:'model-health',label:'模型健康',icon:'i-shield',load:loadModelStats},{page:'ai-tasks',label:'答题任务',icon:'i-clock',load:loadAiTasks},{page:'model-cooldown',label:'冷却队列',icon:'i-clock',load:()=>{}}]},
-      config:{title:'系统配置',icon:'i-settings',items:[{page:'qq-bot',label:'QQ频道机器人',icon:'i-message-circle',load:loadQqBot},{page:'email-config',label:'邮箱配置',icon:'i-mail',load:()=>{loadEmailConfig();loadEmailTemplates();syncHubTemplates(true);}},{page:'sso-config',label:'单点登录',icon:'i-shield',load:loadSsoConfig},{page:'audit-logs',label:'操作审计',icon:'i-file-text',load:()=>loadAuditLogs(1)},{page:'db-config',label:'系统设置',icon:'i-database',load:loadDbConfig}]}
+      config:{title:'系统配置',icon:'i-settings',items:[{page:'qq-bot',label:'QQ频道机器人',icon:'i-message-circle',load:loadQqBot},{page:'email-config',label:'邮箱配置',icon:'i-mail',load:()=>{loadEmailConfig();loadEmailTemplates();syncHubTemplates(true);}},{page:'sso-config',label:'单点登录',icon:'i-shield',load:loadSsoConfig},{page:'audit-logs',label:'操作审计',icon:'i-file-text',load:()=>loadAuditLogs(1)},{page:'db-config',label:'系统设置',icon:'i-database',load:()=>{loadDbConfig();loadCaptchaFlags();}}]}
     };
     function openMobileSubmenu(key,title,icon){
       const cfg=MOBILE_SUBMENU_MAP[key];
@@ -12241,7 +12312,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     }
 
     if(token.value){const start=readHashPage()||'dashboard';page.value=start;loadAll();if(start!=='dashboard')loadPageData(start);}
-    else {page.value='login';initAdminSlider();}
+    else {page.value='login';loadCaptchaFlags().then(()=>{if(captchaFlags.value.admin)initAdminSlider();});}
     loading.value=false;
 
     return{
@@ -12264,7 +12335,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       oldUserRechargeExpanded,oldUserRechargeDetails,oldUserRechargePage,oldUserRechargeTotal,oldUserRechargeTotalPages,oldUserRechargeSum,oldUserRechargeLoading,toggleOldUserRecharge,loadOldUserRechargeDetails,
       questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,deleteQuestionBankItem,bankTypeOptions,bankModelOptions,loadBankModels,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,ssoConfig,ssoSaving,showSsoSecret,ssoCallbackUrl,riskConfig,riskWhitelistText,riskUsers,riskScanning,riskSaving,riskFilter,riskPage,riskTotal,riskTotalPages,resetRiskFilter,
       doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,saveEmailHubFromAddr,hubTplStatusText,syncHubTemplates,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,adminCaptchaClick,adminCaptchaRemove,adminCaptchaCell,
-      loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadSsoConfig,saveSsoConfig,copySsoUrl,loadRiskConfig,saveRiskConfig,scanRisk,riskBan,riskAddWhitelist,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,
+      loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadSsoConfig,saveSsoConfig,copySsoUrl,captchaFlags,captchaFlagsSaving,saveCaptchaFlags,loadCaptchaFlags,loadRiskConfig,saveRiskConfig,scanRisk,riskBan,riskAddWhitelist,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,
       savePaymentConfig,savePayApiConfig,saveHubPayConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,movePlan,openUserEdit,saveUserAdmin,
       toggleProvider,collapseAllProviders,togglePayApiSection,
        addProvider,removeProvider,addModel,removeModel,
