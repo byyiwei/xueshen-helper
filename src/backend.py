@@ -255,7 +255,7 @@ def _vision_rank(model_name):
     return 50
 
 DASHBOARD_CACHE = {"time": 0, "data": None}
-DASHBOARD_CACHE_SECONDS = 5
+DASHBOARD_CACHE_SECONDS = 30
 # 官网直营营收口径：代理商充值（plan_type='dist_recharge'）是压在平台的预存款、属于负债，
 # 不能算进直营收入；分销那套钱单独在「代理商分销 · 收入统计」里按流水出。
 # 卡密激活也往 payment_orders 写一行，代理卡那行 price 恒为 0（是核销不是销售），
@@ -7725,29 +7725,30 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
     # 全口径活跃：答题（ai_call_logs）与脚本活动（script_event_logs，视频/直播/阅读都算）
     # 两表合并去重。挂机活跃＝只有脚本日志、没有答题调用的用户；
     # 付费活跃＝总活跃中会员在期/有题数余额/自有模型在期的用户。
+    # 先按用户聚合出「有没有答题/有没有脚本日志」，再和付费用户表左连接。
+    # 原来的写法在每一行上重复跑 IN 子查询，500 万行级的日志表要扫好几遍。
     active_sql = f"""
         SELECT
           COUNT(DISTINCT u) AS total_active,
-          COUNT(DISTINCT CASE WHEN u IN (SELECT DISTINCT username FROM script_event_logs
-                                WHERE created_at >= {ph} AND created_at < {ph}
-                                  AND COALESCE(username,'') <> '') AND
-                              u NOT IN (SELECT DISTINCT COALESCE(username,'') FROM ai_call_logs
-                                        WHERE created_at >= {ph} AND created_at < {ph}
-                                          AND COALESCE(username,'') <> '')
-                         THEN u END) AS idle_active,
-          COUNT(DISTINCT CASE WHEN u IN (
-                SELECT username FROM users WHERE
-                  (member_until IS NOT NULL AND member_until > NOW())
-                  OR points_balance > 0
-                  OR (custom_model_until IS NOT NULL AND custom_model_until > NOW())
-             ) THEN u END) AS paid_active
+          COUNT(DISTINCT CASE WHEN has_script = 1 AND has_ai = 0 THEN u END) AS idle_active,
+          COUNT(DISTINCT CASE WHEN paid = 1 THEN u END) AS paid_active
         FROM (
-            SELECT DISTINCT username AS u FROM ai_call_logs
+          SELECT u, MAX(a) AS has_ai, MAX(s) AS has_script
+          FROM (
+            SELECT username AS u, 1 AS a, 0 AS s FROM ai_call_logs
             WHERE created_at >= {ph} AND created_at < {ph} AND COALESCE(username,'') <> ''
-            UNION
-            SELECT DISTINCT username AS u FROM script_event_logs
+            UNION ALL
+            SELECT username AS u, 0 AS a, 1 AS s FROM script_event_logs
             WHERE created_at >= {ph} AND created_at < {ph} AND COALESCE(username,'') <> ''
+          ) x
+          GROUP BY u
         ) t
+        LEFT JOIN (
+          SELECT username AS pu, 1 AS paid FROM users
+          WHERE (member_until IS NOT NULL AND member_until > NOW())
+             OR points_balance > 0
+             OR (custom_model_until IS NOT NULL AND custom_model_until > NOW())
+        ) p ON p.pu = t.u
     """
 
     trend_sql = """
@@ -7805,13 +7806,13 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
         cursor = conn.cursor()
         cursor.execute(card_sql, (sd, ed_next, sd, ed_next))
         card_stats = cursor.fetchone() or {}
-        cursor.execute(active_sql, (sd, ed_next, sd, ed_next, sd, ed_next, sd, ed_next))
+        cursor.execute(active_sql, (sd, ed_next, sd, ed_next))
         active_stats = cursor.fetchone() or {}
         # 上一等长周期：只取涨跌需要的关键指标
         try:
             cursor.execute(card_sql, (prev_sd, prev_ed_next, prev_sd, prev_ed_next))
             prev_card_stats = cursor.fetchone() or {}
-            cursor.execute(active_sql, (prev_sd, prev_ed_next, prev_sd, prev_ed_next, prev_sd, prev_ed_next, prev_sd, prev_ed_next))
+            cursor.execute(active_sql, (prev_sd, prev_ed_next, prev_sd, prev_ed_next))
             prev_active_stats = cursor.fetchone() or {}
             cursor.execute(revenue_sql, (prev_sd, prev_ed_next))
             prev_rev_stats = cursor.fetchone() or {}

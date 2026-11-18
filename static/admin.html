@@ -8303,27 +8303,42 @@ createApp({
     }
 
     // Load data
+    // 进入后台时的首屏数据互相独立，全部并发拉取，避免一条接一条等（首屏原来要串行等 3 秒左右）
     async function loadAll(){
-      await loadDashboard();
-      await loadAdminAccount();
-      loadAdaptPending();
-      refreshAiTaskCounts();
       startAdaptPendingPolling();
-      // 侧栏「待审核代理商」角标：静默失败，不影响主流程
-      try{
-        const dr=await safeFetch('/admin/distributor/config',{headers:{'Authorization':token.value}});
-        const dd=await dr.json();
-        if(dd.code===200)fxStats.value=dd.stats||{};
-      }catch(_){}
-      // 侧栏「提现审核」角标：推广提现待审核笔数
-      try{
-        const wr=await safeFetch('/admin/referral/withdrawals?status=pending',{headers:{'Authorization':token.value}});
-        const wd=await wr.json();
-        if(wd.code===200&&wd.summary)referralWdSummary.value=wd.summary;
-      }catch(_){}
+      await Promise.allSettled([
+        loadDashboard(),
+        loadAdminAccount(),
+        loadAdaptPending(),
+        refreshAiTaskCounts(),
+        // 侧栏「待审核代理商」角标：静默失败，不影响主流程
+        (async()=>{
+          try{
+            const dr=await safeFetch('/admin/distributor/config',{headers:{'Authorization':token.value}});
+            const dd=await dr.json();
+            if(dd.code===200)fxStats.value=dd.stats||{};
+          }catch(_){}
+        })(),
+        // 侧栏「提现审核」角标：推广提现待审核笔数
+        (async()=>{
+          try{
+            const wr=await safeFetch('/admin/referral/withdrawals?status=pending',{headers:{'Authorization':token.value}});
+            const wd=await wr.json();
+            if(wd.code===200&&wd.summary)referralWdSummary.value=wd.summary;
+          }catch(_){}
+        })()
+      ]);
     }
     async function loadDashboard(){
       if(!token.value)return;
+      // 首页统计和待处理反馈数互不依赖，一起发出去
+      const feedbackJob=(async()=>{
+        try{
+          const fr=await safeFetch('/admin/feedback?page=1&page_size=1',{headers:{'Authorization':token.value}});
+          const fd=await fr.json();
+          if(fd.code===200){feedbackPendingCount.value=fd.data.pending_count||0;}
+        }catch(_){}
+      })();
       try{
         const params=new URLSearchParams({start:dashStartDate.value,end:dashEndDate.value});
         const res=await safeFetch('/admin/dashboard?'+params,{headers:{'Authorization':token.value}});
@@ -8332,12 +8347,7 @@ createApp({
         else if(data.code===403){logout();showMsg('登录已过期','error');}
         else showMsg(data.msg||'获取首页统计失败','error');
       }catch(e){showMsg('获取首页统计失败: '+(e.message||e),'error',6000);}
-      // 并行获取待处理反馈数
-      try{
-        const fr=await safeFetch('/admin/feedback?page=1&page_size=1',{headers:{'Authorization':token.value}});
-        const fd=await fr.json();
-        if(fd.code===200){feedbackPendingCount.value=fd.data.pending_count||0;}
-      }catch(_){}
+      await feedbackJob;
     }
     function dashDeltaInfo(key){
       const cur=Number((dashboard.value.cards||{})[key]||0);
