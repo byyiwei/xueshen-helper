@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.22
+// @version      6.0.23
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -15,6 +15,12 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.23 (2026-11-18)
+// @changelog    1. 数值/符号选项精确匹配：-30kJ 与 +30kJ、=SUM(B2:F2)、[志愿者]=1 这类选项不再被误判成答案有歧义
+// @changelog    2. 选项只差星号、引号、括号时按相似度挑唯一最接近的一项，仍分不出来才放弃
+// @changelog    3. 学习页面内嵌的章节测验：识别对勾节点为已选中，补点选项正文和整行，避免误报填不上和重复点击取消勾选
+// @changelog    4. 填空题适配隐藏/只读输入框，答案用「＞/→」分隔时按空拆分
+// @changelog    5. 教师未创建/未发布测验的页面不再上报异常；纯文字短题不再误报图片下载失败
 // @changelog    v6.0.22 (2026-11-17)
 // @changelog    1. 修复选项正文以字母开头的答案被拆成字母导致填不上：OCR文字识别、BLEU 值、AQ、PPT大纲结构 等现在按正文匹配
 // @changelog    2. 修复判断题答案写成「答案：B」时整题放弃；答案只给「正确/错误」时按选项正文唯一匹配

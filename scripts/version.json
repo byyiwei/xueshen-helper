@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.0.22",
+    "version": "6.0.23",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.0.22 修复字母开头选项被误拆、答案前缀与判断题填充；勾选后重新回读；智慧树题型缺失时按选项推断"
+    "changelog": "v6.0.23 数值/符号选项精确匹配与相似度消歧；内嵌章节测验勾选回读；填空隐藏输入框与多空拆分；空测验和纯文字题误报修复"
   },
   "xueshen-gf": {
-    "version": "6.0.22",
+    "version": "6.0.23",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.0.22 修复字母开头选项被误拆、答案前缀与判断题填充；勾选后重新回读；智慧树题型缺失时按选项推断"
+    "changelog": "v6.0.23 数值/符号选项精确匹配与相似度消歧；内嵌章节测验勾选回读；填空隐藏输入框与多空拆分；空测验和纯文字题误报修复"
   }
 }
