@@ -9667,6 +9667,20 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               if (markHit.length === 1) answers = [markHit[0]];
             }
           }
+          // 单选题答案被写成「协商,沟通,共事」这种多个候选：整串对不上任何选项时，
+          // 取第一个能唯一对上选项的候选，避免整道题直接放弃。整串本身能对上（选项里
+          // 就带逗号）时不动它，防止把正常选项拆坏。
+          if (question.type === "0" && answers.length === 1 && /[,，、;；|]/.test(String(answers[0] || ""))) {
+            const rawSingle = String(answers[0] || "");
+            const wholeHit = optionKeys.some(k => this.optionTextMatches(k, rawSingle, true));
+            if (!wholeHit) {
+              const firstUnique = rawSingle.split(/[,，、;；|]+/)
+                .map(s => s.trim()).filter(Boolean)
+                .map(c => optionKeys.filter(k => this.optionTextMatches(k, c, true)))
+                .find(hits => hits.length === 1);
+              if (firstUnique) answers = [firstUnique[0]];
+            }
+          }
           for (const answer of answers) {
             const clearAnswer = cleanChoiceAnswer(this.removeHtml(String(answer)));
             const text = String(clearAnswer).normalize("NFKC").trim();
