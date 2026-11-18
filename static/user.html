@@ -3138,7 +3138,7 @@
         }
         .verify-modal-close:hover { background: var(--c-surface-2); color: var(--c-text); }
         .verify-modal-sub { margin: 4px 0 12px; font-size: 12.5px; line-height: 1.6; color: var(--c-text-3); }
-        #loginSliderModal .slider-verify {
+        #loginSliderModal .slider-verify, #codeSliderModal .slider-verify {
             max-width: 100% !important;
             width: 100% !important;
             margin: 0 !important;
@@ -3147,7 +3147,7 @@
             border: 0;
             box-shadow: none;
         }
-        #loginSliderModal .hub-box { max-width: 100% !important; }
+        #loginSliderModal .hub-box, #codeSliderModal .hub-box { max-width: 100% !important; }
 
         /* ===================== 题库工具结束 ===================== */
     </style>
@@ -3371,6 +3371,20 @@
             </div>
             <p class="verify-modal-sub">完成滑块验证后会自动继续登录</p>
             <div id="loginSliderModal"></div>
+        </div>
+    </div>
+
+    <div id="codeVerifyModal" class="verify-modal">
+        <div class="verify-modal-mask"></div>
+        <div class="verify-modal-card" role="dialog" aria-modal="true" aria-labelledby="codeVerifyTitle">
+            <div class="verify-modal-head">
+                <h3 id="codeVerifyTitle">安全验证</h3>
+                <button type="button" class="verify-modal-close" id="codeVerifyClose" aria-label="关闭验证弹窗">
+                    <svg class="ui-icon sm" aria-hidden="true"><use href="#i-x"></use></svg>
+                </button>
+            </div>
+            <p class="verify-modal-sub">完成滑块验证后会自动发送邮箱验证码</p>
+            <div id="codeSliderModal"></div>
         </div>
     </div>
 
@@ -4792,6 +4806,76 @@
             if (closeBtn) closeBtn.addEventListener('click', dismissVerifyModal);
             document.addEventListener('keydown', function (e) {
                 if (e.key === 'Escape' && m.classList.contains('open')) dismissVerifyModal();
+            });
+        }
+        // 注册/找回密码发送邮箱验证码前的中控滑块。和登录滑块分开一套，
+        // 票据绑定 scope=email，不能拿去复用登录或资金操作的验证。
+        let codeSlider = null;
+        let pendingCode = null;
+        function openCodeVerifyModal() {
+            const m = $('codeVerifyModal');
+            if (!m) return false;
+            m.classList.add('open');
+            document.body.classList.add('verify-open');
+            return true;
+        }
+        function closeCodeVerifyModal() {
+            const m = $('codeVerifyModal');
+            if (m) m.classList.remove('open');
+            const loginModal = $('verifyModal');
+            if (!loginModal || !loginModal.classList.contains('open')) document.body.classList.remove('verify-open');
+        }
+        function dismissCodeVerifyModal() {
+            pendingCode = null;
+            closeCodeVerifyModal();
+        }
+        function onCodeSliderMessage(text, ok) {
+            if (ok && pendingCode) {
+                const task = pendingCode;
+                pendingCode = null;
+                const sliderToken = codeSlider ? codeSlider.getToken() : '';
+                closeCodeVerifyModal();
+                if (codeSlider) { codeSlider.verified = false; codeSlider.sliderToken = ''; codeSlider.token = ''; }
+                if (sliderToken) runCodeSend(task, sliderToken);
+                return;
+            }
+            if (pendingCode) msg(pendingCode.msgEl, text || '请完成滑块验证', false);
+        }
+        async function runCodeSend(task, sliderToken) {
+            setBusy(task.btn, true, task.busyText || '发送中...');
+            try {
+                const res = await post(task.url, Object.assign({}, task.payload, { slider_token: sliderToken }));
+                msg(task.msgEl, res.msg || (res.code === 200 ? '验证码已发送' : '发送失败'), res.code === 200);
+                if (res.code !== 200 && codeSlider) codeSlider.reload();
+            } catch (_) {
+                msg(task.msgEl, '网络请求失败', false);
+                if (codeSlider) codeSlider.reload();
+            } finally {
+                setBusy(task.btn, false);
+            }
+        }
+        function startCodeVerify(task) {
+            if (!openCodeVerifyModal()) {
+                // 理论上不会发生；弹窗缺失时不把发送流程卡死，交给后端判断
+                runCodeSend(task, '');
+                return;
+            }
+            pendingCode = task;
+            if (!codeSlider) {
+                codeSlider = new HubSlider($('codeSliderModal'), 'email', { onMessage: onCodeSliderMessage });
+            } else {
+                codeSlider.reload();
+            }
+        }
+        function bindCodeVerifyModal() {
+            const m = $('codeVerifyModal');
+            if (!m) return;
+            const mask = m.querySelector('.verify-modal-mask');
+            const closeBtn = $('codeVerifyClose');
+            if (mask) mask.addEventListener('click', dismissCodeVerifyModal);
+            if (closeBtn) closeBtn.addEventListener('click', dismissCodeVerifyModal);
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && m.classList.contains('open')) dismissCodeVerifyModal();
             });
         }
         function saveSession(token, user) {
@@ -6229,12 +6313,7 @@ await loadPlans();
             $('regEmail').value = email;
             const regUser = $('regUser').value.trim();
             if (!regUser) return msg('regMsg', '请先填写用户名', false);
-            setBusy(this, true, '发送中...');
-            try {
-                const res = await post('/api/auth/send-verify', { email, type: 'register', username: regUser });
-                msg('regMsg', res.msg || '验证码已发送', res.code === 200);
-            } catch (_) { msg('regMsg', '网络请求失败', false); }
-            setBusy(this, false);
+            startCodeVerify({ url: '/api/auth/send-verify', payload: { email, type: 'register', username: regUser }, msgEl: 'regMsg', btn: this, busyText: '发送中...' });
         };
 
         $('regBtn').onclick = async function () {
@@ -6270,12 +6349,7 @@ await loadPlans();
             if (!email) return msg('resetMsg', '请先填写邮箱', false);
             if (!emailFormatOk(email)) return msg('resetMsg', email.indexOf('@') < 0 ? '邮箱缺少 @，请填写完整地址' : '邮箱格式不对，请检查 @ 和域名', false);
             $('resetEmail').value = email;
-            setBusy(this, true, '发送中...');
-            try {
-                const res = await post('/api/auth/send-verify', { email, type: 'reset' });
-                msg('resetMsg', res.msg || '验证码已发送', res.code === 200);
-            } catch (_) { msg('resetMsg', '网络请求失败', false); }
-            setBusy(this, false);
+            startCodeVerify({ url: '/api/auth/send-verify', payload: { email, type: 'reset' }, msgEl: 'resetMsg', btn: this, busyText: '发送中...' });
         };
 
         $('regResendBtn').onclick = async function () {
@@ -6284,12 +6358,7 @@ await loadPlans();
             if (!email) return msg('regMsg', '请先填写邮箱', false);
             if (!emailFormatOk(email)) return msg('regMsg', email.indexOf('@') < 0 ? '邮箱缺少 @，请填写完整地址' : '邮箱格式不对，请检查 @ 和域名', false);
             $('regEmail').value = email;
-            setBusy(this, true, '重发中...');
-            try {
-                const res = await post('/api/auth/resend-verify', { email, type: 'register', username: regUser });
-                msg('regMsg', res.msg || '补发失败', res.code === 200);
-            } catch (_) { msg('regMsg', '网络请求失败', false); }
-            setBusy(this, false);
+            startCodeVerify({ url: '/api/auth/resend-verify', payload: { email, type: 'register', username: regUser }, msgEl: 'regMsg', btn: this, busyText: '重发中...' });
         };
 
         $('resetResendBtn').onclick = async function () {
@@ -6297,12 +6366,7 @@ await loadPlans();
             if (!email) return msg('resetMsg', '请先填写邮箱', false);
             if (!emailFormatOk(email)) return msg('resetMsg', email.indexOf('@') < 0 ? '邮箱缺少 @，请填写完整地址' : '邮箱格式不对，请检查 @ 和域名', false);
             $('resetEmail').value = email;
-            setBusy(this, true, '重发中...');
-            try {
-                const res = await post('/api/auth/resend-verify', { email, type: 'reset' });
-                msg('resetMsg', res.msg || '补发失败', res.code === 200);
-            } catch (_) { msg('resetMsg', '网络请求失败', false); }
-            setBusy(this, false);
+            startCodeVerify({ url: '/api/auth/resend-verify', payload: { email, type: 'reset' }, msgEl: 'resetMsg', btn: this, busyText: '重发中...' });
         };
 
         $('resetBtn').onclick = async function () {
@@ -7663,6 +7727,7 @@ await loadPlans();
 
         startByPath();
         bindVerifyModal();
+        bindCodeVerifyModal();
 
         // ===== 主题切换（0-Emoji，纯矢量 SVG 驱动） =====
         var themeIcons = {

@@ -910,7 +910,7 @@ CAPTCHA_SCOPES = {}          # hub_token -> (scope, expires)：记住这张票�
 CAPTCHA_SCOPES_MAX = 2000
 CAPTCHA_SCOPE_TTL = 300
 CAPTCHA_PASS_TTL = 120       # 核销成功后铸出的一次性 slider_token 有效期
-CAPTCHA_VALID_SCOPES = ("user", "admin", "money")
+CAPTCHA_VALID_SCOPES = ("user", "admin", "money", "email")
 
 # ==================== 中控统一出口：邮件发送 / 模型网关 ====================
 # 与 SSO、滑块同一 Hub App、同一 hub-v1 签名（复用 _hub_sign_headers / _captcha_hub_creds）。
@@ -11652,6 +11652,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not ok_email:
                     self._send_json(400, {"code": 400, "msg": email_err})
                     return
+                # 安全：先过中控滑块，再发验证码，避免被脚本刷邮件
+                if not consume_slider_token(data.get("slider_token"), "email", self._client_ip()):
+                    self._send_json(400, {"code": 400, "msg": "请先完成滑块验证"})
+                    return
                 # 安全：验证码发送限流，防止邮件轰炸
                 ok, err_msg = check_verify_code_rate(self._client_ip(), email)
                 if not ok:
@@ -11717,6 +11721,10 @@ class Handler(BaseHTTPRequestHandler):
                 ok_email, email_err, email, _email_suggestion = validate_email_address(email, check_mx=False)
                 if not ok_email:
                     self._send_json(400, {"code": 400, "msg": email_err})
+                    return
+                # 安全：先过中控滑块，再补发验证码，避免被脚本刷邮件
+                if not consume_slider_token(data.get("slider_token"), "email", self._client_ip()):
+                    self._send_json(400, {"code": 400, "msg": "请先完成滑块验证"})
                     return
                 # 安全：验证码发送限流，防止邮件轰炸
                 ok, err_msg = check_verify_code_rate(self._client_ip(), email)
