@@ -4960,6 +4960,27 @@ def _answer_hits_options(question, answer):
     return True
 
 
+def _answer_matches_question_options(question, answer):
+    """题库答案校验：在 _answer_hits_options 基础上容忍判断题同义判词。
+
+    判断题页面选项常见「对/错」，题库里存的是「正确/错误」（或反过来），
+    脚本侧是认这对同义词的；若直接按字面比对会误判成「对不上」，
+    导致每次命中都绕过题库重新调 AI，白花用户的答题次数。
+    """
+    if _answer_hits_options(question, answer):
+        return True
+    options = [str(o).strip() for o in extract_options_from_question(question) if str(o).strip()]
+    if len(options) != 2:
+        return False
+    polarities = [_judge_polarity(o, max_len=10) for o in options]
+    if None in polarities or polarities[0] == polarities[1]:
+        return False
+    items = [str(x).strip() for x in _answer_items(answer) if str(x).strip()]
+    if len(items) != 1:
+        return False
+    return _judge_polarity(items[0], max_len=10) in polarities
+
+
 def _is_reasoning_only_choice_answer(question, answer):
     """选项题只返回「思考过程/元话术」时判为无效，让任务池换下一个模型重试。
 
@@ -4989,7 +5010,8 @@ def _mark_bank_answer_stale(question, bank_row):
         return
     old_hash = str(bank_row.get("question_hash") or "").strip()
     old_answer = str(bank_row.get("answer") or "").strip()
-    if not old_hash or not old_answer:
+    # 答案为空也要能纠正：这类记录本身填不上，AI 答出来后同样按原记录原地补上
+    if not old_hash:
         return
     mkey = make_matching_key(question)
     if not mkey:
@@ -5027,7 +5049,7 @@ def _apply_bank_answer_fix(question, answer, model_name="", provider_name=""):
         return False
     if float(item.get("expires") or 0) < time.time():
         return False
-    if not _answer_hits_options(question, answer):
+    if not _answer_matches_question_options(question, answer):
         print(f"[题库纠正] AI 答案仍对不上页面选项，保留原记录 mkey={mkey[:12]}", flush=True)
         return False
     old_hash = str(item.get("hash") or "")
@@ -15444,10 +15466,12 @@ class Handler(BaseHTTPRequestHandler):
                         print(f"[题库相似题] 自动选最优 hash={question_hash[:12]} score={similar_score:.3f}", flush=True)
                 if bank_row and not use_custom and not skip_bank:
                     answer = normalize_ai_answer(question, bank_row.get("answer", ""))
-                    bank_mismatch = bool(answer) and not _answer_hits_options(question, answer)
-                    if answer and (_is_truncated_multi_answer(question, answer) or _is_garbage_bank_answer(answer, question) or bank_mismatch):
+                    bank_mismatch = bool(answer) and not _answer_matches_question_options(question, answer)
+                    if not answer or _is_truncated_multi_answer(question, answer) or _is_garbage_bank_answer(answer, question) or bank_mismatch:
                         if bank_mismatch:
                             print(f"[题库命中但答案对不上选项，改走AI] hash={question_hash[:12]} answer={str(answer)[:80]}", flush=True)
+                        elif not answer:
+                            print(f"[题库命中但答案为空，改走AI] hash={question_hash[:12]}", flush=True)
                         else:
                             print(f"[题库命中但答案不可用，改走AI] hash={question_hash[:12]} answer={str(answer)[:80]}", flush=True)
                         # 只有精确命中的记录才能安全覆盖；相似题是另一道题，不能动
@@ -15458,13 +15482,6 @@ class Handler(BaseHTTPRequestHandler):
                         question_hash = question_key
                         _bank_log["matched"] = False
                         _bank_log["matched_hash"] = ""
-                    elif not answer:
-                        err = "题库答案为空"
-                        print(f"[题库命中但答案为空] hash={question_hash[:12]}", flush=True)
-                        enqueue_bank_log(_bank_log)
-                        _bank_logged = True
-                        self._send_json(500, {"code": 500, "msg": err})
-                        return
                     else:
                         resolved_model = bank_row.get("source_model") or "题库"
                         provider_name = "question_bank"
