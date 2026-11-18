@@ -2595,14 +2595,18 @@ class Database:
             quick = int(r.get("quick_refunds") or 0)
             recent = int(r.get("refunds_recent") or 0)
             hits = []
+            hit_types = []
             if cfg["refund_count"] > 0 and recent >= cfg["refund_count"]:
                 hits.append(f"{rd} 天内退款 {recent} 次（阈值 {cfg['refund_count']}）")
+                hit_types.append("refund_count")
             if (cfg["refund_rate_pct"] > 0 and paid_ever >= cfg["refund_rate_min"]
                     and refunded * 100.0 / paid_ever >= cfg["refund_rate_pct"]):
                 rate = round(refunded * 100.0 / paid_ever)
                 hits.append(f"退款率 {rate}%（退款 {refunded}/已付 {paid_ever}，阈值 {cfg['refund_rate_pct']}%）")
+                hit_types.append("refund_rate")
             if cfg["quick_count"] > 0 and quick >= cfg["quick_count"]:
                 hits.append(f"支付后 {qm} 分钟内退款 {quick} 次（阈值 {cfg['quick_count']}）")
+                hit_types.append("quick")
             if not hits:
                 continue
             ent = self.get_user_entitlement(uname) or {}
@@ -2613,6 +2617,7 @@ class Database:
                 "quick_refunds": quick,
                 "refunds_recent": recent,
                 "hits": hits,
+                "hit_types": hit_types,
                 "is_banned": bool(ent.get("is_banned")),
                 "ban_reason": ent.get("ban_reason") or "",
             })
@@ -6562,7 +6567,7 @@ class Database:
             result["overview"]["custom_model_users"] = custom_users
             result["overview"]["custom_model_calls"] = custom_calls
             result["overview"]["custom_user_rate"] = round(custom_users * 100.0 / max(active_users, 1), 1)
-            # 自有模型 TOP 用户
+            # 自有模型 TOP 用户：首屏只取第一页 10 条，翻页走 /admin/user-analysis/list
             result["custom_model_top_users"] = self.fetchall(
                 f"""SELECT a.username, COUNT(*) AS calls,
                            u.created_at, u.last_login_at
@@ -6570,7 +6575,7 @@ class Database:
                     LEFT JOIN users u ON u.username = a.username
                     WHERE a.provider_key = {ph}
                       AND DATE(a.created_at) >= {ph} AND DATE(a.created_at) <= {ph}
-                    GROUP BY a.username ORDER BY calls DESC LIMIT 20""",
+                    GROUP BY a.username ORDER BY calls DESC, a.username ASC LIMIT 10""",
                 ("custom", date_from, date_to)
             ) or []
         except Exception as e:
@@ -6628,14 +6633,81 @@ class Database:
             print(f"[用户分析] 地域分布统计失败: {e}", flush=True)
             result["geo"] = {}
 
+        # 回归老用户：首屏只取第一页 10 条，翻页走 /admin/user-analysis/list
         result["returning_users"] = self.fetchall(
             f"""SELECT username, created_at, last_login_at FROM users
                 WHERE DATE(created_at) < {ph} AND last_login_at IS NOT NULL
                   AND DATE(last_login_at) >= {ph} AND DATE(last_login_at) <= {ph}
-                ORDER BY last_login_at DESC LIMIT 20""",
+                ORDER BY last_login_at DESC, username ASC LIMIT 10""",
             (date_from, date_from, date_to)
         ) or []
         return result
+
+    def _user_analysis_range(self, date_from, date_to):
+        if not date_from:
+            date_from = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+        if not date_to:
+            date_to = datetime.now().strftime("%Y-%m-%d")
+        return date_from, date_to
+
+    def get_returning_users(self, date_from="", date_to="", page=1, page_size=10):
+        """回归老用户查询：区间内重新登录的老用户（注册时间早于区间起点）"""
+        ph = _ph()
+        date_from, date_to = self._user_analysis_range(date_from, date_to)
+        page = max(1, int(page or 1))
+        page_size = max(1, min(100, int(page_size or 10)))
+        offset = (page - 1) * page_size
+        where = (f"DATE(created_at) < {ph} AND last_login_at IS NOT NULL "
+                 f"AND DATE(last_login_at) >= {ph} AND DATE(last_login_at) <= {ph}")
+        row = self.fetchone(f"SELECT COUNT(*) AS c FROM users WHERE {where}",
+                            (date_from, date_from, date_to)) or {}
+        total = int(row.get("c") or 0)
+        rows = self.fetchall(
+            f"""SELECT username, created_at, last_login_at FROM users
+                WHERE {where}
+                ORDER BY last_login_at DESC, username ASC LIMIT {ph} OFFSET {ph}""",
+            (date_from, date_from, date_to, page_size, offset)
+        ) or []
+        return {
+            "rows": rows,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size if total else 0,
+        }
+
+    def get_custom_model_users(self, date_from="", date_to="", page=1, page_size=10):
+        """自有模型答题用户明细：按调用次数排名分页"""
+        ph = _ph()
+        date_from, date_to = self._user_analysis_range(date_from, date_to)
+        page = max(1, int(page or 1))
+        page_size = max(1, min(100, int(page_size or 10)))
+        offset = (page - 1) * page_size
+        row = self.fetchone(
+            f"""SELECT COUNT(DISTINCT username) AS c FROM ai_call_logs
+                WHERE provider_key = {ph}
+                  AND DATE(created_at) >= {ph} AND DATE(created_at) <= {ph}""",
+            ("custom", date_from, date_to)
+        ) or {}
+        total = int(row.get("c") or 0)
+        rows = self.fetchall(
+            f"""SELECT a.username, COUNT(*) AS calls,
+                       u.created_at, u.last_login_at
+                FROM ai_call_logs a
+                LEFT JOIN users u ON u.username = a.username
+                WHERE a.provider_key = {ph}
+                  AND DATE(a.created_at) >= {ph} AND DATE(a.created_at) <= {ph}
+                GROUP BY a.username ORDER BY calls DESC, a.username ASC
+                LIMIT {ph} OFFSET {ph}""",
+            ("custom", date_from, date_to, page_size, offset)
+        ) or []
+        return {
+            "rows": rows,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size if total else 0,
+        }
 
     def get_old_user_recharge_details(self, date_from="", date_to="", page=1, page_size=15):
         """老用户充值明细：查询指定区间内老用户的已支付订单"""
@@ -7567,10 +7639,35 @@ class Database:
         ph = _ph()
         return self.fetchall(f"SELECT * FROM withdrawals WHERE username = {ph} ORDER BY created_at DESC LIMIT {ph}", (username, limit))
 
-    def list_admin_withdrawals(self, status=None, limit=200):
+    def list_admin_withdrawals(self, status=None, keyword="", page=1, page_size=10):
+        """后台提现列表：按状态与用户名筛选并分页"""
+        ph = _ph()
+        page = max(1, int(page or 1))
+        page_size = max(1, min(100, int(page_size or 10)))
+        offset = (page - 1) * page_size
+        where = []
+        params = []
         if status:
-            return self.fetchall("SELECT * FROM withdrawals WHERE status=%s ORDER BY created_at DESC LIMIT %s", (status, limit))
-        return self.fetchall("SELECT * FROM withdrawals ORDER BY created_at DESC LIMIT %s", (limit,))
+            where.append(f"status = {ph}")
+            params.append(status)
+        keyword = (keyword or "").strip()
+        if keyword:
+            where.append(f"username LIKE {ph}")
+            params.append(f"%{keyword}%")
+        where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+        total_row = self.fetchone(f"SELECT COUNT(*) AS cnt FROM withdrawals{where_sql}", tuple(params)) or {}
+        total = int(total_row.get("cnt") or 0)
+        rows = self.fetchall(
+            f"SELECT * FROM withdrawals{where_sql} ORDER BY created_at DESC LIMIT {ph} OFFSET {ph}",
+            tuple(params) + (page_size, offset)
+        ) or []
+        return {
+            "rows": rows,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size if total else 0,
+        }
 
     def get_withdrawal(self, wid):
         ph = _ph()
@@ -7910,10 +8007,24 @@ class Database:
             "pending_count": int(pending.get("cnt") or 0)
         }
 
-    def get_referral_details(self, inviter_username, limit=200):
-        """查看某个推广人邀请的所有用户明细，含充值金额和佣金"""
+    def get_referral_details(self, inviter_username, page=1, page_size=10, keyword=""):
+        """查看某个推广人邀请的用户明细，含充值金额和佣金；支持搜索被邀请人与分页"""
         ph = _ph()
+        page = max(1, int(page or 1))
+        page_size = max(1, min(100, int(page_size or 10)))
+        offset = (page - 1) * page_size
+        keyword = (keyword or "").strip()
         self.settle_pending_commissions(inviter_username)
+        where_extra = ""
+        extra_params = []
+        if keyword:
+            where_extra = f" AND r.invitee_username LIKE {ph}"
+            extra_params.append(f"%{keyword}%")
+        total_row = self.fetchone(
+            f"SELECT COUNT(*) AS cnt FROM referrals r WHERE r.inviter_username = {ph}{where_extra}",
+            (inviter_username, *extra_params)
+        ) or {}
+        total = int(total_row.get("cnt") or 0)
         rows = self.fetchall(
             f"""SELECT r.invitee_username, r.created_at AS referred_at,
                        COALESCE(po.total_paid, 0) AS total_recharge,
@@ -7926,10 +8037,10 @@ class Database:
                     GROUP BY username
                 ) po ON po.username = r.invitee_username
                 LEFT JOIN commission_logs cl ON cl.invitee = r.invitee_username AND cl.inviter = r.inviter_username
-                WHERE r.inviter_username = {ph}
+                WHERE r.inviter_username = {ph}{where_extra}
                 ORDER BY r.created_at DESC
-                LIMIT {ph}""",
-            (inviter_username, limit)
+                LIMIT {ph} OFFSET {ph}""",
+            (inviter_username, *extra_params, page_size, offset)
         )
         result = []
         for row in (rows or []):
@@ -7942,7 +8053,13 @@ class Database:
                 "order_no": row.get("order_no") or "",
                 "order_amount": float(row.get("order_amount") or 0)
             })
-        return result
+        return {
+            "rows": result,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size if total else 0,
+        }
 
     def get_commission_ledger(self, username, limit=200):
         """某个推广人的佣金去向：提现、兑换题数、下单抵扣（区分包月/题数/自有模型）。"""
@@ -8044,30 +8161,59 @@ class Database:
             "events": events
         }
 
-    def get_all_referrers(self, page=1, per_page=20):
-        """分页获取所有推广人及其推广统计"""
+    def get_all_referrers(self, page=1, per_page=20, keyword="", min_invited=0, sort="invited"):
+        """分页获取推广人及其推广统计，支持用户名搜索、最少推广人数与排序"""
         ph = _ph()
-        offset = (max(1, page) - 1) * per_page
-        for r in (self.fetchall(f"SELECT DISTINCT inviter_username FROM referrals LIMIT {ph} OFFSET {ph}", (per_page, offset)) or []):
-            self.settle_pending_commissions(r["inviter_username"])
-        rows = self.fetchall(
-            f"""SELECT r.inviter_username AS username,
+        page = max(1, int(page or 1))
+        per_page = max(1, min(100, int(per_page or 20)))
+        offset = (page - 1) * per_page
+        keyword = (keyword or "").strip()
+        min_invited = max(0, int(min_invited or 0))
+        # 过滤条件套在最内层，外层聚合与总数统计共用同一口径
+        inner_where = ""
+        inner_params = []
+        if keyword:
+            inner_where = f"WHERE inviter_username LIKE {ph}"
+            inner_params.append(f"%{keyword}%")
+        having = ""
+        having_params = []
+        if min_invited > 0:
+            having = f"HAVING invited_count >= {ph}"
+            having_params.append(min_invited)
+        order_map = {
+            "invited": "invited_count DESC, total_commission DESC, username ASC",
+            "commission": "total_commission DESC, invited_count DESC, username ASC",
+            "pending": "pending_commission DESC, invited_count DESC, username ASC",
+        }
+        order_by = order_map.get(sort, order_map["invited"])
+        page_sql = f"""SELECT r.inviter_username AS username,
                        r.invited_count AS invited_count,
                        COALESCE(c.total_commission, 0) AS total_commission,
                        COALESCE(c.paid_commission, 0) AS paid_commission,
                        COALESCE(c.pending_commission, 0) AS pending_commission
                 FROM (SELECT inviter_username, COUNT(DISTINCT invitee_username) AS invited_count
-                      FROM referrals GROUP BY inviter_username) r
+                      FROM referrals {inner_where} GROUP BY inviter_username {having}) r
                 LEFT JOIN (SELECT inviter,
                                   SUM(CASE WHEN status != 'refunded' THEN commission_amount ELSE 0 END) AS total_commission,
                                   SUM(CASE WHEN status = 'paid' THEN commission_amount ELSE 0 END) AS paid_commission,
                                   SUM(CASE WHEN status = 'pending' THEN commission_amount ELSE 0 END) AS pending_commission
                            FROM commission_logs GROUP BY inviter) c ON c.inviter = r.inviter_username
-                ORDER BY invited_count DESC, total_commission DESC
-                LIMIT {ph} OFFSET {ph}""",
-            (per_page, offset)
-        )
-        total_row = self.fetchone("SELECT COUNT(DISTINCT inviter_username) AS cnt FROM referrals") or {}
+                ORDER BY {order_by}
+                LIMIT {ph} OFFSET {ph}"""
+        page_params = tuple(inner_params + having_params + [per_page, offset])
+        rows = self.fetchall(page_sql, page_params)
+        # 先按本页用户结算冷却期已过的佣金，再取一次数字，保证金额与余额一致
+        for r in (rows or []):
+            self.settle_pending_commissions(r["username"])
+        if rows:
+            rows = self.fetchall(page_sql, page_params)
+        total_row = self.fetchone(
+            f"""SELECT COUNT(*) AS cnt FROM (
+                    SELECT inviter_username, COUNT(DISTINCT invitee_username) AS invited_count
+                    FROM referrals {inner_where} GROUP BY inviter_username {having}
+                ) t""",
+            tuple(inner_params + having_params)
+        ) or {}
         total = int(total_row.get("cnt") or 0)
         result = []
         for row in (rows or []):
@@ -8078,7 +8224,8 @@ class Database:
                 "paid_commission": float(row.get("paid_commission") or 0),
                 "pending_commission": float(row.get("pending_commission") or 0)
             })
-        return {"list": result, "total": total, "page": page, "per_page": per_page}
+        return {"list": result, "total": total, "page": page, "per_page": per_page,
+                "total_pages": (total + per_page - 1) // per_page if total else 0}
 
     # ==================== 管理员会话持久化 ====================
     def save_admin_session(self, token, username, expires_at):

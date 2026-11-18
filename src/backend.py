@@ -10382,7 +10382,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, result)
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
-        elif path.startswith("/admin/users"):
+        elif path == "/admin/users":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
@@ -10393,6 +10393,15 @@ class Handler(BaseHTTPRequestHandler):
                 banned = (query_params.get("banned", [""])[0] or "").strip()
                 sort_by = (query_params.get("sort_by", ["created_at"])[0] or "created_at").strip()
                 sort_order = (query_params.get("sort_order", ["desc"])[0] or "desc").strip().lower()
+                try:
+                    page = max(1, int(query_params.get("page", ["1"])[0] or 1))
+                except Exception:
+                    page = 1
+                try:
+                    page_size = max(1, min(100, int(query_params.get("page_size", ["10"])[0] or 10)))
+                except Exception:
+                    page_size = 10
+                offset = (page - 1) * page_size
                 # 白名单校验排序字段
                 allowed_sort = {"created_at", "last_login_at", "id", "username", "points_balance", "register_ip", "last_login_ip", "paid_amount"}
                 if sort_by not in allowed_sort:
@@ -10441,8 +10450,13 @@ class Handler(BaseHTTPRequestHandler):
                     where_list.append("(u.is_banned = 0 OR u.is_banned IS NULL)")
                 if where_list:
                     sql += " WHERE " + " AND ".join(where_list)
-                sql += f" ORDER BY {sort_expr} LIMIT 500"
-                users_list = db.fetchall(sql, tuple(params_list)) if params_list else db.fetchall(sql)
+                count_sql = "SELECT COUNT(*) AS cnt FROM users u" + (" WHERE " + " AND ".join(where_list) if where_list else "")
+                total_row = db.fetchone(count_sql, tuple(params_list)) if params_list else db.fetchone(count_sql)
+                total = int((total_row or {}).get("cnt") or 0)
+                total_pages = (total + page_size - 1) // page_size if total else 0
+                sql += f" ORDER BY {sort_expr} LIMIT %s OFFSET %s"
+                page_params = tuple(params_list) + (page_size, offset)
+                users_list = db.fetchall(sql, page_params)
                 # 给前端一个当前最新脚本版本，用来把「旧版本」标黄
                 latest_script_version = ""
                 try:
@@ -10452,6 +10466,8 @@ class Handler(BaseHTTPRequestHandler):
                 except (OSError, ValueError):
                     latest_script_version = ""
                 self._send_json(200, {"code": 200, "users": users_list,
+                                      "total": total, "page": page, "page_size": page_size,
+                                      "total_pages": total_pages,
                                       "latest_script_version": latest_script_version})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
@@ -10466,17 +10482,32 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json(400, {"code": 400, "msg": "请提供 IP"})
                     return
                 # 注册IP 或 登录IP 命中都算，用于排查同人多开
+                try:
+                    page = max(1, int(qs.get("page", ["1"])[0] or 1))
+                except Exception:
+                    page = 1
+                try:
+                    page_size = max(1, min(100, int(qs.get("page_size", ["10"])[0] or 10)))
+                except Exception:
+                    page_size = 10
+                total_row = db.fetchone(
+                    "SELECT COUNT(*) AS cnt FROM users WHERE register_ip = %s OR last_login_ip = %s",
+                    (ip, ip)
+                ) or {}
+                total = int(total_row.get("cnt") or 0)
                 rows = db.fetchall(
                     "SELECT id, username, email, is_banned, created_at, last_login_at, "
                     "register_ip, register_ip_addr, last_login_ip, last_login_ip_addr "
                     "FROM users WHERE register_ip = %s OR last_login_ip = %s "
-                    "ORDER BY created_at ASC LIMIT 500",
-                    (ip, ip)
+                    "ORDER BY created_at ASC LIMIT %s OFFSET %s",
+                    (ip, ip, page_size, (page - 1) * page_size)
                 )
                 for r in rows:
                     r["created_at"] = str(r.get("created_at") or "")
                     r["last_login_at"] = str(r.get("last_login_at") or "") if r.get("last_login_at") else ""
-                self._send_json(200, {"code": 200, "ip": ip, "users": rows})
+                self._send_json(200, {"code": 200, "ip": ip, "users": rows,
+                                      "total": total, "page": page, "page_size": page_size,
+                                      "total_pages": (total + page_size - 1) // page_size if total else 0})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/login-locks":
@@ -10557,6 +10588,30 @@ class Handler(BaseHTTPRequestHandler):
                 date_to = qs.get("date_to", [""])[0]
                 stats = db.get_user_analysis(date_from=date_from, date_to=date_to)
                 self._send_json(200, {"code": 200, "stats": stats})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/user-analysis/list":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                date_from = qs.get("date_from", [""])[0]
+                date_to = qs.get("date_to", [""])[0]
+                list_type = (qs.get("list", ["returning"])[0] or "returning").strip()
+                page = int(qs.get("page", ["1"])[0] or 1)
+                page_size = int(qs.get("page_size", ["10"])[0] or 10)
+                if list_type == "custom":
+                    result = db.get_custom_model_users(date_from=date_from, date_to=date_to,
+                                                       page=page, page_size=page_size)
+                else:
+                    result = db.get_returning_users(date_from=date_from, date_to=date_to,
+                                                    page=page, page_size=page_size)
+                for r in result["rows"]:
+                    r["created_at"] = str(r.get("created_at") or "")
+                    if r.get("last_login_at"):
+                        r["last_login_at"] = str(r.get("last_login_at") or "")
+                self._send_json(200, {"code": 200, "data": result})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/old-user-recharge-details":
@@ -10863,8 +10918,23 @@ class Handler(BaseHTTPRequestHandler):
                 return
             qs = parse_qs(parsed.query)
             status = qs.get("status", [""])[0]
-            rows = db.list_admin_withdrawals(status if status in ("pending", "approved", "rejected") else None)
-            self._send_json(200, {"code": 200, "withdrawals": rows, "summary": db.withdrawal_summary()})
+            keyword = (qs.get("username", [""])[0] or "").strip()
+            try:
+                page = max(1, int(qs.get("page", ["1"])[0] or 1))
+            except Exception:
+                page = 1
+            try:
+                page_size = max(1, min(100, int(qs.get("page_size", ["10"])[0] or 10)))
+            except Exception:
+                page_size = 10
+            result = db.list_admin_withdrawals(
+                status if status in ("pending", "approved", "rejected") else None,
+                keyword=keyword, page=page, page_size=page_size
+            )
+            self._send_json(200, {"code": 200, "withdrawals": result["rows"],
+                                  "total": result["total"], "page": result["page"],
+                                  "page_size": result["page_size"], "total_pages": result["total_pages"],
+                                  "summary": db.withdrawal_summary()})
         elif path == "/admin/referral/stats":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -10891,8 +10961,19 @@ class Handler(BaseHTTPRequestHandler):
             if not username:
                 self._send_json(400, {"code": 400, "msg": "缺少 username 参数"})
                 return
-            details = db.get_referral_details(username)
-            self._send_json(200, {"code": 200, "details": details, "username": username})
+            keyword = (qs.get("keyword", [""])[0] or "").strip()
+            try:
+                page = max(1, int(qs.get("page", ["1"])[0] or 1))
+            except Exception:
+                page = 1
+            try:
+                page_size = max(1, min(100, int(qs.get("page_size", ["10"])[0] or 10)))
+            except Exception:
+                page_size = 10
+            result = db.get_referral_details(username, page=page, page_size=page_size, keyword=keyword)
+            self._send_json(200, {"code": 200, "details": result["rows"], "username": username,
+                                  "total": result["total"], "page": result["page"],
+                                  "page_size": result["page_size"], "total_pages": result["total_pages"]})
 
         elif path == "/admin/referral/referrers":
             if not self._check_admin():
@@ -10901,7 +10982,14 @@ class Handler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             page = int(qs.get("page", ["1"])[0] or "1")
             per_page = int(qs.get("per_page", ["20"])[0] or "20")
-            data = db.get_all_referrers(page=page, per_page=per_page)
+            keyword = qs.get("keyword", [""])[0]
+            try:
+                min_invited = int(qs.get("min_invited", ["0"])[0] or 0)
+            except Exception:
+                min_invited = 0
+            sort = qs.get("sort", ["invited"])[0] or "invited"
+            data = db.get_all_referrers(page=page, per_page=per_page, keyword=keyword,
+                                       min_invited=min_invited, sort=sort)
             self._send_json(200, {"code": 200, "data": data})
 
         # ==================== 支付明细管理 ====================
@@ -12638,6 +12726,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
             try:
+                try:
+                    req = json.loads(body or "{}")
+                except Exception:
+                    req = {}
+                keyword = str(req.get("keyword") or "").strip().lower()
+                status_filter = str(req.get("status") or "all").strip()
+                rule_filter = str(req.get("rule") or "all").strip()
+                page = max(1, int(req.get("page") or 1))
+                page_size = max(1, min(100, int(req.get("page_size") or 10)))
                 cfg, users = db.get_risk_users()
                 banned_now = 0
                 # 自动封仅在总开关开启时生效；默认关＝只回名单，等人工一键封
@@ -12649,9 +12746,27 @@ class Handler(BaseHTTPRequestHandler):
                             u["is_banned"] = True
                             u["ban_reason"] = reason
                             banned_now += 1
+                # 名单筛选：用户名、状态（风险/已封禁）、命中规则
+                def _keep(u):
+                    if keyword and keyword not in str(u.get("username") or "").lower():
+                        return False
+                    if status_filter == "banned" and not u.get("is_banned"):
+                        return False
+                    if status_filter == "risk" and u.get("is_banned"):
+                        return False
+                    if rule_filter != "all" and rule_filter not in (u.get("hit_types") or []):
+                        return False
+                    return True
+                filtered = [u for u in users if _keep(u)]
+                total = len(filtered)
+                total_pages = (total + page_size - 1) // page_size if total else 0
+                start = (page - 1) * page_size
+                page_users = filtered[start:start + page_size]
                 self._send_json(200, {
                     "code": 200, "enabled": cfg["enabled"], "auto_ban": cfg["auto_ban"],
-                    "users": users, "banned_now": banned_now,
+                    "users": page_users, "banned_now": banned_now,
+                    "total": total, "page": page, "page_size": page_size,
+                    "total_pages": total_pages,
                 })
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})

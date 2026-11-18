@@ -2967,7 +2967,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
             <div class="card-header">
               <h3>同 IP 账号 — <span style="font-family:monospace;color:var(--accent2)">{{ipSearch}}</span></h3>
               <div style="display:flex;gap:8px;align-items:center">
-                <span v-if="!ipSearchLoading" style="font-size:12px;color:var(--text3)">共 {{ipSearchList.length}} 个账号</span>
+                <span v-if="!ipSearchLoading" style="font-size:12px;color:var(--text3)">共 {{ipSearchTotal}} 个账号</span>
                 <button class="btn btn-secondary btn-sm" @click="loadUsersByIp(ipSearch)">刷新</button>
                 <button class="btn btn-secondary btn-sm" @click="ipSearch='';ipSearchList=[]">关闭</button>
               </div>
@@ -3014,19 +3014,24 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                   </tbody>
                 </table>
               </div>
+              <div v-if="ipSearchTotalPages>1" style="display:flex;justify-content:center;align-items:center;gap:10px;padding:12px 0">
+                <button class="btn btn-secondary btn-sm" :disabled="ipSearchPage<=1" @click="loadUsersByIp(ipSearch,ipSearchPage-1)">上一页</button>
+                <span style="font-size:12px;color:var(--text3)">第 {{ipSearchPage}} / {{ipSearchTotalPages}} 页</span>
+                <button class="btn btn-secondary btn-sm" :disabled="ipSearchPage>=ipSearchTotalPages" @click="loadUsersByIp(ipSearch,ipSearchPage+1)">下一页</button>
+              </div>
             </div>
           </div>
           <div class="card">
             <div class="card-header">
-              <h3>注册用户列表</h3>
+              <h3>注册用户列表 <span style="color:var(--text3);font-size:13px;font-weight:400">（共 {{userTotal}} 人，每页 {{userPageSize}} 条）</span></h3>
               <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                <input v-model="userSearch" placeholder="搜索用户名/邮箱" style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:13px;width:200px" @keyup.enter="loadUsers()">
-                <select v-model="userBanFilter" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:13px" @change="loadUsers()">
+                <input v-model="userSearch" placeholder="搜索用户名/邮箱" style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:13px;width:200px" @keyup.enter="loadUsers(1)">
+                <select v-model="userBanFilter" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:13px" @change="loadUsers(1)">
                   <option value="">全部状态</option>
                   <option value="0">正常用户</option>
                   <option value="1">已封禁</option>
                 </select>
-                <select v-model="userSortBy" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:13px" @change="loadUsers()">
+                <select v-model="userSortBy" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:13px" @change="loadUsers(1)">
                   <option value="created_at">注册时间</option>
                   <option value="last_login_at">最近登录</option>
                   <option value="id">ID</option>
@@ -3036,11 +3041,11 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                   <option value="register_ip">注册IP</option>
                   <option value="last_login_ip">登录IP</option>
                 </select>
-                <select v-model="userSortOrder" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:13px" @change="loadUsers()">
+                <select v-model="userSortOrder" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:13px" @change="loadUsers(1)">
                   <option value="desc">降序</option>
                   <option value="asc">升序</option>
                 </select>
-                <button class="btn btn-primary btn-sm" @click="loadUsers()">搜索</button>
+                <button class="btn btn-primary btn-sm" @click="loadUsers(1)">搜索</button>
                 <button class="btn btn-secondary btn-sm" @click="resetUserSearch">重置</button>
                 <button class="btn btn-secondary btn-sm" @click="loadUsers">刷新</button>
                 <button class="btn btn-secondary btn-sm" @click="exportUsersCsv">导出 CSV</button>
@@ -3127,6 +3132,11 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                     </tr>
                   </tbody>
                 </table>
+              </div>
+              <div v-if="userTotalPages>1" style="display:flex;justify-content:center;align-items:center;gap:10px;padding:14px 20px;border-top:1px solid var(--border)">
+                <button class="btn btn-secondary btn-sm" :disabled="userPage<=1" @click="loadUsers(userPage-1)">上一页</button>
+                <span style="font-size:13px;color:var(--text3)">第 {{userPage}} / {{userTotalPages}} 页</span>
+                <button class="btn btn-secondary btn-sm" :disabled="userPage>=userTotalPages" @click="loadUsers(userPage+1)">下一页</button>
               </div>
             </div>
           </div>
@@ -6012,7 +6022,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
             </div>
 
             <div class="card">
-              <div class="card-header"><h3><svg class="ui-icon sm"><use href="#i-user-check"></use></svg> 回归老用户明细（区间内重新登录的老用户 TOP 20）</h3></div>
+              <div class="card-header"><h3><svg class="ui-icon sm"><use href="#i-user-check"></use></svg> 回归老用户明细（区间内重新登录的老用户，每页 10 条）</h3></div>
               <div class="card-body" style="padding:8px 20px 20px">
                 <table style="width:100%;border-collapse:collapse;font-size:12px">
                   <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left"><th style="padding:8px">用户</th><th style="padding:8px">注册时间</th><th style="padding:8px">最近登录</th></tr></thead>
@@ -6026,16 +6036,21 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                   </tbody>
                 </table>
               </div>
+              <div v-if="returningUsersTotalPages>1" style="display:flex;justify-content:center;align-items:center;gap:8px;padding:12px 20px;border-top:1px solid var(--border)">
+                <button class="btn btn-secondary" style="padding:4px 12px" :disabled="returningUsersLoading||returningUsersPage<=1" @click="loadReturningUsersPage(returningUsersPage-1)">上一页</button>
+                <span style="font-size:13px;color:var(--text3)">{{returningUsersPage}} / {{returningUsersTotalPages}}</span>
+                <button class="btn btn-secondary" style="padding:4px 12px" :disabled="returningUsersLoading||returningUsersPage>=returningUsersTotalPages" @click="loadReturningUsersPage(returningUsersPage+1)">下一页</button>
+              </div>
             </div>
 
             <div class="card">
-              <div class="card-header"><h3><svg class="ui-icon sm"><use href="#i-bot"></use></svg> 自有模型答题用户 TOP 20</h3></div>
+              <div class="card-header"><h3><svg class="ui-icon sm"><use href="#i-bot"></use></svg> 自有模型答题用户（按答题次数排名，每页 10 条）</h3></div>
               <div class="card-body" style="padding:8px 20px 20px">
                 <table style="width:100%;border-collapse:collapse;font-size:12px">
                   <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left"><th style="padding:8px">排名</th><th style="padding:8px">用户</th><th style="padding:8px">答题次数</th><th style="padding:8px">注册时间</th><th style="padding:8px">最近登录</th></tr></thead>
                   <tbody>
                     <tr v-for="(u,idx) in userAnalysis.custom_model_top_users" :key="u.username" style="border-bottom:1px solid var(--border)">
-                      <td style="padding:8px;color:var(--text3);font-weight:600">{{idx+1}}</td>
+                      <td style="padding:8px;color:var(--text3);font-weight:600">{{(customUsersPage-1)*10+idx+1}}</td>
                       <td style="padding:8px;color:var(--accent2);cursor:pointer;text-decoration:underline" @click="gotoUserSearch(u.username)">{{u.username}}</td>
                       <td style="padding:8px;color:#a855f7;font-weight:600">{{u.calls}}</td>
                       <td style="padding:8px;color:var(--text3);white-space:nowrap">{{u.created_at?String(u.created_at).substring(0,10):'-'}}</td>
@@ -6044,6 +6059,11 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                     <tr v-if="!userAnalysis.custom_model_top_users.length"><td colspan="5" style="padding:24px;text-align:center;color:var(--text3)">区间内暂无自有模型答题记录</td></tr>
                   </tbody>
                 </table>
+              </div>
+              <div v-if="customUsersTotalPages>1" style="display:flex;justify-content:center;align-items:center;gap:8px;padding:12px 20px;border-top:1px solid var(--border)">
+                <button class="btn btn-secondary" style="padding:4px 12px" :disabled="customUsersLoading||customUsersPage<=1" @click="loadCustomModelUsersPage(customUsersPage-1)">上一页</button>
+                <span style="font-size:13px;color:var(--text3)">{{customUsersPage}} / {{customUsersTotalPages}}</span>
+                <button class="btn btn-secondary" style="padding:4px 12px" :disabled="customUsersLoading||customUsersPage>=customUsersTotalPages" @click="loadCustomModelUsersPage(customUsersPage+1)">下一页</button>
               </div>
             </div>
           </template>
@@ -6111,7 +6131,26 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
         </div>
         <div class="card">
           <div class="card-header">
-            <h3>风险用户名单 <span style="color:var(--text3);font-size:13px;font-weight:400">（{{riskUsers.length}} 人）</span></h3>
+            <h3>风险用户名单 <span style="color:var(--text3);font-size:13px;font-weight:400">（共 {{riskTotal}} 人，每页 10 条）</span></h3>
+          </div>
+          <div class="card-body" style="padding:14px 20px 6px">
+            <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+              <input v-model="riskFilter.keyword" @keyup.enter="scanRisk(1)" placeholder="搜索用户名" style="width:200px;padding:8px 10px;font-size:13px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px">
+              <select v-model="riskFilter.status" @change="scanRisk(1)" style="padding:8px 10px;font-size:13px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px">
+                <option value="all">全部状态</option>
+                <option value="risk">仅风险（未封禁）</option>
+                <option value="banned">仅已封禁</option>
+              </select>
+              <select v-model="riskFilter.rule" @change="scanRisk(1)" style="padding:8px 10px;font-size:13px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px">
+                <option value="all">全部命中规则</option>
+                <option value="refund_count">近期退款次数</option>
+                <option value="refund_rate">退款率</option>
+                <option value="quick">短时退款</option>
+              </select>
+              <button class="btn btn-primary btn-sm" :disabled="riskScanning" @click="scanRisk(1)">查询</button>
+              <button class="btn btn-secondary btn-sm" @click="resetRiskFilter">重置</button>
+              <span v-if="riskScanning" style="font-size:12px;color:var(--accent2)">扫描中...</span>
+            </div>
           </div>
           <div class="card-body" style="overflow-x:auto">
             <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:760px">
@@ -6142,9 +6181,14 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                     <button class="btn btn-secondary btn-sm" @click="riskAddWhitelist(u)">加白名单</button>
                   </td>
                 </tr>
-                <tr v-if="!riskUsers.length"><td colspan="7" style="text-align:center;padding:28px;color:var(--text3)">{{riskScanning?'正在扫描…':'暂无命中风控规则的用户'}}</td></tr>
+                <tr v-if="!riskUsers.length"><td colspan="7" style="text-align:center;padding:28px;color:var(--text3)">{{riskScanning?'正在扫描…':'暂无符合条件的风险用户'}}</td></tr>
               </tbody>
             </table>
+          </div>
+          <div v-if="riskTotalPages>1" style="display:flex;justify-content:center;align-items:center;gap:8px;padding:14px 20px;border-top:1px solid var(--border)">
+            <button class="btn btn-secondary" style="padding:4px 12px" :disabled="riskScanning||riskPage<=1" @click="scanRisk(riskPage-1)">上一页</button>
+            <span style="font-size:13px;color:var(--text3)">第 {{riskPage}} / {{riskTotalPages}} 页</span>
+            <button class="btn btn-secondary" style="padding:4px 12px" :disabled="riskScanning||riskPage>=riskTotalPages" @click="scanRisk(riskPage+1)">下一页</button>
           </div>
         </div>
       </template>
@@ -6463,11 +6507,13 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
           <div v-if="referralTab==='withdrawals'" class="card">
             <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
               <h3>提现申请列表</h3>
-              <div style="display:flex;gap:6px">
-                <button :class="['btn','btn-sm',referralWdFilter===''?'btn-primary':'btn-secondary']" @click="referralWdFilter='';loadReferralWithdrawals()">全部</button>
-                <button :class="['btn','btn-sm',referralWdFilter==='pending'?'btn-primary':'btn-secondary']" @click="referralWdFilter='pending';loadReferralWithdrawals()">待审核</button>
-                <button :class="['btn','btn-sm',referralWdFilter==='approved'?'btn-primary':'btn-secondary']" @click="referralWdFilter='approved';loadReferralWithdrawals()">已通过</button>
-                <button :class="['btn','btn-sm',referralWdFilter==='rejected'?'btn-primary':'btn-secondary']" @click="referralWdFilter='rejected';loadReferralWithdrawals()">已拒绝</button>
+              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+                <input v-model="referralWdKeyword" @keyup.enter="loadReferralWithdrawals(1)" placeholder="搜索用户名" style="width:140px;padding:6px 10px;font-size:13px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px">
+                <button class="btn btn-sm btn-primary" @click="loadReferralWithdrawals(1)">搜索</button>
+                <button :class="['btn','btn-sm',referralWdFilter===''?'btn-primary':'btn-secondary']" @click="referralWdFilter='';loadReferralWithdrawals(1)">全部</button>
+                <button :class="['btn','btn-sm',referralWdFilter==='pending'?'btn-primary':'btn-secondary']" @click="referralWdFilter='pending';loadReferralWithdrawals(1)">待审核</button>
+                <button :class="['btn','btn-sm',referralWdFilter==='approved'?'btn-primary':'btn-secondary']" @click="referralWdFilter='approved';loadReferralWithdrawals(1)">已通过</button>
+                <button :class="['btn','btn-sm',referralWdFilter==='rejected'?'btn-primary':'btn-secondary']" @click="referralWdFilter='rejected';loadReferralWithdrawals(1)">已拒绝</button>
               </div>
             </div>
             <div style="display:flex;gap:16px;padding:12px 20px;background:var(--bg);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center">
@@ -6504,6 +6550,11 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                 </tbody>
               </table>
             </div>
+            <div v-if="referralWdTotalPages>1" style="display:flex;justify-content:center;align-items:center;gap:10px;padding:14px 20px;border-top:1px solid var(--border)">
+              <button class="btn btn-sm btn-secondary" :disabled="referralWdPage<=1" @click="loadReferralWithdrawals(referralWdPage-1)">上一页</button>
+              <span style="font-size:13px;color:var(--text3)">第 {{referralWdPage}} / {{referralWdTotalPages}} 页，共 {{referralWdTotal}} 笔</span>
+              <button class="btn btn-sm btn-secondary" :disabled="referralWdPage>=referralWdTotalPages" @click="loadReferralWithdrawals(referralWdPage+1)">下一页</button>
+            </div>
           </div>
           <!-- 数据统计 -->
           <div v-if="referralTab==='stats'" class="card">
@@ -6539,32 +6590,62 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                   <div style="font-size:11px;color:var(--text3);margin-top:2px">包月 ¥{{Number(referralStats.deduct_monthly||0).toFixed(2)}} · 题数 ¥{{Number(referralStats.deduct_points||0).toFixed(2)}}<span v-if="Number(referralStats.deduct_custom||0)>0"> · 自有模型 ¥{{Number(referralStats.deduct_custom).toFixed(2)}}</span></div>
                 </div>
               </div>
-              <h4 style="margin:0 0 12px">推广用户排名（Top 10）</h4>
-              <table class="data-table" style="width:100%;font-size:13px;border-collapse:collapse">
-                <thead><tr style="text-align:left;color:var(--text3)"><th style="padding:8px 10px">排名</th><th style="padding:8px 10px">用户名</th><th style="padding:8px 10px">推广人数</th><th style="padding:8px 10px">累计返利</th><th style="padding:8px 10px">操作</th></tr></thead>
-                <tbody>
-                  <tr v-if="!referralStats.top10||!referralStats.top10.length"><td colspan="5" style="padding:24px;text-align:center;color:var(--text3)">暂无数据</td></tr>
-                  <tr v-for="(r,i) in referralStats.top10" :key="r.username" style="border-top:1px solid var(--border)">
-                    <td style="padding:8px 10px">{{i+1}}</td><td style="padding:8px 10px">{{r.username}}</td><td style="padding:8px 10px">{{r.invited_count}}</td><td style="padding:8px 10px;font-weight:600">¥{{Number(r.total_commission).toFixed(2)}}</td><td style="padding:8px 10px"><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-sm btn-secondary" @click="viewReferralDetail(r.username)">查看明细</button><button class="btn btn-sm btn-secondary" @click="viewCommissionLedger(r.username)">佣金去向</button></div></td>
-                  </tr>
-                </tbody>
-              </table>
-              <div style="margin-top:20px;display:flex;align-items:center;gap:12px">
-                <h4 style="margin:0">全部推广人</h4>
-                <button class="btn btn-sm btn-secondary" @click="loadAllReferrers(1)">加载列表</button>
-                <span v-if="referralAllList.total>0" style="font-size:12px;color:var(--text3)">共 {{referralAllList.total}} 人，第 {{referralAllList.page}} / {{Math.ceil(referralAllList.total/referralAllList.per_page)}} 页</span>
+              <h4 style="margin:0 0 12px">推广用户排名 <span style="color:var(--text3);font-size:12px;font-weight:400">（共 {{referralRankList.total}} 人，每页 10 条）</span></h4>
+              <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px">
+                <input v-model="referralRankFilter.keyword" @keyup.enter="loadReferralRanking(1)" placeholder="搜索推广人" style="width:180px;padding:8px 10px;font-size:13px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px">
+                <select v-model="referralRankFilter.sort" @change="loadReferralRanking(1)" style="padding:8px 10px;font-size:13px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px">
+                  <option value="invited">按推广人数</option>
+                  <option value="commission">按累计返利</option>
+                  <option value="pending">按待结算</option>
+                </select>
+                <button class="btn btn-sm btn-primary" @click="loadReferralRanking(1)">查询</button>
+                <button class="btn btn-sm btn-secondary" @click="resetReferralRankFilter">重置</button>
               </div>
-              <table v-if="referralAllList.list.length" class="data-table" style="width:100%;font-size:13px;border-collapse:collapse;margin-top:12px">
-                <thead><tr style="text-align:left;color:var(--text3)"><th style="padding:8px 10px">用户名</th><th style="padding:8px 10px">推广人数</th><th style="padding:8px 10px">累计返利</th><th style="padding:8px 10px">已结算</th><th style="padding:8px 10px">待结算</th><th style="padding:8px 10px">操作</th></tr></thead>
-                <tbody>
-                  <tr v-for="r in referralAllList.list" :key="r.username" style="border-top:1px solid var(--border)">
-                    <td style="padding:8px 10px">{{r.username}}</td><td style="padding:8px 10px">{{r.invited_count}}</td><td style="padding:8px 10px;font-weight:600">¥{{Number(r.total_commission).toFixed(2)}}</td><td style="padding:8px 10px;color:var(--success)">¥{{Number(r.paid_commission).toFixed(2)}}</td><td style="padding:8px 10px;color:var(--warning)">¥{{Number(r.pending_commission).toFixed(2)}}</td><td style="padding:8px 10px"><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-sm btn-secondary" @click="viewReferralDetail(r.username)">查看明细</button><button class="btn btn-sm btn-secondary" @click="viewCommissionLedger(r.username)">佣金去向</button></div></td>
-                  </tr>
-                </tbody>
-              </table>
-              <div v-if="referralAllList.total>referralAllList.per_page" style="margin-top:12px;display:flex;gap:8px;align-items:center">
+              <div style="overflow-x:auto">
+                <table class="data-table" style="width:100%;font-size:13px;border-collapse:collapse">
+                  <thead><tr style="text-align:left;color:var(--text3)"><th style="padding:8px 10px">排名</th><th style="padding:8px 10px">用户名</th><th style="padding:8px 10px">推广人数</th><th style="padding:8px 10px">累计返利</th><th style="padding:8px 10px">操作</th></tr></thead>
+                  <tbody>
+                    <tr v-if="!referralRankList.list.length"><td colspan="5" style="padding:24px;text-align:center;color:var(--text3)">暂无数据</td></tr>
+                    <tr v-for="(r,i) in referralRankList.list" :key="r.username" style="border-top:1px solid var(--border)">
+                      <td style="padding:8px 10px">{{(referralRankList.page-1)*10+i+1}}</td><td style="padding:8px 10px">{{r.username}}</td><td style="padding:8px 10px">{{r.invited_count}}</td><td style="padding:8px 10px;font-weight:600">¥{{Number(r.total_commission).toFixed(2)}}</td><td style="padding:8px 10px"><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-sm btn-secondary" @click="viewReferralDetail(r.username)">查看明细</button><button class="btn btn-sm btn-secondary" @click="viewCommissionLedger(r.username)">佣金去向</button></div></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div v-if="referralRankList.total_pages>1" style="margin-top:12px;display:flex;gap:8px;align-items:center">
+                <button class="btn btn-sm btn-secondary" :disabled="referralRankList.page<=1" @click="loadReferralRanking(referralRankList.page-1)">上一页</button>
+                <span style="font-size:12px;color:var(--text3)">第 {{referralRankList.page}} / {{referralRankList.total_pages}} 页</span>
+                <button class="btn btn-sm btn-secondary" :disabled="referralRankList.page>=referralRankList.total_pages" @click="loadReferralRanking(referralRankList.page+1)">下一页</button>
+              </div>
+              <div style="margin-top:24px;display:flex;align-items:center;gap:12px">
+                <h4 style="margin:0">全部推广人 <span style="color:var(--text3);font-size:12px;font-weight:400">（共 {{referralAllList.total}} 人，每页 10 条）</span></h4>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:12px 0">
+                <input v-model="referralAllFilter.keyword" @keyup.enter="loadAllReferrers(1)" placeholder="搜索推广人" style="width:180px;padding:8px 10px;font-size:13px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px">
+                <input v-model.number="referralAllFilter.min_invited" type="number" min="0" placeholder="最少推广人数" style="width:130px;padding:8px 10px;font-size:13px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px">
+                <select v-model="referralAllFilter.sort" @change="loadAllReferrers(1)" style="padding:8px 10px;font-size:13px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px">
+                  <option value="invited">按推广人数</option>
+                  <option value="commission">按累计返利</option>
+                  <option value="pending">按待结算</option>
+                </select>
+                <button class="btn btn-sm btn-primary" @click="loadAllReferrers(1)">查询</button>
+                <button class="btn btn-sm btn-secondary" @click="resetReferralAllFilter">重置</button>
+              </div>
+              <div style="overflow-x:auto">
+                <table v-if="referralAllList.list.length" class="data-table" style="width:100%;font-size:13px;border-collapse:collapse">
+                  <thead><tr style="text-align:left;color:var(--text3)"><th style="padding:8px 10px">用户名</th><th style="padding:8px 10px">推广人数</th><th style="padding:8px 10px">累计返利</th><th style="padding:8px 10px">已结算</th><th style="padding:8px 10px">待结算</th><th style="padding:8px 10px">操作</th></tr></thead>
+                  <tbody>
+                    <tr v-for="r in referralAllList.list" :key="r.username" style="border-top:1px solid var(--border)">
+                      <td style="padding:8px 10px">{{r.username}}</td><td style="padding:8px 10px">{{r.invited_count}}</td><td style="padding:8px 10px;font-weight:600">¥{{Number(r.total_commission).toFixed(2)}}</td><td style="padding:8px 10px;color:var(--success)">¥{{Number(r.paid_commission).toFixed(2)}}</td><td style="padding:8px 10px;color:var(--warning)">¥{{Number(r.pending_commission).toFixed(2)}}</td><td style="padding:8px 10px"><div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-sm btn-secondary" @click="viewReferralDetail(r.username)">查看明细</button><button class="btn btn-sm btn-secondary" @click="viewCommissionLedger(r.username)">佣金去向</button></div></td>
+                    </tr>
+                  </tbody>
+                </table>
+                <div v-else style="padding:24px;text-align:center;color:var(--text3);font-size:13px">没有符合条件的推广人</div>
+              </div>
+              <div v-if="referralAllList.total_pages>1" style="margin-top:12px;display:flex;gap:8px;align-items:center">
                 <button class="btn btn-sm btn-secondary" :disabled="referralAllList.page<=1" @click="loadAllReferrers(referralAllList.page-1)">上一页</button>
-                <button class="btn btn-sm btn-secondary" :disabled="referralAllList.page>=Math.ceil(referralAllList.total/referralAllList.per_page)" @click="loadAllReferrers(referralAllList.page+1)">下一页</button>
+                <span style="font-size:12px;color:var(--text3)">第 {{referralAllList.page}} / {{referralAllList.total_pages}} 页</span>
+                <button class="btn btn-sm btn-secondary" :disabled="referralAllList.page>=referralAllList.total_pages" @click="loadAllReferrers(referralAllList.page+1)">下一页</button>
               </div>
             </div>
           </div>
@@ -6573,9 +6654,13 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
       <!-- 推广明细弹窗 -->
       <div v-if="referralDetailShow" style="position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:20px" @click.self="referralDetailShow=false">
         <div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;max-width:820px;width:100%;max-height:80vh;display:flex;flex-direction:column;overflow:hidden">
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)">
-            <h3 style="margin:0;font-size:16px">推广明细 - {{referralDetailUsername}}</h3>
-            <button class="btn btn-sm btn-secondary" @click="referralDetailShow=false">关闭</button>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap">
+            <h3 style="margin:0;font-size:16px">推广明细 - {{referralDetailUsername}} <span style="color:var(--text3);font-size:12px;font-weight:400">（共 {{referralDetailTotal}} 人，每页 10 条）</span></h3>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input v-model="referralDetailKeyword" @keyup.enter="loadReferralDetailPage(1)" placeholder="搜索被邀请用户" style="width:160px;padding:6px 10px;font-size:13px;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px">
+              <button class="btn btn-sm btn-primary" @click="loadReferralDetailPage(1)">搜索</button>
+              <button class="btn btn-sm btn-secondary" @click="referralDetailShow=false">关闭</button>
+            </div>
           </div>
           <div style="overflow-y:auto;padding:0 20px 16px;flex:1">
             <table class="data-table" style="width:100%;font-size:13px;border-collapse:collapse;margin-top:12px">
@@ -6593,9 +6678,14 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
               </tbody>
             </table>
             <div v-if="referralDetailList.length" style="margin-top:12px;padding:10px;background:var(--bg);border-radius:8px;font-size:12px;color:var(--text3);display:flex;gap:20px;flex-wrap:wrap">
-              <span>总邀请：{{referralDetailList.length}} 人</span>
-              <span>总充值：¥{{referralDetailList.reduce((s,d)=>s+d.total_recharge,0).toFixed(2)}}</span>
-              <span>总佣金：¥{{referralDetailList.reduce((s,d)=>s+d.commission_amount,0).toFixed(2)}}</span>
+              <span>本页邀请：{{referralDetailList.length}} 人</span>
+              <span>本页充值：¥{{referralDetailList.reduce((s,d)=>s+d.total_recharge,0).toFixed(2)}}</span>
+              <span>本页佣金：¥{{referralDetailList.reduce((s,d)=>s+d.commission_amount,0).toFixed(2)}}</span>
+            </div>
+            <div v-if="referralDetailTotalPages>1" style="display:flex;justify-content:center;align-items:center;gap:10px;margin-top:12px">
+              <button class="btn btn-sm btn-secondary" :disabled="referralDetailPage<=1" @click="loadReferralDetailPage(referralDetailPage-1)">上一页</button>
+              <span style="font-size:12px;color:var(--text3)">第 {{referralDetailPage}} / {{referralDetailTotalPages}} 页</span>
+              <button class="btn btn-sm btn-secondary" :disabled="referralDetailPage>=referralDetailTotalPages" @click="loadReferralDetailPage(referralDetailPage+1)">下一页</button>
             </div>
           </div>
         </div>
@@ -6996,10 +7086,14 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
           <div class="card">
             <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:12px">
               <div class="filter-tab-group">
-                <button :class="['filter-tab',referralWdFilter===''?'active':'']" @click="referralWdFilter='';loadReferralWithdrawals()">全部</button>
-                <button :class="['filter-tab',referralWdFilter==='pending'?'active':'']" @click="referralWdFilter='pending';loadReferralWithdrawals()">待审核</button>
-                <button :class="['filter-tab',referralWdFilter==='approved'?'active':'']" @click="referralWdFilter='approved';loadReferralWithdrawals()">已通过</button>
-                <button :class="['filter-tab',referralWdFilter==='rejected'?'active':'']" @click="referralWdFilter='rejected';loadReferralWithdrawals()">已驳回</button>
+                <button :class="['filter-tab',referralWdFilter===''?'active':'']" @click="referralWdFilter='';loadReferralWithdrawals(1)">全部</button>
+                <button :class="['filter-tab',referralWdFilter==='pending'?'active':'']" @click="referralWdFilter='pending';loadReferralWithdrawals(1)">待审核</button>
+                <button :class="['filter-tab',referralWdFilter==='approved'?'active':'']" @click="referralWdFilter='approved';loadReferralWithdrawals(1)">已通过</button>
+                <button :class="['filter-tab',referralWdFilter==='rejected'?'active':'']" @click="referralWdFilter='rejected';loadReferralWithdrawals(1)">已驳回</button>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <input v-model="referralWdKeyword" @keyup.enter="loadReferralWithdrawals(1)" placeholder="搜索用户名" style="width:150px;padding:6px 10px;font-size:13px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:6px">
+                <button class="btn btn-sm btn-primary" @click="loadReferralWithdrawals(1)">搜索</button>
               </div>
             </div>
             <div style="display:flex;gap:16px;padding:12px 20px;background:var(--bg);border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:center">
@@ -7045,6 +7139,11 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                   </tr>
                 </tbody>
               </table>
+            </div>
+            <div v-if="referralWdTotalPages>1" style="display:flex;justify-content:center;align-items:center;gap:10px;padding:14px 20px;border-top:1px solid var(--border)">
+              <button class="btn btn-sm btn-secondary" :disabled="referralWdPage<=1" @click="loadReferralWithdrawals(referralWdPage-1)">上一页</button>
+              <span style="font-size:13px;color:var(--text3)">第 {{referralWdPage}} / {{referralWdTotalPages}} 页，共 {{referralWdTotal}} 笔</span>
+              <button class="btn btn-sm btn-secondary" :disabled="referralWdPage>=referralWdTotalPages" @click="loadReferralWithdrawals(referralWdPage+1)">下一页</button>
             </div>
           </div>
           <div v-if="referralQrPreview" class="modal-overlay" @click.self="referralQrPreview=''">
@@ -7980,10 +8079,17 @@ createApp({
     const userBanFilter=ref('');
     const userSortBy=ref('created_at');
     const userSortOrder=ref('desc');
+    const userPage=ref(1);
+    const userTotal=ref(0);
+    const userTotalPages=ref(0);
+    const userPageSize=10;
     // 同 IP 账号查询（多开/小号排查）
     const ipSearch=ref('');
     const ipSearchList=ref([]);
     const ipSearchLoading=ref(false);
+    const ipSearchPage=ref(1);
+    const ipSearchTotal=ref(0);
+    const ipSearchTotalPages=ref(0);
     const showUserModal=ref(false);
     const userForm=reactive({username:'',email:'',password:'',points_delta:0,member_days_delta:0,member_until:'',is_banned:false,ban_reason:'',reason:''});
     const paymentPlans=ref([]);
@@ -8084,6 +8190,16 @@ createApp({
     const oldUserRechargeTotalPages=ref(0);
     const oldUserRechargeSum=reactive({amount:0,count:0});
     const oldUserRechargeLoading=ref(false);
+    const returningUsersPage=ref(1);
+    const returningUsersTotalPages=ref(0);
+    const returningUsersLoading=ref(false);
+    const customUsersPage=ref(1);
+    const customUsersTotalPages=ref(0);
+    const customUsersLoading=ref(false);
+    const riskFilter=reactive({keyword:'',status:'all',rule:'all'});
+    const riskPage=ref(1);
+    const riskTotal=ref(0);
+    const riskTotalPages=ref(0);
      const questionBank=ref([]);
      const questionBankTotal=ref(0);
      const questionBankLoading=ref(false);
@@ -8448,36 +8564,50 @@ createApp({
       page.value='payment-orders';
       loadPaymentOrders();
     }
-    async function loadUsers(){
+    async function loadUsers(page=1){
       try{
         const params=new URLSearchParams();
         if(userSearch.value.trim())params.set('search',userSearch.value.trim());
         if(userBanFilter.value!=='')params.set('banned',userBanFilter.value);
         if(userSortBy.value)params.set('sort_by',userSortBy.value);
         if(userSortOrder.value)params.set('sort_order',userSortOrder.value);
+        params.set('page',String(page));
+        params.set('page_size',String(userPageSize));
         const qs=params.toString();
         const url='/admin/users'+(qs?('?'+qs):'');
         const res=await fetch(url,{headers:{'Authorization':token.value}});
         const data=await res.json();
-        if(data.code===200){users.value=data.users||[];latestScriptVersion.value=data.latest_script_version||'';}
+        if(data.code===200){
+          users.value=data.users||[];
+          userPage.value=Number(data.page)||page;
+          userTotal.value=Number(data.total)||0;
+          userTotalPages.value=Number(data.total_pages)||0;
+          latestScriptVersion.value=data.latest_script_version||'';
+        }
         else if(data.code===403){logout();showMsg('登录已过期','error');}
       }catch(e){showMsg('获取用户列表失败: '+e,'error');}
     }
     // ===== 同 IP 账号查询（多开/小号排查）=====
-    async function loadUsersByIp(ip){
+    async function loadUsersByIp(ip,page=1){
       ip=(ip||'').trim();
       if(!ip)return;
-      // 面板已展开且是同一个 IP -> 再点一次收起
-      if(ipSearch.value===ip && !ipSearchLoading.value){
+      // 面板已展开且是同一个 IP 的第一页 -> 再点一次收起
+      if(ipSearch.value===ip && !ipSearchLoading.value && page===1 && ipSearchPage.value===1){
         ipSearch.value='';ipSearchList.value=[];return;
       }
       ipSearch.value=ip;
       ipSearchList.value=[];
       ipSearchLoading.value=true;
       try{
-        const res=await fetch('/admin/users-by-ip?ip='+encodeURIComponent(ip),{headers:{'Authorization':token.value}});
+        const qs=new URLSearchParams({ip,page:String(page),page_size:'10'});
+        const res=await fetch('/admin/users-by-ip?'+qs.toString(),{headers:{'Authorization':token.value}});
         const d=await res.json();
-        if(d.code===200){ipSearchList.value=d.users||[];}
+        if(d.code===200){
+          ipSearchList.value=d.users||[];
+          ipSearchPage.value=Number(d.page)||page;
+          ipSearchTotal.value=Number(d.total)||0;
+          ipSearchTotalPages.value=Number(d.total_pages)||0;
+        }
         else if(d.code===403){logout();showMsg('登录已过期','error');ipSearch.value='';}
         else{showMsg(d.msg||'查询失败','error');ipSearch.value='';}
       }catch(e){showMsg('按 IP 查询失败: '+e,'error');ipSearch.value='';}
@@ -8499,7 +8629,7 @@ createApp({
       if(!ip)return;
       page.value='user-mgmt';
       expandedGroups.value.users=true;
-      loadUsers();
+      loadUsers(1);
       loadUsersByIp(ip);
       setTimeout(()=>{
         const el=document.getElementById('ip-search-panel');
@@ -8513,13 +8643,13 @@ createApp({
         userSortBy.value=field;
         userSortOrder.value='desc';
       }
-      loadUsers();
+      loadUsers(1);
     }
     function gotoUserSearch(username){
       userSearch.value=username;
       page.value='user-mgmt';
       expandedGroups.value.users=true;
-      loadUsers();
+      loadUsers(1);
     }
     // 从退款申请页跳过来查同 IP：切到用户管理页再按 IP 列账号
     function gotoUserSearchByIp(ip){
@@ -8527,7 +8657,7 @@ createApp({
       if(!ip)return;
       page.value='user-mgmt';
       expandedGroups.value.users=true;
-      loadUsers();
+      loadUsers(1);
       loadUsersByIp(ip);
     }
     function resetUserSearch(){
@@ -8535,7 +8665,7 @@ createApp({
       userBanFilter.value='';
       userSortBy.value='created_at';
       userSortOrder.value='desc';
-      loadUsers();
+      loadUsers(1);
     }
     async function loadPaymentConfig(){
       try{
@@ -8755,7 +8885,14 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         if(userAnalysisFilter.date_to)qs.set('date_to',userAnalysisFilter.date_to);
         const res=await safeFetch('/admin/user-analysis?'+qs.toString(),{headers:{'Authorization':token.value}});
         const data=await res.json();
-        if(data.code===200){userAnalysis.value=data.stats||null;}
+        if(data.code===200){
+          userAnalysis.value=data.stats||null;
+          const ov=(data.stats&&data.stats.overview)||{};
+          returningUsersPage.value=1;
+          customUsersPage.value=1;
+          returningUsersTotalPages.value=Math.ceil((Number(ov.returned_users)||0)/10);
+          customUsersTotalPages.value=Math.ceil((Number(ov.custom_model_users)||0)/10);
+        }
         else if(data.code===403){logout();showMsg('登录已过期','error');}
         else showMsg(data.msg||'获取用户分析失败','error');
       }catch(e){showMsg('获取用户分析失败: '+(e.message||e),'error',6000);}
@@ -8769,6 +8906,36 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       userAnalysisFilter.date_to=fmtLocalDate(to);
       loadUserAnalysis();
     }
+    async function loadUserAnalysisList(list,page){
+      if(!token.value||!userAnalysis.value)return;
+      const isCustom=list==='custom';
+      const loading=isCustom?customUsersLoading:returningUsersLoading;
+      const pageRef=isCustom?customUsersPage:returningUsersPage;
+      const pagesRef=isCustom?customUsersTotalPages:returningUsersTotalPages;
+      loading.value=true;
+      try{
+        const qs=new URLSearchParams();
+        if(userAnalysisFilter.date_from)qs.set('date_from',userAnalysisFilter.date_from);
+        if(userAnalysisFilter.date_to)qs.set('date_to',userAnalysisFilter.date_to);
+        qs.set('list',list);
+        qs.set('page',String(page));
+        qs.set('page_size','10');
+        const res=await safeFetch('/admin/user-analysis/list?'+qs.toString(),{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200){
+          const d=data.data||{};
+          if(isCustom)userAnalysis.value.custom_model_top_users=d.rows||[];
+          else userAnalysis.value.returning_users=d.rows||[];
+          pageRef.value=d.page||page;
+          pagesRef.value=d.total_pages||0;
+        }
+        else if(data.code===403){logout();showMsg('登录已过期','error');}
+        else showMsg(data.msg||'获取明细失败','error');
+      }catch(e){showMsg('获取明细失败: '+(e.message||e),'error',6000);}
+      finally{loading.value=false;}
+    }
+    function loadReturningUsersPage(page=1){loadUserAnalysisList('returning',page);}
+    function loadCustomModelUsersPage(page=1){loadUserAnalysisList('custom',page);}
     function toggleOldUserRecharge(){
       oldUserRechargeExpanded.value=!oldUserRechargeExpanded.value;
       if(oldUserRechargeExpanded.value&&oldUserRechargeDetails.value.length===0){
@@ -9427,7 +9594,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     }
     async function saveUserAdmin(){
       const data=await adminPost('/admin/user/update',userForm);
-      if(data){showUserModal.value=false;showMsg('用户已更新');loadUsers();}
+      if(data){showUserModal.value=false;showMsg('用户已更新');loadUsers(userPage.value);}
     }
     async function changePassword(){
       if(!pwdForm.old||!pwdForm.new)return showMsg('请填写完整','error');
@@ -9674,14 +9841,27 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       }catch(e){showMsg('保存失败: '+(e.message||e),'error');}
       finally{riskSaving.value=false;}
     }
-    async function scanRisk(){
+    async function scanRisk(page=1){
       if(riskScanning.value)return;
       riskScanning.value=true;
+      riskPage.value=page;
       try{
-        const data=await adminPost('/admin/risk/scan',{});
-        if(data){riskUsers.value=data.users||[];if(data.banned_now)showMsg('已自动封禁 '+data.banned_now+' 人','success');}
+        const data=await adminPost('/admin/risk/scan',{...riskFilter,page,page_size:10});
+        if(data){
+          riskUsers.value=data.users||[];
+          riskTotal.value=Number(data.total)||0;
+          riskTotalPages.value=Number(data.total_pages)||0;
+          riskPage.value=Number(data.page)||page;
+          if(data.banned_now)showMsg('已自动封禁 '+data.banned_now+' 人','success');
+        }
       }catch(e){showMsg('扫描失败: '+(e.message||e),'error');}
       finally{riskScanning.value=false;}
+    }
+    function resetRiskFilter(){
+      riskFilter.keyword='';
+      riskFilter.status='all';
+      riskFilter.rule='all';
+      scanRisk(1);
     }
     async function riskBan(u,doBan){
       const reason=doBan?('风控封禁：'+u.hits.join('；')):'';
@@ -9691,7 +9871,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     }
     async function riskAddWhitelist(u){
       const data=await adminPost('/admin/risk/whitelist',{username:u.username,add:true});
-      if(data){showMsg('已加入白名单');riskWhitelistText.value=(data.whitelist||[]).join(', ');riskUsers.value=riskUsers.value.filter(x=>x.username!==u.username);}
+      if(data){showMsg('已加入白名单');riskWhitelistText.value=(data.whitelist||[]).join(', ');scanRisk(Math.max(1,riskPage.value));}
     }
     async function addProvider(){
       const key=(newProvider.key||'').trim();
@@ -10272,6 +10452,10 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     const referralSaving=ref(false);
     const referralWithdrawals=ref([]);
     const referralWdFilter=ref('');
+    const referralWdKeyword=ref('');
+    const referralWdPage=ref(1);
+    const referralWdTotal=ref(0);
+    const referralWdTotalPages=ref(0);
     const referralWdSummary=ref({today_total:0,today_count:0,approved_total:0,approved_count:0,pending_total:0,pending_count:0});
     const referralStats=ref({top10:[],total_commission:0,total_logs:0,withdrawn_total:0,withdrawn_count:0,pending_withdraw_total:0,pending_withdraw_count:0});
     const referralQrPreview=ref('');
@@ -10435,12 +10619,22 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       }catch(_){showMsg('网络错误','error');}
       referralSaving.value=false;
     }
-    async function loadReferralWithdrawals(){
+    async function loadReferralWithdrawals(page=1){
       try{
-        const url='/admin/referral/withdrawals'+(referralWdFilter.value?('?status='+referralWdFilter.value):'');
-        const res=await safeFetch(url,{headers:{'Authorization':token.value}});
+        const params=new URLSearchParams();
+        if(referralWdFilter.value)params.set('status',referralWdFilter.value);
+        if(referralWdKeyword.value.trim())params.set('username',referralWdKeyword.value.trim());
+        params.set('page',String(page||1));
+        params.set('page_size','10');
+        const res=await safeFetch('/admin/referral/withdrawals?'+params.toString(),{headers:{'Authorization':token.value}});
         const d=await res.json();
-        if(d.code===200){referralWithdrawals.value=d.withdrawals||[]; if(d.summary)referralWdSummary.value=d.summary;}
+        if(d.code===200){
+          referralWithdrawals.value=d.withdrawals||[];
+          referralWdPage.value=Number(d.page)||page||1;
+          referralWdTotal.value=Number(d.total)||0;
+          referralWdTotalPages.value=Number(d.total_pages)||0;
+          if(d.summary)referralWdSummary.value=d.summary;
+        }
       }catch(_){}
     }
     async function approveWithdrawal(id){
@@ -10449,7 +10643,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         const res=await fetch('/admin/referral/withdrawal/approve',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({id})});
         const d=await res.json();
         showMsg(d.msg||'操作失败',d.code===200?'success':'error');
-        if(d.code===200)loadReferralWithdrawals();
+        if(d.code===200)loadReferralWithdrawals(referralWdPage.value);
       }catch(_){showMsg('网络错误','error');}
     }
     async function rejectWithdrawal(id){
@@ -10458,7 +10652,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         const res=await fetch('/admin/referral/withdrawal/reject',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({id,reason})});
         const d=await res.json();
         showMsg(d.msg||'操作失败',d.code===200?'success':'error');
-        if(d.code===200)loadReferralWithdrawals();
+        if(d.code===200)loadReferralWithdrawals(referralWdPage.value);
       }catch(_){showMsg('网络错误','error');}
     }
     async function loadReferralStats(){
@@ -10467,27 +10661,82 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         const d=await res.json();
         if(d.code===200){referralStats.value=d.stats||{top10:[],total_commission:0,total_logs:0,withdrawn_total:0,withdrawn_count:0,pending_withdraw_total:0,pending_withdraw_count:0};}
       }catch(_){}
+      loadReferralRanking(1);
+      loadAllReferrers(1);
     }
 
-    const referralAllList=ref({list:[],total:0,page:1,per_page:20});
+    const referralRankFilter=reactive({keyword:'',sort:'invited'});
+    const referralRankList=ref({list:[],total:0,page:1,per_page:10,total_pages:0});
+    const referralAllFilter=reactive({keyword:'',min_invited:'',sort:'invited'});
+    const referralAllList=ref({list:[],total:0,page:1,per_page:10,total_pages:0});
     const referralDetailShow=ref(false);
     const referralDetailUsername=ref('');
     const referralDetailList=ref([]);
-    async function loadAllReferrers(page){
+    const referralDetailKeyword=ref('');
+    const referralDetailPage=ref(1);
+    const referralDetailTotal=ref(0);
+    const referralDetailTotalPages=ref(0);
+    function referralQuery(filter,page){
+      const qs=new URLSearchParams();
+      qs.set('page',String(page||1));
+      qs.set('per_page','10');
+      if(filter.keyword)qs.set('keyword',filter.keyword);
+      if(filter.sort)qs.set('sort',filter.sort);
+      if(filter.min_invited!==''&&filter.min_invited!=null)qs.set('min_invited',String(filter.min_invited));
+      return qs.toString();
+    }
+    async function loadReferralRanking(page=1){
       try{
-        const res=await safeFetch(`/admin/referral/referrers?page=${page}&per_page=20`,{headers:{'Authorization':token.value}});
+        const res=await safeFetch('/admin/referral/referrers?'+referralQuery(referralRankFilter,page),{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(d.code===200&&d.data){referralRankList.value=d.data;}
+      }catch(_){}
+    }
+    async function loadAllReferrers(page=1){
+      try{
+        const res=await safeFetch('/admin/referral/referrers?'+referralQuery(referralAllFilter,page),{headers:{'Authorization':token.value}});
         const d=await res.json();
         if(d.code===200&&d.data){referralAllList.value=d.data;}
       }catch(_){}
     }
+    function resetReferralRankFilter(){
+      referralRankFilter.keyword='';
+      referralRankFilter.sort='invited';
+      loadReferralRanking(1);
+    }
+    function resetReferralAllFilter(){
+      referralAllFilter.keyword='';
+      referralAllFilter.min_invited='';
+      referralAllFilter.sort='invited';
+      loadAllReferrers(1);
+    }
     async function viewReferralDetail(username){
       referralDetailUsername.value=username;
       referralDetailShow.value=true;
+      referralDetailKeyword.value='';
       referralDetailList.value=[];
+      referralDetailTotal.value=0;
+      referralDetailTotalPages.value=0;
+      loadReferralDetailPage(1);
+    }
+    async function loadReferralDetailPage(page=1){
+      const username=referralDetailUsername.value;
+      if(!username)return;
+      referralDetailPage.value=page;
       try{
-        const res=await safeFetch(`/admin/referral/details?username=${encodeURIComponent(username)}`,{headers:{'Authorization':token.value}});
+        const qs=new URLSearchParams();
+        qs.set('username',username);
+        qs.set('page',String(page));
+        qs.set('page_size','10');
+        if(referralDetailKeyword.value.trim())qs.set('keyword',referralDetailKeyword.value.trim());
+        const res=await safeFetch('/admin/referral/details?'+qs.toString(),{headers:{'Authorization':token.value}});
         const d=await res.json();
-        if(d.code===200){referralDetailList.value=d.details||[];}
+        if(d.code===200){
+          referralDetailList.value=d.details||[];
+          referralDetailPage.value=Number(d.page)||page;
+          referralDetailTotal.value=Number(d.total)||0;
+          referralDetailTotalPages.value=Number(d.total_pages)||0;
+        }
       }catch(_){}
     }
 
@@ -11895,7 +12144,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
        loading,page,loginMode,themeMode,themeLabels,themeIcons,cycleTheme,breadcrumbItems,navigateBreadcrumb,toasts,removeToast,toasts,removeToast,toasts,removeToast,config,emailConfig,emailTemplates,hubTplSyncing,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,SCENE_ICONS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
        mailServers,showServerForm,mailServerForm,showSmtpPass,mailServerTotalWeight,mailServerWeightPercent,toggleEmailEnabled,toggleEmailSmtp,openServerForm,saveMailServer,deleteMailServer,
        showMailHubRecords,mailHubRecords,mailHubRecordsLoading,mailHubRecordsError,toggleEmailHub,loadMailHubRecords,modelHubConfig,loadModelHubConfig,toggleModelHub,barW,
-       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,latestScriptVersion,userSearch,userBanFilter,userSortBy,userSortOrder,ipSearch,ipSearchList,ipSearchLoading,loadUsersByIp,gotoIpSearch,gotoIpSearchFromOrder,showUserModal,userForm,gotoUserSearch,
+       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,latestScriptVersion,userPage,userTotal,userTotalPages,userPageSize,userSearch,userBanFilter,userSortBy,userSortOrder,ipSearch,ipSearchList,ipSearchLoading,ipSearchPage,ipSearchTotal,ipSearchTotalPages,loadUsersByIp,gotoIpSearch,gotoIpSearchFromOrder,showUserModal,userForm,gotoUserSearch,
         showHtmlPreview,htmlPreviewFrame,htmlPreviewData,toggleHtmlPreview,updateHtmlPreview,switchToHtml,onHtmlInput,syncPlainFromHtml,
        paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,hubPayConfig,planForm,
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,
@@ -11906,8 +12155,10 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       pageIssues,pageIssueLoading,pageIssueFilter,pageIssueDetail,pageIssueTotalPages,loadPageIssues,setPageIssueRange,
       answerRows,answerRowsTotal,answerRowsPage,answerRowsPageSize,answerRowsLoading,answerRowsLoaded,loadAnswerRows,
       userAnalysis,userAnalysisLoading,userAnalysisFilter,loadUserAnalysis,setUserAnalysisRange,pct,
+      returningUsersPage,returningUsersTotalPages,returningUsersLoading,loadReturningUsersPage,
+      customUsersPage,customUsersTotalPages,customUsersLoading,loadCustomModelUsersPage,
       oldUserRechargeExpanded,oldUserRechargeDetails,oldUserRechargePage,oldUserRechargeTotal,oldUserRechargeTotalPages,oldUserRechargeSum,oldUserRechargeLoading,toggleOldUserRecharge,loadOldUserRechargeDetails,
-      questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,deleteQuestionBankItem,bankTypeOptions,bankModelOptions,loadBankModels,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,ssoConfig,ssoSaving,showSsoSecret,ssoCallbackUrl,riskConfig,riskWhitelistText,riskUsers,riskScanning,riskSaving,
+      questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,deleteQuestionBankItem,bankTypeOptions,bankModelOptions,loadBankModels,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,ssoConfig,ssoSaving,showSsoSecret,ssoCallbackUrl,riskConfig,riskWhitelistText,riskUsers,riskScanning,riskSaving,riskFilter,riskPage,riskTotal,riskTotalPages,resetRiskFilter,
       doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,saveEmailHubFromAddr,hubTplStatusText,syncHubTemplates,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,
       loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadSsoConfig,saveSsoConfig,copySsoUrl,loadRiskConfig,saveRiskConfig,scanRisk,riskBan,riskAddWhitelist,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,
       savePaymentConfig,savePayApiConfig,saveHubPayConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,movePlan,openUserEdit,saveUserAdmin,
@@ -11917,9 +12168,9 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
        qqBot,qqBotStatus,qqBotLogs,qqBotBotpyAvailable,qqBotSaving,loadQqBot,saveQqBot,
       protocolName,statusText,logStatusText,logFinalModel,formatDuration,questionTypeName,shortText,formatWan,formatScriptExtra,isMembershipActive,fmtMemberExpire,pointsColorStyle,memberColorStyle,trendPoints,trendX,trendY,trendMax,stackBarX,stackBarY,stackBarH,modelBarWidth,revTrendPoints,revTrendArea,revTrendX,revStep,revY,revMax,
       loadLogCleanup,saveLogCleanup,runLogCleanupNow,logRetentionDays,logCleanupSaving,logCleanupRunning,logCleanupResult,logStats,logStatsLoading,manualCleanupDays,manualCleanupTable,payTestForm,payTestLoading,payTestResult,runPayTest,payApiWeightTotal,payApiWeightPercent,refreshSandpayParams,onSandpayAdvancedChange,
-      referralTab,referralConfig,referralSaving,referralWithdrawals,referralWdFilter,referralWdSummary,referralStats,referralQrPreview,
+      referralTab,referralConfig,referralSaving,referralWithdrawals,referralWdFilter,referralWdKeyword,referralWdPage,referralWdTotal,referralWdTotalPages,referralWdSummary,referralStats,referralQrPreview,
       loadReferralConfig,saveReferralConfig,loadReferralWithdrawals,approveWithdrawal,rejectWithdrawal,loadReferralStats,
-      referralAllList,loadAllReferrers,referralDetailShow,referralDetailUsername,referralDetailList,viewReferralDetail,
+      referralAllList,loadAllReferrers,referralRankFilter,referralRankList,loadReferralRanking,referralAllFilter,resetReferralRankFilter,resetReferralAllFilter,referralDetailShow,referralDetailUsername,referralDetailList,referralDetailKeyword,referralDetailPage,referralDetailTotal,referralDetailTotalPages,loadReferralDetailPage,viewReferralDetail,
       commissionLedgerShow,commissionLedgerUser,commissionLedgerLoading,commissionLedgerData,viewCommissionLedger,
       commissionTypeText,commissionTypeStyle,commissionStatusText,commissionStatusColor,commissionEventDetail,
       cooldownItems,cooldownLoading,cooldownUpdatedAt,cooldownTotalHits,cooldownNow,cooldownConfig,cooldownRows,cooldownCounts,
