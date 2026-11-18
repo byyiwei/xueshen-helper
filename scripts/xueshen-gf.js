@@ -2023,7 +2023,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
   };
   const guessIssuePageType = (question) => {
     const wt = question && question.workType;
-    if (wt) return "cx-" + wt;
+    if (wt) return wt === "zhs" ? "zhs-web" : "cx-" + wt;
     const host = location.hostname || "";
     if (/zhihuishu\.com$/i.test(host)) return "zhs-web";
     if (/chaoxing\.com$/i.test(host)) return "cx-zy";
@@ -8985,6 +8985,14 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 options_preview: ((question && question.optionsText) || []).join(" | ").slice(0, 40),
                 option_nodes: (question && question.__xsOptionCount) || 0,
                 option_selector: (question && question.__xsOptionSelector) || "",
+                option_html: (() => {
+                  try {
+                    const first = Object.values((question && question.options) || {})[0];
+                    return first && first.outerHTML ? String(first.outerHTML).replace(/\s+/g, " ").slice(0, 400) : "";
+                  } catch (_) {
+                    return "";
+                  }
+                })(),
                 clicked: !!(question && question.__xsClicked),
                 ...(String((question && question.type) || "") === "2" ? {
                   blank_fields: (question && question.__xsBlankFields) || 0,
@@ -9189,6 +9197,11 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         if (["ks"].includes(this.type)) {
           return optionElement.closest(".answerBg") || optionElement;
         }
+        if (["zj"].includes(this.type)) {
+          // 学习页面内嵌的新版章节测验把点击事件和选中对勾挂在整行 li 上，
+          // before-after 只是行内一层；只认 before-after 会点不中也回读不到已选
+          return optionElement.closest("li") || optionElement;
+        }
         return optionElement;
       });
       __publicField(this, "getCxQuestionTypeFromCode", (code) => {
@@ -9260,41 +9273,44 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         ].join("|");
       });
       __publicField(this, "isChoiceOptionSelected", (optionElement) => {
-        var _a;
         const optionContainer = this.getChoiceOptionContainer(optionElement);
         if (!optionContainer) return false;
+        // 选中标记有时挂在选项外层整行（li）上而不是选项本身，两层都要看
+        const row = (optionContainer.closest && optionContainer.closest("li")) || optionContainer;
+        const scopes = row !== optionContainer ? [optionContainer, row] : [optionContainer];
         // 原生 radio/checkbox 的 checked（property 或属性）与 aria-checked 是通用信号，先读它们：
         // 认不出已选会导致对已选项目再点一次，反而把它取消掉
         const inputs = this.getChoiceOptionInputs(optionContainer);
         if (inputs.some((input) => this.isChoiceInputChecked(input))) return true;
-        if (optionContainer.getAttribute("aria-checked") === "true") return true;
-        const tokens = String(optionContainer.className || "").toLowerCase().split(/\s+/);
-        if (tokens.some((t) => t === "is-checked" || t === "ischecked" || t === "checked" ||
-          t === "check_answer" || t === "check-answer" || t === "selected")) return true;
-        // 章节测验（学习页面内嵌）的选择题没有 radio，勾选后只在选项里挂一个对勾节点。
-        // 以前只在考试(ks)里认这个标记，章节测验勾上了也回读成没选：误报填不上，重试时再点一次还会取消勾选。
-        // 对勾节点可能是常驻但隐藏的，只认真正显示出来的那个。
-        if (["ks"].includes(this.type) && optionContainer.querySelector(".check_answer, .check_answer_dx")) return true;
-        if (optionContainer.querySelector) {
-          const marks = optionContainer.querySelectorAll(
-            ".check_answer, .check_answer_dx, [class*='check_answer'], [class*='check-answer']"
-          );
-          for (const mark of marks) {
-            try {
-              if (mark.getClientRects && mark.getClientRects().length > 0) return true;
-            } catch (_) {
+        const isMarked = (node) => {
+          if (!node) return false;
+          if (node.getAttribute && node.getAttribute("aria-checked") === "true") return true;
+          const tokens = String(node.className || "").toLowerCase().split(/\s+/);
+          if (tokens.some((t) => t === "is-checked" || t === "ischecked" || t === "checked" ||
+            t === "check_answer" || t === "check-answer" || t === "selected")) return true;
+          if (node.querySelector) {
+            const marks = node.querySelectorAll(
+              ".check_answer, .check_answer_dx, [class*='check_answer'], [class*='check-answer']"
+            );
+            for (const mark of marks) {
+              try {
+                if (mark.getClientRects && mark.getClientRects().length > 0) return true;
+              } catch (_) {
+              }
             }
           }
-        }
-        return false;
+          return false;
+        };
+        return scopes.some(isMarked);
       });
       __publicField(this, "selectChoiceOption", (optionElement) => {
-        var _a;
         const optionContainer = this.getChoiceOptionContainer(optionElement);
         if (!optionContainer) return false;
         if (this.isChoiceOptionSelected(optionContainer)) return true;
+        const clicked = new Set();
         const tryClick = (el) => {
-          if (!el) return;
+          if (!el || clicked.has(el)) return;
+          clicked.add(el);
           try {
             el.click();
           } catch (_) {
@@ -9302,6 +9318,11 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         };
         // 超星章节/作业常把事件绑在字母链或 input 上，只点外层 li 可能没反应
         tryClick(optionContainer);
+        if (this.isChoiceOptionSelected(optionContainer)) return true;
+        // zj 版整行 li 是容器，真正绑点击的通常是行内的 before-after
+        tryClick(optionContainer !== optionElement
+          ? (optionContainer.querySelector && optionContainer.querySelector(".before-after")) || optionElement
+          : optionElement);
         if (this.isChoiceOptionSelected(optionContainer)) return true;
         const inputs = this.getChoiceOptionInputs(optionContainer);
         for (const input of inputs) {
@@ -9313,13 +9334,15 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         // 学习页面内嵌的章节测验把点击事件绑在选项正文或整行 li 上，只点字母链可能没反应
         tryClick(optionContainer.querySelector && optionContainer.querySelector(".after, .fl.after"));
         if (this.isChoiceOptionSelected(optionContainer)) return true;
-        const row = optionContainer.closest && optionContainer.closest("li, .Zy_ulTop > li");
+        tryClick(optionContainer.querySelector && optionContainer.querySelector(".check_answer, .check_answer_dx, [class*='check_answer'], [class*='check-answer']"));
+        if (this.isChoiceOptionSelected(optionContainer)) return true;
+        const row = optionContainer.closest && optionContainer.closest("li");
         if (row && row !== optionContainer) {
           tryClick(row);
           if (this.isChoiceOptionSelected(optionContainer)) return true;
         }
         try {
-          (_a = optionContainer.dispatchEvent) == null ? void 0 : _a.call(optionContainer, new this._window.MouseEvent("click", { bubbles: true }));
+          optionContainer.dispatchEvent && optionContainer.dispatchEvent(new this._window.MouseEvent("click", { bubbles: true }));
         } catch (_) {
         }
         return this.isChoiceOptionSelected(optionContainer);
@@ -9644,6 +9667,23 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               if (markHit.length === 1) answers = [markHit[0]];
             }
           }
+          // 单选题答案被写成「协商,沟通,共事」这种多个候选：整串对不上任何选项时，
+          // 只有所有能对上的候选都指向同一个选项才填。模型把几个选项全列出来时
+          // （如四个选项原样返回）会指向不同选项，这种情况宁可不填，不能随便挑第一个。
+          // 整串本身能对上（选项里就带逗号）时不动它，防止把正常选项拆坏。
+          if (question.type === "0" && answers.length === 1 && /[,，、;；|]/.test(String(answers[0] || ""))) {
+            const rawSingle = String(answers[0] || "");
+            const wholeHit = optionKeys.some(k => this.optionTextMatches(k, rawSingle, true));
+            if (!wholeHit) {
+              const hitOptions = rawSingle.split(/[,，、;；|]+/)
+                .map(s => s.trim()).filter(Boolean)
+                .map(c => optionKeys.filter(k => this.optionTextMatches(k, c, true)))
+                .filter(hits => hits.length === 1)
+                .map(hits => hits[0]);
+              const distinct = [...new Set(hitOptions)];
+              if (distinct.length === 1) answers = [distinct[0]];
+            }
+          }
           for (const answer of answers) {
             const clearAnswer = cleanChoiceAnswer(this.removeHtml(String(answer)));
             const text = String(clearAnswer).normalize("NFKC").trim();
@@ -9747,9 +9787,10 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               const imgs = collectImgSrcs(answer);
               matches = optionKeys.filter(k => imgSrcsMatch(imgs, collectImgSrcs(k).concat(collectImgSrcs(question.options[k]))));
             }
-            if (!matches.length && question.type === "1") {
-              // 多选题个别答案和页面写法有细小差异（西北/东北、缺括号、被截断）时，
-              // 按相似度找唯一最接近的选项，避免整道题因为一个字的差别放弃。
+            if (!matches.length && (question.type === "1" || question.type === "0")) {
+              // 个别答案和页面写法有细小差异（西北/东北、缺括号、页面错别字「正怕」与「惧怕」）
+              // 时，按相似度找唯一最接近的选项，避免整道题因为一个字直接放弃。
+              // 单选题只差一个字也很可能是同一项，但错填代价更高，阈值比多选收紧。
               const normBody = (v) => this.clearMark(this.removeHtml(String(v || "")).replace(/^[A-Za-z][.、．)）:：\s]+/, "")).toLowerCase();
               const nAnswer = normBody(answer);
               const bigrams = (s) => {
@@ -9778,7 +9819,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                   secondScore = score;
                 }
               });
-              if (best && bestScore >= 0.55 && (bestScore - secondScore) >= 0.1) matches = [best];
+              const minScore = question.type === "0" ? 0.68 : 0.55;
+              const minMargin = question.type === "0" ? 0.15 : 0.1;
+              if (best && bestScore >= minScore && (bestScore - secondScore) >= minMargin) matches = [best];
             }
             if (matches.length !== 1) {
               question.__xsFillReason = "answer_not_matched";
@@ -9798,6 +9841,11 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               if (this.isChoiceOptionSelected(question.options[key])) {
                 const input = this.getChoiceOptionInputs(container).find(i => this.isChoiceInputChecked(i));
                 try { if (input) input.click(); } catch (_) {}
+                // 整行 li 没有绑定事件时，补点行内的 before-after
+                if (this.isChoiceOptionSelected(question.options[key])) {
+                  const inner = container.querySelector && container.querySelector(".before-after");
+                  try { if (inner) inner.click(); } catch (_) {}
+                }
               }
             }
           }
@@ -14311,6 +14359,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       });
     };
     const isChoiceType = (type) => ["单选题", "多选题", "判断题"].includes(type);
+    // 填空/主观题只要页面确实有输入框，也可以交给 AI 写；没有输入框就不算支持，避免白花次数
+    const isFillBlankType = (type) => ["填空题", "简答题", "论述题", "计算题"].includes(type);
+    const hasFillInputs = (el) => !!(el && el.querySelector && el.querySelector("input, textarea, .fillAnswer input, .fillAnswer textarea"));
     const fillBlank = (question, answers) => {
       const inputs = Array.from(
         question.element.querySelectorAll("input, textarea, .fillAnswer input, .fillAnswer textarea")
@@ -14639,7 +14690,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         }
       }
       if (!handled) {
-        if (isChoiceType(question.type)) {
+        if (isChoiceType(question.type) || (isFillBlankType(question.type) && hasFillInputs(question.element))) {
           const aiAnswerData = await getAIAnswer(apiQuestion);
           if (aiAnswerData.code === 1) {
             question.answer = { code: 2, answer: aiAnswerData.data.answer, src: aiAnswerData.data.src || "ai" };
