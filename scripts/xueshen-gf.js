@@ -3736,9 +3736,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       const textOnlyLen = [question.title, ...(question.optionsText || [])]
         .map((t) => String(t || "").replace(/<img[^>]*>/gi, "").replace(/<[^>]+>/g, "").replace(/&nbsp;/gi, "").replace(/\s+/g, ""))
         .join("").length;
-      // 只有「压根没识别到内容图」的文字题才继续作答；识别到了图却全下不下来，
-      // 说明图是题目的一部分，该提示重试，不能只拿文字让模型猜。
-      if (!(seenImg.size === 0 && textOnlyLen >= 6)) {
+      // 完全没有识别到图片（seenImg 为空）时，短题干也是正常文字题（如简答题「土的可松性」），
+      // 不能因为没有图就报图片下载失败；只有「看到了图但一张都没下下来」或题干全空才拦。
+      if (seenImg.size > 0 || textOnlyLen === 0) {
         window.__XSReportPageIssue && window.__XSReportPageIssue({
           page_type: window.__XSGuessIssuePageType ? window.__XSGuessIssuePageType(question) : "unknown",
           stage: "image",
