@@ -9784,9 +9784,10 @@
               const imgs = collectImgSrcs(answer);
               matches = optionKeys.filter(k => imgSrcsMatch(imgs, collectImgSrcs(k).concat(collectImgSrcs(question.options[k]))));
             }
-            if (!matches.length && question.type === "1") {
-              // 多选题个别答案和页面写法有细小差异（西北/东北、缺括号、被截断）时，
-              // 按相似度找唯一最接近的选项，避免整道题因为一个字的差别放弃。
+            if (!matches.length && (question.type === "1" || question.type === "0")) {
+              // 个别答案和页面写法有细小差异（西北/东北、缺括号、页面错别字「正怕」与「惧怕」）
+              // 时，按相似度找唯一最接近的选项，避免整道题因为一个字直接放弃。
+              // 单选题只差一个字也很可能是同一项，但错填代价更高，阈值比多选收紧。
               const normBody = (v) => this.clearMark(this.removeHtml(String(v || "")).replace(/^[A-Za-z][.、．)）:：\s]+/, "")).toLowerCase();
               const nAnswer = normBody(answer);
               const bigrams = (s) => {
@@ -9815,7 +9816,9 @@
                   secondScore = score;
                 }
               });
-              if (best && bestScore >= 0.55 && (bestScore - secondScore) >= 0.1) matches = [best];
+              const minScore = question.type === "0" ? 0.68 : 0.55;
+              const minMargin = question.type === "0" ? 0.15 : 0.1;
+              if (best && bestScore >= minScore && (bestScore - secondScore) >= minMargin) matches = [best];
             }
             if (matches.length !== 1) {
               question.__xsFillReason = "answer_not_matched";
