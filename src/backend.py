@@ -5037,6 +5037,47 @@ def _answer_matches_question_options(question, answer):
     return _judge_polarity(items[0], max_len=10) in polarities
 
 
+def _answer_choice_conflict(question, answer):
+    """选项题的答案和页面选项对不上，或单选题给了多个答案。
+
+    这类答案下发给脚本后，脚本只会报「答案对不上选项」而填不上：等于白问一次模型，
+    还可能把坏答案写进缓存和题库。判定口径与脚本保持一致：
+    - 答案的每一项都要能对上页面某个选项（字母答案要落在选项范围内）；
+    - 单选题、判断题只能有一个答案（"李某|王某"、"A,B" 都不行）。
+    无选项的填空/简答等题不参与判断；连线题（左右两列配对，答案形如 A-1）
+    也不是按选项正文作答，同样排除。
+    """
+    qname = _normalize_question_type_name(parse_question_payload(question).get("question_type"))
+    if qname not in ("单选题", "多选题", "判断题"):
+        return False
+    options = [str(o).strip() for o in extract_options_from_question(question) if str(o).strip()]
+    if len(options) < 2:
+        return False
+    if not _answer_matches_question_options(question, answer):
+        return True
+    if qname in ("单选题", "判断题"):
+        items = [str(x).strip() for x in _answer_items(answer) if str(x).strip()]
+        if len(items) != 1:
+            return True
+        # "A,B" 这种带分隔符的字母串表示选了多项，单选题只能有一个
+        if re.fullmatch(r"[A-Za-z](?:[\s、,，&+与和/|]*[A-Za-z])+", items[0]):
+            return True
+    return False
+
+
+def _with_choice_retry_hint(question):
+    """给「答案对不上选项」的题补一句明确要求，再用同一道题重问一次。"""
+    hint = "只从上面给出的选项中选择，答案必须与某个选项完全一致，不要解释；单选题只选一项。"
+    try:
+        data = json.loads(question)
+        if isinstance(data, dict):
+            data["question"] = str(data.get("question") or "") + "\n" + hint
+            return json.dumps(data, ensure_ascii=False)
+    except Exception:
+        pass
+    return str(question or "") + "\n" + hint
+
+
 def _is_reasoning_only_choice_answer(question, answer):
     """选项题只返回「思考过程/元话术」时判为无效，让任务池换下一个模型重试。
 
@@ -7003,7 +7044,15 @@ def _run_ai_task(task):
         attempts += 1
         if answer:
             answer = normalize_ai_answer(question, answer)
-            if answer and not _is_truncated_multi_answer(question, answer, fresh=True) and not _is_garbage_bank_answer(answer, question) and not _is_reasoning_only_choice_answer(question, answer):
+            bad_reason = ""
+            if not answer:
+                bad_reason = "答案为空"
+            elif _is_truncated_multi_answer(question, answer, fresh=True) or _is_garbage_bank_answer(answer, question) or _is_reasoning_only_choice_answer(question, answer):
+                bad_reason = "答案质量不合格，已跳过"
+            elif _answer_choice_conflict(question, answer):
+                # 下发了也点不上：换下一个模型再问，不要写缓存/题库
+                bad_reason = "答案与页面选项对不上，换下一个模型重试"
+            if not bad_reason:
                 record_model_token_usage(model_name, tokens)
                 cache_key = make_ai_cache_key(question, "auto")
                 set_ai_cache(cache_key, answer, model_name, provider_name)
@@ -7033,7 +7082,7 @@ def _run_ai_task(task):
                 )
                 print(f"[答题任务] 成功 task={task_id} model={provider_name}/{model_name}", flush=True)
                 return
-            err = "答案质量不合格，已跳过"
+            err = bad_reason or "答案质量不合格，已跳过"
 
         err = str(err or "未返回内容")
         err_display = ai_error_for_display(err)
@@ -9741,8 +9790,27 @@ class Handler(BaseHTTPRequestHandler):
                 return
             task_status = str(task.get("status") or "")
             if task_status == "solved":
-                answer = normalize_ai_answer(str(task.get("question") or ""), str(task.get("answer") or ""))
-                question_key = make_matching_key(str(task.get("question") or ""))
+                task_question = str(task.get("question") or "")
+                answer = normalize_ai_answer(task_question, str(task.get("answer") or ""))
+                question_key = make_matching_key(task_question)
+                if answer and _answer_choice_conflict(task_question, answer):
+                    # 旧版本任务可能存着对不上选项的答案（已下发也填不上）：清掉重新排队，
+                    # 后台换模型重答；这次不扣题数。
+                    try:
+                        db.update_ai_answer_task(
+                            task["id"], status="waiting", answer="", answer_model="", answer_provider="",
+                            next_retry_at=datetime.now(), solved_at=None,
+                            last_error="答案与选项对不上，后台重新作答",
+                        )
+                        _task_live_clear(task["id"])
+                    except Exception as exc:
+                        print(f"[答题任务] 重置对不上选项的旧答案失败: {exc}", flush=True)
+                    self._send_json(202, {"code": 202, "msg": "后台正在重新作答", "data": {
+                        "task_id": task_key,
+                        "status": "waiting",
+                        "retry_after": 3,
+                    }})
+                    return
                 if not answer:
                     self._send_json(500, {"code": 500, "msg": "后台答案为空，请重新提交"})
                     return
@@ -15661,7 +15729,7 @@ class Handler(BaseHTTPRequestHandler):
                     if needs_solution_process(question) and not _looks_like_process_answer(answer):
                         print(f"[AI缓存命中但缺少过程，改走AI] mode={model_mode} answer={str(answer)[:80]}", flush=True)
                         cached = None
-                    elif answer and (_is_truncated_multi_answer(question, answer, fresh=True) or _is_garbage_bank_answer(answer, question) or _is_reasoning_only_choice_answer(question, answer)):
+                    elif answer and (_is_truncated_multi_answer(question, answer, fresh=True) or _is_garbage_bank_answer(answer, question) or _is_reasoning_only_choice_answer(question, answer) or _answer_choice_conflict(question, answer)):
                         print(f"[AI缓存命中但答案不可用，改走AI] mode={model_mode} answer={str(answer)[:80]}", flush=True)
                         cached = None
                     elif not answer:
@@ -15740,11 +15808,41 @@ class Handler(BaseHTTPRequestHandler):
                         return
                     status = "success"
                     bad_answer = _is_truncated_multi_answer(question, answer, fresh=True) or _is_garbage_bank_answer(answer, question) or _is_reasoning_only_choice_answer(question, answer)
-                    if bad_answer:
+                    choice_conflict = (not bad_answer) and _answer_choice_conflict(question, answer)
+                    if choice_conflict and not use_custom:
+                        # 答案和页面选项对不上（单选题回了「正确」、或一下回两个名字）：带明确要求再问一次。
+                        # 重问不额外扣题数；重问仍对不上就不下发，避免脚本填上错误答案。
+                        print(f"[AI答案] 与选项对不上，带提示重问一次 answer={str(answer)[:80]}", flush=True)
+                        retry_vision = is_multimodal_question(question)
+                        retry_raw, _retry_err, retry_model, retry_provider = ask_ai_auto(
+                            _with_choice_retry_hint(question),
+                            need_vision=retry_vision,
+                            username=user.get("username", "") if user else "",
+                            client_ip=self.client_address[0] if self.client_address else "",
+                            budget=50 if retry_vision else 30,
+                            log_errors=False,
+                        )
+                        if retry_raw:
+                            retry_norm = normalize_ai_answer(question, retry_raw)
+                            if (retry_norm
+                                    and not _is_truncated_multi_answer(question, retry_norm, fresh=True)
+                                    and not _is_garbage_bank_answer(retry_norm, question)
+                                    and not _is_reasoning_only_choice_answer(question, retry_norm)
+                                    and not _answer_choice_conflict(question, retry_norm)):
+                                answer = retry_norm
+                                resolved_model = retry_model or resolved_model
+                                provider_name = retry_provider or provider_name
+                                choice_conflict = False
+                                print(f"[AI答案] 重问后已对上选项 answer={str(answer)[:80]}", flush=True)
+                    if bad_answer or choice_conflict:
                         # 兜底话术/截断答案不下发给脚本：发了用户就会把它填进答题框，
                         # 返回 500 让脚本走「未查到答案」的正规兜底（不扣题数、不写缓存、不入库）
-                        print(f"[AI答案] 质量不合格，不下发 answer={str(answer)[:80]}", flush=True)
-                        err = "AI 未能给出有效答案，请稍后重试或手动作答"
+                        if not bad_answer:
+                            print(f"[AI答案] 两次都与选项对不上，不下发 answer={str(answer)[:80]}", flush=True)
+                            err = "AI 给出的答案与题目选项对不上，请稍后重试或手动作答"
+                        else:
+                            print(f"[AI答案] 质量不合格，不下发 answer={str(answer)[:80]}", flush=True)
+                            err = "AI 未能给出有效答案，请稍后重试或手动作答"
                         status = "bad_answer"
                         self._send_json(500, {"code": 500, "msg": err})
                         return
