@@ -14398,11 +14398,29 @@
     const isChoiceType = (type) => ["单选题", "多选题", "判断题"].includes(type);
     // 填空/主观题只要页面确实有输入框，也可以交给 AI 写；没有输入框就不算支持，避免白花次数
     const isFillBlankType = (type) => ["填空题", "简答题", "论述题", "计算题"].includes(type);
-    const hasFillInputs = (el) => !!(el && el.querySelector && el.querySelector("input, textarea, .fillAnswer input, .fillAnswer textarea"));
+    const hasFillInputs = (el) => !!(el && el.querySelector && Array.from(el.querySelectorAll("input, textarea, [contenteditable='true'], .fillAnswer input, .fillAnswer textarea")).some((x) => {
+      if (!x || x.disabled) return false;
+      const tag = String(x.tagName || "").toLowerCase();
+      if (tag === "textarea") return true;
+      if (tag === "input") return ["text", "search", "tel", "number", ""].includes(String(x.getAttribute("type") || "text").toLowerCase());
+      return x.isContentEditable === true;
+    }));
+    // 题目节点里常混着隐藏 input、按钮、题型编码等非答题控件，以前都被当成一个空，
+    // 结果永远「填不满」而报失败（智慧树填空客观题那类页面）。只认真正能写字的控件
+    const isBlankInput = (el) => {
+      if (!el || el.disabled) return false;
+      const tag = String(el.tagName || "").toLowerCase();
+      if (tag === "textarea") return true;
+      if (tag === "input") {
+        const type = String(el.getAttribute("type") || "text").toLowerCase();
+        return ["text", "search", "tel", "number", ""].includes(type);
+      }
+      return el.isContentEditable === true || !!(el.getAttribute && el.getAttribute("contenteditable") === "true");
+    };
     const fillBlank = (question, answers) => {
       const inputs = Array.from(
-        question.element.querySelectorAll("input, textarea, .fillAnswer input, .fillAnswer textarea")
-      );
+        question.element.querySelectorAll("input, textarea, [contenteditable='true'], .fillAnswer input, .fillAnswer textarea")
+      ).filter(isBlankInput);
       if (!inputs.length) return false;
       let values = (answers || []).map((a) => String(a == null ? "" : a).trim()).filter(Boolean);
       if (values.length < inputs.length) {
@@ -14416,10 +14434,28 @@
       inputs.forEach((input, index) => {
         const value = values[index];
         if (!value) return;
-        input.value = value;
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        input.dispatchEvent(new Event("change", { bubbles: true }));
-        if (input.value === value) filledCount += 1;
+        try {
+          // 有些页面给输入框加 readonly 防粘贴；框架接管 value 时直接赋值不触发监听
+          if (input.readOnly) {
+            input.readOnly = false;
+            if (input.hasAttribute && input.hasAttribute("readonly")) input.removeAttribute("readonly");
+          }
+          if (input.isContentEditable) {
+            input.focus();
+            input.textContent = value;
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+          } else {
+            const desc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input) || {}, "value");
+            if (desc && desc.set) desc.set.call(input, value);
+            else input.value = value;
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+          const current = String(input.isContentEditable ? input.textContent : input.value || "").trim();
+          // 页面会对答案做格式化（去空格、补单位），有内容就算填上
+          if (current === String(value).trim() || current.length > 0) filledCount += 1;
+        } catch (_) {
+        }
       });
       return filledCount > 0 && filledCount === inputs.length;
     };
