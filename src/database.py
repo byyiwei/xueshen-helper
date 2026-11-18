@@ -528,6 +528,8 @@ class Database:
         self._add_column_if_missing("admin_config", "log_cleanup_last_at", "log_cleanup_last_at DATETIME NULL COMMENT '上次日志清理时间（用于24小时定时判断，持久化避免重启重置）'")
         # 用户购买套餐时默认选中的支付方式：空=按可用顺序自动选，wechat/alipay/xianyu=指定
         self._add_column_if_missing("admin_config", "pay_default_method", "pay_default_method VARCHAR(16) DEFAULT '' COMMENT '用户购买页默认支付方式'")
+        # 后台答题线程数，可在管理后台实时调整（2-30，默认 10）
+        self._add_column_if_missing("admin_config", "ai_task_workers", "ai_task_workers INT DEFAULT 10 COMMENT '答题任务后台工作线程数'")
 
         # 管理员登录会话：落库保存，服务重启/发版后已登录的后台不会被踢下线
         self.execute("""
@@ -5374,6 +5376,11 @@ class Database:
     # ==================== 管理员相关 ====================
     def get_admin_config(self):
         return self.fetchone("SELECT * FROM admin_config WHERE id = 1")
+
+    def set_ai_task_workers(self, workers):
+        """保存答题线程数，供后台页面调整后持久化。"""
+        ph = _ph()
+        self.execute(f"UPDATE admin_config SET ai_task_workers = {ph} WHERE id = 1", (int(workers),))
 
     def update_admin_password(self, password_hash):
         ph = _ph()

@@ -6579,7 +6579,13 @@ def ask_ai_auto(question, need_vision=False, username="", client_ip="", budget=0
 # ==================== 后台答题任务池 ====================
 # 用户请求只负责提交任务/领取结果，模型在后台线程里一轮一轮地跑，不设总时长。
 # 同一道题按指纹去重：多人同时问只跑一次，成功后写 AI 缓存和题库。
-AI_TASK_WORKERS = 10
+AI_TASK_WORKERS_MIN = 2
+AI_TASK_WORKERS_MAX = 30
+AI_TASK_WORKERS_DEFAULT = 10
+AI_TASK_WORKERS = AI_TASK_WORKERS_DEFAULT  # 当前期望运行的工作线程数（后台可改）
+AI_TASK_WORKER_SLOTS = []  # [(停止事件, 线程)]，用于运行时增减线程
+AI_TASK_WORKERS_LOCK = threading.Lock()
+AI_TASK_WORKER_SEQ = 0
 AI_TASK_ROUND_WAIT = (120, 300, 900, 1800, 3600)
 AI_TASK_CLAIM_LOCK = threading.Lock()
 AI_TASK_WORKER_STARTED = False
@@ -6913,14 +6919,21 @@ def _run_ai_task(task):
     print(f"[答题任务] 第 {round_no} 轮全失败 task={task_id}，{wait_seconds}s 后重试", flush=True)
 
 
-def _ai_task_worker():
+def _ai_task_worker(stop_event=None):
     while True:
+        # 被“减少线程”选中的线程会先把手上的题做完，再从这里退出
+        if stop_event is not None and stop_event.is_set():
+            break
         task = None
         try:
             with AI_TASK_CLAIM_LOCK:
                 task = db.claim_ai_answer_task()
             if not task:
-                time.sleep(2)
+                if stop_event is not None:
+                    if stop_event.wait(2):
+                        break
+                else:
+                    time.sleep(2)
                 continue
             _run_ai_task(task)
         except Exception as e:
@@ -6935,7 +6948,48 @@ def _ai_task_worker():
                     )
                 except Exception:
                     pass
-            time.sleep(2)
+            if stop_event is not None:
+                if stop_event.wait(2):
+                    break
+            else:
+                time.sleep(2)
+
+
+def set_ai_task_workers(n, persist=True):
+    """把工作线程数调整到 n（2-30），立即生效，不用重启服务。
+
+    增加线程会马上补足；减少线程只是给多出来的线程发停止信号，
+    它们会先做完手上的题再退出，不会中断正在作答的任务。
+    """
+    global AI_TASK_WORKERS, AI_TASK_WORKER_SEQ
+    n = int(n)
+    if n < AI_TASK_WORKERS_MIN or n > AI_TASK_WORKERS_MAX:
+        raise ValueError(f"线程数需要在 {AI_TASK_WORKERS_MIN}-{AI_TASK_WORKERS_MAX} 之间")
+    with AI_TASK_WORKERS_LOCK:
+        current = len(AI_TASK_WORKER_SLOTS)
+        if n > current:
+            for _ in range(n - current):
+                stop_event = threading.Event()
+                t = threading.Thread(
+                    target=_ai_task_worker, args=(stop_event,),
+                    name=f"ai-task-{AI_TASK_WORKER_SEQ}", daemon=True,
+                )
+                AI_TASK_WORKER_SEQ += 1
+                t.start()
+                AI_TASK_WORKER_SLOTS.append((stop_event, t))
+            print(f"[答题任务] 工作线程 {current} -> {n}", flush=True)
+        elif n < current:
+            for _ in range(current - n):
+                stop_event, _t = AI_TASK_WORKER_SLOTS.pop()
+                stop_event.set()
+            print(f"[答题任务] 工作线程 {current} -> {n}（多余线程做完手上的题后退出）", flush=True)
+        AI_TASK_WORKERS = n
+    if persist:
+        try:
+            db.set_ai_task_workers(n)
+        except Exception as e:
+            print(f"[答题任务] 保存线程数失败: {e}", flush=True)
+    return n
 
 
 def _start_ai_task_workers():
@@ -6947,8 +7001,15 @@ def _start_ai_task_workers():
         db.reset_running_ai_answer_tasks()
     except Exception as e:
         print(f"[答题任务] 重置 running 任务失败: {e}", flush=True)
-    for i in range(AI_TASK_WORKERS):
-        threading.Thread(target=_ai_task_worker, name=f"ai-task-{i}", daemon=True).start()
+    workers = AI_TASK_WORKERS_DEFAULT
+    try:
+        cfg = db.get_admin_config() or {}
+        saved = int(cfg.get("ai_task_workers") or 0)
+        if saved:
+            workers = max(AI_TASK_WORKERS_MIN, min(AI_TASK_WORKERS_MAX, saved))
+    except Exception as e:
+        print(f"[答题任务] 读取线程数配置失败，用默认值: {e}", flush=True)
+    set_ai_task_workers(workers, persist=False)
     print(f"[答题任务] 已启动 {AI_TASK_WORKERS} 个后台工作线程", flush=True)
 
 
@@ -10089,6 +10150,8 @@ class Handler(BaseHTTPRequestHandler):
                     "code": 200,
                     "now": now,
                     "workers": AI_TASK_WORKERS,
+                    "workers_min": AI_TASK_WORKERS_MIN,
+                    "workers_max": AI_TASK_WORKERS_MAX,
                     "counts": {
                         "queued": int(counts.get("queued") or 0),
                         "running": int(counts.get("running") or 0),
@@ -12576,6 +12639,24 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        elif path == "/admin/ai-task-workers":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                try:
+                    workers = int(data.get("workers") or 0)
+                except (TypeError, ValueError):
+                    workers = 0
+                if workers < AI_TASK_WORKERS_MIN or workers > AI_TASK_WORKERS_MAX:
+                    self._send_json(400, {"code": 400, "msg": f"线程数需要在 {AI_TASK_WORKERS_MIN}-{AI_TASK_WORKERS_MAX} 之间"})
+                    return
+                workers = set_ai_task_workers(workers, persist=True)
+                self._audit("ai_task.workers", f"{workers}", "调整答题后台工作线程数")
+                self._send_json(200, {"code": 200, "msg": f"已调整为 {workers} 个答题线程", "workers": workers})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/ai-tasks/action":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})

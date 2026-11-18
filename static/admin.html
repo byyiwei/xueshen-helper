@@ -1126,6 +1126,10 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
 .live-clock { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 11px; color: var(--text2); letter-spacing: 0.02em; }
 .live-title { margin-top: 9px; font-size: 25px; line-height: 1.25; font-weight: 700; letter-spacing: -0.02em; color: var(--text); }
 .live-desc { margin-top: 8px; max-width: 660px; font-size: 12.5px; line-height: 1.7; color: var(--text2); }
+.live-worker-setting { margin-top: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--text2); }
+.live-worker-setting input { width: 62px; padding: 5px 8px; border-radius: 7px; border: 1px solid var(--border); background: var(--bg2); color: var(--text); font-size: 12px; text-align: center; }
+.live-worker-setting input:focus { outline: none; border-color: var(--accent); }
+.live-worker-hint { font-size: 11.5px; color: var(--text3); }
 .live-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(78px, 1fr));
@@ -4741,6 +4745,12 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                   {{aiLiveWorkers}} 个工作线程在后台轮换模型，失败自动切下一个，一轮全失败就按轮次等待重试。
                   当前 {{aiLiveRunning.length}} 条正在调用，{{aiLiveQueue.length}} 条排队或等待。
                 </p>
+                <div class="live-worker-setting">
+                  <span>答题线程数</span>
+                  <input type="number" min="2" max="30" step="1" v-model.number="aiWorkerInput" :disabled="aiWorkerSaving" @keyup.enter="saveAiTaskWorkers">
+                  <button class="btn btn-secondary btn-sm" :disabled="aiWorkerSaving" @click="saveAiTaskWorkers">{{aiWorkerSaving?'保存中':'保存'}}</button>
+                  <span class="live-worker-hint">范围 2-30，保存后立即生效，正在作答的任务不会被打断</span>
+                </div>
               </div>
               <div class="live-stats">
                 <div class="live-stat success"><div class="live-stat-num">{{aiLiveCounts.running||0}}</div><div class="live-stat-label">运行中</div></div>
@@ -10428,6 +10438,27 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     const aiLiveEvents=computed(()=>aiLive.value.events||[]);
     const aiLiveCounts=computed(()=>({queued:0,running:0,waiting:0,solved:0,failed:0,stopped:0,pending:0,...(aiLive.value.counts||{})}));
     const aiLiveWorkers=computed(()=>Number(aiLive.value.workers||6));
+    // 答题线程数可在线调整：输入框只在第一次拿到数据时同步，保存后以服务端返回为准
+    const aiWorkerInput=ref(10);
+    const aiWorkerSaving=ref(false);
+    const aiWorkerInit=ref(false);
+    async function saveAiTaskWorkers(){
+      const n=Number(aiWorkerInput.value);
+      if(!Number.isInteger(n)||n<2||n>30){showMsg('线程数需要是 2-30 之间的整数','error');return;}
+      if(n===Number(aiLive.value.workers)){showMsg('线程数没有变化','info');return;}
+      aiWorkerSaving.value=true;
+      try{
+        const d=await adminPost('/admin/ai-task-workers',{workers:n});
+        if(d){
+          aiWorkerInput.value=d.workers;
+          aiLive.value={...aiLive.value,workers:d.workers};
+          aiWorkerInit.value=true;
+          showMsg(d.msg||'已保存','success');
+        }
+      }finally{
+        aiWorkerSaving.value=false;
+      }
+    }
     const aiLiveClock=computed(()=>{
       const d=new Date((aiLiveNow.value||Date.now()/1000)*1000);
       const p=n=>String(n).padStart(2,'0');
@@ -11377,6 +11408,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
           aiLiveOffset.value=serverNow-Date.now()/1000;
           aiLiveNow.value=serverNow;
           aiLive.value={live:d.live||[],tasks:d.tasks||[],events:d.events||[],counts:d.counts||{},workers:d.workers||6,now:serverNow};
+          if(!aiWorkerInit.value&&d.workers){aiWorkerInput.value=Number(d.workers);aiWorkerInit.value=true;}
           aiLiveConnected.value=true;
           if(d.counts)aiTaskCounts.value=aiTaskCountsFrom(d.counts);
         }else if(d.code===403){
@@ -12215,6 +12247,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     aiHistoryRows,aiHistoryKeyword,aiHistoryStatus,aiHistoryHasImage,aiHistoryFrom,aiHistoryTo,aiHistoryPage,aiHistoryTotal,aiHistoryTotalPages,aiHistoryLoading,loadAiTaskHistory,resetAiTaskHistory,
     aiTaskDetail,aiTaskDetailLoading,openAiTaskDetail,traceStatusText,
     aiLiveRunning,aiLiveQueue,aiLiveEvents,aiLiveCounts,aiLiveWorkers,aiLiveClock,aiLiveConnected,loadAiTasksLive,startAiTaskLive,stopAiTaskLive,
+    aiWorkerInput,aiWorkerSaving,saveAiTaskWorkers,
     liveElapsed,liveDuration,formatCountdown,queueCountdown,eventAgo,relayClass,relayLabel,liveProgress,
     loadAdaptRequests,adaptPrev,adaptNext,openAdaptDetail,setAdaptStatus,copyAdaptText,
     adsList,adsEdit,adsSaving,adsUploading,newAd,editAd,loadAds,saveAd,toggleAd,deleteAd,pickAdImage,onAdFileChange,
