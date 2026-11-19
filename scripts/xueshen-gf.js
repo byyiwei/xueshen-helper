@@ -1812,7 +1812,6 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         return parse(response);
       })
       .catch(() => {
-        if (data) throw new Error("network");
         if (!silent) xsNetShow("网络有点慢，正在重试…", null);
         return send()
           .then((response) => {
@@ -2067,7 +2066,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           if (now - at > 6e5) PAGE_ISSUE_DEDUP.delete(key);
         }
       }
-      return enqueueScriptEvent(extra, { eventType: "page_snapshot", pageUrl: extra.url_path });
+      return Promise.resolve(enqueueScriptEvent(extra, { eventType: "page_snapshot", pageUrl: extra.url_path }))
+        .catch(() => false);
     } catch (_) {
       return Promise.resolve(false);
     }
@@ -12903,8 +12903,8 @@ const MAX_RECORDS = 200;
             return false;
           }
           const judgeTexts = answer === "对"
-            ? ["对", "正确", "是", "√", "✓", "true", "t"]
-            : ["错", "错误", "否", "×", "✗", "false", "f"];
+            ? ["对", "正确", "是", "√", "✓", "true", "t", "没错", "对的", "正确无误"]
+            : ["错", "错误", "否", "×", "✗", "false", "f", "不对", "不正确", "不是", "非"];
           // 有的页面把对勾/叉号画在选项文字里（「正确（√）」「√ 正确」），
           // 括号内容和符号先剥掉，只留判词，避免答案对却匹配不上。
           // 选项本身只有一个 √/× 时保留，否则会被清成空字符串。
