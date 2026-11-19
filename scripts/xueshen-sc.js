@@ -9558,18 +9558,25 @@ const MAX_RECORDS = 200;
           }
         };
         // 超星章节/作业常把事件绑在字母链或 input 上，只点外层 li 可能没反应
+        const inlineToggle = /addChoice|toggleChoice|switchChoice/i;
+        const toggleClick = !!((optionContainer.getAttribute && inlineToggle.test(String(optionContainer.getAttribute("onclick") || "")))
+          || (optionContainer.closest && optionContainer.closest('[onclick*="addChoice"]'))
+          || (optionContainer.querySelector && optionContainer.querySelector('[onclick*="addChoice"]')));
         const reactScope = (optionContainer.closest && (optionContainer.closest("ul") || optionContainer.closest(".answerBg"))) || optionContainer;
-        let htmlBefore = "";
-        try { htmlBefore = String(reactScope.outerHTML || ""); } catch (_) { }
+        // 新版章节测验的选中态写在题目里的隐藏 input 上，只看选项那一行读不到变化
+        const stateScope = (optionContainer.closest && optionContainer.closest(".TiMu, .questionLi, .reading_answer, [id^='question']")) || reactScope;
+        const snapshot = () => {
+          try { return String(stateScope.outerHTML || ""); } catch (_) { return ""; }
+        };
+        const stateBefore = snapshot();
         tryClick(optionContainer);
         if (this.isChoiceOptionSelected(optionContainer)) return true;
         // 页面已经响应（class / 子节点变化）但认不出「已选」标记时也要立即收手：
         // addChoice 这类切换式选项再点一次会把刚选中的又取消，最终整题空着并误报「点不到」。
-        if (htmlBefore) {
-          let htmlAfter = "";
-          try { htmlAfter = String(reactScope.outerHTML || ""); } catch (_) { }
-          if (htmlAfter && htmlAfter !== htmlBefore) return true;
-        }
+        if (stateBefore && snapshot() !== stateBefore) return true;
+        // 内联 addChoice 是切换式的：单次点击已经交给页面处理，继续补点只会把它取消。
+        // 选中标记认不出来时按成功处理，由上层 __xsTrustedSelected 记录，避免重复点击。
+        if (toggleClick) return true;
         // zj 版整行 li 是容器，真正绑点击的通常是行内的 before-after
         tryClick(optionContainer !== optionElement
           ? (optionContainer.querySelector && optionContainer.querySelector(".before-after")) || optionElement
