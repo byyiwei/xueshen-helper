@@ -9783,13 +9783,14 @@ const MAX_RECORDS = 200;
           if (!answers.length) continue;
           let filledCount = 0;
           // 不按「第几行填第几个」硬对齐：答案前面可能多一行「答案如下：」，
-          // 硬对齐会让后面整体串位。按顺序往后找第一个能对上当前格的答案，
-          // 对不上的行直接跳过，这样多一行/少一行都不会填错位置。
-          let pointer = 0;
+          // 硬对齐会让后面整体串位。每一格在自己的候选里独立找一条还没被用过的
+          // 匹配答案，这样答案乱序返回时也能对上，不再被单向游标卡住。
+          const usedAnswers = new Set();
           selectBoxes.forEach((box, index) => {
             var _b;
             let answer = "";
-            for (let i = pointer; i < answers.length; i += 1) {
+            for (let i = 0; i < answers.length; i += 1) {
+              if (usedAnswers.has(i)) continue;
               const candidate = answers[i];
               if (!candidate) continue;
               // 模型常写「A-B」整对；页面 data 可能只存左项或右项，两个都试一遍
@@ -9801,7 +9802,7 @@ const MAX_RECORDS = 200;
                 this.findElementByAttr(box, "option[value]", "value", value));
               if (hit) {
                 answer = hit;
-                pointer = i + 1;
+                usedAnswers.add(i);
                 break;
               }
             }
@@ -9870,26 +9871,21 @@ const MAX_RECORDS = 200;
           if (!answers.length) continue;
           let filledCount = 0;
           // 同样不按行号硬对齐：模型常在前面加「答案如下：」或解析，
-          // 按小问往后找能匹配该小问选项的答案，跳过对不上的行，避免整体错位。
-          let pointer = 0;
+          // 每个小问独立找一条还没被用过的匹配答案，答案乱序也能对上。
+          const usedAnswers = new Set();
           containers.forEach((container, index) => {
-            let answer = "";
-            for (let i = pointer; i < answers.length; i += 1) {
+            let option = null;
+            for (let i = 0; i < answers.length; i += 1) {
+              if (usedAnswers.has(i)) continue;
               const candidate = answers[i];
               if (!candidate) continue;
-              if (this.findElementByAttr(container, "span.saveSingleSelect[data]", "data", candidate)) {
-                answer = candidate;
-                pointer = i + 1;
+              const hit = this.findElementByAttr(container, "span.saveSingleSelect[data]", "data", candidate);
+              if (hit) {
+                option = hit;
+                usedAnswers.add(i);
                 break;
               }
             }
-            if (!answer) return;
-            const option = this.findElementByAttr(
-              container,
-              "span.saveSingleSelect[data]",
-              "data",
-              answer
-            );
             if (!option) return;
             // 以前点完就算成功：页面没响应、只填上一个小问都会报整题成功。
             // 现在每个小问点完都回读，只有全部小问都真选上了才算填上。
@@ -12466,6 +12462,9 @@ const MAX_RECORDS = 200;
           question.__xsFillReason = "page_structure";
           return false;
         }
+        // 分页模式下 element 是解析时按序号取的节点，可能不是当前这一题；
+        // 上报异常和结构样本时要用当前实际填写的节点，否则样本会串到别的题上。
+        question.element = subjectNode;
         // 不同版本/页面的选项结构不一样：作业页是 .node_detail，
         // stuExamWeb 考试页有的只有 .nodeLab > label > input。写死 .node_detail 时
         // 考试页一个选项都取不到，答案拿到了也点不上（异常页 zhs-web 的那类上报）。
@@ -12903,12 +12902,23 @@ const MAX_RECORDS = 200;
           const judgeTexts = answer === "对"
             ? ["对", "正确", "是", "√", "✓", "true", "t"]
             : ["错", "错误", "否", "×", "✗", "false", "f"];
+          // 有的页面把对勾/叉号画在选项文字里（「正确（√）」「√ 正确」），
+          // 括号内容和符号先剥掉，只留判词，避免答案对却匹配不上。
+          // 选项本身只有一个 √/× 时保留，否则会被清成空字符串。
+          const normalizeJudgeOptionText = (text) => {
+            const withoutBracket = String(text || "")
+              .replace(/^[A-Za-z][.、．)）:：\s]+/, "")
+              .replace(/[（(【\[][^）)】\]]*[）)】\]]/g, "");
+            const withoutSymbols = withoutBracket.replace(/[√✓✔×✗✘]/g, "");
+            return (withoutSymbols.trim() ? withoutSymbols : withoutBracket)
+              .replace(/[\s.。，,、:：;；]/g, "")
+              .trim()
+              .toLowerCase();
+          };
           let judgeClicked = null;
           for (const optionDOM of optionsDOM) {
-            const optionText = optionRawText(optionDOM)
-              .replace(/^[A-Za-z][.、．)）:：\s]+/, "")
-              .replace(/[\s.。，,、]/g, "");
-            if (judgeTexts.includes(optionText.toLowerCase())) {
+            const optionText = normalizeJudgeOptionText(optionRawText(optionDOM));
+            if (judgeTexts.includes(optionText)) {
               isSelected = true;
               judgeClicked = optionDOM;
               // 已经是选中态就不再点，避免切换式选项被点成取消
