@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.24
+// @version      6.1.0
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -15,6 +15,12 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.1.0 (2026-11-19)
+// @changelog    1. 智慧树考试页不再替换 XMLHttpRequest.prototype.open，修复站方反作弊检测误弹
+// @changelog    2. 新增反检测护栏：进入答题页自动检查原生接口，被改动的用原生快照还原并清掉 window.OCS
+// @changelog    3. 检测项异常会写面板日志并上报后台，能直接看到是哪一项被改、有没有修回
+// @changelog    4. 智慧树新版一次渲染多道题但只显示一道时，按当前可见题目作答，不再点隐藏节点
+// @changelog    5. 页面把同一选项写了两遍时选第一个，不再判成答案有歧义整题放弃
 // @changelog    v6.0.24 (2026-11-19)
 // @changelog    1. 选项点下去页面已经变化就立即收手，不再因为读不到勾选标记反复点击、把已选答案又取消掉
 // @changelog    2. 填空只认真正可写的输入框，隐藏控件不再被当成空位；兼容只读输入框和框架接管的输入

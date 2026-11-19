@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.0.24",
+    "version": "6.1.0",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.0.24 选项点击后页面已变化立即收手，避免重复点击取消勾选；填空只认可写输入框并兼容只读/框架输入；填空异常上报补充输入框结构"
+    "changelog": "v6.1.0 修复智慧树反作弊检测误弹（不再替换 XHR.open，新增护栏与异常上报）；按可见题目作答；重复选项自动取第一个"
   },
   "xueshen-gf": {
-    "version": "6.0.24",
+    "version": "6.1.0",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.0.24 选项点击后页面已变化立即收手，避免重复点击取消勾选；填空只认可写输入框并兼容只读/框架输入；填空异常上报补充输入框结构"
+    "changelog": "v6.1.0 修复智慧树反作弊检测误弹（不再替换 XHR.open，新增护栏与异常上报）；按可见题目作答；重复选项自动取第一个"
   }
 }
