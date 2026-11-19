@@ -2295,7 +2295,7 @@
     return result;
   }
   // 哪些平台有哪些能力：设置页按当前平台过滤，没这个功能的平台不显示对应设置
-  const ANSWER_PLATFORM_KEYS = ["cx", "zhs", "qs", "ct"];
+  const ANSWER_PLATFORM_KEYS = ["cx", "zhs", "qs", "ct", "jdz"];
   const WATCH_PLATFORM_KEYS = ["ykt", "mskt", "icve", "ouchn", "mooc", "uschool", "xtzx", "ytccr", "sdzj", "xczx"];
   // 自动切换页签时，别抢用户手动点开的页签（设置、搜题、记录、队列）
   const AUTO_TAB_KEYS = ["0", "1"];
@@ -2440,14 +2440,14 @@
               text: "视频助手",
               value: true,
               type: "switch",
-              platforms: ["zhs"],
+              platforms: ["zhs", "jdz"],
               tips: "关闭后进入学习页不会自动播放视频、不会自动切章节；答题助手打开后才会开始答题"
             },
             assistAnswer: {
               text: "答题助手",
               value: true,
               type: "switch",
-              platforms: ["zhs"],
+              platforms: ["zhs", "jdz"],
               tips: "关闭后进入作业/考试页不会自动作答，可手动点开"
             },
             masteryFull: {
@@ -8978,7 +8978,7 @@
     constructor(type, iframe) {
       super();
       __publicField(this, "type");
-      __publicField(this, "AI_ALLOW_QUESTION_TYPE", ["0", "1", "2", "3", "4", "5", "6", "7", "9", "26"]);
+      __publicField(this, "AI_ALLOW_QUESTION_TYPE", ["0", "1", "2", "3", "4", "5", "6", "7", "9", "11", "14", "15", "26"]);
       __publicField(this, "answerSeparators", ["===", "#", "---", "###", "|", ";", "；", ",", "，", "、"]);
       __publicField(this, "init", async () => {
         var _that = this;
@@ -9171,18 +9171,54 @@
                 code: -1,
                 answer: ["该题型不支持AI答题"]
               };
-              window.__XSReportPageIssue && window.__XSReportPageIssue({
-                page_type: "cx-" + this.type,
-                stage: "detect_type",
-                reason_code: "unsupported_type",
-                selector: "题型 " + String(question.type || ""),
-                expected: "题型在当前脚本的支持列表内",
-                found: {
-                  type: String(question.type || ""),
-                  options: (question.optionsText || []).length
-                },
-                nodes: question.element ? [question.element] : []
-              });
+              // 每会话每种题型只采一条真实页面结构：换作业再遇到同一题型不再重复上报，
+              // 60 秒去重挡不住这种重复，靠类型名去重就够。
+              const unsupportedKey = "cx-" + this.type + ":" + String(question.type || "");
+              const unsupportedReported = window.__xsUnsupportedReported || (window.__xsUnsupportedReported = /* @__PURE__ */ new Set());
+              if (!unsupportedReported.has(unsupportedKey)) {
+                unsupportedReported.add(unsupportedKey);
+                const el = question.element;
+                const selectorHit = (() => {
+                  if (!el || !el.querySelector) return "";
+                  return [".line_answer_ct", ".reading_answer", ".filler", ".subject_node"].find((sel) => {
+                    try { return !!(el.matches(sel) || el.querySelector(sel)); } catch (_) { return false; }
+                  }) || "";
+                })();
+                const countIn = (sel) => {
+                  try { return el && el.querySelectorAll ? el.querySelectorAll(sel).length : 0; } catch (_) { return 0; }
+                };
+                const nodes = [];
+                if (el) nodes.push(el);
+                try {
+                  const hitEl = selectorHit && el.querySelector(selectorHit);
+                  if (hitEl && !nodes.includes(hitEl)) nodes.push(hitEl);
+                  const subEl = el.querySelector(".reading_answer, .questionLi, .filler");
+                  if (subEl && !nodes.includes(subEl)) nodes.push(subEl);
+                } catch (_) {}
+                window.__XSReportPageIssue && window.__XSReportPageIssue({
+                  page_type: "cx-" + this.type,
+                  stage: "detect_type",
+                  reason_code: "unsupported_type",
+                  selector: "题型 " + String(question.type || ""),
+                  expected: "题型在当前脚本的支持列表内",
+                  found: {
+                    type: String(question.type || ""),
+                    options: (question.optionsText || []).length,
+                    selector_hit: selectorHit,
+                    controls: countIn('input, textarea, [contenteditable="true"]'),
+                    inputs: countIn("input"),
+                    selects: countIn("select"),
+                    iframes: countIn("iframe"),
+                    sub_questions: countIn(".reading_answer, .filler, .questionLi"),
+                    option_dom: (question && question.__xsOptionCount) || 0
+                  },
+                  nodes
+                });
+              }
+              this.log.insertLog(
+                `第${index + 1}题是「${question.type}」，当前版本还不支持，已把页面结构回传；这题请手动作答`,
+                "warning"
+              );
             }
           }
           this.questionStore.currentQuestionIndex += 1;
@@ -12083,10 +12119,14 @@
               }
             }
             if (!handled && !this.AI_ALLOW_QUESTION_TYPE.includes(question.type)) {
-              // 平台题型字段缺失或给了冷门名称（材料题、组合题等）时不要直接判「不支持」：
-              // 页面有复选/单选控件就按控件推断，有多个选项就按单选，能答先答，避免误报。
-              if (detectMultiChoiceDom(question.element)) question.type = "多选题";
-              else if ((question.element && question.element.querySelector && question.element.querySelector("input[type='radio'], [role='radio']")) || (question.optionsText || []).length >= 2) question.type = "单选题";
+              // 只对「确实没认出来」的题型按页面控件猜。连线题、阅读理解这类已知但还没实现的
+              // 题型也有多个选项，按旧逻辑会被强改成单选题，然后拿单选答案乱点一遍，
+              // 比不答更糟；它们直接走下面的「不支持」分支，顺手把页面结构采回去。
+              const inferableType = new Set(["", "999", "材料题", "组合题", "其它", "其他"]);
+              if (inferableType.has(String(question.type || ""))) {
+                if (detectMultiChoiceDom(question.element)) question.type = "多选题";
+                else if ((question.element && question.element.querySelector && question.element.querySelector("input[type='radio'], [role='radio']")) || (question.optionsText || []).length >= 2) question.type = "单选题";
+              }
             }
             if (!handled) {
               if (this.AI_ALLOW_QUESTION_TYPE.includes(question.type)) {
@@ -12133,33 +12173,60 @@
                   code: -1,
                   answer: ["该题型不支持AI答题"]
                 };
-                window.__XSReportPageIssue && window.__XSReportPageIssue({
-                  page_type: "zhs-web",
-                  stage: "detect_type",
-                  reason_code: "unsupported_type",
-                  selector: "题型 " + String(question.type || ""),
-                  expected: "题型在当前脚本的支持列表内",
-                  found: {
-                    type: String(question.type || ""),
-                    options: (question.optionsText || []).length,
-                    // 题型判不出/不支持时把诊断信息带全：题干、选项预览、页面控件结构，
-                    // 只看一个 type 无法判断是接口字段异常还是页面结构变了。
-                    title: String((question && question.title) || "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").slice(0, 80),
-                    options_preview: ((question && question.optionsText) || []).slice(0, 4).join(" | ").slice(0, 120),
-                    option_dom: (question && question.__xsOptionCount) || 0,
-                    option_selector: (question && question.__xsOptionSelector) || "",
-                    controls: (() => {
-                      try {
-                        const el = question && question.element;
-                        return el && el.querySelectorAll ? el.querySelectorAll('input, textarea, [contenteditable="true"]').length : 0;
-                      } catch (_) {
-                        return 0;
-                      }
-                    })(),
-                    host: String(location.hostname || "")
-                  },
-                  nodes: question.element ? [question.element] : []
-                });
+                // 每会话每种题型只采一条真实结构；用户换一份作业再遇到同一题型时不重复上报
+                const unsupportedKey = "zhs-web:" + String(question.type || "");
+                const unsupportedReported = window.__xsUnsupportedReported || (window.__xsUnsupportedReported = /* @__PURE__ */ new Set());
+                if (!unsupportedReported.has(unsupportedKey)) {
+                  unsupportedReported.add(unsupportedKey);
+                  const el = question && question.element;
+                  const selectorHit = (() => {
+                    if (!el || !el.querySelector) return "";
+                    return [".subject_node", ".node_detail", ".nodeLab", "textarea", '[contenteditable="true"]'].find((sel) => {
+                      try { return !!(el.matches(sel) || el.querySelector(sel)); } catch (_) { return false; }
+                    }) || "";
+                  })();
+                  const countIn = (sel) => {
+                    try { return el && el.querySelectorAll ? el.querySelectorAll(sel).length : 0; } catch (_) { return 0; }
+                  };
+                  const nodes = [];
+                  if (el) nodes.push(el);
+                  try {
+                    const hitEl = selectorHit && el.querySelector(selectorHit);
+                    if (hitEl && !nodes.includes(hitEl)) nodes.push(hitEl);
+                    const field = el.querySelector('textarea, input:not([type="hidden"]), [contenteditable="true"]');
+                    if (field && !nodes.includes(field)) nodes.push(field);
+                    const optEl = el.querySelector(".node_detail, .nodeLab");
+                    if (optEl && !nodes.includes(optEl)) nodes.push(optEl);
+                  } catch (_) {}
+                  window.__XSReportPageIssue && window.__XSReportPageIssue({
+                    page_type: "zhs-web",
+                    stage: "detect_type",
+                    reason_code: "unsupported_type",
+                    selector: "题型 " + String(question.type || ""),
+                    expected: "题型在当前脚本的支持列表内",
+                    found: {
+                      type: String(question.type || ""),
+                      options: (question.optionsText || []).length,
+                      selector_hit: selectorHit,
+                      // 题型判不出/不支持时把诊断信息带全：题干、选项预览、页面控件结构，
+                      // 只看一个 type 无法判断是接口字段异常还是页面结构变了。
+                      title: String((question && question.title) || "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").slice(0, 80),
+                      options_preview: ((question && question.optionsText) || []).slice(0, 4).join(" | ").slice(0, 120),
+                      option_dom: (question && question.__xsOptionCount) || 0,
+                      option_selector: (question && question.__xsOptionSelector) || "",
+                      controls: countIn('input, textarea, [contenteditable="true"]'),
+                      inputs: countIn("input"),
+                      selects: countIn("select"),
+                      iframes: countIn("iframe"),
+                      sub_questions: countIn(".subject_node, .nodeLab, .option_item")
+                    },
+                    nodes
+                  });
+                }
+                this.log.insertLog(
+                  `第${index + 1}题是「${question.type}」，当前版本还不支持，已把页面结构回传；这题请手动作答`,
+                  "warning"
+                );
               }
             }
             // 填不上也要切到下一题：不切题会导致下一题的答案被填到当前这题上，
@@ -21905,6 +21972,12 @@ const XS_EXT = (() => {
     }],
     defaultRoute: { show: true, tab: "0" }
   };
+  // 景德镇 o-learn：刷课、考试、随堂答题由内置的景德镇模块负责，
+  // 这里只负责挂出同一套主面板（首页/答题/日志/记录/设置），不再单独渲染 olvh 面板。
+  const oLearnRoutes = {
+    match: [{ keyword: "", tab: "0" }],
+    defaultRoute: { show: true, tab: "0" }
+  };
   const platformConfigs = [
     {
       key: "cx",
@@ -21940,6 +22013,14 @@ const XS_EXT = (() => {
       routes: zhsRoutes,
       showAi: false,
       queueAdapter: zhsCourseQueueAdapter
+    },
+    {
+      key: "jdz",
+      name: "景德镇艺术职业学院",
+      domains: ["o-learn.cn"],
+      routes: oLearnRoutes,
+      showAi: false,
+      watchSite: true
     },
     {
       key: "qs",
@@ -24319,6 +24400,36 @@ const XS_EXT = (() => {
     function saveStore() {
         try { GM_setValue(STORE_KEY, JSON.stringify(store)); } catch (e) { /* ignore */ }
     }
+    // 面板统一到主面板后，倍速、自动切章、视频/答题助手都直接用主设置里的现成项，
+    // 不再维护一份景德镇自己的设置界面，避免两套开关互相打架。
+    function syncStoreFromMainSettings() {
+        let basic = null;
+        try { basic = useSettingStore().config.basicConfig; } catch (e) { basic = null; }
+        if (!basic) return;
+        const valueOf = (key) => basic[key] ? basic[key].value : undefined;
+        const speed = Number(valueOf('videoPlayrate'));
+        if (speed > 0) store.speed = speed;
+        if (basic.autoChangeChapter) store.autoNext = !!basic.autoChangeChapter.value;
+        if (basic.assistVideo) {
+            store.autoPlay = !!basic.assistVideo.value;
+            store.tasks.video = !!basic.assistVideo.value;
+        }
+        if (basic.autoAnswer) {
+            const autoOn = !!basic.autoAnswer.value;
+            const assistOn = basic.assistAnswer ? !!basic.assistAnswer.value : true;
+            store.tasks.exam = store.tasks.quiz = autoOn && assistOn;
+        }
+        // 考试交卷对应主设置的「考试设置」里的自动交卷，不能拿作业自动提交来套
+        try {
+            const examConfig = useSettingStore().config.examConfig;
+            if (examConfig && examConfig.autoSubmit) store.tasks.examAutoSubmit = !!examConfig.autoSubmit.value;
+        } catch (e) { /* ignore */ }
+        // 主面板已经登录时把凭据同步过来；已有脚本密钥时不动，避免把密钥换成普通 token
+        try {
+            const token = valueOf('token');
+            if (token && !store.account.scriptKey) store.account.token = token;
+        } catch (e) { /* ignore */ }
+    }
 
     /* ======================== 状态 ======================== */
     let state = {
@@ -24349,6 +24460,8 @@ const XS_EXT = (() => {
         logStore.list.push({ time: new Date(), msg });
         if (logStore.list.length > CONFIG.logMax) logStore.list.shift();
         console.log('%c[景德镇艺术助手]', 'color:#4CAF50;font-weight:bold', msg);
+        // 统一面板后，景德镇日志直接写进主面板的「日志」页，不再有自己的日志列表
+        try { useLogStore().insertLog('[景德镇] ' + msg); } catch (e) { /* ignore */ }
         renderLogPanel();
     }
 
@@ -26123,6 +26236,8 @@ const XS_EXT = (() => {
     /* ======================== 启动 ======================== */
     function init() {
         loadStore();
+        syncStoreFromMainSettings();
+        setInterval(syncStoreFromMainSettings, 3000);
         loadRecords();
         log('景德镇艺术-学习助手 v4.1.0 启动');
 
@@ -26131,7 +26246,6 @@ const XS_EXT = (() => {
         setupGlobalObserver();
 
         const start = () => {
-            createPanel();
             watchRouteChange();
             setupVisibilityHandler();
             setupUserInteractionUnlock();
