@@ -2731,7 +2731,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       try { fn(questionNo); } catch (_) { }
     }
   };
-  const applyPickedCandidate = (index, candidate) => {
+  const applyPickedCandidate = async (index, candidate) => {
     const questionStore = useQuestionStore();
     const question = questionStore.questionList[index];
     const hook = getQuestionFillHook();
@@ -2741,7 +2741,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     if (!answer.length) return false;
     real.answer = { code: 1, answer, src: "bank" };
     question.answer = { code: 1, answer, src: "bank" };
-    const filled = hook.fillQuestion(real, index);
+    const filled = await hook.fillQuestion(real, index);
     questionStore.questionList = [...questionStore.questionList];
     return !!filled;
   };
@@ -2820,8 +2820,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         answerDom.value.scrollTo({ top: dom.offsetTop });
         selectedIndex.value = index;
       };
-      const pickCandidate = (qIndex, candidate) => {
-        const filled = applyPickedCandidate(qIndex, candidate);
+      const pickCandidate = async (qIndex, candidate) => {
+        const filled = await applyPickedCandidate(qIndex, candidate);
         const q = questionList.value[qIndex];
         if (q && q.answer) {
           q.answer.picked = filled;
@@ -11721,7 +11721,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     constructor(type, iframe) {
       super();
       __publicField(this, "type");
-      __publicField(this, "AI_ALLOW_QUESTION_TYPE", ["单选题", "多选题", "判断题", "填空题", "多项选择题", "X型选择题", "X型题", "不定项选择题", "不定项"]);
+      __publicField(this, "AI_ALLOW_QUESTION_TYPE", ["单选题", "多选题", "判断题", "填空题", "简答题", "名词解释", "多项选择题", "X型选择题", "X型题", "不定项选择题", "不定项"]);
       __publicField(this, "init", async () => {
         var _that = this;
         this.questions = [];
@@ -11781,12 +11781,24 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             : 0;
           const pagedMode = nodeCount > 0
             && (nodeCount < this.questions.length || (nodeCount > 1 && visibleNodeCount < nodeCount));
+          // SPA 换作业时不刷新页面：上一份作业的答题循环必须停掉，
+          // 否则它会拿着旧题目继续往新页面上点。
+          const routeKey = () => String((this._window || window).location.href);
+          const startRouteKey = routeKey();
           for (const [index, question] of this.questions.entries()) {
+            if (routeKey() !== startRouteKey) {
+              this.log.insertLog("页面已切换，停止上一份作业的答题", "warning");
+              break;
+            }
             this.questionStore.currentQuestionIndex = index;
             let fillFailed = false;
             let handled = false;
             if (mode !== "ai") {
               const answerData = mode === "questionBank" ? await getQuestionBankAnswer(question) : await getAccurateAnswer(question);
+              if (routeKey() !== startRouteKey) {
+                this.log.insertLog("页面已切换，停止上一份作业的答题", "warning");
+                break;
+              }
               if (answerData.code === 1) {
                 if (answerData.data.multimatch) {
                   // 手动选择模式：题库有多道相似题，先不填，等用户自己挑
@@ -11816,7 +11828,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                   answer: answerData.data.answer,
                   source: "accurate"
                 });
-                const errorStatus = !this.fillQuestion(question, index);
+                const errorStatus = !(await this.fillQuestion(question, index));
                 if (errorStatus) {
                   question.answer.code = 0;
                   question.answer.msg = "答案拿到了但没点上去";
@@ -11848,6 +11860,10 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                   type: this.questionType[question.type] || question.type
                 };
                 const aiAnswerData = await getAIAnswer(aiQuestion);
+                if (routeKey() !== startRouteKey) {
+                  this.log.insertLog("页面已切换，停止上一份作业的答题", "warning");
+                  break;
+                }
                 if (aiAnswerData.code === 1) {
                   question.answer = {
                     code: 2,
@@ -11860,7 +11876,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                     answer: aiAnswerData.data.answer,
                     source: "ai"
                   });
-                  const errorStatus = !this.fillQuestion(question, index);
+                  const errorStatus = !(await this.fillQuestion(question, index));
                   if (errorStatus) {
                     question.answer.code = 0;
                     question.answer.msg = "答案拿到了但没点上去";
@@ -11982,7 +11998,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         }
         this.questionStore.questionList = this.questions;
       });
-      __publicField(this, "fillQuestion", (question, index) => {
+      __publicField(this, "fillQuestion", async (question, index) => {
         let isSelected = false;
         if (!this._window) return;
         // 智慧树新版作业页一屏只渲染一道题，按题目序号取节点会取空，导致第二题起答不上、
@@ -12057,6 +12073,53 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             } catch (_) {}
           }
           question.__xsClicked = true;
+        };
+        // 点击后回读：不能只凭「点了」就报填上。
+        // 选中状态可能挂在选项本身、内层 .node_detail/.label，或外层 label/li/.nodeLab 上，
+        // 原生 radio/checkbox 则看 checked；图标题看图片 src 变化。
+        const optionStateNodes = (el) => {
+          const nodes = [];
+          const push = (n) => { if (n && !nodes.includes(n)) nodes.push(n); };
+          push(el);
+          if (el.querySelector) {
+            push(el.querySelector(".node_detail"));
+            push(el.querySelector(".label"));
+          }
+          if (el.closest) {
+            push(el.closest(".nodeLab"));
+            push(el.closest("label"));
+            push(el.closest("li"));
+            push(el.closest(".subject_node"));
+          }
+          return nodes;
+        };
+        const isOptionSelected = (el) => {
+          if (!el) return false;
+          try {
+            const input = el.matches && el.matches("input")
+              ? el
+              : (el.querySelector && el.querySelector("input[type='radio'], input[type='checkbox']"));
+            if (input && input.checked) return true;
+            for (const node of optionStateNodes(el)) {
+              if (node.getAttribute && node.getAttribute("aria-checked") === "true") return true;
+              const tokens = String(node.className || "").toLowerCase().split(/\s+/);
+              if (tokens.some((t) => /^(checked|is-checked|ischecked|onchecked|selected|active|current|choose|chosen|on)$/.test(t))) return true;
+            }
+          } catch (_) {}
+          return false;
+        };
+        const optionSnapshot = (el) => {
+          try {
+            const input = el.matches && el.matches("input")
+              ? el
+              : (el.querySelector && el.querySelector("input[type='radio'], input[type='checkbox']"));
+            const imgs = Array.from((el.querySelectorAll && el.querySelectorAll("img")) || [])
+              .map((img) => `${img.getAttribute("src") || ""}|${img.className || ""}`).join(",");
+            return optionStateNodes(el).map((node) => `${node.className || ""}|${(node.getAttribute && node.getAttribute("aria-checked")) || ""}`)
+              .join(";") + `#${input ? (input.checked ? 1 : 0) : ""}#${imgs}`;
+          } catch (_) {
+            return "";
+          }
         };
         const normalizeOptText = (str) => String(str ?? "").replace(/^[A-Z][.、．]\s*/i, "").replace(/\s+/g, "").replace(/[^\p{L}\p{N}√×]/gu, "").toLowerCase();
         if (question.type === "单选题" || question.type === "多选题" || /多选|X型|不定项/.test(question.type || "")) {
@@ -12161,12 +12224,55 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               }
             }
           });
-          Array.from(pickedIdx).sort((a, b) => a - b).forEach((optIdx) => {
+          let pickedList = Array.from(pickedIdx).sort((a, b) => a - b);
+          // 页面把同一选项写了两遍（正文完全相同）时选第一个即可，不能当成答案有歧义
+          if (pickedList.length > 1) {
+            const norms = new Set(pickedList.map((idx) => optionNorms[idx]));
+            if (norms.size === 1) pickedList = [pickedList[0]];
+          }
+          // 单选命中多个不同选项说明匹配不可靠，宁可不填也不乱点
+          if (!isMultiType && pickedList.length > 1) {
+            question.__xsFillReason = "answer_ambiguous";
+            try {
+              this.log.insertLog(`第${index + 1}题单选答案匹配到多个选项，已跳过`, "warning");
+            } catch (_) {}
+            return false;
+          }
+          const beforeSnaps = pickedList.map((optIdx) => optionSnapshot(optionsDOM[optIdx]));
+          pickedList.forEach((optIdx) => {
             const optionDOM = optionsDOM[optIdx];
-            if (!optionDOM) return;
-            isSelected = true;
-            clickOption(optionDOM);
+            if (optionDOM) clickOption(optionDOM);
           });
+          if (pickedList.length) {
+            // 点击后必须回读真实选中状态，不能只凭「点了」就报成功：
+            // 选项被遮挡、选择器变了、页面没响应时，假成功比报错更危险。
+            // 有的页面是 Vue/React 异步更新，给一点时间再读。
+            await new Promise((resolve) => setTimeout(resolve, 180));
+            const liveOptions = collectOptionNodes();
+            const list = liveOptions.length === optionsDOM.length ? liveOptions : optionsDOM;
+            const allOk = pickedList.every((optIdx, i) => {
+              let el = list[optIdx];
+              if (!el) return false;
+              if (isOptionSelected(el)) return true;
+              // 重渲染后节点会被替换，按选项正文重新定位再读一次
+              const wanted = optionNorms[optIdx];
+              const hit = wanted
+                ? liveOptions.find((node) => normalizeOptText(optionRawText(node)) === wanted)
+                : null;
+              if (hit && isOptionSelected(hit)) return true;
+              // 图标题的选中经常只换图标，不挂 checked 类
+              const before = beforeSnaps[i];
+              const after = optionSnapshot(hit || el);
+              return !!before && !!after && before !== after;
+            });
+            isSelected = allOk;
+            if (!allOk) {
+              question.__xsFillReason = "click_not_effective";
+              try {
+                this.log.insertLog(`第${index + 1}题选项点击后未生效，按未填写处理`, "warning");
+              } catch (_) {}
+            }
+          }
         } else if (question.type === "判断题") {
           // 判断题答案的各种写法都要能判定；以前没命中就默认「对」，会把「错误。」「False」答成对题。
           const rawJudge = String((question.answer.answer && question.answer.answer[0]) == null ? "" : question.answer.answer[0]).replace(/\s+/g, "");
@@ -12195,13 +12301,28 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           const judgeTexts = answer === "对"
             ? ["对", "正确", "是", "√", "✓", "true", "t"]
             : ["错", "错误", "否", "×", "✗", "false", "f"];
+          let judgeClicked = null;
           optionsDOM.forEach((optionDOM) => {
             const optionText = optionRawText(optionDOM).replace(/[\s.。，,、]/g, "");
             if (judgeTexts.includes(optionText.toLowerCase())) {
               isSelected = true;
               clickOption(optionDOM);
+              judgeClicked = optionDOM;
             }
           });
+          if (judgeClicked) {
+            await new Promise((resolve) => setTimeout(resolve, 180));
+            const wanted = normalizeOptText(optionRawText(judgeClicked));
+            const live = collectOptionNodes();
+            const hit = live.find((node) => normalizeOptText(optionRawText(node)) === wanted);
+            if (!isOptionSelected(judgeClicked) && !(hit && isOptionSelected(hit))) {
+              isSelected = false;
+              question.__xsFillReason = "click_not_effective";
+              try {
+                this.log.insertLog(`第${index + 1}题判断题选项点击后未生效，按未填写处理`, "warning");
+              } catch (_) {}
+            }
+          }
         } else if (question.type === "填空题" || question.type === "简答题" || question.type === "名词解释") {
           // 智慧树填空题可能是 input，也可能是 textarea / contenteditable，个别页面还嵌在 iframe 里。
           const blankAnswers = normalizeChoiceAnswerList(question.answer.answer);
@@ -12554,7 +12675,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                   });
                   if (questions.length) {
                     const pageWin = _unsafeWindow || window;
-                    pageWin.__xsExamQuestionsReady = questions;
+                    // 带上当前页面地址：SPA 换作业后旧题目不会被当成新作业的题
+                    pageWin.__xsExamQuestionsReady = { key: String(pageWin.location.href), questions };
                     if (typeof fireExamQuestionHooks === "function") fireExamQuestionHooks();
                   }
                 }
@@ -12568,11 +12690,14 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
   };
   const onExamQuestions = [];
   const fireExamQuestionHooks = () => {
+    const w = _unsafeWindow || window;
+    const ready = w.__xsExamQuestionsReady;
+    // 只消费当前页面地址下抓到的题目，旧作业的题不能拿来答新页面
+    if (!ready || ready.key !== w.location.href) return;
     const list = onExamQuestions.splice(0, onExamQuestions.length);
     if (!list.length) return;                        // 还没有入口注册回调，题目先留在 window 里
-    const w = _unsafeWindow || window;
-    if (w.__xsAnswerStarted) return;                 // 只答一轮，避免 doHomework/doExam 重复触发
-    w.__xsAnswerStarted = true;
+    if (w.__xsAnswerStarted === w.location.href) return;   // 当前页面只答一轮
+    w.__xsAnswerStarted = w.location.href;
     const cb = list[0];
     const reportErr = (e) => {
       try {
@@ -12594,10 +12719,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     const w = _unsafeWindow || window;
     // 题目接口在页面早期就会请求（document-start 的 send 钩子已经抓下来了），
     // 答题入口注册时补触发一次；store 必须同步写入，parseHtml 是从 store 读题目的。
-    if (w.__xsExamQuestionsReady) {
-      if (w.__xsAnswerStarted) return;
+    // ready 里带页面地址，SPA 换作业后旧题直接作废，不会被套到新页面上。
+    const ready = w.__xsExamQuestionsReady;
+    if (ready && ready.key === w.location.href && Array.isArray(ready.questions) && ready.questions.length) {
+      if (w.__xsAnswerStarted === w.location.href) return;
       try {
-        useQuestionStore().questionList = w.__xsExamQuestionsReady;
+        useQuestionStore().questionList = ready.questions;
       } catch (_) {}
       onExamQuestions.push(callback);
       fireExamQuestionHooks();
@@ -12610,8 +12737,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     const questionStore = useQuestionStore();
     // 入口可能被调用多次（路由变化等），只跑一轮，避免重复解析/重复答题
     const w0 = _unsafeWindow || window;
-    if (w0.__xsAutoAnswerEntered) return;
-    w0.__xsAutoAnswerEntered = true;
+    if (w0.__xsAutoAnswerEntered === w0.location.href) return;
+    w0.__xsAutoAnswerEntered = w0.location.href;
     log.insertLog("进入作业页面，脚本开始工作中..");
     questionStore.accuracy = -1;
     const handleFetchHook = async () => {
@@ -21508,7 +21635,7 @@ const XS_EXT = (() => {
       const log = useLogStore();
       const setting = useSettingStore();
       const emit = __emit;
-      const url2 = window.location.href;
+      let url2 = window.location.href;
       const hostname = window.location.hostname;
       const messageStore = useMessageStore();
       const currentPlatform = platformConfigs.find(
@@ -21724,6 +21851,46 @@ const XS_EXT = (() => {
         }
         isShow.value = true;
       };
+      // 智慧树从作业列表切到另一份作业可能是不刷新页面的路由切换：
+      // 路由只在上一次挂载时匹配过，三个答题标记也一直留在 window 上，
+      // 不重新匹配就会出现「点了新作业但不开始答题」，甚至拿旧作业的题套新页面。
+      // 这里监听路由变化，重跑一次匹配；题目与答题状态改为按当前 href 识别，旧数据自动作废。
+      const installZhsRouteWatcher = () => {
+        if (location.hostname.indexOf("zhihuishu.com") === -1) return;
+        const w = _unsafeWindow || window;
+        w.__xsZhsReroute = () => {
+          url2 = window.location.href;
+          chooseLogicByUrl();
+        };
+        if (w.__xsZhsRouteWatcherInstalled) return;
+        w.__xsZhsRouteWatcherInstalled = true;
+        let lastHref = window.location.href;
+        let timer = null;
+        const onRouteChange = () => {
+          if (window.location.href === lastHref) return;
+          lastHref = window.location.href;
+          clearTimeout(timer);
+          // 等站方完成路由渲染和题目接口请求，再重新匹配
+          timer = setTimeout(() => {
+            try {
+              if (typeof w.__xsZhsReroute === "function") w.__xsZhsReroute();
+            } catch (_) {}
+          }, 800);
+        };
+        window.addEventListener("hashchange", onRouteChange);
+        window.addEventListener("popstate", onRouteChange);
+        ["pushState", "replaceState"].forEach((name) => {
+          const original = history[name];
+          if (typeof original !== "function" || original.__xsRouteWrapped) return;
+          const wrapped = function (...args) {
+            const ret = original.apply(this, args);
+            setTimeout(onRouteChange, 50);
+            return ret;
+          };
+          wrapped.__xsRouteWrapped = true;
+          history[name] = wrapped;
+        });
+      };
       const updateTokenInfo = () => {
         if (setting.config.basicConfig.token.value) {
           getTokenInfo().then((res) => {
@@ -21822,6 +21989,7 @@ const XS_EXT = (() => {
       vue.onUnmounted(() => clearInterval(refreshTimer.value));
       changeNewVersion();
       chooseLogicByUrl();
+      installZhsRouteWatcher();
       emit("customEvent", isShow.value);
       return (_ctx, _cache) => {
         const _component_a_tab_pane = vue.resolveComponent("a-tab-pane");
