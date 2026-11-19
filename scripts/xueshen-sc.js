@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.0.23
+// @version      6.0.24
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -15,6 +15,10 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.0.24 (2026-11-19)
+// @changelog    1. 选项点下去页面已经变化就立即收手，不再因为读不到勾选标记反复点击、把已选答案又取消掉
+// @changelog    2. 填空只认真正可写的输入框，隐藏控件不再被当成空位；兼容只读输入框和框架接管的输入
+// @changelog    3. 填空填不上时上报输入框结构，便于定位具体的页面写法
 // @changelog    v6.0.23 (2026-11-18)
 // @changelog    1. 数值/符号选项精确匹配：-30kJ 与 +30kJ、=SUM(B2:F2)、[志愿者]=1 这类选项不再被误判成答案有歧义
 // @changelog    2. 选项只差星号、引号、括号时按相似度挑唯一最接近的一项，仍分不出来才放弃

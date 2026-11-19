@@ -4988,6 +4988,12 @@ _REASONING_ONLY_RE = re.compile(
 )
 
 
+def _norm_option_text(v):
+    """选项/答案正文归一化：去「A.」前缀、空白和常见标点后转小写。"""
+    v = re.sub(r"^[A-Za-z][.、．)）:：]\s*", "", str(v or ""))
+    return re.sub(r"[\s　，。！？；：,.!?;:\-—_【】\[\]（）()\"'“”‘’]+", "", v).lower()
+
+
 def _answer_hits_options(question, answer):
     """答案（含多选 JSON 数组）是否至少对应一个页面选项；无选项题不参与判断。"""
     options = [str(o).strip() for o in extract_options_from_question(question) if str(o).strip()]
@@ -4997,18 +5003,19 @@ def _answer_hits_options(question, answer):
     if not items:
         return False
 
-    def norm(v):
-        v = re.sub(r"^[A-Za-z][.、．)）:：]\s*", "", str(v or ""))
-        return re.sub(r"[\s　，。！？；：,.!?;:\-—_【】\[\]（）()\"'“”‘’]+", "", v).lower()
-
-    option_norms = [norm(o) for o in options if norm(o)]
+    option_norms = [n for n in (_norm_option_text(o) for o in options) if n]
+    letter_seq_re = re.compile(r"[A-Za-z](?:[\s、,，&+与和/|]*[A-Za-z]){0,11}")
     for item in items:
-        if re.fullmatch(r"[A-Za-z](?:[\s、,，&+与和/|]*[A-Za-z]){0,11}", item):
+        n_item = _norm_option_text(item)
+        # 选项正文本身就是一串英文字母（AlexNet、ResNet、ViT）时先按正文比对；
+        # 否则下面会把它当成「答案字母序列」，字母超出选项数就误判成答案对不上。
+        if n_item and n_item in option_norms:
+            continue
+        if letter_seq_re.fullmatch(item):
             letters = re.sub(r"[\s、,，&+与和/|]+", "", item).upper()
             if not all(ord(c) - 65 < len(options) for c in letters):
                 return False
             continue
-        n_item = norm(item)
         if not n_item:
             return False
         if not any(n_item == no or (len(n_item) >= 2 and n_item in no) for no in option_norms):
@@ -5059,8 +5066,12 @@ def _answer_choice_conflict(question, answer):
         items = [str(x).strip() for x in _answer_items(answer) if str(x).strip()]
         if len(items) != 1:
             return True
-        # "A,B" 这种带分隔符的字母串表示选了多项，单选题只能有一个
-        if re.fullmatch(r"[A-Za-z](?:[\s、,，&+与和/|]*[A-Za-z])+", items[0]):
+        # "A,B" 这种带分隔符的字母串表示选了多项，单选题只能有一个；
+        # 但选项正文本身是英文字母串（AlexNet）时按正文算一个答案，不算多选。
+        only = items[0]
+        option_norms = {n for n in (_norm_option_text(o) for o in options) if n}
+        if _norm_option_text(only) not in option_norms and re.fullmatch(
+                r"[A-Za-z](?:[\s、,，&+与和/|]*[A-Za-z])+", only):
             return True
     return False
 
@@ -5515,6 +5526,29 @@ def normalize_ai_answer(question, answer):
                 _hits = [opt for opt in options if _norm_opt(opt) and len(_t) >= 2 and _t in _norm_opt(opt)]
                 if len(_hits) == 1:
                     return _hits[0]
+                # 答案后面跟了解释（"Atlas（阿特拉斯）"、"sh（清擦音）"）：
+                # 整段只包含唯一一个选项正文时，按该选项返回，不判成对不上。
+                _contained = [
+                    opt for opt in options
+                    if len(_norm_opt(opt)) >= 2 and _norm_opt(opt) in _t
+                ]
+                if len(_contained) == 1 and _norm_opt(_contained[0]) != _t:
+                    return _contained[0]
+        # 多选题逐项都正好是某个选项正文（选项本身是英文字母：f、s、sh、r）：
+        # 直接按选项原文组 JSON 数组，不能当选项字母去数，否则字母越界会被整项丢掉。
+        if is_multi:
+            _parts = [p.strip() for p in re.split(r"[,，、;；|/]+", text) if p.strip()]
+            if len(_parts) >= 2:
+                _picked = []
+                for _p in _parts:
+                    _ph = [opt for opt in options if _norm_opt(opt) == _norm_opt(_p)]
+                    if len(_ph) != 1:
+                        _picked = []
+                        break
+                    _picked.append(_ph[0])
+                if _picked and len(set(_picked)) == len(_picked):
+                    _ordered = [opt for opt in options if opt in _picked]
+                    return json.dumps(_ordered, ensure_ascii=False)
 
     if options:
         def _letters_to_answer(letter_text):
