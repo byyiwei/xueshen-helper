@@ -10919,14 +10919,23 @@ const MAX_RECORDS = 200;
         watchIframe(documentElement);
       });
     };
-    const waitIframeLoad = async (iframe) => {
+    const waitIframeLoad = (iframe, timeoutSec = 15) => {
       return new Promise((resolve) => {
-        const intervalId = setInterval(async () => {
-          var _a;
-          if (iframe.contentDocument && ((_a = iframe.contentDocument) == null ? void 0 : _a.readyState) == "complete") {
-            resolve();
-            clearInterval(intervalId);
+        const deadline = Date.now() + timeoutSec * 1e3;
+        let intervalId = null;
+        const finish = (ready) => {
+          if (intervalId) clearInterval(intervalId);
+          resolve(ready);
+        };
+        intervalId = setInterval(() => {
+          let ready = false;
+          try {
+            ready = !!(iframe.contentDocument && iframe.contentDocument.readyState == "complete");
+          } catch (_) {
+            ready = false;
           }
+          // 有些 iframe（PDF 预览、持续请求的页面）会一直停在 interactive，必须超时放行，否则整条任务链卡死
+          if (ready || Date.now() >= deadline) finish(ready);
         }, 500);
       });
     };
@@ -11178,6 +11187,8 @@ const MAX_RECORDS = 200;
             log.insertLog("全部章节任务点已完成");
           } else if (hasLockedChapters()) {
             log.insertLog("仍有未解锁的章节，请完成当前章节的任务点后继续", "warning", 4);
+          } else if (await changeToNextUnfinishedChapter()) {
+            log.insertLog("已到最后一章，已自动跳转到未完成的章节");
           } else {
             log.insertLog("已到最后一章，但仍有章节未完成，请手动切换到未完成的章节", "warning", 4);
           }
@@ -11261,14 +11272,14 @@ const MAX_RECORDS = 200;
         rxjs.from(allIframes).pipe(
           concatMap((iframe) => processIframe(iframe).catch((error) => {
             console.warn("[cx] 任务点处理异常。", error);
-            log.insertLog("当前任务点处理异常", "warning");
+            log.insertLog(`当前任务点处理异常：${error && (error.message || String(error)) || "未知错误"}`, "warning");
             return TASK_RESULT.unconfirmed;
           }))
         ).subscribe({
           next: (result) => taskResults.push(result || TASK_RESULT.skipped),
           error: (error) => {
             console.warn("[cx] 任务链异常终止。", error);
-            log.insertLog("任务链处理异常，请尝试刷新页面", "warning", 4);
+            log.insertLog(`任务链处理异常：${error && (error.message || String(error)) || "未知错误"}，请尝试刷新页面`, "warning", 4);
           },
           complete: async () => {
             var _a, _b;
@@ -11828,7 +11839,8 @@ const MAX_RECORDS = 200;
       const iframeWindow = iframe.contentWindow;
       if (!iframeDocument || !iframeWindow) return TASK_RESULT.skipped;
       if (iframeSrc.includes("javascript:")) return TASK_RESULT.skipped;
-      await waitIframeLoad(iframe);
+      const iframeReady = await waitIframeLoad(iframe);
+      if (!iframeReady) log.insertLog("iframe 加载超时，继续处理后续任务点", "warning");
       const parentClass = ((_a = iframe.parentElement) == null ? void 0 : _a.className) || "";
       if (parentClass.includes("ans-job-finished")) return TASK_RESULT.skipped;
       if (iframeSrc.includes("modules/read")) {
