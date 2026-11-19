@@ -13420,28 +13420,43 @@ const MAX_RECORDS = 200;
   };
   // 直接从页面 Vue 实例里读答案（答案本来就下发在前端数据里，不用猜）
   const zhsAnswerTopicByVm = async (log) => {
-    var _a, _b, _c;
+    var _a, _b;
     const vm = zhsGetTopicVm();
     if (!(vm == null ? void 0 : vm.testDialog)) return false;
-    const question = (_b = (_a = vm.topicInfo) == null ? void 0 : _a.lessonTestQuestionUseInterfaceDtos) == null ? void 0 : _b[0];
-    const options = (_c = question == null ? void 0 : question.testQuestion) == null ? void 0 : _c.questionOptions;
-    const answers = question == null ? void 0 : question.answerUs;
+    const dtos = ((_b = (_a = vm.topicInfo) == null ? void 0 : _a.lessonTestQuestionUseInterfaceDtos) == null ? void 0 : _b.slice()) || [];
     log.insertLog("检测到弹题测验，尝试自动作答..");
     const captchaPassed = await zhsWaitForYidun(log);
     if (!captchaPassed) return false;
-    let count = 0;
-    if (options && answers && typeof vm.topicClickQot === "function") {
-      for (const option of options) {
-        if (answers.indexOf(option.sortUs) === -1) continue;
-        await sleep(0.8);
-        vm.topicClickQot(option);
-        count++;
+    let clickedOptions = 0;
+    let answeredQuestions = 0;
+    if (typeof vm.topicClickQot === "function") {
+      // 弹题可能有多道题（弹窗底部有分页），要逐题读完再关窗，不能只答第一题
+      for (const dto of dtos) {
+        var _c, _d;
+        const options = (_d = (_c = dto == null ? void 0 : dto.testQuestion) == null ? void 0 : _c.questionOptions) == null ? void 0 : _d;
+        const rawAnswers = dto == null ? void 0 : dto.answerUs;
+        const answers = (Array.isArray(rawAnswers) ? rawAnswers : rawAnswers == null ? [] : [rawAnswers])
+          .map((value) => String(value == null ? "" : value).trim())
+          .filter(Boolean);
+        if (!options || !options.length || !answers.length) continue;
+        let clickedInQuestion = 0;
+        for (const option of options) {
+          const key = String((option == null ? void 0 : option.sortUs) == null ? "" : option.sortUs).trim();
+          if (!key || !answers.includes(key)) continue;
+          await sleep(0.8);
+          vm.topicClickQot(option);
+          clickedInQuestion++;
+        }
+        if (clickedInQuestion) {
+          clickedOptions += clickedInQuestion;
+          answeredQuestions++;
+        }
       }
     }
-    await sleep(Math.max(2, 5 - count * 0.8));
+    await sleep(Math.max(2, 5 - clickedOptions * 0.8));
     vm.testDialog = false;
-    if (count) {
-      log.insertLog(`弹题已自动作答完成（${count}题），继续播放视频`);
+    if (answeredQuestions) {
+      log.insertLog(`弹题已自动作答完成（${answeredQuestions}题），继续播放视频`);
     } else {
       log.insertLog("未读取到弹题答案，已关闭弹窗", "warning");
     }
@@ -13505,27 +13520,37 @@ const MAX_RECORDS = 200;
               return;
             }
             var dto = vm.topicInfo.lessonTestQuestionUseInterfaceDtos;
-            if (!dto || !dto[0]) {
-              window.postMessage({ type: "ABC_ZHS_QUIZ_RESULT", success: false }, "*");
-              return;
-            }
-            var options = dto[0].testQuestion.questionOptions;
-            var answers = dto[0].answerUs;
-            if (!options || !answers) {
+            if (!dto || !dto.length) {
               window.postMessage({ type: "ABC_ZHS_QUIZ_RESULT", success: false }, "*");
               return;
             }
             var count = 0;
-            options.forEach(function(opt, i) {
-              if (answers.indexOf(opt.sortUs) !== -1) {
-                setTimeout(function() { vm.topicClickQot(options[i]); }, 800 * count);
+            var answeredQuestions = 0;
+            // 弹题可能有多道题（弹窗底部有分页），逐题读完再关窗
+            (Array.isArray(dto) ? dto : []).forEach(function(item) {
+              var question = item && item.testQuestion;
+              var options = question && question.questionOptions;
+              var rawAnswers = item && item.answerUs;
+              var answers = (Array.isArray(rawAnswers) ? rawAnswers : rawAnswers == null ? [] : [rawAnswers]).map(function(value) {
+                return String(value == null ? "" : value).trim();
+              }).filter(Boolean);
+              if (!options || !options.length || !answers.length) return;
+              var clickedInQuestion = 0;
+              options.forEach(function(opt) {
+                var key = String((opt && opt.sortUs) == null ? "" : opt.sortUs).trim();
+                if (!key || answers.indexOf(key) === -1) return;
+                var delay = 800 * count;
+                setTimeout(function() { vm.topicClickQot(opt); }, delay);
                 count++;
-              }
+                clickedInQuestion++;
+              });
+              if (clickedInQuestion) answeredQuestions++;
             });
             var closeDelay = Math.max(count * 800 + 2000, 5000);
             setTimeout(function() {
               vm.testDialog = false;
-              window.postMessage({ type: "ABC_ZHS_QUIZ_RESULT", success: true, count: count }, "*");
+              // 一个选项都没点上时不要报成功，让外层走 DOM 兜底，避免视频被弹窗卡住
+              window.postMessage({ type: "ABC_ZHS_QUIZ_RESULT", success: count > 0, count: count, questions: answeredQuestions }, "*");
             }, closeDelay);
           } catch (err) {
             window.postMessage({ type: "ABC_ZHS_QUIZ_RESULT", success: false, error: err.message }, "*");
@@ -13654,7 +13679,8 @@ const MAX_RECORDS = 200;
           clearTimeout(timeout);
           window.removeEventListener("message", handler);
           if (e.data.success) {
-            log.insertLog(`弹题已自动作答完成（${e.data.count}题），继续播放视频`);
+            const answeredCount = e.data.questions != null ? e.data.questions : e.data.count;
+            log.insertLog(`弹题已自动作答完成（${answeredCount}题），继续播放视频`);
           } else {
             log.insertLog(
               `弹题自动作答失败${e.data.error ? ": " + e.data.error : ""}，改用页面兜底作答..`,
