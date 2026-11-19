@@ -561,6 +561,15 @@ def sanitize_answer_summary(item):
                 src[key] = max(0, min(int(src_raw.get(key) or 0), total if total else 100000))
             except (TypeError, ValueError):
                 src[key] = 0
+        # 填上的题是怎么确认选中的：state=读到选中标记、icon=只看到图标变化、skipped=本来就已选中。
+        # 只做钳制，不参与填充率计算；用来区分「真确认」和「图标兜底」。
+        verified_raw = extra.get("verified") if isinstance(extra.get("verified"), dict) else {}
+        verified = {}
+        for key in ("state", "icon", "skipped", "unknown"):
+            try:
+                verified[key] = max(0, min(int(verified_raw.get(key) or 0), total if total else 100000))
+            except (TypeError, ValueError):
+                verified[key] = 0
         unanswered_raw = extra.get("unanswered")
         unanswered = []
         quota_dropped = 0
@@ -596,6 +605,7 @@ def sanitize_answer_summary(item):
         extra["filled"] = filled
         extra["unfilled"] = total - filled
         extra["src"] = src
+        extra["verified"] = verified
         extra["unanswered"] = unanswered
         extra["platform"] = str(extra.get("platform", ""))[:20]
         try:

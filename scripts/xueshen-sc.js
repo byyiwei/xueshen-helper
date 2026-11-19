@@ -2082,11 +2082,23 @@
   const ANSWER_SUMMARY_LIMIT = 40;
   // 余额不足不是答题能力问题，进统计只会把填充率/卡点榜刷脏，直接丢掉。
   const isQuotaFailReason = (msg) => /余额不足|题数不足|点数不足|insufficient.?quota|请到用户中心购买|请联系您的服务方/i.test(String(msg || ""));
+  // 答题失败原因要能直接进统计：都写成「答案拿到了但没点上去」，后台就分不出是没匹配、没点上还是只填了一半
+  const XS_FILL_REASON_TEXT = {
+    answer_not_matched: "答案未匹配到页面选项",
+    answer_partial_match: "答案有部分未匹配到页面选项",
+    answer_ambiguous: "单选答案匹配到多个选项",
+    answer_invalid: "答案无法判定对错",
+    click_not_effective: "选项点击后未选中",
+    blank_partial: "部分空未填上"
+  };
+  const describeFillReason = (reason) => XS_FILL_REASON_TEXT[String(reason || "")] || "";
   const buildAnswerSummary = async (platform, questions) => {
     const list = Array.isArray(questions) ? questions : [];
     let filled = 0;
     let skippedQuota = 0;
     const src = { bank: 0, cache: 0, ai: 0, unknown: 0 };
+    // 填上的题是靠什么确认的：state=读到选中标记、icon=只看到图标变化、skipped=本来就已选中
+    const verified = { state: 0, icon: 0, skipped: 0, unknown: 0 };
     const unanswered = [];
     for (const question of list) {
       const ans = question && question.answer || {};
@@ -2095,6 +2107,9 @@
         filled += 1;
         if (ans.src === "bank" || ans.src === "cache" || ans.src === "ai") src[ans.src] += 1;
         else src.unknown += 1;
+        String(question && question.__xsVerifiedBy || "").split(",").forEach((mode) => {
+          if (Object.prototype.hasOwnProperty.call(verified, mode)) verified[mode] += 1;
+        });
         continue;
       }
       // 余额不足：整题不进 total / unanswered
@@ -2112,7 +2127,7 @@
         // code 是排查用的原始状态：0=拿到了但点不上，-1004=题库没答案，其它=后端报错码
         code: Number(ans.code) || 0,
         // -1004 既可能是「题库没收录」也可能是「额度用尽/超时」，只有 msg 分得开
-        reason: String(ans.msg || (Number(ans.code) === 0 ? "答案拿到了但没点上去" : "")).slice(0, 80),
+        reason: String(ans.msg || describeFillReason(question && question.__xsFillReason) || (Number(ans.code) === 0 ? "答案拿到了但没点上去" : "")).slice(0, 80),
         // 题干前 60 字：后台看到「这道题卡了 37 次」得能认出是哪道题，纯 hash 没人查得动
         title: String(question && question.title || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 60),
         // 客户端指纹，仅用于「同一道题反复点不上」的归类；与后端 bank_call_logs.question_hash
@@ -2132,6 +2147,7 @@
       filled,
       unfilled: Math.max(0, total - filled),
       src,
+      verified,
       unanswered,
       accuracy: Number((filled / Math.max(total, 1) * 100).toFixed(1)),
       threshold,
@@ -11866,7 +11882,8 @@
             window.__XSReportPageIssue && window.__XSReportPageIssue({
               page_type: "zhs-web",
               stage: "fill",
-              reason_code: "answer_fill_failed",
+              // 把具体失败原因带进上报：都记成 answer_fill_failed 时，后台分不出是没匹配、没点上还是只填了一半
+              reason_code: String((question && question.__xsFillReason) || "answer_fill_failed"),
               selector: isChoice ? ".subject_node input, .subject_node label" : ".subject_node textarea, .subject_node input",
               expected: isChoice ? "选项可点击并回读为已选中" : "文本框可写入并回读",
               found: {
@@ -11882,6 +11899,11 @@
                 // 答案里有几个项没映射到任何选项（多选少选/答案格式对不上时能直接看出来）
                 unmatched: (question && question.__xsUnmatchedAnswers) || 0,
                 unmatched_answers: String((question && question.__xsUnmatchedAnswerPreview) || "").slice(0, 60),
+                // 选择题成功判断的来源：state=读到选中标记、icon=只看到图标变化、skipped=本来就已选中
+                ...(isChoice ? {
+                  verified_by: String((question && question.__xsVerifiedBy) || "").slice(0, 40),
+                  skipped_selected: (question && question.__xsSkippedSelected) || 0
+                } : {}),
                 // 智慧树填空/问答填不上时同样把首个输入候选的结构带回后台
                 blank_html: (() => {
                   try {
@@ -11958,7 +11980,7 @@
                 const errorStatus = !(await this.fillQuestion(question, index));
                 if (errorStatus) {
                   question.answer.code = 0;
-                  question.answer.msg = "答案拿到了但没点上去";
+                  question.answer.msg = describeFillReason(question.__xsFillReason) || "答案拿到了但没点上去";
                   reportFillFail(question);
                   fillFailed = true;
                 } else {
@@ -12006,7 +12028,7 @@
                   const errorStatus = !(await this.fillQuestion(question, index));
                   if (errorStatus) {
                     question.answer.code = 0;
-                    question.answer.msg = "答案拿到了但没点上去";
+                    question.answer.msg = describeFillReason(question.__xsFillReason) || "答案拿到了但没点上去";
                     reportFillFail(question);
                     fillFailed = true;
                   } else {
@@ -12188,7 +12210,13 @@
           return this.removeHtml((inner || el).innerHTML);
         };
         const clickOption = (el) => {
-          if (!el) return;
+          if (!el) return false;
+          // 已经选中的绝不能再点：radio/checkbox 和多数自定义选项都是切换式，
+          // 再点一次等于取消选中，最后交卷这题会空着，日志却显示填上了。
+          if (isOptionSelected(el)) {
+            question.__xsSkippedSelected = (question.__xsSkippedSelected || 0) + 1;
+            return false;
+          }
           const input = el.matches && el.matches("input")
             ? el
             : (el.querySelector && el.querySelector("input[type='radio'], input[type='checkbox']"));
@@ -12200,6 +12228,7 @@
             } catch (_) {}
           }
           question.__xsClicked = true;
+          return true;
         };
         // 点击后回读：不能只凭「点了」就报填上。
         // 选中状态可能挂在选项本身、内层 .node_detail/.label，或外层 label/li/.nodeLab 上，
@@ -12240,15 +12269,12 @@
           } catch (_) {}
           return false;
         };
-        const optionSnapshot = (el) => {
+        // 图标题的选中经常只换图标、不挂 checked 类，这里只比较图片本身；
+        // 不能用整块 DOM 的“变了”当依据：切题动画/重渲染也会变，会把没选中当成选中。
+        const optionImgSignature = (el) => {
           try {
-            const input = el.matches && el.matches("input")
-              ? el
-              : (el.querySelector && el.querySelector("input[type='radio'], input[type='checkbox']"));
-            const imgs = Array.from((el.querySelectorAll && el.querySelectorAll("img")) || [])
+            return Array.from((el.querySelectorAll && el.querySelectorAll("img")) || [])
               .map((img) => `${img.getAttribute("src") || ""}|${img.className || ""}`).join(",");
-            return optionStateNodes(el).map((node) => `${node.className || ""}|${(node.getAttribute && node.getAttribute("aria-checked")) || ""}`)
-              .join(";") + `#${input ? (input.checked ? 1 : 0) : ""}#${imgs}`;
           } catch (_) {
             return "";
           }
@@ -12389,7 +12415,9 @@
             } catch (_) {}
             return false;
           }
-          const beforeSnaps = pickedList.map((optIdx) => optionSnapshot(optionsDOM[optIdx]));
+          // 点之前先记住哪些选项本来就选上了：这些只回读、不点击，并记成 skipped 便于统计
+          const preSelectedIdx = new Set(pickedList.filter((optIdx) => optionsDOM[optIdx] && isOptionSelected(optionsDOM[optIdx])));
+          const beforeImgSnaps = pickedList.map((optIdx) => optionImgSignature(optionsDOM[optIdx]));
           pickedList.forEach((optIdx) => {
             const optionDOM = optionsDOM[optIdx];
             if (optionDOM) clickOption(optionDOM);
@@ -12398,28 +12426,47 @@
             // 点击后必须回读真实选中状态，不能只凭「点了」就报成功：
             // 选项被遮挡、选择器变了、页面没响应时，假成功比报错更危险。
             // 有的页面是 Vue/React 异步更新，轮询到状态变化就返回，最多等 320ms。
-            const verifyPicked = () => {
+            const locateLive = (optIdx) => {
               const liveOptions = collectOptionNodes();
               const list = liveOptions.length === optionsDOM.length ? liveOptions : optionsDOM;
+              const el = list[optIdx];
+              const wanted = optionNorms[optIdx];
+              const hit = wanted
+                ? liveOptions.find((node) => normalizeOptText(optionRawText(node)) === wanted)
+                : null;
+              return { el, hit };
+            };
+            const verifyPicked = () => {
               return pickedList.every((optIdx, i) => {
-                const el = list[optIdx];
+                const { el, hit } = locateLive(optIdx);
                 if (!el) return false;
                 if (isOptionSelected(el)) return true;
                 // 重渲染后节点会被替换，按选项正文重新定位再读一次
-                const wanted = optionNorms[optIdx];
-                const hit = wanted
-                  ? liveOptions.find((node) => normalizeOptText(optionRawText(node)) === wanted)
-                  : null;
                 if (hit && isOptionSelected(hit)) return true;
-                // 图标题的选中经常只换图标，不挂 checked 类
-                const before = beforeSnaps[i];
-                const after = optionSnapshot(hit || el);
-                return !!before && !!after && before !== after;
+                // 图标题的选中可能只换图标：只认图片真的变了，整块 DOM 变了不算
+                const beforeImg = beforeImgSnaps[i];
+                const afterImg = optionImgSignature(hit || el);
+                return !!beforeImg && !!afterImg && beforeImg !== afterImg;
               });
             };
             const allOk = await waitForState(verifyPicked, 320);
             isSelected = allOk;
-            if (!allOk) {
+            if (allOk) {
+              const modes = pickedList.map((optIdx, i) => {
+                if (preSelectedIdx.has(optIdx)) return "skipped";
+                const { el, hit } = locateLive(optIdx);
+                if ((el && isOptionSelected(el)) || (hit && isOptionSelected(hit))) return "state";
+                const beforeImg = beforeImgSnaps[i];
+                const afterImg = optionImgSignature(hit || el);
+                return beforeImg && afterImg && beforeImg !== afterImg ? "icon" : "unknown";
+              });
+              question.__xsVerifiedBy = modes.join(",");
+              if (modes.includes("icon")) {
+                try {
+                  this.log.insertLog(`第${index + 1}题靠图标变化确认选中，未识别到选中标记`, "warning");
+                } catch (_) {}
+              }
+            } else {
               question.__xsFillReason = "click_not_effective";
               try {
                 this.log.insertLog(`第${index + 1}题选项点击后未生效，按未填写处理`, "warning");
@@ -12470,8 +12517,9 @@
             const optionText = optionRawText(optionDOM).replace(/[\s.。，,、]/g, "");
             if (judgeTexts.includes(optionText.toLowerCase())) {
               isSelected = true;
-              clickOption(optionDOM);
               judgeClicked = optionDOM;
+              // 已经是选中态就不再点，避免切换式选项被点成取消
+              if (!isOptionSelected(optionDOM)) clickOption(optionDOM);
               break;   // 判断题只点第一个命中的选项，避免页面有两个同义项时点两次把选中又切回去
             }
           }
