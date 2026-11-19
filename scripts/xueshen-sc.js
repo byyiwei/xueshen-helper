@@ -12217,7 +12217,14 @@
           && (allNodes.length < total || (allNodes.length > 1 && visibleNodes.length < allNodes.length));
         let subjectNode = allNodes[index];
         if (paged) {
-          const normNode = (n) => this.removeHtml(n.innerHTML).replace(/\s+/g, "").slice(0, 40);
+          // 用全文哈希做去重键：只取前 40 字时，两道题干开头相同（「下列关于……的说法正确的是」）
+          // 会互相误判成已答过，导致跳过真实题目或重复处理同一题。
+          const normNode = (n) => {
+            const text = this.removeHtml(n.innerHTML).replace(/\s+/g, "");
+            let hash = 0;
+            for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) | 0;
+            return `${hash}:${text.length}`;
+          };
           const done = this.__answeredNodes || (this.__answeredNodes = new Set());
           const visible = allNodes.filter((n) => {
             const rect = n.getBoundingClientRect();
@@ -12260,6 +12267,12 @@
         const optionsDOM = collectOptionNodes();
         question.__xsOptionCount = optionsDOM.length;
         question.__xsClicked = false;
+        // 页面多选控件是最终事实：接口题型给成单选、或解析阶段按索引取错节点时，在这里纠正，
+        // 否则后面 isMultiType=false，多选答案会被当成「单选匹配多个」整题跳过。
+        if (question.type === "单选题" && optionsDOM.length && detectMultiChoiceDom(subjectNode)) {
+          question.type = "多选题";
+          question.__xsTypeFixedByDom = 1;
+        }
         // 选项正文优先取正文节点，避免把 A./B. 序号算进正文
         const optionRawText = (el) => {
           const inner = el.querySelector && el.querySelector(".node_detail, .label");
@@ -12402,6 +12415,9 @@
           const unmatchedAnswers = [];
           answerList.forEach((answer) => {
             const pickedBefore = pickedIdx.size;
+            // 这一条答案有没有对上选项：不能用「已选数量变没变」判断，
+            // 两条答案指向同一个选项时数量不变，会被误记成没匹配
+            let matchedThisAnswer = false;
             // 字母答案映射：A / ABD / A,B,D → 按选项序号勾选
             const letterText = String(answer || "").trim();
             let letters = [];
@@ -12416,21 +12432,55 @@
             } else if (/^[A-Za-z]$/.test(letterText)) letters = [letterText.toUpperCase()];
             else if (/^[A-Za-z]{2,12}$/.test(letterText)) letters = letterText.toUpperCase().split("");
             else if (/^[A-Z](?:[\s,，、;；|]+[A-Z])+$/i.test(letterText)) letters = letterText.toUpperCase().split(/[\s,，、;；|]+/).filter(Boolean);
+            // 一个答案项只能对应一个选项：选项「方法」和「方法论」都能包含答案「方法」，
+            // 以前会把两项全勾上，多选直接多选。先收集候选，再只取最贴合的一项。
+            const exactHits = [];
+            const imgHits = [];
+            const textHits = [];
             optionsDOM.forEach((optionDOM, optIdx) => {
               if (letters.length) {
-                if (letters.includes(String.fromCharCode(65 + optIdx))) pickedIdx.add(optIdx);
+                if (letters.includes(String.fromCharCode(65 + optIdx))) {
+                  pickedIdx.add(optIdx);
+                  matchedThisAnswer = true;
+                }
                 return;
               }
               const optionText = optionRawText(optionDOM);
               const nAnswer = normalizeOptText(answer);
               const nOption = normalizeOptText(optionText);
               // 双向包含：答案可能比选项长（带解释/括号补充），只判选项包含答案会漏
-              if (answer == optionText || this.removeAllTags(answer) == this.removeAllTags(optionText) || (nAnswer.length >= 2 && nOption && (nOption.includes(nAnswer) || (nOption.length >= 2 && nAnswer.includes(nOption))))) {
-                pickedIdx.add(optIdx);
+              const exact = answer == optionText || this.removeAllTags(answer) == this.removeAllTags(optionText);
+              if (exact) {
+                exactHits.push(optIdx);
+              } else if (nAnswer.length >= 2 && nOption && (nOption.includes(nAnswer) || (nOption.length >= 2 && nAnswer.includes(nOption)))) {
+                textHits.push(optIdx);
               } else if (imgSrcsMatch(collectImgSrcs(answer), collectImgSrcs(optionDOM).concat(collectImgSrcs(optionText)))) {
-                pickedIdx.add(optIdx);
+                imgHits.push(optIdx);
               }
             });
+            if (!letters.length && pickedIdx.size === pickedBefore) {
+              let chosen = -1;
+              if (exactHits.length) {
+                chosen = exactHits[0];   // 页面把同一选项写了两遍时选第一个
+              } else if (imgHits.length) {
+                chosen = imgHits[0];
+              } else if (textHits.length) {
+                // 包含关系命中多项时取长度最接近答案的，避免「方法」同时勾上「方法论」
+                const nAnswerTarget = normalizeOptText(answer);
+                let bestDiff = Infinity;
+                textHits.forEach((optIdx) => {
+                  const diff = Math.abs(String(optionNorms[optIdx] || "").length - nAnswerTarget.length);
+                  if (diff < bestDiff) {
+                    bestDiff = diff;
+                    chosen = optIdx;
+                  }
+                });
+              }
+              if (chosen >= 0) {
+                pickedIdx.add(chosen);
+                matchedThisAnswer = true;
+              }
+            }
             // 正文对不上时按相似度找唯一最接近的一项：选项只差一个字、标点或全半角时，
             // 以前会整题放弃或漏勾。阈值按单/多选区分，且要求与第二名有明显差距才认。
             if (pickedIdx.size === pickedBefore) {
@@ -12465,10 +12515,13 @@
                 });
                 const minScore = isMultiType ? 0.62 : 0.68;
                 const minMargin = isMultiType ? 0.1 : 0.15;
-                if (bestIdx >= 0 && bestScore >= minScore && bestScore - secondScore >= minMargin) pickedIdx.add(bestIdx);
+                if (bestIdx >= 0 && bestScore >= minScore && bestScore - secondScore >= minMargin) {
+                  pickedIdx.add(bestIdx);
+                  matchedThisAnswer = true;
+                }
               }
             }
-            if (pickedIdx.size === pickedBefore) unmatchedAnswers.push(String(answer == null ? "" : answer).trim());
+            if (!matchedThisAnswer) unmatchedAnswers.push(String(answer == null ? "" : answer).trim());
           });
           let pickedList = Array.from(pickedIdx).sort((a, b) => a - b);
           // 页面把同一选项写了两遍（正文完全相同）时选第一个即可，不能当成答案有歧义
