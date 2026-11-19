@@ -9619,10 +9619,25 @@ const MAX_RECORDS = 200;
         if (!pattern) return [normalizedAnswer];
         return normalizedAnswer.split(new RegExp(pattern)).map((item) => item.trim()).filter(Boolean);
       });
+      __publicField(this, "splitMultilineAnswer", (text) => {
+        // 连线/复合/多空填空的答案经常是「一行一项」，但全局分隔符里没有换行：
+        // 不能把 \n 加进 answerSeparators，否则论述题整段文字会被切碎。
+        // 只在这类需要多项的路径里按行拆，并去掉行首序号（1. / （1） / ①）。
+        const raw = String(text == null ? "" : text);
+        if (!raw.includes("\n")) return [];
+        const lines = raw.split(/\r?\n/).map((line) => String(line)
+          .replace(/^\s*(?:[（(]\s*\d{1,3}\s*[)）]|\d{1,3}\s*[.、．:：)）](?!\d)|[①-⑳])\s*/, "")
+          .trim()).filter(Boolean);
+        return lines.length > 1 ? lines : [];
+      });
       __publicField(this, "buildAnswerGroups", (answers = []) => {
         if (!Array.isArray(answers)) return [this.splitAnswer(answers)];
         if (answers.length === 1) {
           const whole = [String(answers[0] == null ? "" : answers[0]).trim()].filter(Boolean);
+          // 先按换行拆（一行一项），拆不开再按全局分隔符拆；
+          // 整串始终作为备选，防止正常答案里本身带换行/逗号时被拆坏。
+          const lines = this.splitMultilineAnswer(answers[0]);
+          if (lines.length > 1) return [lines, whole];
           const split = this.splitAnswer(answers[0]);
           // 拆开后同时保留整串：连线/复合题里带逗号的单个答案不能被拆坏
           return split.length > 1 ? [split, whole] : [whole];
@@ -9643,6 +9658,11 @@ const MAX_RECORDS = 200;
       __publicField(this, "resolveBlankAnswers", (answers = [], blankCount = 1) => {
         const list = (Array.isArray(answers) ? answers : [answers]).map((a) => String(a == null ? "" : a).trim()).filter(Boolean);
         if (list.length >= blankCount) return list.slice(0, blankCount);
+        // 多个空时，模型常把答案写成「一行一个空」；单空题不拆，避免把多段论述切碎
+        if (blankCount > 1 && list.length === 1) {
+          const lines = this.splitMultilineAnswer(list[0]);
+          if (lines.length >= 2) return lines.slice(0, blankCount);
+        }
         const flat = [];
         list.forEach((a) => {
           // 三个空的答案常写成「A＞B＞C」，以前只认逗号分号，整串塞进第一个空
