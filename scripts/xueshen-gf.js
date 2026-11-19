@@ -21362,10 +21362,14 @@ const XS_EXT = (() => {
       if (!courseId) return;
       if (!force && Date.now() - ouchn.readsAt < 15e3) return;
       ouchn.readsAt = Date.now();
+      let abortTimer = null;
       try {
+        const controller = typeof AbortController === "function" ? new AbortController() : null;
+        if (controller) abortTimer = setTimeout(() => controller.abort(), 8000);
         const resp = await fetch(`/api/course/${courseId}/activity-reads-for-user`, {
           credentials: "include",
-          headers: { accept: "application/json" }
+          headers: { accept: "application/json" },
+          signal: controller ? controller.signal : void 0
         });
         if (!resp.ok) return;
         const data = await resp.json();
@@ -21375,6 +21379,8 @@ const XS_EXT = (() => {
         }
         ouchn.reads = map;
       } catch (e) {
+      } finally {
+        if (abortTimer) clearTimeout(abortTimer);
       }
     };
     const ouchnIsFull = (id) => {
