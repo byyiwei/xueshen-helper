@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.1.0",
+    "version": "6.1.1",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.1.0 修复智慧树反作弊检测误弹（不再替换 XHR.open，新增护栏与异常上报）；按可见题目作答；重复选项自动取第一个"
+    "changelog": "v6.1.1 视频任务点确认等待放宽、iframe 超时不再卡死整章、智慧树弹题逐题作答、答案按行拆分逐空对应、景德镇并入主面板"
   },
   "xueshen-gf": {
-    "version": "6.1.0",
+    "version": "6.1.1",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.1.0 修复智慧树反作弊检测误弹（不再替换 XHR.open，新增护栏与异常上报）；按可见题目作答；重复选项自动取第一个"
+    "changelog": "v6.1.1 视频任务点确认等待放宽、iframe 超时不再卡死整章、智慧树弹题逐题作答、答案按行拆分逐空对应、景德镇并入主面板"
   }
 }
