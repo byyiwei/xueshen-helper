@@ -10339,8 +10339,8 @@ const MAX_RECORDS = 200;
           if (!filled) {
             // 页面改版后 aria-label / span[data] 不一定还在：最后按选项文字「对 / 错」兜底
             const judgeTexts = answer === "true"
-              ? ["对", "正确", "是", "√", "✓", "true", "t"]
-              : ["错", "错误", "否", "×", "✗", "false", "f"];
+              ? ["对", "對", "正确", "正確", "是", "√", "✓", "true", "t"]
+              : ["错", "錯", "错误", "錯誤", "否", "×", "✗", "false", "f"];
             const hitKeys = Object.keys(question.options).filter((k) =>
               judgeTexts.some((t) => this.optionTextMatches(k, t, true))
             );
@@ -12915,8 +12915,8 @@ const MAX_RECORDS = 200;
         } else if (question.type === "判断题") {
           // 判断题答案的各种写法都要能判定；以前没命中就默认「对」，会把「错误。」「False」答成对题。
           const rawJudge = String((question.answer.answer && question.answer.answer[0]) == null ? "" : question.answer.answer[0]).replace(/\s+/g, "");
-          const negJudge = /(不正确|不对|不是|不属于|并不|(?:^|[\s,，、;；|【（(])非(?:$|[\s,，、;；|】）)])|错误|错|否|×|✗|wrong|false|^no$|^n$|^f$)/i;
-          const posJudge = /(正确|对|是|√|✓|right|true|^yes$|^y$|^t$|^ri$)/i;
+          const negJudge = /(不正确|不对|不是|不属于|并不|(?:^|[\s,，、;；|【（(])非(?:$|[\s,，、;；|】）)])|错误|錯|错|否|×|✗|wrong|false|^no$|^n$|^f$)/i;
+          const posJudge = /(正确|正確|对|對|是|√|✓|right|true|^yes$|^y$|^t$|^ri$)/i;
           let answer = "";
           if (negJudge.test(rawJudge)) answer = "错";
           else if (posJudge.test(rawJudge)) answer = "对";
@@ -12938,8 +12938,8 @@ const MAX_RECORDS = 200;
             return false;
           }
           const judgeTexts = answer === "对"
-            ? ["对", "正确", "是", "√", "✓", "true", "t", "没错", "对的", "正确无误"]
-            : ["错", "错误", "否", "×", "✗", "false", "f", "不对", "不正确", "不是", "非"];
+            ? ["对", "對", "正确", "正確", "是", "√", "✓", "true", "t", "没错", "對的", "对的", "正确无误"]
+            : ["错", "錯", "错误", "錯誤", "否", "×", "✗", "false", "f", "不对", "不正确", "不是", "非"];
           // 有的页面把对勾/叉号画在选项文字里（「正确（√）」「√ 正确」），
           // 括号内容和符号先剥掉，只留判词，避免答案对却匹配不上。
           // 选项本身只有一个 √/× 时保留，否则会被清成空字符串。
@@ -21103,8 +21103,19 @@ const XS_EXT = (() => {
       id: "ouchn",
       name: "国家开放大学",
       test: (host) => /(^|\.)ouchn\.(cn|edu\.cn)$/.test(host),
-      play: [".mvp-fonts-play", "[class*=play]"],
-      next: [".next-btn"],
+      play: [
+        ".mvp-fonts-play",
+        ".prism-big-play-btn",
+        ".xgplayer-start",
+        ".xgplayer-play",
+        ".dplayer-play-icon",
+        ".plyr__control--overlaid",
+        ".vjs-big-play-button",
+        "[class*=big-play]",
+        "[class*=play-btn]",
+        "[class*=play]"
+      ],
+      next: [".next-btn", "[class*=next]:not([disabled])"],
       doc: true,
       verified: true
     },
@@ -21193,6 +21204,8 @@ const XS_EXT = (() => {
     let originalHasFocus = null;
     // 点过「下一节」后先等页面换掉视频，避免同一节被反复点
     const advanceGuard = { at: 0, href: "", src: "" };
+    let lastWatchDiagAt = 0;
+    let pausedTicks = 0;
     const log = (text) => {
       const line = `${(/* @__PURE__ */ new Date()).toLocaleTimeString()}  ${text}`;
       state.logs.unshift(line);
@@ -21228,15 +21241,55 @@ const XS_EXT = (() => {
       }
       return list;
     };
+    // 部分新版播放器把 video 放进 open shadow root，普通 querySelectorAll 扫不到
+    let shadowRootsCache = { at: 0, roots: [] };
+    const collectSearchRoots = () => {
+      const documents = collectDocuments();
+      const now = Date.now();
+      if (now - shadowRootsCache.at < 3000) return shadowRootsCache.roots;
+      const roots = documents.slice();
+      for (let i = 0; i < roots.length && roots.length < 24; i++) {
+        let hosts = [];
+        try { hosts = Array.from(roots[i].querySelectorAll("*")).slice(0, 6000); } catch (e) { hosts = []; }
+        for (const host of hosts) {
+          let shadow = null;
+          try { shadow = host.shadowRoot; } catch (e) { shadow = null; }
+          if (shadow && !roots.includes(shadow)) roots.push(shadow);
+        }
+      }
+      shadowRootsCache = { at: now, roots };
+      return roots;
+    };
     const queryAll = (selector) => {
       const found = [];
-      for (const doc of collectDocuments()) {
+      for (const root of collectSearchRoots()) {
         try {
-          found.push(...doc.querySelectorAll(selector));
+          found.push(...root.querySelectorAll(selector));
         } catch (e) {
         }
       }
       return found;
+    };
+    // 国开新版学习页拿不到视频时，把 iframe 地址和可读性写进日志，方便按真实页面补选择器
+    const describeWatchPage = () => {
+      const parts = [];
+      try {
+        const frames = Array.from(document.querySelectorAll("iframe"));
+        parts.push(`iframe ${frames.length} 个`);
+        for (const frame of frames.slice(0, 6)) {
+          let readable = false;
+          try { readable = !!frame.contentDocument; } catch (e) { readable = false; }
+          const src = String(frame.src || frame.getAttribute("src") || "").slice(0, 120);
+          parts.push(`${readable ? "可读" : "跨域"} ${src || "(无地址)"}`);
+        }
+      } catch (e) {
+      }
+      try { parts.push(`video ${queryAll("video").length} 个`); } catch (e) {}
+      try {
+        const shadowCount = collectSearchRoots().length - collectDocuments().length;
+        if (shadowCount > 0) parts.push(`shadowRoot ${shadowCount} 个`);
+      } catch (e) {}
+      return parts.join("；");
     };
     const isVisible = (el) => {
       if (!el || !el.isConnected) return false;
@@ -21402,6 +21455,10 @@ const XS_EXT = (() => {
         const video = findVideo();
         if (!video) {
           state.progress = "";
+          if ((profile.id === "ouchn" || profile.id === "ouchn-syxy") && Date.now() - lastWatchDiagAt > 8000) {
+            lastWatchDiagAt = Date.now();
+            log(`未发现视频，页面结构：${describeWatchPage()}`);
+          }
           if (settings.autoScroll && profile.doc) {
             state.media = "文档页：正在向下滚动";
             await scrollDocument();
@@ -21449,8 +21506,22 @@ const XS_EXT = (() => {
           return;
         }
         if (video.paused) {
-          clickFirst(profile.play || []);
+          pausedTicks += 1;
+          if (pausedTicks === 3 && (profile.id === "ouchn" || profile.id === "ouchn-syxy")) {
+            const wrapper = video.parentElement ? String(video.parentElement.className || video.parentElement.tagName || "") : "";
+            log(`视频已找到但未能起播，地址 ${String(video.currentSrc || video.src || "").slice(0, 120)}，外层 ${wrapper.slice(0, 80)}`);
+          }
+          const playBtn = clickFirst(profile.play || []);
           safePlay(video);
+          // 有的播放器只认画布点击，找不到播放按钮时补一次点击
+          if (!playBtn) {
+            setTimeout(() => {
+              if (!state.running || !video.paused) return;
+              try { video.click(); } catch (e) {}
+            }, 500);
+          }
+        } else {
+          pausedTicks = 0;
         }
         state.status = "运行中";
       } catch (error) {
@@ -21484,8 +21555,8 @@ const XS_EXT = (() => {
     const norm = (s) => String(s || "").replace(/[\s　"“”'‘’]/g, "").toLowerCase();
     const judgeNorm = (s) => {
       const t = String(s || "").trim();
-      if (/^(对|正确|是|√|t|true)$/i.test(t)) return "对";
-      if (/^(错|错误|否|×|f|false)$/i.test(t)) return "错";
+      if (/^(对|對|正确|正確|是|√|t|true)$/i.test(t)) return "对";
+      if (/^(错|錯|错误|錯誤|否|×|f|false)$/i.test(t)) return "错";
       return "";
     };
 
