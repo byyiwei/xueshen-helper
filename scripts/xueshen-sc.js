@@ -9003,6 +9003,23 @@
                   }
                 })(),
                 clicked: !!(question && question.__xsClicked),
+                ...(() => {
+                  const type = String((question && question.type) || "");
+                  // 连线题/复合题以前只报「点了几个」，后台分不出是全没点上还是只填了一半
+                  if (type === "11") {
+                    return {
+                      line_filled: (question && question.__xsLineFilled) || 0,
+                      line_expected: (question && question.__xsLineExpected) || 0
+                    };
+                  }
+                  if (type === "14" || type === "15") {
+                    return {
+                      composite_filled: (question && question.__xsCompositeFilled) || 0,
+                      composite_expected: (question && question.__xsCompositeExpected) || 0
+                    };
+                  }
+                  return {};
+                })(),
                 ...(String((question && question.type) || "") === "2" ? {
                   blank_fields: (question && question.__xsBlankFields) || 0,
                   blank_answers: (question && question.__xsBlankAnswers) || 0,
@@ -9322,6 +9339,60 @@
         };
         return scopes.some(isMarked);
       });
+      // 点一下选项后回读它到底有没有被选中：复合题/连线题的选项结构各不相同，
+      // 有的换 class、有的换图标、有的加 aria/data 属性，统一按「已选标记 + DOM 变化」判断。
+      __publicField(this, "optionDomSignature", (el) => {
+        try {
+          const attrs = ["aria-checked", "aria-selected", "data-selected", "data-checked", "style"]
+            .map((name) => (el.getAttribute && el.getAttribute(name)) || "")
+            .join(",");
+          const html = String(el.innerHTML || "");
+          return [String(el.className || ""), attrs, html.length, html.slice(0, 120)].join("|");
+        } catch (_) {
+          return "";
+        }
+      });
+      __publicField(this, "clickOptionWithReadBack", (option, scope) => {
+        if (!option) return false;
+        const target = scope || option;
+        const marked = (node) => {
+          const tokens = String(node.className || "").toLowerCase().split(/\s+/);
+          if (tokens.some((t) =>
+            t === "checked" || t === "selected" || t === "is-checked" || t === "chosen" ||
+            t === "check_answer" || t === "check-answer"
+          )) return true;
+          try {
+            return node.getAttribute("aria-checked") === "true" ||
+              node.getAttribute("aria-selected") === "true" ||
+              node.getAttribute("data-selected") === "true" ||
+              node.getAttribute("data-checked") === "true";
+          } catch (_) {
+            return false;
+          }
+        };
+        // 「已选」标记可能挂在选项本身，也可能挂在整行上，向上找几层；
+        // 点之前只看选项这一行，不看整个容器（容器上的标记可能属于同题另一个选项）
+        const markedNow = (includeScope) => {
+          let node = option;
+          for (let depth = 0; node && depth < 6; depth++) {
+            if ((node !== target || includeScope) && marked(node)) return true;
+            if (node === target) break;
+            node = node.parentElement;
+          }
+          return false;
+        };
+        // 已经选中的不能再点：这类选项是切换式的，再点一下反而会取消选中
+        if (markedNow(false)) return true;
+        const before = this.optionDomSignature(target);
+        try {
+          option.click();
+        } catch (_) {
+          return false;
+        }
+        if (markedNow(true)) return true;
+        // 页面没给认识得出来的标记时，范围内至少要有可见变化（换图标/高亮），否则算没点上去
+        return !!before && this.optionDomSignature(target) !== before;
+      });
       __publicField(this, "selectChoiceOption", (optionElement) => {
         const optionContainer = this.getChoiceOptionContainer(optionElement);
         if (!optionContainer) return false;
@@ -9547,24 +9618,23 @@
         const selectBoxes = question.element.querySelectorAll(
           ".line_answer_ct .selectBox, .thirdUlList .dept_select"
         );
-        const answerInputs = question.element.querySelectorAll(
-          ".line_answer input[name^='answer']"
-        );
-        if (!selectBoxes.length) return false;
+        if (!selectBoxes.length) {
+          question.__xsFillReason = "answer_not_matched";
+          return false;
+        }
+        let bestFilled = 0;
         for (const answers of answerGroups) {
-          if (!answers.length) continue;
-          if (answerInputs.length && answers.length !== selectBoxes.length) continue;
-          if (!answerInputs.length && answers.length !== selectBoxes.length) continue;
+          if (!answers.length || answers.length !== selectBoxes.length) continue;
           let filledCount = 0;
           selectBoxes.forEach((box, index) => {
-            var _a, _b;
+            var _b;
             const answer = answers[index];
             if (!answer) return;
             const optionItem = this.findElementByAttr(box, "li[data]", "data", answer);
             const optionLink = optionItem == null ? void 0 : optionItem.querySelector("a");
             if (optionLink) {
-              optionLink.click();
-              filledCount += 1;
+              // 点击后回读这一格是否出现选中标记/结构变化，没反应就不计入已填
+              if (this.clickOptionWithReadBack(optionLink, box)) filledCount += 1;
               return;
             }
             const selectOption = this.findElementByAttr(
@@ -9574,21 +9644,52 @@
               answer
             );
             if (!selectOption) return;
-            (_a = box.querySelector("option[selected]")) == null ? void 0 : _a.removeAttribute("selected");
-            selectOption.setAttribute("selected", "");
-            box.value = answer;
-            const selectedText = (_b = box.parentElement) == null ? void 0 : _b.querySelector(".chosen-single span");
-            if (selectedText) selectedText.textContent = answer;
+            // option 常常在 box 内层的 <select> 里，值要设在真正的 select 上，写在 div 上页面不会认
+            const selectEl = (selectOption.closest && selectOption.closest("select")) ||
+              (String(box.tagName || "").toLowerCase() === "select" ? box : (box.querySelector && box.querySelector("select"))) ||
+              box;
+            // 有的页面用 chosen/框架接管下拉：除了改 value，还要派发 input/change；
+            // 第一次被回滚时重试一次，两次读完都对不上就按没填上算
+            const applyValue = () => {
+              try {
+                const prev = selectEl.querySelector("option[selected]");
+                if (prev) prev.removeAttribute("selected");
+                selectOption.setAttribute("selected", "");
+                selectEl.value = answer;
+                const win2 = (selectEl.ownerDocument && selectEl.ownerDocument.defaultView) || this._window;
+                const EventType3 = (win2 && win2.Event) || Event;
+                selectEl.dispatchEvent(new EventType3("input", { bubbles: true }));
+                selectEl.dispatchEvent(new EventType3("change", { bubbles: true }));
+                const selectedText = (_b = box.parentElement) == null ? void 0 : _b.querySelector(".chosen-single span");
+                if (selectedText) selectedText.textContent = answer;
+                return true;
+              } catch (_) {
+                return false;
+              }
+            };
+            let got = applyValue() ? String(selectEl.value == null ? "" : selectEl.value) : "";
+            if (got !== String(answer)) got = applyValue() ? String(selectEl.value == null ? "" : selectEl.value) : "";
+            if (got !== String(answer)) return;
             filledCount += 1;
           });
+          if (filledCount > bestFilled) bestFilled = filledCount;
           if (filledCount === selectBoxes.length) return true;
+          // 已经点上了几个再换另一种拆法，会把连线题里点开的选项又切回去，只试到第一次有反应为止
+          if (filledCount > 0) break;
         }
+        question.__xsLineFilled = bestFilled;
+        question.__xsLineExpected = selectBoxes.length;
+        question.__xsFillReason = bestFilled > 0 ? "answer_partial_match" : "answer_not_matched";
         return false;
       });
       __publicField(this, "fillCompositeChoiceQuestion", (question, containerSelector) => {
         const answerGroups = this.buildAnswerGroups(question.answer.answer);
         const containers = question.element.querySelectorAll(containerSelector);
-        if (!containers.length) return false;
+        if (!containers.length) {
+          question.__xsFillReason = "answer_not_matched";
+          return false;
+        }
+        let bestFilled = 0;
         for (const answers of answerGroups) {
           if (!answers.length) continue;
           let filledCount = 0;
@@ -9602,11 +9703,17 @@
               answer
             );
             if (!option) return;
-            option.click();
-            filledCount += 1;
+            // 以前点完就算成功：页面没响应、只填上一个小问都会报整题成功。
+            // 现在每个小问点完都回读，只有全部小问都真选上了才算填上。
+            if (this.clickOptionWithReadBack(option, container)) filledCount += 1;
           });
-          if (filledCount > 0) return true;
+          if (filledCount > bestFilled) bestFilled = filledCount;
+          if (filledCount === containers.length) return true;
+          if (filledCount > 0) break;
         }
+        question.__xsCompositeFilled = bestFilled;
+        question.__xsCompositeExpected = containers.length;
+        question.__xsFillReason = bestFilled > 0 ? "answer_partial_match" : "answer_not_matched";
         return false;
       });
       __publicField(this, "fillUeditor", (textareaElement, rawText) => {
@@ -9961,9 +10068,20 @@
           question.__xsBlankAnswers = blankAnswers.length;
           question.__xsBlankFilled = blankFilled;
           question.__xsBlankReadonly = blankFields.filter((el) => el.readOnly || el.disabled).length;
-          // 答案数和空数不一致时，填上能对上的部分也算成功，避免整题空白
+          // 答案数和空数不一致时，填上能对上的部分也算成功，避免整题空白；
+          // 但要单独记下少填了几个空，统计上才能把「少填」和「填不上」分开。
           const expect = Math.min(blankFields.length, blankAnswers.length);
           filled = blankFilled > 0 && blankFilled === expect;
+          if (filled && expect < blankFields.length) {
+            question.__xsBlankPartial = blankFields.length - expect;
+            question.__xsFillReason = "blank_partial";
+            try {
+              this.log.insertLog(
+                `填空题有${question.__xsBlankPartial}个空没有答案，只填上了${expect}个`,
+                "warning"
+              );
+            } catch (_) {}
+          }
         } else if (question.type === "3") {
           const rawJudge = cleanChoiceAnswer(String(question.answer.answer[0] == null ? "" : question.answer.answer[0]));
           let answer = this.resolveJudgeAnswer(rawJudge);
@@ -12443,8 +12561,20 @@
             question.__xsBlankFields = fields.length;
             question.__xsBlankAnswers = texts.length;
             question.__xsBlankFilled = filledCount;
-            // 所有该填的空都填上才算成功，避免「只填第一个空」被当成整题答完
-            isSelected = filledCount > 0 && filledCount === Math.min(fields.length, texts.length);
+            // 所有该填的空都填上才算成功，避免「只填第一个空」被当成整题答完；
+            // 答案数少于空数时单独记一下，统计上才能区分「少填」和「填不上」。
+            const expect = Math.min(fields.length, texts.length);
+            isSelected = filledCount > 0 && filledCount === expect;
+            if (isSelected && expect < fields.length) {
+              question.__xsBlankPartial = fields.length - expect;
+              question.__xsFillReason = "blank_partial";
+              try {
+                this.log.insertLog(
+                  `第${index + 1}题填空题有${question.__xsBlankPartial}个空没有答案，只填上了${expect}个`,
+                  "warning"
+                );
+              } catch (_) {}
+            }
           }
         }
         return isSelected;
