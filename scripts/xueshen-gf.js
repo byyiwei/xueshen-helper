@@ -12239,6 +12239,25 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               "warning", 8
             );
           } catch (_) {}
+          // 站方检测到异常会直接弹窗，用户一般不会来反馈；把检查项变化上报后台，
+          // 后台能直接看到是哪一项被改、有没有修回来。
+          try {
+            if (window.__XSReportPageIssue) {
+              window.__XSReportPageIssue({
+                page_type: "zhs-exam",
+                stage: "detect",
+                reason_code: after.length ? "native_check_unfixed" : "native_check_fixed",
+                selector: "isAllNative",
+                expected: "XMLHttpRequest.prototype.open 等原生检查项保持原生",
+                found: {
+                  before: before.join(","),
+                  after: after.join(","),
+                  host: String(location.hostname || "")
+                },
+                signature: before.join(",")
+              });
+            }
+          } catch (_) {}
         }
       } catch (_) {}
     };
