@@ -2089,6 +2089,10 @@
     answer_ambiguous: "单选答案匹配到多个选项",
     answer_invalid: "答案无法判定对错",
     click_not_effective: "选项点击后未选中",
+    extra_selected: "多选里有答案之外的选项未能取消",
+    no_input: "页面上找不到输入框",
+    fill_not_effective: "输入框写入后回读不对",
+    unknown_type: "未知题型，暂不支持",
     blank_partial: "部分空未填上"
   };
   const describeFillReason = (reason) => XS_FILL_REASON_TEXT[String(reason || "")] || "";
@@ -2127,7 +2131,7 @@
         // code 是排查用的原始状态：0=拿到了但点不上，-1004=题库没答案，其它=后端报错码
         code: Number(ans.code) || 0,
         // -1004 既可能是「题库没收录」也可能是「额度用尽/超时」，只有 msg 分得开
-        reason: String(ans.msg || describeFillReason(question && question.__xsFillReason) || (Number(ans.code) === 0 ? "答案拿到了但没点上去" : "")).slice(0, 80),
+        reason: String(ans.msg || describeFillReason(question && question.__xsFillReason) || (Number(ans.code) === 0 ? "答案拿到了但没点上去" : `code:${Number(ans.code) || 0}`)).slice(0, 80),
         // 题干前 60 字：后台看到「这道题卡了 37 次」得能认出是哪道题，纯 hash 没人查得动
         title: String(question && question.title || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 60),
         // 客户端指纹，仅用于「同一道题反复点不上」的归类；与后端 bank_call_logs.question_hash
@@ -10149,11 +10153,28 @@
             if (hitKeys.length === 1) filled = this.selectChoiceOption(question.options[hitKeys[0]]);
           }
         } else if (question.type === "4" || question.type === "5" || question.type === "6" || question.type === "7" || question.type === "9" || question.type === "26") {
-          const textareaElement = question.element.querySelector("textarea");
-          if (!textareaElement) return false;
           const longAnswer = this.resolveBlankAnswers(question.answer.answer, 1)[0] || "";
-          if (!longAnswer) return false;
-          filled = this.fillUeditor(textareaElement, longAnswer);
+          if (!longAnswer) {
+            question.__xsFillReason = "answer_invalid";
+            return false;
+          }
+          const textareaElement = question.element.querySelector("textarea");
+          if (textareaElement) {
+            filled = this.fillUeditor(textareaElement, longAnswer);
+          } else {
+            // 纯 contenteditable 富文本没有 textarea 底座：以前直接失败且不记原因
+            const editable = question.element.querySelector('[contenteditable="true"], .ql-editor, .ck-editor__editable, [role="textbox"]');
+            if (!editable) {
+              question.__xsFillReason = "no_input";
+              this.log.insertLog(
+                `长文本题(type:${question.type})在页面上找不到输入框，本题未填`,
+                "warning"
+              );
+              return false;
+            }
+            filled = this.fillBlankField(editable, longAnswer);
+            if (!filled) question.__xsFillReason = "fill_not_effective";
+          }
         } else if (question.type === "11") {
           filled = this.fillLineQuestion(question);
         } else if (question.type === "14") {
@@ -10161,6 +10182,7 @@
         } else if (question.type === "15") {
           filled = this.fillCompositeChoiceQuestion(question, ".reading_answer");
         } else {
+          question.__xsFillReason = "unknown_type";
           this.log.insertLog(
             `异常题型:type:${question.type}，请联系客服..`,
             "warning"
@@ -12209,14 +12231,9 @@
           const inner = el.querySelector && el.querySelector(".node_detail, .label");
           return this.removeHtml((inner || el).innerHTML);
         };
-        const clickOption = (el) => {
+        // 不看状态、直接点一次：用于把多选里答案之外的已选项取消掉
+        const clickOptionRaw = (el) => {
           if (!el) return false;
-          // 已经选中的绝不能再点：radio/checkbox 和多数自定义选项都是切换式，
-          // 再点一次等于取消选中，最后交卷这题会空着，日志却显示填上了。
-          if (isOptionSelected(el)) {
-            question.__xsSkippedSelected = (question.__xsSkippedSelected || 0) + 1;
-            return false;
-          }
           const input = el.matches && el.matches("input")
             ? el
             : (el.querySelector && el.querySelector("input[type='radio'], input[type='checkbox']"));
@@ -12229,6 +12246,16 @@
           }
           question.__xsClicked = true;
           return true;
+        };
+        const clickOption = (el) => {
+          if (!el) return false;
+          // 已经选中的绝不能再点：radio/checkbox 和多数自定义选项都是切换式，
+          // 再点一次等于取消选中，最后交卷这题会空着，日志却显示填上了。
+          if (isOptionSelected(el)) {
+            question.__xsSkippedSelected = (question.__xsSkippedSelected || 0) + 1;
+            return false;
+          }
+          return clickOptionRaw(el);
         };
         // 点击后回读：不能只凭「点了」就报填上。
         // 选中状态可能挂在选项本身、内层 .node_detail/.label，或外层 label/li/.nodeLab 上，
@@ -12415,6 +12442,15 @@
             } catch (_) {}
             return false;
           }
+          // 多选页面可能恢复过上次暂存的答案，答案之外还有已选项：不取消就会带着错误项交卷。
+          // 多选选项是勾选式，对已选项再点一次就是取消，安全。
+          const extraSelectedIdx = new Set();
+          if (isMultiType && pickedList.length) {
+            optionsDOM.forEach((el, optIdx) => {
+              if (!pickedIdx.has(optIdx) && isOptionSelected(el)) extraSelectedIdx.add(optIdx);
+            });
+            extraSelectedIdx.forEach((optIdx) => clickOptionRaw(optionsDOM[optIdx]));
+          }
           // 点之前先记住哪些选项本来就选上了：这些只回读、不点击，并记成 skipped 便于统计
           const preSelectedIdx = new Set(pickedList.filter((optIdx) => optionsDOM[optIdx] && isOptionSelected(optionsDOM[optIdx])));
           const beforeImgSnaps = pickedList.map((optIdx) => optionImgSignature(optionsDOM[optIdx]));
@@ -12436,7 +12472,18 @@
                 : null;
               return { el, hit };
             };
+            // 答案之外的选项必须真的被取消，否则交卷会多选
+            const extrasOk = () => {
+              if (!extraSelectedIdx.size) return true;
+              return Array.from(extraSelectedIdx).every((optIdx) => {
+                const { el, hit } = locateLive(optIdx);
+                if (el && isOptionSelected(el)) return false;
+                if (hit && isOptionSelected(hit)) return false;
+                return true;
+              });
+            };
             const verifyPicked = () => {
+              if (!extrasOk()) return false;
               return pickedList.every((optIdx, i) => {
                 const { el, hit } = locateLive(optIdx);
                 if (!el) return false;
@@ -12467,9 +12514,15 @@
                 } catch (_) {}
               }
             } else {
-              question.__xsFillReason = "click_not_effective";
+              const extrasLeft = !extrasOk();
+              question.__xsFillReason = extrasLeft ? "extra_selected" : "click_not_effective";
               try {
-                this.log.insertLog(`第${index + 1}题选项点击后未生效，按未填写处理`, "warning");
+                this.log.insertLog(
+                  extrasLeft
+                    ? `第${index + 1}题多选有答案之外的选项没能取消，按未填写处理`
+                    : `第${index + 1}题选项点击后未生效，按未填写处理`,
+                  "warning"
+                );
               } catch (_) {}
             }
           }
@@ -12624,6 +12677,12 @@
               } catch (_) {}
             }
           }
+        } else {
+          // 走到这里说明题型不在支持列表里：以前静默返回 false，小结里就成了空原因
+          question.__xsFillReason = "unknown_type";
+          try {
+            this.log.insertLog(`第${index + 1}题题型「${question.type}」暂不支持，已跳过`, "warning");
+          } catch (_) {}
         }
         return isSelected;
       });
