@@ -3432,6 +3432,21 @@ const MAX_RECORDS = 200;
     const hit = XS_TYPE_RULES.find((rule) => rule.keywords.some((keyword) => raw.includes(keyword)));
     return hit ? hit.name : raw;
   };
+  // 连线/复合/多空填空的答案经常是「一行一项」。只在这类需要多项的路径里按行拆：
+  // 不能把换行加进全局分隔符，否则论述题整段文字会被切碎。
+  // 同时去掉行首序号和「答案如下：」这类引导行，遇到「解析：」就截掉后面的内容。
+  const splitMultilineAnswerItems = (text) => {
+    const raw = String(text == null ? "" : text);
+    if (!raw.includes("\n")) return [];
+    let lines = raw.split(/\r?\n/).map((line) => String(line)
+      .replace(/^\s*(?:[（(]\s*\d{1,3}\s*[)）]|\d{1,3}\s*[.、．:：)）](?!\d)|[①-⑳])\s*/, "")
+      .replace(/^\s*(?:参考|标准|正确)?答案\s*(?:如下|是|为)?\s*[:：]\s*/, "")
+      .replace(/^\s*(?:解答|答)\s*[:：]\s*/, "")
+      .trim()).filter(Boolean);
+    const cutAt = lines.findIndex((line) => /^(?:解析|分析|说明|注意|点评)\s*[:：]/.test(line));
+    if (cutAt >= 0) lines = lines.slice(0, cutAt);
+    return lines.length > 1 ? lines : [];
+  };
   // 把答案规范成字符串数组：支持数组、单条文本、"A,B,D"、"ABD"、"D.甲 E.乙" 等形态。
   // 注意：同名的函数原先只定义在另一个函数的局部作用域里，QuestionHandler2.fillQuestion 调不到，
   // 会抛 ReferenceError 让答案永远填不上（日志表现就是“开始答题..”后什么都没有），所以模块级再提供一份。
@@ -9620,15 +9635,9 @@ const MAX_RECORDS = 200;
         return normalizedAnswer.split(new RegExp(pattern)).map((item) => item.trim()).filter(Boolean);
       });
       __publicField(this, "splitMultilineAnswer", (text) => {
-        // 连线/复合/多空填空的答案经常是「一行一项」，但全局分隔符里没有换行：
-        // 不能把 \n 加进 answerSeparators，否则论述题整段文字会被切碎。
-        // 只在这类需要多项的路径里按行拆，并去掉行首序号（1. / （1） / ①）。
-        const raw = String(text == null ? "" : text);
-        if (!raw.includes("\n")) return [];
-        const lines = raw.split(/\r?\n/).map((line) => String(line)
-          .replace(/^\s*(?:[（(]\s*\d{1,3}\s*[)）]|\d{1,3}\s*[.、．:：)）](?!\d)|[①-⑳])\s*/, "")
-          .trim()).filter(Boolean);
-        return lines.length > 1 ? lines : [];
+        // 连线/复合/多空填空的答案经常是「一行一项」；通用的按行拆分见模块级函数，
+// 这里保留同名方法给现有调用点。拆的时候会去掉引导语和解析段。
+        return splitMultilineAnswerItems(text);
       });
       __publicField(this, "buildAnswerGroups", (answers = []) => {
         if (!Array.isArray(answers)) return [this.splitAnswer(answers)];
@@ -9774,11 +9783,31 @@ const MAX_RECORDS = 200;
         }
         let bestFilled = 0;
         for (const answers of answerGroups) {
-          if (!answers.length || answers.length !== selectBoxes.length) continue;
+          if (!answers.length) continue;
           let filledCount = 0;
+          // 不按「第几行填第几个」硬对齐：答案前面可能多一行「答案如下：」，
+          // 硬对齐会让后面整体串位。按顺序往后找第一个能对上当前格的答案，
+          // 对不上的行直接跳过，这样多一行/少一行都不会填错位置。
+          let pointer = 0;
           selectBoxes.forEach((box, index) => {
             var _b;
-            const answer = answers[index];
+            let answer = "";
+            for (let i = pointer; i < answers.length; i += 1) {
+              const candidate = answers[i];
+              if (!candidate) continue;
+              // 模型常写「A-B」整对；页面 data 可能只存左项或右项，两个都试一遍
+              const variants = [candidate];
+              const pair = String(candidate).match(/^\s*([A-Za-z0-9]+)\s*(?:-|–|—|>|→|=|：|:)\s*(.+?)\s*$/);
+              if (pair && pair[1] && pair[2]) variants.push(pair[2], pair[1]);
+              const hit = variants.find((value) =>
+                this.findElementByAttr(box, "li[data]", "data", value) ||
+                this.findElementByAttr(box, "option[value]", "value", value));
+              if (hit) {
+                answer = hit;
+                pointer = i + 1;
+                break;
+              }
+            }
             if (!answer) return;
             const optionItem = this.findElementByAttr(box, "li[data]", "data", answer);
             const optionLink = optionItem == null ? void 0 : optionItem.querySelector("a");
@@ -9843,9 +9872,21 @@ const MAX_RECORDS = 200;
         for (const answers of answerGroups) {
           if (!answers.length) continue;
           let filledCount = 0;
-          answers.forEach((answer, index) => {
-            const container = containers[index];
-            if (!container || !answer) return;
+          // 同样不按行号硬对齐：模型常在前面加「答案如下：」或解析，
+          // 按小问往后找能匹配该小问选项的答案，跳过对不上的行，避免整体错位。
+          let pointer = 0;
+          containers.forEach((container, index) => {
+            let answer = "";
+            for (let i = pointer; i < answers.length; i += 1) {
+              const candidate = answers[i];
+              if (!candidate) continue;
+              if (this.findElementByAttr(container, "span.saveSingleSelect[data]", "data", candidate)) {
+                answer = candidate;
+                pointer = i + 1;
+                break;
+              }
+            }
+            if (!answer) return;
             const option = this.findElementByAttr(
               container,
               "span.saveSingleSelect[data]",
@@ -10240,16 +10281,15 @@ const MAX_RECORDS = 200;
           question.__xsBlankAnswers = blankAnswers.length;
           question.__xsBlankFilled = blankFilled;
           question.__xsBlankReadonly = blankFields.filter((el) => el.readOnly || el.disabled).length;
-          // 答案数和空数不一致时，填上能对上的部分也算成功，避免整题空白；
-          // 但要单独记下少填了几个空，统计上才能把「少填」和「填不上」分开。
-          const expect = Math.min(blankFields.length, blankAnswers.length);
-          filled = blankFilled > 0 && blankFilled === expect;
-          if (filled && expect < blankFields.length) {
-            question.__xsBlankPartial = blankFields.length - expect;
+          // 只有每个空都真的填上才算成功。以前答案比空少时按 min 算 expect，
+          // 几个空只填一个也报成功，用户以为答完了，实际漏了空。
+          filled = blankFields.length > 0 && blankFilled === blankFields.length;
+          if (!filled && blankFilled > 0) {
+            question.__xsBlankPartial = blankFields.length - blankFilled;
             question.__xsFillReason = "blank_partial";
             try {
               this.log.insertLog(
-                `填空题有${question.__xsBlankPartial}个空没有答案，只填上了${expect}个`,
+                `填空题有${question.__xsBlankPartial}个空没填上，按未完成处理`,
                 "warning"
               );
             } catch (_) {}
@@ -12868,7 +12908,9 @@ const MAX_RECORDS = 200;
             : ["错", "错误", "否", "×", "✗", "false", "f"];
           let judgeClicked = null;
           for (const optionDOM of optionsDOM) {
-            const optionText = optionRawText(optionDOM).replace(/[\s.。，,、]/g, "");
+            const optionText = optionRawText(optionDOM)
+              .replace(/^[A-Za-z][.、．)）:：\s]+/, "")
+              .replace(/[\s.。，,、]/g, "");
             if (judgeTexts.includes(optionText.toLowerCase())) {
               isSelected = true;
               judgeClicked = optionDOM;
@@ -12945,12 +12987,15 @@ const MAX_RECORDS = 200;
                 return false;
               }
             };
-            // 一个答案对应多个空时（答案写成「A，B，C」一整条）按分隔符拆到各空；
-            // 只有一个空、答案却是多段时，用整串填进去。
+            // 一个答案对应多个空时：先按换行拆（模型常「一行一个空」），
+            // 拆不开再按逗号顿号等分隔符拆；只有一个空时用整串填进去。
             let texts = blankAnswers;
             if (fields.length > 1 && blankAnswers.length === 1) {
-              const parts = String(blankAnswers[0] == null ? "" : blankAnswers[0])
-                .split(/[,，、;；|＞→]+/).map((s) => s.trim()).filter(Boolean);
+              const rawOne = String(blankAnswers[0] == null ? "" : blankAnswers[0]);
+              const lines = splitMultilineAnswerItems(rawOne);
+              const parts = lines.length >= 2
+                ? lines
+                : rawOne.split(/[,，、;；|＞→]+/).map((s) => s.trim()).filter(Boolean);
               if (parts.length >= 2) texts = parts;
             } else if (fields.length === 1 && blankAnswers.length > 1) {
               texts = [blankAnswers.join("，")];
@@ -12963,16 +13008,15 @@ const MAX_RECORDS = 200;
             question.__xsBlankFields = fields.length;
             question.__xsBlankAnswers = texts.length;
             question.__xsBlankFilled = filledCount;
-            // 所有该填的空都填上才算成功，避免「只填第一个空」被当成整题答完；
-            // 答案数少于空数时单独记一下，统计上才能区分「少填」和「填不上」。
-            const expect = Math.min(fields.length, texts.length);
-            isSelected = filledCount > 0 && filledCount === expect;
-            if (isSelected && expect < fields.length) {
-              question.__xsBlankPartial = fields.length - expect;
+            // 只有每个空都真的填上才算成功。以前答案比空少时按 min 算 expect，
+            // 三个空只填一个也报成功，用户以为答完了，实际漏了两个。
+            isSelected = fields.length > 0 && filledCount === fields.length;
+            if (!isSelected && filledCount > 0) {
+              question.__xsBlankPartial = fields.length - filledCount;
               question.__xsFillReason = "blank_partial";
               try {
                 this.log.insertLog(
-                  `第${index + 1}题填空题有${question.__xsBlankPartial}个空没有答案，只填上了${expect}个`,
+                  `第${index + 1}题填空题有${question.__xsBlankPartial}个空没填上，按未完成处理`,
                   "warning"
                 );
               } catch (_) {}
