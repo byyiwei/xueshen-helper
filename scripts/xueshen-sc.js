@@ -10804,7 +10804,9 @@ const MAX_RECORDS = 200;
     return target;
   };
 
-  const JOB_CONFIRM_TIMEOUT = 8;
+  const JOB_CONFIRM_TIMEOUT = 20;
+  // 刷新后平台要先拉取服务端进度再画完成态，页面本身加载也要时间，给足等待
+  const JOB_CONFIRM_RELOAD_TIMEOUT = 20;
   const PLAYBACK_WATCHDOG_INTERVAL = 5;
   const PLAY_FAIL_HINT_THRESHOLD = 3;
   const parseJobReport = (responseText) => {
@@ -11439,6 +11441,16 @@ const MAX_RECORDS = 200;
           }
         })();
         const isJobFinished = () => !!(taskContainer && taskContainer.classList.contains("ans-job-finished"));
+            // 出问题时要能看出是“进度没提交”还是“提交了但完成态没画出来”
+            const mediaProgressText = (mediaElement) => {
+              try {
+                const current = Number(mediaElement.currentTime);
+                const duration = Number(mediaElement.duration);
+                return `进度 ${Number.isFinite(current) ? current.toFixed(1) : "?"}/${Number.isFinite(duration) ? duration.toFixed(1) : "?"} 秒，实际倍速 ${mediaElement.playbackRate || finalRate}x`;
+              } catch (_) {
+                return "进度未知";
+              }
+            };
         log.insertLog(`发现一个${mediaType}，开始播放，倍速 ${finalRate}x`);
         let isExecuted = false;
         let isSpeedRestored = false;
@@ -11470,13 +11482,13 @@ const MAX_RECORDS = 200;
               }
             } catch (_) {}
             if (afterConfirmReload && taskContainer) {
-              log.insertLog(`${mediaType}刷新后复查任务点完成状态…`);
-              if (await waitJobIconFinished(taskContainer, 5)) {
+              log.insertLog(`${mediaType}刷新后复查任务点完成状态（最多等待${JOB_CONFIRM_RELOAD_TIMEOUT}秒）…`);
+              if (await waitJobIconFinished(taskContainer, JOB_CONFIRM_RELOAD_TIMEOUT)) {
                 log.insertLog(`${mediaType}刷新后任务点已确认完成`);
                 resolve();
                 return;
               }
-              log.insertLog(`${mediaType}刷新后仍未标记完成，将重新播放`, "warning");
+              log.insertLog(`${mediaType}刷新后等待${JOB_CONFIRM_RELOAD_TIMEOUT}秒仍未标记完成（${mediaProgressText(mediaElement)}），将重新播放`, "warning");
             }
             await waitForCxFaceRecognition({
               log,
@@ -11580,7 +11592,7 @@ const MAX_RECORDS = 200;
                 if (sessionStorage.getItem(MEDIA_CONFIRM_RELOAD_KEY) === mediaJobKey) return false;
                 sessionStorage.setItem(MEDIA_CONFIRM_RELOAD_KEY, mediaJobKey);
               } catch (_) {}
-              log.insertLog(`${mediaType}进度未刷出完成态，立即刷新确认任务点`, "warning");
+              log.insertLog(`${mediaType}进度未刷出完成态（${mediaProgressText(mediaElement)}），立即刷新确认任务点`, "warning");
               cleanup();
               isResolved = true;
               setTimeout(() => {
@@ -11604,6 +11616,8 @@ const MAX_RECORDS = 200;
               }
               log.insertLog(`${mediaType}已播放完成，等待平台确认学习进度…`);
               const reportPromise = (jobWatcher && jobWatcher.result) || Promise.resolve(false);
+              let jobReportConfirmed = false;
+              reportPromise.then((value) => { jobReportConfirmed = !!value; }).catch(() => {});
               const confirmed = await confirmJobFinished(taskContainer, reportPromise, JOB_CONFIRM_TIMEOUT);
               if (isResolved) return;
               if (confirmed || isJobFinished()) {
@@ -11614,7 +11628,10 @@ const MAX_RECORDS = 200;
               }
               // 平台常需刷新才画完成态：确认超时后立刻刷新（只刷一次）
               if (!reloadToConfirmProgress()) {
-                log.insertLog(`${mediaType}已刷新过仍未确认，停止自动切章以免空跳`, "warning");
+                log.insertLog(
+                  `${mediaType}等待${JOB_CONFIRM_TIMEOUT}秒后刷新仍未确认（${mediaProgressText(mediaElement)}，任务上报${jobReportConfirmed ? "成功" : "未成功"}），停止自动切章以免空跳`,
+                  "warning"
+                );
                 try { mediaElement.pause(); } catch (_) {}
                 finishTask(TASK_RESULT.unconfirmed);
               }
