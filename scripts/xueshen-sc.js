@@ -9502,22 +9502,31 @@
         const win = (field.ownerDocument && field.ownerDocument.defaultView) || this._window;
         try {
           const EventType2 = (win && win.Event) || Event;
+          const want = text.trim();
           if (field.isContentEditable) {
+            const before = String(field.textContent || "").trim();
+            if (before === want) return true;   // 已经是答案，不用重写
             field.focus();
             field.textContent = text;
             field.dispatchEvent(new EventType2("input", { bubbles: true }));
-            return String(field.textContent || "").trim() === text.trim();
+            const got = String(field.textContent || "").trim();
+            // 必须确实写入：占位/残留内容不能算填上
+            return got !== before && got.includes(want);
           }
           // 有些页面用框架接管 value，直接赋值不触发监听，走原型 setter 更稳
+          const before = String(field.value || "").trim();
+          if (before === want) return true;
           const desc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(field) || {}, "value");
           if (desc && desc.set) desc.set.call(field, text);
           else field.value = text;
           field.dispatchEvent(new EventType2("input", { bubbles: true }));
           field.dispatchEvent(new EventType2("change", { bubbles: true }));
           const current = String(field.value || "").trim();
-          if (current === text.trim()) return true;
-          // 页面会对答案做格式化（去前导 0、去空格、补单位），有内容就算填上，避免反复重试
-          return current.length > 0;
+          // 和智慧树同一套判定：写入前后没变化说明没写进去；
+          // 页面可能自动格式化（去前导 0、去空格、补单位），允许包含关系。
+          if (current === before) return false;
+          return current === want || current.includes(want)
+            || (want.includes(current) && current.length >= Math.min(2, want.length));
         } catch (_) {
           return false;
         }
@@ -12137,7 +12146,10 @@
                 return;
               }
               const whole = normalizeOptText(item);
-              const wholeHit = whole && optionNorms.some((t) => t && (t.includes(whole) || whole.includes(t)));
+              // 必须整串和某个选项正文完全相等才算「整串命中」。
+              // 用包含关系时，短选项（「方法」）是整串（「方法目的结果」）的子串，
+              // 会被误判成已命中而不拆分，多选就少选。
+              const wholeHit = whole && optionNorms.some((t) => t === whole);
               if (wholeHit) {
                 out.push(item);
                 return;
@@ -12299,14 +12311,15 @@
             ? ["对", "正确", "是", "√", "✓", "true", "t"]
             : ["错", "错误", "否", "×", "✗", "false", "f"];
           let judgeClicked = null;
-          optionsDOM.forEach((optionDOM) => {
+          for (const optionDOM of optionsDOM) {
             const optionText = optionRawText(optionDOM).replace(/[\s.。，,、]/g, "");
             if (judgeTexts.includes(optionText.toLowerCase())) {
               isSelected = true;
               clickOption(optionDOM);
               judgeClicked = optionDOM;
+              break;   // 判断题只点第一个命中的选项，避免页面有两个同义项时点两次把选中又切回去
             }
-          });
+          }
           if (judgeClicked) {
             await new Promise((resolve) => setTimeout(resolve, 180));
             const wanted = normalizeOptText(optionRawText(judgeClicked));
