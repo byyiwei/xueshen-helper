@@ -9408,12 +9408,15 @@
       __publicField(this, "splitAnswer", (answer = "") => {
         const normalizedAnswer = String(answer || "").trim();
         if (!normalizedAnswer) return [];
-        for (const separator of this.answerSeparators) {
-          if (normalizedAnswer.includes(separator)) {
-            return normalizedAnswer.split(separator).map((item) => item.trim()).filter(Boolean);
-          }
-        }
-        return [normalizedAnswer];
+        // 一次按所有分隔符拆，不能遇到第一个命中的就返回：
+        // 以前 "A|B;C" 只会拆成 ["A", "B;C"]，后面的 B/C 漏拆。
+        const pattern = this.answerSeparators
+          .slice()
+          .sort((a, b) => b.length - a.length)
+          .map((separator) => separator.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+          .join("|");
+        if (!pattern) return [normalizedAnswer];
+        return normalizedAnswer.split(new RegExp(pattern)).map((item) => item.trim()).filter(Boolean);
       });
       __publicField(this, "buildAnswerGroups", (answers = []) => {
         if (!Array.isArray(answers)) return [this.splitAnswer(answers)];
@@ -9711,6 +9714,25 @@
                 .map(hits => hits[0]);
               const distinct = [...new Set(hitOptions)];
               if (distinct.length === 1) answers = [distinct[0]];
+            }
+          }
+          // 多选题只有一条答案、且整串对不上任何选项时，按逗号/顿号等分隔符拆开再匹配。
+          // 后端经常把多选答案写成「方法,目的,结果」一整条，不拆就一个都匹配不到，
+          // 相似度兜底又只会挑中一个，表现就是多选少选。
+          // 三个护栏：整串能唯一命中某个选项时不拆（防止拆坏带逗号的单个选项）；
+          // 拆开后每段必须唯一命中不同选项、且至少命中两段才采用；只命中一段则保持原样，
+          // 交给后面的相似度和字母逻辑，绝不把多选拆成一个。
+          if (question.type === "1" && answers.length === 1 && /[,，、;；|]/.test(String(answers[0] || ""))) {
+            const rawMulti = String(answers[0] || "");
+            const wholeHit = optionKeys.filter(k => this.optionTextMatches(k, rawMulti, true));
+            if (!wholeHit.length) {
+              const hitOptions = rawMulti.split(/[,，、;；|]+/)
+                .map(s => s.trim()).filter(Boolean)
+                .map(c => optionKeys.filter(k => this.optionTextMatches(k, c, true)))
+                .filter(hits => hits.length === 1)
+                .map(hits => hits[0]);
+              const distinct = [...new Set(hitOptions)];
+              if (distinct.length >= 2) answers = distinct;
             }
           }
           for (const answer of answers) {
@@ -11689,7 +11711,7 @@
     constructor(type, iframe) {
       super();
       __publicField(this, "type");
-      __publicField(this, "AI_ALLOW_QUESTION_TYPE", ["单选题", "多选题", "判断题", "多项选择题", "X型选择题", "X型题", "不定项选择题", "不定项"]);
+      __publicField(this, "AI_ALLOW_QUESTION_TYPE", ["单选题", "多选题", "判断题", "填空题", "多项选择题", "X型选择题", "X型题", "不定项选择题", "不定项"]);
       __publicField(this, "init", async () => {
         var _that = this;
         this.questions = [];
@@ -11859,7 +11881,22 @@
                   expected: "题型在当前脚本的支持列表内",
                   found: {
                     type: String(question.type || ""),
-                    options: (question.optionsText || []).length
+                    options: (question.optionsText || []).length,
+                    // 题型判不出/不支持时把诊断信息带全：题干、选项预览、页面控件结构，
+                    // 只看一个 type 无法判断是接口字段异常还是页面结构变了。
+                    title: String((question && question.title) || "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").slice(0, 80),
+                    options_preview: ((question && question.optionsText) || []).slice(0, 4).join(" | ").slice(0, 120),
+                    option_dom: (question && question.__xsOptionCount) || 0,
+                    option_selector: (question && question.__xsOptionSelector) || "",
+                    controls: (() => {
+                      try {
+                        const el = question && question.element;
+                        return el && el.querySelectorAll ? el.querySelectorAll('input, textarea, [contenteditable="true"]').length : 0;
+                      } catch (_) {
+                        return 0;
+                      }
+                    })(),
+                    host: String(location.hostname || "")
                   },
                   nodes: question.element ? [question.element] : []
                 });
@@ -11924,7 +11961,15 @@
       __publicField(this, "parseHtml", () => {
         this.questionStore.currentQuestionIndex = 0;
         if (!this._document) return [];
-        this.addQuestions(this.questionStore.questionList);
+        // 题目接口没抓到或返回空时，questionList 可能是 undefined/null/非数组，
+        // addQuestions 里直接 forEach 会抛错，而调用方是 async，异常被静默吞掉，
+        // 表现就是「开始答题」后什么都不发生。这里先挡住空值。
+        const list = this.questionStore && this.questionStore.questionList;
+        if (Array.isArray(list) && list.length) {
+          this.addQuestions(list);
+        } else {
+          this.questions = [];
+        }
         this.questionStore.questionList = this.questions;
       });
       __publicField(this, "fillQuestion", (question, index) => {
@@ -12008,8 +12053,37 @@
           // 先把命中的选项序号收齐再去点，避免同一选项被点两次（多选题再点一次会取消勾选，
           // 表现就是「多选题只答一个」）
           const pickedIdx = new Set();
-          const answerList = normalizeChoiceAnswerList(question.answer.answer);
+          const isMultiType = /多选|X型|不定项/.test(question.type || "");
+          const optionNorms = optionsDOM.map((optionDOM) => normalizeOptText(optionRawText(optionDOM)));
+          // 多选答案偶尔被拼成「方法，目的，结果」一整条：先看整串是不是某个选项的正文，
+          // 不是才按中英文逗号/顿号拆开；拆开后至少两项能对上选项才算拆分成功，避免误拆正常选项。
+          const expandAnswerByOptions = (list) => {
+            if (!isMultiType) return list;
+            const out = [];
+            list.forEach((item) => {
+              const parts = String(item || "").split(/[,，、;；|]+/).map((s) => s.trim()).filter(Boolean);
+              if (parts.length < 2) {
+                out.push(item);
+                return;
+              }
+              const whole = normalizeOptText(item);
+              const wholeHit = whole && optionNorms.some((t) => t && (t.includes(whole) || whole.includes(t)));
+              if (wholeHit) {
+                out.push(item);
+                return;
+              }
+              const hitCount = parts.filter((p) => {
+                const np = normalizeOptText(p);
+                return np && optionNorms.some((t) => t && (t.includes(np) || np.includes(t)));
+              }).length;
+              if (hitCount >= 2) out.push(...parts);
+              else out.push(item);
+            });
+            return out;
+          };
+          const answerList = expandAnswerByOptions(normalizeChoiceAnswerList(question.answer.answer));
           answerList.forEach((answer) => {
+            const pickedBefore = pickedIdx.size;
             // 字母答案映射：A / ABD / A,B,D → 按选项序号勾选
             const letterText = String(answer || "").trim();
             let letters = [];
@@ -12032,12 +12106,50 @@
               const optionText = optionRawText(optionDOM);
               const nAnswer = normalizeOptText(answer);
               const nOption = normalizeOptText(optionText);
-              if (answer == optionText || this.removeAllTags(answer) == this.removeAllTags(optionText) || (nAnswer.length >= 2 && nOption && nOption.includes(nAnswer))) {
+              // 双向包含：答案可能比选项长（带解释/括号补充），只判选项包含答案会漏
+              if (answer == optionText || this.removeAllTags(answer) == this.removeAllTags(optionText) || (nAnswer.length >= 2 && nOption && (nOption.includes(nAnswer) || (nOption.length >= 2 && nAnswer.includes(nOption))))) {
                 pickedIdx.add(optIdx);
               } else if (imgSrcsMatch(collectImgSrcs(answer), collectImgSrcs(optionDOM).concat(collectImgSrcs(optionText)))) {
                 pickedIdx.add(optIdx);
               }
             });
+            // 正文对不上时按相似度找唯一最接近的一项：选项只差一个字、标点或全半角时，
+            // 以前会整题放弃或漏勾。阈值按单/多选区分，且要求与第二名有明显差距才认。
+            if (pickedIdx.size === pickedBefore) {
+              const nAnswerTarget = normalizeOptText(answer);
+              if (nAnswerTarget.length >= 2 && !collectImgSrcs(answer).length) {
+                const bigrams = (s) => {
+                  const out = new Set();
+                  if (s.length === 1) out.add(s);
+                  for (let i = 0; i < s.length - 1; i++) out.add(s.slice(i, i + 2));
+                  return out;
+                };
+                const sim = (a, b) => {
+                  if (!a || !b) return 0;
+                  if (a === b) return 1;
+                  if (a.includes(b) || b.includes(a)) return Math.min(a.length, b.length) / Math.max(a.length, b.length) + 0.3;
+                  const A = bigrams(a);
+                  const B = bigrams(b);
+                  let inter = 0;
+                  A.forEach((x) => { if (B.has(x)) inter += 1; });
+                  return (2 * inter) / ((A.size + B.size) || 1);
+                };
+                let bestIdx = -1, bestScore = 0, secondScore = 0;
+                optionNorms.forEach((nOption, optIdx) => {
+                  const score = sim(nAnswerTarget, nOption);
+                  if (score > bestScore) {
+                    secondScore = bestScore;
+                    bestScore = score;
+                    bestIdx = optIdx;
+                  } else if (score > secondScore) {
+                    secondScore = score;
+                  }
+                });
+                const minScore = isMultiType ? 0.62 : 0.68;
+                const minMargin = isMultiType ? 0.1 : 0.15;
+                if (bestIdx >= 0 && bestScore >= minScore && bestScore - secondScore >= minMargin) pickedIdx.add(bestIdx);
+              }
+            }
           });
           Array.from(pickedIdx).sort((a, b) => a - b).forEach((optIdx) => {
             const optionDOM = optionsDOM[optIdx];
@@ -12046,15 +12158,29 @@
             clickOption(optionDOM);
           });
         } else if (question.type === "判断题") {
-          let answer = "对";
-          if (question.answer.answer[0].match(
-            /(^|,)(正确|是|对|√|T|ri|right|true)(,|$)/
-          )) {
-            answer = "对";
-          } else if (question.answer.answer[0].match(
-            /(^|,)(错误|否|错|×|F|wr|wrong|false)(,|$)/
-          )) {
-            answer = "错";
+          // 判断题答案的各种写法都要能判定；以前没命中就默认「对」，会把「错误。」「False」答成对题。
+          const rawJudge = String((question.answer.answer && question.answer.answer[0]) == null ? "" : question.answer.answer[0]).replace(/\s+/g, "");
+          const negJudge = /(错误|不对|不正确|错|否|×|✗|wrong|false|^no$|^n$|^f$)/i;
+          const posJudge = /(正确|对|是|√|✓|right|true|^yes$|^y$|^t$|^ri$)/i;
+          let answer = "";
+          if (negJudge.test(rawJudge)) answer = "错";
+          else if (posJudge.test(rawJudge)) answer = "对";
+          // 答案可能给的是选项字母（页面 A=对、B=错），按字母对应的选项正文判定
+          if (!answer && /^[A-Za-z]$/.test(rawJudge)) {
+            const judgeIdx = rawJudge.toUpperCase().charCodeAt(0) - 65;
+            const judgeOpt = optionsDOM[judgeIdx];
+            if (judgeOpt) {
+              const judgeText = optionRawText(judgeOpt).replace(/\s+/g, "");
+              if (negJudge.test(judgeText)) answer = "错";
+              else if (posJudge.test(judgeText)) answer = "对";
+            }
+          }
+          if (!answer) {
+            question.__xsFillReason = "answer_invalid";
+            try {
+              this.log.insertLog(`判断题答案无法判定对错，本题不填：${rawJudge || "空"}`, "warning");
+            } catch (_) {}
+            return false;
           }
           const judgeTexts = answer === "对"
             ? ["对", "正确", "是", "√", "✓", "true", "t"]
@@ -12066,7 +12192,65 @@
               clickOption(optionDOM);
             }
           });
-        } else ;
+        } else if (question.type === "填空题" || question.type === "简答题" || question.type === "名词解释") {
+          // 智慧树填空题可能是 input，也可能是 textarea / contenteditable，个别页面还嵌在 iframe 里。
+          const blankAnswers = normalizeChoiceAnswerList(question.answer.answer);
+          const fields = [];
+          const collectFields = (root) => {
+            if (!root || !root.querySelectorAll) return;
+            Array.from(root.querySelectorAll('textarea, input, [contenteditable="true"]')).forEach((el) => {
+              if (!el || el.disabled || el.readOnly) return;
+              if (el.tagName === "INPUT") {
+                const type = String(el.getAttribute("type") || "text").toLowerCase();
+                if (!["text", "search", "number", "tel", "url", "email"].includes(type)) return;
+              }
+              if (el.getClientRects && el.getClientRects().length === 0) return;
+              if (!fields.includes(el)) fields.push(el);
+            });
+          };
+          collectFields(subjectNode);
+          Array.from(subjectNode.querySelectorAll("iframe")).forEach((frame) => {
+            try {
+              collectFields(frame.contentDocument);
+            } catch (_) {}
+          });
+          if (fields.length && blankAnswers.length) {
+            const fillField = (field, text) => {
+              try {
+                field.focus();
+                if (field.isContentEditable) {
+                  field.textContent = text;
+                  field.dispatchEvent(new Event("input", { bubbles: true }));
+                  field.dispatchEvent(new Event("change", { bubbles: true }));
+                  return String(field.textContent || "").trim().length > 0;
+                }
+                const proto = field.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+                const desc = Object.getOwnPropertyDescriptor(proto, "value");
+                if (desc && desc.set) desc.set.call(field, text);
+                else field.value = text;
+                field.dispatchEvent(new Event("input", { bubbles: true }));
+                field.dispatchEvent(new Event("change", { bubbles: true }));
+                const got = String(field.value || "").trim();
+                // 页面可能自动格式化（去空格/前导 0），有内容就算填上
+                return got === text.trim() || got.length > 0;
+              } catch (_) {
+                return false;
+              }
+            };
+            const texts = fields.length === 1 && blankAnswers.length > 1
+              ? [blankAnswers.join("，")]
+              : blankAnswers;
+            let filledCount = 0;
+            fields.forEach((field, fieldIdx) => {
+              const text = texts[fieldIdx];
+              if (text && fillField(field, text)) filledCount += 1;
+            });
+            question.__xsBlankFields = fields.length;
+            question.__xsBlankAnswers = texts.length;
+            question.__xsBlankFilled = filledCount;
+            isSelected = filledCount > 0;
+          }
+        }
         return isSelected;
       });
       __publicField(this, "extractOptions", (questionOptions, questionType) => {
@@ -12081,7 +12265,9 @@
         return [optionsObject, optionTexts];
       });
       __publicField(this, "addQuestions", (questions) => {
+        if (!Array.isArray(questions) || !questions.length) return;
         questions.forEach((question) => {
+          if (!question || typeof question !== "object") return;
           const questionTitle = this.removeHtml(question.name);
           const rawType = question && question.questionType;
           const apiTypeText = rawType && typeof rawType === "object" ? (rawType.name || rawType.code || "") : rawType;
@@ -12326,6 +12512,27 @@
             const requestUrl = getRequestUrl(this.responseURL);
             if (requestUrl.includes(ANSWER_SHEET_URL)) {
               saveAnswerSheetPayload(parseResponseText(this.responseText));
+              return;
+            }
+            // 作业/考试题目接口在页面早期就会请求，答题入口可能还没注册回调。
+            // document-start 的 send 钩子先把题目抓到 window 上，入口启动时补触发，
+            // 否则接口先返回、入口后注册，回调永远等不到，表现就是“开始答题”后不动。
+            if (/doHomework|doExam/i.test(requestUrl)) {
+              try {
+                const data = JSON.parse(this.responseText);
+                const parts = data && data.rt && data.rt.examBase ? data.rt.examBase.workExamParts : null;
+                if (Array.isArray(parts)) {
+                  let questions = [];
+                  parts.forEach((part) => {
+                    questions = questions.concat((part && part.questionDtos) || []);
+                  });
+                  if (questions.length) {
+                    const pageWin = _unsafeWindow || window;
+                    pageWin.__xsExamQuestionsReady = questions;
+                    if (typeof fireExamQuestionHooks === "function") fireExamQuestionHooks();
+                  }
+                }
+              } catch (_) {}
             }
           });
         } catch (_) {}
@@ -12333,46 +12540,52 @@
       };
     }
   };
-  const fetchHook = (url2, callback) => {
-    const questionStore = useQuestionStore();
-    function addXMLRequestCallback(callback2) {
-      var oldSend, i;
-      if (XMLHttpRequest.callbacks) {
-        XMLHttpRequest.callbacks.push(callback2);
-      } else {
-        XMLHttpRequest.callbacks = [callback2];
-        oldSend = XMLHttpRequest.prototype.send;
-        XMLHttpRequest.prototype.send = function() {
-          for (i = 0; i < XMLHttpRequest.callbacks.length; i++) {
-            XMLHttpRequest.callbacks[i](this);
-          }
-          oldSend.apply(this, arguments);
-        };
+  const onExamQuestions = [];
+  const fireExamQuestionHooks = () => {
+    const list = onExamQuestions.splice(0, onExamQuestions.length);
+    if (!list.length) return;                        // 还没有入口注册回调，题目先留在 window 里
+    const w = _unsafeWindow || window;
+    if (w.__xsAnswerStarted) return;                 // 只答一轮，避免 doHomework/doExam 重复触发
+    w.__xsAnswerStarted = true;
+    const cb = list[0];
+    const reportErr = (e) => {
+      try {
+        useLogStore().insertLog("答题流程异常：" + (e && e.message ? e.message : e), "warning");
+      } catch (_) {}
+    };
+    setTimeout(() => {
+      try {
+        const r = cb();
+        // async 回调的异常不能丢：以前静默吞掉，表现就是日志停在“开始答题..”不动
+        if (r && typeof r.catch === "function") r.catch(reportErr);
+      } catch (e) {
+        reportErr(e);
       }
+    }, 0);
+  };
+  const fetchHook = (url2, callback) => {
+    if (typeof callback !== "function") return;
+    const w = _unsafeWindow || window;
+    // 题目接口在页面早期就会请求（document-start 的 send 钩子已经抓下来了），
+    // 答题入口注册时补触发一次；store 必须同步写入，parseHtml 是从 store 读题目的。
+    if (w.__xsExamQuestionsReady) {
+      if (w.__xsAnswerStarted) return;
+      try {
+        useQuestionStore().questionList = w.__xsExamQuestionsReady;
+      } catch (_) {}
+      onExamQuestions.push(callback);
+      fireExamQuestionHooks();
+      return;
     }
-    addXMLRequestCallback(function(xhr) {
-      xhr.addEventListener("load", function() {
-        if (xhr.readyState == 4 && xhr.status == 200) {
-          if (xhr.responseURL.includes(url2)) {
-            const keywords = ["doExam", "doHomework"];
-            if (keywords.some((keyword) => xhr.responseURL.includes(keyword))) {
-              let questions = [];
-              const questionsParts = JSON.parse(xhr.response).rt.examBase.workExamParts;
-              questionsParts.forEach((part) => {
-                console.log("part", part.questionDtos);
-                questions = questions.concat(part.questionDtos);
-              });
-              questionStore.questionList = questions;
-            }
-            callback();
-          }
-        }
-      });
-    });
+    onExamQuestions.push(callback);
   };
   const autoAnswerLogic = async () => {
     const log = useLogStore();
     const questionStore = useQuestionStore();
+    // 入口可能被调用多次（路由变化等），只跑一轮，避免重复解析/重复答题
+    const w0 = _unsafeWindow || window;
+    if (w0.__xsAutoAnswerEntered) return;
+    w0.__xsAutoAnswerEntered = true;
     log.insertLog("进入作业页面，脚本开始工作中..");
     questionStore.accuracy = -1;
     const handleFetchHook = async () => {

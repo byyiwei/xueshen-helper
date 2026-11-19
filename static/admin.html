@@ -7309,6 +7309,12 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
               <span style="font-size:12px;color:var(--text3)">开启后，收到新的问题反馈或用户追问时自动邮件通知管理员</span>
               <span v-if="accountConfig.admin_email" style="font-size:12px;color:var(--text3)">· 通知邮箱：<b style="color:var(--text2)">{{accountConfig.admin_email}}</b>（在「个人中心」配置）</span>
               <span v-else style="font-size:12px;color:var(--warn);display:inline-flex;align-items:center;gap:4px"><svg class="ui-icon sm"><use href="#i-alert-triangle"></use></svg> 未配置管理员邮箱，请在「个人中心 → 绑定找回邮箱」设置</span>
+              <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);border-left:1px solid var(--border);padding-left:14px;flex-wrap:wrap">
+                用户活跃
+                <input v-model.number="feedbackEmailActiveMinutes" type="number" min="0" max="1440" step="5" style="width:72px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:13px" @change="saveFeedbackNotify()">
+                分钟内回复不发邮件
+                <span style="font-size:12px;color:var(--text3)">（0 = 每次都发）</span>
+              </div>
             </div>
           </div>
           <!-- 统计栏 -->
@@ -7498,7 +7504,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
             </div>
             <div class="modal-actions">
               <button class="btn btn-secondary" @click="feedbackDetail=null">关闭</button>
-              <button v-if="feedbackDetail.status!=='closed'" class="btn btn-primary" @click="replyFeedback()">回复并发送邮件</button>
+              <button v-if="feedbackDetail.status!=='closed'" class="btn btn-primary" @click="replyFeedback()">发送回复</button>
             </div>
           </div>
         </div>
@@ -10651,6 +10657,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     const modelTestResults=reactive({});
     const newProviderTestResult=ref(null);
     const feedbackNotifyEnabled=ref(false);
+    const feedbackEmailActiveMinutes=ref(30);
     const referralConfig=ref({referral_enabled:false,referral_rate:0.1,referral_min_withdraw:10,referral_settle_days:7,referral_points_rate:50,referral_exchange_enabled:true,referral_deduct_enabled:true,referral_hold_minutes:30});
     const referralSaving=ref(false);
     const referralWithdrawals=ref([]);
@@ -11713,13 +11720,21 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       try{
         const res=await safeFetch('/admin/feedback-notify/config',{headers:{'Authorization':token.value}});
         const d=await res.json();
-        if(d.code===200)feedbackNotifyEnabled.value=!!d.enabled;
+        if(d.code===200){
+          feedbackNotifyEnabled.value=!!d.enabled;
+          if(d.active_minutes!==undefined&&d.active_minutes!==null)feedbackEmailActiveMinutes.value=Number(d.active_minutes);
+        }
       }catch(_){}
     }
     async function saveFeedbackNotify(){
       try{
-        const res=await adminPost('/admin/feedback-notify/config',{enabled:feedbackNotifyEnabled.value});
-        if(res&&res.code===200)showMsg('已保存通知设置');
+        const minutes=Math.max(0,Math.min(1440,Number(feedbackEmailActiveMinutes.value)||0));
+        feedbackEmailActiveMinutes.value=minutes;
+        const res=await adminPost('/admin/feedback-notify/config',{enabled:feedbackNotifyEnabled.value,active_minutes:minutes});
+        if(res&&res.code===200){
+          if(res.active_minutes!==undefined)feedbackEmailActiveMinutes.value=Number(res.active_minutes);
+          showMsg('已保存通知设置');
+        }
         else showMsg((res&&res.msg)||'保存失败','error');
       }catch(e){showMsg('保存失败: '+(e.message||e),'error');}
     }
@@ -11853,7 +11868,8 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         });
         const d=await res.json();
         if(d.code===200){
-          showMsg('回复成功，邮件已发送','success');
+          // 后端会按用户是否在线决定发不发邮件，提示文案以后端返回为准
+          showMsg(d.msg||'回复成功',d.email_status==='failed'?'error':'success');
           const fid=feedbackDetail.value.id;
           feedbackReplyText.value='';
           fbAttachList.value=[];
@@ -12411,7 +12427,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         loadFeedbackList,feedbackSearch,viewFeedbackDetail,replyFeedback,updateFeedbackStatus,feedbackPrev,feedbackNext,
     fbAttachList,fbUploadingCount,onAdminFbFiles,onAdminFbPaste,removeAdminFbAttachment,downloadAdminFbAttachment,copyAdminFbImage,adminFbSize,
     feedbackAutoCloseDays,loadFeedbackAutoClose,saveFeedbackAutoClose,cardPayLabel,
-    feedbackNotifyEnabled,loadFeedbackNotify,saveFeedbackNotify,
+    feedbackNotifyEnabled,feedbackEmailActiveMinutes,loadFeedbackNotify,saveFeedbackNotify,
     adaptList,adaptFilter,adaptPage,adaptTotal,adaptTotalPages,adaptDetail,adaptAdminNote,adaptPending,adaptUrgent,loadAdaptPending,
     modelStatsDays,modelStatsRows,modelStatsLoading,modelStatsFilter,modelStatsKeyword,modelStatsFilteredRows,modelStatusText,modelStatusStyle,loadModelStats,disableModel,
     modelStatsSort,modelStatsCompact,toggleModelStatsSort,sortMark,

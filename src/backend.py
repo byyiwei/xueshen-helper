@@ -11504,7 +11504,8 @@ class Handler(BaseHTTPRequestHandler):
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
-            self._send_json(200, {"code": 200, "enabled": db.get_feedback_notify_enabled()})
+            self._send_json(200, {"code": 200, "enabled": db.get_feedback_notify_enabled(),
+                                    "active_minutes": db.get_feedback_email_active_minutes()})
 
         elif path == "/admin/daily-report/preview":
             if not self._check_admin():
@@ -14268,43 +14269,72 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 if not reply_text and att_ids:
                     reply_text = "管理员上传了附件，请到用户中心查看。"
-                # 发送邮件（使用 feedback_reply 模板，模板不存在时用 fallback）
-                user_email = fb.get("email") or ""
-                if not user_email:
-                    user = db.get_user_by_username(fb.get("username") or "")
-                    user_email = (user or {}).get("email") or ""
-                if not user_email:
-                    self._send_json(400, {"code": 400, "msg": "用户未绑定邮箱，无法发送邮件"})
-                    return
-                # 检查模板是否存在，不存在则用 fallback
-                tpl = db.get_email_template_by_scene("feedback_reply")
-                if tpl:
-                    ok, err = send_email(
-                        to_addr=user_email,
-                        subject=None,
-                        body_text=None,
-                        body_html=None,
-                        scene="feedback_reply",
-                        variables={
-                            "username": fb.get("username", ""),
-                            "title": fb.get("title", ""),
-                            "reply_text": reply_text
-                        }
-                    )
-                else:
-                    # 模板不存在时的 fallback
-                    fb_subject = f"学神助手 - 问题反馈回复：{fb.get('title','')}"
-                    fb_html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;background:#f0f9ff;font-family:sans-serif;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:40px 20px;"><table width="480" cellpadding="0" cellspacing="0" style="max-width:480px;background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#0ea5e9,#0284c7);padding:28px 32px;text-align:center;color:#fff;font-size:18px;font-weight:600;">学神助手</td></tr><tr><td style="padding:32px;"><p style="margin:0 0 16px;color:#1f2937;font-size:15px;">您好 <b>{fb.get('username','')}</b>，</p><p style="margin:0 0 8px;color:#4b5563;font-size:14px;">您提交的问题反馈已处理：</p><div style="background:#f0f9ff;border-left:4px solid #0ea5e9;border-radius:8px;padding:14px 16px;margin:0 0 20px;"><p style="margin:0 0 6px;color:#6b7280;font-size:12px;">反馈标题</p><p style="margin:0;color:#1f2937;font-size:14px;font-weight:600;">{fb.get('title','')}</p></div><p style="margin:0 0 8px;color:#4b5563;font-size:14px;">管理员回复：</p><div style="background:#f9fafb;border-radius:12px;padding:16px 18px;margin:0 0 20px;"><p style="margin:0;color:#1f2937;font-size:14px;line-height:1.7;white-space:pre-wrap;">{reply_text}</p></div><p style="margin:0;color:#9ca3af;font-size:12px;">如有疑问请继续在用户中心提交反馈。</p></td></tr></table></td></tr></table></body></html>"""
-                    ok, err = send_email(user_email, fb_subject, body_text=reply_text, body_html=fb_html)
-                if not ok:
-                    self._send_json(500, {"code": 500, "msg": f"邮件发送失败：{err}"})
-                    return
-                # 保存回复（兼容旧字段 + 新对话表）
+                # 先保存回复：邮件只是通知，不能因为邮件失败让回复丢失。
+                # （以前先发邮件、失败直接 500，管理员回复就白写了）
                 db.reply_feedback(fid, reply_text)
                 reply_id = db.add_feedback_reply_with_id(fid, "admin", reply_text, quote_sender, quote_content)
                 if att_ids:
                     db.link_feedback_attachments(att_ids, fid, reply_id, "admin")
-                self._send_json(200, {"code": 200, "msg": "回复成功，邮件已发送"})
+                # 再决定要不要发邮件：
+                # 1. 用户最近 active_minutes 分钟内有发言，说明正在对话，跳过邮件；
+                # 2. 没绑定邮箱，跳过；
+                # 3. 发送失败也照样返回成功，只提示邮件没发出去。
+                user_email = fb.get("email") or ""
+                if not user_email:
+                    user = db.get_user_by_username(fb.get("username") or "")
+                    user_email = (user or {}).get("email") or ""
+                email_sent = False
+                email_status = "no_email"
+                msg = "回复成功（用户未绑定邮箱，未发送邮件）"
+                active_minutes = 0
+                try:
+                    active_minutes = db.get_feedback_email_active_minutes()
+                except Exception:
+                    active_minutes = 0
+                last_active_sec = None
+                if user_email and active_minutes > 0:
+                    try:
+                        last_active_sec = db.get_feedback_user_last_active_seconds(fid)
+                    except Exception:
+                        last_active_sec = None
+                if user_email and active_minutes > 0 and last_active_sec is not None \
+                        and last_active_sec < active_minutes * 60:
+                    email_status = "skipped_active"
+                    msg = "回复成功（用户在线，本次不发邮件）"
+                elif user_email:
+                    try:
+                        # 检查模板是否存在，不存在则用 fallback
+                        tpl = db.get_email_template_by_scene("feedback_reply")
+                        if tpl:
+                            ok, err = send_email(
+                                to_addr=user_email,
+                                subject=None,
+                                body_text=None,
+                                body_html=None,
+                                scene="feedback_reply",
+                                variables={
+                                    "username": fb.get("username", ""),
+                                    "title": fb.get("title", ""),
+                                    "reply_text": reply_text
+                                }
+                            )
+                        else:
+                            # 模板不存在时的 fallback
+                            fb_subject = f"学神助手 - 问题反馈回复：{fb.get('title','')}"
+                            fb_html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body style="margin:0;padding:0;background:#f0f9ff;font-family:sans-serif;"><table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:40px 20px;"><table width="480" cellpadding="0" cellspacing="0" style="max-width:480px;background:#fff;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,.08);overflow:hidden;"><tr><td style="background:linear-gradient(135deg,#0ea5e9,#0284c7);padding:28px 32px;text-align:center;color:#fff;font-size:18px;font-weight:600;">学神助手</td></tr><tr><td style="padding:32px;"><p style="margin:0 0 16px;color:#1f2937;font-size:15px;">您好 <b>{fb.get('username','')}</b>，</p><p style="margin:0 0 8px;color:#4b5563;font-size:14px;">您提交的问题反馈已处理：</p><div style="background:#f0f9ff;border-left:4px solid #0ea5e9;border-radius:8px;padding:14px 16px;margin:0 0 20px;"><p style="margin:0 0 6px;color:#6b7280;font-size:12px;">反馈标题</p><p style="margin:0;color:#1f2937;font-size:14px;font-weight:600;">{fb.get('title','')}</p></div><p style="margin:0 0 8px;color:#4b5563;font-size:14px;">管理员回复：</p><div style="background:#f9fafb;border-radius:12px;padding:16px 18px;margin:0 0 20px;"><p style="margin:0;color:#1f2937;font-size:14px;line-height:1.7;white-space:pre-wrap;">{reply_text}</p></div><p style="margin:0;color:#9ca3af;font-size:12px;">如有疑问请继续在用户中心提交反馈。</p></td></tr></table></td></tr></table></body></html>"""
+                            ok, err = send_email(user_email, fb_subject, body_text=reply_text, body_html=fb_html)
+                    except Exception as e:
+                        ok, err = False, str(e)
+                    if ok:
+                        email_sent = True
+                        email_status = "sent"
+                        msg = "回复成功，邮件已发送"
+                    else:
+                        email_status = "failed"
+                        msg = f"回复成功，但邮件发送失败：{err}"
+                self._send_json(200, {"code": 200, "msg": msg,
+                                      "email_sent": email_sent, "email_status": email_status,
+                                      "reply_id": reply_id})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -14743,9 +14773,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 data = json.loads(body or "{}")
-                enabled = bool(data.get("enabled"))
-                db.set_feedback_notify_enabled(enabled)
-                self._send_json(200, {"code": 200, "msg": "配置已保存"})
+                if "enabled" in data:
+                    db.set_feedback_notify_enabled(bool(data.get("enabled")))
+                if "active_minutes" in data:
+                    db.set_feedback_email_active_minutes(data.get("active_minutes"))
+                self._send_json(200, {"code": 200, "msg": "配置已保存",
+                                      "active_minutes": db.get_feedback_email_active_minutes()})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 

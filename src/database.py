@@ -1558,6 +1558,9 @@ class Database:
         self._add_column_if_missing("admin_config", "referral_hold_minutes", "referral_hold_minutes INT DEFAULT 30 COMMENT '下单抵扣冻结时长（分钟），超时退回'")
         self._add_column_if_missing("admin_config", "feedback_auto_close_days", "feedback_auto_close_days INT DEFAULT 7")
         self._add_column_if_missing("admin_config", "feedback_notify_enabled", "feedback_notify_enabled TINYINT DEFAULT 0")
+        # 反馈回复时，用户最近多少分钟内有过互动就不发提醒邮件（避免正在对话还每句都发）
+        self._add_column_if_missing("admin_config", "feedback_email_active_minutes",
+                                    "feedback_email_active_minutes INT DEFAULT 30 COMMENT '反馈回复时用户活跃多久内不发邮件（分钟），0=每次都发'")
         self._add_column_if_missing("admin_config", "refund_days_limit", "refund_days_limit INT DEFAULT 7 COMMENT '退款时效（天），0=不允许退款'")
         # 退款自动审核：两个开关都开，且订单支付时间落在 [min,max] 小时内才自动退
         self._add_column_if_missing("admin_config", "auto_refund_enabled", "auto_refund_enabled TINYINT DEFAULT 0 COMMENT '自动退款总开关'")
@@ -7342,6 +7345,50 @@ class Database:
     def set_feedback_notify_enabled(self, enabled):
         ph = _ph()
         self.execute(f"UPDATE admin_config SET feedback_notify_enabled = {ph} WHERE id = 1", (1 if enabled else 0,))
+
+    def get_feedback_email_active_minutes(self):
+        """反馈回复时用户最近多少分钟内有互动就跳过邮件；0 表示每次都发。"""
+        row = self.fetchone("SELECT feedback_email_active_minutes FROM admin_config WHERE id = 1")
+        try:
+            n = int((row or {}).get("feedback_email_active_minutes") or 0)
+        except (TypeError, ValueError):
+            n = 30
+        return max(0, min(n, 1440))
+
+    def set_feedback_email_active_minutes(self, minutes):
+        ph = _ph()
+        try:
+            n = int(minutes)
+        except (TypeError, ValueError):
+            n = 30
+        n = max(0, min(n, 1440))
+        self.execute(f"UPDATE admin_config SET feedback_email_active_minutes = {ph} WHERE id = 1", (n,))
+        return n
+
+    def get_feedback_user_last_active_seconds(self, feedback_id):
+        """用户最近一次在该反馈里发言距今多少秒；没有用户发言时退回反馈提交时间。
+        用数据库 NOW() 计算，避免应用服务器与数据库时区不一致。"""
+        ph = _ph()
+        row = self.fetchone(
+            f"SELECT TIMESTAMPDIFF(SECOND, created_at, NOW()) AS ago FROM feedback_replies "
+            f"WHERE feedback_id={ph} AND sender='user' ORDER BY id DESC LIMIT 1",
+            (feedback_id,)
+        )
+        if row and row.get("ago") is not None:
+            try:
+                return max(0, int(row["ago"]))
+            except (TypeError, ValueError):
+                pass
+        row = self.fetchone(
+            f"SELECT TIMESTAMPDIFF(SECOND, created_at, NOW()) AS ago FROM user_feedback WHERE id={ph}",
+            (feedback_id,)
+        )
+        if row and row.get("ago") is not None:
+            try:
+                return max(0, int(row["ago"]))
+            except (TypeError, ValueError):
+                pass
+        return None
 
     def clear_question_bank(self, keyword=""):
         ph = _ph()
