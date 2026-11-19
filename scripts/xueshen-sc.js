@@ -2093,6 +2093,9 @@
     no_input: "页面上找不到输入框",
     fill_not_effective: "输入框写入后回读不对",
     unknown_type: "未知题型，暂不支持",
+    page_structure: "页面结构异常，找不到题目",
+    no_options: "页面上找不到选项",
+    answer_out_of_range: "答案里的选项在页面上找不到",
     blank_partial: "部分空未填上"
   };
   const describeFillReason = (reason) => XS_FILL_REASON_TEXT[String(reason || "")] || "";
@@ -9088,8 +9091,12 @@
                   source: "accurate"
                 });
                 let fillSuccess = this.fillQuestion(question);
-                if (["0", "1"].includes(question.type)) {
-                  for (let attempt = 0; attempt < 3; attempt++) {
+                // 第一次就成功不再重试；只有「页面可能还没更新完」的原因重试有意义，
+                // 答案没匹配/找不到输入框这类重试也不会变好，白花时间。
+                if (!fillSuccess && ["0", "1"].includes(question.type)) {
+                  const retryable = ["click_not_effective", "fill_not_effective", "answer_partial_match", "extra_selected", ""];
+                  for (let attempt = 0; attempt < 2; attempt++) {
+                    if (!retryable.includes(String(question.__xsFillReason || ""))) break;
                     await sleep(0.2);
                     if (!this.setting.config.basicConfig.autoAnswer.value) break;
                     fillSuccess = this.fillQuestion(question);
@@ -9101,7 +9108,7 @@
                   continue;
                 }
                 question.answer.code = 0;
-                question.answer.msg = "答案拿到了但没点上去";
+                question.answer.msg = describeFillReason(question.__xsFillReason) || "答案拿到了但没点上去";
                 reportFillFail(question);
                 // 题库答案填不上（常见于图片选项），改走模型
               } else if (mode === "questionBank" || answerData.code !== -1004) {
@@ -9129,8 +9136,12 @@
                   source: "ai"
                 });
                 let fillSuccess = this.fillQuestion(question);
-                if (["0", "1"].includes(question.type)) {
-                  for (let attempt = 0; attempt < 3; attempt++) {
+                // 第一次就成功不再重试；只有「页面可能还没更新完」的原因重试有意义，
+                // 答案没匹配/找不到输入框这类重试也不会变好，白花时间。
+                if (!fillSuccess && ["0", "1"].includes(question.type)) {
+                  const retryable = ["click_not_effective", "fill_not_effective", "answer_partial_match", "extra_selected", ""];
+                  for (let attempt = 0; attempt < 2; attempt++) {
+                    if (!retryable.includes(String(question.__xsFillReason || ""))) break;
                     await sleep(0.2);
                     if (!this.setting.config.basicConfig.autoAnswer.value) break;
                     fillSuccess = this.fillQuestion(question);
@@ -9139,7 +9150,7 @@
                 }
                 if (!fillSuccess) {
                   question.answer.code = 0;
-                  question.answer.msg = "答案拿到了但没点上去";
+                  question.answer.msg = describeFillReason(question.__xsFillReason) || "答案拿到了但没点上去";
                   reportFillFail(question);
                   continue;
                 }
@@ -9152,7 +9163,7 @@
                   msg: answerData.msg
                 };
               } else if (!question.answer.msg) {
-                question.answer.msg = "答案拿到了但没点上去";
+                question.answer.msg = describeFillReason(question.__xsFillReason) || "答案拿到了但没点上去";
               }
             } else if (!(question.answer && question.answer.code === 0 && Array.isArray(question.answer.answer) && question.answer.answer.length)) {
               question.answer = {
@@ -9821,7 +9832,10 @@
           const optionKeys = Object.keys(question.options);
           const targets = new Set();
           let answers = question.answer.answer || [];
-          if (!answers.length) return false;
+          if (!answers.length) {
+            question.__xsFillReason = "answer_invalid";
+            return false;
+          }
           // 答案被题库拆成多个字母（如 "R|C|B"）时，先拼回整串看是否正好是某个选项的正文（RCB模型）。
           // 拆开的字母越界时按字母点必然失败，这种题目要回到选项正文匹配。
           if (question.type === "0" && answers.length > 1) {
@@ -9908,7 +9922,10 @@
                   // 页面选项比答案少：常见于老师把几个选项一起粘进了同一个选项框，
                   // 页面上本来就点不到这些选项。多选就把能点的部分填上，别整题放弃；
                   // 单选拿不准时仍放弃，避免选错。
-                  if (question.type !== "1" || !validLetters.length) return false;
+                  if (question.type !== "1" || !validLetters.length) {
+                    question.__xsFillReason = "answer_out_of_range";
+                    return false;
+                  }
                   this.log.insertLog(
                     `答案含页面没有的选项 ${outOfRange.join("")}，本题只填 ${validLetters.join("")}`,
                     "warning"
@@ -10070,14 +10087,27 @@
             return !!(question.__xsTrustedSelected && question.__xsTrustedSelected.has(key));
           };
           filled = optionKeys.every(key => optionSelectedNow(key) === targets.has(key));
+          if (!filled) {
+            // 区分「答案没点上」和「多出来的已选项没取消」：前者可能是页面异步，值得重试；
+            // 后者重试也多半没用，上报时也要分开统计
+            const allTargetsOn = [...targets].every(key => optionSelectedNow(key));
+            const extrasOn = optionKeys.some(key => !targets.has(key) && optionSelectedNow(key));
+            question.__xsFillReason = allTargetsOn && extrasOn ? "extra_selected" : "click_not_effective";
+          }
         } else if (question.type === "2") {
           const blankFields = this.getBlankFields(question.element);
-          if (blankFields.length === 0) return false;
+          if (blankFields.length === 0) {
+            question.__xsFillReason = "no_input";
+            return false;
+          }
           const blankAnswers = this.resolveBlankAnswers(
             question.answer.answer,
             blankFields.length
           );
-          if (!blankAnswers.length) return false;
+          if (!blankAnswers.length) {
+            question.__xsFillReason = "answer_invalid";
+            return false;
+          }
           let blankFilled = 0;
           blankFields.forEach((field, index) => {
             const blankAnswer = blankAnswers[index];
@@ -12063,7 +12093,7 @@
                     msg: aiAnswerData.msg
                   };
                 } else if (!question.answer.msg) {
-                  question.answer.msg = "答案拿到了但没点上去";
+                  question.answer.msg = describeFillReason(question.__xsFillReason) || "答案拿到了但没点上去";
                 }
               } else if (!(question.answer && question.answer.code === 0 && Array.isArray(question.answer.answer) && question.answer.answer.length)) {
                 question.answer = {
@@ -12171,6 +12201,7 @@
       });
       __publicField(this, "fillQuestion", async (question, index) => {
         let isSelected = false;
+        question.__xsFillReason = "";
         if (!this._window) return;
         // 智慧树新版作业页一屏只渲染一道题，按题目序号取节点会取空，导致第二题起答不上、
         // 只能刷新页面才恢复。节点总数少于题目总数时，改为取「当前屏幕上那道题」
@@ -12196,7 +12227,10 @@
           subjectNode = pool.find((n) => !done.has(normNode(n))) || pool[pool.length - 1];
           done.add(normNode(subjectNode));
         }
-        if (!subjectNode) return false;
+        if (!subjectNode) {
+          question.__xsFillReason = "page_structure";
+          return false;
+        }
         // 不同版本/页面的选项结构不一样：作业页是 .node_detail，
         // stuExamWeb 考试页有的只有 .nodeLab > label > input。写死 .node_detail 时
         // 考试页一个选项都取不到，答案拿到了也点不上（异常页 zhs-web 的那类上报）。
@@ -12326,6 +12360,14 @@
           const pickedIdx = new Set();
           const isMultiType = /多选|X型|不定项/.test(question.type || "");
           const optionNorms = optionsDOM.map((optionDOM) => normalizeOptText(optionRawText(optionDOM)));
+          if (!optionsDOM.length) {
+            // 选择题页面上一个选项都没取到：以前静默失败，小结里只剩一句通用文案
+            question.__xsFillReason = "no_options";
+            try {
+              this.log.insertLog(`第${index + 1}题页面上找不到选项，本题未填`, "warning");
+            } catch (_) {}
+            return false;
+          }
           // 多选答案偶尔被拼成「方法，目的，结果」一整条：先看整串是不是某个选项的正文，
           // 不是才按中英文逗号/顿号拆开；拆开后至少两项能对上选项才算拆分成功，避免误拆正常选项。
           const expandAnswerByOptions = (list) => {
