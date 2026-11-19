@@ -9824,6 +9824,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         if (!this._window) return false;
         let filled = false;
         question.__xsFillReason = "";
+        // 信任集合只在本轮有效：上一次重试里「点了但页面不暴露状态」记下的 key，
+        // 重试时页面可能已经重渲染丢了选中态，沿用旧信任会把失败掩盖成成功。
+        question.__xsTrustedSelected = null;
         const cleanChoiceAnswer = (raw) => String(raw == null ? "" : raw)
           .split(/\r?\n/)[0]
           .replace(/[*_`#>]/g, "")
@@ -12270,11 +12273,26 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         const optionsDOM = collectOptionNodes();
         question.__xsOptionCount = optionsDOM.length;
         question.__xsClicked = false;
-        // 页面多选控件是最终事实：接口题型给成单选、或解析阶段按索引取错节点时，在这里纠正，
-        // 否则后面 isMultiType=false，多选答案会被当成「单选匹配多个」整题跳过。
-        if (question.type === "单选题" && optionsDOM.length && detectMultiChoiceDom(subjectNode)) {
-          question.type = "多选题";
-          question.__xsTypeFixedByDom = 1;
+        // 页面控件是最终事实：接口题型为空或给成单选、或解析阶段按索引取错节点时，在这里纠正，
+        // 否则多选答案会被当成「单选匹配多个」整题跳过。
+        if (optionsDOM.length) {
+          const typeText = String(question.type || "");
+          const visibleInputs = (selector) => Array.from(subjectNode.querySelectorAll(selector))
+            .filter((inp) => !inp.disabled && (!inp.getClientRects || inp.getClientRects().length > 0));
+          const radioCount = visibleInputs("input[type='radio'], [role='radio']").length;
+          const checkboxCount = visibleInputs("input[type='checkbox'], [role='checkbox']").length;
+          const multiByDom = detectMultiChoiceDom(subjectNode);
+          if ((!typeText || typeText === "单选题") && multiByDom) {
+            question.type = "多选题";
+            question.__xsTypeFixedByDom = 1;
+          } else if (!typeText && radioCount && !checkboxCount) {
+            question.type = "单选题";
+            question.__xsTypeFixedByDom = 1;
+          } else if (/多选|X型|不定项/.test(typeText) && radioCount && !checkboxCount) {
+            // 页面只有单选框时不可能多选；不纠正的话点第二个选项会把第一个取消
+            question.type = "单选题";
+            question.__xsTypeFixedByDom = 1;
+          }
         }
         // 选项正文优先取正文节点，避免把 A./B. 序号算进正文
         const optionRawText = (el) => {
