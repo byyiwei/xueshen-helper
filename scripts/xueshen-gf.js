@@ -8958,7 +8958,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       super();
       __publicField(this, "type");
       __publicField(this, "AI_ALLOW_QUESTION_TYPE", ["0", "1", "2", "3", "4", "5", "6", "7", "9", "26"]);
-      __publicField(this, "answerSeparators", ["===", "#", "---", "###", "|", ";", "；"]);
+      __publicField(this, "answerSeparators", ["===", "#", "---", "###", "|", ";", "；", ",", "，", "、"]);
       __publicField(this, "init", async () => {
         var _that = this;
         this.parseHtml();
@@ -9423,7 +9423,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       });
       __publicField(this, "buildAnswerGroups", (answers = []) => {
         if (!Array.isArray(answers)) return [this.splitAnswer(answers)];
-        if (answers.length === 1) return [this.splitAnswer(answers[0])];
+        if (answers.length === 1) {
+          const whole = [String(answers[0] == null ? "" : answers[0]).trim()].filter(Boolean);
+          const split = this.splitAnswer(answers[0]);
+          // 拆开后同时保留整串：连线/复合题里带逗号的单个答案不能被拆坏
+          return split.length > 1 ? [split, whole] : [whole];
+        }
         const normalizedAnswers = answers.map((answer) => String(answer || "").trim()).filter(Boolean);
         const groups = [normalizedAnswers];
         normalizedAnswers.forEach((answer) => {
@@ -9523,7 +9528,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       __publicField(this, "resolveJudgeAnswer", (rawAnswer) => {
         const text = String(rawAnswer == null ? "" : rawAnswer).replace(/\s+/g, "");
         if (!text) return "";
-        const neg = /(错误|不对|非|否|误|错|×|✗|(^|[,，、;；(（【])(wrong|false|no|n|f)([,，、;；)）】]|$))/i;
+        // 负数词必须先判，且要覆盖「不正确」「不是」「不属于」「并不」：
+        // 这些写法里都含正数词（正确/是），只靠「不对」会把它们判成对。
+        const neg = /(不正确|不对|不是|不属于|并不|(?:^|[,，、;；(（【])非(?:$|[,，、;；)）】])|错误|否|误|错|×|✗|(^|[,，、;；(（【])(wrong|false|no|n|f)([,，、;；)）】]|$))/i;
         const pos = /(正确|对|是|√|✓|(^|[,，、;；(（【])(true|right|yes|t|y|ri)([,，、;；)）】]|$))/i;
         if (neg.test(text)) return "false";
         if (pos.test(text)) return "true";
@@ -12163,7 +12170,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         } else if (question.type === "判断题") {
           // 判断题答案的各种写法都要能判定；以前没命中就默认「对」，会把「错误。」「False」答成对题。
           const rawJudge = String((question.answer.answer && question.answer.answer[0]) == null ? "" : question.answer.answer[0]).replace(/\s+/g, "");
-          const negJudge = /(错误|不对|不正确|错|否|×|✗|wrong|false|^no$|^n$|^f$)/i;
+          const negJudge = /(不正确|不对|不是|不属于|并不|(?:^|[\s,，、;；|【（(])非(?:$|[\s,，、;；|】）)])|错误|错|否|×|✗|wrong|false|^no$|^n$|^f$)/i;
           const posJudge = /(正确|对|是|√|✓|right|true|^yes$|^y$|^t$|^ri$)/i;
           let answer = "";
           if (negJudge.test(rawJudge)) answer = "错";
@@ -12220,29 +12227,44 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           if (fields.length && blankAnswers.length) {
             const fillField = (field, text) => {
               try {
+                const want = String(text == null ? "" : text).trim();
+                if (!want) return false;
+                const before = String(field.isContentEditable ? field.textContent : field.value || "").trim();
+                const okValue = (got) => {
+                  got = String(got || "").trim();
+                  // 必须确实写入成功：写入前就有占位/残留内容时，不能因为「框里有字」就算填上。
+                  // 页面可能自动格式化（去空格、补单位），所以允许包含关系。
+                  if (got === before) return false;
+                  return got === want || got.includes(want) || (want.includes(got) && got.length >= Math.min(2, want.length));
+                };
                 field.focus();
                 if (field.isContentEditable) {
-                  field.textContent = text;
+                  field.textContent = want;
                   field.dispatchEvent(new Event("input", { bubbles: true }));
                   field.dispatchEvent(new Event("change", { bubbles: true }));
-                  return String(field.textContent || "").trim().length > 0;
+                  return okValue(field.textContent);
                 }
                 const proto = field.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
                 const desc = Object.getOwnPropertyDescriptor(proto, "value");
-                if (desc && desc.set) desc.set.call(field, text);
-                else field.value = text;
+                if (desc && desc.set) desc.set.call(field, want);
+                else field.value = want;
                 field.dispatchEvent(new Event("input", { bubbles: true }));
                 field.dispatchEvent(new Event("change", { bubbles: true }));
-                const got = String(field.value || "").trim();
-                // 页面可能自动格式化（去空格/前导 0），有内容就算填上
-                return got === text.trim() || got.length > 0;
+                return okValue(field.value);
               } catch (_) {
                 return false;
               }
             };
-            const texts = fields.length === 1 && blankAnswers.length > 1
-              ? [blankAnswers.join("，")]
-              : blankAnswers;
+            // 一个答案对应多个空时（答案写成「A，B，C」一整条）按分隔符拆到各空；
+            // 只有一个空、答案却是多段时，用整串填进去。
+            let texts = blankAnswers;
+            if (fields.length > 1 && blankAnswers.length === 1) {
+              const parts = String(blankAnswers[0] == null ? "" : blankAnswers[0])
+                .split(/[,，、;；|＞→]+/).map((s) => s.trim()).filter(Boolean);
+              if (parts.length >= 2) texts = parts;
+            } else if (fields.length === 1 && blankAnswers.length > 1) {
+              texts = [blankAnswers.join("，")];
+            }
             let filledCount = 0;
             fields.forEach((field, fieldIdx) => {
               const text = texts[fieldIdx];
@@ -12251,7 +12273,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             question.__xsBlankFields = fields.length;
             question.__xsBlankAnswers = texts.length;
             question.__xsBlankFilled = filledCount;
-            isSelected = filledCount > 0;
+            // 所有该填的空都填上才算成功，避免「只填第一个空」被当成整题答完
+            isSelected = filledCount > 0 && filledCount === Math.min(fields.length, texts.length);
           }
         }
         return isSelected;
