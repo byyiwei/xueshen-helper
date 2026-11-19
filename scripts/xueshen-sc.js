@@ -10426,29 +10426,27 @@
     if (!prototype) {
       return { result: Promise.resolve(false), restore: () => {} };
     }
-    const originalOpen = prototype.open;
     const originalSend = prototype.send;
     let reportSettled = null;
     const result = new Promise((resolve) => {
       reportSettled = resolve;
     });
-    prototype.open = function(method, url2, ...rest) {
-      this.__xsJobRequestUrl = typeof url2 === "string" ? url2 : "";
-      return originalOpen.call(this, method, url2, ...rest);
-    };
+    // 站方 isAllNative 会把 XMLHttpRequest.prototype.open 当作检测项，任何任务都不能替换它。
+    // send 不在检查范围；请求地址在 load 里用 responseURL 拿即可。
     prototype.send = function(...args) {
-      if (String(this.__xsJobRequestUrl || "").includes("/ananas/job")) {
-        this.addEventListener("load", () => {
-          try { reportSettled(parseJobReport(this.responseText)); } catch (_) { reportSettled(false); }
-        });
-        this.addEventListener("error", () => { try { reportSettled(false); } catch (_) {} });
-      }
+      this.addEventListener("load", () => {
+        try {
+          if (String(this.responseURL || "").includes("/ananas/job")) {
+            reportSettled(parseJobReport(this.responseText));
+          }
+        } catch (_) { reportSettled(false); }
+      });
+      this.addEventListener("error", () => { try { reportSettled(false); } catch (_) {} });
       return originalSend.apply(this, args);
     };
     return {
       result,
       restore: () => {
-        prototype.open = originalOpen;
         prototype.send = originalSend;
       }
     };
@@ -11723,7 +11721,16 @@
           };
           // 一屏一题：页面渲染的题目节点比接口题目少，切题后必须等新题渲染出来
           const nodeCount = this._document ? this._document.querySelectorAll(".subject_node").length : 0;
-          const pagedMode = nodeCount > 0 && nodeCount < this.questions.length;
+          // 智慧树新版会把 5 道题的节点全渲染出来、但同一时刻只显示 1 道（其余隐藏），
+          // 只看节点数会误判成非分页，进而去点隐藏节点点不动 —— 这里同时看可见节点数。
+          const visibleNodeCount = this._document
+            ? Array.from(this._document.querySelectorAll(".subject_node")).filter((n) => {
+                const r = n.getBoundingClientRect();
+                return r.width > 0 && r.height > 0;
+              }).length
+            : 0;
+          const pagedMode = nodeCount > 0
+            && (nodeCount < this.questions.length || (nodeCount > 1 && visibleNodeCount < nodeCount));
           for (const [index, question] of this.questions.entries()) {
             this.questionStore.currentQuestionIndex = index;
             let fillFailed = false;
@@ -11910,7 +11917,13 @@
         // （和 OCS 每轮重新抓当前题的做法一致），并按文本记住答过的题，避免重复点。
         const allNodes = Array.from(document.querySelectorAll(".subject_node"));
         const total = (this.questions && this.questions.length) || 0;
-        const paged = total > 0 && allNodes.length > 0 && allNodes.length < total;
+        // 节点数等于题目数、但同一时刻只显示一道时，也必须走「取当前可见那道题」的分页逻辑
+        const visibleNodes = allNodes.filter((n) => {
+          const rect = n.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        });
+        const paged = total > 0 && allNodes.length > 0
+          && (allNodes.length < total || (allNodes.length > 1 && visibleNodes.length < allNodes.length));
         let subjectNode = allNodes[index];
         if (paged) {
           const normNode = (n) => this.removeHtml(n.innerHTML).replace(/\s+/g, "").slice(0, 40);
@@ -12097,6 +12110,139 @@
     if (input == null ? void 0 : input.url) return input.url;
     return input ? String(input) : "";
   };
+  // ===== 站方反作弊检测（isAllNative）规避 =====
+  // 站方只校验这些：XMLHttpRequest、XMLHttpRequest.prototype.open、document.body.attachShadow、
+  // !window.OCS、JSON.parse、document.getSelection、window.getSelection、
+  // window.prototype.call / apply / bind。
+  // 三个关键点：
+  //  1) prototype.open 是被检查项，绝不能替换；prototype.send 不检查，抓响应体只挂 send；
+  //  2) 干净浏览器里 window.prototype 是 undefined，检测会直接抛错因此不弹窗；
+  //     脚本管理器沙箱会把它变成对象，检测才真正跑起来 —— 必须还原；
+  //  3) 先用 document-start 时抓到的原生引用做快照，检查项被别的扩展改掉时可以还原。
+  const NATIVE_SNAPSHOT = (() => {
+    const w = _unsafeWindow || window;
+    const snap = {};
+    try { snap.XHRopen = w.XMLHttpRequest && w.XMLHttpRequest.prototype.open; } catch (_) {}
+    try { snap.JSONparse = w.JSON.parse; } catch (_) {}
+    try { snap.docGetSelection = w.document.getSelection; } catch (_) {}
+    try { snap.winGetSelection = w.getSelection; } catch (_) {}
+    try { snap.attachShadow = w.Element && w.Element.prototype.attachShadow; } catch (_) {}
+    return snap;
+  })();
+
+  const isNativeFn = (fn) => {
+    try {
+      const w = _unsafeWindow || window;
+      return typeof fn === "function" && /\[native code\]/.test(w.Function.prototype.toString.call(fn));
+    } catch (_) { return false; }
+  };
+
+  const collectNativeIssues = () => {
+    const w = _unsafeWindow || window;
+    const issues = [];
+    try {
+      if (!isNativeFn(w.XMLHttpRequest)) issues.push("XMLHttpRequest");
+      if (!isNativeFn(w.XMLHttpRequest && w.XMLHttpRequest.prototype.open)) issues.push("XHR.open");
+      if (!isNativeFn(w.JSON.parse)) issues.push("JSON.parse");
+      if (!isNativeFn(w.document.getSelection)) issues.push("document.getSelection");
+      if (!isNativeFn(w.getSelection)) issues.push("window.getSelection");
+      if (!isNativeFn(w.Element && w.Element.prototype.attachShadow)) issues.push("attachShadow");
+      if (!isNativeFn(w.Function.prototype.call)) issues.push("Function.call");
+      if (!isNativeFn(w.Function.prototype.apply)) issues.push("Function.apply");
+      if (!isNativeFn(w.Function.prototype.bind)) issues.push("Function.bind");
+      if (typeof w.prototype !== "undefined") {
+        if (!isNativeFn(w.prototype && w.prototype.call)) issues.push("window.prototype.call");
+        if (!isNativeFn(w.prototype && w.prototype.apply)) issues.push("window.prototype.apply");
+        if (!isNativeFn(w.prototype && w.prototype.bind)) issues.push("window.prototype.bind");
+      }
+      if (typeof w.OCS !== "undefined") issues.push("window.OCS");
+    } catch (_) {}
+    return issues;
+  };
+
+  const guardExamDetection = () => {
+    const w = _unsafeWindow || window;
+    // 1) window.prototype：还原成原生原型
+    try {
+      const proto = w.prototype;
+      if (typeof proto !== "undefined" && proto !== w.Function.prototype) {
+        if (proto && typeof proto === "object") {
+          ["call", "apply", "bind"].forEach((k) => {
+            try {
+              if (proto[k] !== w.Function.prototype[k]) {
+                Object.defineProperty(proto, k, { value: w.Function.prototype[k], writable: true, configurable: true });
+              }
+            } catch (_) {}
+          });
+        }
+        const ok = proto && typeof proto === "object"
+          && proto.call === w.Function.prototype.call
+          && proto.apply === w.Function.prototype.apply
+          && proto.bind === w.Function.prototype.bind;
+        if (!ok) w.prototype = w.Function.prototype;
+      }
+    } catch (_) {}
+    // 2) 检查项被其它扩展改掉的，用原生快照还原
+    try {
+      if (!isNativeFn(w.XMLHttpRequest && w.XMLHttpRequest.prototype.open) && NATIVE_SNAPSHOT.XHRopen) {
+        w.XMLHttpRequest.prototype.open = NATIVE_SNAPSHOT.XHRopen;
+      }
+    } catch (_) {}
+    try {
+      if (!isNativeFn(w.JSON.parse) && NATIVE_SNAPSHOT.JSONparse) w.JSON.parse = NATIVE_SNAPSHOT.JSONparse;
+    } catch (_) {}
+    try {
+      if (!isNativeFn(w.document.getSelection) && NATIVE_SNAPSHOT.docGetSelection) w.document.getSelection = NATIVE_SNAPSHOT.docGetSelection;
+    } catch (_) {}
+    try {
+      if (!isNativeFn(w.getSelection) && NATIVE_SNAPSHOT.winGetSelection) w.getSelection = NATIVE_SNAPSHOT.winGetSelection;
+    } catch (_) {}
+    try {
+      if (!isNativeFn(w.Element && w.Element.prototype.attachShadow) && NATIVE_SNAPSHOT.attachShadow) {
+        w.Element.prototype.attachShadow = NATIVE_SNAPSHOT.attachShadow;
+      }
+    } catch (_) {}
+    // 3) window.OCS 存在会被判异常，清掉
+    try {
+      if (typeof w.OCS !== "undefined") {
+        try { delete w.OCS; } catch (_) { w.OCS = undefined; }
+      }
+    } catch (_) {}
+  };
+
+  // 站方进入答题页 1 秒后查一次、之后每 60 秒查一次；这里同步自检，
+  // 有异常就再修一次，并把具体项写进面板日志，方便定位是谁改的。
+  const watchExamDetection = () => {
+    const w = _unsafeWindow || window;
+    if (w.__xsExamGuardTimer) return;
+    const check = (notify) => {
+      try {
+        const before = collectNativeIssues();
+        if (!before.length) return;
+        guardExamDetection();
+        const after = collectNativeIssues();
+        if (notify) {
+          try {
+            useLogStore().insertLog(
+              after.length
+                ? `检测项异常（多为其它扩展改动）：${after.join(" / ")}`
+                : `检测项异常已自动修正：${before.join(" / ")}`,
+              "warning", 8
+            );
+          } catch (_) {}
+        }
+      } catch (_) {}
+    };
+    setTimeout(() => check(true), 1200);
+    setTimeout(() => check(false), 3000);
+    w.__xsExamGuardTimer = setInterval(() => check(true), 60000);
+  };
+  try {
+    if (location.hostname.indexOf("zhihuishu.com") !== -1) {
+      guardExamDetection();
+      watchExamDetection();
+    }
+  } catch (_) {}
   const installAnswerSheetHook = () => {
     const pageWindow = _unsafeWindow || window;
     const hookFlag = Symbol.for("__xsAsHooked");
@@ -12123,38 +12269,23 @@
         });
       } catch (_) {}
     }
+    // 站方 isAllNative 会检查 XMLHttpRequest.prototype.open 是否原生，所以这里绝不替换 open。
+    // 只挂 send（不在检查范围），在 load 里用 responseURL 判断是不是答案单接口。
     const OriginalXHR = pageWindow.XMLHttpRequest;
     if (typeof OriginalXHR === "function" && !OriginalXHR[hookFlag]) {
-      const originalOpen = OriginalXHR.prototype.open;
       const originalSend = OriginalXHR.prototype.send;
-      const reqUrlKey = Symbol.for("__xsReqUrl");
       OriginalXHR[hookFlag] = true;
-      OriginalXHR.prototype.open = function(method, url2, ...rest) {
-        this[reqUrlKey] = url2 || "";
-        return originalOpen.call(this, method, url2, ...rest);
-      };
-      try {
-        const nativeOpenStr = originalOpen.toString.bind(originalOpen);
-        Object.defineProperty(OriginalXHR.prototype.open, "toString", {
-          value: nativeOpenStr, writable: true, configurable: true
-        });
-      } catch (_) {}
       OriginalXHR.prototype.send = function(...args) {
-        this.addEventListener("load", function() {
-          const requestUrl = getRequestUrl(this.responseURL || this[reqUrlKey]);
-          if (requestUrl.includes(ANSWER_SHEET_URL)) {
-            saveAnswerSheetPayload(parseResponseText(this.responseText));
-          }
-        });
+        try {
+          this.addEventListener("load", function() {
+            const requestUrl = getRequestUrl(this.responseURL);
+            if (requestUrl.includes(ANSWER_SHEET_URL)) {
+              saveAnswerSheetPayload(parseResponseText(this.responseText));
+            }
+          });
+        } catch (_) {}
         return originalSend.apply(this, args);
       };
-      try {
-        const sendToString = originalSend.toString.bind(originalSend);
-        Object.defineProperty(OriginalXHR.prototype.send, "toString", {
-          value: sendToString,
-          writable: true, configurable: true
-        });
-      } catch (_) {}
     }
   };
   const fetchHook = (url2, callback) => {
@@ -23146,6 +23277,8 @@ const XS_EXT = (() => {
       startClipboardUnrestriction(document);
     }
     if (url.includes("zhihuishu.com") && isTopWindow) {
+      guardExamDetection();
+      watchExamDetection();
       if (url.includes("studyvideoh5.zhihuishu.com")) {
         hookError();
       }
