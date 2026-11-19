@@ -2094,6 +2094,7 @@
     fill_not_effective: "输入框写入后回读不对",
     unknown_type: "未知题型，暂不支持",
     page_structure: "页面结构异常，找不到题目",
+    page_not_advanced: "上一题没有切走，本题未填写",
     no_options: "页面上找不到选项",
     answer_out_of_range: "答案里的选项在页面上找不到",
     blank_partial: "部分空未填上"
@@ -10245,7 +10246,10 @@
                 const stemEl = sub.querySelector(".reader_answer_tit");
                 const stem = this.removeHtml(stemEl ? stemEl.innerHTML : "");
                 const typeText = ((sub.querySelector(".read_type") || {}).innerText || "");
-                const questionType = /多选|多项选择|不定项/.test(typeText) ? "1" : "0";
+                // 复合子题的 .read_type 偶尔整个缺失：默认按单选会把多选子题的多字母答案
+                // 判成 answer_ambiguous 整题不填。缺题型时按多选下发，单选答案只会命中一个选项，
+                // 填充时仍按实际点中的集合校验，不会因此把单选答错。
+                const questionType = typeText ? (/多选|多项选择|不定项/.test(typeText) ? "1" : "0") : "1";
                 const [optionsObject, optionTexts] = this.extractOptions(
                   sub.querySelectorAll('.stem_answer > div[onclick*="addChoice"]'),
                   ".answer_p"
@@ -10253,6 +10257,7 @@
                 this.questions.push({
                   element: sub,
                   type: questionType,
+                  __xsCompositeSub: 1,
                   title: this.clean(stem),
                   context: passage,
                   optionsText: optionTexts,
@@ -11840,14 +11845,42 @@
       "warning",
       4
     );
-    while (setting.config.basicConfig.autoAnswer.value) {
+    // 单题考试页：点「下一题」后必须确认题目真的换了，否则等于把同一道题反复答，
+// 既重复扣额度又重复上报；再加一个硬上限，防止最后一题的按钮一直可点导致死循环。
+    const examQuestionKey = () => {
+      try {
+        const root = document.querySelector(".questionLi, .TiMu, .subject_node, .question-detail, [id^='question']");
+        if (!root) return "";
+        const id = String(root.id || (root.getAttribute && root.getAttribute("data")) || "");
+        return id + "|" + String(root.innerText || root.textContent || "").replace(/\s+/g, "").slice(0, 80);
+      } catch (_) {
+        return "";
+      }
+    };
+    let rounds = 0;
+    while (setting.config.basicConfig.autoAnswer.value && rounds < 200) {
+      rounds += 1;
       await new QuestionHandler$1("ks").init();
       if (!setting.config.basicConfig.autoAnswer.value) return;
       const nextBtn = getNextQuestionBtn();
       if (!nextBtn) break;
+      const beforeKey = examQuestionKey();
       nextBtn.click();
+      let advanced = false;
+      for (let wait = 0; wait < 12; wait++) {
+        await sleep(0.5);
+        if (!setting.config.basicConfig.autoAnswer.value) return;
+        const key = examQuestionKey();
+        if (key && key !== beforeKey) {
+          advanced = true;
+          break;
+        }
+      }
+      if (!advanced) {
+        log.insertLog("题目没有切换（可能已是最后一题或页面未响应），已停止自动答题", "warning", 4);
+        break;
+      }
       log.insertLog("已切换到下一题，继续处理..");
-      await sleep(1);
     }
     if (setting.config.basicConfig.autoAnswer.value) await submitCxExam(log, setting);
   };
@@ -11916,7 +11949,7 @@
     constructor(type, iframe) {
       super();
       __publicField(this, "type");
-      __publicField(this, "AI_ALLOW_QUESTION_TYPE", ["单选题", "多选题", "判断题", "填空题", "简答题", "名词解释", "多项选择题", "X型选择题", "X型题", "不定项选择题", "不定项"]);
+      __publicField(this, "AI_ALLOW_QUESTION_TYPE", ["单选题", "多选题", "判断题", "填空题", "简答题", "名词解释", "多项选择题", "X型选择题", "X型题", "不定项选择题", "不定项", "论述题", "计算题", "写作题", "作文题"]);
       __publicField(this, "init", async () => {
         var _that = this;
         this.questions = [];
@@ -11995,7 +12028,6 @@
               break;
             }
             this.questionStore.currentQuestionIndex = index;
-            let fillFailed = false;
             let handled = false;
             if (mode !== "ai") {
               const answerData = mode === "questionBank" ? await getQuestionBankAnswer(question) : await getAccurateAnswer(question);
@@ -12037,7 +12069,6 @@
                   question.answer.code = 0;
                   question.answer.msg = describeFillReason(question.__xsFillReason) || "答案拿到了但没点上去";
                   reportFillFail(question);
-                  fillFailed = true;
                 } else {
                   this.correctNum += 1;
                   handled = true;
@@ -12085,7 +12116,6 @@
                     question.answer.code = 0;
                     question.answer.msg = describeFillReason(question.__xsFillReason) || "答案拿到了但没点上去";
                     reportFillFail(question);
-                    fillFailed = true;
                   } else {
                     this.correctNum += 1;
                   }
@@ -12132,7 +12162,9 @@
                 });
               }
             }
-            if (!fillFailed && this.type == "zy") {
+            // 填不上也要切到下一题：不切题会导致下一题的答案被填到当前这题上，
+            // 比漏填更糟（主动把对的题改错，还上报成功）。
+            if (this.type == "zy") {
               // 新版页面可能没有 switch-btn-box，原来直接取 [0].innerText 会抛错并中断整个答题流程，
               // 表现就是「答完第一题就不动了」。这里改成：先按原结构找，找不到再按按钮文字找「下一题」。
               let nextBtn = this._document.querySelector(
@@ -12234,7 +12266,14 @@
             return rect.width > 0 && rect.height > 0;
           });
           const pool = visible.length ? visible : allNodes;
-          subjectNode = pool.find((n) => !done.has(normNode(n))) || pool[pool.length - 1];
+          const nextNode = pool.find((n) => !done.has(normNode(n)));
+          if (!nextNode) {
+            // 当前页面上能看到的题都已处理过，说明上一题没切走。
+            // 此时绝不能退回最后一个节点继续写，否则下一题的答案会写进上一题。
+            question.__xsFillReason = "page_not_advanced";
+            return false;
+          }
+          subjectNode = nextNode;
           done.add(normNode(subjectNode));
         }
         if (!subjectNode) {
@@ -12704,7 +12743,7 @@
               } catch (_) {}
             }
           }
-        } else if (question.type === "填空题" || question.type === "简答题" || question.type === "名词解释") {
+        } else if (["填空题", "简答题", "名词解释", "论述题", "计算题", "写作题", "作文题"].includes(question.type)) {
           // 智慧树填空题可能是 input，也可能是 textarea / contenteditable，个别页面还嵌在 iframe 里。
           const blankAnswers = normalizeChoiceAnswerList(question.answer.answer);
           const fields = [];
