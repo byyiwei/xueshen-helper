@@ -11720,6 +11720,12 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 type: String((question && question.type) || ""),
                 options: ((question && question.optionsText) || []).length,
                 controls: controls.length,
+                // 选择题填不上时把选项解析结果一起带回，能区分是没认出选项还是点击没生效
+                options_preview: ((question && question.optionsText) || []).slice(0, 4).join(" | ").slice(0, 80),
+                option_dom: (question && question.__xsOptionCount) || 0,
+                option_selector: (question && question.__xsOptionSelector) || "",
+                clicked: !!(question && question.__xsClicked),
+                answer_text: String(((question && question.answer && question.answer.answer) || []).join(",")).slice(0, 60),
                 // 智慧树填空/问答填不上时同样把首个输入候选的结构带回后台
                 blank_html: (() => {
                   try {
@@ -11968,6 +11974,14 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             }
           }
           question.__xsOptionSelector = "";
+          // 兜底：页面只有裸 radio/checkbox（外面没有 .node_detail/.nodeLab/label 容器），
+          // 用 input 所在的 label / 父节点当选项，否则一个选项都取不到，答案再对也点不上。
+          const bareInputs = Array.from(subjectNode.querySelectorAll("input[type='radio'], input[type='checkbox']"))
+            .filter((inp) => !inp.disabled);
+          if (bareInputs.length >= 2) {
+            question.__xsOptionSelector = "input[radio/checkbox]";
+            return bareInputs.map((inp) => (inp.closest && inp.closest("label")) || inp.parentElement || inp);
+          }
           return [];
         };
         const optionsDOM = collectOptionNodes();
