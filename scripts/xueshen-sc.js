@@ -21205,6 +21205,8 @@ const XS_EXT = (() => {
     // 点过「下一节」后先等页面换掉视频，避免同一节被反复点
     const advanceGuard = { at: 0, href: "", src: "" };
     let lastWatchDiagAt = 0;
+    let lastWatchDiagText = "";
+    let lastEnterClickAt = 0;
     let pausedTicks = 0;
     const log = (text) => {
       const line = `${(/* @__PURE__ */ new Date()).toLocaleTimeString()}  ${text}`;
@@ -21273,23 +21275,159 @@ const XS_EXT = (() => {
     // 国开新版学习页拿不到视频时，把 iframe 地址和可读性写进日志，方便按真实页面补选择器
     const describeWatchPage = () => {
       const parts = [];
+      try { parts.push(`地址 ${String(location.pathname + location.hash).slice(0, 120)}`); } catch (e) {}
+      let docs = [];
+      try { docs = collectDocuments(); } catch (e) { docs = [document]; }
+      parts.push(`文档 ${docs.length} 个`);
+      docs.slice(0, 5).forEach((doc, idx) => {
+        const counts = (() => {
+          try {
+            const n = (s) => doc.querySelectorAll(s).length;
+            return `v${n("video")} a${n("audio")} c${n("canvas")} o${n("object") + n("embed")}`;
+          } catch (e) { return "读取失败"; }
+        })();
+        let frames = [];
+        try {
+          frames = Array.from(doc.querySelectorAll("iframe")).slice(0, 4).map((frame) => {
+            let readable = false;
+            try { readable = !!frame.contentDocument; } catch (e) { readable = false; }
+            return `${readable ? "可读" : "跨域"} ${String(frame.src || frame.getAttribute("src") || "(无地址)").slice(0, 80)}`;
+          });
+        } catch (e) {
+        }
+        parts.push(`#${idx + 1} ${counts}${frames.length ? " | " + frames.join(" | ") : ""}`);
+      });
       try {
-        const frames = Array.from(document.querySelectorAll("iframe"));
-        parts.push(`iframe ${frames.length} 个`);
-        for (const frame of frames.slice(0, 6)) {
-          let readable = false;
-          try { readable = !!frame.contentDocument; } catch (e) { readable = false; }
-          const src = String(frame.src || frame.getAttribute("src") || "").slice(0, 120);
-          parts.push(`${readable ? "可读" : "跨域"} ${src || "(无地址)"}`);
+        const candidates = queryAll("[class*=player], [class*=video], [class*=media], [class*=prism], [class*=aliplayer], canvas")
+          .slice(0, 6)
+          .map((el) => `${String(el.tagName || "").toLowerCase()}.${String(el.className || "").replace(/\s+/g, ".").slice(0, 30)}`);
+        if (candidates.length) parts.push(`候选 ${candidates.join(" , ")}`);
+      } catch (e) {
+      }
+      try {
+        const videos = queryAll("video");
+        if (videos.length) {
+          parts.push(`video ${videos.slice(0, 3).map((video) => {
+            let rect = { width: 0, height: 0 };
+            try { rect = video.getBoundingClientRect(); } catch (e) {
+            }
+            return `${Math.round(rect.width)}x${Math.round(rect.height)},${Math.round(Number(video.duration) || 0)}秒,${video.paused ? "暂停" : "播放中"}`;
+          }).join(" , ")}`);
         }
       } catch (e) {
       }
-      try { parts.push(`video ${queryAll("video").length} 个`); } catch (e) {}
-      try {
-        const shadowCount = collectSearchRoots().length - collectDocuments().length;
-        if (shadowCount > 0) parts.push(`shadowRoot ${shadowCount} 个`);
-      } catch (e) {}
       return parts.join("；");
+    };
+    const ouchn = {
+      reads: {},
+      readsAt: 0,
+      lastOpenAt: 0,
+      currentId: "",
+      arrivedAt: 0,
+      lastSkipLogAt: 0,
+      endedAt: 0,
+      resumed: new Set()
+    };
+    const isOuchnWatch = (profile) => !!profile && (profile.id === "ouchn" || profile.id === "ouchn-syxy");
+    const ouchnCourseId = () => {
+      const match = String(location.pathname || "").match(/\/course\/(\d+)/);
+      return match ? match[1] : "";
+    };
+    const ouchnActivityId = () => {
+      const match = String(location.hash || "").match(/#\/(\d+)/);
+      return match ? match[1] : "";
+    };
+    const ouchnScope = () => {
+      const el = document.querySelector(".full-screen-mode-sidebar-menu-item, .online-video-activity");
+      const ng = (_unsafeWindow || window).angular;
+      if (!el || !ng) return null;
+      try {
+        return ng.element(el).scope() || null;
+      } catch (e) {
+        return null;
+      }
+    };
+    const ouchnActivities = () => {
+      const scope = ouchnScope();
+      const menu = scope && scope.$parent;
+      const list = menu && menu.module && menu.module.activities;
+      return Array.isArray(list) ? list : [];
+    };
+    // 活动完成度直接从平台接口读：full 表示已完成，part 里的 data.end 是上次看到的位置
+    const ouchnRefreshReads = async (force) => {
+      const courseId = ouchnCourseId();
+      if (!courseId) return;
+      if (!force && Date.now() - ouchn.readsAt < 15e3) return;
+      ouchn.readsAt = Date.now();
+      try {
+        const resp = await fetch(`/api/course/${courseId}/activity-reads-for-user`, {
+          credentials: "include",
+          headers: { accept: "application/json" }
+        });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const map = {};
+        for (const item of (data && data.activity_reads) || []) {
+          if (item && item.activity_id != null) map[String(item.activity_id)] = item;
+        }
+        ouchn.reads = map;
+      } catch (e) {
+      }
+    };
+    const ouchnIsFull = (id) => {
+      const item = ouchn.reads[String(id)];
+      return !!item && item.completeness === "full";
+    };
+    const ouchnResumeAt = (id) => {
+      const item = ouchn.reads[String(id)];
+      const end = item && item.data && Number(item.data.end);
+      return Number.isFinite(end) && end > 5 ? end : 0;
+    };
+    const ouchnActivityOf = (id) => ouchnActivities().find((item) => String(item.id) === String(id)) || null;
+    // 地址里没有任务号时退回 Angular 的当前活动
+    const ouchnCurrentId = () => {
+      const fromHash = ouchnActivityId();
+      if (fromHash) return fromHash;
+      const scope = ouchnScope();
+      const menu = scope && scope.$parent;
+      const current = menu && menu.currentActivity;
+      return current && current.id != null ? String(current.id) : "";
+    };
+    // 从当前活动往后找第一个没完成的视频任务
+    const ouchnNextVideo = (currentId) => {
+      const activities = ouchnActivities();
+      if (!activities.length) return null;
+      let index = activities.findIndex((activity) => String(activity.id) === String(currentId));
+      if (index < 0) index = -1;
+      const ordered = activities.slice(index + 1).concat(activities.slice(0, index + 1));
+      for (const activity of ordered) {
+        if (!activity || activity.type !== "online_video") continue;
+        if (ouchnIsFull(activity.id)) continue;
+        return activity;
+      }
+      return null;
+    };
+    const ouchnOpen = (activity) => {
+      if (!activity) return false;
+      const scope = ouchnScope();
+      if (!scope) return false;
+      try {
+        if (typeof scope.activityIsLocked === "function" && scope.activityIsLocked(activity)) {
+          log(`「${activity.title}」还未解锁，等前面的任务完成`);
+          return false;
+        }
+        if (typeof scope.$apply === "function" && typeof scope.changeActivity === "function") {
+          scope.$apply(() => scope.changeActivity(activity));
+          return true;
+        }
+      } catch (e) {
+        log(`跳转「${activity.title}」失败：${e && e.message || e}`);
+      }
+      return false;
+    };
+    const ouchnActivityTitle = (id) => {
+      const activity = ouchnActivities().find((item) => String(item.id) === String(id));
+      return activity ? String(activity.title || activity.id) : "当前任务";
     };
     const isVisible = (el) => {
       if (!el || !el.isConnected) return false;
@@ -21451,13 +21589,63 @@ const XS_EXT = (() => {
           return;
         }
         state.page = location.pathname || "/";
+        // 国开：每秒跟随地址里的任务号，进入新任务时重置节流，并从平台接口读完成度
+        if (isOuchnWatch(profile)) {
+          await ouchnRefreshReads();
+          const ouchnId = ouchnCurrentId();
+          if (ouchnId && ouchnId !== ouchn.currentId) {
+            ouchn.currentId = ouchnId;
+            ouchn.arrivedAt = Date.now();
+            ouchn.endedAt = 0;
+            ouchn.lastSkipLogAt = 0;
+            pausedTicks = 0;
+          }
+        }
         if (handleQuizPopup(profile)) return;
         const video = findVideo();
         if (!video) {
           state.progress = "";
           if ((profile.id === "ouchn" || profile.id === "ouchn-syxy") && Date.now() - lastWatchDiagAt > 8000) {
-            lastWatchDiagAt = Date.now();
-            log(`未发现视频，页面结构：${describeWatchPage()}`);
+            const text = describeWatchPage();
+            const changed = text !== lastWatchDiagText;
+            if (changed || Date.now() - lastWatchDiagAt > 60000) {
+              lastWatchDiagAt = Date.now();
+              lastWatchDiagText = text;
+              log(`未发现视频，页面结构：${text}`);
+            }
+          }
+          // 国开新版学习活动有时先停在“开始学习/继续学习”的入口页，主动点一次
+          if ((profile.id === "ouchn" || profile.id === "ouchn-syxy") && Date.now() - lastEnterClickAt > 5000) {
+            const enterBtn = queryAll("button, a, [class*=btn], [role=button]").find((el) =>
+              isVisible(el) && /^(开始学习|继续学习|进入学习|开始播放|继续播放)$/.test(textOf(el))
+            );
+            if (enterBtn) {
+              lastEnterClickAt = Date.now();
+              try {
+                enterBtn.click();
+                log(`已点击「${textOf(enterBtn)}」进入学习`);
+              } catch (e) {
+              }
+            }
+          }
+          // 国开：停在一个已经看完的视频任务上时，直接切到下一个没看完的视频
+          if (isOuchnWatch(profile) && Date.now() - ouchn.arrivedAt > 3000 && Date.now() - ouchn.lastOpenAt > 6000) {
+            const ouchnId = ouchn.currentId || ouchnCurrentId();
+            const activity = ouchnId ? ouchnActivityOf(ouchnId) : null;
+            if (activity && activity.type === "online_video" && ouchnIsFull(ouchnId)) {
+              const next = ouchnNextVideo(ouchnId);
+              if (next) {
+                ouchn.lastOpenAt = Date.now();
+                log(`「${ouchnActivityTitle(ouchnId)}」已完成，切到「${next.title || next.id}」`);
+                if (ouchnOpen(next)) {
+                  state.media = "已跳过完成的视频";
+                  return;
+                }
+              } else if (Date.now() - ouchn.lastSkipLogAt > 60000) {
+                ouchn.lastSkipLogAt = Date.now();
+                log("本模块的视频任务都已完成，等待手动切换");
+              }
+            }
           }
           if (settings.autoScroll && profile.doc) {
             state.media = "文档页：正在向下滚动";
@@ -21471,6 +21659,42 @@ const XS_EXT = (() => {
         const duration = Number(video.duration) || 0;
         const current = Number(video.currentTime) || 0;
         state.progress = duration > 0 ? `${formatTime(current)} / ${formatTime(duration)}（${Math.floor(current / duration * 100)}%）` : "";
+        // 国开：已完成的任务不再从头重播；没看完的从上次位置接着播
+        if (isOuchnWatch(profile) && ouchn.currentId && current < 2) {
+          if (ouchnIsFull(ouchn.currentId) && Date.now() - ouchn.arrivedAt > 3000) {
+            const next = ouchnNextVideo(ouchn.currentId);
+            if (next && Date.now() - ouchn.lastOpenAt > 6000) {
+              ouchn.lastOpenAt = Date.now();
+              log(`「${ouchnActivityTitle(ouchn.currentId)}」已完成，切到「${next.title || next.id}」`);
+              if (ouchnOpen(next)) {
+                state.status = "已跳过完成的视频";
+                return;
+              }
+            }
+            // 没有下一个视频，或下一个还没解锁：不要重播已经完成的这一节
+            if (!next && Date.now() - ouchn.lastSkipLogAt > 60000) {
+              ouchn.lastSkipLogAt = Date.now();
+              log("本模块的视频任务都已完成，等待手动切换");
+            }
+            state.status = next ? "等待下一个视频解锁" : "本模块视频已完成";
+            try {
+              video.pause();
+            } catch (e) {
+            }
+            return;
+          }
+          if (!ouchn.resumed.has(ouchn.currentId) && Object.keys(ouchn.reads).length && duration > 0) {
+            ouchn.resumed.add(ouchn.currentId);
+            const resumeAt = ouchnResumeAt(ouchn.currentId);
+            if (resumeAt > 5 && duration > resumeAt + 10) {
+              try {
+                video.currentTime = resumeAt;
+                log(`从上次看到的 ${formatTime(resumeAt)} 继续播放`);
+              } catch (e) {
+              }
+            }
+          }
+        }
         if (!video.muted) {
           try {
             video.muted = true;
@@ -21490,6 +21714,42 @@ const XS_EXT = (() => {
           if (!pageChanged && Date.now() - advanceGuard.at < 1e4) {
             state.status = "等待下一页加载";
             return;
+          }
+          // 国开：先等平台把这一节点确认成“已完成”，再跳到下一个没看完的视频
+          if (isOuchnWatch(profile) && ouchn.currentId) {
+            if (!ouchn.endedAt) ouchn.endedAt = Date.now();
+            const waited = Date.now() - ouchn.endedAt;
+            if (waited < 2500) {
+              state.status = "等待平台确认完成";
+              return;
+            }
+            await ouchnRefreshReads(waited < 4000);
+            if (ouchnIsFull(ouchn.currentId)) {
+              const next = ouchnNextVideo(ouchn.currentId);
+              if (next) {
+                if (Date.now() - ouchn.lastOpenAt > 6000) {
+                  ouchn.lastOpenAt = Date.now();
+                  log(`本节已确认完成，切到「${next.title || next.id}」`);
+                  if (ouchnOpen(next)) {
+                    advanceGuard.at = Date.now();
+                    advanceGuard.href = location.href;
+                    advanceGuard.src = videoSrc;
+                    state.segments += 1;
+                    prefs.segments = state.segments;
+                    xsWatchWritePrefs(prefs);
+                    return;
+                  }
+                }
+                // 下一个视频还没解锁：一般是平台课程数据还没刷新，等下一轮再看
+                state.status = "等待下一个视频解锁";
+                return;
+              }
+            } else if (waited < 20000) {
+              state.status = "等待平台确认完成";
+              return;
+            } else if (waited < 22500) {
+              log("视频已播完，但平台未确认完成，继续下一节");
+            }
           }
           const clicked = clickNext(profile);
           if (!clicked) {
