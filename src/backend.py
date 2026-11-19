@@ -15619,6 +15619,7 @@ class Handler(BaseHTTPRequestHandler):
                                     if (ai_norm
                                             and not _is_truncated_multi_answer(question, ai_norm, fresh=True)
                                             and not _is_garbage_bank_answer(ai_norm, question)
+                                            and not _answer_choice_conflict(question, ai_norm)
                                             and not any(str(c.get("answer") or "").strip() == ai_norm.strip() for c in items)):
                                         items.append({
                                             "question_hash": "",
@@ -15668,7 +15669,9 @@ class Handler(BaseHTTPRequestHandler):
                         print(f"[题库相似题] 自动选最优 hash={question_hash[:12]} score={similar_score:.3f}", flush=True)
                 if bank_row and not use_custom and not skip_bank:
                     answer = normalize_ai_answer(question, bank_row.get("answer", ""))
-                    bank_mismatch = bool(answer) and not _answer_matches_question_options(question, answer)
+                    # 题库里的答案也要按「脚本能不能填上」的标准校验：
+                    # 不仅要对得上选项，单选题还只能有一个答案（历史上存过 "李某|王某" 这种双答案）
+                    bank_mismatch = bool(answer) and (not _answer_matches_question_options(question, answer) or _answer_choice_conflict(question, answer))
                     if not answer or _is_truncated_multi_answer(question, answer) or _is_garbage_bank_answer(answer, question) or bank_mismatch:
                         if bank_mismatch:
                             print(f"[题库命中但答案对不上选项，改走AI] hash={question_hash[:12]} answer={str(answer)[:80]}", flush=True)
