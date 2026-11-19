@@ -11764,6 +11764,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 option_selector: (question && question.__xsOptionSelector) || "",
                 clicked: !!(question && question.__xsClicked),
                 answer_text: String(((question && question.answer && question.answer.answer) || []).join(",")).slice(0, 60),
+                // 答案里有几个项没映射到任何选项（多选少选/答案格式对不上时能直接看出来）
+                unmatched: (question && question.__xsUnmatchedAnswers) || 0,
+                unmatched_answers: String((question && question.__xsUnmatchedAnswerPreview) || "").slice(0, 60),
                 // 智慧树填空/问答填不上时同样把首个输入候选的结构带回后台
                 blank_html: (() => {
                   try {
@@ -12097,8 +12100,13 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           if (el.closest) {
             push(el.closest(".nodeLab"));
             push(el.closest("label"));
-            push(el.closest("li"));
-            push(el.closest(".subject_node"));
+            // li 只有在这行里最多一个选项控件时才当成选项行。
+            // 整道题的容器（.subject_node、题目列表 li）常带 active/current 表示“当前题目”，
+            // 把它算进选中判定会让每个选项都被误判成已选，回读校验直接失效。
+            const li = el.closest("li");
+            if (li && (!li.querySelectorAll || li.querySelectorAll("input[type='radio'], input[type='checkbox']").length <= 1)) {
+              push(li);
+            }
           }
           return nodes;
         };
@@ -12128,6 +12136,19 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               .join(";") + `#${input ? (input.checked ? 1 : 0) : ""}#${imgs}`;
           } catch (_) {
             return "";
+          }
+        };
+        // 选中状态变化后立刻返回，最多等 320ms；固定等 180ms 会让几百题的大卷白白多花几十秒
+        const waitForState = async (check, maxMs = 320) => {
+          const deadline = Date.now() + maxMs;
+          while (true) {
+            let ok = false;
+            try {
+              ok = !!check();
+            } catch (_) {}
+            if (ok) return true;
+            if (Date.now() >= deadline) return false;
+            await new Promise((resolve) => setTimeout(resolve, 30));
           }
         };
         const normalizeOptText = (str) => String(str ?? "").replace(/^[A-Z][.、．]\s*/i, "").replace(/\s+/g, "").replace(/[^\p{L}\p{N}√×]/gu, "").toLowerCase();
@@ -12167,6 +12188,8 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             return out;
           };
           const answerList = expandAnswerByOptions(normalizeChoiceAnswerList(question.answer.answer));
+          // 记录完全没匹配到任何选项的答案项：多选少选不能静默当成成功
+          const unmatchedAnswers = [];
           answerList.forEach((answer) => {
             const pickedBefore = pickedIdx.size;
             // 字母答案映射：A / ABD / A,B,D → 按选项序号勾选
@@ -12235,6 +12258,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 if (bestIdx >= 0 && bestScore >= minScore && bestScore - secondScore >= minMargin) pickedIdx.add(bestIdx);
               }
             }
+            if (pickedIdx.size === pickedBefore) unmatchedAnswers.push(String(answer == null ? "" : answer).trim());
           });
           let pickedList = Array.from(pickedIdx).sort((a, b) => a - b);
           // 页面把同一选项写了两遍（正文完全相同）时选第一个即可，不能当成答案有歧义
@@ -12258,25 +12282,27 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
           if (pickedList.length) {
             // 点击后必须回读真实选中状态，不能只凭「点了」就报成功：
             // 选项被遮挡、选择器变了、页面没响应时，假成功比报错更危险。
-            // 有的页面是 Vue/React 异步更新，给一点时间再读。
-            await new Promise((resolve) => setTimeout(resolve, 180));
-            const liveOptions = collectOptionNodes();
-            const list = liveOptions.length === optionsDOM.length ? liveOptions : optionsDOM;
-            const allOk = pickedList.every((optIdx, i) => {
-              let el = list[optIdx];
-              if (!el) return false;
-              if (isOptionSelected(el)) return true;
-              // 重渲染后节点会被替换，按选项正文重新定位再读一次
-              const wanted = optionNorms[optIdx];
-              const hit = wanted
-                ? liveOptions.find((node) => normalizeOptText(optionRawText(node)) === wanted)
-                : null;
-              if (hit && isOptionSelected(hit)) return true;
-              // 图标题的选中经常只换图标，不挂 checked 类
-              const before = beforeSnaps[i];
-              const after = optionSnapshot(hit || el);
-              return !!before && !!after && before !== after;
-            });
+            // 有的页面是 Vue/React 异步更新，轮询到状态变化就返回，最多等 320ms。
+            const verifyPicked = () => {
+              const liveOptions = collectOptionNodes();
+              const list = liveOptions.length === optionsDOM.length ? liveOptions : optionsDOM;
+              return pickedList.every((optIdx, i) => {
+                const el = list[optIdx];
+                if (!el) return false;
+                if (isOptionSelected(el)) return true;
+                // 重渲染后节点会被替换，按选项正文重新定位再读一次
+                const wanted = optionNorms[optIdx];
+                const hit = wanted
+                  ? liveOptions.find((node) => normalizeOptText(optionRawText(node)) === wanted)
+                  : null;
+                if (hit && isOptionSelected(hit)) return true;
+                // 图标题的选中经常只换图标，不挂 checked 类
+                const before = beforeSnaps[i];
+                const after = optionSnapshot(hit || el);
+                return !!before && !!after && before !== after;
+              });
+            };
+            const allOk = await waitForState(verifyPicked, 320);
             isSelected = allOk;
             if (!allOk) {
               question.__xsFillReason = "click_not_effective";
@@ -12284,6 +12310,17 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 this.log.insertLog(`第${index + 1}题选项点击后未生效，按未填写处理`, "warning");
               } catch (_) {}
             }
+          }
+          // 答案里有的项一个选项都没映射上：多选即使其余项勾上也只算“部分匹配”，
+          // 不能按成功处理，否则填充率虚高、用户也发现不了少选。
+          if (unmatchedAnswers.length) {
+            question.__xsUnmatchedAnswers = unmatchedAnswers.length;
+            question.__xsUnmatchedAnswerPreview = unmatchedAnswers.join(" | ").slice(0, 80);
+            question.__xsFillReason = "answer_partial_match";
+            isSelected = false;
+            try {
+              this.log.insertLog(`第${index + 1}题有${unmatchedAnswers.length}个答案没匹配到选项`, "warning");
+            } catch (_) {}
           }
         } else if (question.type === "判断题") {
           // 判断题答案的各种写法都要能判定；以前没命中就默认「对」，会把「错误。」「False」答成对题。
@@ -12324,11 +12361,13 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
             }
           }
           if (judgeClicked) {
-            await new Promise((resolve) => setTimeout(resolve, 180));
             const wanted = normalizeOptText(optionRawText(judgeClicked));
-            const live = collectOptionNodes();
-            const hit = live.find((node) => normalizeOptText(optionRawText(node)) === wanted);
-            if (!isOptionSelected(judgeClicked) && !(hit && isOptionSelected(hit))) {
+            const judgeOk = () => {
+              if (isOptionSelected(judgeClicked)) return true;
+              const hit = collectOptionNodes().find((node) => normalizeOptText(optionRawText(node)) === wanted);
+              return !!(hit && isOptionSelected(hit));
+            };
+            if (!(await waitForState(judgeOk, 320))) {
               isSelected = false;
               question.__xsFillReason = "click_not_effective";
               try {
