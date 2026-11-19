@@ -3221,7 +3221,26 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     return new Promise((resolve) => setTimeout(resolve, ms * 1e3));
   };
   const STORAGE_KEY = "answerRecords";
-  const MAX_RECORDS = 200;
+const MAX_RECORDS = 200;
+  // 视频学习记录和答题记录放在同一个「记录」页：答题记录是主数据，
+  // 视频记录单独存一份，合并展示时按最近时间排序，最多留 100 条
+  const VIDEO_RECORDS_KEY = "videoRecords";
+  const MAX_VIDEO_RECORDS = 100;
+  const formatWatchedSeconds = (sec) => {
+    sec = Math.max(0, Math.floor(Number(sec) || 0));
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    return h ? `${h}时${m}分` : m ? `${m}分${s}秒` : `${s}秒`;
+  };
+  const loadVideoRecords = () => {
+    try {
+      const rows = JSON.parse(_GM_getValue(VIDEO_RECORDS_KEY) || "[]");
+      return Array.isArray(rows) ? rows.filter((r) => r && r.key) : [];
+    } catch (error) {
+      return [];
+    }
+  };
   const normalizeText = (value = "") => String(value).replace(/\s+/g, " ").trim();
   const normalizeOptions = (options = []) => [...Array.isArray(options) ? options : []].map((item) => normalizeText(item)).filter(Boolean).sort();
   const formatRequestTime = (timestamp) => {
@@ -3245,14 +3264,52 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
   };
   const useAnswerRecordStore = pinia.defineStore("answerRecord", {
     state: () => ({
-      records: loadRecords()
+      records: loadRecords(),
+      videoRecords: loadVideoRecords()
     }),
     getters: {
-      displayRecords: (state) => state.records
+      displayRecords: (state) => {
+        const videos = state.videoRecords.map((v) => ({
+          cacheKey: "video:" + v.key,
+          token: "景德镇 o-learn",
+          title: v.title || "视频学习",
+          requestTime: formatRequestTime(v.lastSeen),
+          timestamp: v.lastSeen,
+          answer: [v.done ? "已完成" : "学习中", "已学 " + formatWatchedSeconds(v.watched)],
+          type: "video",
+          optionsText: [],
+          workType: "jdz",
+          refer: v.key,
+          source: "video",
+          video: true
+        }));
+        return [...state.records, ...videos].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      }
     },
     actions: {
       persistRecords() {
         _GM_setValue(STORAGE_KEY, JSON.stringify(this.records));
+      },
+      persistVideoRecords() {
+        _GM_setValue(VIDEO_RECORDS_KEY, JSON.stringify(this.videoRecords));
+      },
+      upsertVideoRecord({ key, title, watched, done, lastSeen }) {
+        const cacheKey = String(key || "");
+        if (!cacheKey) return;
+        const record = {
+          key: cacheKey,
+          title: String(title || "视频学习"),
+          watched: Math.max(0, Math.floor(Number(watched) || 0)),
+          done: !!done,
+          lastSeen: Number(lastSeen) || Date.now()
+        };
+        const index = this.videoRecords.findIndex((item) => item.key === cacheKey);
+        if (index >= 0) this.videoRecords.splice(index, 1, Object.assign({}, this.videoRecords[index], record));
+        else this.videoRecords.unshift(record);
+        this.videoRecords = this.videoRecords
+          .sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0))
+          .slice(0, MAX_VIDEO_RECORDS);
+        this.persistVideoRecords();
       },
       insertRecord({ question, answer, token, source }) {
         const timestamp = Date.now();
@@ -3276,7 +3333,9 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
       },
       clearRecords() {
         this.records = [];
+        this.videoRecords = [];
         this.persistRecords();
+        this.persistVideoRecords();
       }
     }
   });
@@ -4261,7 +4320,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
         return vue.openBlock(), vue.createElementBlock("div", _hoisted_1$2, [
           _cache[5] || (_cache[5] = vue.createElementVNode("div", { class: "separator" }, "▤ 记录", -1)),
           vue.createElementVNode("div", _hoisted_2$1, [
-            vue.createElementVNode("span", null, vue.toDisplayString(keyword.value.trim() ? "找到 " + filteredRecords.value.length + " 条记录" : "最多保留 200 条答题记录，当前 " + filteredRecords.value.length + " 条"), 1),
+            vue.createElementVNode("span", null, vue.toDisplayString(keyword.value.trim() ? "找到 " + filteredRecords.value.length + " 条记录" : "最多保留 200 条答题、100 条视频记录，当前 " + filteredRecords.value.length + " 条"), 1),
             vue.createVNode(_component_a_button, {
               class: "clear-btn",
               size: "small",
@@ -4297,28 +4356,28 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 class: "record-item"
               }, [
                 vue.createElementVNode("div", _hoisted_6, [
-                  _cache[1] || (_cache[1] = vue.createElementVNode("span", { class: "record-label" }, "密钥", -1)),
+                  vue.createElementVNode("span", { class: "record-label" }, vue.toDisplayString(record.video ? "平台" : "密钥"), 1),
                   vue.createElementVNode("span", {
                     class: "record-value",
                     title: record.token || "未配置"
                   }, vue.toDisplayString(record.token || "未配置"), 9, _hoisted_7)
                 ]),
                 vue.createElementVNode("div", _hoisted_8, [
-                  _cache[2] || (_cache[2] = vue.createElementVNode("span", { class: "record-label" }, "题目", -1)),
+                  vue.createElementVNode("span", { class: "record-label" }, vue.toDisplayString(record.video ? "视频" : "题目"), 1),
                   vue.createElementVNode("span", {
                     class: "record-value",
                     title: record.title
                   }, vue.toDisplayString(record.title), 9, _hoisted_9)
                 ]),
                 vue.createElementVNode("div", _hoisted_10, [
-                  _cache[3] || (_cache[3] = vue.createElementVNode("span", { class: "record-label" }, "答案", -1)),
+                  vue.createElementVNode("span", { class: "record-label" }, vue.toDisplayString(record.video ? "进度" : "答案"), 1),
                   vue.createElementVNode("span", {
                     class: "record-value",
                     title: formatAnswer(record.answer)
                   }, vue.toDisplayString(formatAnswer(record.answer)), 9, _hoisted_11)
                 ]),
                 vue.createElementVNode("div", _hoisted_12, [
-                  _cache[4] || (_cache[4] = vue.createElementVNode("span", { class: "record-label" }, "请求时间", -1)),
+                  vue.createElementVNode("span", { class: "record-label" }, vue.toDisplayString(record.video ? "最近观看" : "请求时间"), 1),
                   vue.createElementVNode("span", {
                     class: "record-value",
                     title: record.requestTime
@@ -4326,7 +4385,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
                 ])
               ]);
             }), 128))
-          ])) : (vue.openBlock(), vue.createElementBlock("div", _hoisted_14, vue.toDisplayString(keyword.value.trim() ? "没有找到包含「" + keyword.value.trim() + "」的记录。" : " 当前筛选条件下暂无答题记录。成功搜到答案并扣次后，会自动写入本地缓存。 "), 1))
+          ])) : (vue.openBlock(), vue.createElementBlock("div", _hoisted_14, vue.toDisplayString(keyword.value.trim() ? "没有找到包含「" + keyword.value.trim() + "」的记录。" : " 当前筛选条件下暂无答题或视频学习记录。答题记录会在成功取到答案后自动写入；视频学习记录会在检测到视频后自动写入。 "), 1))
         ]);
       };
     }
@@ -24501,6 +24560,22 @@ const XS_EXT = (() => {
         }
         return rec;
     }
+    // 视频记录同步到主面板「记录」页，最多每 10 秒写一次，避免每秒播放都落一次存储
+    function syncVideoRecordToPanel(rec, force) {
+        if (!rec || !rec.key) return;
+        const now = Date.now();
+        if (!force && rec.__panelSyncedAt && now - rec.__panelSyncedAt < 10000) return;
+        rec.__panelSyncedAt = now;
+        try {
+            useAnswerRecordStore().upsertVideoRecord({
+                key: rec.key,
+                title: rec.title,
+                watched: rec.watched,
+                done: rec.done,
+                lastSeen: rec.lastSeen || now,
+            });
+        } catch (e) { /* ignore */ }
+    }
     function formatDuration(sec) {
         sec = Math.floor(sec);
         const h = Math.floor(sec / 3600);
@@ -24882,6 +24957,7 @@ const XS_EXT = (() => {
         state.currentVideo = video;
         video.__vjsPlayer = getVjsPlayer(video);
         video.__record = ensureRecord(video);
+        syncVideoRecordToPanel(video.__record, true);
         log('🎬 发现视频，开始接管', video.__vjsPlayer ? '' : '', `时长=${video.duration ? formatDuration(video.duration) : '未知'}`);
         video.autoplay = true;
         video.preload = 'auto';
@@ -24906,6 +24982,7 @@ const XS_EXT = (() => {
             if (video.__record) {
                 video.__record.done = true;
                 saveRecords();
+                syncVideoRecordToPanel(video.__record, true);
                 renderRecordPanel();
             }
             if (store.autoNext) gotoNextCourseware();
@@ -26207,6 +26284,7 @@ const XS_EXT = (() => {
                     state.currentVideo.__record.watched += 1;
                     state.currentVideo.__record.lastSeen = Date.now();
                     saveRecords();
+                    syncVideoRecordToPanel(state.currentVideo.__record);
                 }
                 updateUI();
             }
