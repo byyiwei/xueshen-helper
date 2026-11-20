@@ -10379,6 +10379,8 @@ const MAX_RECORDS = 200;
               judgeTexts.some((t) => this.optionTextMatches(k, t, true))
             );
             if (hitKeys.length === 1) filled = this.selectChoiceOption(question.options[hitKeys[0]]);
+            // 判断题失败以前不带原因，后台只看到「答案拿到了但填不上」，分不清是没认出对/错选项还是点击没生效
+            if (!filled) question.__xsFillReason = hitKeys.length ? "click_not_effective" : "option_not_found";
           }
         } else if (question.type === "4" || question.type === "5" || question.type === "6" || question.type === "7" || question.type === "9" || question.type === "26") {
           const longAnswer = this.resolveBlankAnswers(question.answer.answer, 1)[0] || "";
@@ -10533,6 +10535,11 @@ const MAX_RECORDS = 200;
             title: this.clean(questionTitle),
             optionsText: optionTexts,
             options: optionsObject,
+            // 这些字段给「页面异常」上报用：超星这边以前没记，后台看到的选项数总是 0，分不出是没认出选项还是点不上
+            __xsOptionCount: optionElements ? optionElements.length : 0,
+            __xsOptionSelector: ["zj"].includes(this.type)
+              ? '[class*="before-after"]'
+              : (["zy", "ks"].includes(this.type) ? ".answerBg" : ""),
             answer: { code: -1, answer: [] },
             workType: this.type,
             refer: this._window.location.href
