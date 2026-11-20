@@ -22799,6 +22799,11 @@ const XS_EXT = (() => {
     };
 
     const registry = [];
+    // 本轮已经拿到的答案（按题号），交卷前用它核对页面上的勾选是否完整
+    const answerStore = new Map();
+    // 页面上识别不出选项/输入框的题目数（比如简答富文本），大于 0 就不自动交卷
+    let unparsedQuestions = 0;
+    let lastQuestionSig = "";
     const state = vue.reactive({
       scanning: false,
       running: false,
@@ -22849,6 +22854,18 @@ const XS_EXT = (() => {
           try { blocks.push(...findBlocks(doc)); } catch (_) {}
         }
         const usable = blocks.filter((block) => (block.options && block.options.length >= 2) || (block.inputs && block.inputs.length));
+        // 题目换了（或换了考试），之前记下的答案作废；同一套题补答时保留，方便核对
+        const sig = usable.map((block) => (block.title || "").slice(0, 80)).join("\u0001");
+        if (sig !== lastQuestionSig) {
+          lastQuestionSig = sig;
+          answerStore.clear();
+        }
+        // 国开：页面上有题目节点却没识别出选项/输入框的，记下来（通常是简答富文本），不能自动交卷
+        unparsedQuestions = 0;
+        if (isOuchnHost()) {
+          const subjectLis = Array.from(new Set(document.querySelectorAll(".exam-paper li.subject:not(.text)")));
+          unparsedQuestions = subjectLis.filter((li) => !usable.some((block) => block.el === li || li.contains(block.el))).length;
+        }
         state.total = usable.length;
         if (!silent) {
           if (usable.length) log(`当前页面识别到 ${usable.length} 道题`);
@@ -22895,6 +22912,7 @@ const XS_EXT = (() => {
               const block = registry[index];
               const answer = (question && question.answer && question.answer.answer) || [];
               if (!block) return false;
+              if (answer.length) answerStore.set(index, answer);
               const filled = fill(block, answer);
               setItem(index, filled.ok
                 ? { status: "done", answer: answer.join(" "), msg: `已填 ${filled.filled} 项` }
@@ -22957,6 +22975,80 @@ const XS_EXT = (() => {
       syncStoreItem(index, { answer: { code: 1, answer: picked, src: "page", msg: "页面已作答" } });
       return true;
     };
+    // 把页面上的勾选和答案对齐：漏勾的补上，多选题多勾的取消掉。
+    // 多选题如果不清掉旧勾，手动重答或补答之后会带着上一次的答案交卷。
+    const reconcileChoices = async (block, answer) => {
+      if (!block) return { ok: false, matched: { picked: [], unmatched: [] }, want: 0, got: 0 };
+      const matched = pickOptions(block, answer);
+      if (block.kind === "input" || !block.controls || !block.controls.length) {
+        const list = Array.isArray(answer) ? answer : [answer];
+        for (let index = 0; index < block.inputs.length; index++) {
+          const value = String(list[index] == null ? "" : list[index]).trim();
+          if (!value) continue;
+          const input = block.inputs[index];
+          if (String(input.value || "").trim() === value) continue;
+          try {
+            input.focus();
+            input.value = value;
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          } catch (_) {}
+          await sleep(0.1);
+        }
+        const got = block.inputs.filter((input) => String(input.value || "").trim()).length;
+        return { ok: got > 0, matched, want: block.inputs.length, got };
+      }
+      const expected = matched.picked.slice();
+      if (block.type === "单选" || block.type === "判断") expected.splice(1);
+      for (const opt of block.options) {
+        if (!opt.input) continue;
+        const want = expected.indexOf(opt) >= 0;
+        if (!!opt.input.checked === want) continue;
+        try { (opt.input || opt.el).click(); } catch (_) {}
+        await sleep(0.12);
+        // 个别时候点控件不生效，再点一次整行
+        if (!!opt.input.checked !== want) {
+          try { opt.el.click(); } catch (_) {}
+          await sleep(0.12);
+        }
+      }
+      const got = expected.filter((opt) => opt.input && opt.input.checked).length;
+      const extra = block.options.some((opt) => opt.input && opt.input.checked && expected.indexOf(opt) < 0);
+      return { ok: expected.length > 0 && got === expected.length && !extra, matched, want: expected.length, got };
+    };
+
+    // 一道题在当前页面上算不算完整答完：已勾选、答案都对上选项、多选题没有多勾
+    const blockOkay = (block, index) => {
+      if (!block || !isAnswered(block)) return false;
+      const answer = answerStore.get(index);
+      // 页面本来就有答案、本轮没取到新答案的，以页面为准
+      if (!answer || !answer.length) return true;
+      const matched = pickOptions(block, answer);
+      if (matched.unmatched.length) return false;
+      if (block.kind === "input") return block.inputs.every((input) => String(input.value || "").trim());
+      if (!block.controls || !block.controls.length) return true;
+      const expected = matched.picked.slice();
+      if (block.type !== "多选") expected.splice(1);
+      if (!expected.length) return false;
+      if (expected.some((opt) => opt.input && !opt.input.checked)) return false;
+      return !(block.type === "多选"
+        && block.options.some((opt) => opt.input && opt.input.checked && expected.indexOf(opt) < 0));
+    };
+
+    // 国开考试页的试卷数据挂在 Angular scope 上，用它核对题目总数，防止还有题没渲染出来就交卷
+    const ouchnExamTotal = () => {
+      try {
+        if (!isOuchnHost() || !window.angular) return 0;
+        const host = document.querySelector(".exam-paper");
+        if (!host) return 0;
+        const scope = window.angular.element(host).scope();
+        const total = Number(scope && scope.exam && scope.exam.subjects_count);
+        return isFinite(total) && total > 0 ? total : 0;
+      } catch (_) {
+        return 0;
+      }
+    };
+
     const toQuestion = (block) => ({
       title: block.title || "",
       optionsText: (block.options || []).map((opt) => stripLetter(opt.text)),
@@ -23007,12 +23099,17 @@ const XS_EXT = (() => {
       }
       state.running = true;
       state.done = 0;
-      const answerMap = new Map();
+      // 记下本轮实际动过的题；收尾核对只补这些题，不碰页面上本来就有答案的题
+      const touched = new Set();
       log(`开始作答，共 ${usable.length} 道题`);
       for (const item of state.items.slice()) {
         if (!state.running) break;
         // 自动作答不动页面上已经答过的题；用户手动点「开始答题」时整页重新答一遍
-        if (item.status === "done" && auto) { state.done++; continue; }
+        if (item.status === "done" && auto) {
+          answerStore.delete(item.index);
+          state.done++;
+          continue;
+        }
         const block = registry[item.index];
         if (!block) continue;
         setItem(item.index, { status: "running" });
@@ -23062,31 +23159,47 @@ const XS_EXT = (() => {
             log(`第 ${item.index + 1} 题未搜到答案`, "warning");
             continue;
           }
-          answerMap.set(item.index, answer);
-          const filled = alreadyFilled
-            ? { ok: isAnswered(block), filled: answer.length, unmatched: [], missing: 0, extraDropped: 0 }
-            : await clickMissing(block, answer);
+          answerStore.set(item.index, answer);
+          touched.add(item.index);
+          let filled;
+          if (alreadyFilled) {
+            const rec = isOuchnHost() ? await reconcileChoices(block, answer) : null;
+            filled = rec
+              ? { ok: rec.ok, filled: rec.got, want: rec.want, unmatched: rec.matched.unmatched, missing: 0, extraDropped: 0 }
+              : { ok: isAnswered(block), filled: answer.length, unmatched: [], missing: 0, extraDropped: 0 };
+          } else {
+            filled = await clickMissing(block, answer);
+            // 国开选择题再对一遍：漏勾补上、多选里多勾的取消，避免带着残缺答案往下走
+            if (isOuchnHost() && block.controls && block.controls.length) {
+              const rec = await reconcileChoices(block, answer);
+              filled = { ok: rec.ok, filled: rec.got, want: rec.want, unmatched: rec.matched.unmatched, missing: 0, extraDropped: 0 };
+            }
+          }
           const fromAI = !!(res && res.data && res.data.src === "ai");
           if (filled.ok) {
             const notes = [];
-            if (filled.unmatched && filled.unmatched.length) notes.push(`有 ${filled.unmatched.length} 个答案没对上选项`);
-            if (filled.missing) notes.push(`还有 ${filled.missing} 个空没有答案`);
-            if (filled.want && filled.filled < filled.want) notes.push(`应填 ${filled.want} 项，只点上 ${filled.filled} 项`);
+            const problems = [];
+            if (filled.unmatched && filled.unmatched.length) problems.push(`有 ${filled.unmatched.length} 个答案没对上选项`);
+            if (filled.missing) problems.push(`还有 ${filled.missing} 个空没有答案`);
+            if (filled.want && filled.filled < filled.want) problems.push(`应填 ${filled.want} 项，只点上 ${filled.filled} 项`);
+            notes.push(...problems);
             if (filled.extraDropped) notes.push("题目是单选，多余的答案没填");
             if (fromAI) notes.push("这条是 AI 作答，建议核对");
             const needCheck = notes.length > 0;
             setItem(item.index, {
               status: needCheck ? "warn" : "done",
+              // issue 表示真的没填完整，自动交卷时一律拦住；AI 建议核对只提示不拦
+              issue: problems.length > 0,
               answer: answer.join(" "),
               msg: needCheck ? notes.join("；") : `已填 ${filled.filled} 项`
             });
             syncStoreItem(item.index, {
-              answer: { code: needCheck || fromAI ? 2 : 1, answer, src: (res && res.data && res.data.src) || "bank", msg: notes.join("；") }
+              answer: { code: problems.length || fromAI ? 2 : 1, answer, src: (res && res.data && res.data.src) || "bank", msg: notes.join("；") }
             });
             log(`第 ${item.index + 1} 题${needCheck ? "已填，需核对" : "已作答"}：${answer.join(" ")}`, needCheck ? "warning" : void 0);
           } else {
             if (!keepPageAnswer(item.index, block)) {
-              setItem(item.index, { status: "fail", answer: answer.join(" "), msg: filled.reason || "填写失败" });
+              setItem(item.index, { status: "fail", issue: true, answer: answer.join(" "), msg: filled.reason || "填写失败" });
               syncStoreItem(item.index, { answer: { code: -1, answer: [], msg: "答案拿到了但没点上去" } });
             }
             log(`第 ${item.index + 1} 题 ${filled.reason || "填写失败"}`, "warning");
@@ -23099,26 +23212,34 @@ const XS_EXT = (() => {
         // sleep 的单位是秒，这里每题之间停 1 秒，给页面留出更新时间
         await sleep(1);
       }
-      // 收尾核对：页面重绘可能把刚点上的勾清掉，按已拿到的答案再补一次，避免漏答
+      // 收尾核对：页面重绘可能把刚点上的勾清掉，按已拿到的答案再对一遍，
+      // 漏勾的补勾、多选多勾的取消；不只看「有没有勾」，要看勾的是不是答案里的选项
       if (isOuchnHost()) {
         await sleep(1);
         let repaired = 0;
-        registry.forEach((block, index) => {
-          if (isAnswered(block)) return;
-          const answer = answerMap.get(index);
-          if (!answer || !answer.length) return;
-          const matched = pickOptions(block, answer);
-          const targets = block.type === "多选" ? matched.picked : matched.picked.slice(0, 1);
-          targets.forEach((opt) => {
-            if (opt.input && opt.input.checked) return;
-            try { (opt.input || opt.el).click(); } catch (_) {}
-          });
+        for (const [index, answer] of Array.from(answerStore.entries())) {
+          if (!touched.has(index)) continue;
+          const block = registry[index];
+          if (!block || blockOkay(block, index)) continue;
+          const rec = await reconcileChoices(block, answer);
+          const complete = rec.ok && (!rec.want || rec.got >= rec.want);
+          if (!complete) continue;
           repaired++;
-        });
+          const item = (state.items || [])[index];
+          if (item && item.status === "warn" && !(rec.matched.unmatched || []).length) {
+            setItem(index, { status: "done", issue: false, msg: "" });
+            try {
+              const cur = useQuestionStore().questionList[index];
+              const src = (cur && cur.answer && cur.answer.src) || "bank";
+              syncStoreItem(index, { answer: { code: src === "ai" ? 2 : 1, answer: answer.slice(), src, msg: "已补齐选项" } });
+            } catch (_) {}
+          }
+        }
         await sleep(0.6);
-        if (repaired) log(`已补填 ${repaired} 道题`);
-        const left = registry.filter((block) => !isAnswered(block)).length;
-        if (left) log(`还有 ${left} 道题没填上，请检查页面后手动处理`, "warning");
+        if (repaired) log(`已补齐 ${repaired} 道题的勾选`);
+        const left = registry.filter((block, index) => !blockOkay(block, index)).length;
+        if (left) log(`还有 ${left} 道题没填完整，请检查页面后手动处理`, "warning");
+        else if (unparsedQuestions) log(`有 ${unparsedQuestions} 道题脚本没识别出选项，请手动作答`, "warning");
         else log("核对完成，所有题目都已填上答案");
       }
       state.running = false;
@@ -23171,14 +23292,29 @@ const XS_EXT = (() => {
     };
     const findVisibleByText = (selector, pattern) => Array.from(document.querySelectorAll(selector))
       .find((el) => isVisibleEl(el) && pattern.test(TEXT(el)));
-    // 自动交卷：必须所有题都填上答案才动手，避免把空题一起交上去
+    // 自动交卷：要求每一题都完整作答且页面上勾的就是答案，才点交卷；
+// 有漏题、选项没对上、题目没渲染全（分页）或没识别出选项的，一律不交
     const submitExamAuto = async () => {
       if (!useSettingStore().config.examConfig.autoSubmit.value) return false;
+      if (state.running || state.pick) return false;
       const items = state.items || [];
-      const pending = items.filter((it) => it.status !== "done" && it.status !== "warn").length;
-      const domLeft = registry.filter((block) => !isAnswered(block)).length;
-      if (!items.length || pending || domLeft) {
-        log(`还有 ${Math.max(pending, domLeft)} 道题没填上，先不自动交卷`, "warning");
+      if (!items.length) {
+        log("没有识别到题目，先不自动交卷", "warning");
+        return false;
+      }
+      const unfinished = items.filter((it) => !(it.status === "done" || (it.status === "warn" && !it.issue))).length;
+      const domLeft = registry.filter((block, index) => !blockOkay(block, index)).length;
+      const modelTotal = ouchnExamTotal();
+      if (modelTotal && registry.length < modelTotal) {
+        log(`试卷共 ${modelTotal} 题，页面只识别出 ${registry.length} 题，可能还有题没显示，先不交卷`, "warning");
+        return false;
+      }
+      if (unparsedQuestions) {
+        log(`有 ${unparsedQuestions} 道题没识别出选项或输入框，请手动作答后再交卷`, "warning");
+        return false;
+      }
+      if (unfinished || domLeft) {
+        log(`还有 ${Math.max(unfinished, domLeft)} 道题没填完整，先不自动交卷`, "warning");
         return false;
       }
       const submitBtn = findVisibleByText("a, button", /^交卷$/);
@@ -23188,16 +23324,30 @@ const XS_EXT = (() => {
       }
       submitBtn.click();
       log("所有题目已作答，已点击交卷");
-      await sleep(1.5);
-      const dialogs = Array.from(document.querySelectorAll(".confirmation-popup, .reveal-modal"));
-      const dialog = dialogs.find((el) => isVisibleEl(el) && /确定提交试卷/.test(TEXT(el)));
-      const okBtn = dialog && Array.from(dialog.querySelectorAll("a, button")).find((el) => /^确定$/.test(TEXT(el)));
+      // 弹窗要等页面存完答案才出来，最多等 6 秒
+      let dialog = null;
+      for (let i = 0; i < 15 && !dialog; i++) {
+        await sleep(0.4);
+        dialog = Array.from(document.querySelectorAll(".confirmation-popup, .reveal-modal"))
+          .find((el) => isVisibleEl(el) && /确定提交试[卷题]/.test(TEXT(el)));
+      }
+      if (!dialog) {
+        log("交卷确认弹窗没出现，请在页面上确认交卷", "warning");
+        return false;
+      }
+      // 弹窗如果提示还有未作答的题，停下来交给用户，不硬点确定
+      if (/未作答|还有.*(道题|试题)/.test(TEXT(dialog))) {
+        log("交卷弹窗提示还有未作答的题，已停止自动交卷，请检查页面", "warning");
+        return false;
+      }
+      const okBtn = Array.from(dialog.querySelectorAll("a, button")).find((el) => /^确定$/.test(TEXT(el)));
       if (okBtn) {
         okBtn.click();
         log("已确认交卷");
+        await sleep(2);
         return true;
       }
-      log("交卷确认弹窗没出现，请在页面上确认交卷", "warning");
+      log("交卷弹窗里没找到确定按钮，请在页面上确认", "warning");
       return false;
     };
     const autoExamTick = async () => {
@@ -23220,10 +23370,13 @@ const XS_EXT = (() => {
         try { useSettingStore().tabIndex = "2"; } catch (_) {}
         log("检测到考试页面，开始自动作答");
         await start({ auto: true });
-        // 还有题没填上就隔一分钟再来一轮；登录/密钥问题重试也没用，别反复打扰
-        const left = registry.filter((block) => !isAnswered(block)).length;
+        // 还有题没填完整就隔一分钟再来一轮；登录/密钥问题重试也没用，别反复打扰
+        const left = registry.filter((block, index) => !blockOkay(block, index)).length;
         const authFail = (state.items || []).some((it) => /登录|密钥/.test(it.msg || ""));
-        if (left && !authFail && examTries < 3) {
+        if (unparsedQuestions) {
+          examNextAt = Infinity;
+          log(`有 ${unparsedQuestions} 道题没识别出选项或输入框，补答也没用，请手动作答后再交卷`, "warning");
+        } else if (left && !authFail && examTries < 3) {
           examNextAt = Date.now() + 60e3;
           log(`还有 ${left} 道题没填上，一分钟后自动补答（第 ${examTries + 1}/3 轮）`, "warning");
         } else if (left) {
