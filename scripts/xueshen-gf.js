@@ -22453,11 +22453,17 @@ const XS_EXT = (() => {
         if (group.controls.every((c) => container.contains(c))) break;
       }
       if (!container) container = first.parentElement;
+      // 上溯不能越过「题目边界」：国开 li.subject、通用 questionBox 一层就是一道题，
+      // 越过去 block.el 会变成跨多题的大容器，unparsedQuestions 的 li.contains(block.el)
+      // 就永远不成立，自动交卷会被误判成「有题没识别出」而永久失效
+      const BOUNDARY_SELECTOR = "li.subject, .questionBox, .question-box, .exam-question, .timu, .TiMu";
+      const boundary = first.closest ? first.closest(BOUNDARY_SELECTOR) : null;
       const baseText = TEXT(container);
       let best = container;
       let up = container.parentElement;
       for (let i = 0; i < 4 && up; i++, up = up.parentElement) {
         if (up === document.body || up === document.documentElement) break;
+        if (boundary && (up === boundary || boundary.contains(up))) break;
         const extra = TEXT(up).length - baseText.length;
         if (extra >= 6) { best = up; break; }
         if (extra > 0) best = up;
@@ -22940,7 +22946,8 @@ const XS_EXT = (() => {
         if (isOuchnHost()) {
           const subjectLis = Array.from(new Set(document.querySelectorAll(".exam-paper li.subject")));
           unparsedQuestions = subjectLis.filter((li) => {
-            if (usable.some((block) => block.el === li || li.contains(block.el))) return false;
+            // 双向判断：题目块是 li 本身/在 li 里都算解析成功；block.el 是 li 的祖先（上溯过头）也不算漏题
+            if (usable.some((block) => block.el === li || li.contains(block.el) || block.el.contains(li))) return false;
             try {
               return !!li.querySelector(".subject-body, .subject-options, textarea, input, iframe, [contenteditable]");
             } catch (_) {
@@ -23332,6 +23339,8 @@ const XS_EXT = (() => {
         else log("核对完成，所有题目都已填上答案");
       }
       state.running = false;
+      // 国开一卷一报：答题小结（每题 code/msg/src 都在 questionStore 里），后台才能看到填充率与卡点
+      try { reportAnswerSummary("ouchn", useQuestionStore().questionList); } catch (_) {}
       log(auto ? "本轮自动作答结束" : "本轮作答结束，请检查后手动提交");
     };
 
