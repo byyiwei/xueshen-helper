@@ -22308,8 +22308,10 @@ const XS_EXT = (() => {
               state.status = "等待平台确认完成";
               return;
             } else if (waited < 22500) {
-              // 平台迟迟不记账：跳走前把这节的完成状态和播放位置记下来，回查「白看」时用
+              // 平台迟迟不记账：跳走前把这节的完成状态和播放位置记下来，回查「白看」时用；
+              // 重看模式下允许它下轮再被选中重试，别留在 replayed 里变成永远不再碰
               const full = (() => { try { return ouchnIsFull(ouchn.currentId); } catch (_) { return "?"; } })();
+              if (!readWatchSettings().skipDone) ouchn.replayed.delete(String(ouchn.currentId));
               log(`视频已播完但平台未确认完成（等了 ${Math.round(waited / 1000)} 秒，completeness=${full}，`
                 + `播放 ${Math.round(video.currentTime)}/${Math.round(video.duration || 0)} 秒），继续下一节`, "warning");
             }
@@ -23564,14 +23566,21 @@ const XS_EXT = (() => {
         log(`还有 ${Math.max(unfinished, domLeft)} 道题没填完整，先不自动交卷`, "warning");
         return false;
       }
-    // 确认弹窗选择器：新版国开是 .confirmation-popup/.reveal-modal，老版学习网和
-    // 其它框架（Element UI/layui/Bootstrap）是 dialog/modal/layer/popup 命名，两边都要认；
-    // 交卷按钮的排除列表也用它，不然老版弹窗里的「交卷」会被当成页面交卷按钮重复点
-    const OUCHN_DIALOG_SELECTOR = ".confirmation-popup, .reveal-modal, .el-dialog, .layui-layer, .modal, [class*='dialog'], [class*='Dialog'], [class*='modal'], [class*='Modal'], [class*='popup'], [class*='Popup'], [class*='layer'], [class*='Layer']";
+    // 确认弹窗有两层选择器：
+    // 精确版用于「排除交卷按钮」——宽泛的 [class*=layer/modal/popup/dialog] 会把
+    // .page-layer、.exam-modal-wrap 这类页面容器命中的交卷按钮误排除，只能认精确弹窗类；
+    // 宽泛版用于「找弹窗」，但取候选时要挑文本最短（最内层）的那个，
+    // 不然 .modal 包着整个答题区时 TEXT 会带上整卷文字，「未作答」误判就来了
+    const OUCHN_DIALOG_EXACT = ".confirmation-popup, .reveal-modal, .el-dialog__wrapper, .el-dialog, .layui-layer, .modal-dialog, .modal";
+    const OUCHN_DIALOG_BROAD = OUCHN_DIALOG_EXACT + ", [class*='dialog'], [class*='Dialog'], [class*='modal'], [class*='Modal'], [class*='popup'], [class*='Popup'], [class*='layer'], [class*='Layer']";
+    // 从候选里挑最内层弹窗：文本最短的（外层容器把整卷文字都包着，文本长得多）
+    const pickInnermostDialog = (list, pattern) => list
+      .filter((el) => isVisibleEl(el) && pattern.test(TEXT(el)))
+      .sort((a, b) => TEXT(a).length - TEXT(b).length)[0] || null;
     // 交卷按钮文案不一定是纯「交卷」：可能是「立即交卷」「交 卷」或按钮里套了 span（TEXT 会拼出完整文字），
-    // 所以只要求元素可见、不在确认弹窗里、文字含「交卷」
+    // 所以只要求元素可见、不在确认弹窗里（只认精确弹窗类，别被页面容器的命名误伤）、文字含「交卷」
     const submitBtn = Array.from(document.querySelectorAll("a, button"))
-      .find((el) => isVisibleEl(el) && !el.closest(OUCHN_DIALOG_SELECTOR) && /交\s*卷/.test(TEXT(el)));
+      .find((el) => isVisibleEl(el) && !el.closest(OUCHN_DIALOG_EXACT) && /交\s*卷/.test(TEXT(el)));
     if (!submitBtn) {
       log("没找到交卷按钮，请在页面上手动交卷", "warning");
       return false;
@@ -23582,8 +23591,7 @@ const XS_EXT = (() => {
     let dialog = null;
     for (let i = 0; i < 15 && !dialog; i++) {
       await sleep(0.4);
-      dialog = Array.from(document.querySelectorAll(OUCHN_DIALOG_SELECTOR))
-        .find((el) => isVisibleEl(el) && /确定提交|提交试[卷题]|交卷/.test(TEXT(el)));
+      dialog = pickInnermostDialog(Array.from(document.querySelectorAll(OUCHN_DIALOG_BROAD)), /确定提交|提交试[卷题]|交卷/);
     }
       if (!dialog) {
         log("交卷确认弹窗没出现，请在页面上确认交卷", "warning");
@@ -23605,8 +23613,7 @@ const XS_EXT = (() => {
         const paperGone = () => !document.querySelector(".exam-paper .subjects-jit-display li.subject, .exam-paper li.subject, .everyQuest");
         for (let i = 0; i < 20; i++) {
           await sleep(0.5);
-          const popup = Array.from(document.querySelectorAll(OUCHN_DIALOG_SELECTOR))
-            .find((el) => isVisibleEl(el) && /失败|错误|异常|请重试|未作答|还有/.test(TEXT(el)));
+          const popup = pickInnermostDialog(Array.from(document.querySelectorAll(OUCHN_DIALOG_BROAD)), /失败|错误|异常|请重试|未作答|还有/);
           if (popup) {
             log("交卷后页面提示异常，可能没提交成功，请在页面上确认", "warning");
             return false;
