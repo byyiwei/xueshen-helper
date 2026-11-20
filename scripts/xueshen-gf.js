@@ -3953,7 +3953,13 @@ const MAX_RECORDS = 200;
             onload: (response) => {
               try {
                 const obj = JSON.parse(response.responseText || "{}");
-                if (obj.code === 202) { pollTask(taskId, tries + 1); return; }
+                // 202 = 任务还在跑；也不得无限轮询，否则任务卡死会把 start() 永久挂住，
+                // state.running 不复位、自动答题整个停摆（超星/智慧树/国开共用这条链路）
+                if (obj.code === 202) {
+                  if (tries < 120) { pollTask(taskId, tries + 1); return; }
+                  resolve(handleError$1("后台任务长时间未完成，已停止等待"));
+                  return;
+                }
                 finishTask(obj, response);
               } catch (e) {
                 resolve(handleError$1("后台任务响应解析失败"));
@@ -22930,7 +22936,19 @@ const XS_EXT = (() => {
         });
       }
       if (block.controls.length) return block.controls.some((input) => input.checked);
-      return block.options.some((opt) => /(^|[\s-])(active|selected|checked|is-checked|choose|chosen)([\s-]|$)/i.test(String(opt.el.className || "")));
+      // 没有 input 的点击式选项：先认 class 名，再认 aria 状态——
+      // 有些页面改版只换了选中标记（aria-checked/aria-selected），漏一层就会把已答题当未答，交卷被永久拦住
+      return block.options.some((opt) => {
+        if (/(^|[\s-])(active|selected|checked|is-checked|choose|chosen)([\s-]|$)/i.test(String(opt.el.className || ""))) return true;
+        try {
+          return opt.el.getAttribute("aria-checked") === "true"
+            || opt.el.getAttribute("aria-selected") === "true"
+            || opt.el.getAttribute("aria-pressed") === "true"
+            || opt.el.dataset && (opt.el.dataset.selected === "true" || opt.el.dataset.checked === "true" || opt.el.dataset.active === "true");
+        } catch (_) {
+          return false;
+        }
+      });
     };
 
     const registry = [];
@@ -23445,6 +23463,8 @@ const XS_EXT = (() => {
     // 自动作答失败（没搜到答案、没点上去）时，隔一分钟再补一轮，最多 3 轮
     let examTries = 0;
     let examNextAt = 0;
+    // 交卷重试独立计数：补答轮用 examTries，交卷失败重试用这个
+    let examSubmitTries = 0;
     const isOuchnExamPage = () => {
       try {
         // 新版考试页是 .exam-paper li.subject，老版学习网是 .everyQuest；两套都要能自动跑
@@ -23576,6 +23596,7 @@ const XS_EXT = (() => {
         examKey = key;
         examTries = 0;
         examNextAt = 0;
+        examSubmitTries = 0;
       }
       if (Date.now() < examNextAt || examTries >= 3) return;
       examBusy = true;
@@ -23612,13 +23633,22 @@ const XS_EXT = (() => {
           examNextAt = Infinity;
           log(`还有 ${left} 道题没填上，请手动处理后交卷`, "warning");
         } else {
-          examNextAt = Infinity;
           // 成功填满也要上报——否则后台只有失败样本，填充率统计不了；
           // 最后一轮 start() 已发过，这里只在中间轮提前收尾时补发
           if (reportHere) {
             try { reportAnswerSummary("ouchn", useQuestionStore().questionList); } catch (_) {}
           }
-          await submitExamAuto();
+          // 交卷失败（没找到按钮/弹窗没出现/页面没变化）隔 2 分钟再试一次，最多 2 次；
+          // 交卷不可逆，失败多半要人工看，不能像补答那样连试 3 轮
+          const submitted = await submitExamAuto();
+          if (!submitted && examSubmitTries < 2) {
+            examSubmitTries += 1;
+            examNextAt = Date.now() + 120e3;
+            log(`两分钟后自动重试交卷（第 ${examSubmitTries + 1}/3 次）`, "warning");
+          } else {
+            examNextAt = Infinity;
+            if (!submitted) log("交卷仍未成功，请手动确认", "warning");
+          }
         }
       } catch (e) {
         log("自动作答出错：" + String((e && e.message) || e).slice(0, 80));
