@@ -22683,13 +22683,15 @@ const XS_EXT = (() => {
             '[contenteditable="true"], .ql-editor, .ck-editor__editable, .edui-body-container[contenteditable], iframe'
           ))) {
             if (blanks.includes(el)) continue;
-            // iframe 编辑器（如 UEditor）：只认同源的，取它 body 当可写区域
+            // iframe 编辑器（如 UEditor）：只认同源的，可写区是里面的 contenteditable 元素或 body
             let target = el;
             if (el.tagName === "IFRAME") {
               try {
                 const inner = el.contentDocument;
-                if (!inner || !inner.body || inner.body.isContentEditable === false && !inner.querySelector('[contenteditable="true"]')) continue;
-                target = inner.body;
+                if (!inner || !inner.body) continue;
+                // UEditor 类编辑器的可写区是 iframe 里的 contenteditable 元素，不一定是 body 本身
+                target = inner.querySelector('[contenteditable="true"]') || (inner.body.isContentEditable ? inner.body : null);
+                if (!target) continue;
               } catch (_) { continue; }
             }
             if (!isShownControl(target)) continue;
@@ -22995,7 +22997,7 @@ const XS_EXT = (() => {
         // 章节标题只有标题没有作答区，自然放过；简答题的富文本/iframe 编辑器解析不出时一定会拦下
         unparsedQuestions = 0;
         if (isOuchnHost()) {
-          const subjectLis = Array.from(new Set(document.querySelectorAll(".exam-paper li.subject")));
+          const subjectLis = Array.from(new Set(document.querySelectorAll(".exam-paper li.subject, .everyQuest")));
           unparsedQuestions = subjectLis.filter((li) => {
             // 双向判断：题目块是 li 本身/在 li 里都算解析成功；block.el 是 li 的祖先（上溯过头）也不算漏题
             if (usable.some((block) => block.el === li || li.contains(block.el) || block.el.contains(li))) return false;
@@ -23163,20 +23165,21 @@ const XS_EXT = (() => {
       const answer = answerStore.get(index);
       // 页面本来就有答案、本轮没取到新答案的，以页面为准
       if (!answer || !answer.length) return true;
-      const matched = pickOptions(block, answer);
-      if (matched.unmatched.length) return false;
+      // 填空/简答没有 options，pickOptions 会把答案全塞进 unmatched，必须先走输入分支
       if (block.kind === "input") return block.inputs.every((input) => {
         const rich = richTextRead(input);
         if (rich !== null) return !!rich;
         return String(input.value || "").trim();
       });
+      const matched = pickOptions(block, answer);
+      if (matched.unmatched.length) return false;
       if (!block.controls || !block.controls.length) return true;
       const expected = matched.picked.slice();
       if (block.type !== "多选") expected.splice(1);
       if (!expected.length) return false;
       if (expected.some((opt) => opt.input && !opt.input.checked)) return false;
       return !(block.type === "多选"
-        && block.options.some((opt) => opt.input && opt.input.checked && expected.indexOf(opt) < 0));
+        && block.options.some((opt) => opt.input && !expected.includes(opt)));
     };
 
     // 国开考试页的试卷数据挂在 Angular scope 上，用它核对题目总数，防止还有题没渲染出来就交卷
@@ -23243,9 +23246,10 @@ const XS_EXT = (() => {
     const start = async (opts) => {
       const auto = !!(opts && opts.auto);
       if (state.running) return;
-      // 一卷一报只报最终轮：自动补答还会再来一轮的不报（partial），
-      // 手动点「开始答题」也不报（手动轮次只是重答，不是收尾），防止填充率被中间轮拉低
-      const summaryFinal = !auto || examNextAt === Infinity;
+      // 一卷一报由调用方决定是否上报（opts.reportSummary）：
+      // 自动补答的中间轮不报，只有 autoExamTick 判定不再重试的那轮才报；
+      // 这里不能自己读 examNextAt——它在 start() 返回之后才被置成 Infinity，当时读到的还是旧值
+      const reportSummary = !!(opts && opts.reportSummary);
       const usable = scan(true);
       if (!usable.length) {
         log("没有识别到题目，先打开作业或考试页面再试");
@@ -23397,9 +23401,9 @@ const XS_EXT = (() => {
         else log("核对完成，所有题目都已填上答案");
       }
       state.running = false;
-      // 国开一卷一报（只报最终轮，见 start 开头的 summaryFinal）：
+      // 国开一卷一报（是否上报由调用方传 opts.reportSummary，见 start 开头说明）：
       // 每题 code/msg/src 都在 questionStore 里，后台才能看到填充率与卡点
-      if (summaryFinal) {
+      if (reportSummary) {
         try { reportAnswerSummary("ouchn", useQuestionStore().questionList); } catch (_) {}
       }
       log(auto ? "本轮自动作答结束" : "本轮作答结束，请检查后手动提交");
@@ -23435,8 +23439,9 @@ const XS_EXT = (() => {
     let examNextAt = 0;
     const isOuchnExamPage = () => {
       try {
+        // 新版考试页是 .exam-paper li.subject，老版学习网是 .everyQuest；两套都要能自动跑
         return /(^|\.)ouchn\.(cn|edu\.cn)$/i.test(location.hostname)
-          && !!document.querySelector(".exam-paper .subjects-jit-display li.subject, .exam-paper li.subject");
+          && !!document.querySelector(".exam-paper .subjects-jit-display li.subject, .exam-paper li.subject, .everyQuest");
       } catch (_) {
         return false;
       }
@@ -23533,7 +23538,7 @@ const XS_EXT = (() => {
         log("已确认交卷，等待页面跳转");
         // 点完确定不等于交卷成功：站点存答案失败会停在原地，等页面离开答题页（或弹出新弹窗）才算数
         let leftPage = false;
-        const paperGone = () => !document.querySelector(".exam-paper .subjects-jit-display li.subject, .exam-paper li.subject");
+        const paperGone = () => !document.querySelector(".exam-paper .subjects-jit-display li.subject, .exam-paper li.subject, .everyQuest");
         for (let i = 0; i < 20; i++) {
           await sleep(0.5);
           const popup = Array.from(document.querySelectorAll(".confirmation-popup, .reveal-modal"))
@@ -23566,6 +23571,9 @@ const XS_EXT = (() => {
       }
       if (Date.now() < examNextAt || examTries >= 3) return;
       examBusy = true;
+      // 这是最后一轮（本地址第 3 次、或后面不会再重试）才上报答题小结；
+      // examNextAt 要等 start() 返回后才被改，start() 里读不到，只能在这先算好传进去
+      const isFinalTry = examTries >= 3;
       examTries += 1;
       try {
         const blocks = scan(true);
@@ -23573,17 +23581,24 @@ const XS_EXT = (() => {
         // 考试页自动作答时把面板切到「答题」，答案和进度直接展示出来
         try { useSettingStore().tabIndex = "2"; } catch (_) {}
         log("检测到考试页面，开始自动作答");
-        await start({ auto: true });
+        await start({ auto: true, reportSummary: isFinalTry });
         // 还有题没填完整就隔一分钟再来一轮；登录/密钥问题重试也没用，别反复打扰
         const left = registry.filter((block, index) => !blockOkay(block, index)).length;
         const authFail = (state.items || []).some((it) => /登录|密钥/.test(it.msg || ""));
         if (unparsedQuestions) {
+          if (!isFinalTry) {
+            // 中间轮因漏题提前终止：这轮就是收尾，小结在这里补发
+            try { reportAnswerSummary("ouchn", useQuestionStore().questionList); } catch (_) {}
+          }
           examNextAt = Infinity;
           log(`有 ${unparsedQuestions} 道题没识别出选项或输入框，补答也没用，请手动作答后再交卷`, "warning");
         } else if (left && !authFail && examTries < 3) {
           examNextAt = Date.now() + 60e3;
           log(`还有 ${left} 道题没填上，一分钟后自动补答（第 ${examTries + 1}/3 轮）`, "warning");
         } else if (left) {
+          if (!isFinalTry) {
+            try { reportAnswerSummary("ouchn", useQuestionStore().questionList); } catch (_) {}
+          }
           examNextAt = Infinity;
           log(`还有 ${left} 道题没填上，请手动处理后交卷`, "warning");
         } else {
