@@ -2473,6 +2473,13 @@
               platforms: WATCH_PLATFORM_KEYS,
               tips: "开启后进入课程页自动播放视频；倍速用上面的「视频倍速」，播完自动翻页用「自动切换章节」"
             },
+            skipWatchDone: {
+              text: "已完成任务自动跳过",
+              value: true,
+              type: "switch",
+              platforms: WATCH_PLATFORM_KEYS,
+              tips: "开启后，平台上已经完成的视频、课件不再重播，直接打开下一个没完成的任务；关闭则按顺序继续"
+            },
             forceClipboard: {
               text: "解除复制限制",
               value: true,
@@ -3116,7 +3123,7 @@
         return `${value}%`;
       };
       const closeAllAuto = () => {
-        const hasAnyEnabled = setting.config.basicConfig.autoSubmit.value || setting.config.basicConfig.autoChangeChapter.value || setting.config.basicConfig.skipFinishedChapter.value || setting.config.basicConfig.autoAnswer.value || setting.config.examConfig.autoSubmit.value || setting.config.basicConfig.autoRefresh.value || setting.config.basicConfig.watchAssist.value;
+        const hasAnyEnabled = setting.config.basicConfig.autoSubmit.value || setting.config.basicConfig.autoChangeChapter.value || setting.config.basicConfig.skipFinishedChapter.value || setting.config.basicConfig.autoAnswer.value || setting.config.examConfig.autoSubmit.value || setting.config.basicConfig.autoRefresh.value || setting.config.basicConfig.watchAssist.value || setting.config.basicConfig.skipWatchDone.value;
         const newState = !hasAnyEnabled;
         setting.config.basicConfig.autoSubmit.value = newState;
         setting.config.basicConfig.autoChangeChapter.value = newState;
@@ -3125,6 +3132,7 @@
         setting.config.examConfig.autoSubmit.value = newState;
         setting.config.basicConfig.autoRefresh.value = newState;
         setting.config.basicConfig.watchAssist.value = newState;
+        setting.config.basicConfig.skipWatchDone.value = newState;
       };
       return (_ctx, _cache) => {
         const _component_a_slider = vue.resolveComponent("a-slider");
@@ -21211,7 +21219,8 @@ const XS_EXT = (() => {
         speed: Math.min(4, Math.max(0.5, speed)),
         autoNext,
         autoScroll: autoNext,
-        enabled: basic.watchAssist ? !!basic.watchAssist.value : true
+        enabled: basic.watchAssist ? !!basic.watchAssist.value : true,
+        skipDone: basic.skipWatchDone ? !!basic.skipWatchDone.value : true
       };
     } catch (e) {
       return fallback;
@@ -21238,6 +21247,7 @@ const XS_EXT = (() => {
     let lastWatchDiagText = "";
     let lastEnterClickAt = 0;
     let pausedTicks = 0;
+    let disabledNoted = false;
     let lastPlayLoggedId = "";
     const log = (text) => {
       const line = `${(/* @__PURE__ */ new Date()).toLocaleTimeString()}  ${text}`;
@@ -21403,7 +21413,7 @@ const XS_EXT = (() => {
     };
     // 课程总览（地址是 #/）上 scope 里只有当前选中模块的活动，没法跨模块找视频。
     // 整门课程的活动一次拉齐：先试全量接口，拿不到再按模块拉
-    const ouchnAll = { videos: [], byId: {}, at: 0, loading: false };
+    const ouchnAll = { videos: [], list: [], byId: {}, at: 0, triedAt: 0, loading: false };
     const ouchnFetchAll = async (url) => {
       const controller = typeof AbortController === "function" ? new AbortController() : null;
       const timer = controller ? setTimeout(() => controller.abort(), 8000) : null;
@@ -21435,12 +21445,19 @@ const XS_EXT = (() => {
         if (!courseId) return ouchnAll.videos;
         const seen = /* @__PURE__ */ new Set();
         const videos = [];
+        const tasks = [];
+        const seenTasks = /* @__PURE__ */ new Set();
         const pushVideos = (data) => {
           const list = ((data && data.learning_activities) || []).concat((data && data.exams) || []);
           for (const activity of list) {
             if (!activity) continue;
             const id = String(activity.id || "");
             if (id && !ouchnAll.byId[id]) ouchnAll.byId[id] = activity;
+            // 视频和课件按课程顺序记下来，跳任务时不会漏掉课件
+            if (id && (activity.type === "online_video" || activity.type === "material") && !seenTasks.has(id)) {
+              seenTasks.add(id);
+              tasks.push(activity);
+            }
             if (activity.type !== "online_video") continue;
             if (!id || seen.has(id)) continue;
             seen.add(id);
@@ -21461,7 +21478,8 @@ const XS_EXT = (() => {
         }
         // 课程数据还没加载出来时结果是空的，不能缓存，等下一轮再拉
         ouchnAll.triedAt = Date.now();
-        if (videos.length) {
+        if (videos.length || tasks.length) {
+          if (tasks.length) ouchnAll.list = tasks;
           ouchnAll.videos = videos;
           ouchnAll.at = Date.now();
         }
@@ -21526,15 +21544,21 @@ const XS_EXT = (() => {
       return /\/learning-activity\/full-screen$/.test(path) || /\/course\/\d+\/ng$/.test(path) || /\/(course|learning-activity)\/?$/.test(path);
     };
     // 从当前活动往后找第一个没完成的视频任务
+    // 视频和课件都能自动打开，考试、作业、讨论这些不能替用户点
+    const ouchnAutoTask = (activity) => !!activity && (activity.type === "online_video" || activity.type === "material");
+    // 从当前任务往后找第一个没完成的视频或课件（按课程顺序）
     const ouchnNextVideo = (currentId) => {
-      const activities = ouchnActivities();
-      if (!activities.length) return null;
+      // 整门课程数据还没拉回来时先返回 null，让调用方走跨模块接口重新拉
+      const activities = (ouchnAll.list && ouchnAll.list.length) ? ouchnAll.list : null;
+      if (!activities) return null;
       let index = activities.findIndex((activity) => String(activity.id) === String(currentId));
       if (index < 0) index = -1;
       const ordered = activities.slice(index + 1).concat(activities.slice(0, index + 1));
+      const skipDone = readWatchSettings().skipDone;
       for (const activity of ordered) {
-        if (!activity || activity.type !== "online_video") continue;
-        if (ouchnIsFull(activity.id)) continue;
+        if (!ouchnAutoTask(activity)) continue;
+        if (skipDone && ouchnIsFull(activity.id)) continue;
+        if (ouchnIsLocked(activity)) continue;
         return activity;
       }
       return null;
@@ -21577,6 +21601,8 @@ const XS_EXT = (() => {
       }
       // 只在课件任务上翻页，视频、测验页面不碰
       if (!activity || activity.type !== "material") return "";
+      // 平台已经标记完成的课件不再重复打开，直接交给跳转逻辑
+      if (ouchnIsFull(id) && readWatchSettings().skipDone) return "skip";
       let frame = null;
       try {
         frame = Array.from(document.querySelectorAll("iframe")).find((item) => {
@@ -21642,17 +21668,20 @@ const XS_EXT = (() => {
       const prereqs = (activity && activity.prerequisites) || [];
       return prereqs.some((item) => !(item && item.completion_criterion && item.completion_criterion.has_completed));
     };
-    // 本模块没有下一个未完成视频时，跨模块找第一个没看完且已解锁的视频
+    // 本模块没有下一个未完成任务时，按整门课程顺序找第一个没看完且已解锁的视频或课件
     const ouchnNextGlobal = async (currentId) => {
-      const all = await ouchnLoadAllVideos();
+      await ouchnLoadAllVideos();
+      const all = (ouchnAll.list && ouchnAll.list.length) ? ouchnAll.list : ouchnAll.videos;
       if (!all.length) return null;
       let index = all.findIndex((activity) => String(activity.id) === String(currentId));
       if (index < 0) index = -1;
       const ordered = all.slice(index + 1).concat(all.slice(0, index + 1));
+      const skipDone = readWatchSettings().skipDone;
       for (const activity of ordered) {
-        if (!activity || activity.type !== "online_video") continue;
+        if (!ouchnAutoTask(activity)) continue;
         if (String(activity.id) === String(currentId)) continue;
-        if (ouchnIsFull(activity.id) || ouchnIsLocked(activity)) continue;
+        if (skipDone && ouchnIsFull(activity.id)) continue;
+        if (ouchnIsLocked(activity)) continue;
         return activity;
       }
       return null;
@@ -21871,15 +21900,15 @@ const XS_EXT = (() => {
           if (isOuchnWatch(profile)) {
             const pdfState = await ouchnReadPdf();
             if (pdfState) {
-              state.media = pdfState === "done" ? "课件已翻到最后一页" : "课件：正在自动翻页";
-              if (pdfState === "done" && Date.now() - ouchnPdfState.doneAt > 8000 && Date.now() - ouchn.lastOpenAt > 8000) {
+              state.media = pdfState === "done" ? "课件已翻到最后一页" : (pdfState === "skip" ? "课件已完成，跳过" : "课件：正在自动翻页");
+              if ((pdfState === "done" || pdfState === "skip") && Date.now() - ouchnPdfState.doneAt > 8000 && Date.now() - ouchn.lastOpenAt > 8000) {
                 const pdfId = ouchn.currentId || ouchnCurrentId();
                 const next = await ouchnNextGlobal(pdfId);
                 if (next) {
                   ouchn.lastOpenAt = Date.now();
-                  log(`${ouchnLabel(pdfId)}已翻到最后一页，接着看「${next.title || next.id}」`);
+                  log(pdfState === "skip" ? `${ouchnLabel(pdfId)}已完成，接着看「${next.title || next.id}」` : `${ouchnLabel(pdfId)}已翻到最后一页，接着看「${next.title || next.id}」`);
                   if (ouchnOpen(next)) {
-                    state.media = "已翻完课件，继续下一个视频";
+                    state.media = pdfState === "skip" ? "已跳过完成的课件" : "已翻完课件，继续下一个视频";
                     return;
                   }
                 }
@@ -21949,12 +21978,13 @@ const XS_EXT = (() => {
           // 国开：从课程总览（地址是 #/，没有当前任务）进来时，跨模块找第一个没看完且已解锁的视频打开
           if (isOuchnWatch(profile) && !ouchn.currentId && isOuchnOverview() && Date.now() - ouchn.lastOpenAt > 8000) {
             const allVideos = await ouchnLoadAllVideos();
-            const first = allVideos.find((activity) => !ouchnIsFull(activity.id) && !ouchnIsLocked(activity));
+            const tasks = (ouchnAll.list && ouchnAll.list.length) ? ouchnAll.list : allVideos;
+            const first = tasks.find((activity) => ouchnAutoTask(activity) && (settings.skipDone ? !ouchnIsFull(activity.id) : true) && !ouchnIsLocked(activity));
             if (first) {
               if (ouchnOpen(first)) {
                 ouchn.lastOpenAt = Date.now();
                 log(`进入课程总览，自动打开「${first.title || first.id}」`);
-                state.media = "已打开第一个未完成视频";
+                state.media = "已打开第一个未完成任务";
                 return;
               }
               // 页面还没完全就绪时切换可能不生效，一分钟提示一次就够
@@ -21968,7 +21998,7 @@ const XS_EXT = (() => {
               const modules2 = (menu2 && menu2.course && menu2.course.modules) || [];
               if (modules2.length) {
                 ouchn.lastSkipLogAt = Date.now();
-                log(allVideos.length ? "视频任务都已完成或还没解锁" : "课程里没有找到视频任务");
+                log(allVideos.length ? "视频和课件都已完成或还没解锁" : "课程里没有找到能自动学习的任务");
               }
             }
           }
@@ -21985,9 +22015,10 @@ const XS_EXT = (() => {
         const duration = Number(video.duration) || 0;
         const current = Number(video.currentTime) || 0;
         state.progress = duration > 0 ? `${formatTime(current)} / ${formatTime(duration)}（${Math.floor(current / duration * 100)}%）` : "";
-        // 国开：已完成的任务不再从头重播；没看完的从上次位置接着播
-        if (isOuchnWatch(profile) && ouchn.currentId && current < 2) {
-          if (ouchnIsFull(ouchn.currentId) && Date.now() - ouchn.arrivedAt > 3000) {
+        // 国开：已完成的任务不再重播（从头或停在结尾都跳过）；没看完的从上次位置接着播
+        if (isOuchnWatch(profile) && ouchn.currentId) {
+          const atEnd = duration > 0 && current >= duration - 3;
+          if (settings.skipDone && ouchnIsFull(ouchn.currentId) && (current < 2 || atEnd) && Date.now() - ouchn.arrivedAt > 3000) {
             const next = ouchnNextVideo(ouchn.currentId);
             if (next && Date.now() - ouchn.lastOpenAt > 6000) {
               ouchn.lastOpenAt = Date.now();
@@ -22019,7 +22050,7 @@ const XS_EXT = (() => {
             }
             return;
           }
-          if (!ouchn.resumed.has(ouchn.currentId) && Object.keys(ouchn.reads).length && duration > 0) {
+          if (current < 2 && !ouchn.resumed.has(ouchn.currentId) && Object.keys(ouchn.reads).length && duration > 0) {
             ouchn.resumed.add(ouchn.currentId);
             const resumeAt = ouchnResumeAt(ouchn.currentId);
             if (resumeAt > 5 && duration > resumeAt + 10) {
@@ -22122,8 +22153,8 @@ const XS_EXT = (() => {
           log(`第 ${state.segments} 节播完，已点下一节`);
           return;
         }
-        // 日志里带上正在看的视频名字，用户一眼能对上；名字还没拿到就等下一轮再记
-        if (isOuchnWatch(profile) && ouchn.currentId && lastPlayLoggedId !== ouchn.currentId) {
+        // 日志里带上正在看的视频名字，用户一眼能对上；名字还没拿到就等下一轮再记；已完成的直接跳过不记
+        if (isOuchnWatch(profile) && ouchn.currentId && !ouchnIsFull(ouchn.currentId) && lastPlayLoggedId !== ouchn.currentId) {
           if (ouchnActivityTitle(ouchn.currentId)) {
             lastPlayLoggedId = ouchn.currentId;
             log(`开始播放${ouchnLabel(ouchn.currentId)}`);
@@ -22159,7 +22190,15 @@ const XS_EXT = (() => {
       const profile = xsWatchProfileFor(location.hostname);
       if (!profile) return false;
       // 设置里的「视频助手」开着才自动开始，关掉后连进入页面都不动
-      if (!readWatchSettings().enabled) return false;
+      if (!readWatchSettings().enabled) {
+        // 用户关掉时日志里说一声，免得以为脚本没反应
+        if (!disabledNoted) {
+          disabledNoted = true;
+          log("视频助手已关闭，需要时到设置里打开");
+        }
+        return false;
+      }
+      disabledNoted = false;
       return start(profile);
     } };
     // 方便在控制台排查视频助手（只读接口，不影响正常运行）
@@ -25231,6 +25270,18 @@ const XS_EXT = (() => {
             }
           };
           setTimeout(kickAutoStart, 0);
+        } catch (e) {
+        }
+        // 在设置里开关「视频助手」时立即生效，并在日志里说明
+        try {
+          const watchSwitch = useSettingStore().config.basicConfig.watchAssist;
+          vue.watch(() => watchSwitch && watchSwitch.value, (enabled) => {
+            if (enabled) {
+              xsWatch.autoStart();
+            } else if (xsWatch.state.running) {
+              xsWatch.stop("视频助手已关闭，不再自动播放");
+            }
+          });
         } catch (e) {
         }
         // >>> FX-STRIP:auto-update
