@@ -22926,11 +22926,20 @@ const XS_EXT = (() => {
           lastQuestionSig = sig;
           answerStore.clear();
         }
-        // 国开：页面上有题目节点却没识别出选项/输入框的，记下来（通常是简答富文本），不能自动交卷
+        // 国开：页面上有题目节点却没识别出选项/输入框的，记下来（通常是简答富文本），不能自动交卷。
+        // 不再按 class 排除章节标题，改为「有作答区却没解析出来才算漏题」：
+        // 章节标题只有标题没有作答区，自然放过；简答题的富文本/iframe 编辑器解析不出时一定会拦下
         unparsedQuestions = 0;
         if (isOuchnHost()) {
-          const subjectLis = Array.from(new Set(document.querySelectorAll(".exam-paper li.subject:not(.text)")));
-          unparsedQuestions = subjectLis.filter((li) => !usable.some((block) => block.el === li || li.contains(block.el))).length;
+          const subjectLis = Array.from(new Set(document.querySelectorAll(".exam-paper li.subject")));
+          unparsedQuestions = subjectLis.filter((li) => {
+            if (usable.some((block) => block.el === li || li.contains(block.el))) return false;
+            try {
+              return !!li.querySelector(".subject-body, .subject-options, textarea, input, iframe, [contenteditable]");
+            } catch (_) {
+              return false;
+            }
+          }).length;
         }
         state.total = usable.length;
         if (!silent) {
@@ -23383,7 +23392,10 @@ const XS_EXT = (() => {
         log(`还有 ${Math.max(unfinished, domLeft)} 道题没填完整，先不自动交卷`, "warning");
         return false;
       }
-      const submitBtn = findVisibleByText("a, button", /^交卷$/);
+      // 交卷按钮文案不一定是纯「交卷」：可能是「立即交卷」「交 卷」或按钮里套了 span（TEXT 会拼出完整文字），
+      // 所以只要求元素可见、不在确认弹窗里、文字含「交卷」
+      const submitBtn = Array.from(document.querySelectorAll("a, button"))
+        .find((el) => isVisibleEl(el) && !el.closest(".confirmation-popup, .reveal-modal") && /交\s*卷/.test(TEXT(el)));
       if (!submitBtn) {
         log("没找到交卷按钮，请在页面上手动交卷", "warning");
         return false;
@@ -23395,7 +23407,7 @@ const XS_EXT = (() => {
       for (let i = 0; i < 15 && !dialog; i++) {
         await sleep(0.4);
         dialog = Array.from(document.querySelectorAll(".confirmation-popup, .reveal-modal"))
-          .find((el) => isVisibleEl(el) && /确定提交试[卷题]/.test(TEXT(el)));
+          .find((el) => isVisibleEl(el) && /确定提交|提交试[卷题]|交卷/.test(TEXT(el)));
       }
       if (!dialog) {
         log("交卷确认弹窗没出现，请在页面上确认交卷", "warning");
@@ -23406,11 +23418,30 @@ const XS_EXT = (() => {
         log("交卷弹窗提示还有未作答的题，已停止自动交卷，请检查页面", "warning");
         return false;
       }
-      const okBtn = Array.from(dialog.querySelectorAll("a, button")).find((el) => /^确定$/.test(TEXT(el)));
+      // 确定按钮文案可能是「确定」「提 交」「确认提交」等，匹配含关键词的第一个按钮
+      const okBtn = Array.from(dialog.querySelectorAll("a, button"))
+        .find((el) => isVisibleEl(el) && /^(确\s*定|确\s*认|提\s*交|确认提交|确定提交)$/.test(TEXT(el)));
       if (okBtn) {
         okBtn.click();
-        log("已确认交卷");
-        await sleep(2);
+        log("已确认交卷，等待页面跳转");
+        // 点完确定不等于交卷成功：站点存答案失败会停在原地，等页面离开答题页（或弹出新弹窗）才算数
+        let leftPage = false;
+        const paperGone = () => !document.querySelector(".exam-paper .subjects-jit-display li.subject, .exam-paper li.subject");
+        for (let i = 0; i < 20; i++) {
+          await sleep(0.5);
+          const popup = Array.from(document.querySelectorAll(".confirmation-popup, .reveal-modal"))
+            .find((el) => isVisibleEl(el) && /失败|错误|异常|请重试|未作答|还有/.test(TEXT(el)));
+          if (popup) {
+            log("交卷后页面提示异常，可能没提交成功，请在页面上确认", "warning");
+            return false;
+          }
+          if (paperGone() || !isOuchnExamPage()) { leftPage = true; break; }
+        }
+        if (!leftPage) {
+          log("点击确定后 10 秒页面没有变化，交卷可能没成功，请在页面上确认", "warning");
+          return false;
+        }
+        log("交卷成功，页面已离开答题页");
         return true;
       }
       log("交卷弹窗里没找到确定按钮，请在页面上确认", "warning");
