@@ -13355,7 +13355,7 @@ const MAX_RECORDS = 200;
           try {
             if (window.__XSReportPageIssue) {
               window.__XSReportPageIssue({
-                page_type: "zhs-exam",
+                page_type: "zhs-web",
                 stage: "detect",
                 reason_code: after.length ? "native_check_unfixed" : "native_check_fixed",
                 selector: "isAllNative",
@@ -13363,6 +13363,28 @@ const MAX_RECORDS = 200;
                 found: {
                   before: before.join(","),
                   after: after.join(","),
+                  // attachShadow 被改时，光看 before/after 分不清是快照本身不干净，
+                  // 还是包装挂在 HTMLElement.prototype / body 实例上，下次上报直接带这 4 个字段
+                  snapshotNative: isNativeFn(NATIVE_SNAPSHOT.attachShadow),
+                  bodyOwnProp: (() => {
+                    try { return Object.prototype.hasOwnProperty.call(document.body || {}, "attachShadow"); } catch (_) { return false; }
+                  })(),
+                  htmlProtoOwnProp: (() => {
+                    try { return Object.prototype.hasOwnProperty.call(w.HTMLElement.prototype, "attachShadow"); } catch (_) { return false; }
+                  })(),
+                  toStringHead: (() => {
+                    try {
+                      const effective = (() => {
+                        try {
+                          if (Object.prototype.hasOwnProperty.call(document.body || {}, "attachShadow")) return document.body.attachShadow;
+                        } catch (_) {}
+                        return w.Element && w.Element.prototype.attachShadow;
+                      })();
+                      return typeof effective === "function" ? Function.prototype.toString.call(effective).slice(0, 100) : "";
+                    } catch (_) {
+                      return "";
+                    }
+                  })(),
                   host: String(location.hostname || "")
                 },
                 signature: before.join(",")
