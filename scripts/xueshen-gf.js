@@ -21283,6 +21283,17 @@ const XS_EXT = (() => {
       play: [".screen-player-btn-icon.icon-play-sp-fill", "[class*=play]"],
       next: [".btn-next"],
       verified: true
+    },
+    {
+      // 青书学堂学历课程视频页（degree.qingshuxuetang.com/shdx/Student/Course/CourseShow）
+      // 切节靠整页跳转改 nodeId（onMenuClick 内部就是 location.assign），不用「下一节」按钮
+      id: "qs-degree",
+      name: "青书学堂",
+      test: (host) => /(^|\.)qingshuxuetang\.com$/.test(host),
+      play: [".vjs-big-play-button", "[class*=big-play]", "[class*=play]"],
+      next: [],
+      doc: false,
+      verified: true
     }
   ];
   const xsWatchProfileFor = (hostname) => XS_WATCH_PROFILES.find((profile) => profile.test(hostname || location.hostname)) || null;
@@ -21464,6 +21475,111 @@ const XS_EXT = (() => {
       replayed: new Set()
     };
     const isOuchnWatch = (profile) => !!profile && (profile.id === "ouchn" || profile.id === "ouchn-syxy");
+    // ===== 青书学堂（degree.qingshuxuetang.com）视频助手状态 =====
+    // 菜单节点 = #lessonList a[id^="courseware-"]（id 形如 courseware-kcjs_2_2）
+    // 完成度 = GetStudyRecordAndScore 的 studyRecordList（nodeId → playerProgress，单位秒）
+    // 切节 = 整页跳转 CourseShow?...&nodeId=X（页面自己的 onMenuClick 就是 location.assign）
+    // 防挂机 = 每 5 分钟弹 .ui-dialog-confirm「确认是否在观看视频」，点确定自动续播；
+    //          弹窗后 3 分钟不点会 studyEnd（本次学习记录作废），所以必须自动点
+    const qsWatch = {
+      records: {},        // nodeId -> { playerProgress, accumulativeTime, studyTimes }
+      recordsAt: 0,       // 上次拉学习记录时间
+      currentId: "",      // 当前 nodeId
+      arrivedAt: 0,       // 进入当前节点的时间
+      lastOpenAt: 0,      // 上次切节时间
+      endedAt: 0,         // 视频播完时间（等平台确认用）
+      lastSkipLogAt: 0,
+      confirmedAt: 0,     // 上次点防挂机弹窗时间
+      teachplanCourseId: ""
+    };
+    const isQsWatch = (profile) => !!profile && profile.id === "qs-degree";
+    const qsNodeId = () => {
+      const match = String(location.search || "").match(/[?&]nodeId=([\w-]+)/);
+      return match ? match[1] : "";
+    };
+    const qsMenuNodes = () => Array.from(document.querySelectorAll('#lessonList a[id^="courseware-"]'))
+      .map((a) => ({ id: String(a.id).replace(/^courseware-/, ""), title: (a.textContent || "").trim() }))
+      .filter((n) => n.id);
+    // 青书完成判定：playerProgress（已播秒数）达到视频时长的 95% 算看完。
+    // 没有时长信息（记录里没这个节点）时只要累积时长超过 60 秒也认为播过——青书没有显式"完成"字段，
+    // 平台按播放位置记账，跳过判断保守一点，宁可重播也不漏看
+    const qsIsDone = (nodeId, duration) => {
+      const rec = qsWatch.records[nodeId];
+      if (!rec) return false;
+      if (duration > 0 && rec.playerProgress >= duration * 0.95) return true;
+      return false;
+    };
+    // 拉学习记录（页面上有 jQuery 和登录态，直接 $.get；无需 sign 签名）
+    // teachPlanCourseId 不在地址里，是内联脚本 getLastPlayerTime('3580',...) 的字面量，正则抓
+    const qsTeachplanCourseId = () => {
+      if (qsWatch.teachplanCourseId) return qsWatch.teachplanCourseId;
+      try {
+        const txts = Array.from(document.scripts).filter((s) => !s.src).map((s) => s.text || "").join("\n");
+        const m = txts.match(/getLastPlayerTime\(['"]?(\d+)['"]?/);
+        if (m) qsWatch.teachplanCourseId = m[1];
+      } catch (e) { /* ignore */ }
+      return qsWatch.teachplanCourseId || "";
+    };
+    const qsRefreshRecords = (force) => {
+      if (!force && Date.now() - qsWatch.recordsAt < 30000) return Promise.resolve();
+      const periodId = (String(location.search || "").match(/[?&]periodId=(\d+)/) || [])[1];
+      const tpcid = qsTeachplanCourseId();
+      if (!periodId || !tpcid) return Promise.resolve();
+      return new Promise((resolve) => {
+        try {
+          const jq = (_unsafeWindow || window).jQuery || window.jQuery;
+          if (!jq) return resolve();
+          jq.get("/shdx/Student/Course/GetStudyRecordAndScore?teachPlanCourseId=" + tpcid + "&periodId=" + periodId + "&_=" + (Date.now() - 100), (j) => {
+            try {
+              const list = (j && j.data && j.data.studyRecordList) || [];
+              const next = {};
+              list.forEach((r) => {
+                if (r && r.nodeId) {
+                  next[String(r.nodeId)] = {
+                    playerProgress: Number(r.playerProgress) || 0,
+                    accumulativeTime: Number(r.accumulativeTime) || 0,
+                    studyTimes: Number(r.studyTimes) || 0
+                  };
+                }
+              });
+              qsWatch.records = next;
+              qsWatch.recordsAt = Date.now();
+            } catch (e) { /* ignore */ }
+            resolve();
+          }).fail(() => resolve());
+        } catch (e) { resolve(); }
+      });
+    };
+    // 切节：整页跳转（页面 onMenuClick 内部就是 location.assign）
+    const qsOpen = (nodeId) => {
+      try {
+        const url = new URL(location.href);
+        url.searchParams.set("nodeId", nodeId);
+        location.assign(url.href);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    };
+    // 下一个节点：按菜单顺序找当前之后第一个没看完的；没有就回头找第一个没看完的
+    const qsNextNode = (currentId, duration) => {
+      const nodes = qsMenuNodes();
+      if (!nodes.length) return null;
+      const notDone = (n) => {
+        if (n.id === currentId && duration > 0) return false; // 当前这节播完了别再选自己
+        return !qsIsDone(n.id, duration);
+      };
+      const idx = nodes.findIndex((n) => n.id === currentId);
+      for (let i = idx + 1; i < nodes.length; i += 1) {
+        if (notDone(nodes[i])) return nodes[i];
+      }
+      if (readWatchSettings().skipDone) return null; // 跳过已完成开着：全做完就停
+      // 重看模式：从头找第一个（当前节除外）
+      for (const n of nodes) {
+        if (n.id !== currentId && notDone(n)) return n;
+      }
+      return null;
+    };
     const ouchnCourseId = () => {
       const match = String(location.pathname || "").match(/\/course\/(\d+)/);
       return match ? match[1] : "";
@@ -22051,6 +22167,39 @@ const XS_EXT = (() => {
             pausedTicks = 0;
           }
         }
+        // 青书：跟随地址里的 nodeId，进新节点时重置；学习记录 30 秒刷一次
+        if (isQsWatch(profile)) {
+          await qsRefreshRecords();
+          const qsId = qsNodeId();
+          if (!qsId) {
+            qsWatch.currentId = "";
+            qsWatch.endedAt = 0;
+          } else if (qsId !== qsWatch.currentId) {
+            qsWatch.currentId = qsId;
+            qsWatch.arrivedAt = Date.now();
+            qsWatch.endedAt = 0;
+            qsWatch.lastSkipLogAt = 0;
+            pausedTicks = 0;
+          }
+        }
+        // 青书防挂机弹窗：每 5 分钟弹「确认是否在观看视频」并暂停播放，3 分钟不点本次记录作废。
+        // 必须自动点确定，点了页面自己会续播并重排下一个 5 分钟
+        if (isQsWatch(profile)) {
+          const confirmDlg = Array.from(document.querySelectorAll(".ui-dialog.ui-dialog-confirm"))
+            .find((el) => el.offsetParent !== null);
+          if (confirmDlg) {
+            const btn = Array.from(confirmDlg.querySelectorAll("button"))
+              .find((b) => /确定|确认/.test(b.textContent || ""));
+            if (btn && Date.now() - qsWatch.confirmedAt > 4000) {
+              qsWatch.confirmedAt = Date.now();
+              try {
+                btn.click();
+                log("已自动确认「是否在观看视频」弹窗，继续播放");
+              } catch (e) { /* ignore */ }
+              return;
+            }
+          }
+        }
         if (handleQuizPopup(profile)) return;
         // 国开切到课件/测验后，上一个视频的播放器可能还挂在页面里，别拿它当当前视频
         let video = findVideo();
@@ -22060,6 +22209,11 @@ const XS_EXT = (() => {
         }
         if (!video) {
           state.progress = "";
+          // 青书：地址里有 nodeId 但还没挂载播放器（视频节点），面板提示等待；非视频节点（文档/图文）页面自己记进度
+          if (isQsWatch(profile)) {
+            state.media = qsWatch.currentId ? "等待视频加载" : "当前页面没有视频";
+            return;
+          }
           // 国开课件（PDF/PPT）：自动翻页，翻到底后接着找下一个没完成的视频
           if (isOuchnWatch(profile)) {
             const pdfState = await ouchnReadPdf();
@@ -22187,6 +22341,27 @@ const XS_EXT = (() => {
         const duration = Number(video.duration) || 0;
         const current = Number(video.currentTime) || 0;
         state.progress = duration > 0 ? `${formatTime(current)} / ${formatTime(duration)}（${Math.floor(current / duration * 100)}%）` : "";
+        // 青书：平台按播放位置记账（playerProgress），已完成（进度达标且停在开头/结尾）的跳到下一节
+        if (isQsWatch(profile) && qsWatch.currentId) {
+          const qsAtEnd = duration > 0 && current >= duration - 3;
+          const qsDone = qsIsDone(qsWatch.currentId, duration);
+          if (settings.skipDone && qsDone && (current < 2 || qsAtEnd) && Date.now() - qsWatch.arrivedAt > 3000 && Date.now() - qsWatch.lastOpenAt > 6000) {
+            const next = qsNextNode(qsWatch.currentId, duration);
+            if (next) {
+              qsWatch.lastOpenAt = Date.now();
+              log(`青书：${qsWatch.currentId} 已看完，切到「${next.title || next.id}」`);
+              state.status = "已跳过完成的视频";
+              qsOpen(next.id);
+              return;
+            }
+            state.status = "本课程视频已完成";
+            if (Date.now() - qsWatch.lastSkipLogAt > 60000) {
+              qsWatch.lastSkipLogAt = Date.now();
+              log("青书：菜单里的视频都看完了，视频助手待命");
+            }
+            return;
+          }
+        }
         // 国开：已完成的任务不再重播（从头或停在结尾都跳过）；没看完的从上次位置接着播
         if (isOuchnWatch(profile) && ouchn.currentId) {
           const atEnd = duration > 0 && current >= duration - 3;
@@ -22254,6 +22429,55 @@ const XS_EXT = (() => {
             state.status = "等待下一页加载";
             return;
           }
+          // 青书：播完后先刷新学习记录，等平台把 playerProgress 记到位再切节，避免白看
+          if (isQsWatch(profile) && qsWatch.currentId) {
+            if (!qsWatch.endedAt) qsWatch.endedAt = Date.now();
+            const qsWaited = Date.now() - qsWatch.endedAt;
+            if (qsWaited < 2500) {
+              state.status = "等待平台确认完成";
+              return;
+            }
+            await qsRefreshRecords(true);
+            const rec = qsWatch.records[qsWatch.currentId];
+            const progressOk = rec && duration > 0 && rec.playerProgress >= duration * 0.95;
+            if (progressOk) {
+              const next = qsNextNode(qsWatch.currentId, duration);
+              if (next) {
+                if (Date.now() - qsWatch.lastOpenAt > 6000) {
+                  qsWatch.lastOpenAt = Date.now();
+                  log(`青书：${qsWatch.currentId} 已确认看完，切到「${next.title || next.id}」`);
+                  state.segments += 1;
+                  prefs.segments = state.segments;
+                  xsWatchWritePrefs(prefs);
+                  qsOpen(next.id);
+                }
+                state.status = "等待下一节加载";
+              } else {
+                state.status = "本课程视频已完成";
+                if (Date.now() - qsWatch.lastSkipLogAt > 60000) {
+                  qsWatch.lastSkipLogAt = Date.now();
+                  log("青书：菜单里的视频都看完了，视频助手待命");
+                }
+              }
+              return;
+            }
+            if (qsWaited < 20000) {
+              state.status = "等待平台确认完成";
+              return;
+            }
+            if (qsWaited < 45000) {
+              state.status = "等待平台确认完成";
+              return;
+            }
+            // 平台长时间没记账：不能无限等也不能无脑切，60 秒提示一次继续等（和国开一致——
+            // 实测切走会反复重看同一节）
+            if (Date.now() - qsWatch.lastSkipLogAt > 60000) {
+              qsWatch.lastSkipLogAt = Date.now();
+              log(`青书：${qsWatch.currentId} 播完已超过 ${Math.round(qsWaited / 1000)} 秒平台仍未记账（playerProgress=${rec ? rec.playerProgress : "无"}），暂停切节等待`, "warning");
+            }
+            state.status = "等待平台确认完成";
+            return;
+          }
           // 国开：先等平台把这一节点确认成“已完成”，再跳到下一个没看完的视频
           if (isOuchnWatch(profile) && ouchn.currentId) {
             if (!ouchn.endedAt) ouchn.endedAt = Date.now();
@@ -22314,6 +22538,17 @@ const XS_EXT = (() => {
               if (!readWatchSettings().skipDone) ouchn.replayed.delete(String(ouchn.currentId));
               log(`视频已播完但平台未确认完成（等了 ${Math.round(waited / 1000)} 秒，completeness=${full}，`
                 + `播放 ${Math.round(video.currentTime)}/${Math.round(video.duration || 0)} 秒），继续下一节`, "warning");
+            } else {
+              // 平台长时间没记账（waited >= 22.5 秒）：不能再落到下面 clickNext 无限翻页——
+              // 实测会每 11 秒点一次「下一节」，日志刷屏、segments 乱涨。
+              // 这里每 60 秒记一条日志继续等，平台记账后 ouchnRefreshReads 会把状态带回来
+              if (Date.now() - ouchn.lastSkipLogAt > 60000) {
+                ouchn.lastSkipLogAt = Date.now();
+                log(`${ouchnLabel(ouchn.currentId)}播完已超过 ${Math.round(waited / 1000)} 秒平台仍未确认完成，`
+                  + `暂停翻页等待（可能需要刷新页面）`, "warning");
+              }
+              state.status = "等待平台确认完成";
+              return;
             }
           }
           const clicked = clickNext(profile);
@@ -22341,6 +22576,10 @@ const XS_EXT = (() => {
         }
         if (video.paused) {
           pausedTicks += 1;
+          // 青书：弹窗确认后页面自己会 restorePlayer，但偶尔续播失败；连续 3 次还暂停就补一次播放
+          if (pausedTicks === 3 && isQsWatch(profile) && Date.now() - qsWatch.confirmedAt < 15000) {
+            log("青书：确认弹窗后没有自动续播，补一次播放");
+          }
           if (pausedTicks === 3 && (profile.id === "ouchn" || profile.id === "ouchn-syxy")) {
             log(`${ouchnLabel(ouchn.currentId)}没有自动起播，正在重试`);
           }
@@ -23573,10 +23812,18 @@ const XS_EXT = (() => {
     // 不然 .modal 包着整个答题区时 TEXT 会带上整卷文字，「未作答」误判就来了
     const OUCHN_DIALOG_EXACT = ".confirmation-popup, .reveal-modal, .el-dialog__wrapper, .el-dialog, .layui-layer, .modal-dialog, .modal";
     const OUCHN_DIALOG_BROAD = OUCHN_DIALOG_EXACT + ", [class*='dialog'], [class*='Dialog'], [class*='modal'], [class*='Modal'], [class*='popup'], [class*='Popup'], [class*='layer'], [class*='Layer']";
-    // 从候选里挑最内层弹窗：文本最短的（外层容器把整卷文字都包着，文本长得多）
-    const pickInnermostDialog = (list, pattern) => list
-      .filter((el) => isVisibleEl(el) && pattern.test(TEXT(el)))
-      .sort((a, b) => TEXT(a).length - TEXT(b).length)[0] || null;
+    // 从候选里挑最内层弹窗：文本最短的（外层容器把整卷文字都包着，文本长得多）。
+    // 必须能装下按钮（querySelector('a,button') 命中）——layui 的确认按钮 class 含 layer，
+    // 文案「确定提交」也含关键词，比弹窗容器还短，不加这条会把按钮本身当成弹窗挑走
+    const pickInnermostDialog = (list, pattern) => {
+      const usable = list.filter((el) => isVisibleEl(el) && pattern.test(TEXT(el)) && el.querySelector("a, button"));
+      if (usable.length) {
+        return usable.sort((a, b) => TEXT(a).length - TEXT(b).length)[0];
+      }
+      // 兜底：没有能装按钮的候选（比如提示型弹窗），退回纯文本最短逻辑
+      return list.filter((el) => isVisibleEl(el) && pattern.test(TEXT(el)))
+        .sort((a, b) => TEXT(a).length - TEXT(b).length)[0] || null;
+    };
     // 交卷按钮文案不一定是纯「交卷」：可能是「立即交卷」「交 卷」或按钮里套了 span（TEXT 会拼出完整文字），
     // 所以只要求元素可见、不在确认弹窗里（只认精确弹窗类，别被页面容器的命名误伤）、文字含「交卷」
     const submitBtn = Array.from(document.querySelectorAll("a, button"))
