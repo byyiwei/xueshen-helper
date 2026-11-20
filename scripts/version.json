@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.1.1",
+    "version": "6.1.2",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.1.1 视频任务点确认等待放宽、iframe 超时不再卡死整章、智慧树弹题逐题作答、答案按行拆分逐空对应、景德镇并入主面板"
+    "changelog": "v6.1.2 新增青书学堂视频助手（倍速/防挂机/自动切节）、超星英文题型与罗马数字答案修复、智慧树多空填空识别修复、检测异常上报去重"
   },
   "xueshen-gf": {
-    "version": "6.1.1",
+    "version": "6.1.2",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.1.1 视频任务点确认等待放宽、iframe 超时不再卡死整章、智慧树弹题逐题作答、答案按行拆分逐空对应、景德镇并入主面板"
+    "changelog": "v6.1.2 新增青书学堂视频助手（倍速/防挂机/自动切节）、超星英文题型与罗马数字答案修复、智慧树多空填空识别修复、检测异常上报去重"
   }
 }

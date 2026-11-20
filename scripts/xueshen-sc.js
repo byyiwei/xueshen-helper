@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.1.1
+// @version      6.1.2
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -15,7 +15,14 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
-// @changelog    v6.1.1 (2026-11-19)
+// @changelog    v6.1.2 (2026-11-20)
+// @changelog    1. 新增青书学堂视频助手：自动播放、倍速、防挂机弹窗自动确认、播完等平台记账再自动切下一节
+// @changelog    2. 修复青书多节连播时用当前视频时长判断其他节点完成度导致漏课的问题
+// @changelog    3. 超星支持英文课程题型：Multiple Choice / Single Choice / True or False 等不再整题跳过
+// @changelog    4. 修复答案写成罗马数字（I、II、IV）时匹配不上选项导致整题放弃的问题
+// @changelog    5. 修复智慧树填空客观题输入框与题干分离时只识别到 1 个空的问题
+// @changelog    6. 检测项异常修不回时不再每分钟重复上报，只在首次发现或异常项变化时上报
+// @changelog    7. 青书学堂答题记录纳入一卷一报，后台能看到青书的作答小结
 // @changelog    1. 超星视频任务点确认等待放宽到20秒，刷新后复查同样给足时间，网络慢时不再误判未完成而整段重播
 // @changelog    2. 修复超星任务链因 iframe 一直加载不完而整章卡住：等待15秒超时后继续处理，同时异常日志直接带上具体原因
 // @changelog    3. 智慧树课中弹题有多道题时逐题作答，一个选项都没点上时不再误报完成
