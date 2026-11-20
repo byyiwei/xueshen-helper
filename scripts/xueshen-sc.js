@@ -9178,7 +9178,7 @@ const MAX_RECORDS = 200;
           const usesToggleOptions = (question) => {
             try {
               return !!(question && question.element && question.element.querySelector(
-                '[onclick*="addChoice"], [onclick*="toggleChoice"], [onclick*="switchChoice"]'
+                '[onclick*="addChoice"], [onclick*="toggleChoice"], [onclick*="switchChoice"], [role="checkbox"], [role="radio"]'
               ));
             } catch (_) {
               return false;
