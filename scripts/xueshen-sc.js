@@ -23179,7 +23179,7 @@ const XS_EXT = (() => {
       if (!expected.length) return false;
       if (expected.some((opt) => opt.input && !opt.input.checked)) return false;
       return !(block.type === "多选"
-        && block.options.some((opt) => opt.input && !expected.includes(opt)));
+        && block.options.some((opt) => opt.input && opt.input.checked && !expected.includes(opt)));
     };
 
     // 国开考试页的试卷数据挂在 Angular scope 上，用它核对题目总数，防止还有题没渲染出来就交卷
@@ -23196,10 +23196,15 @@ const XS_EXT = (() => {
       }
     };
     // 总数这道防线只在能读到 Angular scope 时生效；读不到时记一条日志，
-    // 不然国开换前端后这道检查会静默失效，谁也不知道
+    // 不然国开换前端后这道检查会静默失效，谁也不知道。
+    // 老版学习网页面（无 .exam-paper）本来就取不到 scope，属预期情况，只在同一地址第一次交卷时提醒一次
+    let examTotalWarnedFor = "";
     const ouchnExamTotalLogged = () => {
       const total = ouchnExamTotal();
-      if (!total && isOuchnExamPage()) log("读不到试卷总题数（Angular scope 拿不到），「分页漏题」检查跳过", "warning");
+      if (!total && isOuchnExamPage() && examTotalWarnedFor !== location.href) {
+        examTotalWarnedFor = location.href;
+        log("读不到试卷总题数（Angular scope 拿不到，老版页面属正常），「分页漏题」检查跳过", "warning");
+      }
       return total;
     };
 
@@ -23571,9 +23576,9 @@ const XS_EXT = (() => {
       }
       if (Date.now() < examNextAt || examTries >= 3) return;
       examBusy = true;
-      // 这是最后一轮（本地址第 3 次、或后面不会再重试）才上报答题小结；
-      // examNextAt 要等 start() 返回后才被改，start() 里读不到，只能在这先算好传进去
-      const isFinalTry = examTries >= 3;
+      // examTries 在下面自增；进 start() 前先算「自增后是不是第 3 次」（也就是最后一轮），
+      // 最后一轮才让 start() 发答题小结，避免中间轮拉低填充率
+      const isFinalTry = examTries + 1 >= 3;
       examTries += 1;
       try {
         const blocks = scan(true);
@@ -23585,9 +23590,11 @@ const XS_EXT = (() => {
         // 还有题没填完整就隔一分钟再来一轮；登录/密钥问题重试也没用，别反复打扰
         const left = registry.filter((block, index) => !blockOkay(block, index)).length;
         const authFail = (state.items || []).some((it) => /登录|密钥/.test(it.msg || ""));
+        // 中间轮（isFinalTry=false）走到任何「不再重试」的分支，这轮就是收尾，小结在这里补发；
+        // 最后一轮的小结由 start() 自己发，避免重复
+        const reportHere = !isFinalTry;
         if (unparsedQuestions) {
-          if (!isFinalTry) {
-            // 中间轮因漏题提前终止：这轮就是收尾，小结在这里补发
+          if (reportHere) {
             try { reportAnswerSummary("ouchn", useQuestionStore().questionList); } catch (_) {}
           }
           examNextAt = Infinity;
@@ -23596,13 +23603,18 @@ const XS_EXT = (() => {
           examNextAt = Date.now() + 60e3;
           log(`还有 ${left} 道题没填上，一分钟后自动补答（第 ${examTries + 1}/3 轮）`, "warning");
         } else if (left) {
-          if (!isFinalTry) {
+          if (reportHere) {
             try { reportAnswerSummary("ouchn", useQuestionStore().questionList); } catch (_) {}
           }
           examNextAt = Infinity;
           log(`还有 ${left} 道题没填上，请手动处理后交卷`, "warning");
         } else {
           examNextAt = Infinity;
+          // 成功填满也要上报——否则后台只有失败样本，填充率统计不了；
+          // 最后一轮 start() 已发过，这里只在中间轮提前收尾时补发
+          if (reportHere) {
+            try { reportAnswerSummary("ouchn", useQuestionStore().questionList); } catch (_) {}
+          }
           await submitExamAuto();
         }
       } catch (e) {
