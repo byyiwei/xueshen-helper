@@ -22376,7 +22376,8 @@ const XS_EXT = (() => {
     const judgeNorm = (s) => {
       const t = String(s || "").trim();
       if (/^(对|對|正确|正確|是|√|t|true)$/i.test(t)) return "对";
-      if (/^(错|錯|错误|錯誤|否|×|f|false)$/i.test(t)) return "错";
+      // 否定写法必须先于包含匹配处理：「不对」若落到 target.includes(body) 会命中「对」，答案直接答反
+      if (/^(不对|不對|不正确|不正確|不是|不属于|并不|非|错|錯|错误|錯誤|否|×|x|f|false)$/i.test(t)) return "错";
       return "";
     };
 
