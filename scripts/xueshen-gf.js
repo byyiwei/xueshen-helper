@@ -21330,10 +21330,18 @@ const XS_EXT = (() => {
         parts.push(`#${idx + 1} ${counts}${frames.length ? " | " + frames.join(" | ") : ""}`);
       });
       try {
-        const candidates = queryAll("[class*=player], [class*=video], [class*=media], [class*=prism], [class*=aliplayer], canvas")
-          .slice(0, 6)
-          .map((el) => `${String(el.tagName || "").toLowerCase()}.${String(el.className || "").replace(/\s+/g, ".").slice(0, 30)}`);
-        if (candidates.length) parts.push(`候选 ${candidates.join(" , ")}`);
+        // 同一类播放器容器会重复出现，日志里只留去重后的前几个，避免刷屏
+        const seen = /* @__PURE__ */ new Set();
+        const candidates = [];
+        for (const el of queryAll("[class*=player], [class*=video], [class*=media], [class*=prism], [class*=aliplayer], canvas")) {
+          const cls = String(el.className || "").replace(/\s+/g, ".").replace(/\.[\w-]{20,}/g, "").slice(0, 30);
+          const text = `${String(el.tagName || "").toLowerCase()}${cls ? "." + cls : ""}`;
+          if (seen.has(text)) continue;
+          seen.add(text);
+          candidates.push(text);
+          if (candidates.length >= 4) break;
+        }
+        if (candidates.length) parts.push(`候选 ${candidates.join("、")}`);
       } catch (e) {
       }
       try {
@@ -21698,7 +21706,10 @@ const XS_EXT = (() => {
         const video = findVideo();
         if (!video) {
           state.progress = "";
-          if ((profile.id === "ouchn" || profile.id === "ouchn-syxy") && Date.now() - lastWatchDiagAt > 8000) {
+          // 刚切到新任务时播放器要几秒才挂载，等过了缓冲期再判定「未发现视频」
+          const ouchnActivity = (profile.id === "ouchn" || profile.id === "ouchn-syxy") ? ouchnActivityOf(ouchn.currentId || ouchnCurrentId()) : null;
+          const ouchnMayBeVideo = !ouchnActivity || ouchnActivity.type === "online_video";
+          if ((profile.id === "ouchn" || profile.id === "ouchn-syxy") && ouchnMayBeVideo && Date.now() - ouchn.arrivedAt > 8000 && Date.now() - lastWatchDiagAt > 8000) {
             const text = describeWatchPage();
             const changed = text !== lastWatchDiagText;
             if (changed || Date.now() - lastWatchDiagAt > 60000) {
