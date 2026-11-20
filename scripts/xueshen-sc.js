@@ -22283,7 +22283,10 @@ const XS_EXT = (() => {
               state.status = "等待平台确认完成";
               return;
             } else if (waited < 22500) {
-              log("视频已播完，但平台未确认完成，继续下一节");
+              // 平台迟迟不记账：跳走前把这节的完成状态和播放位置记下来，回查「白看」时用
+              const full = (() => { try { return ouchnIsFull(ouchn.currentId); } catch (_) { return "?"; } })();
+              log(`视频已播完但平台未确认完成（等了 ${Math.round(waited / 1000)} 秒，completeness=${full}，`
+                + `播放 ${Math.round(video.currentTime)}/${Math.round(video.duration || 0)} 秒），继续下一节`, "warning");
             }
           }
           const clicked = clickNext(profile);
@@ -23124,6 +23127,13 @@ const XS_EXT = (() => {
         return 0;
       }
     };
+    // 总数这道防线只在能读到 Angular scope 时生效；读不到时记一条日志，
+    // 不然国开换前端后这道检查会静默失效，谁也不知道
+    const ouchnExamTotalLogged = () => {
+      const total = ouchnExamTotal();
+      if (!total && isOuchnExamPage()) log("读不到试卷总题数（Angular scope 拿不到），「分页漏题」检查跳过", "warning");
+      return total;
+    };
 
     const toQuestion = (block) => ({
       title: block.title || "",
@@ -23373,6 +23383,22 @@ const XS_EXT = (() => {
     const submitExamAuto = async () => {
       if (!useSettingStore().config.examConfig.autoSubmit.value) return false;
       if (state.running || state.pick) return false;
+      // registry 是开答时 scan 的 DOM 快照：国开是 SPA，答题过程中切题/翻页会重建 DOM，
+      // 旧节点上的 checked 状态已经不代表页面现状。交卷前必须重新扫一遍
+      // （此时 state.running 已是 false，scan 不会被挡），再用新节点核对。
+      const fresh = scan(true);
+      if (fresh.length) {
+        registry.length = 0;
+        registry.push(...fresh);
+        state.items = fresh.map((block, index) => ({
+          index,
+          title: block.title || `第 ${index + 1} 题`,
+          type: block.type,
+          answer: "",
+          status: isAnswered(block) ? "done" : "pending",
+          msg: ""
+        }));
+      }
       const items = state.items || [];
       if (!items.length) {
         log("没有识别到题目，先不自动交卷", "warning");
@@ -23380,7 +23406,7 @@ const XS_EXT = (() => {
       }
       const unfinished = items.filter((it) => !(it.status === "done" || (it.status === "warn" && !it.issue))).length;
       const domLeft = registry.filter((block, index) => !blockOkay(block, index)).length;
-      const modelTotal = ouchnExamTotal();
+      const modelTotal = ouchnExamTotalLogged();
       if (modelTotal && registry.length < modelTotal) {
         log(`试卷共 ${modelTotal} 题，页面只识别出 ${registry.length} 题，可能还有题没显示，先不交卷`, "warning");
         return false;
