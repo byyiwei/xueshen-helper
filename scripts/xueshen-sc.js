@@ -9065,6 +9065,18 @@ const MAX_RECORDS = 200;
       __publicField(this, "answerSeparators", ["===", "#", "---", "###", "|", ";", "；", ",", "，", "、"]);
       __publicField(this, "init", async () => {
         var _that = this;
+        // 章节测验/作业的题目是异步渲染的：iframe 先出现、题目后出现，直接解析会误报「找不到题目容器」
+        const containerSelector = this.type === "zj" ? ".TiMu" : ".questionLi";
+        for (let wait = 0; wait < 16 && this._document; wait += 1) {
+          let hasContainer = false;
+          try {
+            hasContainer = !!this._document.querySelector(containerSelector);
+          } catch (e) {
+            hasContainer = false;
+          }
+          if (hasContainer) break;
+          await sleep(0.5);
+        }
         this.parseHtml();
         this.reportParseIssues();
         if (this.questions.length) {
@@ -12150,6 +12162,16 @@ const MAX_RECORDS = 200;
         var _that = this;
         this.questions = [];
         this.parseHtml();
+        // 题目接口有时比 .subject_node 渲染晚到：节点已经出来了、题目列表还是空。
+        // 这时先等一会儿让接口数据落到 store，再解析一次，避免误报页面解析失败。
+        if (!this.questions.length && this._document && this._document.querySelectorAll(".subject_node").length) {
+          for (let wait = 0; wait < 16; wait += 1) {
+            const list = this.questionStore && this.questionStore.questionList;
+            if (Array.isArray(list) && list.length) break;
+            await sleep(0.5);
+          }
+          this.parseHtml();
+        }
         if (this.questions.length) {
           this.log.insertLog(
             `成功解析到${this.questions.length}个题目，开始答题..`
