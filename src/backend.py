@@ -626,7 +626,7 @@ PAGE_SNAPSHOT_NODE_LIMIT = 6
 PAGE_SNAPSHOT_TYPES = {
     "cx-zj": "超星章节测验", "cx-zy": "超星作业", "cx-ks": "超星考试",
     "zhs-web": "智慧树页面", "zhs-exam": "智慧树页面（旧标记）", "zhs-h5": "智慧树整卷",
-    "olearn": "景德镇o-learn", "unknown": "未标注平台",
+    "olearn": "景德镇o-learn", "qs": "青书学堂", "unknown": "未标注平台",
 }
 PAGE_SNAPSHOT_STAGES = {
     "load": "页面加载", "parse": "解析页面", "find_question": "找题目容器",
@@ -8285,7 +8285,7 @@ ANSWER_TYPE_NAMES = {
 ANSWER_PLATFORM_NAMES = {
     "cx-zj": "超星章节测验", "cx-zy": "超星作业", "cx-ks": "超星考试",
     "zhs-web": "智慧树考试页", "zhs-h5": "智慧树整卷", "olearn": "景德镇o-learn",
-    "ouchn": "国家开放大学",
+    "ouchn": "国家开放大学", "qs": "青书学堂",
     "unknown": "未标注平台"
 }
 # 脚本上报的题级状态码：0 是「答案在手却点不上」（脚本侧填充问题），-1 是该题型脚本还没实现，

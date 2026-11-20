@@ -2308,7 +2308,7 @@
   // 国开考试拿不到答案对照，交卷前算不出正确率，也没有章节自动提交；
   // 这几项只给有完整作业/考试流程的平台显示
   const ANSWER_REPORT_KEYS = ["cx", "zhs", "qs", "ct", "jdz"];
-  const WATCH_PLATFORM_KEYS = ["ykt", "mskt", "icve", "ouchn", "mooc", "uschool", "xtzx", "ytccr", "sdzj", "xczx"];
+  const WATCH_PLATFORM_KEYS = ["ykt", "mskt", "icve", "ouchn", "qs", "mooc", "uschool", "xtzx", "ytccr", "sdzj", "xczx"];
   // 自动切换页签时，别抢用户手动点开的页签（设置、搜题、记录、队列）
   const AUTO_TAB_KEYS = ["0", "1"];
   const autoSetTab = (settingStore, key) => {
@@ -2480,7 +2480,7 @@
               text: "已完成任务自动跳过",
               value: true,
               type: "switch",
-              platforms: ["ouchn"],
+              platforms: ["ouchn", "qs"],
               tips: "开启后，平台上已经完成的视频、课件不再重播，直接打开下一个没完成的任务；关闭则按顺序继续"
             },
             forceClipboard: {
@@ -3077,6 +3077,7 @@
           { label: "基本设置", configs: pick(setting.config.basicConfig), showRemainCount: true }
         ];
         // 国开虽然走通用视频助手，但考试页支持自动答题，所以考试设置也要显示
+        // 青书走视频助手但作业/考试答题走接口直通层（自动交卷在 EXT_CONF，不在这份配置里），也不显示考试设置
         if (!isWatchSite || platformKey === "ouchn") sections.push({ label: "考试设置", configs: pick(setting.config.examConfig) });
         if (platformKey === "cx") sections.push({ label: "超星设置", configs: pick(setting.config.cxConfig) });
         return sections;
@@ -17525,16 +17526,21 @@ const XS_EXT = (() => {
   }
 
   function qsFillPage(question, labels) {
+    // 勾选判定必须用解析时定好的 label（可能来自 input.value，也可能来自 .option-input-preview 的 content）。
+    // 原来直接拿 input.value 和 labels 比，label 来自 preview 的题 input 没 value，一个都勾不上。
     let filled = 0;
+    let matched = 0;
     question.options.forEach((opt) => {
       if (!opt.input) return;
-      const wanted = labels.includes(String(opt.input.value || '').trim().toUpperCase());
+      const wanted = labels.includes(String(opt.label || '').trim().toUpperCase());
+      if (wanted) matched += 1;
       if (opt.input.checked !== wanted) {
         try { (opt.element || opt.input).click(); } catch (e) { /* ignore */ }
       }
       if (opt.input.checked) filled += 1;
     });
-    return filled;
+    // matched 为 0 说明 label 全对不上（页面结构变了或答案不是字母），一个都别勾
+    return { filled, matched };
   }
 
   function qsBuildQuestionPayload(question) {
@@ -17571,16 +17577,23 @@ const XS_EXT = (() => {
     extLog(`青书：解析到 ${questions.length} 道题，开始作答（默认只保存，不自动交卷）`, null);
     let answered = 0;
     let skipped = 0;
+    // 一卷一报：按主脚本口径给每题挂 answer 状态，收尾统一上报（平台名 qs）
+    for (const q of questions) {
+      q.answer = { code: -1004, answer: [], msg: '未作答', src: '' };
+      q.title = q.stem;
+    }
     for (let index = 0; index < questions.length; index += 1) {
       const question = questions[index];
       const rowText = `青书 第${index + 1}/${questions.length}题`;
       if (question.type === 'unknown') {
         extLog(`${rowText}：题型未识别，已跳过`, 'warning');
+        question.answer.msg = '题型未识别';
         skipped += 1;
         continue;
       }
       if (question.type !== '2' && question.type !== '4' && !question.options.length) {
         extLog(`${rowText}：没有选项，已跳过`, 'warning');
+        question.answer.msg = '没有选项';
         skipped += 1;
         continue;
       }
@@ -17589,11 +17602,13 @@ const XS_EXT = (() => {
         result = await getAnswerByMode(qsBuildQuestionPayload(question));
       } catch (error) {
         extLog(`${rowText}：查询答案失败（${(error && error.message) || error}）`, 'error');
+        question.answer.msg = `查询答案失败：${(error && error.message) || error}`.slice(0, 80);
         skipped += 1;
         continue;
       }
       if (!result || result.code !== 1 || !result.data || !result.data.answer) {
         extLog(`${rowText}：未查到答案（${(result && result.msg) || '题库与 AI 都没有结果'}）`, 'warning');
+        question.answer.msg = String((result && result.msg) || '未查到答案').slice(0, 80);
         skipped += 1;
         continue;
       }
@@ -17601,15 +17616,27 @@ const XS_EXT = (() => {
       const native = qsNativeAnswer(question, answers);
       if (!native) {
         extLog(`${rowText}：答案与选项对不上，已跳过（原始答案：${extText(answers.join('、')).slice(0, 40)}）`, 'warning');
+        question.answer.msg = '答案与选项对不上';
         skipped += 1;
         continue;
       }
+      question.answer.src = result.data.src || '';
       if (question.type === '2' || question.type === '4') {
         extLog(`${rowText}：主观题，答案已取到但需你在页面填写：${native.slice(0, 60)}`, 'warning');
+        question.answer.msg = '主观题需手动填写';
       } else {
         const labels = qsResolveLabels(question, answers);
-        qsFillPage(question, labels);
-        extLog(`${rowText}：已选择 ${labels.join('')}`, 'success');
+        const { filled, matched } = qsFillPage(question, labels);
+        // matched=0 说明一个都没勾上（label 对不上），不能报成功
+        if (labels.length && matched > 0 && filled > 0) {
+          extLog(`${rowText}：已选择 ${labels.join('')}`, 'success');
+          question.answer = { code: 1, answer: answers, src: result.data.src || 'bank', msg: '' };
+        } else {
+          extLog(`${rowText}：页面勾选未生效（答案 ${labels.join('') || '无'}），请手动核对`, 'warning');
+          question.answer = { code: 0, answer: answers, src: result.data.src || '', msg: '页面勾选未生效' };
+          skipped += 1;
+          continue;
+        }
       }
       try {
         await qsRequest(ctx, 'Svc/SaveQuestionAnswer', {
@@ -17618,6 +17645,7 @@ const XS_EXT = (() => {
         });
       } catch (error) {
         extLog(`${rowText}：保存失败（${(error && error.message) || error}）`, 'error');
+        question.answer.msg = `保存失败：${(error && error.message) || error}`.slice(0, 80);
         skipped += 1;
         continue;
       }
@@ -17625,6 +17653,8 @@ const XS_EXT = (() => {
       log.insertLog(`${rowText}：已作答并保存`, 'success', 2);
     }
     extLog(`青书：作答结束，已保存 ${answered} 题，跳过 ${skipped} 题；请检查后手动交卷`, 'success');
+    // 一卷一报：reportAnswerSummary 与 XS_EXT 在同一个外层 IIFE 里，直接调用（不 await，失败不影响收尾）
+    try { reportAnswerSummary('qs', questions); } catch (e) { /* ignore */ }
     if (EXT_CONF.autoSubmit && skipped === 0) {
       extLog('青书：自动交卷已开启，请在面板确认', 'warning');
     }
@@ -18121,6 +18151,8 @@ const XS_EXT = (() => {
   const qsRoutes = {
     match: [
       { keyword: 'ExercisePaper', tab: '1', logic: qsHomeworkLogic },
+      // 老「挂课」逻辑只跑 CourseStudy 页（degree 的 CourseShow 视频页走通用视频助手 qs-degree），
+      // 两套都按整域匹配时同页会同时生效：老逻辑 120 秒一个接口直报，新助手也在上报，互相污染进度
       { keyword: '/Student/Course/CourseStudy', tab: '0', logic: qsStudyLogic },
       { keyword: '/Student/', tab: '0' }
     ],
@@ -21487,7 +21519,8 @@ const XS_EXT = (() => {
       endedAt: 0,         // 视频播完时间（等平台确认用）
       lastSkipLogAt: 0,
       confirmedAt: 0,     // 上次点防挂机弹窗时间
-      teachplanCourseId: ""
+      teachplanCourseId: "",
+      durations: {}       // nodeId -> 该节点自己的视频时长（秒），完成判定用节点自己的，不能用当前视频的
     };
     const isQsWatch = (profile) => !!profile && profile.id === "qs-degree";
     const qsNodeId = () => {
@@ -21497,14 +21530,17 @@ const XS_EXT = (() => {
     const qsMenuNodes = () => Array.from(document.querySelectorAll('#lessonList a[id^="courseware-"]'))
       .map((a) => ({ id: String(a.id).replace(/^courseware-/, ""), title: (a.textContent || "").trim() }))
       .filter((n) => n.id);
-    // 青书完成判定：playerProgress（已播秒数）达到视频时长的 95% 算看完。
-    // 没有时长信息（记录里没这个节点）时只要累积时长超过 60 秒也认为播过——青书没有显式"完成"字段，
-    // 平台按播放位置记账，跳过判断保守一点，宁可重播也不漏看
-    const qsIsDone = (nodeId, duration) => {
+    // 青书完成判定：playerProgress（已播秒数）达到该节点自己时长的 95% 算看完。
+    // 时长必须用节点自己的（qsWatch.durations），不能拿「当前在看的视频」时长去比所有节点——
+    // 当前是 90 秒短片时 1800 秒长课只看 100 秒会被误判已完成直接跳过（漏课），
+    // 反过来当前是长课时已看满的短片又会被拉回来重看。
+    // durations 在进入节点、播放时、播完确认三个时机记录；别的节点没记录就当没看完（宁可重播不漏看）
+    const qsIsDone = (nodeId) => {
       const rec = qsWatch.records[nodeId];
       if (!rec) return false;
-      if (duration > 0 && rec.playerProgress >= duration * 0.95) return true;
-      return false;
+      const own = Number(qsWatch.durations[nodeId]) || 0;
+      if (!(own > 0)) return false;
+      return rec.playerProgress >= own * 0.95;
     };
     // 拉学习记录（页面上有 jQuery 和登录态，直接 $.get；无需 sign 签名）
     // teachPlanCourseId 不在地址里，是内联脚本 getLastPlayerTime('3580',...) 的字面量，正则抓
@@ -21523,9 +21559,11 @@ const XS_EXT = (() => {
       const tpcid = qsTeachplanCourseId();
       if (!periodId || !tpcid) return Promise.resolve();
       return new Promise((resolve) => {
+        // 10 秒拿不到响应就放行：tick 是串行的，请求挂住会把整个视频助手停摆
+        const timer = setTimeout(() => resolve(), 10000);
         try {
           const jq = (_unsafeWindow || window).jQuery || window.jQuery;
-          if (!jq) return resolve();
+          if (!jq) { clearTimeout(timer); return resolve(); }
           jq.get("/shdx/Student/Course/GetStudyRecordAndScore?teachPlanCourseId=" + tpcid + "&periodId=" + periodId + "&_=" + (Date.now() - 100), (j) => {
             try {
               const list = (j && j.data && j.data.studyRecordList) || [];
@@ -21542,9 +21580,10 @@ const XS_EXT = (() => {
               qsWatch.records = next;
               qsWatch.recordsAt = Date.now();
             } catch (e) { /* ignore */ }
+            clearTimeout(timer);
             resolve();
-          }).fail(() => resolve());
-        } catch (e) { resolve(); }
+          }).fail(() => { clearTimeout(timer); resolve(); });
+        } catch (e) { clearTimeout(timer); resolve(); }
       });
     };
     // 切节：整页跳转（页面 onMenuClick 内部就是 location.assign）
@@ -21559,12 +21598,13 @@ const XS_EXT = (() => {
       }
     };
     // 下一个节点：按菜单顺序找当前之后第一个没看完的；没有就回头找第一个没看完的
-    const qsNextNode = (currentId, duration) => {
+    const qsNextNode = (currentId) => {
       const nodes = qsMenuNodes();
       if (!nodes.length) return null;
+      // 当前节刚播完：无论记录如何都不再选自己（qsIsDone 对它必然为 true，这里显式排除防边界）
       const notDone = (n) => {
-        if (n.id === currentId && duration > 0) return false; // 当前这节播完了别再选自己
-        return !qsIsDone(n.id, duration);
+        if (n.id === currentId) return false;
+        return !qsIsDone(n.id);
       };
       const idx = nodes.findIndex((n) => n.id === currentId);
       for (let i = idx + 1; i < nodes.length; i += 1) {
@@ -22164,8 +22204,13 @@ const XS_EXT = (() => {
             pausedTicks = 0;
           }
         }
-        // 青书：跟随地址里的 nodeId，进新节点时重置；学习记录 30 秒刷一次
+        // 青书：跟随地址里的 nodeId，进新节点时重置；学习记录 30 秒刷一次。
+        // 只在 CourseShow（视频课件页）跑：老 qsStudyLogic 管 CourseStudy 挂课页，别在这页同时跑
         if (isQsWatch(profile)) {
+          if (!/\/CourseShow/i.test(location.pathname)) {
+            state.media = "非视频页，待命";
+            return;
+          }
           await qsRefreshRecords();
           const qsId = qsNodeId();
           if (!qsId) {
@@ -22338,12 +22383,16 @@ const XS_EXT = (() => {
         const duration = Number(video.duration) || 0;
         const current = Number(video.currentTime) || 0;
         state.progress = duration > 0 ? `${formatTime(current)} / ${formatTime(duration)}（${Math.floor(current / duration * 100)}%）` : "";
+        // 青书：记下当前节点自己的时长（完成判定用节点自己的，跨节点不能借用当前视频的时长）
+        if (isQsWatch(profile) && qsWatch.currentId && duration > 0) {
+          qsWatch.durations[qsWatch.currentId] = duration;
+        }
         // 青书：平台按播放位置记账（playerProgress），已完成（进度达标且停在开头/结尾）的跳到下一节
         if (isQsWatch(profile) && qsWatch.currentId) {
           const qsAtEnd = duration > 0 && current >= duration - 3;
-          const qsDone = qsIsDone(qsWatch.currentId, duration);
+          const qsDone = qsIsDone(qsWatch.currentId);
           if (settings.skipDone && qsDone && (current < 2 || qsAtEnd) && Date.now() - qsWatch.arrivedAt > 3000 && Date.now() - qsWatch.lastOpenAt > 6000) {
-            const next = qsNextNode(qsWatch.currentId, duration);
+            const next = qsNextNode(qsWatch.currentId);
             if (next) {
               qsWatch.lastOpenAt = Date.now();
               log(`青书：${qsWatch.currentId} 已看完，切到「${next.title || next.id}」`);
@@ -22436,9 +22485,10 @@ const XS_EXT = (() => {
             }
             await qsRefreshRecords(true);
             const rec = qsWatch.records[qsWatch.currentId];
+            // 用当前视频的真实时长判定（这一刻 video 就是要确认的节点），不用间接层
             const progressOk = rec && duration > 0 && rec.playerProgress >= duration * 0.95;
             if (progressOk) {
-              const next = qsNextNode(qsWatch.currentId, duration);
+              const next = qsNextNode(qsWatch.currentId);
               if (next) {
                 if (Date.now() - qsWatch.lastOpenAt > 6000) {
                   qsWatch.lastOpenAt = Date.now();
