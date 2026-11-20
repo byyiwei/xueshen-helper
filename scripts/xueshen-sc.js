@@ -10352,32 +10352,42 @@ const MAX_RECORDS = 200;
             true: "对",
             false: "错"
           };
+          // 先定位到唯一的目标选项，只点一次。addChoice 这类选项是切换式的：
+          // 先按 aria-label 点一次没回读到选中、又按文字点第二次时，会把刚选上的再取消掉，
+          // 最后整题空着并报「填不上」。
+          let judgeTarget = null;
           for (const key in question.options) {
+            const optionEl = question.options[key];
             if (["zj", "zy"].includes(this.type)) {
-              if ((_a = question.options[key].getAttribute("aria-label")) == null ? void 0 : _a.includes(`${trueOrFalse[answer]}选择`)) {
-                filled = this.selectChoiceOption(question.options[key]);
+              const aria = optionEl && optionEl.getAttribute ? optionEl.getAttribute("aria-label") : "";
+              if (aria && aria.includes(`${trueOrFalse[answer]}选择`)) {
+                judgeTarget = optionEl;
                 break;
               }
             } else if (["ks"].includes(this.type)) {
-              const optionElement = question.options[key].querySelector(
-                `span[data='${answer}']`
-              );
+              const optionElement = optionEl && optionEl.querySelector
+                ? optionEl.querySelector(`span[data='${answer}']`)
+                : null;
               if (!optionElement) continue;
-              filled = this.selectChoiceOption(optionElement);
+              judgeTarget = optionElement;
               break;
             }
           }
-          if (!filled) {
-            // 页面改版后 aria-label / span[data] 不一定还在：最后按选项文字「对 / 错」兜底
+          if (!judgeTarget) {
+            // 页面改版后 aria-label / span[data] 不一定还在：按选项文字「对 / 错」兜底
             const judgeTexts = answer === "true"
               ? ["对", "對", "正确", "正確", "是", "√", "✓", "true", "t"]
               : ["错", "錯", "错误", "錯誤", "否", "×", "✗", "false", "f"];
             const hitKeys = Object.keys(question.options).filter((k) =>
               judgeTexts.some((t) => this.optionTextMatches(k, t, true))
             );
-            if (hitKeys.length === 1) filled = this.selectChoiceOption(question.options[hitKeys[0]]);
-            // 判断题失败以前不带原因，后台只看到「答案拿到了但填不上」，分不清是没认出对/错选项还是点击没生效
-            if (!filled) question.__xsFillReason = hitKeys.length ? "click_not_effective" : "option_not_found";
+            if (hitKeys.length === 1) judgeTarget = question.options[hitKeys[0]];
+          }
+          if (judgeTarget) {
+            filled = this.selectChoiceOption(judgeTarget);
+            if (!filled) question.__xsFillReason = "click_not_effective";
+          } else {
+            question.__xsFillReason = "option_not_found";
           }
         } else if (question.type === "4" || question.type === "5" || question.type === "6" || question.type === "7" || question.type === "9" || question.type === "26") {
           const longAnswer = this.resolveBlankAnswers(question.answer.answer, 1)[0] || "";
