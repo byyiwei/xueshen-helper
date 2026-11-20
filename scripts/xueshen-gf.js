@@ -21240,12 +21240,18 @@ const XS_EXT = (() => {
     let lastWatchDiagText = "";
     let lastEnterClickAt = 0;
     let pausedTicks = 0;
+    let lastPlayLoggedId = "";
     const log = (text) => {
       const line = `${(/* @__PURE__ */ new Date()).toLocaleTimeString()}  ${text}`;
       state.logs.unshift(line);
       if (state.logs.length > 20) state.logs.length = 20;
       try {
         useLogStore().insertLog(text);
+      } catch (e) {
+      }
+      // 同时打到控制台，用户反馈问题时可以直接复制控制台日志
+      try {
+        console.log(`[视频助手] ${text}`);
       } catch (e) {
       }
     };
@@ -21526,9 +21532,43 @@ const XS_EXT = (() => {
       }
       return false;
     };
+    // 本模块没有下一个未完成视频时，跨模块找第一个没看完且已解锁的视频
+    const ouchnNextGlobal = async (currentId) => {
+      const all = await ouchnLoadAllVideos();
+      if (!all.length) return null;
+      const scope = ouchnScope();
+      const isLocked = (activity) => {
+        try {
+          return !!(scope && typeof scope.activityIsLocked === "function" && scope.activityIsLocked(activity));
+        } catch (e) {
+          return false;
+        }
+      };
+      let index = all.findIndex((activity) => String(activity.id) === String(currentId));
+      if (index < 0) index = -1;
+      const ordered = all.slice(index + 1).concat(all.slice(0, index + 1));
+      for (const activity of ordered) {
+        if (!activity || activity.type !== "online_video") continue;
+        if (String(activity.id) === String(currentId)) continue;
+        if (ouchnIsFull(activity.id) || isLocked(activity)) continue;
+        return activity;
+      }
+      return null;
+    };
+    // 活动名称缓存：离开任务页后菜单数据可能已经换掉，日志里仍要能叫出视频名字
+    const ouchnTitles = {};
     const ouchnActivityTitle = (id) => {
-      const activity = ouchnActivities().find((item) => String(item.id) === String(id));
-      return activity ? String(activity.title || activity.id) : "当前任务";
+      if (!id) return "";
+      if (ouchnTitles[id]) return ouchnTitles[id];
+      let activity = ouchnActivities().find((item) => String(item.id) === String(id));
+      if (!activity) activity = (ouchnAll.videos || []).find((item) => String(item.id) === String(id));
+      const title = activity ? String(activity.title || "") : "";
+      if (title) ouchnTitles[id] = title;
+      return title;
+    };
+    const ouchnLabel = (id) => {
+      const title = ouchnActivityTitle(id);
+      return title ? `「${title}」` : "";
     };
     const isVisible = (el) => {
       if (!el || !el.isConnected) return false;
@@ -21694,7 +21734,11 @@ const XS_EXT = (() => {
         if (isOuchnWatch(profile)) {
           await ouchnRefreshReads();
           const ouchnId = ouchnCurrentId();
-          if (ouchnId && ouchnId !== ouchn.currentId) {
+          if (!ouchnId) {
+            // 回到课程总览（#/）时清掉上一个任务，否则总览的「自动打开下一个」会被挡住
+            ouchn.currentId = "";
+            ouchn.endedAt = 0;
+          } else if (ouchnId !== ouchn.currentId) {
             ouchn.currentId = ouchnId;
             ouchn.arrivedAt = Date.now();
             ouchn.endedAt = 0;
@@ -21706,16 +21750,20 @@ const XS_EXT = (() => {
         const video = findVideo();
         if (!video) {
           state.progress = "";
-          // 刚切到新任务时播放器要几秒才挂载，等过了缓冲期再判定「未发现视频」
-          const ouchnActivity = (profile.id === "ouchn" || profile.id === "ouchn-syxy") ? ouchnActivityOf(ouchn.currentId || ouchnCurrentId()) : null;
-          const ouchnMayBeVideo = !ouchnActivity || ouchnActivity.type === "online_video";
-          if ((profile.id === "ouchn" || profile.id === "ouchn-syxy") && ouchnMayBeVideo && Date.now() - ouchn.arrivedAt > 8000 && Date.now() - lastWatchDiagAt > 8000) {
-            const text = describeWatchPage();
-            const changed = text !== lastWatchDiagText;
-            if (changed || Date.now() - lastWatchDiagAt > 60000) {
+          // 国开：视频任务迟迟没挂载播放器时，只在面板里提示一句；页面结构只写到控制台，方便排查
+          if (profile.id === "ouchn" || profile.id === "ouchn-syxy") {
+            const taskId = ouchn.currentId || ouchnCurrentId();
+            const task = taskId ? ouchnActivityOf(taskId) : null;
+            const wantVideo = !task || task.type === "online_video";
+            const diagKey = `loading:${taskId}`;
+            if (taskId && wantVideo && Date.now() - ouchn.arrivedAt > 15000 && lastWatchDiagText !== diagKey) {
+              lastWatchDiagText = diagKey;
               lastWatchDiagAt = Date.now();
-              lastWatchDiagText = text;
-              log(`未发现视频，页面结构：${text}`);
+              log("视频还没加载出来，稍等一下；一直不动就刷新页面");
+              try {
+                console.log("[视频助手] 页面结构：", describeWatchPage());
+              } catch (e) {
+              }
             }
           }
           // 国开新版学习活动有时先停在“开始学习/继续学习”的入口页，主动点一次
@@ -21740,14 +21788,24 @@ const XS_EXT = (() => {
               const next = ouchnNextVideo(ouchnId);
               if (next) {
                 ouchn.lastOpenAt = Date.now();
-                log(`「${ouchnActivityTitle(ouchnId)}」已完成，切到「${next.title || next.id}」`);
+                log(`${ouchnLabel(ouchnId)}已完成，切到「${next.title || next.id}」`);
                 if (ouchnOpen(next)) {
                   state.media = "已跳过完成的视频";
                   return;
                 }
-              } else if (Date.now() - ouchn.lastSkipLogAt > 60000) {
-                ouchn.lastSkipLogAt = Date.now();
-                log("本模块的视频任务都已完成，等待手动切换");
+              } else {
+                const globalNext = await ouchnNextGlobal(ouchnId);
+                if (globalNext) {
+                  ouchn.lastOpenAt = Date.now();
+                  log(`${ouchnLabel(ouchnId)}已完成，本模块看完了，接着打开「${globalNext.title || globalNext.id}」`);
+                  if (ouchnOpen(globalNext)) {
+                    state.media = "已跳过完成的视频";
+                    return;
+                  }
+                } else if (Date.now() - ouchn.lastSkipLogAt > 60000) {
+                  ouchn.lastSkipLogAt = Date.now();
+                  log("课程里的视频都已完成，等待手动切换");
+                }
               }
             }
           }
@@ -21793,16 +21851,26 @@ const XS_EXT = (() => {
             const next = ouchnNextVideo(ouchn.currentId);
             if (next && Date.now() - ouchn.lastOpenAt > 6000) {
               ouchn.lastOpenAt = Date.now();
-              log(`「${ouchnActivityTitle(ouchn.currentId)}」已完成，切到「${next.title || next.id}」`);
+              log(`${ouchnLabel(ouchn.currentId)}已完成，切到「${next.title || next.id}」`);
               if (ouchnOpen(next)) {
                 state.status = "已跳过完成的视频";
                 return;
               }
             }
-            // 没有下一个视频，或下一个还没解锁：不要重播已经完成的这一节
-            if (!next && Date.now() - ouchn.lastSkipLogAt > 60000) {
-              ouchn.lastSkipLogAt = Date.now();
-              log("本模块的视频任务都已完成，等待手动切换");
+            // 本模块没有下一个：跨模块找第一个没看完且已解锁的视频
+            if (!next && Date.now() - ouchn.lastOpenAt > 6000) {
+              const globalNext = await ouchnNextGlobal(ouchn.currentId);
+              if (globalNext) {
+                ouchn.lastOpenAt = Date.now();
+                log(`${ouchnLabel(ouchn.currentId)}已完成，本模块看完了，接着打开「${globalNext.title || globalNext.id}」`);
+                if (ouchnOpen(globalNext)) {
+                  state.status = "已跳过完成的视频";
+                  return;
+                }
+              } else if (Date.now() - ouchn.lastSkipLogAt > 60000) {
+                ouchn.lastSkipLogAt = Date.now();
+                log("课程里的视频都已完成，等待手动切换");
+              }
             }
             state.status = next ? "等待下一个视频解锁" : "本模块视频已完成";
             try {
@@ -21817,7 +21885,7 @@ const XS_EXT = (() => {
             if (resumeAt > 5 && duration > resumeAt + 10) {
               try {
                 video.currentTime = resumeAt;
-                log(`从上次看到的 ${formatTime(resumeAt)} 继续播放`);
+                log(`${ouchnLabel(ouchn.currentId)}从上次看到的 ${formatTime(resumeAt)} 继续播放`);
               } catch (e) {
               }
             }
@@ -21857,7 +21925,7 @@ const XS_EXT = (() => {
               if (next) {
                 if (Date.now() - ouchn.lastOpenAt > 6000) {
                   ouchn.lastOpenAt = Date.now();
-                  log(`本节已确认完成，切到「${next.title || next.id}」`);
+                  log(`${ouchnLabel(ouchn.currentId)}已确认完成，切到「${next.title || next.id}」`);
                   if (ouchnOpen(next)) {
                     advanceGuard.at = Date.now();
                     advanceGuard.href = location.href;
@@ -21870,6 +21938,27 @@ const XS_EXT = (() => {
                 }
                 // 下一个视频还没解锁：一般是平台课程数据还没刷新，等下一轮再看
                 state.status = "等待下一个视频解锁";
+                return;
+              } else {
+                // 本模块看完了：跨模块找第一个没看完且已解锁的视频
+                const globalNext = await ouchnNextGlobal(ouchn.currentId);
+                if (globalNext) {
+                  ouchn.lastOpenAt = Date.now();
+                  log(`${ouchnLabel(ouchn.currentId)}已确认完成，本模块看完了，接着打开「${globalNext.title || globalNext.id}」`);
+                  if (ouchnOpen(globalNext)) {
+                    advanceGuard.at = Date.now();
+                    advanceGuard.href = location.href;
+                    advanceGuard.src = videoSrc;
+                    state.segments += 1;
+                    prefs.segments = state.segments;
+                    xsWatchWritePrefs(prefs);
+                    return;
+                  }
+                } else if (Date.now() - ouchn.lastSkipLogAt > 60000) {
+                  ouchn.lastSkipLogAt = Date.now();
+                  log("课程里的视频都已完成，等待手动切换");
+                }
+                state.status = "视频任务已完成";
                 return;
               }
             } else if (waited < 20000) {
@@ -21893,11 +21982,15 @@ const XS_EXT = (() => {
           log(`第 ${state.segments} 节播完，已点下一节`);
           return;
         }
+        // 日志里带上正在看的视频名字，用户一眼能对上
+        if (isOuchnWatch(profile) && ouchn.currentId && lastPlayLoggedId !== ouchn.currentId) {
+          lastPlayLoggedId = ouchn.currentId;
+          log(`开始播放${ouchnLabel(ouchn.currentId)}`);
+        }
         if (video.paused) {
           pausedTicks += 1;
           if (pausedTicks === 3 && (profile.id === "ouchn" || profile.id === "ouchn-syxy")) {
-            const wrapper = video.parentElement ? String(video.parentElement.className || video.parentElement.tagName || "") : "";
-            log(`视频已找到但未能起播，地址 ${String(video.currentSrc || video.src || "").slice(0, 120)}，外层 ${wrapper.slice(0, 80)}`);
+            log(`${ouchnLabel(ouchn.currentId)}没有自动起播，正在重试`);
           }
           const playBtn = clickFirst(profile.play || []);
           safePlay(video);
@@ -21918,13 +22011,19 @@ const XS_EXT = (() => {
         tickBusy = false;
       }
     };
-    return { prefs, state, start, stop, tick, profileFor: xsWatchProfileFor, supported: xsWatchSupported, autoStart: () => {
+    const watchApi = { prefs, state, start, stop, tick, profileFor: xsWatchProfileFor, supported: xsWatchSupported, autoStart: () => {
       const profile = xsWatchProfileFor(location.hostname);
       if (!profile) return;
       // 设置里的「视频助手」开着才自动开始，关掉后连进入页面都不动
       if (!readWatchSettings().enabled) return;
       start(profile);
     } };
+    // 方便在控制台排查视频助手（只读接口，不影响正常运行）
+    try {
+      (_unsafeWindow || window).__xsWatch = watchApi;
+    } catch (e) {
+    }
+    return watchApi;
   })();
 
   // 新增平台共用同一套路由：在这些站点的任何页面都显示面板，
@@ -21995,6 +22094,20 @@ const XS_EXT = (() => {
       return groups;
     };
 
+    // 页面上常见“新建活动”之类的隐藏表单，里面的选项不是题目，扫题时要跳过
+    const isShownControl = (el) => {
+      try {
+        if (!el || !el.isConnected) return false;
+        if (el.getClientRects && el.getClientRects().length === 0 && el.offsetParent === null) return false;
+        const view = el.ownerDocument && el.ownerDocument.defaultView;
+        const style = view ? view.getComputedStyle(el) : null;
+        if (style && (style.visibility === "hidden" || style.display === "none")) return false;
+        return true;
+      } catch (e) {
+        return true;
+      }
+    };
+
     // 题目块 = 包含全部选项控件的最近祖先，再往上找带题干的那层
     const resolveBlock = (group) => {
       const first = group.controls[0];
@@ -22036,6 +22149,7 @@ const XS_EXT = (() => {
       for (const sel of SELECTORS) {
         const nodes = Array.from(scope.querySelectorAll(sel)).filter((el) => {
           if (el.querySelector(sel)) return false;
+          if (!isShownControl(el)) return false;
           const text = TEXT(el);
           return text.length >= 2 && text.length <= 300 && /^\s*[A-H]\s*[.、,，:：)）]/.test(text);
         });
@@ -22256,7 +22370,7 @@ const XS_EXT = (() => {
       }
       const blocks = [];
       const controls = Array.from(scope.querySelectorAll('input[type="radio"], input[type="checkbox"]'))
-        .filter((el) => !el.disabled);
+        .filter((el) => !el.disabled && isShownControl(el));
       for (const group of groupControls(controls)) {
         blocks.push({
           el: resolveBlock(group),
