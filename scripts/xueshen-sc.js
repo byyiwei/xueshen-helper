@@ -22676,6 +22676,26 @@ const XS_EXT = (() => {
             if (!el.disabled && !el.readOnly && !blanks.includes(el)) blanks.push(el);
           }
         }
+        // 富文本简答（contenteditable / 常见编辑器）也收进输入框，至少能填、能交卷；
+        // 普通输入框已收集的题不再重复找
+        if (!blanks.length) {
+          for (const el of Array.from(root.querySelectorAll(
+            '[contenteditable="true"], .ql-editor, .ck-editor__editable, .edui-body-container[contenteditable], iframe'
+          ))) {
+            if (blanks.includes(el)) continue;
+            // iframe 编辑器（如 UEditor）：只认同源的，取它 body 当可写区域
+            let target = el;
+            if (el.tagName === "IFRAME") {
+              try {
+                const inner = el.contentDocument;
+                if (!inner || !inner.body || inner.body.isContentEditable === false && !inner.querySelector('[contenteditable="true"]')) continue;
+                target = inner.body;
+              } catch (_) { continue; }
+            }
+            if (!isShownControl(target)) continue;
+            blanks.push(target);
+          }
+        }
         if (!options.length && !blanks.length) continue;
         options.sort((a, b) => {
           const pos = a.el.compareDocumentPosition(b.el);
@@ -22822,6 +22842,27 @@ const XS_EXT = (() => {
       return { picked: picked.filter((value, index, arr) => arr.indexOf(value) === index), unmatched };
     };
 
+    // 富文本区（contenteditable/iframe body）没有 .value，要单独读写；
+    // 返回 null 表示不是富文本区，交给普通 input/textarea 处理
+    const richTextRead = (el) => {
+      try {
+        if (el && el.isContentEditable && el.tagName !== "INPUT" && el.tagName !== "TEXTAREA") return String(el.innerText || el.textContent || "").trim();
+      } catch (_) {}
+      return null;
+    };
+    const richTextWrite = (el, value) => {
+      try {
+        if (!(el && el.isContentEditable && el.tagName !== "INPUT" && el.tagName !== "TEXTAREA")) return false;
+        el.focus();
+        el.textContent = value;
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        return String(el.innerText || el.textContent || "").trim() === String(value).trim();
+      } catch (_) {
+        return false;
+      }
+    };
+
     const fill = (block, answer) => {
       if (!block) return { ok: false, reason: "没有题目块" };
       if (block.kind === "input") {
@@ -22830,6 +22871,12 @@ const XS_EXT = (() => {
         block.inputs.forEach((input, index) => {
           const value = String(list[index] == null ? "" : list[index]).trim();
           if (!value) return;
+          // 富文本编辑器：textContent + input 事件 + 回读，写不进去按失败算
+          const before = richTextRead(input);
+          if (before !== null) {
+            if (richTextWrite(input, value)) count++;
+            return;
+          }
           input.focus();
           input.value = value;
           input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -22869,7 +22916,14 @@ const XS_EXT = (() => {
 
     const isAnswered = (block) => {
       if (!block) return false;
-      if (block.kind === "input") return block.inputs.some((input) => String(input.value || "").trim());
+      if (block.kind === "input") {
+        return block.inputs.some((input) => {
+          // 富文本区没有 .value，读 innerText
+          const rich = richTextRead(input);
+          if (rich !== null) return !!rich;
+          return String(input.value || "").trim();
+        });
+      }
       if (block.controls.length) return block.controls.some((input) => input.checked);
       return block.options.some((opt) => /(^|[\s-])(active|selected|checked|is-checked|choose|chosen)([\s-]|$)/i.test(String(opt.el.className || "")));
     };
@@ -23111,7 +23165,11 @@ const XS_EXT = (() => {
       if (!answer || !answer.length) return true;
       const matched = pickOptions(block, answer);
       if (matched.unmatched.length) return false;
-      if (block.kind === "input") return block.inputs.every((input) => String(input.value || "").trim());
+      if (block.kind === "input") return block.inputs.every((input) => {
+        const rich = richTextRead(input);
+        if (rich !== null) return !!rich;
+        return String(input.value || "").trim();
+      });
       if (!block.controls || !block.controls.length) return true;
       const expected = matched.picked.slice();
       if (block.type !== "多选") expected.splice(1);
@@ -23185,6 +23243,9 @@ const XS_EXT = (() => {
     const start = async (opts) => {
       const auto = !!(opts && opts.auto);
       if (state.running) return;
+      // 一卷一报只报最终轮：自动补答还会再来一轮的不报（partial），
+      // 手动点「开始答题」也不报（手动轮次只是重答，不是收尾），防止填充率被中间轮拉低
+      const summaryFinal = !auto || examNextAt === Infinity;
       const usable = scan(true);
       if (!usable.length) {
         log("没有识别到题目，先打开作业或考试页面再试");
@@ -23336,8 +23397,11 @@ const XS_EXT = (() => {
         else log("核对完成，所有题目都已填上答案");
       }
       state.running = false;
-      // 国开一卷一报：答题小结（每题 code/msg/src 都在 questionStore 里），后台才能看到填充率与卡点
-      try { reportAnswerSummary("ouchn", useQuestionStore().questionList); } catch (_) {}
+      // 国开一卷一报（只报最终轮，见 start 开头的 summaryFinal）：
+      // 每题 code/msg/src 都在 questionStore 里，后台才能看到填充率与卡点
+      if (summaryFinal) {
+        try { reportAnswerSummary("ouchn", useQuestionStore().questionList); } catch (_) {}
+      }
       log(auto ? "本轮自动作答结束" : "本轮作答结束，请检查后手动提交");
     };
 
