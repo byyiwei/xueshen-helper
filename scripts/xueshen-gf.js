@@ -23390,18 +23390,25 @@ const XS_EXT = (() => {
       // 旧节点上的 checked 状态已经不代表页面现状。交卷前必须重新扫一遍
       // （此时 state.running 已是 false，scan 不会被挡），再用新节点核对。
       const fresh = scan(true);
-      if (fresh.length) {
-        registry.length = 0;
-        registry.push(...fresh);
-        state.items = fresh.map((block, index) => ({
-          index,
-          title: block.title || `第 ${index + 1} 题`,
-          type: block.type,
-          answer: "",
-          status: isAnswered(block) ? "done" : "pending",
-          msg: ""
-        }));
+      // 重扫为空说明页面已经变了（已提交跳转、DOM 暂时不可用、题目容器被整体替换），
+      // 这时旧快照的 checked 不可信，继续走会误放行甚至误点别的按钮，直接停手交给用户
+      if (!fresh.length) {
+        log("交卷前重新扫描页面没找到题目，页面可能已变化，先不自动交卷", "warning");
+        return false;
       }
+      registry.length = 0;
+      registry.push(...fresh);
+      // 重扫会重建 items（只剩 done/pending），把之前 fail/warn 的标记带过来，面板上还能看到哪题失败过
+      const prevStatus = new Map((state.items || []).map((it) => [it.index, it]));
+      state.items = fresh.map((block, index) => {
+        const answered = isAnswered(block);
+        const prev = prevStatus.get(index);
+        // 页面上没答且之前记过 fail/warn：保留旧状态和原因，别把失败痕迹抹掉
+        if (!answered && prev && (prev.status === "fail" || (prev.status === "warn" && prev.issue))) {
+          return { index, title: block.title || `第 ${index + 1} 题`, type: block.type, answer: prev.answer || "", status: prev.status, msg: prev.msg || "" };
+        }
+        return { index, title: block.title || `第 ${index + 1} 题`, type: block.type, answer: "", status: answered ? "done" : "pending", msg: "" };
+      });
       const items = state.items || [];
       if (!items.length) {
         log("没有识别到题目，先不自动交卷", "warning");
