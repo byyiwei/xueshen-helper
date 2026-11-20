@@ -23120,7 +23120,9 @@ const XS_EXT = (() => {
         });
       } else {
         (block.inputs || []).forEach((input) => {
-          const value = String(input.value || "").trim();
+          // 富文本区没有 .value，读 innerText
+          const rich = richTextRead(input);
+          const value = (rich !== null ? rich : String(input.value || "")).trim();
           if (value) picked.push(value);
         });
       }
@@ -23146,6 +23148,14 @@ const XS_EXT = (() => {
           const value = String(list[index] == null ? "" : list[index]).trim();
           if (!value) continue;
           const input = block.inputs[index];
+          // 富文本区没有 .value：先读回当前内容，一致就跳过；不一致用 richTextWrite 写并回读
+          const richCurrent = richTextRead(input);
+          if (richCurrent !== null) {
+            if (richCurrent === value) continue;
+            if (richTextWrite(input, value)) continue;
+            // 写失败也不能用 .value 读写，直接留着让 got 统计去判
+            continue;
+          }
           if (String(input.value || "").trim() === value) continue;
           try {
             input.focus();
@@ -23155,7 +23165,11 @@ const XS_EXT = (() => {
           } catch (_) {}
           await sleep(0.1);
         }
-        const got = block.inputs.filter((input) => String(input.value || "").trim()).length;
+        const got = block.inputs.filter((input) => {
+          const rich = richTextRead(input);
+          if (rich !== null) return !!rich;
+          return String(input.value || "").trim();
+        }).length;
         return { ok: got > 0, matched, want: block.inputs.length, got };
       }
       const expected = matched.picked.slice();
@@ -23460,8 +23474,10 @@ const XS_EXT = (() => {
     // 自动作答失败（没搜到答案、没点上去）时，隔一分钟再补一轮，最多 3 轮
     let examTries = 0;
     let examNextAt = 0;
-    // 交卷重试独立计数：补答轮用 examTries，交卷失败重试用这个
+    // 交卷重试独立计数与时间：补答轮用 examTries，交卷失败重试用这两个；
+    // 重试不走补答入口，所以要有自己的时间戳（examNextAt 被 examTries >= 3 的守卫挡住时不再生效）
     let examSubmitTries = 0;
+    let examSubmitRetryAt = 0;
     const isOuchnExamPage = () => {
       try {
         // 新版考试页是 .exam-paper li.subject，老版学习网是 .everyQuest；两套都要能自动跑
@@ -23584,6 +23600,24 @@ const XS_EXT = (() => {
       log("交卷弹窗里没找到确定按钮，请在页面上确认", "warning");
       return false;
     };
+    // 交卷 + 失败后安排重试的公共收口：firstRun=true 是补答轮里第一次交卷，
+    // false 是重试轮（不重扫面板、不上报小结）
+    const trySubmitExam = async (firstRun) => {
+      const submitted = await submitExamAuto();
+      if (submitted) {
+        examSubmitRetryAt = 0;
+        return true;
+      }
+      if (examSubmitTries < 2) {
+        examSubmitTries += 1;
+        examSubmitRetryAt = Date.now() + 120e3;
+        log(`两分钟后自动重试交卷（第 ${examSubmitTries + 1}/3 次）`, "warning");
+      } else {
+        examSubmitRetryAt = 0;
+        log("交卷仍未成功，请手动确认", "warning");
+      }
+      return false;
+    };
     const autoExamTick = async () => {
       if (examBusy || state.running || state.pick) return;
       if (!isOuchnExamPage()) return;
@@ -23594,64 +23628,73 @@ const XS_EXT = (() => {
         examTries = 0;
         examNextAt = 0;
         examSubmitTries = 0;
+        examSubmitRetryAt = 0;
       }
       if (Date.now() < examNextAt || examTries >= 3) return;
+      // 交卷重试专用入口：examTries 用满后 tick 进不来，但交卷重试还得继续，
+      // 所以重试轮在这里单独放行、跳过补答流程，只做「确认页面填满 + 交卷」；
+      // examSubmitTries 已用尽（交了 3 次都失败）时不再进，彻底交给用户
+      const submitRetry = examTries >= 3 && examSubmitTries > 0 && examSubmitRetryAt > 0;
+      if (submitRetry && Date.now() < examSubmitRetryAt) return;
       examBusy = true;
-      // examTries 在下面自增；进 start() 前先算「自增后是不是第 3 次」（也就是最后一轮），
-      // 最后一轮才让 start() 发答题小结，避免中间轮拉低填充率
-      const isFinalTry = examTries + 1 >= 3;
-      examTries += 1;
-      try {
-        const blocks = scan(true);
-        if (!blocks.length) return;
-        // 考试页自动作答时把面板切到「答题」，答案和进度直接展示出来
-        try { useSettingStore().tabIndex = "2"; } catch (_) {}
-        log("检测到考试页面，开始自动作答");
-        await start({ auto: true, reportSummary: isFinalTry });
-        // 还有题没填完整就隔一分钟再来一轮；登录/密钥问题重试也没用，别反复打扰
-        const left = registry.filter((block, index) => !blockOkay(block, index)).length;
-        const authFail = (state.items || []).some((it) => /登录|密钥/.test(it.msg || ""));
-        // 中间轮（isFinalTry=false）走到任何「不再重试」的分支，这轮就是收尾，小结在这里补发；
-        // 最后一轮的小结由 start() 自己发，避免重复
-        const reportHere = !isFinalTry;
-        if (unparsedQuestions) {
-          if (reportHere) {
-            try { reportAnswerSummary("ouchn", useQuestionStore().questionList); } catch (_) {}
-          }
-          examNextAt = Infinity;
-          log(`有 ${unparsedQuestions} 道题没识别出选项或输入框，补答也没用，请手动作答后再交卷`, "warning");
-        } else if (left && !authFail && examTries < 3) {
-          examNextAt = Date.now() + 60e3;
-          log(`还有 ${left} 道题没填上，一分钟后自动补答（第 ${examTries + 1}/3 轮）`, "warning");
-        } else if (left) {
-          if (reportHere) {
-            try { reportAnswerSummary("ouchn", useQuestionStore().questionList); } catch (_) {}
-          }
-          examNextAt = Infinity;
-          log(`还有 ${left} 道题没填上，请手动处理后交卷`, "warning");
-        } else {
-          // 成功填满也要上报——否则后台只有失败样本，填充率统计不了；
-          // 最后一轮 start() 已发过，这里只在中间轮提前收尾时补发
-          if (reportHere) {
-            try { reportAnswerSummary("ouchn", useQuestionStore().questionList); } catch (_) {}
-          }
-          // 交卷失败（没找到按钮/弹窗没出现/页面没变化）隔 2 分钟再试一次，最多 2 次；
-          // 交卷不可逆，失败多半要人工看，不能像补答那样连试 3 轮
-          const submitted = await submitExamAuto();
-          if (!submitted && examSubmitTries < 2) {
-            examSubmitTries += 1;
-            examNextAt = Date.now() + 120e3;
-            log(`两分钟后自动重试交卷（第 ${examSubmitTries + 1}/3 次）`, "warning");
-          } else {
+      if (!submitRetry) {
+        // examTries 在下面自增；进 start() 前先算「自增后是不是第 3 次」（也就是最后一轮），
+        // 最后一轮才让 start() 发答题小结，避免中间轮拉低填充率
+        const isFinalTry = examTries + 1 >= 3;
+        examTries += 1;
+        try {
+          const blocks = scan(true);
+          if (!blocks.length) return;
+          // 考试页自动作答时把面板切到「答题」，答案和进度直接展示出来
+          try { useSettingStore().tabIndex = "2"; } catch (_) {}
+          log("检测到考试页面，开始自动作答");
+          await start({ auto: true, reportSummary: isFinalTry });
+          // 还有题没填完整就隔一分钟再来一轮；登录/密钥问题重试也没用，别反复打扰
+          const left = registry.filter((block, index) => !blockOkay(block, index)).length;
+          const authFail = (state.items || []).some((it) => /登录|密钥/.test(it.msg || ""));
+          // 中间轮（isFinalTry=false）走到任何「不再重试」的分支，这轮就是收尾，小结在这里补发；
+          // 最后一轮的小结由 start() 自己发，避免重复
+          const reportHere = !isFinalTry;
+          if (unparsedQuestions) {
+            if (reportHere) {
+              try { reportAnswerSummary("ouchn", useQuestionStore().questionList); } catch (_) {}
+            }
             examNextAt = Infinity;
-            if (!submitted) log("交卷仍未成功，请手动确认", "warning");
+            log(`有 ${unparsedQuestions} 道题没识别出选项或输入框，补答也没用，请手动作答后再交卷`, "warning");
+          } else if (left && !authFail && examTries < 3) {
+            examNextAt = Date.now() + 60e3;
+            log(`还有 ${left} 道题没填上，一分钟后自动补答（第 ${examTries + 1}/3 轮）`, "warning");
+          } else if (left) {
+            if (reportHere) {
+              try { reportAnswerSummary("ouchn", useQuestionStore().questionList); } catch (_) {}
+            }
+            examNextAt = Infinity;
+            log(`还有 ${left} 道题没填上，请手动处理后交卷`, "warning");
+          } else {
+            // 成功填满也要上报——否则后台只有失败样本，填充率统计不了；
+            // 最后一轮 start() 已发过，这里只在中间轮提前收尾时补发
+            if (reportHere) {
+              try { reportAnswerSummary("ouchn", useQuestionStore().questionList); } catch (_) {}
+            }
+            await trySubmitExam(true);
           }
+        } catch (e) {
+          log("自动作答出错：" + String((e && e.message) || e).slice(0, 80));
+          if (examTries < 3) examNextAt = Date.now() + 60e3;
+        } finally {
+          examBusy = false;
         }
-      } catch (e) {
-        log("自动作答出错：" + String((e && e.message) || e).slice(0, 80));
-        if (examTries < 3) examNextAt = Date.now() + 60e3;
-      } finally {
-        examBusy = false;
+      } else {
+        // 重试轮：题目已经填满，不再跑 start()、不再报小结（第一次交卷前已报过），
+        // 只核对页面状态后重新交卷
+        try {
+          examNextAt = Infinity;
+          await trySubmitExam(false);
+        } catch (e) {
+          log("交卷重试出错：" + String((e && e.message) || e).slice(0, 80));
+        } finally {
+          examBusy = false;
+        }
       }
     };
     const startExamWatcher = () => {
