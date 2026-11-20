@@ -2477,7 +2477,7 @@
               text: "已完成任务自动跳过",
               value: true,
               type: "switch",
-              platforms: WATCH_PLATFORM_KEYS,
+              platforms: ["ouchn"],
               tips: "开启后，平台上已经完成的视频、课件不再重播，直接打开下一个没完成的任务；关闭则按顺序继续"
             },
             forceClipboard: {
@@ -25253,35 +25253,35 @@ const XS_EXT = (() => {
         app.use(pinia$1);
         app.use(Antd);
         app.mount(appDiv);
-        // 面板挂载后再兜底启动一次视频助手，避免路由逻辑漏触发；
-        // 刚挂载时设置可能还没读出来，没启动成功就隔一秒再试，最多约 20 秒
+        // 国开：面板挂载后再兜底启动一次视频助手，避免路由逻辑漏触发；
+        // 刚挂载时设置可能还没读出来，没启动成功就隔一秒再试，最多约 20 秒。
+        // 只在新国开站点做这件事，其它平台保持原样。
         try {
-          let kickTries = 16;
-          const kickAutoStart = () => {
-            try {
-              if (xsWatch.state.running) return;
-              if (xsWatch.autoStart()) return;
-            } catch (e) {
-              // 设置还没就绪时可能直接报错，同样继续重试
-            }
-            if (kickTries > 0) {
-              kickTries -= 1;
-              setTimeout(kickAutoStart, 1200);
-            }
-          };
-          setTimeout(kickAutoStart, 0);
-        } catch (e) {
-        }
-        // 在设置里开关「视频助手」时立即生效，并在日志里说明
-        try {
-          const watchSwitch = useSettingStore().config.basicConfig.watchAssist;
-          vue.watch(() => watchSwitch && watchSwitch.value, (enabled) => {
-            if (enabled) {
-              xsWatch.autoStart();
-            } else if (xsWatch.state.running) {
-              xsWatch.stop("视频助手已关闭，不再自动播放");
-            }
-          });
+          if (/(^|\.)ouchn\.(cn|edu\.cn)$/.test(location.hostname)) {
+            let kickTries = 16;
+            const kickAutoStart = () => {
+              try {
+                if (xsWatch.state.running) return;
+                if (xsWatch.autoStart()) return;
+              } catch (e) {
+                // 设置还没就绪时可能直接报错，同样继续重试
+              }
+              if (kickTries > 0) {
+                kickTries -= 1;
+                setTimeout(kickAutoStart, 1200);
+              }
+            };
+            setTimeout(kickAutoStart, 0);
+            // 在设置里开关「视频助手」时立即生效，并在日志里说明
+            const watchSwitch = useSettingStore().config.basicConfig.watchAssist;
+            vue.watch(() => watchSwitch && watchSwitch.value, (enabled) => {
+              if (enabled) {
+                xsWatch.autoStart();
+              } else if (xsWatch.state.running) {
+                xsWatch.stop("视频助手已关闭，不再自动播放");
+              }
+            });
+          }
         } catch (e) {
         }
         // >>> FX-STRIP:auto-update
