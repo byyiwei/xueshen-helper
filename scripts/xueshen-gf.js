@@ -23633,12 +23633,17 @@ const XS_EXT = (() => {
         examSubmitTries = 0;
         examSubmitRetryAt = 0;
       }
-      if (Date.now() < examNextAt || examTries >= 3) return;
-      // 交卷重试专用入口：examTries 用满后 tick 进不来，但交卷重试还得继续，
-      // 所以重试轮在这里单独放行、跳过补答流程，只做「确认页面填满 + 交卷」；
-      // examSubmitTries 已用尽（交了 3 次都失败）时不再进，彻底交给用户
-      const submitRetry = examTries >= 3 && examSubmitTries > 0 && examSubmitRetryAt > 0;
-      if (submitRetry && Date.now() < examSubmitRetryAt) return;
+      // 交卷重试专用入口：必须放在补答守卫之前，且不能要求 examTries >= 3——
+      // 第 1/2 轮交卷失败时 examNextAt 已被置 Infinity，examTries 又不满，
+      // 带上这个条件重试入口在第 1/2 轮同样进不去。
+      // 有 pending 重试（examSubmitRetryAt > 0）就由它说了算，跳过补答流程直接重交；
+      // 用尽（交了 3 次都失败）后 examSubmitRetryAt 被置 0，这里不再放行，彻底交给用户
+      const submitRetry = examSubmitTries > 0 && examSubmitRetryAt > 0;
+      if (submitRetry) {
+        if (Date.now() < examSubmitRetryAt) return;
+      } else if (Date.now() < examNextAt || examTries >= 3) {
+        return;
+      }
       examBusy = true;
       if (!submitRetry) {
         // examTries 在下面自增；进 start() 前先算「自增后是不是第 3 次」（也就是最后一轮），
@@ -23679,7 +23684,10 @@ const XS_EXT = (() => {
             if (reportHere) {
               try { reportAnswerSummary("ouchn", useQuestionStore().questionList); } catch (_) {}
             }
-            await trySubmitExam(true);
+            // 交卷失败后关掉补答节奏，让 examSubmitRetryAt（2 分钟间隔）单独说了算；
+            // 不关的话下一 tick（2 秒后）就放行，十几秒内连交 3 次——交卷不可逆，绝不能这样
+            const ok = await trySubmitExam(true);
+            if (!ok) examNextAt = Infinity;
           }
         } catch (e) {
           log("自动作答出错：" + String((e && e.message) || e).slice(0, 80));
