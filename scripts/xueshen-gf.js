@@ -21384,8 +21384,9 @@ const XS_EXT = (() => {
       const match = String(location.hash || "").match(/#\/(\d+)/);
       return match ? match[1] : "";
     };
+    // 视频/任务页用菜单项 scope（能看到当前模块活动）；课程总览没有菜单项，退回整页外层 scope 也能切换活动
     const ouchnScope = () => {
-      const el = document.querySelector(".full-screen-mode-sidebar-menu-item, .online-video-activity");
+      const el = document.querySelector(".full-screen-mode-sidebar-menu-item, .online-video-activity, .full-screen-mode-wrapper");
       const ng = (_unsafeWindow || window).angular;
       if (!el || !ng) return null;
       try {
@@ -21404,8 +21405,25 @@ const XS_EXT = (() => {
       return Array.isArray(list) ? list : [];
     };
     // 课程总览（地址是 #/）上 scope 里只有当前选中模块的活动，没法跨模块找视频。
-    // 直接从课程接口把每个模块的活动拉一遍，按课程顺序找出第一个没看完且已解锁的视频。
+    // 整门课程的活动一次拉齐：先试全量接口，拿不到再按模块拉
     const ouchnAll = { videos: [], at: 0, loading: false };
+    const ouchnFetchAll = async (url) => {
+      const controller = typeof AbortController === "function" ? new AbortController() : null;
+      const timer = controller ? setTimeout(() => controller.abort(), 8000) : null;
+      try {
+        const resp = await fetch(url, {
+          credentials: "include",
+          headers: { accept: "application/json" },
+          signal: controller ? controller.signal : void 0
+        });
+        if (!resp.ok) return null;
+        return await resp.json();
+      } catch (e) {
+        return null;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
     const ouchnLoadAllVideos = async () => {
       if (Date.now() - ouchnAll.at < 60e3) return ouchnAll.videos;
       if (ouchnAll.loading) {
@@ -21415,30 +21433,29 @@ const XS_EXT = (() => {
       ouchnAll.loading = true;
       try {
         const courseId = ouchnCourseId();
-        const scope = ouchnScope();
-        const menu = scope && scope.$parent;
-        const modules = (menu && menu.course && menu.course.modules) || [];
+        if (!courseId) return ouchnAll.videos;
+        const seen = /* @__PURE__ */ new Set();
         const videos = [];
-        for (const module2 of modules) {
-          const moduleId = module2 && module2.id;
-          if (!moduleId || !courseId) continue;
-          const controller = typeof AbortController === "function" ? new AbortController() : null;
-          const timer2 = controller ? setTimeout(() => controller.abort(), 8000) : null;
-          try {
-            const resp = await fetch(`/api/course/${courseId}/all-activities?module_ids=[${moduleId}]&activity_types=learning_activities,exams,classrooms`, {
-              credentials: "include",
-              headers: { accept: "application/json" },
-              signal: controller ? controller.signal : void 0
-            });
-            if (!resp.ok) continue;
-            const data = await resp.json();
-            const list = ((data && data.learning_activities) || []).concat((data && data.exams) || []);
-            for (const activity of list) {
-              if (activity && activity.type === "online_video") videos.push(activity);
-            }
-          } catch (e) {
-          } finally {
-            if (timer2) clearTimeout(timer2);
+        const pushVideos = (data) => {
+          const list = ((data && data.learning_activities) || []).concat((data && data.exams) || []);
+          for (const activity of list) {
+            if (!activity || activity.type !== "online_video") continue;
+            const id = String(activity.id || "");
+            if (!id || seen.has(id)) continue;
+            seen.add(id);
+            videos.push(activity);
+          }
+        };
+        // 总览页没有菜单数据时，这个接口也能拿到整门课程
+        pushVideos(await ouchnFetchAll(`/api/course/${courseId}/all-activities`));
+        if (!videos.length) {
+          const scope = ouchnScope();
+          const menu = scope && scope.$parent;
+          const modules = (menu && menu.course && menu.course.modules) || [];
+          for (const module2 of modules) {
+            const moduleId = module2 && module2.id;
+            if (!moduleId) continue;
+            pushVideos(await ouchnFetchAll(`/api/course/${courseId}/all-activities?module_ids=[${moduleId}]&activity_types=learning_activities,exams,classrooms`));
           }
         }
         // 课程数据还没加载出来时结果是空的，不能缓存，等下一轮再拉
@@ -21598,25 +21615,27 @@ const XS_EXT = (() => {
       scroller.scrollTop = Math.min(scroller.scrollHeight, scroller.scrollTop + Math.max(600, scroller.clientHeight * 3));
       return "reading";
     };
+    // 国开的活动自带前置条件，没有菜单 scope 也能判断是否已解锁
+    const ouchnIsLocked = (activity) => {
+      try {
+        const scope = ouchnScope();
+        if (scope && typeof scope.activityIsLocked === "function") return !!scope.activityIsLocked(activity);
+      } catch (e) {
+      }
+      const prereqs = (activity && activity.prerequisites) || [];
+      return prereqs.some((item) => !(item && item.completion_criterion && item.completion_criterion.has_completed));
+    };
     // 本模块没有下一个未完成视频时，跨模块找第一个没看完且已解锁的视频
     const ouchnNextGlobal = async (currentId) => {
       const all = await ouchnLoadAllVideos();
       if (!all.length) return null;
-      const scope = ouchnScope();
-      const isLocked = (activity) => {
-        try {
-          return !!(scope && typeof scope.activityIsLocked === "function" && scope.activityIsLocked(activity));
-        } catch (e) {
-          return false;
-        }
-      };
       let index = all.findIndex((activity) => String(activity.id) === String(currentId));
       if (index < 0) index = -1;
       const ordered = all.slice(index + 1).concat(all.slice(0, index + 1));
       for (const activity of ordered) {
         if (!activity || activity.type !== "online_video") continue;
         if (String(activity.id) === String(currentId)) continue;
-        if (ouchnIsFull(activity.id) || isLocked(activity)) continue;
+        if (ouchnIsFull(activity.id) || ouchnIsLocked(activity)) continue;
         return activity;
       }
       return null;
@@ -21735,6 +21754,8 @@ const XS_EXT = (() => {
         log("设置里的「视频助手（新增平台）」是关闭状态，先到设置中打开");
         return false;
       }
+      // 路由切换会重复触发自动开始，已经在跑就不重复启动
+      if (state.running && timer) return true;
       if (timer) clearInterval(timer);
       timer = null;
       state.running = true;
@@ -21909,21 +21930,18 @@ const XS_EXT = (() => {
           // 国开：从课程总览（地址是 #/，没有当前任务）进来时，跨模块找第一个没看完且已解锁的视频打开
           if (isOuchnWatch(profile) && !ouchn.currentId && isOuchnOverview() && Date.now() - ouchn.lastOpenAt > 8000) {
             const allVideos = await ouchnLoadAllVideos();
-            const scope = ouchnScope();
-            const isLocked = (activity) => {
-              try {
-                return !!(scope && typeof scope.activityIsLocked === "function" && scope.activityIsLocked(activity));
-              } catch (e) {
-                return false;
-              }
-            };
-            const first = allVideos.find((activity) => !ouchnIsFull(activity.id) && !isLocked(activity));
+            const first = allVideos.find((activity) => !ouchnIsFull(activity.id) && !ouchnIsLocked(activity));
             if (first) {
-              ouchn.lastOpenAt = Date.now();
-              log(`进入课程总览，自动打开「${first.title || first.id}」`);
               if (ouchnOpen(first)) {
+                ouchn.lastOpenAt = Date.now();
+                log(`进入课程总览，自动打开「${first.title || first.id}」`);
                 state.media = "已打开第一个未完成视频";
                 return;
+              }
+              // 页面还没完全就绪时切换可能不生效，一分钟提示一次就够
+              if (Date.now() - ouchn.lastSkipLogAt > 60000) {
+                ouchn.lastSkipLogAt = Date.now();
+                log(`准备打开「${first.title || first.id}」，页面还没就绪，稍后重试`);
               }
             } else if (Date.now() - ouchn.lastSkipLogAt > 60000) {
               // 课程数据还没加载出来时先不提示，免得用户以为课程里没有视频
@@ -21935,7 +21953,8 @@ const XS_EXT = (() => {
               }
             }
           }
-          if (settings.autoScroll && profile.doc) {
+          // 国开课程总览不是文档任务，不能在这里整页往下滚，否则会把页面滚成一片空白
+          if (settings.autoScroll && profile.doc && !(isOuchnWatch(profile) && isOuchnOverview())) {
             state.media = "文档页：正在向下滚动";
             await scrollDocument();
           } else {
@@ -25172,6 +25191,11 @@ const XS_EXT = (() => {
         app.use(pinia$1);
         app.use(Antd);
         app.mount(appDiv);
+        // 面板挂载后再兜底启动一次视频助手，避免路由逻辑漏触发
+        try {
+          setTimeout(() => { xsWatch.autoStart(); }, 0);
+        } catch (e) {
+        }
         // >>> FX-STRIP:auto-update
         // === 自动检测更新 + 顶部提示条 ===
         (function() {
