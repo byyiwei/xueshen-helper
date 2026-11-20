@@ -21379,8 +21379,56 @@ const XS_EXT = (() => {
     const ouchnActivities = () => {
       const scope = ouchnScope();
       const menu = scope && scope.$parent;
-      const list = menu && menu.module && menu.module.activities;
+      // 学习页里 module.activities 是当前模块；课程总览上活动挂在 selectedModule / course.activities
+      const list = (menu && menu.module && menu.module.activities)
+        || (menu && menu.selectedModule && menu.selectedModule.activities)
+        || (menu && menu.course && menu.course.activities);
       return Array.isArray(list) ? list : [];
+    };
+    // 课程总览（地址是 #/）上 scope 里只有当前选中模块的活动，没法跨模块找视频。
+    // 直接从课程接口把每个模块的活动拉一遍，按课程顺序找出第一个没看完且已解锁的视频。
+    const ouchnAll = { videos: [], at: 0, loading: false };
+    const ouchnLoadAllVideos = async () => {
+      if (Date.now() - ouchnAll.at < 60e3) return ouchnAll.videos;
+      if (ouchnAll.loading) {
+        for (let wait = 0; wait < 40 && ouchnAll.loading; wait += 1) await sleep(0.25);
+        return ouchnAll.videos;
+      }
+      ouchnAll.loading = true;
+      try {
+        const courseId = ouchnCourseId();
+        const scope = ouchnScope();
+        const menu = scope && scope.$parent;
+        const modules = (menu && menu.course && menu.course.modules) || [];
+        const videos = [];
+        for (const module2 of modules) {
+          const moduleId = module2 && module2.id;
+          if (!moduleId || !courseId) continue;
+          const controller = typeof AbortController === "function" ? new AbortController() : null;
+          const timer2 = controller ? setTimeout(() => controller.abort(), 8000) : null;
+          try {
+            const resp = await fetch(`/api/course/${courseId}/all-activities?module_ids=[${moduleId}]&activity_types=learning_activities,exams,classrooms`, {
+              credentials: "include",
+              headers: { accept: "application/json" },
+              signal: controller ? controller.signal : void 0
+            });
+            if (!resp.ok) continue;
+            const data = await resp.json();
+            const list = ((data && data.learning_activities) || []).concat((data && data.exams) || []);
+            for (const activity of list) {
+              if (activity && activity.type === "online_video") videos.push(activity);
+            }
+          } catch (e) {
+          } finally {
+            if (timer2) clearTimeout(timer2);
+          }
+        }
+        ouchnAll.videos = videos;
+        ouchnAll.at = Date.now();
+      } finally {
+        ouchnAll.loading = false;
+      }
+      return ouchnAll.videos;
     };
     // 活动完成度直接从平台接口读：full 表示已完成，part 里的 data.end 是上次看到的位置
     const ouchnRefreshReads = async (force) => {
@@ -21427,6 +21475,13 @@ const XS_EXT = (() => {
       const menu = scope && scope.$parent;
       const current = menu && menu.currentActivity;
       return current && current.id != null ? String(current.id) : "";
+    };
+    // 课程总览：地址是 #/ 或没有 hash，和学习任务详情页区分开
+    const isOuchnOverview = () => {
+      const hash = String(location.hash || "");
+      if (hash && hash !== "#" && hash !== "#/") return false;
+      const path = String(location.pathname || "");
+      return /\/learning-activity\/full-screen$/.test(path) || /\/course\/\d+\/ng$/.test(path) || /\/(course|learning-activity)\/?$/.test(path);
     };
     // 从当前活动往后找第一个没完成的视频任务
     const ouchnNextVideo = (currentId) => {
@@ -21680,6 +21735,30 @@ const XS_EXT = (() => {
                 ouchn.lastSkipLogAt = Date.now();
                 log("本模块的视频任务都已完成，等待手动切换");
               }
+            }
+          }
+          // 国开：从课程总览（地址是 #/，没有当前任务）进来时，跨模块找第一个没看完且已解锁的视频打开
+          if (isOuchnWatch(profile) && !ouchn.currentId && isOuchnOverview() && Date.now() - ouchn.lastOpenAt > 8000) {
+            const allVideos = await ouchnLoadAllVideos();
+            const scope = ouchnScope();
+            const isLocked = (activity) => {
+              try {
+                return !!(scope && typeof scope.activityIsLocked === "function" && scope.activityIsLocked(activity));
+              } catch (e) {
+                return false;
+              }
+            };
+            const first = allVideos.find((activity) => !ouchnIsFull(activity.id) && !isLocked(activity));
+            if (first) {
+              ouchn.lastOpenAt = Date.now();
+              log(`进入课程总览，自动打开「${first.title || first.id}」`);
+              if (ouchnOpen(first)) {
+                state.media = "已打开第一个未完成视频";
+                return;
+              }
+            } else if (Date.now() - ouchn.lastSkipLogAt > 60000) {
+              ouchn.lastSkipLogAt = Date.now();
+              log(allVideos.length ? "视频任务都已完成或还没解锁" : "课程里没有找到视频任务");
             }
           }
           if (settings.autoScroll && profile.doc) {
