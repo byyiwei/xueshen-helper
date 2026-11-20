@@ -21654,11 +21654,15 @@ const XS_EXT = (() => {
       if (!activity) return false;
       const scope = ouchnScope();
       if (!scope) return false;
-      // 重看模式下标记这一节已经重看过：挑下一节时排除掉，防止单视频反复重开、多视频 A→B→C 无限轮转
-      if (!readWatchSettings().skipDone) ouchn.replayed.add(String(activity.id));
+      // 重看模式下打开成功才算「重看过」：打不开的（没解锁/跳转失败）要能再试，
+      // 打开了但平台没记进度的也要能再试——标记放 try 内、失败时回退
+      const replayKey = String(activity.id || "");
+      const markReplay = !readWatchSettings().skipDone;
+      if (markReplay) ouchn.replayed.add(replayKey);
       try {
         if (typeof scope.activityIsLocked === "function" && scope.activityIsLocked(activity)) {
           log(`「${activity.title}」还未解锁，等前面的任务完成`);
+          if (markReplay) ouchn.replayed.delete(replayKey);
           return false;
         }
         // 课件阅读器是盖满整页的浮层，活动切换不会把它带走，先关掉，否则新任务在背后打开、画面还停在旧课件
@@ -21671,7 +21675,9 @@ const XS_EXT = (() => {
         }
       } catch (e) {
         log(`跳转「${activity.title}」失败：${e && e.message || e}`);
+        if (markReplay) ouchn.replayed.delete(replayKey);
       }
+      if (markReplay) ouchn.replayed.delete(replayKey);
       return false;
     };
     // 国开只对课件（material）自动向下滚：总览、考试、讨论这些页面都不碰
@@ -23558,23 +23564,27 @@ const XS_EXT = (() => {
         log(`还有 ${Math.max(unfinished, domLeft)} 道题没填完整，先不自动交卷`, "warning");
         return false;
       }
-      // 交卷按钮文案不一定是纯「交卷」：可能是「立即交卷」「交 卷」或按钮里套了 span（TEXT 会拼出完整文字），
-      // 所以只要求元素可见、不在确认弹窗里、文字含「交卷」
-      const submitBtn = Array.from(document.querySelectorAll("a, button"))
-        .find((el) => isVisibleEl(el) && !el.closest(".confirmation-popup, .reveal-modal") && /交\s*卷/.test(TEXT(el)));
-      if (!submitBtn) {
-        log("没找到交卷按钮，请在页面上手动交卷", "warning");
-        return false;
-      }
-      submitBtn.click();
-      log("所有题目已作答，已点击交卷");
-      // 弹窗要等页面存完答案才出来，最多等 6 秒
-      let dialog = null;
-      for (let i = 0; i < 15 && !dialog; i++) {
-        await sleep(0.4);
-        dialog = Array.from(document.querySelectorAll(".confirmation-popup, .reveal-modal"))
-          .find((el) => isVisibleEl(el) && /确定提交|提交试[卷题]|交卷/.test(TEXT(el)));
-      }
+    // 确认弹窗选择器：新版国开是 .confirmation-popup/.reveal-modal，老版学习网和
+    // 其它框架（Element UI/layui/Bootstrap）是 dialog/modal/layer/popup 命名，两边都要认；
+    // 交卷按钮的排除列表也用它，不然老版弹窗里的「交卷」会被当成页面交卷按钮重复点
+    const OUCHN_DIALOG_SELECTOR = ".confirmation-popup, .reveal-modal, .el-dialog, .layui-layer, .modal, [class*='dialog'], [class*='Dialog'], [class*='modal'], [class*='Modal'], [class*='popup'], [class*='Popup'], [class*='layer'], [class*='Layer']";
+    // 交卷按钮文案不一定是纯「交卷」：可能是「立即交卷」「交 卷」或按钮里套了 span（TEXT 会拼出完整文字），
+    // 所以只要求元素可见、不在确认弹窗里、文字含「交卷」
+    const submitBtn = Array.from(document.querySelectorAll("a, button"))
+      .find((el) => isVisibleEl(el) && !el.closest(OUCHN_DIALOG_SELECTOR) && /交\s*卷/.test(TEXT(el)));
+    if (!submitBtn) {
+      log("没找到交卷按钮，请在页面上手动交卷", "warning");
+      return false;
+    }
+    submitBtn.click();
+    log("所有题目已作答，已点击交卷");
+    // 弹窗要等页面存完答案才出来，最多等 6 秒
+    let dialog = null;
+    for (let i = 0; i < 15 && !dialog; i++) {
+      await sleep(0.4);
+      dialog = Array.from(document.querySelectorAll(OUCHN_DIALOG_SELECTOR))
+        .find((el) => isVisibleEl(el) && /确定提交|提交试[卷题]|交卷/.test(TEXT(el)));
+    }
       if (!dialog) {
         log("交卷确认弹窗没出现，请在页面上确认交卷", "warning");
         return false;
@@ -23595,7 +23605,7 @@ const XS_EXT = (() => {
         const paperGone = () => !document.querySelector(".exam-paper .subjects-jit-display li.subject, .exam-paper li.subject, .everyQuest");
         for (let i = 0; i < 20; i++) {
           await sleep(0.5);
-          const popup = Array.from(document.querySelectorAll(".confirmation-popup, .reveal-modal"))
+          const popup = Array.from(document.querySelectorAll(OUCHN_DIALOG_SELECTOR))
             .find((el) => isVisibleEl(el) && /失败|错误|异常|请重试|未作答|还有/.test(TEXT(el)));
           if (popup) {
             log("交卷后页面提示异常，可能没提交成功，请在页面上确认", "warning");
