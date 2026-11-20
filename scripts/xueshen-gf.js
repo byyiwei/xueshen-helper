@@ -21406,7 +21406,7 @@ const XS_EXT = (() => {
     };
     // 课程总览（地址是 #/）上 scope 里只有当前选中模块的活动，没法跨模块找视频。
     // 整门课程的活动一次拉齐：先试全量接口，拿不到再按模块拉
-    const ouchnAll = { videos: [], at: 0, loading: false };
+    const ouchnAll = { videos: [], byId: {}, at: 0, loading: false };
     const ouchnFetchAll = async (url) => {
       const controller = typeof AbortController === "function" ? new AbortController() : null;
       const timer = controller ? setTimeout(() => controller.abort(), 8000) : null;
@@ -21426,6 +21426,8 @@ const XS_EXT = (() => {
     };
     const ouchnLoadAllVideos = async () => {
       if (Date.now() - ouchnAll.at < 60e3) return ouchnAll.videos;
+      // 刚拉过但没拿到数据（课程还没加载好），15 秒内不重复拉
+      if (ouchnAll.triedAt && Date.now() - ouchnAll.triedAt < 15e3) return ouchnAll.videos;
       if (ouchnAll.loading) {
         for (let wait = 0; wait < 40 && ouchnAll.loading; wait += 1) await sleep(0.25);
         return ouchnAll.videos;
@@ -21439,8 +21441,10 @@ const XS_EXT = (() => {
         const pushVideos = (data) => {
           const list = ((data && data.learning_activities) || []).concat((data && data.exams) || []);
           for (const activity of list) {
-            if (!activity || activity.type !== "online_video") continue;
+            if (!activity) continue;
             const id = String(activity.id || "");
+            if (id && !ouchnAll.byId[id]) ouchnAll.byId[id] = activity;
+            if (activity.type !== "online_video") continue;
             if (!id || seen.has(id)) continue;
             seen.add(id);
             videos.push(activity);
@@ -21459,6 +21463,7 @@ const XS_EXT = (() => {
           }
         }
         // 课程数据还没加载出来时结果是空的，不能缓存，等下一轮再拉
+        ouchnAll.triedAt = Date.now();
         if (videos.length) {
           ouchnAll.videos = videos;
           ouchnAll.at = Date.now();
@@ -21504,7 +21509,9 @@ const XS_EXT = (() => {
       const end = item && item.data && Number(item.data.end);
       return Number.isFinite(end) && end > 5 ? end : 0;
     };
-    const ouchnActivityOf = (id) => ouchnActivities().find((item) => String(item.id) === String(id)) || null;
+    const ouchnActivityOf = (id) => ouchnActivities().find((item) => String(item.id) === String(id))
+      || (ouchnAll.byId && ouchnAll.byId[String(id)])
+      || null;
     // 地址里没有任务号时退回 Angular 的当前活动
     const ouchnCurrentId = () => {
       const fromHash = ouchnActivityId();
@@ -21553,11 +21560,24 @@ const XS_EXT = (() => {
       }
       return false;
     };
+    // 国开只对课件（material）自动向下滚：总览、考试、讨论这些页面都不碰
+    const ouchnMayScrollDoc = () => {
+      const id = ouchn.currentId || ouchnCurrentId();
+      if (!id) return false;
+      const activity = ouchnActivityOf(id);
+      return !!activity && activity.type === "material";
+    };
     // 国开课件（PDF/PPT）用 note-bene 阅读器打开，自动往下翻到最后一页
     const ouchnPdfState = { id: "", done: /* @__PURE__ */ new Set(), doneAt: 0, clickedAt: 0 };
     const ouchnReadPdf = async () => {
       const id = ouchn.currentId || ouchnCurrentId();
-      const activity = id ? ouchnActivityOf(id) : null;
+      if (!id) return "";
+      let activity = ouchnActivityOf(id);
+      // 课件页不一定有侧栏菜单数据，先靠整门课程接口补一下活动类型
+      if (!activity) {
+        await ouchnLoadAllVideos();
+        activity = ouchnActivityOf(id);
+      }
       // 只在课件任务上翻页，视频、测验页面不碰
       if (!activity || activity.type !== "material") return "";
       let frame = null;
@@ -21646,6 +21666,8 @@ const XS_EXT = (() => {
       if (!id) return "";
       if (ouchnTitles[id]) return ouchnTitles[id];
       let activity = ouchnActivities().find((item) => String(item.id) === String(id));
+      // 课件页没有侧栏数据，标题从整门课程接口拿
+      if (!activity && ouchnAll.byId) activity = ouchnAll.byId[String(id)];
       if (!activity) activity = (ouchnAll.videos || []).find((item) => String(item.id) === String(id));
       const title = activity ? String(activity.title || "") : "";
       if (title) ouchnTitles[id] = title;
@@ -21953,8 +21975,8 @@ const XS_EXT = (() => {
               }
             }
           }
-          // 国开课程总览不是文档任务，不能在这里整页往下滚，否则会把页面滚成一片空白
-          if (settings.autoScroll && profile.doc && !(isOuchnWatch(profile) && isOuchnOverview())) {
+          // 国开只有课件页才整页下滚，总览/考试页滚下去会变成一片空白
+          if (settings.autoScroll && profile.doc && (!isOuchnWatch(profile) || ouchnMayScrollDoc())) {
             state.media = "文档页：正在向下滚动";
             await scrollDocument();
           } else {
@@ -22103,10 +22125,14 @@ const XS_EXT = (() => {
           log(`第 ${state.segments} 节播完，已点下一节`);
           return;
         }
-        // 日志里带上正在看的视频名字，用户一眼能对上
+        // 日志里带上正在看的视频名字，用户一眼能对上；名字还没拿到就等下一轮再记
         if (isOuchnWatch(profile) && ouchn.currentId && lastPlayLoggedId !== ouchn.currentId) {
-          lastPlayLoggedId = ouchn.currentId;
-          log(`开始播放${ouchnLabel(ouchn.currentId)}`);
+          if (ouchnActivityTitle(ouchn.currentId)) {
+            lastPlayLoggedId = ouchn.currentId;
+            log(`开始播放${ouchnLabel(ouchn.currentId)}`);
+          } else {
+            void ouchnLoadAllVideos();
+          }
         }
         if (video.paused) {
           pausedTicks += 1;
@@ -22134,10 +22160,10 @@ const XS_EXT = (() => {
     };
     const watchApi = { prefs, state, start, stop, tick, open: ouchnOpen, nextGlobal: ouchnNextGlobal, profileFor: xsWatchProfileFor, supported: xsWatchSupported, autoStart: () => {
       const profile = xsWatchProfileFor(location.hostname);
-      if (!profile) return;
+      if (!profile) return false;
       // 设置里的「视频助手」开着才自动开始，关掉后连进入页面都不动
-      if (!readWatchSettings().enabled) return;
-      start(profile);
+      if (!readWatchSettings().enabled) return false;
+      return start(profile);
     } };
     // 方便在控制台排查视频助手（只读接口，不影响正常运行）
     try {
@@ -25191,9 +25217,23 @@ const XS_EXT = (() => {
         app.use(pinia$1);
         app.use(Antd);
         app.mount(appDiv);
-        // 面板挂载后再兜底启动一次视频助手，避免路由逻辑漏触发
+        // 面板挂载后再兜底启动一次视频助手，避免路由逻辑漏触发；
+        // 刚挂载时设置可能还没读出来，没启动成功就隔一秒再试，最多约 20 秒
         try {
-          setTimeout(() => { xsWatch.autoStart(); }, 0);
+          let kickTries = 16;
+          const kickAutoStart = () => {
+            try {
+              if (xsWatch.state.running) return;
+              if (xsWatch.autoStart()) return;
+            } catch (e) {
+              // 设置还没就绪时可能直接报错，同样继续重试
+            }
+            if (kickTries > 0) {
+              kickTries -= 1;
+              setTimeout(kickAutoStart, 1200);
+            }
+          };
+          setTimeout(kickAutoStart, 0);
         } catch (e) {
         }
         // >>> FX-STRIP:auto-update
