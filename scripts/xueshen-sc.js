@@ -22874,17 +22874,7 @@ const XS_EXT = (() => {
           const store = useQuestionStore();
           store.questionList = usable.map((block, index) => {
             // 进页面前已经答过的题：把页面上选中的选项读出来，答案区不能空着
-            const picked = [];
-            if (block.controls && block.controls.length) {
-              (block.options || []).forEach((opt) => {
-                if (opt.input && opt.input.checked) picked.push(opt.letter || stripLetter(opt.text));
-              });
-            } else {
-              (block.inputs || []).forEach((input) => {
-                const value = String(input.value || "").trim();
-                if (value) picked.push(value);
-              });
-            }
+            const picked = pageAnswer(block);
             return {
               index,
               title: escapeHtml(block.title || `第 ${index + 1} 题`),
@@ -22943,7 +22933,30 @@ const XS_EXT = (() => {
       list[index] = Object.assign({}, list[index], patch);
       store.questionList = list;
     };
+    // 从页面上读当前已选的答案：重答失败时用它可以保住原有答案，不让面板变空
+    const pageAnswer = (block) => {
+      const picked = [];
+      if (block.controls && block.controls.length) {
+        (block.options || []).forEach((opt) => {
+          if (opt.input && opt.input.checked) picked.push(opt.letter || stripLetter(opt.text));
+        });
+      } else {
+        (block.inputs || []).forEach((input) => {
+          const value = String(input.value || "").trim();
+          if (value) picked.push(value);
+        });
+      }
+      return picked;
+    };
 
+    // 重答失败但页面上本来就有答案：保留原答案，别把面板清空
+    const keepPageAnswer = (index, block) => {
+      const picked = pageAnswer(block);
+      if (!picked.length) return false;
+      setItem(index, { status: "done", answer: picked.join(" "), msg: "保留页面已有答案" });
+      syncStoreItem(index, { answer: { code: 1, answer: picked, src: "page", msg: "页面已作答" } });
+      return true;
+    };
     const toQuestion = (block) => ({
       title: block.title || "",
       optionsText: (block.options || []).map((opt) => stripLetter(opt.text)),
@@ -23013,8 +23026,11 @@ const XS_EXT = (() => {
           // 题库里有多道相似题：按「手动选择的处理」等用户点选或直接跳过，不拿空答案硬填
           if (res && res.data && res.data.multimatch && candidates.length) {
             if (getManualWaitMode() === "skip") {
-              setItem(item.index, { status: "fail", msg: `有 ${candidates.length} 道相似题，已按设置跳过` });
-              syncStoreItem(item.index, { answer: { code: 0, answer: [], src: "pick", msg: `有 ${candidates.length} 道相似题，已按设置跳过` } });
+              const kept = keepPageAnswer(item.index, block);
+              if (!kept) {
+                setItem(item.index, { status: "fail", msg: `有 ${candidates.length} 道相似题，已按设置跳过` });
+                syncStoreItem(item.index, { answer: { code: 0, answer: [], src: "pick", msg: `有 ${candidates.length} 道相似题，已按设置跳过` } });
+              }
               log(`第 ${item.index + 1} 题有 ${candidates.length} 道相似题，已按设置跳过`, "warning");
               continue;
             }
@@ -23029,7 +23045,9 @@ const XS_EXT = (() => {
                 return cand ? normalizeLocalBackendAnswers(cand.answer, (block.options || []).map((opt) => stripLetter(opt.text))) : null;
               })();
             if (!picked || !picked.length) {
-              setItem(item.index, { status: "fail", msg: "等待选择超时，已跳过" });
+              if (!keepPageAnswer(item.index, block)) {
+                setItem(item.index, { status: "fail", msg: "等待选择超时，已跳过" });
+              }
               log(`第 ${item.index + 1} 题等待选择超时，已跳过`, "warning");
               continue;
             }
@@ -23037,8 +23055,10 @@ const XS_EXT = (() => {
             alreadyFilled = isOuchnHost();
           }
           if (!Array.isArray(answer) || !answer.length) {
-            setItem(item.index, { status: "fail", msg: (res && res.msg) || "未搜到答案" });
-            syncStoreItem(item.index, { answer: { code: -1, answer: [], msg: (res && res.msg) || "未搜到答案" } });
+            if (!keepPageAnswer(item.index, block)) {
+              setItem(item.index, { status: "fail", msg: (res && res.msg) || "未搜到答案" });
+              syncStoreItem(item.index, { answer: { code: -1, answer: [], msg: (res && res.msg) || "未搜到答案" } });
+            }
             log(`第 ${item.index + 1} 题未搜到答案`, "warning");
             continue;
           }
@@ -23065,8 +23085,10 @@ const XS_EXT = (() => {
             });
             log(`第 ${item.index + 1} 题${needCheck ? "已填，需核对" : "已作答"}：${answer.join(" ")}`, needCheck ? "warning" : void 0);
           } else {
-            setItem(item.index, { status: "fail", answer: answer.join(" "), msg: filled.reason || "填写失败" });
-            syncStoreItem(item.index, { answer: { code: -1, answer: [], msg: "答案拿到了但没点上去" } });
+            if (!keepPageAnswer(item.index, block)) {
+              setItem(item.index, { status: "fail", answer: answer.join(" "), msg: filled.reason || "填写失败" });
+              syncStoreItem(item.index, { answer: { code: -1, answer: [], msg: "答案拿到了但没点上去" } });
+            }
             log(`第 ${item.index + 1} 题 ${filled.reason || "填写失败"}`, "warning");
           }
           state.done++;
