@@ -9173,6 +9173,17 @@ const MAX_RECORDS = 200;
               nodes: el ? [el] : []
             });
           };
+          // addChoice / toggleChoice 这类选项是切换式的：重试时会再点一遍，等于把刚选上的又取消，
+          // 题目反而变空。这类题只填一次，失败就如实上报，交给用户处理。
+          const usesToggleOptions = (question) => {
+            try {
+              return !!(question && question.element && question.element.querySelector(
+                '[onclick*="addChoice"], [onclick*="toggleChoice"], [onclick*="switchChoice"]'
+              ));
+            } catch (_) {
+              return false;
+            }
+          };
           registerQuestionFillHook(this);
           for (const [index, question] of this.questions.entries()) {
             if (!this.setting.config.basicConfig.autoAnswer.value) break;
@@ -9201,7 +9212,7 @@ const MAX_RECORDS = 200;
                 let fillSuccess = this.fillQuestion(question);
                 // 第一次就成功不再重试；只有「页面可能还没更新完」的原因重试有意义，
                 // 答案没匹配/找不到输入框这类重试也不会变好，白花时间。
-                if (!fillSuccess && ["0", "1"].includes(question.type)) {
+                if (!fillSuccess && ["0", "1"].includes(question.type) && !usesToggleOptions(question)) {
                   const retryable = ["click_not_effective", "fill_not_effective", "answer_partial_match", "extra_selected", ""];
                   for (let attempt = 0; attempt < 2; attempt++) {
                     if (!retryable.includes(String(question.__xsFillReason || ""))) break;
@@ -9246,7 +9257,7 @@ const MAX_RECORDS = 200;
                 let fillSuccess = this.fillQuestion(question);
                 // 第一次就成功不再重试；只有「页面可能还没更新完」的原因重试有意义，
                 // 答案没匹配/找不到输入框这类重试也不会变好，白花时间。
-                if (!fillSuccess && ["0", "1"].includes(question.type)) {
+                if (!fillSuccess && ["0", "1"].includes(question.type) && !usesToggleOptions(question)) {
                   const retryable = ["click_not_effective", "fill_not_effective", "answer_partial_match", "extra_selected", ""];
                   for (let attempt = 0; attempt < 2; attempt++) {
                     if (!retryable.includes(String(question.__xsFillReason || ""))) break;
@@ -9625,6 +9636,22 @@ const MAX_RECORDS = 200;
         }
         try {
           optionContainer.dispatchEvent && optionContainer.dispatchEvent(new this._window.MouseEvent("click", { bubbles: true }));
+        } catch (_) {
+        }
+        if (this.isChoiceOptionSelected(optionContainer)) return true;
+        // 新版章节测验有 li[role=checkbox] 这种自定义复选控件，只响应指针事件，.click() 不触发；
+        // 走到这里说明前面所有点击都没让页面产生任何变化，再补一组指针事件试试。
+        try {
+          const win = this._window;
+          ["pointerdown", "mousedown", "pointerup", "mouseup"].forEach((type) => {
+            try {
+              const evt = type.indexOf("pointer") === 0 && typeof win.PointerEvent === "function"
+                ? new win.PointerEvent(type, { bubbles: true, cancelable: true, view: win, button: 0 })
+                : new win.MouseEvent(type, { bubbles: true, cancelable: true, view: win, button: 0 });
+              optionContainer.dispatchEvent(evt);
+            } catch (_) {
+            }
+          });
         } catch (_) {
         }
         return this.isChoiceOptionSelected(optionContainer);
