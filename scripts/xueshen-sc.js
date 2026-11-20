@@ -8830,23 +8830,27 @@ const MAX_RECORDS = 200;
       };
       this.questionTypeKeywordRules = [
         {
-          keywords: ["单项选择", "单选"],
+          // 英文课程题面写 Multiple Choice / Single Choice，全中文关键词识别不了，
+          // 会被判成 999「异常题型」整题跳过（后台 3372891）。
+          // normalizeQuestionTypeText 会去掉空格且不转小写，所以英文关键词
+          // 统一写成「小写 + 无空格」的形式，匹配时用小写化文本比对。
+          keywords: ["单项选择", "单选", "singlechoice"],
           type: "0"
         },
         {
-          keywords: ["多项选择", "多选", "不定项", "X型"],
+          keywords: ["多项选择", "多选", "不定项", "X型", "multiplechoice"],
           type: "1"
         },
         {
-          keywords: ["填空", "思政元素"],
+          keywords: ["填空", "思政元素", "fillintheblank"],
           type: "2"
         },
         {
-          keywords: ["判断", "是非"],
+          keywords: ["判断", "是非", "trueorfalse", "judgement", "judgment"],
           type: "3"
         },
         {
-          keywords: ["简答"],
+          keywords: ["简答", "shortanswer"],
           type: "4"
         },
         {
@@ -8854,34 +8858,34 @@ const MAX_RECORDS = 200;
           type: "5"
         },
         {
-          keywords: ["论述"],
+          keywords: ["论述", "essay"],
           type: "6"
         },
         {
           // 学习通新版把作文/写作单独编码成 answertype=26，题型名直接写「写作题」。
           // 不识别的话整题会被判成 999「异常题型」，连 AI 都不会调。
-          keywords: ["写作", "作文"],
+          keywords: ["写作", "作文", "writing"],
           type: "26"
         },
         {
-          keywords: ["计算"],
+          keywords: ["计算", "calculation"],
           type: "7"
         },
         {
           // 证明题同样按步骤给分：只回一句结论等于没写过程
-          keywords: ["证明"],
+          keywords: ["证明", "proof"],
           type: "7"
         },
         {
-          keywords: ["连线", "匹配"],
+          keywords: ["连线", "匹配", "matching"],
           type: "11"
         },
         {
-          keywords: ["完型填空", "完形填空"],
+          keywords: ["完型填空", "完形填空", "cloze"],
           type: "14"
         },
         {
-          keywords: ["阅读理解"],
+          keywords: ["阅读理解", "readingcomprehension"],
           type: "15"
         }
       ];
@@ -9026,8 +9030,9 @@ const MAX_RECORDS = 200;
         if (exactQuestionTypeMap[normalizedText]) {
           return exactQuestionTypeMap[normalizedText];
         }
+        const lowerText = normalizedText.toLowerCase();
         const matchedRule = this.questionTypeKeywordRules.find(
-          (rule) => rule.keywords.some((keyword) => normalizedText.includes(keyword))
+          (rule) => rule.keywords.some((keyword) => lowerText.includes(keyword.toLowerCase()))
         );
         return (matchedRule == null ? void 0 : matchedRule.type) || "999";
       };
@@ -10123,6 +10128,46 @@ const MAX_RECORDS = 200;
             }
           }
           for (const answer of answers) {
+            // 罗马数字答案（I、II、IV）：页面选项也用罗马数字编号时按编号对位。
+            // 不处理的话会被当成普通字母 A-Z 解析——I 变成第 9 个选项、IV 直接越界，
+            // 整题放弃（后台 3372189）。要求一半以上选项带罗马数字前缀才启用，
+            // 防止英文选项正文以「I 」开头（I like it）时误撞。
+            const romanRe = /^(?:X{0,3}(?:IX|IX|IV|V?I{0,3}))$/i;
+            const romanValue = (s) => {
+              const map = { I: 1, V: 5, X: 10 };
+              let total = 0;
+              for (let i = 0; i < s.length; i++) {
+                const cur = map[s[i]];
+                const next = map[s[i + 1]];
+                total += next && next > cur ? -cur : cur;
+              }
+              return total;
+            };
+            const romanPrefixOf = (k) => {
+              const body = this.removeHtml(String(k || "")).normalize("NFKC").trim();
+              const m = body.match(/^([IVXivx]+)\s*[.、．)）:：]/);
+              return m ? romanValue(m[1].toUpperCase()) : 0;
+            };
+            const romanPieces = String(answer || "").split(/[\s,，、;；|]+/).map((s) => s.trim()).filter(Boolean);
+            if (romanPieces.length >= 1 && romanPieces.every((p) => romanRe.test(p)) &&
+                optionKeys.length >= 2 &&
+                optionKeys.filter((k) => romanPrefixOf(k) > 0).length >= Math.ceil(optionKeys.length / 2)) {
+              let romanOk = true;
+              const romanTargets = [];
+              for (const piece of romanPieces) {
+                const want = romanValue(piece.toUpperCase());
+                const hits = optionKeys.filter((k) => romanPrefixOf(k) === want);
+                if (want <= 0 || hits.length !== 1) {
+                  romanOk = false;
+                  break;
+                }
+                romanTargets.push(hits[0]);
+              }
+              if (romanOk && romanTargets.length) {
+                romanTargets.forEach((k) => targets.add(k));
+                continue;
+              }
+            }
             const clearAnswer = cleanChoiceAnswer(this.removeHtml(String(answer)));
             const text = String(clearAnswer).normalize("NFKC").trim();
             let matches = optionKeys.filter(k => k === clearAnswer);
@@ -15780,9 +15825,44 @@ const MAX_RECORDS = 200;
       return el.isContentEditable === true || !!(el.getAttribute && el.getAttribute("contenteditable") === "true");
     };
     const fillBlank = (question, answers) => {
-      const inputs = Array.from(
-        question.element.querySelectorAll("input, textarea, [contenteditable='true'], .fillAnswer input, .fillAnswer textarea")
+      const collectBlankInputs = (root) => Array.from(
+        root.querySelectorAll("input, textarea, [contenteditable='true'], .fillAnswer input, .fillAnswer textarea")
       ).filter(isBlankInput);
+      let inputs = collectBlankInputs(question.element);
+      // 智慧树填空客观题的输入框不一定挂在题干节点里：题干(.questionContent)和
+      // 输入框(.fillAnswer)常是兄弟节点，只在自己范围内找会漏掉大部分空，
+      // 表现就是「4 个空只识别 1 个输入框」整题失败（后台 3371721）。
+      // 向上最多扩 3 层重新收集，取收集到更多的那层；搜索框这类题目外控件
+      // 一般在 header/侧栏，隔了很远，不会被带进来。
+      if (inputs.length < 2) {
+        let parent = question.element && question.element.parentElement;
+        for (let up = 0; up < 3 && parent; up += 1) {
+          const wider = collectBlankInputs(parent);
+          if (wider.length > inputs.length) inputs = wider;
+          parent = parent.parentElement;
+        }
+      }
+      // 题干有多个空但输入框懒渲染时（要点一下空位才出输入框），点一遍题干里的
+      // 占位/填空区域再重新收集一次
+      const blankCountInTitle = (String(question.title || "").match(/_{2,}/g) || []).length;
+      if (inputs.length < blankCountInTitle) {
+        try {
+          (question.element || document).querySelectorAll(
+            ".fillAnswer, [class*='blank'], [class*='Blank']"
+          ).forEach((el) => {
+            try { el.click(); } catch (_) {}
+          });
+        } catch (_) {}
+        inputs = collectBlankInputs(question.element);
+        if (inputs.length < blankCountInTitle) {
+          let parent = question.element && question.element.parentElement;
+          for (let up = 0; up < 3 && parent; up += 1) {
+            const wider = collectBlankInputs(parent);
+            if (wider.length > inputs.length) inputs = wider;
+            parent = parent.parentElement;
+          }
+        }
+      }
       if (!inputs.length) return false;
       let values = (answers || []).map((a) => String(a == null ? "" : a).trim()).filter(Boolean);
       if (values.length < inputs.length) {
@@ -16167,7 +16247,28 @@ const MAX_RECORDS = 200;
             expected: "写入后能回读为已填写/已选中",
             found: {
               type: String(question.type || ""),
-              options: (question.optionsText || []).length
+              options: (question.optionsText || []).length,
+              // 填空/主观题把输入框数量和结构带回，后台能直接看出是没找到框还是框不够
+              blank_inputs: (() => {
+                try {
+                  return (question.element || document).querySelectorAll(
+                    "input, textarea, [contenteditable='true']"
+                  ).length;
+                } catch (_) {
+                  return 0;
+                }
+              })(),
+              blank_html: (() => {
+                try {
+                  const el = (question.element || document).querySelector(
+                    "input, textarea, [contenteditable='true'], .fillAnswer"
+                  );
+                  return el && el.outerHTML ? String(el.outerHTML).replace(/\s+/g, " ").slice(0, 300) : "";
+                } catch (_) {
+                  return "";
+                }
+              })(),
+              blank_partial: (question.__xsBlankPartial || 0)
             },
             nodes: question.element ? [question.element] : []
           });
