@@ -22998,7 +22998,8 @@ const XS_EXT = (() => {
       log(`开始作答，共 ${usable.length} 道题`);
       for (const item of state.items.slice()) {
         if (!state.running) break;
-        if (item.status === "done") { state.done++; continue; }
+        // 自动作答不动页面上已经答过的题；用户手动点「开始答题」时整页重新答一遍
+        if (item.status === "done" && auto) { state.done++; continue; }
         const block = registry[item.index];
         if (!block) continue;
         setItem(item.index, { status: "running" });
