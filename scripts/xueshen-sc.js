@@ -21230,6 +21230,7 @@ const XS_EXT = (() => {
     });
     let timer = null;
     let tickBusy = false;
+    let tickStartedAt = 0;
     let originalHasFocus = null;
     // 点过「下一节」后先等页面换掉视频，避免同一节被反复点
     const advanceGuard = { at: 0, href: "", src: "" };
@@ -21437,8 +21438,11 @@ const XS_EXT = (() => {
             if (timer2) clearTimeout(timer2);
           }
         }
-        ouchnAll.videos = videos;
-        ouchnAll.at = Date.now();
+        // 课程数据还没加载出来时结果是空的，不能缓存，等下一轮再拉
+        if (videos.length) {
+          ouchnAll.videos = videos;
+          ouchnAll.at = Date.now();
+        }
       } finally {
         ouchnAll.loading = false;
       }
@@ -21528,6 +21532,68 @@ const XS_EXT = (() => {
         log(`跳转「${activity.title}」失败：${e && e.message || e}`);
       }
       return false;
+    };
+    // 国开课件（PDF/PPT）用 note-bene 阅读器打开，自动往下翻到最后一页
+    const ouchnPdfState = { id: "", done: /* @__PURE__ */ new Set(), doneAt: 0, clickedAt: 0 };
+    const ouchnReadPdf = async () => {
+      const id = ouchn.currentId || ouchnCurrentId();
+      const activity = id ? ouchnActivityOf(id) : null;
+      // 只在课件任务上翻页，视频、测验页面不碰
+      if (!activity || activity.type !== "material") return "";
+      let frame = null;
+      try {
+        frame = Array.from(document.querySelectorAll("iframe")).find((item) => {
+          if (!/pdf-viewer|note-bene/i.test(String(item.src || ""))) return false;
+          const rect = item.getBoundingClientRect();
+          return rect.width > 50 && rect.height > 50;
+        });
+      } catch (e) {
+        frame = null;
+      }
+      if (!frame || !frame.contentDocument) {
+        // 课件页先点「查看」把阅读器打开
+        if (Date.now() - ouchnPdfState.clickedAt > 8000) {
+          const view = queryAll("a, button, span").find((el) => isVisible(el) && textOf(el) === "查看");
+          if (view) {
+            ouchnPdfState.clickedAt = Date.now();
+            try {
+              view.click();
+              log(`打开${ouchnLabel(id)}的课件文件`);
+            } catch (e) {
+            }
+            return "opening";
+          }
+        }
+        return "";
+      }
+      const doc = frame.contentDocument;
+      let scroller = null;
+      try {
+        // 阅读器里侧栏也能滚，取内容最长的那一块才是正文
+        for (const el of doc.querySelectorAll("div")) {
+          const style = doc.defaultView.getComputedStyle(el);
+          if (!/(auto|scroll)/.test(style.overflowY) || el.scrollHeight <= el.clientHeight * 1.5) continue;
+          if (!scroller || el.scrollHeight > scroller.scrollHeight) scroller = el;
+        }
+      } catch (e) {
+        scroller = null;
+      }
+      if (!scroller) return "";
+      if (ouchnPdfState.id !== id) {
+        ouchnPdfState.id = id;
+        const pages = String(doc.body && doc.body.innerText || "").match(/\/\s*(\d+)/);
+        log(`开始阅读${ouchnLabel(id)}${pages ? `（共 ${pages[1]} 页）` : ""}`);
+      }
+      if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4) {
+        if (!ouchnPdfState.done.has(id)) {
+          ouchnPdfState.done.add(id);
+          ouchnPdfState.doneAt = Date.now();
+          log(`${ouchnLabel(id)}已翻到最后一页`);
+        }
+        return "done";
+      }
+      scroller.scrollTop = Math.min(scroller.scrollHeight, scroller.scrollTop + Math.max(600, scroller.clientHeight * 3));
+      return "reading";
     };
     // 本模块没有下一个未完成视频时，跨模块找第一个没看完且已解锁的视频
     const ouchnNextGlobal = async (currentId) => {
@@ -21717,8 +21783,14 @@ const XS_EXT = (() => {
       return null;
     };
     const tick = async (profile) => {
-      if (!state.running || tickBusy) return;
+      if (!state.running) return;
+      // 上一轮卡在慢请求上时不要一直占着锁，超过 15 秒就放开重来
+      if (tickBusy) {
+        if (Date.now() - tickStartedAt < 15000) return;
+        tickBusy = false;
+      }
       tickBusy = true;
+      tickStartedAt = Date.now();
       try {
         if (!document.body) return;
         const settings = readWatchSettings();
@@ -21744,9 +21816,34 @@ const XS_EXT = (() => {
           }
         }
         if (handleQuizPopup(profile)) return;
-        const video = findVideo();
+        // 国开切到课件/测验后，上一个视频的播放器可能还挂在页面里，别拿它当当前视频
+        let video = findVideo();
+        if (video && isOuchnWatch(profile)) {
+          const task = ouchn.currentId ? ouchnActivityOf(ouchn.currentId) : null;
+          if (task && task.type !== "online_video") video = null;
+        }
         if (!video) {
           state.progress = "";
+          // 国开课件（PDF/PPT）：自动翻页，翻到底后接着找下一个没完成的视频
+          if (isOuchnWatch(profile)) {
+            const pdfState = await ouchnReadPdf();
+            if (pdfState) {
+              state.media = pdfState === "done" ? "课件已翻到最后一页" : "课件：正在自动翻页";
+              if (pdfState === "done" && Date.now() - ouchnPdfState.doneAt > 8000 && Date.now() - ouchn.lastOpenAt > 8000) {
+                const pdfId = ouchn.currentId || ouchnCurrentId();
+                const next = await ouchnNextGlobal(pdfId);
+                if (next) {
+                  ouchn.lastOpenAt = Date.now();
+                  log(`${ouchnLabel(pdfId)}已翻到最后一页，接着看「${next.title || next.id}」`);
+                  if (ouchnOpen(next)) {
+                    state.media = "已翻完课件，继续下一个视频";
+                    return;
+                  }
+                }
+              }
+              return;
+            }
+          }
           // 国开：视频任务迟迟没挂载播放器时，只在面板里提示一句；页面结构只写到控制台，方便排查
           if (profile.id === "ouchn" || profile.id === "ouchn-syxy") {
             const taskId = ouchn.currentId || ouchnCurrentId();
@@ -21826,8 +21923,13 @@ const XS_EXT = (() => {
                 return;
               }
             } else if (Date.now() - ouchn.lastSkipLogAt > 60000) {
-              ouchn.lastSkipLogAt = Date.now();
-              log(allVideos.length ? "视频任务都已完成或还没解锁" : "课程里没有找到视频任务");
+              // 课程数据还没加载出来时先不提示，免得用户以为课程里没有视频
+              const menu2 = scope && scope.$parent;
+              const modules2 = (menu2 && menu2.course && menu2.course.modules) || [];
+              if (modules2.length) {
+                ouchn.lastSkipLogAt = Date.now();
+                log(allVideos.length ? "视频任务都已完成或还没解锁" : "课程里没有找到视频任务");
+              }
             }
           }
           if (settings.autoScroll && profile.doc) {
@@ -22008,7 +22110,7 @@ const XS_EXT = (() => {
         tickBusy = false;
       }
     };
-    const watchApi = { prefs, state, start, stop, tick, profileFor: xsWatchProfileFor, supported: xsWatchSupported, autoStart: () => {
+    const watchApi = { prefs, state, start, stop, tick, open: ouchnOpen, nextGlobal: ouchnNextGlobal, profileFor: xsWatchProfileFor, supported: xsWatchSupported, autoStart: () => {
       const profile = xsWatchProfileFor(location.hostname);
       if (!profile) return;
       // 设置里的「视频助手」开着才自动开始，关掉后连进入页面都不动
@@ -22397,7 +22499,7 @@ const XS_EXT = (() => {
       }
       // 填空、简答：不属于任何选择题块的输入框
       const textInputs = Array.from(scope.querySelectorAll('input[type="text"], input:not([type]), textarea'))
-        .filter((el) => !el.disabled && !el.readOnly)
+        .filter((el) => !el.disabled && !el.readOnly && isShownControl(el))
         .filter((el) => !blocks.some((b) => b.el.contains(el)));
       const seen = new Set();
       for (const input of textInputs) {
@@ -22724,7 +22826,12 @@ const XS_EXT = (() => {
       setTimeout(() => { try { scan(true); } catch (_) {} }, 6000);
     };
 
-    return { state, scan, start, stop, inspect, Panel, boot, findBlocks, fill };
+    const quizApi = { state, scan, start, stop, inspect, Panel, boot, findBlocks, fill };
+    try {
+      (_unsafeWindow || window).__xsQuiz = quizApi;
+    } catch (e) {
+    }
+    return quizApi;
   })();
 
   const xsWatchRoutes = {
