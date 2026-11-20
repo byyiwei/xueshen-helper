@@ -21561,6 +21561,7 @@ const XS_EXT = (() => {
       for (const activity of ordered) {
         if (!ouchnAutoTask(activity)) continue;
         if (skipDone && ouchnIsFull(activity.id)) continue;
+        if (ouchnPdfCooling(activity)) continue;
         if (ouchnIsLocked(activity)) continue;
         return activity;
       }
@@ -21575,6 +21576,10 @@ const XS_EXT = (() => {
           log(`「${activity.title}」还未解锁，等前面的任务完成`);
           return false;
         }
+        // 课件阅读器是盖满整页的浮层，活动切换不会把它带走，先关掉，否则新任务在背后打开、画面还停在旧课件
+        const targetId = String(activity.id || "");
+        const hereId = String(ouchn.currentId || ouchnCurrentId() || "");
+        if (targetId && targetId !== hereId) ouchnCloseViewer();
         if (typeof scope.$apply === "function" && typeof scope.changeActivity === "function") {
           scope.$apply(() => scope.changeActivity(activity));
           return true;
@@ -21592,7 +21597,28 @@ const XS_EXT = (() => {
       return !!activity && activity.type === "material";
     };
     // 国开课件（PDF/PPT）用 note-bene 阅读器打开，自动往下翻到最后一页
-    const ouchnPdfState = { id: "", done: /* @__PURE__ */ new Set(), doneAt: 0, clickedAt: 0 };
+    const ouchnPdfState = { id: "", viewerId: "", done: /* @__PURE__ */ new Set(), doneAt: 0, clickedAt: 0, at: {} };
+    // 关掉课件阅读器浮层；不关的话它会一直挡在新打开的页面上
+    const ouchnCloseViewer = () => {
+      try {
+        const viewer = document.querySelector("#file-previewer.open, .pdf-reader-wrapper.open");
+        if (!viewer) return false;
+        const close = viewer.querySelector("a.right.close") || viewer.querySelector(".font-close") || viewer.querySelector("[class*=close]");
+        if (close) {
+          close.click();
+          ouchnPdfState.viewerId = "";
+          return true;
+        }
+      } catch (e) {
+      }
+      return false;
+    };
+    // 刚读完但平台还没记成完成的课件，两分钟内不再重复打开，免得在几个课件之间来回空转
+    const ouchnPdfCooling = (activity) => {
+      if (!activity || activity.type !== "material") return false;
+      const at = ouchnPdfState.at[String(activity.id)] || 0;
+      return !!at && Date.now() - at < 120e3;
+    };
     const ouchnReadPdf = async () => {
       const id = ouchn.currentId || ouchnCurrentId();
       if (!id) return "";
@@ -21606,6 +21632,11 @@ const XS_EXT = (() => {
       if (!activity || activity.type !== "material") return "";
       // 平台已经标记完成的课件不再重复打开，直接交给跳转逻辑
       if (ouchnIsFull(id) && readWatchSettings().skipDone) return "skip";
+      // 阅读器还停在上一个课件上（浮层不随活动切换消失）：先关掉，不能拿旧文件当本次课件
+      if (ouchnPdfState.viewerId && ouchnPdfState.viewerId !== String(id)) {
+        ouchnCloseViewer();
+        return "";
+      }
       let frame = null;
       try {
         frame = Array.from(document.querySelectorAll("iframe")).find((item) => {
@@ -21622,6 +21653,7 @@ const XS_EXT = (() => {
           const view = queryAll("a, button, span").find((el) => isVisible(el) && textOf(el) === "查看");
           if (view) {
             ouchnPdfState.clickedAt = Date.now();
+            ouchnPdfState.viewerId = String(id);
             try {
               view.click();
               log(`打开${ouchnLabel(id)}的课件文件`);
@@ -21632,6 +21664,8 @@ const XS_EXT = (() => {
         }
         return "";
       }
+      // 阅读器是用户自己打开的（不是脚本点的「查看」）时，按当前课件认
+      if (!ouchnPdfState.viewerId) ouchnPdfState.viewerId = String(id);
       const doc = frame.contentDocument;
       let scroller = null;
       try {
@@ -21654,6 +21688,7 @@ const XS_EXT = (() => {
         if (!ouchnPdfState.done.has(id)) {
           ouchnPdfState.done.add(id);
           ouchnPdfState.doneAt = Date.now();
+          ouchnPdfState.at[id] = Date.now();
           log(`${ouchnLabel(id)}已翻到最后一页`);
         }
         return "done";
@@ -21684,10 +21719,44 @@ const XS_EXT = (() => {
         if (!ouchnAutoTask(activity)) continue;
         if (String(activity.id) === String(currentId)) continue;
         if (skipDone && ouchnIsFull(activity.id)) continue;
+        if (ouchnPdfCooling(activity)) continue;
         if (ouchnIsLocked(activity)) continue;
         return activity;
       }
       return null;
+    };
+    // 没找到下一个任务时，区分“都完成了”和“后面还有没解锁的”，别把锁住的未完成任务说成已完成
+    const ouchnLeftover = () => {
+      const list = (ouchnAll.list && ouchnAll.list.length) ? ouchnAll.list : [];
+      let done = 0;
+      let locked = 0;
+      let open = 0;
+      let cooling = 0;
+      for (const activity of list) {
+        if (!ouchnAutoTask(activity)) continue;
+        if (ouchnIsFull(activity.id)) {
+          done += 1;
+          continue;
+        }
+        if (ouchnIsLocked(activity)) {
+          locked += 1;
+          continue;
+        }
+        if (ouchnPdfCooling(activity)) {
+          cooling += 1;
+          continue;
+        }
+        open += 1;
+      }
+      return { done, locked, open, cooling };
+    };
+    const ouchnWaitText = () => {
+      const left = ouchnLeftover();
+      if (!left.done && !left.locked && !left.open && !left.cooling) return "还没拿到课程任务数据，稍后再找";
+      if (left.open) return "还有没完成的任务，稍后继续";
+      if (left.locked) return `还有 ${left.locked} 个视频/课件没解锁，前面的任务完成后会自动接着学`;
+      if (left.cooling) return "刚读完的课件还在等平台记进度，稍后自动继续";
+      return "课程里的视频和课件都已完成";
     };
     // 活动名称缓存：离开任务页后菜单数据可能已经换掉，日志里仍要能叫出视频名字
     const ouchnTitles = {};
@@ -21906,14 +21975,22 @@ const XS_EXT = (() => {
               state.media = pdfState === "done" ? "课件已翻到最后一页" : (pdfState === "skip" ? "课件已完成，跳过" : "课件：正在自动翻页");
               if ((pdfState === "done" || pdfState === "skip") && Date.now() - ouchnPdfState.doneAt > 8000 && Date.now() - ouchn.lastOpenAt > 8000) {
                 const pdfId = ouchn.currentId || ouchnCurrentId();
+                // 平台要过几秒才把课件记成完成；没确认前先别切走，切走了会被反复重读
+                if (pdfState === "done" && pdfId && !ouchnIsFull(pdfId) && Date.now() - (ouchnPdfState.at[pdfId] || ouchnPdfState.doneAt) < 45000) {
+                  state.media = "课件已翻完，等平台记进度";
+                  return;
+                }
                 const next = await ouchnNextGlobal(pdfId);
                 if (next) {
                   ouchn.lastOpenAt = Date.now();
-                  log(pdfState === "skip" ? `${ouchnLabel(pdfId)}已完成，接着看「${next.title || next.id}」` : `${ouchnLabel(pdfId)}已翻到最后一页，接着看「${next.title || next.id}」`);
                   if (ouchnOpen(next)) {
+                    log(pdfState === "skip" ? `${ouchnLabel(pdfId)}已完成，接着看「${next.title || next.id}」` : `${ouchnLabel(pdfId)}已翻到最后一页，接着看「${next.title || next.id}」`);
                     state.media = pdfState === "skip" ? "已跳过完成的课件" : "已翻完课件，继续下一个视频";
                     return;
                   }
+                } else if (Date.now() - ouchn.lastSkipLogAt > 60000) {
+                  ouchn.lastSkipLogAt = Date.now();
+                  log(ouchnWaitText());
                 }
               }
               return;
@@ -21973,7 +22050,7 @@ const XS_EXT = (() => {
                   }
                 } else if (Date.now() - ouchn.lastSkipLogAt > 60000) {
                   ouchn.lastSkipLogAt = Date.now();
-                  log("课程里的视频都已完成，等待手动切换");
+                  log(ouchnWaitText());
                 }
               }
             }
@@ -22001,7 +22078,7 @@ const XS_EXT = (() => {
               const modules2 = (menu2 && menu2.course && menu2.course.modules) || [];
               if (modules2.length) {
                 ouchn.lastSkipLogAt = Date.now();
-                log(allVideos.length ? "视频和课件都已完成或还没解锁" : "课程里没有找到能自动学习的任务");
+                log(allVideos.length ? ouchnWaitText() : "课程里没有找到能自动学习的任务");
               }
             }
           }
@@ -22043,7 +22120,7 @@ const XS_EXT = (() => {
                 }
               } else if (Date.now() - ouchn.lastSkipLogAt > 60000) {
                 ouchn.lastSkipLogAt = Date.now();
-                log("课程里的视频都已完成，等待手动切换");
+                log(ouchnWaitText());
               }
             }
             state.status = next ? "等待下一个视频解锁" : "本模块视频已完成";
@@ -22130,7 +22207,7 @@ const XS_EXT = (() => {
                   }
                 } else if (Date.now() - ouchn.lastSkipLogAt > 60000) {
                   ouchn.lastSkipLogAt = Date.now();
-                  log("课程里的视频都已完成，等待手动切换");
+                  log(ouchnWaitText());
                 }
                 state.status = "视频任务已完成";
                 return;
