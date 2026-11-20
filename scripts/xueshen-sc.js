@@ -21456,7 +21456,9 @@ const XS_EXT = (() => {
       arrivedAt: 0,
       lastSkipLogAt: 0,
       endedAt: 0,
-      resumed: new Set()
+      resumed: new Set(),
+      // 重看模式（关掉「已完成任务自动跳过」）下每节最多重看一次，防止全部看完后无限轮转
+      replayed: new Set()
     };
     const isOuchnWatch = (profile) => !!profile && (profile.id === "ouchn" || profile.id === "ouchn-syxy");
     const ouchnCourseId = () => {
@@ -21622,7 +21624,10 @@ const XS_EXT = (() => {
     // 从当前活动往后找第一个没完成的视频任务
     // 视频和课件都能自动打开，考试、作业、讨论这些不能替用户点
     const ouchnAutoTask = (activity) => !!activity && (activity.type === "online_video" || activity.type === "material");
-    // 从当前任务往后找第一个没完成的视频或课件（按课程顺序）
+    // 从当前任务往后找第一个没完成的视频或课件（按课程顺序）。
+    // 「已完成任务自动跳过」关闭时是重看模式：不排除已完成任务，但要挡两件事——
+    // 一是不能把当前任务自己当「下一节」（单视频课程会反复重开自己），
+    // 二是每节最多重看一次（ouchn.replayed 记录），都重看完就停，否则 A→B→C→A 无限轮转
     const ouchnNextVideo = (currentId) => {
       // 整门课程数据还没拉回来时先返回 null，让调用方走跨模块接口重新拉
       const activities = (ouchnAll.list && ouchnAll.list.length) ? ouchnAll.list : null;
@@ -21633,7 +21638,9 @@ const XS_EXT = (() => {
       const skipDone = readWatchSettings().skipDone;
       for (const activity of ordered) {
         if (!ouchnAutoTask(activity)) continue;
+        if (String(activity.id) === String(currentId)) continue;
         if (skipDone && ouchnIsFull(activity.id)) continue;
+        if (!skipDone && ouchn.replayed.has(String(activity.id))) continue;
         if (ouchnPdfCooling(activity)) continue;
         if (ouchnIsLocked(activity)) continue;
         return activity;
@@ -21644,6 +21651,8 @@ const XS_EXT = (() => {
       if (!activity) return false;
       const scope = ouchnScope();
       if (!scope) return false;
+      // 重看模式下标记这一节已经重看过：挑下一节时排除掉，防止单视频反复重开、多视频 A→B→C 无限轮转
+      if (!readWatchSettings().skipDone) ouchn.replayed.add(String(activity.id));
       try {
         if (typeof scope.activityIsLocked === "function" && scope.activityIsLocked(activity)) {
           log(`「${activity.title}」还未解锁，等前面的任务完成`);
@@ -21792,6 +21801,7 @@ const XS_EXT = (() => {
         if (!ouchnAutoTask(activity)) continue;
         if (String(activity.id) === String(currentId)) continue;
         if (skipDone && ouchnIsFull(activity.id)) continue;
+        if (!skipDone && ouchn.replayed.has(String(activity.id))) continue;
         if (ouchnPdfCooling(activity)) continue;
         if (ouchnIsLocked(activity)) continue;
         return activity;
