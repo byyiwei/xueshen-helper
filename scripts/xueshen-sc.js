@@ -13387,12 +13387,21 @@ const MAX_RECORDS = 200;
   const watchExamDetection = () => {
     const w = _unsafeWindow || window;
     if (w.__xsExamGuardTimer) return;
+    // attachShadow 被其它扩展改掉时这里可能修不回来，检查每 60 秒跑一次：
+    // 不去重的话同一个问题每分钟刷一条上报，一天几百条全是重复的。
+    // 只有「异常项集合变化」或「首次发现」时才上报。
+    let lastReportedSig = "";
     const check = (notify) => {
       try {
         const before = collectNativeIssues();
-        if (!before.length) return;
+        if (!before.length) {
+          lastReportedSig = "";
+          return;
+        }
         guardExamDetection();
         const after = collectNativeIssues();
+        const sig = after.length ? after.join(",") : "fixed:" + before.join(",");
+        if (sig === lastReportedSig) return;
         if (notify) {
           try {
             useLogStore().insertLog(
@@ -13439,8 +13448,9 @@ const MAX_RECORDS = 200;
                   })(),
                   host: String(location.hostname || "")
                 },
-                signature: before.join(",")
+                signature: sig
               });
+              lastReportedSig = sig;
             }
           } catch (_) {}
         }
