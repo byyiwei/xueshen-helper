@@ -2304,7 +2304,10 @@
     return result;
   }
   // 哪些平台有哪些能力：设置页按当前平台过滤，没这个功能的平台不显示对应设置
-  const ANSWER_PLATFORM_KEYS = ["cx", "zhs", "qs", "ct", "jdz"];
+  const ANSWER_PLATFORM_KEYS = ["cx", "zhs", "qs", "ct", "jdz", "ouchn"];
+  // 国开考试拿不到答案对照，交卷前算不出正确率，也没有章节自动提交；
+  // 这几项只给有完整作业/考试流程的平台显示
+  const ANSWER_REPORT_KEYS = ["cx", "zhs", "qs", "ct", "jdz"];
   const WATCH_PLATFORM_KEYS = ["ykt", "mskt", "icve", "ouchn", "mooc", "uschool", "xtzx", "ytccr", "sdzj", "xczx"];
   // 自动切换页签时，别抢用户手动点开的页签（设置、搜题、记录、队列）
   const AUTO_TAB_KEYS = ["0", "1"];
@@ -2406,14 +2409,14 @@
             },
             accuracy: {
               text: "正确率",
-              platforms: ANSWER_PLATFORM_KEYS,
+              platforms: ANSWER_REPORT_KEYS,
               value: 80,
               type: "slider",
               tips: "作业、测验、考试满足设定的正确率才会提交，不满足自动保存,建议80%"
             },
             autoSubmit: {
               text: "章节、作业自动提交",
-              platforms: ANSWER_PLATFORM_KEYS,
+              platforms: ANSWER_REPORT_KEYS,
               value: true,
               type: "switch",
               tips: "（建议开启）开启后，满足正确率则自动提交作业、章节，手动答题时建议关闭此功能"
@@ -2426,7 +2429,7 @@
             },
             skipFinishedChapter: {
               text: "跳过已完成章节",
-              platforms: ANSWER_PLATFORM_KEYS,
+              platforms: ANSWER_REPORT_KEYS,
               value: true,
               type: "switch",
               tips: "（建议开启）自动切章时优先跳到目录里未完成的章节，减少空跳"
@@ -2955,7 +2958,7 @@
               _cache[5] || (_cache[5] = vue.createElementVNode("span", null, "｜", -1)),
               vue.createElementVNode("span", null, [
                 _cache[4] || (_cache[4] = vue.createTextVNode(" 准确率： ")),
-                vue.unref(questionList).length == 0 ? (vue.openBlock(), vue.createElementBlock("span", _hoisted_5$4, "未答题")) : vue.unref(accuracy) != -1 ? (vue.openBlock(), vue.createElementBlock("span", _hoisted_6$4, vue.toDisplayString(vue.unref(accuracy)) + "%", 1)) : (vue.openBlock(), vue.createElementBlock("span", _hoisted_7$4, "作业中.."))
+                vue.unref(questionList).length == 0 ? (vue.openBlock(), vue.createElementBlock("span", _hoisted_5$4, "未答题")) : vue.unref(accuracy) != -1 ? (vue.openBlock(), vue.createElementBlock("span", _hoisted_6$4, vue.toDisplayString(vue.unref(accuracy)) + "%", 1)) : (vue.openBlock(), vue.createElementBlock("span", _hoisted_7$4, /ouchn\.(cn|edu\.cn)$/i.test(location.hostname) ? "考试中" : "作业中.."))
               ]),
               _cache[6] || (_cache[6] = vue.createElementVNode("span", null, "｜", -1)),
               vue.createElementVNode("span", null, "剩余次数：" + vue.toDisplayString(vue.unref(userInfo).remainCount), 1)
@@ -3073,7 +3076,8 @@
         const sections = [
           { label: "基本设置", configs: pick(setting.config.basicConfig), showRemainCount: true }
         ];
-        if (!isWatchSite) sections.push({ label: "考试设置", configs: pick(setting.config.examConfig) });
+        // 国开虽然走通用视频助手，但考试页支持自动答题，所以考试设置也要显示
+        if (!isWatchSite || platformKey === "ouchn") sections.push({ label: "考试设置", configs: pick(setting.config.examConfig) });
         if (platformKey === "cx") sections.push({ label: "超星设置", configs: pick(setting.config.cxConfig) });
         return sections;
       });
@@ -22528,16 +22532,19 @@ const XS_EXT = (() => {
         blanks: ["textarea", 'input[type="text"]'],
         captcha: ""
       },
-      // 国家开放大学（学习网老版 + 电大考试站）
+      // 国家开放大学（新版学习网 + 学习网老版 + 电大考试站）
+      // 新版考试页每道题是 li.subject，选项是 ol.subject-options > li.option：
+      // 单选/判断的 radio 在选项行里，而且每个选项的 name 都不一样（不能按 name 归组）；
+      // 题型写在 .summary-sub-title（单选题 / 多选题 / 判断题）。
       {
         id: "ouchn-lms",
         domains: ["ouchn.cn", "ouchn.edu.cn"],
         roots: ["li.subject", ".everyQuest"],
         title: [".summary-title .subject-description", ".topicTitle"],
-        type: [".subject-point > span", ".question-box .tag"],
-        options: [".subject-options li .option-content", ".optionList .topicTitle", ".optionList li"],
-        optionText: [],
-        blanks: ["textarea", 'input[type="text"]'],
+        type: [".summary-sub-title", ".subject-point > span", ".question-box .tag"],
+        options: [".subject-options li.option", ".optionList .topicTitle", ".optionList li"],
+        optionText: [".option-content", ".topicTitle"],
+        blanks: [".subject-body textarea", ".subject-body input[type='text']", "textarea", 'input[type="text"]'],
         captcha: ""
       },
       // 西财在线
@@ -22798,12 +22805,37 @@ const XS_EXT = (() => {
       total: 0,
       done: 0,
       items: [],
-      logs: []
+      logs: [],
+      // 题库有多道相似题时，把候选项挂在这里，面板下方渲染出来给用户点
+      pick: null
     });
 
-    const log = (text) => {
+    let pickResolve = null;
+    // 等用户点候选：超时 10 分钟按跳过处理，避免整轮答题一直挂着
+    const waitPick = (rule) => new Promise((resolve) => {
+      const started = Date.now();
+      state.pick = rule;
+      pickResolve = (cand) => {
+        clearInterval(timer);
+        pickResolve = null;
+        state.pick = null;
+        resolve(cand || null);
+      };
+      const timer = setInterval(() => {
+        if (pickResolve && Date.now() - started > 10 * 60 * 1e3) pickResolve(null);
+      }, 1000);
+    });
+    const chooseCandidate = (cand) => {
+      if (pickResolve) pickResolve(cand);
+    };
+
+    const log = (text, level) => {
       state.logs.unshift({ at: Date.now(), text: String(text) });
       if (state.logs.length > 30) state.logs.length = 30;
+      // 同步写到「日志」页，自动答题的进度用户在主面板里就能看到
+      try {
+        useLogStore().insertLog(String(text), level);
+      } catch (_) {}
     };
 
     // 扫一遍页面，题目有变化才更新列表
@@ -22833,6 +22865,54 @@ const XS_EXT = (() => {
           status: isAnswered(block) ? "done" : "pending",
           msg: ""
         }));
+        // 国开：把题目同步到超星那套答题界面，搜到的答案也显示在那里
+        if (isOuchnHost()) {
+          // applyPickedCandidate 需要题目上的 optionsText 来做答案归一化
+          usable.forEach((block) => {
+            block.optionsText = (block.options || []).map((opt) => stripLetter(opt.text));
+          });
+          const store = useQuestionStore();
+          store.questionList = usable.map((block, index) => {
+            // 进页面前已经答过的题：把页面上选中的选项读出来，答案区不能空着
+            const picked = [];
+            if (block.controls && block.controls.length) {
+              (block.options || []).forEach((opt) => {
+                if (opt.input && opt.input.checked) picked.push(opt.letter || stripLetter(opt.text));
+              });
+            } else {
+              (block.inputs || []).forEach((input) => {
+                const value = String(input.value || "").trim();
+                if (value) picked.push(value);
+              });
+            }
+            return {
+              index,
+              title: escapeHtml(block.title || `第 ${index + 1} 题`),
+              titleText: block.title || "",
+              type: block.type,
+              optionsText: (block.options || []).map((opt) => stripLetter(opt.text)),
+              answer: picked.length
+                ? { code: 1, answer: picked, src: "page", msg: "页面已作答" }
+                : { code: -1, answer: [], msg: "" }
+            };
+          });
+          store.currentQuestionIndex = usable.length ? 1 : 0;
+          store.accuracy = -1;
+          // 「题目结果」里点相似题候选时，用它把答案填回国开的考试页
+          registerQuestionFillHook({
+            questions: registry,
+            fillQuestion: (question, index) => {
+              const block = registry[index];
+              const answer = (question && question.answer && question.answer.answer) || [];
+              if (!block) return false;
+              const filled = fill(block, answer);
+              setItem(index, filled.ok
+                ? { status: "done", answer: answer.join(" "), msg: `已填 ${filled.filled} 项` }
+                : { status: "fail", answer: answer.join(" "), msg: filled.reason || "填写失败" });
+              return filled.ok;
+            }
+          });
+        }
         return usable;
       } finally {
         state.scanning = false;
@@ -22847,17 +22927,65 @@ const XS_EXT = (() => {
       state.items = next;
     };
 
+    // 国开用超星那套答题界面展示结果：题目、答案、相似题候选都走 questionStore；
+    // 其它通用平台仍用上面这份精简列表。
+    // 注意：Pinia 要等面板挂载后才可用，store 只能在函数里取，不能在模块初始化时取。
+    const isOuchnHost = () => {
+      try { return /(^|\.)ouchn\.(cn|edu\.cn)$/i.test(location.hostname); } catch (_) { return false; }
+    };
+    const escapeHtml = (text) => String(text == null ? "" : text)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const syncStoreItem = (index, patch) => {
+      if (!isOuchnHost()) return;
+      const store = useQuestionStore();
+      const list = store.questionList.slice();
+      if (!list[index]) return;
+      list[index] = Object.assign({}, list[index], patch);
+      store.questionList = list;
+    };
+
     const toQuestion = (block) => ({
       title: block.title || "",
       optionsText: (block.options || []).map((opt) => stripLetter(opt.text)),
+      // 题型要如实告诉后端：判断题按单选发出去，模型容易当普通单选题答
       type: block.kind === "input"
         ? (block.type === "简答" ? "简答题" : "填空题")
-        : (block.type === "多选" ? "多选题" : "单选题"),
+        : (block.type === "多选" ? "多选题" : block.type === "判断" ? "判断题" : "单选题"),
       refer: location.href
     });
 
     // 逐题取答案并填上；默认不点提交
-    const start = async () => {
+    // 网络抖动导致的失败再问一次；答案已拿到但没点上的，按原答案单独补点，
+    // 绝不重复整题重填（多选重填会把已勾上的点掉）。
+    const askAnswer = async (question) => {
+      let res = await getAnswerByMode(question);
+      const retryable = res && (res.code === -1006 || res.code === -1005 || /超时|网络|无法连接|频繁/.test(res.msg || ""));
+      if (retryable) {
+        await sleep(2);
+        res = await getAnswerByMode(question);
+      }
+      return res;
+    };
+    const clickMissing = async (block, answer) => {
+      // 填空/简答、没有 input 的点击式选项，直接交给通用填充逻辑
+      if (block.kind === "input" || !block.controls || !block.controls.length) return fill(block, answer);
+      const matched = pickOptions(block, answer);
+      const targets = block.type === "多选" ? matched.picked : matched.picked.slice(0, 1);
+      for (const opt of targets) {
+        if (opt.input && opt.input.checked) continue;
+        try { (opt.input || opt.el).click(); } catch (_) {}
+        await sleep(0.15);
+      }
+      const checked = block.controls ? block.controls.filter((input) => input.checked).length : 0;
+      return {
+        ok: targets.length > 0 && checked > 0,
+        filled: checked,
+        want: targets.length,
+        unmatched: matched.unmatched
+      };
+    };
+    const start = async (opts) => {
+      const auto = !!(opts && opts.auto);
       if (state.running) return;
       const usable = scan(true);
       if (!usable.length) {
@@ -22866,6 +22994,7 @@ const XS_EXT = (() => {
       }
       state.running = true;
       state.done = 0;
+      const answerMap = new Map();
       log(`开始作答，共 ${usable.length} 道题`);
       for (const item of state.items.slice()) {
         if (!state.running) break;
@@ -22873,21 +23002,55 @@ const XS_EXT = (() => {
         const block = registry[item.index];
         if (!block) continue;
         setItem(item.index, { status: "running" });
+        if (isOuchnHost()) useQuestionStore().currentQuestionIndex = item.index + 1;
         try {
           const question = toQuestion(block);
-          const res = await getAnswerByMode(question);
-          const answer = res && res.data && res.data.answer;
+          const res = await askAnswer(question);
+          let answer = res && res.data && res.data.answer;
+          const candidates = (res && res.data && res.data.candidates) || [];
+          let alreadyFilled = false;
+          // 题库里有多道相似题：按「手动选择的处理」等用户点选或直接跳过，不拿空答案硬填
+          if (res && res.data && res.data.multimatch && candidates.length) {
+            if (getManualWaitMode() === "skip") {
+              setItem(item.index, { status: "fail", msg: `有 ${candidates.length} 道相似题，已按设置跳过` });
+              syncStoreItem(item.index, { answer: { code: 0, answer: [], src: "pick", msg: `有 ${candidates.length} 道相似题，已按设置跳过` } });
+              log(`第 ${item.index + 1} 题有 ${candidates.length} 道相似题，已按设置跳过`, "warning");
+              continue;
+            }
+            const pickMsg = `有 ${candidates.length} 道相似题，请选择后继续`;
+            setItem(item.index, { status: "pick", msg: pickMsg });
+            syncStoreItem(item.index, { answer: { code: 0, answer: [], src: "pick", msg: pickMsg, candidates } });
+            log(`第 ${item.index + 1} 题有 ${candidates.length} 道相似题，等你选择后继续…`, "warning");
+            const picked = isOuchnHost()
+              ? await waitForManualPick(item.index)
+              : await (async () => {
+                const cand = await waitPick({ index: item.index, candidates });
+                return cand ? normalizeLocalBackendAnswers(cand.answer, (block.options || []).map((opt) => stripLetter(opt.text))) : null;
+              })();
+            if (!picked || !picked.length) {
+              setItem(item.index, { status: "fail", msg: "等待选择超时，已跳过" });
+              log(`第 ${item.index + 1} 题等待选择超时，已跳过`, "warning");
+              continue;
+            }
+            answer = picked;
+            alreadyFilled = isOuchnHost();
+          }
           if (!Array.isArray(answer) || !answer.length) {
             setItem(item.index, { status: "fail", msg: (res && res.msg) || "未搜到答案" });
-            log(`第 ${item.index + 1} 题未搜到答案`);
+            syncStoreItem(item.index, { answer: { code: -1, answer: [], msg: (res && res.msg) || "未搜到答案" } });
+            log(`第 ${item.index + 1} 题未搜到答案`, "warning");
             continue;
           }
-          const filled = fill(block, answer);
+          answerMap.set(item.index, answer);
+          const filled = alreadyFilled
+            ? { ok: isAnswered(block), filled: answer.length, unmatched: [], missing: 0, extraDropped: 0 }
+            : await clickMissing(block, answer);
           const fromAI = !!(res && res.data && res.data.src === "ai");
           if (filled.ok) {
             const notes = [];
             if (filled.unmatched && filled.unmatched.length) notes.push(`有 ${filled.unmatched.length} 个答案没对上选项`);
             if (filled.missing) notes.push(`还有 ${filled.missing} 个空没有答案`);
+            if (filled.want && filled.filled < filled.want) notes.push(`应填 ${filled.want} 项，只点上 ${filled.filled} 项`);
             if (filled.extraDropped) notes.push("题目是单选，多余的答案没填");
             if (fromAI) notes.push("这条是 AI 作答，建议核对");
             const needCheck = notes.length > 0;
@@ -22896,25 +23059,52 @@ const XS_EXT = (() => {
               answer: answer.join(" "),
               msg: needCheck ? notes.join("；") : `已填 ${filled.filled} 项`
             });
-            log(`第 ${item.index + 1} 题${needCheck ? "已填，需核对" : "已作答"}：${answer.join(" ")}`);
+            syncStoreItem(item.index, {
+              answer: { code: needCheck || fromAI ? 2 : 1, answer, src: (res && res.data && res.data.src) || "bank", msg: notes.join("；") }
+            });
+            log(`第 ${item.index + 1} 题${needCheck ? "已填，需核对" : "已作答"}：${answer.join(" ")}`, needCheck ? "warning" : void 0);
           } else {
             setItem(item.index, { status: "fail", answer: answer.join(" "), msg: filled.reason || "填写失败" });
-            log(`第 ${item.index + 1} 题 ${filled.reason || "填写失败"}`);
+            syncStoreItem(item.index, { answer: { code: -1, answer: [], msg: "答案拿到了但没点上去" } });
+            log(`第 ${item.index + 1} 题 ${filled.reason || "填写失败"}`, "warning");
           }
           state.done++;
         } catch (e) {
           setItem(item.index, { status: "fail", msg: String((e && e.message) || e).slice(0, 80) });
-          log(`第 ${item.index + 1} 题出错`);
+          log(`第 ${item.index + 1} 题出错`, "warning");
         }
         // sleep 的单位是秒，这里每题之间停 1 秒，给页面留出更新时间
         await sleep(1);
       }
+      // 收尾核对：页面重绘可能把刚点上的勾清掉，按已拿到的答案再补一次，避免漏答
+      if (isOuchnHost()) {
+        await sleep(1);
+        let repaired = 0;
+        registry.forEach((block, index) => {
+          if (isAnswered(block)) return;
+          const answer = answerMap.get(index);
+          if (!answer || !answer.length) return;
+          const matched = pickOptions(block, answer);
+          const targets = block.type === "多选" ? matched.picked : matched.picked.slice(0, 1);
+          targets.forEach((opt) => {
+            if (opt.input && opt.input.checked) return;
+            try { (opt.input || opt.el).click(); } catch (_) {}
+          });
+          repaired++;
+        });
+        await sleep(0.6);
+        if (repaired) log(`已补填 ${repaired} 道题`);
+        const left = registry.filter((block) => !isAnswered(block)).length;
+        if (left) log(`还有 ${left} 道题没填上，请检查页面后手动处理`, "warning");
+        else log("核对完成，所有题目都已填上答案");
+      }
       state.running = false;
-      log("本轮作答结束，请检查后手动提交");
+      log(auto ? "本轮自动作答结束" : "本轮作答结束，请检查后手动提交");
     };
 
     const stop = () => {
       state.running = false;
+      if (pickResolve) pickResolve(null);
       log("已停止");
     };
 
@@ -22931,10 +23121,111 @@ const XS_EXT = (() => {
       }
     };
 
+    // ===== 国家开放大学考试：进入考场后自动作答 =====
+    // 考试页在 SPA 里换 hash 不刷新整页，路由逻辑不会再跑一遍，所以这里用定时器盯着；
+    // 同一个考试地址只自动跑一轮，页面局部重绘不会重复刷答案。
+    let examTimer = null;
+    let examBusy = false;
+    let examKey = "";
+    // 自动作答失败（没搜到答案、没点上去）时，隔一分钟再补一轮，最多 3 轮
+    let examTries = 0;
+    let examNextAt = 0;
+    const isOuchnExamPage = () => {
+      try {
+        return /(^|\.)ouchn\.(cn|edu\.cn)$/i.test(location.hostname)
+          && !!document.querySelector(".exam-paper .subjects-jit-display li.subject, .exam-paper li.subject");
+      } catch (_) {
+        return false;
+      }
+    };
+    const isVisibleEl = (el) => {
+      try {
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      } catch (_) {
+        return false;
+      }
+    };
+    const findVisibleByText = (selector, pattern) => Array.from(document.querySelectorAll(selector))
+      .find((el) => isVisibleEl(el) && pattern.test(TEXT(el)));
+    // 自动交卷：必须所有题都填上答案才动手，避免把空题一起交上去
+    const submitExamAuto = async () => {
+      if (!useSettingStore().config.examConfig.autoSubmit.value) return false;
+      const items = state.items || [];
+      const pending = items.filter((it) => it.status !== "done" && it.status !== "warn").length;
+      const domLeft = registry.filter((block) => !isAnswered(block)).length;
+      if (!items.length || pending || domLeft) {
+        log(`还有 ${Math.max(pending, domLeft)} 道题没填上，先不自动交卷`, "warning");
+        return false;
+      }
+      const submitBtn = findVisibleByText("a, button", /^交卷$/);
+      if (!submitBtn) {
+        log("没找到交卷按钮，请在页面上手动交卷", "warning");
+        return false;
+      }
+      submitBtn.click();
+      log("所有题目已作答，已点击交卷");
+      await sleep(1.5);
+      const dialogs = Array.from(document.querySelectorAll(".confirmation-popup, .reveal-modal"));
+      const dialog = dialogs.find((el) => isVisibleEl(el) && /确定提交试卷/.test(TEXT(el)));
+      const okBtn = dialog && Array.from(dialog.querySelectorAll("a, button")).find((el) => /^确定$/.test(TEXT(el)));
+      if (okBtn) {
+        okBtn.click();
+        log("已确认交卷");
+        return true;
+      }
+      log("交卷确认弹窗没出现，请在页面上确认交卷", "warning");
+      return false;
+    };
+    const autoExamTick = async () => {
+      if (examBusy || state.running || state.pick) return;
+      if (!isOuchnExamPage()) return;
+      if (!useSettingStore().config.basicConfig.autoAnswer.value) return;
+      const key = location.href;
+      if (examKey !== key) {
+        examKey = key;
+        examTries = 0;
+        examNextAt = 0;
+      }
+      if (Date.now() < examNextAt || examTries >= 3) return;
+      examBusy = true;
+      examTries += 1;
+      try {
+        const blocks = scan(true);
+        if (!blocks.length) return;
+        // 考试页自动作答时把面板切到「答题」，答案和进度直接展示出来
+        try { useSettingStore().tabIndex = "2"; } catch (_) {}
+        log("检测到考试页面，开始自动作答");
+        await start({ auto: true });
+        // 还有题没填上就隔一分钟再来一轮；登录/密钥问题重试也没用，别反复打扰
+        const left = registry.filter((block) => !isAnswered(block)).length;
+        const authFail = (state.items || []).some((it) => /登录|密钥/.test(it.msg || ""));
+        if (left && !authFail && examTries < 3) {
+          examNextAt = Date.now() + 60e3;
+          log(`还有 ${left} 道题没填上，一分钟后自动补答（第 ${examTries + 1}/3 轮）`, "warning");
+        } else if (left) {
+          examNextAt = Infinity;
+          log(`还有 ${left} 道题没填上，请手动处理后交卷`, "warning");
+        } else {
+          examNextAt = Infinity;
+          await submitExamAuto();
+        }
+      } catch (e) {
+        log("自动作答出错：" + String((e && e.message) || e).slice(0, 80));
+        if (examTries < 3) examNextAt = Date.now() + 60e3;
+      } finally {
+        examBusy = false;
+      }
+    };
+    const startExamWatcher = () => {
+      if (examTimer) return;
+      examTimer = setInterval(() => { void autoExamTick(); }, 2e3);
+    };
+
     const Panel = {
       name: "XsQuizPanel",
       setup() {
-        return { state, start, stop, scan: () => scan(false), inspect };
+        return { state, start, stop, scan: () => scan(false), inspect, chooseCandidate };
       },
       render() {
         const h = vue.h;
@@ -22942,10 +23233,10 @@ const XS_EXT = (() => {
         const plain = { padding: "5px 12px", borderRadius: "6px", border: "1px solid var(--t-border2)", background: "var(--t-surface)", color: "var(--t-text)", cursor: "pointer" };
         const primary = Object.assign({}, plain, { border: "1px solid var(--t-primary)", background: "var(--t-primary)", color: "#fff" });
         const statusColor = {
-          pending: "var(--t-text3)", running: "var(--t-primary)",
+          pending: "var(--t-text3)", running: "var(--t-primary)", pick: "var(--t-warning, #dc6803)",
           done: "var(--t-success, #12b76a)", warn: "var(--t-warning, #dc6803)", fail: "var(--t-danger, #d92d20)"
         };
-        const statusText = { pending: "待答", running: "作答中", done: "已答", warn: "核对", fail: "失败" };
+        const statusText = { pending: "待答", running: "作答中", pick: "选答", done: "已答", warn: "核对", fail: "失败" };
         const rows = state.items.map((item) => h("div", {
           key: item.index,
           style: { display: "flex", gap: "8px", padding: "6px 0", borderBottom: "1px dashed var(--t-border)" }
@@ -22954,7 +23245,24 @@ const XS_EXT = (() => {
           h("div", { style: { flex: "1", minWidth: 0 } }, [
             h("div", { style: { color: "var(--t-text)", fontSize: "12.5px", lineHeight: 1.6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, item.title),
             item.answer ? h("div", { style: { color: "var(--t-primary)", fontSize: "12px" } }, item.answer) : null,
-            item.msg ? h("div", { style: { color: "var(--t-text3)", fontSize: "11.5px" } }, item.msg) : null
+            item.msg ? h("div", { style: { color: "var(--t-text3)", fontSize: "11.5px" } }, item.msg) : null,
+            // 相似题候选：点哪条就用哪条的答案填本题
+            state.pick && state.pick.index === item.index ? h("div", {
+              style: { display: "flex", flexDirection: "column", gap: "4px", marginTop: "6px" }
+            }, state.pick.candidates.map((cand, ci) => h("div", {
+              key: "cand-" + ci,
+              onClick: () => this.chooseCandidate(cand),
+              style: {
+                padding: "6px 8px", borderRadius: "6px", border: "1px solid var(--t-border2)",
+                background: "var(--t-surface)", cursor: "pointer"
+              }
+            }, [
+              h("div", { style: { color: "var(--t-text3)", fontSize: "11.5px" } },
+                cand.source === "ai" ? `AI 参考答案${cand.model ? `（${cand.model}）` : ""}` : `候选 ${ci + 1}${cand.score != null ? `（相似度 ${cand.score}%）` : ""}`),
+              h("div", { style: { color: "var(--t-text)", fontSize: "12px", lineHeight: 1.5, maxHeight: "58px", overflow: "hidden" }, innerHTML: String(cand.question || "") }),
+              h("div", { style: { color: "var(--t-primary)", fontSize: "12px" } },
+                "答案：" + (Array.isArray(cand.answer) ? cand.answer.join(" ") : String(cand.answer == null ? "" : cand.answer)))
+            ]))) : null
           ])
         ]));
         const logs = state.logs.slice(0, 8).map((item, index) => h("div", { key: index, style: { color: "var(--t-text3)", fontSize: "11.5px", lineHeight: 1.7 } }, item.text));
@@ -22965,7 +23273,9 @@ const XS_EXT = (() => {
               state.total ? `识别到 ${state.total} 题，已完成 ${state.done}` : "未识别到题目")
           ]),
           h("div", { style: { color: "var(--t-text3)", fontSize: "12px", lineHeight: 1.7 } },
-            "进入作业或考试页面后点「扫描题目」。答案由你的题库和 AI 提供，只自动填答案，不会替你点提交，检查完自己提交。"),
+            useSettingStore().config.examConfig.autoSubmit.value
+              ? "进入作业或考试页面后点「扫描题目」。全部题目答完后会按「考试设置」里的自动交卷提交。"
+              : "进入作业或考试页面后点「扫描题目」。答案由你的题库和 AI 提供，只自动填答案，不会替你点提交，检查完自己提交。"),
           h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } }, [
             h("button", { onClick: this.scan, disabled: state.scanning, style: plain }, state.scanning ? "扫描中" : "扫描题目"),
             h("button", { onClick: this.start, disabled: state.running || !state.total, style: primary }, state.running ? "正在作答" : "开始答题"),
@@ -22978,16 +23288,46 @@ const XS_EXT = (() => {
       }
     };
 
+    // 国开答题页：上面是操作按钮，下面直接复用超星那套「题目结果」界面
+    const OuchnPanel = {
+      name: "OuchnAnswerPanel",
+      setup() {
+        return {
+          state,
+          start: () => { void start(); },
+          stop,
+          scan: () => scan(false)
+        };
+      },
+      render() {
+        const h = vue.h;
+        const plain = { padding: "5px 12px", borderRadius: "6px", border: "1px solid var(--t-border2)", background: "var(--t-surface)", color: "var(--t-text)", cursor: "pointer" };
+        const primary = Object.assign({}, plain, { border: "1px solid var(--t-primary)", background: "var(--t-primary)", color: "#fff" });
+        return h("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } }, [
+          h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } }, [
+            h("button", { onClick: this.scan, disabled: this.state.scanning, style: plain }, this.state.scanning ? "扫描中" : "扫描题目"),
+            h("button", { onClick: this.start, disabled: this.state.running || !this.state.total, style: primary }, this.state.running ? "正在作答" : "开始答题"),
+            this.state.running ? h("button", { onClick: this.stop, style: plain }, "停止") : null
+          ]),
+          h("div", { style: { color: "var(--t-text3)", fontSize: "12px", lineHeight: 1.7 } },
+            "进入考试后，「自动答题」开启会自动作答；答案和相似题选择显示在下面，自动交卷在「设置 - 考试设置」里。"),
+          h(_sfc_main$7)
+        ]);
+      }
+    };
+
     // 进入页面后自动扫一次，隔几秒再扫，页面异步渲染也能跟上
     let booted = false;
     const boot = () => {
       if (booted) return;
       booted = true;
+      // 国开考试页没有独立路由，进入后由这里负责发现并自动作答
+      startExamWatcher();
       setTimeout(() => { try { scan(true); } catch (_) {} }, 2500);
       setTimeout(() => { try { scan(true); } catch (_) {} }, 6000);
     };
 
-    const quizApi = { state, scan, start, stop, inspect, Panel, boot, findBlocks, fill };
+    const quizApi = { state, scan, start, stop, inspect, Panel, OuchnPanel, boot, findBlocks, fill, chooseCandidate, startExamWatcher };
     try {
       (_unsafeWindow || window).__xsQuiz = quizApi;
     } catch (e) {
@@ -23101,7 +23441,8 @@ const XS_EXT = (() => {
       name: "国家开放大学",
       domains: ["ouchn.cn", "ouchn.edu.cn"],
       routes: xsWatchRoutes,
-      showAi: false,
+      // 学习网考试页支持题目解析与自动作答，答题相关设置对国开同样生效
+      showAi: true,
       watchSite: true
     },
     {
@@ -23238,11 +23579,13 @@ const XS_EXT = (() => {
         {
           key: "2",
           tab: "答题",
-          component: currentPlatform?.watchSite
-            ? xsQuiz.Panel
-            : currentPlatform?.key === "zhs"
-              ? ZhiHuiShuAnswerPanel
-              : _sfc_main$7
+          component: currentPlatform?.key === "ouchn"
+            ? xsQuiz.OuchnPanel
+            : currentPlatform?.watchSite
+              ? xsQuiz.Panel
+              : currentPlatform?.key === "zhs"
+                ? ZhiHuiShuAnswerPanel
+                : _sfc_main$7
         },
         ...(currentPlatform?.queueAdapter ? [{
           key: "queue",
