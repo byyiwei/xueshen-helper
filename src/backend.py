@@ -622,7 +622,7 @@ def sanitize_answer_summary(item):
 
 # 「页面结构快照」：脚本识别页面/填充题目失败时上报，用来回答「哪套页面改版了、改的是哪个节点」。
 # 只收结构化摘要，绝不收整页 HTML：整页动辄几 MB，还夹着学生姓名、学号和内联图片。
-PAGE_SNAPSHOT_NODE_LIMIT = 6
+PAGE_SNAPSHOT_NODE_LIMIT = 8
 PAGE_SNAPSHOT_TYPES = {
     "cx-zj": "超星章节测验", "cx-zy": "超星作业", "cx-ks": "超星考试",
     "zhs-web": "智慧树页面", "zhs-exam": "智慧树页面（旧标记）", "zhs-h5": "智慧树整卷",
@@ -638,6 +638,15 @@ PAGE_SNAPSHOT_REASONS = {
     "page_parse_failed": "页面解析失败", "structure_changed": "页面结构变了",
     "no_option_answer": "没取到选项答案", "answer_fill_failed": "答案拿到了但填不上",
     "answer_option_out_of_range": "答案含页面没有的选项",
+    # 填充环节的细分原因：脚本 XS_FILL_REASON_TEXT 里的键都要有中文名，
+    # 否则后台「页面异常」列表直接显示 answer_not_matched 这种代码，值班时看不懂。
+    "answer_not_matched": "答案未匹配到页面选项", "answer_partial_match": "答案有部分未匹配到页面选项",
+    "answer_ambiguous": "单选答案匹配到多个选项", "answer_invalid": "答案无法判定对错",
+    "click_not_effective": "选项点击后未选中", "extra_selected": "多选里有答案之外的选项未能取消",
+    "no_input": "页面上找不到输入框", "fill_not_effective": "输入框写入后回读不对",
+    "page_structure": "页面结构异常，找不到题目", "page_not_advanced": "上一题没有切走",
+    "no_options": "页面上找不到选项", "answer_out_of_range": "答案里的选项在页面上找不到",
+    "blank_partial": "部分空未填上",
     "unsupported_type": "该题型暂不支持",
     "option_not_found": "找不到选项按钮", "cannot_click": "选项点不上",
     "input_not_found": "找不到输入框", "cannot_input": "输入框填不进去",
@@ -645,7 +654,20 @@ PAGE_SNAPSHOT_REASONS = {
     "image_not_supported": "题型不支持图片", "submit_blocked": "交卷按钮点不动",
     "page_not_loaded": "页面没加载出来", "login_lost": "登录状态失效",
     "native_check_unfixed": "原生检查没还原", "native_check_fixed": "原生检查已还原",
+    # 站方自己（或更早加载的扩展）在脚本注入前就改过检查项：脚本拿着不干净的原生快照，
+    # 修不回来也不该算成「我们没还原」，单独一类，后台不按待修问题处理。
+    "native_check_preexisting": "检查项在脚本注入前已被改动",
 }
+
+def _safe_int(val, default=0):
+    """把脚本上报的任意值转成 int，转不了就给默认值——结构快照里字段类型不可信。"""
+    try:
+        if isinstance(val, bool):
+            return int(val)
+        return int(float(val))
+    except (TypeError, ValueError):
+        return default
+
 
 def sanitize_page_snapshot(item):
     """把脚本上报的页面结构快照钳成可统计、可存储的小 JSON。返回 None 表示丢弃。"""
@@ -663,15 +685,17 @@ def sanitize_page_snapshot(item):
         # found 只留计数/布尔/短字符串，防止有人把整页数据塞进来
         raw_found = extra.get("found") if isinstance(extra.get("found"), dict) else {}
         found = {}
-        for key, val in list(raw_found.items())[:12]:
+        for key, val in list(raw_found.items())[:16]:
             k = str(key)[:24]
             if isinstance(val, bool):
                 found[k] = val
             elif isinstance(val, (int, float)):
                 found[k] = max(-1, min(val, 100000))
             else:
-                # toStringHead 这类诊断字段要保留到 100 字符，才能看出包装函数长什么样
-                found[k] = str(val)[:100]
+                # toStringHead 这类诊断字段要保留到 100 字符，才能看出包装函数长什么样；
+                # *_html 是「页面结构不清晰」时脚本额外带回来的节点片段，留 500 字符才有诊断价值。
+                limit = 500 if k.endswith("_html") else (200 if k in ("dom", "body_cls", "toStringHead", "dom_summary") else 100)
+                found[k] = str(val)[:limit]
         nodes = []
         raw_nodes = extra.get("nodes") if isinstance(extra.get("nodes"), list) else []
         for row in raw_nodes[:PAGE_SNAPSHOT_NODE_LIMIT]:
@@ -680,9 +704,15 @@ def sanitize_page_snapshot(item):
             nodes.append({
                 "tag": str(row.get("tag") or "")[:20],
                 "id": str(row.get("id") or "")[:40],
-                "classes": str(row.get("classes") or row.get("class") or "")[:120],
-                "text": re.sub(r"\s+", " ", str(row.get("text") or ""))[:80],
-                "path": str(row.get("path") or row.get("selector") or "")[:200],
+                "classes": str(row.get("classes") or row.get("class") or "")[:160],
+                "text": re.sub(r"\s+", " ", str(row.get("text") or ""))[:160],
+                "path": str(row.get("path") or row.get("selector") or "")[:260],
+                # 结构快照的核心：「这一个节点长什么样」。
+                # 只给 tag/class 时，页面改版只能猜；带上 outerHTML 片段和一层子节点摘要，
+                # 后台能直接看出选项是换了 class 还是整块换成了别的容器。
+                "html": re.sub(r"\s+", " ", str(row.get("html") or ""))[:500],
+                "child_tags": re.sub(r"\s+", " ", str(row.get("child_tags") or row.get("children") or ""))[:200],
+                "option_like": max(-1, min(_safe_int(row.get("option_like"), 0), 100000)),
             })
         clean = {
             "page_type": page_type,
@@ -5474,11 +5504,34 @@ def latex_to_plain_text(text):
     return t.strip()
 
 
+def _is_placeholder_answer(answer):
+    """模型面对听力/图片/残缺题时会回一句「请提供音频及具体题目」——那不是答案。
+
+    以前这种句子会被当成答案返回、写进题库，脚本再拿它去填，最终变成一条
+    answer_not_matched 页面异常（2026-11-21 后台 3 条）。这里统一判掉：
+    命中就返回空，让上层按「没答案」处理（换模型 / 提示人工），不填、不入库。
+    """
+    text = str(answer or "").strip()
+    # 真答案一般很短；超过 40 字的多半是解释或分析，不在这里拦
+    if not text or len(text) > 40:
+        return False
+    return bool(re.search(
+        r"(?:请|麻烦|需要|请先)?\s*(?:提供|上传|补充|发送)\s*(?:音频|录音|听力|题目|题干|完整题目|图片|材料)"
+        r"|题目不完整|题干不完整|题目[缺失少]|无法作答|无法回答|不能作答|缺少(?:音频|题目|材料)"
+        r"|音频(?:未|没有|缺失)|未(?:提供|收到)音频|no\s*audio|audio\s*(?:is\s*)?(?:missing|required)|please\s*provide",
+        text,
+        flags=re.I,
+    ))
+
+
 def normalize_ai_answer(question, answer):
     """把模型返回清洗成适合脚本匹配的最终答案，避免返回 Thinking Process。"""
     if not answer:
         return answer
     text = str(answer).strip()
+    # 「答案被重复一遍」只可能来自 think 标签没洗干净，先记住原始串里到底有没有这个标签。
+    # 下面的折叠逻辑只能在这种前提下执行，否则正常答案会被误折叠（见下方注释）。
+    _had_think = bool(re.search(r"<\s*/?\s*think\s*>", text, flags=re.I))
     # 推理模型（DeepSeek 等）把思考过程包在 <think>...</think> 内；部分 OpenAI 兼容代理
     # 还会把 </think> 结束符漏进正文、并把答案字母重复一次，形成
     # "C</think>C" / "A,B,C</think>A,B,C" 这类脏答案。这里彻底清洗：
@@ -5487,6 +5540,10 @@ def normalize_ai_answer(question, answer):
     # 2) 去掉残留的孤立 <think> / </think> 标签
     text = re.sub(r"<\s*/?\s*think\s*>", "", text, flags=re.I)
     text = text.strip()
+    # 占位语不是答案（「请提供音频及具体题目」「题目不完整」）：一律按没答案处理，
+    # 免得脚本把它填进输入框、再以 answer_not_matched 的身份刷进页面异常。
+    if _is_placeholder_answer(text):
+        return ""
     # 数学过程题：模型偶尔无视提示词仍然输出 LaTeX，编辑器不会渲染，先转成普通文本。
     if _needs_plain_math(question):
         text = latex_to_plain_text(text)
@@ -5494,13 +5551,30 @@ def normalize_ai_answer(question, answer):
     # 前面几行步骤全扔掉，只剩「答案：1/2」，正好又变成老师说的「只给答案」。
     if needs_solution_process(question) and not extract_options_from_question(question):
         return text
-    # 3) "C</think>C" 去标签后变 "CC"，"A,B,C</think>A,B,C" 变 "A,B,CA,B,C"，
-    #    "错误错误" 变自身，"1000001010000010" 同理：若整串为「前半==后半」的重复
-    #    （短答案，<=60 字符），则取前半（即正确答案）。不限字母，中文/数字重复同样折叠。
+    # 3) "C</think>C" 去标签后变 "CC"，"A,B,C</think>A,B,C" 变 "A,B,CA,B,C"：
+    #    整串为「前半==后半」的重复时取前半（即正确答案）。
+    #    ⚠️ 这条规则以前是无条件执行的，把正常答案里的「重复数字」也折叠掉了：
+    #    题库答案 "2020"（年份）前半后半都是 "20" → 被洗成 "20"，页面上只有「2020」，
+    #    于是匹配不上、每题重复上报 answer_not_matched（2026-11-20 一天 42 条，同一用户同一题）。
+    #    现在三个护栏：
+    #      a) 只有原始串里真的出现过 <think>/<\/think>（重复是标签漏出造成的）才折叠；
+    #      b) 整串是纯数字（2020、11、1212、100）一律不折叠，重复数字本身就是答案；
+    #      c) 整串正好等于页面某个选项正文时也不折叠。
     if len(text) <= 60:
         _dm = re.match(r"^(.+)\1$", text)
         if _dm:
-            text = _dm.group(1).strip()
+            _folded = _dm.group(1).strip()
+            _pure_number = bool(re.fullmatch(r"[\d\s.,:：/＋+\-—%]+", text))
+            _is_option_text = False
+            try:
+                _opts_for_fold = extract_options_from_question(question) or []
+                _plain_fold = lambda v: re.sub(r"[\s　，。！？；：,.!?;:\-—_【】\[\]（）()\"'“”‘’]+", "", str(v or "")).lower()
+                _plain_text = _plain_fold(text)
+                _is_option_text = bool(_plain_text) and any(_plain_fold(o) == _plain_text for o in _opts_for_fold)
+            except Exception:
+                _is_option_text = False
+            if _folded and _had_think and not _pure_number and not _is_option_text:
+                text = _folded
     mapped_img = _map_image_answer_to_letters(question, text)
     if mapped_img:
         return mapped_img

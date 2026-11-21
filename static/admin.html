@@ -1312,6 +1312,8 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
 .trace-msg.error { color: var(--danger); }
 .trace-msg.note { color: var(--text3); }
 .trace-msg.answer { color: var(--text); }
+/* 页面异常详情里的节点 HTML 片段：原样保留缩进会给几百字符撑出横向滚动，统一折行等宽显示 */
+.trace-pre { margin-top: 7px; padding: 8px 10px; font-size: 11.5px; line-height: 1.6; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--text2); background: var(--bg2, rgba(127,127,127,0.07)); border: 1px solid var(--border); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow-y: auto; }
 .trace-empty { padding: 26px 16px; text-align: center; font-size: 12px; color: var(--text3); border: 1px dashed var(--border); border-radius: 10px; }
 html[data-theme="light"] .live-hero { background: radial-gradient(110% 150% at 0% 0%, rgba(37, 99, 235, 0.12), transparent 52%), linear-gradient(135deg, #ffffff, #f3f6fb); }
 html[data-theme="light"] .live-stat { background: rgba(255, 255, 255, 0.72); }
@@ -5695,6 +5697,9 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                     <div class="trace-head"><span class="trace-model">&lt;{{n.tag||'?'}}&gt;</span><span class="trace-provider">{{n.id?'#'+n.id:''}} {{n.classes?'.'+n.classes.replace(/ /g,'.'):''}}</span></div>
                     <div class="trace-msg" v-if="n.path">路径：{{n.path}}</div>
                     <div class="trace-msg" v-if="n.text">文字：{{n.text}}</div>
+                    <div class="trace-msg" v-if="n.child_tags">子节点：{{n.child_tags}}</div>
+                    <div class="trace-msg" v-if="n.option_like">像选项的节点：{{n.option_like}} 个</div>
+                    <pre v-if="n.html" class="trace-pre">{{n.html}}</pre>
                   </div>
                 </div>
               </div>

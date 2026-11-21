@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.1.2
+// @version      6.1.3
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -15,6 +15,13 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.1.3 (2026-11-21)
+// @changelog    1. 页面异常上报补结构：每个节点带外层HTML片段、子节点摘要、选项类节点数，另附整页各选择器命中计数，页面改版能直接定位换成什么容器
+// @changelog    2. 填充失败的异常补带整题HTML片段（截500字符），不再只报「答案未匹配」却看不到页面结构
+// @changelog    3. 音频/残缺题：模型回「请提供音频及具体题目」这类占位语不再当答案填充，直接标为需人工作答，也不再刷页面异常
+// @changelog    4. 测验已结束/已提交/查看统计这类页面不再误报「找不到题目容器」
+// @changelog    5. 智慧树原生检测项在脚本注入前就被改动时单独归类，不再按「没还原」反复上报
+// @changelog    6. 配合后端修复年份类答案被折叠（2020 被洗成 20）导致题库命中却整题填不上的问题
 // @changelog    v6.1.2 (2026-11-20)
 // @changelog    1. 新增青书学堂视频助手：自动播放、倍速、防挂机弹窗自动确认、播完等平台记账再自动切下一节
 // @changelog    2. 修复青书多节连播时用当前视频时长判断其他节点完成度导致漏课的问题
@@ -2026,23 +2033,45 @@
     try {
       const parts = [];
       let node = el;
-      for (let depth = 0; node && node.nodeType === 1 && depth < 4; depth += 1) {
+      for (let depth = 0; node && node.nodeType === 1 && depth < 5; depth += 1) {
         let seg = String(node.tagName || "").toLowerCase();
         if (node.id) seg += "#" + node.id;
         else if (typeof node.className === "string" && node.className.trim()) {
-          seg += "." + node.className.trim().split(/\s+/).slice(0, 2).join(".");
+          seg += "." + node.className.trim().split(/\s+/).slice(0, 3).join(".");
         }
         parts.unshift(seg);
         node = node.parentElement;
       }
       path = parts.join(" > ");
     } catch (_) {}
+    const clean = (s, n) => String(s == null ? "" : s).replace(/\s+/g, " ").trim().slice(0, n);
+    // 「返回的页面结构不清晰」时，光有 tag/class 只能猜：带上外层 HTML 片段、
+    // 一层子节点摘要、以及「像选项的节点」数量，后台才能一眼看出是换了 class
+    // 还是整块换成了别的容器。只截 500 字符，不传整页。
+    let html = "", childTags = "", optionLike = 0;
+    try { html = clean(el.outerHTML, 500); } catch (_) {}
+    try {
+      childTags = [...(el.children || [])].slice(0, 6).map((child) => {
+        const tag = String(child.tagName || "").toLowerCase();
+        const id = child.id ? "#" + child.id : "";
+        const cls = !id && typeof child.className === "string" && child.className.trim()
+          ? "." + child.className.trim().split(/\s+/).slice(0, 2).join(".")
+          : "";
+        return tag + id + cls;
+      }).join(" > ").slice(0, 200);
+    } catch (_) {}
+    try {
+      optionLike = el.querySelectorAll('li, [class*="before-after"], .answerBg, .stem_answer, [onclick*="addChoice"], [role="radio"], [role="checkbox"], input[type="radio"], input[type="checkbox"], textarea, [contenteditable="true"]').length;
+    } catch (_) {}
     return {
       tag: String(el.tagName || "").toLowerCase(),
       id: String(el.id || ""),
       classes: typeof el.className === "string" ? el.className : "",
-      text: String(el.innerText || el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80),
-      path
+      text: clean(el.innerText || el.textContent || "", 160),
+      path,
+      html,
+      child_tags: childTags,
+      option_like: optionLike
     };
   };
   const guessIssuePageType = (question) => {
@@ -2069,9 +2098,35 @@
       }, payload || {});
       extra.script_version = getScriptInfo().version;
       extra.nodes = (Array.isArray(extra.nodes) ? extra.nodes : [])
-        .slice(0, 4)
+        .slice(0, 6)
         .map((n) => (n && n.nodeType === 1 ? summarizeIssueNode(n) : n))
         .filter(Boolean);
+      // 页面级结构摘要：页面改版时后台最想知道的是「这些选择器现在还剩几个」。
+      // 比如 .answerBg 从 40 变 0、但 li 还有 40 个，就是换了容器而不是题目没渲染。
+      // 只放计数，字符串很短，和以前一样不传页面内容。
+      if (!extra.found || typeof extra.found !== "object") extra.found = {};
+      try {
+        const doc = document;
+        const cnt = (sel) => {
+          try { return doc.querySelectorAll(sel).length; } catch (_) { return 0; }
+        };
+        const pairs = [
+          [".TiMu", cnt(".TiMu")],
+          [".questionLi", cnt(".questionLi")],
+          [".answerBg", cnt(".answerBg")],
+          ["before-after", cnt('[class*="before-after"]')],
+          [".stem_answer", cnt(".stem_answer")],
+          ["addChoice", cnt('[onclick*="addChoice"]')],
+          ["li", cnt("li")],
+          ["input", cnt("input")],
+          ["textarea", cnt("textarea")],
+          ["iframe", cnt("iframe")],
+          ["role-opt", cnt('[role="radio"],[role="checkbox"]')]
+        ].filter(([, n]) => n > 0);
+        if (pairs.length) extra.found.dom = pairs.map(([k, n]) => k + ":" + n).join(" ").slice(0, 200);
+        const bodyCls = String((document.body && document.body.className) || "").trim();
+        if (bodyCls) extra.found.body_cls = bodyCls.slice(0, 120);
+      } catch (_) {}
       const sig = [extra.page_type, extra.stage, extra.reason_code, extra.selector, extra.signature || ""].join("|");
       const now = Date.now();
       if (now - (PAGE_ISSUE_DEDUP.get(sig) || 0) < 6e4) return Promise.resolve(false);
@@ -2098,6 +2153,14 @@
   const ANSWER_SUMMARY_LIMIT = 40;
   // 余额不足不是答题能力问题，进统计只会把填充率/卡点榜刷脏，直接丢掉。
   const isQuotaFailReason = (msg) => /余额不足|题数不足|点数不足|insufficient.?quota|请到用户中心购买|请联系您的服务方/i.test(String(msg || ""));
+  // 模型面对听力/图片/残缺题时经常回一句「请提供音频及具体题目」「题目不完整」。
+  // 那不是答案：拿去填必然匹配不到，最后变成 answer_not_matched 刷进页面异常；
+  // 还会被当有效答案存进本地答题记录。命中就按「这题需要人工」处理，不填也不上报。
+  const PLACEHOLDER_ANSWER_RE = /(?:请|麻烦|需要|请先)?\s*(?:提供|上传|补充|发送)\s*(?:音频|录音|听力|题目|题干|完整题目|图片|材料)|题目不完整|题干不完整|无法作答|无法回答|不能作答|缺少(?:音频|题目|材料)|音频(?:未|没有|缺失)|未(?:提供|收到)音频|no\s*audio|audio\s*(?:is\s*)?(?:missing|required)|please\s*provide/i;
+  const isPlaceholderAnswer = (value) => {
+    const text = String(value == null ? "" : value).trim();
+    return !!text && text.length <= 40 && PLACEHOLDER_ANSWER_RE.test(text);
+  };
   // 答题失败原因要能直接进统计：都写成「答案拿到了但没点上去」，后台就分不出是没匹配、没点上还是只填了一半
   const XS_FILL_REASON_TEXT = {
     answer_not_matched: "答案未匹配到页面选项",
@@ -9152,6 +9215,15 @@ const MAX_RECORDS = 200;
                     return "";
                   }
                 })(),
+                // 整题容器片段：选项结构认不出来时，光看第一个选项的 HTML 判断不了
+                // 是「选项换容器」还是「整个题目节点换了」，这一段能直接看出层级。
+                question_html: (() => {
+                  try {
+                    return el && el.outerHTML ? String(el.outerHTML).replace(/\s+/g, " ").slice(0, 500) : "";
+                  } catch (_) {
+                    return "";
+                  }
+                })(),
                 clicked: !!(question && question.__xsClicked),
                 ...(() => {
                   const type = String((question && question.type) || "");
@@ -9217,6 +9289,12 @@ const MAX_RECORDS = 200;
                   src: answerData.data.src
                 };
                 this.setting.userInfo.remainCount = formatLocalRemainCount(answerData.data.remainCount);
+                // 「请提供音频及具体题目」这类占位语不是答案：不填、不存记录、不上报
+                if (isPlaceholderAnswer(Array.isArray(answerData.data.answer) ? answerData.data.answer.join("") : answerData.data.answer)) {
+                  question.answer = { code: -1, answer: [], msg: "该题需要音频/题目材料，请人工作答" };
+                  this.log.insertLog(`第${index + 1}题需要音频或题目材料，脚本不硬填，请人工作答`, "warning");
+                  continue;
+                }
                 if (answerData.data.multimatch) {
                   // 手动选择模式：题库有多道相似题，先不填，等用户自己挑
                   question.answer.msg = "存在多道相似题，请先手动选择后再填写";
@@ -9268,6 +9346,12 @@ const MAX_RECORDS = 200;
                   src: answerData.data.src || "ai"
                 };
                 this.setting.userInfo.remainCount = formatLocalRemainCount(answerData.data.remainCount);
+                // 同上：模型回的是「请提供音频/题目不完整」时不填，标成需人工
+                if (isPlaceholderAnswer(Array.isArray(answerData.data.answer) ? answerData.data.answer.join("") : answerData.data.answer)) {
+                  question.answer = { code: -1, answer: [], msg: "该题需要音频/题目材料，请人工作答" };
+                  this.log.insertLog(`第${index + 1}题需要音频或题目材料，脚本不硬填，请人工作答`, "warning");
+                  continue;
+                }
                 saveAnswerRecord({
                   question,
                   answer: answerData.data.answer,
@@ -9370,7 +9454,10 @@ const MAX_RECORDS = 200;
             (this._document && this._document.body && this._document.body.innerText) || ""
           ).slice(0, 2000);
           const emptyQuiz = /(教师未创建|未创建完成|暂无(?:试题|题目|测验)|尚未(?:发布|创建)|未发布|没有题目)/.test(pageText);
-          window.__XSReportPageIssue && !emptyQuiz && window.__XSReportPageIssue({
+          // 「测验已结束 / 已提交 / 查看统计」这类页面本来就没有 .TiMu，报 no_container 是假异常
+          // （2026-11-21 后台 1 条：用户打开的是已结束的测验）。只对还能作答的页面报。
+          const finishedQuiz = /(测验已结束|考试已结束|已提交|已交卷|已截止|查看统计|已结束)/.test(pageText);
+          window.__XSReportPageIssue && !emptyQuiz && !finishedQuiz && window.__XSReportPageIssue({
             page_type: "cx-" + this.type,
             stage: "parse",
             reason_code: "no_container",
@@ -9413,6 +9500,30 @@ const MAX_RECORDS = 200;
         );
         const empty = optionQuestions.filter((q) => !((q.optionsText || []).length));
         if (!empty.length) return;
+        // 有些题型本来就没有「选项按钮」：听力题（音频播完才出选项，或选项在播放器里）、
+        // 纯音频/视频题。把它们一并算成「页面结构变了」，后台每天都会收到假异常，
+        // 真改版反而被淹掉。只报「DOM 看起来像选择题、却一个选项都没取到」的题。
+        const looksLikeChoice = (q) => {
+          const el = q && q.element;
+          if (!el || !el.querySelector) return false;
+          try {
+            return !!el.querySelector('.answerBg, [class*="before-after"], [onclick*="addChoice"], .stem_answer, .reading_answer, li, [role="radio"], [role="checkbox"]');
+          } catch (_) {
+            return false;
+          }
+        };
+        const mediaLike = (q) => {
+          const el = q && q.element;
+          const text = String((q && q.title) || "") + " " + String((el && el.textContent) || "").slice(0, 200);
+          if (/听力|音频|播放|录音|listen|audio/i.test(text)) return true;
+          try {
+            return !!el.querySelector('audio, video, iframe, [class*="audio"], [class*="player"]');
+          } catch (_) {
+            return false;
+          }
+        };
+        const suspects = empty.filter((q) => looksLikeChoice(q) || !mediaLike(q));
+        if (!suspects.length) return;
         const doc = this._document;
         const count = (sel) => (doc && doc.querySelectorAll ? doc.querySelectorAll(sel).length : 0);
         window.__XSReportPageIssue && window.__XSReportPageIssue({
@@ -9423,14 +9534,21 @@ const MAX_RECORDS = 200;
           expected: "每道选择题至少能取到 2 个选项",
           found: {
             questions: this.questions.length,
-            empty_choice: empty.length,
+            empty_choice: suspects.length,
+            // 空选项题里有几道是音频/播放器类的：后台据此判断是不是「题型本来就没选项」
+            empty_media: suspects.filter((q) => mediaLike(q) && !looksLikeChoice(q)).length,
             containers: count(this.type === "zj" ? ".TiMu" : ".questionLi"),
             answer_bg: count(".answerBg"),
             hover_div: count('.hoverDiv[onclick*="addChoice"]'),
             reading_answer: count(".reading_answer"),
-            save_single: count("span.saveSingleSelect")
+            save_single: count("span.saveSingleSelect"),
+            // 这几个计数是本次新加的：结构变了到底变成什么，用选择器命中数说话
+            before_after: count('[class*="before-after"]'),
+            stem_answer: count(".stem_answer"),
+            option_row: count(".TiMu li, .questionLi li"),
+            inputs: count('input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"]')
           },
-          nodes: empty.slice(0, 4).map((q) => q.element)
+          nodes: suspects.slice(0, 4).map((q) => q.element)
         });
       });
       __publicField(this, "getChoiceOptionContainer", (optionElement) => {
@@ -13422,18 +13540,33 @@ const MAX_RECORDS = 200;
           // 后台能直接看到是哪一项被改、有没有修回来。
           try {
             if (window.__XSReportPageIssue) {
+              // 快照本身就不是原生的，说明在脚本注入之前（站方自己的脚本或更早加载的扩展）
+              // 就已经改过了，我们拿不到干净的基线，修不回来也不该记成「没还原」。
+              // 这类单独标 native_check_preexisting，后台不按待修问题处理。
+              const snapNative = isNativeFn(NATIVE_SNAPSHOT.attachShadow);
               window.__XSReportPageIssue({
                 page_type: "zhs-web",
                 stage: "detect",
-                reason_code: after.length ? "native_check_unfixed" : "native_check_fixed",
+                reason_code: after.length ? (snapNative ? "native_check_unfixed" : "native_check_preexisting") : "native_check_fixed",
                 selector: "isAllNative",
-                expected: "XMLHttpRequest.prototype.open 等原生检查项保持原生",
+                expected: snapNative
+                  ? "XMLHttpRequest.prototype.open 等原生检查项保持原生"
+                  : "脚本注入前检查项已被改动，无干净基线可还原",
                 found: {
                   before: before.join(","),
                   after: after.join(","),
                   // attachShadow 被改时，光看 before/after 分不清是快照本身不干净，
                   // 还是包装挂在 HTMLElement.prototype / body 实例上，下次上报直接带这 4 个字段
-                  snapshotNative: isNativeFn(NATIVE_SNAPSHOT.attachShadow),
+                  snapshotNative: snapNative,
+                  snapshotHead: (() => {
+                    try {
+                      return typeof NATIVE_SNAPSHOT.attachShadow === "function"
+                        ? Function.prototype.toString.call(NATIVE_SNAPSHOT.attachShadow).slice(0, 200)
+                        : "";
+                    } catch (_) {
+                      return "";
+                    }
+                  })(),
                   bodyOwnProp: (() => {
                     try { return Object.prototype.hasOwnProperty.call(document.body || {}, "attachShadow"); } catch (_) { return false; }
                   })(),
@@ -13448,7 +13581,7 @@ const MAX_RECORDS = 200;
                         } catch (_) {}
                         return w.Element && w.Element.prototype.attachShadow;
                       })();
-                      return typeof effective === "function" ? Function.prototype.toString.call(effective).slice(0, 100) : "";
+                      return typeof effective === "function" ? Function.prototype.toString.call(effective).slice(0, 200) : "";
                     } catch (_) {
                       return "";
                     }
