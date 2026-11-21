@@ -9874,7 +9874,23 @@ const MAX_RECORDS = 200;
         // 多个空时，模型常把答案写成「一行一个空」；单空题不拆，避免把多段论述切碎
         if (blankCount > 1 && list.length === 1) {
           const lines = this.splitMultilineAnswer(list[0]);
-          if (lines.length >= 2) return lines.slice(0, blankCount);
+          // 拆不出多行（没有换行）时不能在这里返回空数组，交给下面的标点拆分处理
+          if (lines.length) {
+            if (lines.length >= blankCount) return lines.slice(0, blankCount);
+            // 行数还是不够：诗句类多空题里模型常把相邻两个空写在同一个逗号里
+            // （如「帘卷西风，人比黄花瘦」是第3、4空）。以前这里拆出行后直接返回，
+            // 后面的空全留空、整题报 blank_partial（2026-11-21 三条空白题）。
+            // 只有「按标点再拆一次能拆出更多段」才采用，拆不出就按原行数返回。
+            const splitLines = [];
+            lines.forEach((line) => {
+              line.split(/[,，、;；|＞→]+/).forEach((piece) => {
+                const trimmed = piece.trim();
+                if (trimmed) splitLines.push(trimmed);
+              });
+            });
+            if (splitLines.length > lines.length) return splitLines.slice(0, blankCount);
+            return lines.slice(0, blankCount);
+          }
         }
         const flat = [];
         list.forEach((a) => {
