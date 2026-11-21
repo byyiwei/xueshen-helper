@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.1.3
+// @version      6.1.4
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -15,6 +15,12 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.1.4 (2026-11-21)
+// @changelog    1. 智慧树作业页：题目接口没返回时按页面结构兜底解析，整份作业不再直接放弃
+// @changelog    2. 超星章节测验：题目节点被页面重渲染脱离后自动按原容器 id 重找并重取选项，修复多选/判断整题「点击后未选中」
+// @changelog    3. 智慧树复习查看页不再把单选题误判成填空题，只读回显题自动跳过、不再刷「题型不支持」
+// @changelog    4. 多空填空题：答案里相邻两个空写在同一行（如诗句题）时按标点补拆，最后一个空不再留空
+// @changelog    5. 原生检测：脚本注入前已被其它扩展改动的检查项不再上报后台
 // @changelog    v6.1.3 (2026-11-21)
 // @changelog    1. 页面异常上报补结构：每个节点带外层HTML片段、子节点摘要、选项类节点数，另附整页各选择器命中计数，页面改版能直接定位换成什么容器
 // @changelog    2. 填充失败的异常补带整题HTML片段（截500字符），不再只报「答案未匹配」却看不到页面结构
