@@ -24839,6 +24839,112 @@ const XS_EXT = (() => {
     return found ? found.key : null;
   }
 
+  // ===== 未支持平台的作业数据回传（2026-11-21）=====
+  // U校园这类平台目前只做视频助手、不做作业答题，而作业题目是页面加载后从接口拉回来的，
+  // 页面 DOM 里没有题干（上报 text_len 一直为 0），想适配也无从下手。
+  // 这里在作业/考试页轻量记录接口返回的题目 JSON，随「未支持平台」异常一起回传后台；
+  // 拿到真实结构后就能照着写解析，再支持这个平台的答题。
+  // 只读：不改请求、不改响应、只匹配题目类接口，不做任何自动操作。
+  (function installUnsupportedPageCapture() {
+    try {
+      const host = location.hostname || "";
+      const plat = platformConfigs.find((item) => item.domains.some((d) => host === d || host.endsWith("." + d)));
+      // 只对「只做视频助手」的平台启用；超星/智慧树/青书/国开这些已经能答题的不需要
+      if (!plat || !plat.watchSite) return;
+      const path = String(location.pathname || "") + String(location.hash || "") + String(location.search || "");
+      // 只在作业/考试/测验页面抓，普通课程播放页不抓
+      if (!/(homework|exam|test|quiz|paper|exercise|\/do\/|\/work)/i.test(path)) return;
+      const pageWin = (typeof unsafeWindow !== "undefined" && unsafeWindow) || window;
+      if (pageWin.__xsPageCaptureInstalled) return;
+      pageWin.__xsPageCaptureInstalled = 1;
+
+      const MAX_RECORDS = 4;
+      const MAX_SAMPLE = 3000;
+      const records = [];
+      const seenUrls = new Set();
+      const TOPIC_RE = /(question|subject|exercise|homework|paper|answer|item|题目|试题|作业|选项)/i;
+      // 接口里可能夹登录态/学号/手机号：回传前先抹掉，只留题目结构
+      const sensitiveRe = /("(?:token|access_token|refresh_token|password|passwd|pwd|phone|mobile|email|idcard|id_card|studentNo|student_no|cookie|sessionId)"\s*:\s*")[^"]*"/gi;
+      const clean = (text) => String(text).replace(sensitiveRe, "$1***");
+
+      const record = (url, body) => {
+        if (records.length >= MAX_RECORDS) return;
+        const text = String(body || "");
+        if (text.length < 40) return;
+        const u = String(url || "").slice(0, 200);
+        if (!TOPIC_RE.test(u + text.slice(0, 800))) return;
+        const key = u.split("?")[0];
+        if (seenUrls.has(key)) return;
+        seenUrls.add(key);
+        records.push({ url: u, sample: clean(text).slice(0, MAX_SAMPLE) });
+      };
+
+      const origFetch = pageWin.fetch;
+      if (typeof origFetch === "function") {
+        pageWin.fetch = function (...args) {
+          const first = args[0];
+          const reqUrl = typeof first === "string" ? first : (first && first.url) || "";
+          const p = origFetch.apply(this, args);
+          try {
+            p.then((res) => {
+              try {
+                const ct = (res && res.headers && res.headers.get && res.headers.get("content-type")) || "";
+                if (ct && !/json|text|javascript/i.test(ct)) return;
+                res.clone().text().then((t) => record(reqUrl, t)).catch(() => {});
+              } catch (_) {}
+            }).catch(() => {});
+          } catch (_) {}
+          return p;
+        };
+      }
+
+      const XHR = pageWin.XMLHttpRequest;
+      if (XHR && XHR.prototype) {
+        const origOpen = XHR.prototype.open;
+        const origSend = XHR.prototype.send;
+        XHR.prototype.open = function (method, url) {
+          this.__xsCaptureUrl = url;
+          return origOpen.apply(this, arguments);
+        };
+        XHR.prototype.send = function () {
+          try {
+            this.addEventListener("load", () => {
+              try {
+                if (this.responseType && this.responseType !== "text") return;
+                record(this.__xsCaptureUrl, this.responseText);
+              } catch (_) {}
+            });
+          } catch (_) {}
+          return origSend.apply(this, arguments);
+        };
+      }
+
+      window.__XSGetPageCapture = () => records.slice();
+      // 页面上有答题控件、又真抓到了题目接口数据：主动回传一次。
+      // 这类平台没有答题流程可等，只能页面稳定后自己报。
+      const reportCapture = () => {
+        try {
+          if (!records.length || window.__xsCaptureReported) return;
+          const controls = document.querySelectorAll('input:not([type="hidden"]), textarea, [contenteditable="true"]').length;
+          if (controls < 3) return;
+          window.__xsCaptureReported = 1;
+          window.__XSReportPageIssue && window.__XSReportPageIssue({
+            page_type: "unknown",
+            stage: "capture",
+            reason_code: "unsupported_platform_capture",
+            selector: "题目接口返回",
+            expected: "未支持平台的作业数据结构（用于后续适配）",
+            found: { records: records.length, controls, platform: plat.key },
+            capture: records,
+            nodes: []
+          });
+        } catch (_) {}
+      };
+      setTimeout(reportCapture, 8000);
+      setTimeout(reportCapture, 20000);
+    } catch (_) {}
+  })();
+
   // 面板内容兜底：某个页签渲染出错时显示原因，不再整块空白
   const PanelBoundary = {
     name: "PanelBoundary",

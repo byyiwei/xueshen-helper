@@ -666,7 +666,7 @@ PAGE_SNAPSHOT_TYPES = {
 PAGE_SNAPSHOT_STAGES = {
     "load": "页面加载", "parse": "解析页面", "find_question": "找题目容器",
     "detect_type": "识别题型", "detect": "原生检测", "image": "处理图片", "fill": "填写答案",
-    "submit": "提交试卷", "login": "登录状态", "other": "其他",
+    "submit": "提交试卷", "login": "登录状态", "capture": "回传数据", "other": "其他",
 }
 PAGE_SNAPSHOT_REASONS = {
     "no_container": "找不到题目容器", "unknown_type": "认不出题型",
@@ -687,6 +687,9 @@ PAGE_SNAPSHOT_REASONS = {
     "input_not_found": "找不到输入框", "cannot_input": "输入框填不进去",
     "image_download_failed": "图片下载失败", "image_recognize_failed": "图片识别失败",
     "image_not_supported": "题型不支持图片", "submit_blocked": "交卷按钮点不动",
+    "empty_question": "没解析到题目内容",
+    # 未支持平台的作业页：脚本把题目接口返回的 JSON 片段随上报带回来，用于后续适配
+    "unsupported_platform_capture": "未支持平台已回传题目数据",
     "page_not_loaded": "页面没加载出来", "login_lost": "登录状态失效",
     "native_check_unfixed": "原生检查没还原", "native_check_fixed": "原生检查已还原",
     # 站方自己（或更早加载的扩展）在脚本注入前就改过检查项：脚本拿着不干净的原生快照，
@@ -762,6 +765,30 @@ def sanitize_page_snapshot(item):
             "script_version": str(extra.get("script_version") or item.get("script_version") or "")[:32],
             "signature": str(extra.get("signature") or "")[:64],
         }
+        # 未支持平台的题目接口样本（只读抓取）：单独字段保存，不塞进 found ——
+        # found 只留短诊断值会被截成 100 字符。每条留 3000 字符、最多 4 条，
+        # 够看清题目/选项/题型的 JSON 结构，又不至于把整卷数据搬回库。
+        capture = []
+        raw_capture = extra.get("capture") if isinstance(extra.get("capture"), list) else []
+        _cap_sensitive = re.compile(
+            r'("(?:token|access_token|refresh_token|password|passwd|pwd|phone|mobile|email|'
+            r'idcard|id_card|studentNo|student_no|cookie|sessionId)"\s*:\s*")[^"]*"',
+            re.I,
+        )
+        for row in raw_capture[:4]:
+            if not isinstance(row, dict):
+                continue
+            sample = re.sub(r"\s+", " ", str(row.get("sample") or ""))[:3000]
+            # 脚本端已经抹过一遍；后端再抹一次，避免旧版本脚本把登录态/学号带上来
+            sample = _cap_sensitive.sub(r"\1***", sample)
+            if not sample:
+                continue
+            capture.append({
+                "url": str(row.get("url") or "")[:200],
+                "sample": sample,
+            })
+        if capture:
+            clean["capture"] = capture
         item["extra"] = clean
         item["event_type"] = "page_snapshot"
         page_name = PAGE_SNAPSHOT_TYPES.get(page_type, page_type or "未标注平台")
