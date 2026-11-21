@@ -5065,10 +5065,28 @@ _REASONING_ONLY_RE = re.compile(
 )
 
 
+_FW2HW_PUNCT = str.maketrans({
+    "！": "!", "＃": "#", "＄": "$", "％": "%", "＆": "&", "＊": "*", "＋": "+",
+    "－": "-", "／": "/", "：": ":", "；": ";", "＜": "<", "＝": "=", "＞": ">",
+    "？": "?", "＠": "@", "＼": "\\", "＾": "^", "＿": "_", "｀": "`", "｜": "|",
+    "～": "~", "（": "(", "）": ")", "［": "[", "］": "]", "｛": "{", "｝": "}",
+})
+
+
 def _norm_option_text(v):
-    """选项/答案正文归一化：去「A.」前缀、空白和常见标点后转小写。"""
-    v = re.sub(r"^[A-Za-z][.、．)）:：]\s*", "", str(v or ""))
-    return re.sub(r"[\s　，。！？；：,.!?;:\-—_【】\[\]（）()\"'“”‘’]+", "", v).lower()
+    """选项/答案正文归一化：去「A.」前缀、空白和常见标点后转小写。
+
+    选项正文本身就是一个符号（`!`、`_`、`$`）时，剥完标点会变成空串，
+    与任何答案都对不上 —— 编程类课程这种「符号选项」很常见，会让任务池
+    把正确回答反复判成「答案与页面选项对不上」并一直换模型重试
+    （2026-11-21 标识符题）。剥空时回退到「只去空白 + 全角转半角 + 小写」。
+    """
+    s = str(v or "").translate(_FW2HW_PUNCT)
+    s = re.sub(r"^[A-Za-z][.、．)）:：]\s*", "", s)
+    stripped = re.sub(r"[\s　，。！？；：,.!?;:\-—_【】\[\]（）()\"'“”‘’]+", "", s)
+    if stripped:
+        return stripped.lower()
+    return re.sub(r"\s+", "", s).lower()
 
 
 def _answer_hits_options(question, answer):
@@ -5635,8 +5653,9 @@ def normalize_ai_answer(question, answer):
     # 把 AQ 变成 A 号选项，整题点错或点不上。
     if options:
         def _norm_opt(v):
-            t0 = re.sub(r"^[A-Za-z][.、．)）:：]\s*", "", str(v or ""))
-            return re.sub(r"[\s　，。！？；：,.!?;:\-—_【】\[\]（）()\"'“”‘’]+", "", t0).lower()
+            # 统一用 _norm_option_text：选项正文是纯符号（!、_、$）时也能精确对上，
+            # 不能用本地版本把符号剥空（2026-11-21 标识符题）
+            return _norm_option_text(v)
         _t = _norm_opt(text)
         if _t:
             _exact = [opt for opt in options if _norm_opt(opt) == _t]
@@ -5829,8 +5848,9 @@ def normalize_ai_answer(question, answer):
     # 脚本按正文匹配即可；对上多个或对不上就保留原样，不猜。
     if options:
         def _norm_opt(v):
-            t0 = re.sub(r"^[A-Za-z][.、．)）:：]\s*", "", str(v or ""))
-            return re.sub(r"[\s　，。！？；：,.!?;:\-—_【】\[\]（）()\"'“”‘’]+", "", t0).lower()
+            # 统一用 _norm_option_text：选项正文是纯符号（!、_、$）时也能精确对上，
+            # 不能用本地版本把符号剥空（2026-11-21 标识符题）
+            return _norm_option_text(v)
         _t = _norm_opt(text)
         if _t:
             _hits = [opt for opt in options if _norm_opt(opt) and (_norm_opt(opt) == _t or (len(_t) >= 2 and _t in _norm_opt(opt)))]

@@ -13025,7 +13025,13 @@ const MAX_RECORDS = 200;
             await new Promise((resolve) => setTimeout(resolve, 30));
           }
         };
-        const normalizeOptText = (str) => String(str ?? "").replace(/^[A-Z][.、．]\s*/i, "").replace(/\s+/g, "").replace(/[^\p{L}\p{N}√×]/gu, "").toLowerCase();
+        // 选项正文本身是符号（!、_、$）时，剥掉非字母数字会变成空串，和任何答案都对不上
+        // （2026-11-21「哪种符号不能作为标识符」题）。剥空时回退到只去空白的结果。
+        const normalizeOptText = (str) => {
+          const base = String(str ?? "").replace(/^[A-Z][.、．]\s*/i, "").replace(/\s+/g, "");
+          const stripped = base.replace(/[^\p{L}\p{N}√×]/gu, "").toLowerCase();
+          return stripped || base.toLowerCase();
+        };
         if (question.type === "单选题" || question.type === "多选题" || /多选|X型|不定项/.test(question.type || "")) {
           // 先把命中的选项序号收齐再去点，避免同一选项被点两次（多选题再点一次会取消勾选，
           // 表现就是「多选题只答一个」）
