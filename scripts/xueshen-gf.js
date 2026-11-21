@@ -9990,6 +9990,16 @@ const MAX_RECORDS = 200;
         if (list.length >= blankCount) return list.slice(0, blankCount);
         // 多个空时，模型常把答案写成「一行一个空」；单空题不拆，避免把多段论述切碎
         if (blankCount > 1 && list.length === 1) {
+          // 听力/填表题模型常按「1.A 2.B 3.B」这种编号挤在一行：没有换行也没有逗号分隔，
+          // 以前整串塞进第一个空，其余空全空着（2026-11-22 一条 A 级听力填空）。
+          // 只有整串以编号开头、能拆出至少两段时才用，避免把「1.5 米」这类数字拆坏。
+          if (/^\s*\d{1,2}\s*[.、．)）:：]\s*\S/.test(list[0])) {
+            const numberedParts = String(list[0])
+              .split(/(?:^|\s)\d{1,2}\s*[.、．)）:：]\s*(?=\S)/)
+              .map((s) => s.trim())
+              .filter(Boolean);
+            if (numberedParts.length >= 2) return numberedParts.slice(0, blankCount);
+          }
           const lines = this.splitMultilineAnswer(list[0]);
           // 拆不出多行（没有换行）时不能在这里返回空数组，交给下面的标点拆分处理
           if (lines.length) {
