@@ -795,10 +795,21 @@ def sanitize_page_snapshot(item):
         # 页面作答控件结构：接口解决读题，填写方式还得看 DOM 长什么样
         dom = extra.get("dom_sample")
         if isinstance(dom, dict):
+            def _dom_text(val, limit):
+                s = str(val or "")
+                s = re.sub(r"[ \t]+", " ", s)
+                s = re.sub(r"\n{3,}", "\n\n", s)
+                return s.strip()[:limit]
             clean["dom_sample"] = {
                 "controls": _safe_int(dom.get("controls"), 0),
-                "container": re.sub(r"\s+", " ", str(dom.get("container") or ""))[:1200],
-                "option": re.sub(r"\s+", " ", str(dom.get("option") or ""))[:1200],
+                "container": _dom_text(dom.get("container"), 1200),
+                # 结构骨架保留换行，缩进就是层级
+                "skeleton": _dom_text(dom.get("skeleton"), 4000),
+                "stem": _dom_text(dom.get("stem"), 800),
+                "option": _dom_text(dom.get("option"), 800),
+                "option_list": _dom_text(dom.get("option_list"), 1000),
+                "input": _dom_text(dom.get("input"), 500),
+                "submit": _dom_text(dom.get("submit"), 500),
             }
         item["extra"] = clean
         item["event_type"] = "page_snapshot"

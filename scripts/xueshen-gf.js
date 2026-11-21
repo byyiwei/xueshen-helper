@@ -24971,24 +24971,82 @@ const XS_EXT = (() => {
       }
 
       window.__XSGetPageCapture = () => records.slice();
-      // 接口只解决「读题」，填答案还得看页面控件长什么样：抓控件最集中的容器和
-      // 一个选项节点的外层 HTML（各 1200 字符），能看出选项是 label、li 还是 div。
+      // 接口只解决「读题」，填答案还得看页面控件长什么样。
+      // 整块 outerHTML 截 1200 字符只会看到开头（表头、导航），平台用 hash 类名时
+      // 连容器都选不中；改成「结构骨架 + 关键区域局部样本」：
+      //   骨架：每层 tag#id.class，标注控件数和文字长度，能看全答题区的层级
+      //   题干/选项/输入/提交：各取一小段外层 HTML，确定具体的填写和点击方式
       const pageStructure = () => {
         try {
+          const squash = (s, n) => String(s || "").replace(/\s+/g, " ").replace(/>\s+</g, "><").slice(0, n || 800);
+          const ctrlSel = 'input:not([type="hidden"]), textarea, [contenteditable="true"]';
           let best = null;
           let bestCount = 0;
-          document.querySelectorAll('form, [class*="question"], [class*="exam"], [class*="homework"], [class*="paper"], main, section').forEach((el) => {
+          document.querySelectorAll('form, [class*="question"], [class*="exam"], [class*="homework"], [class*="paper"], [class*="paper"], main, section').forEach((el) => {
             if (!el.querySelectorAll) return;
-            const n = el.querySelectorAll('input:not([type="hidden"]), textarea, [contenteditable="true"]').length;
+            const n = el.querySelectorAll(ctrlSel).length;
             if (n > bestCount) { bestCount = n; best = el; }
           });
           if (!best) best = document.body;
-          const squash = (s) => String(s || "").replace(/\s+/g, " ").replace(/>\s+</g, "><").slice(0, 1200);
-          const option = document.querySelector('[class*="option"], [class*="choice"], [class*="answer"], label, li');
+          if (!best) return null;
+
+          // 结构骨架：跳过脚本/样式/图标，只走有控件或文字的分支，避免导航页脚占满配额
+          const skeleton = (() => {
+            const lines = [];
+            const walk = (el, depth) => {
+              if (!el || lines.length >= 120 || depth > 8) return;
+              const tag = String(el.tagName || "").toLowerCase();
+              if (!tag || ["script", "style", "svg", "noscript", "link", "meta"].indexOf(tag) >= 0) return;
+              const id = el.id ? "#" + el.id : "";
+              const cls = typeof el.className === "string" ? el.className.trim().split(/\s+/).filter(Boolean).slice(0, 4).join(".") : "";
+              const textLen = String(el.textContent || "").replace(/\s+/g, "").length;
+              const ctrl = el.querySelectorAll ? el.querySelectorAll("input, textarea, [contenteditable=\"true\"]").length : 0;
+              if (depth > 0 && !textLen && !ctrl) return;
+              lines.push("  ".repeat(depth) + tag + id + (cls ? "." + cls : "") + (ctrl ? " [控件" + ctrl + "]" : "") + (textLen ? " (字" + textLen + ")" : ""));
+              Array.from(el.children || []).slice(0, 20).forEach((child) => {
+                if (lines.length >= 120) return;
+                walk(child, depth + 1);
+              });
+            };
+            walk(best, 0);
+            return lines.join("\n").slice(0, 4000);
+          })();
+
+          // 题干：答题区里文字最多的一块（通常就是题面）
+          const stem = (() => {
+            let pick = null;
+            let bestLen = 0;
+            Array.from(best.querySelectorAll("div, p, span, h1, h2, h3, h4")).slice(0, 300).forEach((el) => {
+              const len = String(el.textContent || "").replace(/\s+/g, "").length;
+              if (len > bestLen && len < 2000) { bestLen = len; pick = el; }
+            });
+            return pick ? squash(pick.outerHTML, 800) : "";
+          })();
+
+          // 选项：答题区里第一个选项节点（label / li / 带 option·choice 类名）
+          const optionEl = best.querySelector('label, li, [role="radio"], [role="checkbox"], [class*="option"], [class*="choice"]');
+          const optionsBox = optionEl && optionEl.parentElement ? optionEl.parentElement : null;
+
+          // 输入控件：第一个可见输入框的外层结构
+          const inputEl = best.querySelector(ctrlSel);
+
+          // 提交按钮：文字含「提交/交卷/保存」
+          let submitEl = null;
+          Array.from(document.querySelectorAll("button, a, input[type=submit]")).slice(0, 200).some((el) => {
+            const t = String(el.textContent || el.value || "").replace(/\s+/g, "");
+            if (/提交|交卷|保存|submit|save/i.test(t)) { submitEl = el; return true; }
+            return false;
+          });
+
           return {
             controls: bestCount,
-            container: best ? squash(best.outerHTML) : "",
-            option: option ? squash(option.outerHTML) : "",
+            container: best ? squash(best.outerHTML, 1200) : "",
+            skeleton: skeleton,
+            stem: stem,
+            option: optionEl ? squash(optionEl.outerHTML, 800) : "",
+            option_list: optionsBox ? squash(optionsBox.outerHTML, 1000) : "",
+            input: inputEl ? squash(inputEl.outerHTML, 500) : "",
+            submit: submitEl ? squash(submitEl.outerHTML, 500) : "",
           };
         } catch (_) {
           return null;
