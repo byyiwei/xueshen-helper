@@ -2184,6 +2184,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     page_not_advanced: "上一题没有切走，本题未填写",
     no_options: "页面上找不到选项",
     answer_out_of_range: "答案里的选项在页面上找不到",
+    answer_incomplete: "答案比空少，部分空没填",
     blank_partial: "部分空未填上"
   };
   const describeFillReason = (reason) => XS_FILL_REASON_TEXT[String(reason || "")] || "";
@@ -9221,6 +9222,8 @@ const MAX_RECORDS = 200;
           const mode = answerMode.value;
           // 答案拿到了但页面上点不上：把题目节点和控件数量报回去，才能判断是页面改版还是选项是图片
           const reportFillFail = (question) => {
+            // 答案本身不完整（比如填空只答了一半）不是页面问题，只本地提示不上报
+            if (question && question.__xsSkipPageReport) return;
             const el = question && question.element;
             const isChoice = ["0", "1", "3"].includes(String((question && question.type) || ""));
             const controls = el && el.querySelectorAll ? el.querySelectorAll('input, textarea, [contenteditable="true"]') : [];
@@ -9276,6 +9279,25 @@ const MAX_RECORDS = 200;
                   try {
                     const first = Object.values((question && question.options) || {})[0];
                     return first && first.outerHTML ? String(first.outerHTML).replace(/\s+/g, " ").slice(0, 400) : "";
+                  } catch (_) {
+                    return "";
+                  }
+                })(),
+                // 每个选项的字母 + 是否读成已选（! 表示节点已脱离文档）：
+                // 再报「取消不掉/点不中」时能直接定位到哪一项、是读错还是节点失联
+                option_states: (() => {
+                  try {
+                    const nodes = Object.values((question && question.options) || {});
+                    return nodes.slice(0, 8).map((node) => {
+                      let letter = "";
+                      try {
+                        const mark = node.querySelector && node.querySelector(".num_option, .num_option_dx, [data]");
+                        letter = String((mark && mark.textContent) || "").trim().slice(0, 2);
+                      } catch (_) {
+                      }
+                      const on = _that.isChoiceOptionSelected(node) ? 1 : 0;
+                      return letter + ":" + on + (node && node.isConnected ? "" : "!");
+                    }).join(",");
                   } catch (_) {
                     return "";
                   }
@@ -9822,10 +9844,13 @@ const MAX_RECORDS = 200;
         // 注意多选的内联事件叫 addMultipleChoice（不是 addChoice）：只认 addChoice 会把
         // 多选当成普通选项，点一次读不到状态就连补点几次，把刚选上的又取消掉
         // （2026-11-21 三条「多选题选项点击后未选中」）。前缀+Choice 的写法都算切换式。
-        const inlineToggle = /add[A-Za-z]*Choice|toggle[A-Za-z]*Choice|switch[A-Za-z]*Choice|changeChoice/i;
+        // 整卷预览（exam-ans/.../preview）用的是 clickSaveMultiSelect / saveSingleSelect：
+        // 带 Save 的也是「点一下写一次答案」，不能当普通选项反复补点。
+        const inlineToggle = /add[A-Za-z]*Choice|toggle[A-Za-z]*Choice|switch[A-Za-z]*Choice|changeChoice|[Ss]ave(?:Multi|Single)[A-Za-z]*(?:Select|Choice)/i;
+        const toggleSelector = '[onclick*="Choice"], [onclick*="Select"]';
         const toggleClick = !!((optionContainer.getAttribute && inlineToggle.test(String(optionContainer.getAttribute("onclick") || "")))
-          || (optionContainer.closest && optionContainer.closest('[onclick*="Choice"]'))
-          || (optionContainer.querySelector && optionContainer.querySelector('[onclick*="Choice"]')));
+          || (optionContainer.closest && optionContainer.closest(toggleSelector))
+          || (optionContainer.querySelector && optionContainer.querySelector(toggleSelector)));
         // 这两个标记进上报：下次再出现「点击后未选中」，能直接看出是没识别成切换式还是页面没响应
         this.__xsLastToggle = toggleClick;
         const reactScope = (optionContainer.closest && (optionContainer.closest("ul") || optionContainer.closest(".answerBg"))) || optionContainer;
@@ -10597,17 +10622,21 @@ const MAX_RECORDS = 200;
             return false;
           }
           // 先清理旧答案，再逐项选择；只有最终选中集合完全一致才算填充成功。
-          for (const key of optionKeys) {
-            if (!targets.has(key) && this.isChoiceOptionSelected(question.options[key])) {
-              const container = this.getChoiceOptionContainer(question.options[key]);
-              try { container.click(); } catch (_) {}
-              if (this.isChoiceOptionSelected(question.options[key])) {
-                const input = this.getChoiceOptionInputs(container).find(i => this.isChoiceInputChecked(i));
-                try { if (input) input.click(); } catch (_) {}
-                // 整行 li 没有绑定事件时，补点行内的 before-after
+          // 单选题不清理：整卷预览的单选是「点目标顶掉旧答案」，点旧选项反而会把它写成答案
+          // （2026-11-21 整卷预览单选 extra_selected）。只有多选才要先取消答案之外的已选项。
+          if (question.type === "1") {
+            for (const key of optionKeys) {
+              if (!targets.has(key) && this.isChoiceOptionSelected(question.options[key])) {
+                const container = this.getChoiceOptionContainer(question.options[key]);
+                try { container.click(); } catch (_) {}
                 if (this.isChoiceOptionSelected(question.options[key])) {
-                  const inner = container.querySelector && container.querySelector(".before-after");
-                  try { if (inner) inner.click(); } catch (_) {}
+                  const input = this.getChoiceOptionInputs(container).find(i => this.isChoiceInputChecked(i));
+                  try { if (input) input.click(); } catch (_) {}
+                  // 整行 li 没有绑定事件时，补点行内的 before-after
+                  if (this.isChoiceOptionSelected(question.options[key])) {
+                    const inner = container.querySelector && container.querySelector(".before-after");
+                    try { if (inner) inner.click(); } catch (_) {}
+                  }
                 }
               }
             }
@@ -10632,7 +10661,11 @@ const MAX_RECORDS = 200;
             if (this.isChoiceOptionSelected(live || question.options[key])) return true;
             return !!(question.__xsTrustedSelected && question.__xsTrustedSelected.has(key));
           };
-          filled = optionKeys.every(key => optionSelectedNow(key) === targets.has(key));
+          // 单选题只认「目标选中」：整卷预览里旧选项的选中标记可能没被页面清掉，
+          // 那只是显示残留，最后点的目标才是保存的答案（2026-11-21 单选 extra_selected）。
+          filled = optionKeys.every(key => question.type === "0"
+            ? (!targets.has(key) || optionSelectedNow(key))
+            : (optionSelectedNow(key) === targets.has(key)));
           if (!filled) {
             // 填的过程中点击选项里的图片可能把查看器又拉起来：再关一次；关掉后整套
             // 清理+点选重跑一遍（只重试一次），遮罩挡掉的点击这次才能真正生效
@@ -10649,7 +10682,7 @@ const MAX_RECORDS = 200;
             // 区分「答案没点上」和「多出来的已选项没取消」：前者可能是页面异步，值得重试；
             // 后者重试也多半没用，上报时也要分开统计
             const allTargetsOn = [...targets].every(key => optionSelectedNow(key));
-            const extrasOn = optionKeys.some(key => !targets.has(key) && optionSelectedNow(key));
+            const extrasOn = question.type === "1" && optionKeys.some(key => !targets.has(key) && optionSelectedNow(key));
             question.__xsFillReason = allTargetsOn && extrasOn ? "extra_selected" : "click_not_effective";
           }
         } else if (question.type === "2") {
@@ -10681,7 +10714,15 @@ const MAX_RECORDS = 200;
           filled = blankFields.length > 0 && blankFilled === blankFields.length;
           if (!filled && blankFilled > 0) {
             question.__xsBlankPartial = blankFields.length - blankFilled;
-            question.__xsFillReason = "blank_partial";
+            // 答案本身就比空少（模型只答了 9 个、页面有 10 个空）不是页面问题：
+            // 只在本地提示，不上报页面异常（2026-11-21 两条 blank_partial）。
+            if (blankAnswers.length < blankFields.length) {
+              question.__xsFillReason = "answer_incomplete";
+              question.__xsSkipPageReport = 1;
+            } else {
+              question.__xsFillReason = "blank_partial";
+              question.__xsSkipPageReport = 0;
+            }
             try {
               this.log.insertLog(
                 `填空题有${question.__xsBlankPartial}个空没填上，按未完成处理`,
@@ -12581,6 +12622,8 @@ const MAX_RECORDS = 200;
           const { answerMode } = this.setting.config.basicConfig;
           const mode = answerMode.value;
           const reportFillFail = (question) => {
+            // 答案本身不完整（比如填空只答了一半）不是页面问题，只本地提示不上报
+            if (question && question.__xsSkipPageReport) return;
             const el = question && question.element;
             const isChoice = ["单选题", "多选题", "判断题", "多项选择题", "X型选择题", "X型题", "不定项选择题", "不定项"].includes(String((question && question.type) || ""));
             const controls = el && el.querySelectorAll ? el.querySelectorAll('input, textarea, [contenteditable="true"]') : [];
@@ -13500,7 +13543,14 @@ const MAX_RECORDS = 200;
             isSelected = fields.length > 0 && filledCount === fields.length;
             if (!isSelected && filledCount > 0) {
               question.__xsBlankPartial = fields.length - filledCount;
-              question.__xsFillReason = "blank_partial";
+              // 答案比空少不是页面问题，只本地提示不上报（同 cx 填空的处理）
+              if (texts.length < fields.length) {
+                question.__xsFillReason = "answer_incomplete";
+                question.__xsSkipPageReport = 1;
+              } else {
+                question.__xsFillReason = "blank_partial";
+                question.__xsSkipPageReport = 0;
+              }
               try {
                 this.log.insertLog(
                   `第${index + 1}题填空题有${question.__xsBlankPartial}个空没填上，按未完成处理`,
@@ -16676,6 +16726,8 @@ const MAX_RECORDS = 200;
         const filled = await fillQuestion(question);
         if (!filled) {
           question.answer.code = 0;
+          // 答案本身不完整（填空只答了一半）不是页面问题，本地提示即可
+          if (question.__xsSkipPageReport) return filled;
           window.__XSReportPageIssue && window.__XSReportPageIssue({
             page_type: window.__XSGuessIssuePageType ? window.__XSGuessIssuePageType(question) : "unknown",
             stage: "fill",
