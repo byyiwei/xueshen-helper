@@ -796,9 +796,9 @@ def sanitize_page_snapshot(item):
         dom = extra.get("dom_sample")
         if isinstance(dom, dict):
             def _dom_text(val, limit):
-                s = str(val or "")
-                s = re.sub(r"[ \t]+", " ", s)
-                s = re.sub(r"\n{3,}", "\n\n", s)
+                # 骨架的缩进就是层级，不能压掉；只清行尾空格和多余空行
+                lines = [ln.rstrip() for ln in str(val or "").splitlines()]
+                s = re.sub(r"\n{3,}", "\n\n", "\n".join(lines))
                 return s.strip()[:limit]
             clean["dom_sample"] = {
                 "controls": _safe_int(dom.get("controls"), 0),
