@@ -775,7 +775,7 @@ def sanitize_page_snapshot(item):
             r'idcard|id_card|studentNo|student_no|cookie|sessionId)"\s*:\s*")[^"]*"',
             re.I,
         )
-        for row in raw_capture[:4]:
+        for row in raw_capture[:6]:
             if not isinstance(row, dict):
                 continue
             sample = re.sub(r"\s+", " ", str(row.get("sample") or ""))[:3000]
@@ -785,10 +785,21 @@ def sanitize_page_snapshot(item):
                 continue
             capture.append({
                 "url": str(row.get("url") or "")[:200],
+                "method": str(row.get("method") or "")[:8],
+                "req": _cap_sensitive.sub(r"\1***", str(row.get("req") or ""))[:500],
                 "sample": sample,
+                "schema": str(row.get("schema") or "")[:3000],
             })
         if capture:
             clean["capture"] = capture
+        # 页面作答控件结构：接口解决读题，填写方式还得看 DOM 长什么样
+        dom = extra.get("dom_sample")
+        if isinstance(dom, dict):
+            clean["dom_sample"] = {
+                "controls": _safe_int(dom.get("controls"), 0),
+                "container": re.sub(r"\s+", " ", str(dom.get("container") or ""))[:1200],
+                "option": re.sub(r"\s+", " ", str(dom.get("option") or ""))[:1200],
+            }
         item["extra"] = clean
         item["event_type"] = "page_snapshot"
         page_name = PAGE_SNAPSHOT_TYPES.get(page_type, page_type or "未标注平台")

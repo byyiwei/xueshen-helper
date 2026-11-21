@@ -24858,7 +24858,7 @@ const XS_EXT = (() => {
       if (pageWin.__xsPageCaptureInstalled) return;
       pageWin.__xsPageCaptureInstalled = 1;
 
-      const MAX_RECORDS = 4;
+      const MAX_RECORDS = 6;
       const MAX_SAMPLE = 3000;
       const records = [];
       const seenUrls = new Set();
@@ -24867,7 +24867,46 @@ const XS_EXT = (() => {
       const sensitiveRe = /("(?:token|access_token|refresh_token|password|passwd|pwd|phone|mobile|email|idcard|id_card|studentNo|student_no|cookie|sessionId)"\s*:\s*")[^"]*"/gi;
       const clean = (text) => String(text).replace(sensitiveRe, "$1***");
 
-      const record = (url, body) => {
+      // 整卷 JSON 常有上万字符，原始样本截 3000 只能看到前两题。
+      // 结构提纲把字段名、类型、数组长度抽出来，整卷字段都能覆盖到而体积很小。
+      const jsonOutline = (text) => {
+        try {
+          const data = JSON.parse(text);
+          const out = [];
+          const walk = (node, depth, path) => {
+            if (out.length >= 80 || depth > 6) return;
+            if (node === null || typeof node !== "object") {
+              out.push(path + "=" + String(node).slice(0, 60));
+              return;
+            }
+            if (Array.isArray(node)) {
+              out.push(path + "[" + node.length + "]");
+              if (node.length) {
+                // 整卷题型混合（选择、填空、判断字段不一样）：合并前 3 题的字段，别只看第一题
+                const objs = node.slice(0, 3).filter((x) => x && typeof x === "object" && !Array.isArray(x));
+                if (objs.length > 1) {
+                  const merged = [];
+                  objs.forEach((o) => Object.keys(o).forEach((k) => { if (merged.indexOf(k) < 0) merged.push(k); }));
+                  out.push(path + "[*]{" + merged.slice(0, 24).join(",") + "}");
+                  merged.slice(0, 10).forEach((k) => walk(objs[0][k], depth + 1, path + "[*]." + k));
+                } else {
+                  walk(node[0], depth + 1, path + "[0]");
+                }
+              }
+              return;
+            }
+            const keys = Object.keys(node);
+            out.push(path + "{" + keys.slice(0, 24).join(",") + "}");
+            keys.slice(0, 10).forEach((k) => walk(node[k], depth + 1, path + "." + k));
+          };
+          walk(data, 0, "$");
+          return out.join("\n").slice(0, 3000);
+        } catch (_) {
+          return "";
+        }
+      };
+
+      const record = (url, body, method, reqBody) => {
         if (records.length >= MAX_RECORDS) return;
         const text = String(body || "");
         if (text.length < 40) return;
@@ -24876,21 +24915,31 @@ const XS_EXT = (() => {
         const key = u.split("?")[0];
         if (seenUrls.has(key)) return;
         seenUrls.add(key);
-        records.push({ url: u, sample: clean(text).slice(0, MAX_SAMPLE) });
+        // method/req 也要带回：适配时要照着原来的请求方式和参数取整卷、翻页
+        records.push({
+          url: u,
+          method: String(method || "GET").toUpperCase().slice(0, 8),
+          req: clean(String(reqBody || "")).slice(0, 500),
+          sample: clean(text).slice(0, MAX_SAMPLE),
+          schema: jsonOutline(text),
+        });
       };
 
       const origFetch = pageWin.fetch;
       if (typeof origFetch === "function") {
         pageWin.fetch = function (...args) {
           const first = args[0];
+          const init = args[1] || {};
           const reqUrl = typeof first === "string" ? first : (first && first.url) || "";
+          const reqMethod = (first && first.method) || init.method || "GET";
+          const reqBody = typeof init.body === "string" ? init.body : "";
           const p = origFetch.apply(this, args);
           try {
             p.then((res) => {
               try {
                 const ct = (res && res.headers && res.headers.get && res.headers.get("content-type")) || "";
                 if (ct && !/json|text|javascript/i.test(ct)) return;
-                res.clone().text().then((t) => record(reqUrl, t)).catch(() => {});
+                res.clone().text().then((t) => record(reqUrl, t, reqMethod, reqBody)).catch(() => {});
               } catch (_) {}
             }).catch(() => {});
           } catch (_) {}
@@ -24904,14 +24953,16 @@ const XS_EXT = (() => {
         const origSend = XHR.prototype.send;
         XHR.prototype.open = function (method, url) {
           this.__xsCaptureUrl = url;
+          this.__xsCaptureMethod = method;
           return origOpen.apply(this, arguments);
         };
-        XHR.prototype.send = function () {
+        XHR.prototype.send = function (body) {
           try {
+            const reqBody = typeof body === "string" ? body : "";
             this.addEventListener("load", () => {
               try {
                 if (this.responseType && this.responseType !== "text") return;
-                record(this.__xsCaptureUrl, this.responseText);
+                record(this.__xsCaptureUrl, this.responseText, this.__xsCaptureMethod, reqBody);
               } catch (_) {}
             });
           } catch (_) {}
@@ -24920,14 +24971,40 @@ const XS_EXT = (() => {
       }
 
       window.__XSGetPageCapture = () => records.slice();
-      // 页面上有答题控件、又真抓到了题目接口数据：主动回传一次。
-      // 这类平台没有答题流程可等，只能页面稳定后自己报。
+      // 接口只解决「读题」，填答案还得看页面控件长什么样：抓控件最集中的容器和
+      // 一个选项节点的外层 HTML（各 1200 字符），能看出选项是 label、li 还是 div。
+      const pageStructure = () => {
+        try {
+          let best = null;
+          let bestCount = 0;
+          document.querySelectorAll('form, [class*="question"], [class*="exam"], [class*="homework"], [class*="paper"], main, section').forEach((el) => {
+            if (!el.querySelectorAll) return;
+            const n = el.querySelectorAll('input:not([type="hidden"]), textarea, [contenteditable="true"]').length;
+            if (n > bestCount) { bestCount = n; best = el; }
+          });
+          if (!best) best = document.body;
+          const squash = (s) => String(s || "").replace(/\s+/g, " ").replace(/>\s+</g, "><").slice(0, 1200);
+          const option = document.querySelector('[class*="option"], [class*="choice"], [class*="answer"], label, li');
+          return {
+            controls: bestCount,
+            container: best ? squash(best.outerHTML) : "",
+            option: option ? squash(option.outerHTML) : "",
+          };
+        } catch (_) {
+          return null;
+        }
+      };
+      // 页面上有答题控件、又真抓到了题目接口数据：主动回传。
+      // 这类平台没有答题流程可等，只能页面稳定后自己报；题目可能分页/懒加载，
+      // 抓到新接口就再报一次（后台 60 秒内同签名会去重，不会刷屏）。
+      let reportedCount = 0;
       const reportCapture = () => {
         try {
-          if (!records.length || window.__xsCaptureReported) return;
+          if (!records.length || records.length <= reportedCount) return;
           const controls = document.querySelectorAll('input:not([type="hidden"]), textarea, [contenteditable="true"]').length;
           if (controls < 3) return;
-          window.__xsCaptureReported = 1;
+          reportedCount = records.length;
+          const dom = pageStructure();
           window.__XSReportPageIssue && window.__XSReportPageIssue({
             page_type: "unknown",
             stage: "capture",
@@ -24936,12 +25013,15 @@ const XS_EXT = (() => {
             expected: "未支持平台的作业数据结构（用于后续适配）",
             found: { records: records.length, controls, platform: plat.key },
             capture: records,
+            dom_sample: dom,
             nodes: []
           });
         } catch (_) {}
       };
       setTimeout(reportCapture, 8000);
       setTimeout(reportCapture, 20000);
+      setTimeout(reportCapture, 45000);
+      setTimeout(reportCapture, 90000);
     } catch (_) {}
   })();
 
