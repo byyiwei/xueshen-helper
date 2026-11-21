@@ -9238,6 +9238,9 @@ const MAX_RECORDS = 200;
                 // 题目节点是否还连着活文档：脱离的节点上点击永远无效，能直接分辨「重渲染失联」
                 el_connected: !!(el && el.isConnected),
                 rebinded: !!(question && question.__xsRebinded),
+                // 填的时候是否关过图片查看器遮罩：extra_selected 里区分「遮罩挡点击」
+                viewer_closed: !!(question && question.__xsViewerClosed),
+                viewer_retried: !!(question && question.__xsViewerRetried),
                 ...(() => {
                   const type = String((question && question.type) || "");
                   // 连线题/复合题以前只报「点了几个」，后台分不出是全没点上还是只填了一半
@@ -9575,6 +9578,27 @@ const MAX_RECORDS = 200;
           return optionElement.closest("li") || optionElement;
         }
         return optionElement;
+      });
+      __publicField(this, "closeImageViewerOverlay", () => {
+        try {
+          if (!document.body || !document.body.classList.contains("viewer-open")) return false;
+          const closeBtn = document.querySelector(".viewer-button")
+            || document.querySelector(".viewer-container .viewer-close")
+            || document.querySelector(".viewer-toolbar .viewer-close");
+          if (closeBtn) {
+            try { closeBtn.click(); } catch (_) {}
+          }
+          // viewerjs 关闭带过渡，点按钮可能没立刻摘掉 body 标记；还开着就直接藏容器，
+          // 别让全屏遮罩把接下来的选项点击全部挡掉
+          if (document.body.classList.contains("viewer-open")) {
+            const container = document.querySelector(".viewer-container");
+            if (container) container.style.display = "none";
+            document.body.classList.remove("viewer-open");
+          }
+          return true;
+        } catch (_) {
+          return false;
+        }
       });
       __publicField(this, "getCxQuestionTypeFromCode", (code) => {
         if (Number.isNaN(code)) return "";
@@ -10239,6 +10263,12 @@ const MAX_RECORDS = 200;
             }
           }
         } catch (_) {}
+        // 图片查看器（viewerjs）开着时全屏遮罩会挡住一切点击：清理旧答案的「取消」点不动，
+        // 回读就会变成「答案之外的选项未能取消」（2026-11-21 图片选项单选题 extra_selected）。
+        // 填之前先把查看器关掉。
+        try {
+          if (this.closeImageViewerOverlay()) question.__xsViewerClosed = 1;
+        } catch (_) {}
         const cleanChoiceAnswer = (raw) => String(raw == null ? "" : raw)
           .split(/\r?\n/)[0]
           .replace(/[*_`#>]/g, "")
@@ -10545,6 +10575,18 @@ const MAX_RECORDS = 200;
             return !!(question.__xsTrustedSelected && question.__xsTrustedSelected.has(key));
           };
           filled = optionKeys.every(key => optionSelectedNow(key) === targets.has(key));
+          if (!filled) {
+            // 填的过程中点击选项里的图片可能把查看器又拉起来：再关一次；关掉后整套
+            // 清理+点选重跑一遍（只重试一次），遮罩挡掉的点击这次才能真正生效
+            try {
+              if (this.closeImageViewerOverlay()) {
+                if (!question.__xsViewerRetried) {
+                  question.__xsViewerRetried = 1;
+                  return this.fillQuestion(question);
+                }
+              }
+            } catch (_) {}
+          }
           if (!filled) {
             // 区分「答案没点上」和「多出来的已选项没取消」：前者可能是页面异步，值得重试；
             // 后者重试也多半没用，上报时也要分开统计
