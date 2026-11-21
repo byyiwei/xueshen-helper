@@ -3952,20 +3952,31 @@ const MAX_RECORDS = 200;
       // 完全没有识别到图片（seenImg 为空）时，短题干也是正常文字题（如简答题「土的可松性」），
       // 不能因为没有图就报图片下载失败；只有「看到了图但一张都没下下来」或题干全空才拦。
       if (seenImg.size > 0 || textOnlyLen === 0) {
-        window.__XSReportPageIssue && window.__XSReportPageIssue({
-          page_type: window.__XSGuessIssuePageType ? window.__XSGuessIssuePageType(question) : "unknown",
-          stage: "image",
-          reason_code: "image_download_failed",
-          selector: "题干/选项图片",
-          expected: "题目图片可下载",
-          found: {
-            images: seenImg.size,
-            downloaded: images.length,
-            text_len: textOnlyLen
-          },
-          nodes: question && question.element ? [question.element] : []
-        });
-        return { code: -1005, data: { answer: [] }, msg: "图片下载失败，请刷新题目后重试" };
+        const pageType = window.__XSGuessIssuePageType ? window.__XSGuessIssuePageType(question) : "unknown";
+        // 题干、选项、图片全空：这不是「图片下载失败」，是页面根本没解析出题目
+        // （2026-11-21 U校园未支持页面 3 条，报的全是图片下载失败，误导排查）。
+        // 未标注平台（不在脚本支持列表里）不上报，避免刷假异常。
+        const nothingParsed = seenImg.size === 0 && textOnlyLen === 0;
+        if (pageType !== "unknown") {
+          window.__XSReportPageIssue && window.__XSReportPageIssue({
+            page_type: pageType,
+            stage: nothingParsed ? "parse" : "image",
+            reason_code: nothingParsed ? "empty_question" : "image_download_failed",
+            selector: nothingParsed ? "题干/选项" : "题干/选项图片",
+            expected: nothingParsed ? "题目文本或图片可解析" : "题目图片可下载",
+            found: {
+              images: seenImg.size,
+              downloaded: images.length,
+              text_len: textOnlyLen
+            },
+            nodes: question && question.element ? [question.element] : []
+          });
+        }
+        return {
+          code: -1005,
+          data: { answer: [] },
+          msg: nothingParsed ? "没有解析到题目内容，请确认页面已加载完整" : "图片下载失败，请刷新题目后重试"
+        };
       }
     }
     const payloadObj = {
@@ -9171,14 +9182,30 @@ const MAX_RECORDS = 200;
         var _that = this;
         // 章节测验/作业的题目是异步渲染的：iframe 先出现、题目后出现，直接解析会误报「找不到题目容器」
         const containerSelector = this.type === "zj" ? ".TiMu" : ".questionLi";
-        for (let wait = 0; wait < 16 && this._document; wait += 1) {
+        // 题目内容可能在同源子 iframe 里渲染：外层学习页实例解析不到不是页面异常，
+        // 由 iframe 内的脚本实例作答。等容器时顺带看一眼 iframe，上报前用它判断。
+        const containerInChildFrame = () => {
+          try {
+            return Array.from(this._document.querySelectorAll("iframe")).some((frame) => {
+              try {
+                return !!(frame.contentDocument && frame.contentDocument.querySelector(containerSelector));
+              } catch (_) {
+                return false;
+              }
+            });
+          } catch (_) {
+            return false;
+          }
+        };
+        // 章节测验加载慢时 8 秒不够（2026-11-21 一条：外层学习页 8 秒内 iframe 还没挂好），加到 20 秒
+        for (let wait = 0; wait < 40 && this._document; wait += 1) {
           let hasContainer = false;
           try {
             hasContainer = !!this._document.querySelector(containerSelector);
           } catch (e) {
             hasContainer = false;
           }
-          if (hasContainer) break;
+          if (hasContainer || containerInChildFrame()) break;
           await sleep(0.5);
         }
         this.parseHtml();
@@ -9473,7 +9500,20 @@ const MAX_RECORDS = 200;
           // 「测验已结束 / 已提交 / 查看统计」这类页面本来就没有 .TiMu，报 no_container 是假异常
           // （2026-11-21 后台 1 条：用户打开的是已结束的测验）。只对还能作答的页面报。
           const finishedQuiz = /(测验已结束|考试已结束|已提交|已交卷|已截止|查看统计|已结束)/.test(pageText);
-          window.__XSReportPageIssue && !emptyQuiz && !finishedQuiz && window.__XSReportPageIssue({
+          // 题目在同源子 iframe（api/work）里渲染时，外层学习页实例本来就解析不到：
+          // iframe 内的脚本实例会作答，这里报 no_container 是假异常（2026-11-21 一条）。
+          const containerSelector = this.type === "zj" ? ".TiMu" : ".questionLi";
+          let containerInFrame = false;
+          try {
+            containerInFrame = Array.from(this._document.querySelectorAll("iframe")).some((frame) => {
+              try {
+                return !!(frame.contentDocument && frame.contentDocument.querySelector(containerSelector));
+              } catch (_) {
+                return false;
+              }
+            });
+          } catch (_) {}
+          window.__XSReportPageIssue && !emptyQuiz && !finishedQuiz && !containerInFrame && window.__XSReportPageIssue({
             page_type: "cx-" + this.type,
             stage: "parse",
             reason_code: "no_container",
@@ -10857,11 +10897,6 @@ const MAX_RECORDS = 200;
           });
         });
       });
-      this.type = type;
-      if (iframe) {
-        this._document = iframe.contentDocument;
-        this._window = iframe.contentWindow;
-      }
     }
     extractOptions(optionElements, optionSelector) {
       const optionsObject = {};
