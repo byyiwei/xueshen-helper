@@ -254,11 +254,33 @@ def _vision_rank(model_name):
             return 80 + i
     return 50
 
-DASHBOARD_CACHE = {"time": 0, "data": None}
+DASHBOARD_CACHE = {}
 DASHBOARD_CACHE_SECONDS = 60
+# 已结束的区间数据不会再变，可以直接缓存久一点；含今天的区间仍按 60 秒刷新。
+# 以前是「单区间缓存 + 每写一条 AI 日志就清空」，流量一上来每次打开首页
+# 都要把整段区间（一个月/一个季度）重新聚合一遍，所以加载特别慢。
+DASHBOARD_CACHE_CLOSED_SECONDS = 900
+DASHBOARD_CACHE_MAX = 32
 # 上一周期的对比数据变化很慢，单独缓存 5 分钟，避免每次刷新首页都重算昨天整天
-PREV_DASHBOARD_CACHE = {"key": "", "time": 0, "data": None}
+PREV_DASHBOARD_CACHE = {}
 PREV_DASHBOARD_CACHE_SECONDS = 1800
+PREV_DASHBOARD_CACHE_MAX = 16
+# 失败日志被回填成「已切换」后，首页「失败数」若还用回填前的缓存就会出现
+# 卡片有数、点进失败明细却空的落差（2026-11-21 下午 429 风暴后实测）。
+# 回填频率远低于普通写日志，这里按 10 秒节流、只清包含「今天」的缓存桶。
+_DASH_BACKFILL_FLUSH_AT = 0.0
+
+def flush_dashboard_cache_for_backfill():
+    global _DASH_BACKFILL_FLUSH_AT
+    now_ts = time.time()
+    if now_ts - _DASH_BACKFILL_FLUSH_AT < 10:
+        return
+    _DASH_BACKFILL_FLUSH_AT = now_ts
+    today = datetime.now().strftime("%Y-%m-%d")
+    for key in list(DASHBOARD_CACHE.keys()):
+        end_day = str(key).rsplit("_", 1)[-1]
+        if end_day >= today:
+            DASHBOARD_CACHE.pop(key, None)
 # 官网直营营收口径：代理商充值（plan_type='dist_recharge'）是压在平台的预存款、属于负债，
 # 不能算进直营收入；分销那套钱单独在「代理商分销 · 收入统计」里按流水出。
 # 卡密激活也往 payment_orders 写一行，代理卡那行 price 恒为 0（是核销不是销售），
@@ -296,6 +318,8 @@ def ai_log_worker():
                     item.get("final_model") or "",
                     item.get("since"),
                 )
+                # 回填后首页「失败数」要跟着变，不然卡片和失败明细对不上
+                flush_dashboard_cache_for_backfill()
             else:
                 db.save_ai_call_log(item)
         except Exception as e:
@@ -308,7 +332,8 @@ threading.Thread(target=ai_log_worker, daemon=True).start()
 def enqueue_ai_log(item):
     try:
         AI_LOG_QUEUE.put_nowait(item)
-        DASHBOARD_CACHE["data"] = None
+        # 不再逐条清空首页统计缓存：缓存按区间分桶 + TTL 刷新，
+        # 有答题流量时每写一条就清空会让首页长区间统计永远命中不了缓存。
     except queue.Full:
         print("[AI日志队列] 队列已满，丢弃一条日志", flush=True)
 
@@ -326,7 +351,6 @@ def enqueue_ai_log_backfill(question, final_model, since=None):
             "final_model": final_model or "",
             "since": since,
         })
-        DASHBOARD_CACHE["data"] = None
     except queue.Full:
         print("[AI日志队列] 队列已满，跳过一次失败日志回填", flush=True)
 
@@ -344,6 +368,17 @@ def bank_log_worker():
             BANK_LOG_QUEUE.task_done()
 
 threading.Thread(target=bank_log_worker, daemon=True).start()
+
+# 长区间统计索引补齐：日志表可能有几百万行，建索引比较久，
+# 放在后台线程里慢慢跑，失败只记日志，不影响启动和其它请求。
+def _ensure_perf_indexes_async():
+    time.sleep(8)
+    try:
+        db.ensure_perf_indexes()
+    except Exception as e:
+        print(f"[索引] 检查统计索引失败: {e}", flush=True)
+
+threading.Thread(target=_ensure_perf_indexes_async, daemon=True, name="perf-index").start()
 
 def enqueue_bank_log(item):
     try:
@@ -8063,6 +8098,37 @@ def parse_agent_decision(response_text):
     return decision
 
 
+# 注册用户列表的「脚本版本」下拉：版本集合变化很慢，缓存 5 分钟，
+# 避免每次翻页/筛选都把 users 表 DISTINCT 扫一遍。
+USER_SCRIPT_VERSION_CACHE = {"time": 0, "data": []}
+USER_SCRIPT_VERSION_CACHE_SECONDS = 300
+
+
+def _version_sort_key(v):
+    """把 1.9.0 / 1.10.0 这类版本号按数字段排序，纯字符串降序会把 1.9 排到 1.10 前面。"""
+    parts = re.split(r"[^0-9]+", str(v or ""))
+    return tuple(int(p) for p in parts if p.isdigit())
+
+
+def _get_user_script_versions():
+    now_ts = time.time()
+    cached = USER_SCRIPT_VERSION_CACHE.get("data") or []
+    if cached and now_ts - USER_SCRIPT_VERSION_CACHE.get("time", 0) < USER_SCRIPT_VERSION_CACHE_SECONDS:
+        return cached
+    try:
+        rows = db.fetchall(
+            "SELECT DISTINCT script_version AS v FROM users "
+            "WHERE COALESCE(script_version, '') <> '' LIMIT 500"
+        ) or []
+        data = [str(r.get("v") or "").strip()[:32] for r in rows]
+        data = [v for v in data if v]
+        data.sort(key=_version_sort_key, reverse=True)
+        USER_SCRIPT_VERSION_CACHE.update({"time": now_ts, "data": data})
+        return data
+    except Exception:
+        return cached
+
+
 def _get_token_usage_data(start_date, end_date):
     """获取模型 token 消耗数据"""
     try:
@@ -8099,8 +8165,12 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
         ed_next = ed
     cache_key = sd + "_" + ed
     now_ts = time.time()
-    if DASHBOARD_CACHE.get("data") and DASHBOARD_CACHE.get("key") == cache_key and now_ts - DASHBOARD_CACHE.get("time", 0) < DASHBOARD_CACHE_SECONDS:
-        return DASHBOARD_CACHE["data"]
+    # 区间缓存按 key 分桶：历史区间（不含今天）缓存久一些，今天的区间仍然短 TTL。
+    # 这样即便有答题流量在持续写日志，重复打开首页也不需要重算整段区间。
+    cache_ttl = DASHBOARD_CACHE_CLOSED_SECONDS if ed < today else DASHBOARD_CACHE_SECONDS
+    cached = DASHBOARD_CACHE.get(cache_key)
+    if cached and now_ts - cached.get("time", 0) < cache_ttl:
+        return cached.get("data")
     # 上一等长周期，用来看「较上期」涨跌（今天就看昨天，近7天就看前7天）
     try:
         sd_dt0 = _dt.strptime(sd, "%Y-%m-%d")
@@ -8113,21 +8183,12 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
     except Exception:
         prev_sd, prev_ed_next = sd, ed_next
     ph = "%s"
-    card_sql = f"""
+    # 用户总数/题库总量这类小查询单独走，别和百万级的日志聚合绑在同一条 SQL 上。
+    meta_sql = f"""
         SELECT
           (SELECT COUNT(*) FROM users) AS users,
           (SELECT COUNT(*) FROM question_bank) AS question_bank,
-          (SELECT COUNT(*) FROM question_bank WHERE created_at >= {ph} AND created_at < {ph}) AS bank_new,
-          COUNT(DISTINCT CASE
-            WHEN COALESCE(username,'') <> '' THEN username
-            WHEN COALESCE(client_ip,'') <> '' THEN client_ip
-            ELSE NULL END) AS active,
-          COUNT(*) AS calls,
-          SUM(CASE WHEN status='success' THEN 1 ELSE 0 END) AS success,
-          SUM(CASE WHEN status='error' AND COALESCE(final_model,'')='' THEN 1 ELSE 0 END) AS error,
-          SUM(CASE WHEN status='success' AND provider_key='question_bank' THEN 1 ELSE 0 END) AS bank_hits
-        FROM ai_call_logs
-        WHERE created_at >= {ph} AND created_at < {ph}
+          (SELECT COUNT(*) FROM question_bank WHERE created_at >= {ph} AND created_at < {ph}) AS bank_new
     """
 
     # 全口径活跃：答题（ai_call_logs）与脚本活动（script_event_logs，视频/直播/阅读都算）
@@ -8138,6 +8199,7 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
     active_sql = f"""
         SELECT
           COUNT(DISTINCT u) AS total_active,
+          COUNT(DISTINCT CASE WHEN has_ai = 1 THEN u END) AS answer_active,
           COUNT(DISTINCT CASE WHEN has_script = 1 AND has_ai = 0 THEN u END) AS idle_active,
           COUNT(DISTINCT CASE WHEN paid = 1 THEN u END) AS paid_active
         FROM (
@@ -8163,7 +8225,8 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
         SELECT DATE(created_at) AS day,
                COUNT(*) AS total,
                SUM(CASE WHEN status='success' THEN 1 ELSE 0 END) AS success,
-               SUM(CASE WHEN status='error' AND COALESCE(final_model,'')='' THEN 1 ELSE 0 END) AS error
+               SUM(CASE WHEN status='error' AND COALESCE(final_model,'')='' THEN 1 ELSE 0 END) AS error,
+               SUM(CASE WHEN status='success' AND provider_key='question_bank' THEN 1 ELSE 0 END) AS bank_hits
         FROM ai_call_logs
         WHERE created_at >= %s AND created_at < %s
         GROUP BY DATE(created_at)
@@ -8211,7 +8274,8 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
     """
     # 首页统计的几条查询互不依赖，分头并发查：整体耗时按最慢的一条算，
     # 而不是「当前周期 + 上一周期」十几条查询全部相加。
-    def _fetch(sql, params):
+    def _fetch(sql, params, name=""):
+        t0 = time.time()
         conn = db._new_mysql_conn()
         try:
             cursor = conn.cursor()
@@ -8219,9 +8283,12 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
             return cursor.fetchall() or []
         finally:
             conn.close()
+            cost = time.time() - t0
+            if cost >= 1.5:
+                print(f"[首页统计] {name or 'query'} 耗时 {cost:.1f}s", flush=True)
 
     current_jobs = {
-        "card": (card_sql, (sd, ed_next, sd, ed_next)),
+        "meta": (meta_sql, (sd, ed_next)),
         "active": (active_sql, (sd, ed_next, sd, ed_next)),
         "trend": (trend_sql, (sd, ed_next)),
         "model": (model_sql, (sd, ed_next)),
@@ -8231,19 +8298,21 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
         "pending": (ai_task_pending_sql, ()),
     }
     prev_key = prev_sd + "_" + prev_ed_next
+    prev_hit = PREV_DASHBOARD_CACHE.get(prev_key)
     prev_cached = None
-    if (PREV_DASHBOARD_CACHE.get("data") and PREV_DASHBOARD_CACHE.get("key") == prev_key
-            and time.time() - PREV_DASHBOARD_CACHE.get("time", 0) < PREV_DASHBOARD_CACHE_SECONDS):
-        prev_cached = PREV_DASHBOARD_CACHE["data"]
+    if prev_hit and time.time() - prev_hit.get("time", 0) < PREV_DASHBOARD_CACHE_SECONDS:
+        prev_cached = prev_hit.get("data")
+    # 上一周期同样只跑「日趋势 + 活跃 + 营收」三条，卡片数字由日趋势累加得出，
+    # 不再为上一周期单独扫一遍 ai_call_logs 全字段。
     prev_jobs = {
-        "card": (card_sql, (prev_sd, prev_ed_next, prev_sd, prev_ed_next)),
+        "trend": (trend_sql, (prev_sd, prev_ed_next)),
         "active": (active_sql, (prev_sd, prev_ed_next, prev_sd, prev_ed_next)),
         "revenue": (revenue_sql, (prev_sd, prev_ed_next)),
     }
     with ThreadPoolExecutor(max_workers=10) as ex:
-        current_futs = {name: ex.submit(_fetch, sql, params) for name, (sql, params) in current_jobs.items()}
+        current_futs = {name: ex.submit(_fetch, sql, params, name) for name, (sql, params) in current_jobs.items()}
         prev_futs = {} if prev_cached is not None else {
-            name: ex.submit(_fetch, sql, params) for name, (sql, params) in prev_jobs.items()
+            name: ex.submit(_fetch, sql, params, name) for name, (sql, params) in prev_jobs.items()
         }
         current = {}
         for name, fut in current_futs.items():
@@ -8264,18 +8333,33 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
             except Exception:
                 prev = {}
             if prev:
-                PREV_DASHBOARD_CACHE.update({"key": prev_key, "time": time.time(), "data": prev})
-    card_stats = (current.get("card") or [{}])[0]
+                PREV_DASHBOARD_CACHE[prev_key] = {"time": time.time(), "data": prev}
+                if len(PREV_DASHBOARD_CACHE) > PREV_DASHBOARD_CACHE_MAX:
+                    oldest = min(PREV_DASHBOARD_CACHE, key=lambda k: PREV_DASHBOARD_CACHE[k].get("time", 0))
+                    PREV_DASHBOARD_CACHE.pop(oldest, None)
+    meta_stats = (current.get("meta") or [{}])[0]
     active_stats = (current.get("active") or [{}])[0]
-    prev_card_stats = (prev.get("card") or [{}])[0]
     prev_active_stats = (prev.get("active") or [{}])[0]
     prev_rev_stats = (prev.get("revenue") or [{}])[0]
     trend_rows = current.get("trend") or []
+    prev_trend_rows = prev.get("trend") or []
     model_rows = current.get("model") or []
     rev_stats = (current.get("revenue") or [{}])[0]
     rev_trend_rows = current.get("rev_trend") or []
     refund_pending_row = (current.get("refund") or [{}])[0]
     ai_task_pending_row = (current.get("pending") or [{}])[0]
+
+    def _sum_rows(rows, key):
+        return sum(int(r.get(key) or 0) for r in rows)
+
+    calls_total = _sum_rows(trend_rows, "total")
+    success_total = _sum_rows(trend_rows, "success")
+    error_total = _sum_rows(trend_rows, "error")
+    bank_hits_total = _sum_rows(trend_rows, "bank_hits")
+    prev_calls = _sum_rows(prev_trend_rows, "total")
+    prev_success = _sum_rows(prev_trend_rows, "success")
+    prev_error = _sum_rows(prev_trend_rows, "error")
+    prev_bank_hits = _sum_rows(prev_trend_rows, "bank_hits")
     trend_map = {str(r.get("day"))[:10]: r for r in trend_rows}
     rev_trend_map = {str(r.get("day"))[:10]: r for r in rev_trend_rows}
     trend = []
@@ -8306,27 +8390,30 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
 
     data = {
         "cards": {
-            "users": int(card_stats.get("users") or 0),
-            "active": int((active_stats.get("total_active") or 0)) or int(card_stats.get("active") or 0),
-            "active_answer": int(card_stats.get("active") or 0),
+            "users": int(meta_stats.get("users") or 0),
+            # 总活跃沿用「答题 + 脚本活动」去重后的数；答题活跃由同一份 UNION 子查询一并算出，
+            # 不再对 ai_call_logs 额外跑一次 COUNT(DISTINCT ...)。
+            "active": int(active_stats.get("total_active") or 0) or int(active_stats.get("answer_active") or 0),
+            "active_answer": int(active_stats.get("answer_active") or 0),
             "active_idle": int(active_stats.get("idle_active") or 0),
             "active_paid": int(active_stats.get("paid_active") or 0),
-            "question_bank": int(card_stats.get("question_bank") or 0),
-            "bank_new": int(card_stats.get("bank_new") or 0),
-            "calls": int(card_stats.get("calls") or 0),
-            "success": int(card_stats.get("success") or 0),
-            "error": int(card_stats.get("error") or 0),
-            "bank_hits": int(card_stats.get("bank_hits") or 0),
-            "bank_hit_rate": round((int(card_stats.get("bank_hits") or 0) / max(1, int(card_stats.get("success") or 0))) * 100, 1),
+            "question_bank": int(meta_stats.get("question_bank") or 0),
+            "bank_new": int(meta_stats.get("bank_new") or 0),
+            # 卡片数字直接由日趋势累加，省掉一次对 ai_call_logs 的整段全字段扫描。
+            "calls": calls_total,
+            "success": success_total,
+            "error": error_total,
+            "bank_hits": bank_hits_total,
+            "bank_hit_rate": round((bank_hits_total / max(1, success_total)) * 100, 1),
             "refund_pending": int(refund_pending_row.get("cnt") or 0),
             "ai_task_pending": int(ai_task_pending_row.get("cnt") or 0),
         },
         "prev": {
-            "active": int(prev_active_stats.get("total_active") or 0) or int(prev_card_stats.get("active") or 0),
-            "calls": int(prev_card_stats.get("calls") or 0),
-            "success": int(prev_card_stats.get("success") or 0),
-            "error": int(prev_card_stats.get("error") or 0),
-            "bank_hits": int(prev_card_stats.get("bank_hits") or 0),
+            "active": int(prev_active_stats.get("total_active") or 0) or int(prev_active_stats.get("answer_active") or 0),
+            "calls": prev_calls,
+            "success": prev_success,
+            "error": prev_error,
+            "bank_hits": prev_bank_hits,
             "revenue": round(float(prev_rev_stats.get("total_revenue") or 0), 2),
         },
         "trend": trend,
@@ -8344,9 +8431,11 @@ def get_admin_dashboard_stats(start_date=None, end_date=None):
         },
         "token_usage": _get_token_usage_data(sd, ed_next),
     }
-    DASHBOARD_CACHE["time"] = now_ts
-    DASHBOARD_CACHE["key"] = cache_key
-    DASHBOARD_CACHE["data"] = data
+    # 按区间分桶缓存，回调最近写入的旧桶；不再被后台写日志逐条清空。
+    if len(DASHBOARD_CACHE) >= DASHBOARD_CACHE_MAX:
+        oldest = min(DASHBOARD_CACHE, key=lambda k: DASHBOARD_CACHE[k].get("time", 0))
+        DASHBOARD_CACHE.pop(oldest, None)
+    DASHBOARD_CACHE[cache_key] = {"time": now_ts, "data": data}
     return data
 
 
@@ -8374,19 +8463,23 @@ ANSWER_CODE_NAMES = {
     10003: "请求失败（未登录/超时/响应解析）",
     429: "被限流"
 }
-ANSWER_STATS_CACHE = {"key": "", "time": 0, "data": None}
+ANSWER_STATS_CACHE = {}
+# 答题统计按「日期区间 + 版本」分桶缓存：来回切版本/切区间不用每次都把整段小结重算一遍
+ANSWER_STATS_CACHE_MAX = 8
 
 
 def _answer_pct(part, whole):
     return round((int(part) / max(int(whole), 1)) * 100, 1)
 
 
-def get_admin_answer_stats(start_date=None, end_date=None):
+def get_admin_answer_stats(start_date=None, end_date=None, version=""):
     """「一卷一报」小结的聚合：填充成功率、题库/缓存/AI 占比、点不上的题型、按平台与渠道分组。
 
     明细在 script_event_logs.extra_json，MySQL 5.7 没有 JSON_TABLE，所以在 Python 里算。
     注意口径：这里统计的是「脚本把答案点上了没有」，不是「答案对不对」——
     交卷后平台不给分数，判对率目前采不到，别当正确率用。
+    version 只筛选卡片/趋势/明细这些「当前视图」，按版本的横向对比始终展示区间内全部版本；
+    下拉里选择未上报版本时传 `_unknown_`，避免和「不筛选」的空字符串冲突。
     """
     from datetime import datetime as _dt, timedelta as _td
     today = _dt.now().strftime("%Y-%m-%d")
@@ -8401,11 +8494,14 @@ def get_admin_answer_stats(start_date=None, end_date=None):
         raise ValueError("开始日期不能晚于结束日期")
     if (end_day - start_day).days > 366:
         raise ValueError("单次查询日期范围不能超过367天")
-    cache_key = sd + "_" + ed
+    ver_arg = str(version or "").strip()[:32]
+    ver_unknown = ver_arg == "_unknown_"
+    ver_filter = "" if ver_unknown else ver_arg
+    cache_key = sd + "_" + ed + "_" + ver_arg
     now_ts = time.time()
-    if (ANSWER_STATS_CACHE.get("data") and ANSWER_STATS_CACHE.get("key") == cache_key
-            and now_ts - ANSWER_STATS_CACHE.get("time", 0) < DASHBOARD_CACHE_SECONDS):
-        return ANSWER_STATS_CACHE["data"]
+    cached = ANSWER_STATS_CACHE.get(cache_key)
+    if cached and now_ts - cached.get("time", 0) < DASHBOARD_CACHE_SECONDS:
+        return cached.get("data")
 
     # 分页取完整个区间的数据：一次最多 3000 行，超过就翻页，避免大范围查询把老数据截掉
     rows = []
@@ -8422,6 +8518,7 @@ def get_admin_answer_stats(start_date=None, end_date=None):
             break
     totals = {"sessions": 0, "questions": 0, "filled": 0, "bank": 0, "cache": 0, "ai": 0, "unknown": 0}
     by_day, by_platform, by_channel, blocked, blocked_codes, blocked_hashes = {}, {}, {}, {}, {}, {}
+    by_version = {}
     recent = []
     for row in rows or []:
         extra = row.get("extra_json")
@@ -8446,10 +8543,38 @@ def get_admin_answer_stats(start_date=None, end_date=None):
             part = {"bank": 0, "cache": 0, "ai": 0, "unknown": 0}
         platform = str(extra.get("platform") or "unknown")[:20]
         day = str(row.get("created_at") or "")[:10]
+        # 版本以落库列优先（上报时已拆好），老数据回退 extra_json 里的同名字段
+        ver = str(row.get("script_version") or extra.get("script_version") or "").strip()[:32]
         if row.get("channel") == "distributor":
             channel = "代理商 " + (str(row.get("channel_ref") or "")[:40] or "未知")
         else:
             channel = "官方直营"
+
+        # 按版本统计始终覆盖区间内全部小结，不受当前筛选影响：
+        # 选中某个版本后，版本对比表不会只剩一行，方便横向看哪个版本在退化。
+        ver_bucket = by_version.setdefault(ver, {"sessions": 0, "questions": 0, "filled": 0,
+                                                 "bank": 0, "cache": 0, "ai": 0, "unknown": 0,
+                                                 "threshold": []})
+        ver_bucket["sessions"] += 1
+        ver_bucket["questions"] += total
+        ver_bucket["filled"] += filled
+        for k in ("bank", "cache", "ai", "unknown"):
+            ver_bucket[k] += part[k]
+        vthr = 0.0
+        try:
+            vthr = float(extra.get("threshold") or 0)
+            if vthr > 0:
+                ver_bucket["threshold"].append(vthr)
+        except (TypeError, ValueError):
+            vthr = 0.0
+
+        # 当前视图筛选：_unknown_ 只留没有版本号的旧数据
+        if ver_filter or ver_unknown:
+            if ver_unknown:
+                if ver:
+                    continue
+            elif ver != ver_filter:
+                continue
 
         totals["sessions"] += 1
         totals["questions"] += total
@@ -8467,12 +8592,8 @@ def get_admin_answer_stats(start_date=None, end_date=None):
         by_platform[platform]["cache"] += part["cache"]
         by_platform[platform]["ai"] += part["ai"]
         by_platform[platform]["unknown"] += part["unknown"]
-        try:
-            thr = float(extra.get("threshold") or 0)
-            if thr > 0:
-                by_platform[platform]["threshold"].append(thr)
-        except (TypeError, ValueError):
-            pass
+        if vthr > 0:
+            by_platform[platform]["threshold"].append(vthr)
         unfilled_names = []
         for entry in (extra.get("unanswered") or []):
             if not isinstance(entry, dict):
@@ -8517,7 +8638,7 @@ def get_admin_answer_stats(start_date=None, end_date=None):
                 "fill_rate": _answer_pct(filled, total),
                 "threshold": extra.get("threshold"),
                 "unfilled_types": unfilled_names[:10],
-                "script_version": str(extra.get("script_version") or "")[:20]
+                "script_version": ver
             })
 
     trend = []
@@ -8557,6 +8678,23 @@ def get_admin_answer_stats(start_date=None, end_date=None):
     channels = [{"channel": name, "sessions": c["sessions"], "questions": c["questions"],
                  "filled": c["filled"], "fill_rate": _answer_pct(c["filled"], c["questions"])}
                 for name, c in sorted(by_channel.items(), key=lambda kv: -kv[1]["questions"])]
+
+    versions = []
+    for name, v in sorted(by_version.items(), key=lambda kv: (-kv[1]["questions"], kv[0])):
+        versions.append({
+            "version": name,
+            "label": name or "未上报",
+            "value": name or "_unknown_",
+            "sessions": v["sessions"],
+            "questions": v["questions"],
+            "filled": v["filled"],
+            "unfilled": max(0, v["questions"] - v["filled"]),
+            "fill_rate": _answer_pct(v["filled"], v["questions"]),
+            "bank_rate": _answer_pct(v["bank"], v["questions"]),
+            "cache_rate": _answer_pct(v["cache"], v["questions"]),
+            "ai_rate": _answer_pct(v["ai"], v["questions"]),
+            "threshold": round(sum(v["threshold"]) / len(v["threshold"]), 1) if v["threshold"] else 0
+        })
 
     block_types = [{"type": t, "name": ANSWER_TYPE_NAMES.get(t, t or "未知"), "count": n}
                    for t, n in sorted(blocked.items(), key=lambda kv: -kv[1])][:12]
@@ -8598,15 +8736,19 @@ def get_admin_answer_stats(start_date=None, end_date=None):
         "trend": trend,
         "platforms": platforms,
         "channels": channels,
+        "version": ver_arg,
+        "version_label": ("未上报" if ver_unknown else ver_filter) or "全部版本",
+        "versions": versions,
         "block_types": block_types,
         "block_codes": block_codes,
         "block_hashes": block_hashes,
         "recent": recent,
         "score_note": "此页统计的是「脚本把答案点上了没有」，不是「答案对不对」；平台交卷后不回吐分数，判对率目前采不到。"
     }
-    ANSWER_STATS_CACHE["time"] = now_ts
-    ANSWER_STATS_CACHE["key"] = cache_key
-    ANSWER_STATS_CACHE["data"] = data
+    ANSWER_STATS_CACHE[cache_key] = {"time": now_ts, "data": data}
+    if len(ANSWER_STATS_CACHE) > ANSWER_STATS_CACHE_MAX:
+        oldest = min(ANSWER_STATS_CACHE, key=lambda k: ANSWER_STATS_CACHE[k].get("time", 0))
+        ANSWER_STATS_CACHE.pop(oldest, None)
     return data
 
 
@@ -10571,6 +10713,110 @@ class Handler(BaseHTTPRequestHandler):
                 })
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
+        elif path == "/admin/ai-tasks/stats":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                qs = parse_qs(parsed.query)
+                range_key = str(qs.get("range", [""])[0] or "").strip().lower()
+                raw_from = str(qs.get("date_from", [""])[0] or "").strip()[:10]
+                raw_to = str(qs.get("date_to", [""])[0] or "").strip()[:10]
+
+                def _parse_day(s):
+                    try:
+                        return datetime.strptime(s, "%Y-%m-%d").date()
+                    except Exception:
+                        return None
+
+                today = datetime.now().date()
+                df, dt = _parse_day(raw_from), _parse_day(raw_to)
+                label = ""
+                if range_key == "custom":
+                    if not df and not dt:
+                        df, dt = today - timedelta(days=6), today
+                    elif not df:
+                        df = dt
+                    elif not dt:
+                        dt = df
+                    label = "自定义"
+                elif range_key in ("today", "day"):
+                    df = dt = today
+                    label = "今日"
+                elif range_key in ("yesterday",):
+                    df = dt = today - timedelta(days=1)
+                    label = "昨日"
+                elif range_key in ("30d", "month30"):
+                    df, dt = today - timedelta(days=29), today
+                    label = "近30天"
+                elif range_key in ("month", "monthly"):
+                    df, dt = today.replace(day=1), today
+                    label = "本月"
+                else:
+                    df, dt = today - timedelta(days=6), today
+                    label = "近7天"
+                if not df or not dt:
+                    df, dt = today - timedelta(days=6), today
+                    label = label or "近7天"
+                if df > dt:
+                    df, dt = dt, df
+                if (dt - df).days > 366:
+                    df = dt - timedelta(days=366)
+                    label = label or "自定义"
+
+                stats = db.ai_answer_task_stats(df.isoformat(), dt.isoformat())
+                daily_map = stats.get("daily") or {}
+                created_map = daily_map.get("created") or {}
+                solved_map = daily_map.get("solved") or {}
+                failed_map = daily_map.get("failed") or {}
+                stopped_map = daily_map.get("stopped") or {}
+                daily = []
+                for i in range((dt - df).days + 1):
+                    day = df + timedelta(days=i)
+                    key = day.isoformat()
+                    daily.append({
+                        "day": key,
+                        "label": key[5:],
+                        "created": int(created_map.get(key) or 0),
+                        "solved": int(solved_map.get(key) or 0),
+                        "failed": int(failed_map.get(key) or 0),
+                        "stopped": int(stopped_map.get(key) or 0),
+                    })
+                solved = int(stats.get("solved") or 0)
+                failed = int(stats.get("failed") or 0)
+                stopped = int(stats.get("stopped") or 0)
+                finished = solved + failed + stopped
+                self._send_json(200, {
+                    "code": 200,
+                    "stats": {
+                        "range": range_key or "7d",
+                        "range_label": label,
+                        "date_from": df.isoformat(),
+                        "date_to": dt.isoformat(),
+                        "days": (dt - df).days + 1,
+                        "created": int(stats.get("created") or 0),
+                        "images": int(stats.get("images") or 0),
+                        "attempts": int(stats.get("attempts") or 0),
+                        "solved": solved,
+                        "solved_avg_attempts": float(stats.get("solved_avg_attempts") or 0),
+                        "solved_avg_seconds": int(stats.get("solved_avg_seconds") or 0),
+                        "failed": failed,
+                        "failed_avg_attempts": float(stats.get("failed_avg_attempts") or 0),
+                        "stopped": stopped,
+                        "finished": finished,
+                        "rate": round(solved * 100.0 / finished, 1) if finished else 0.0,
+                        "pending_now": int(stats.get("pending_now") or 0),
+                        "solved_now": int(stats.get("solved_now") or 0),
+                        "failed_now": int(stats.get("failed_now") or 0),
+                        "stopped_now": int(stats.get("stopped_now") or 0),
+                        "daily": daily,
+                        "failure_reasons": stats.get("failure_reasons") or [],
+                        "recent_failed": stats.get("recent_failed") or [],
+                        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    },
+                })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/ai-tasks/detail":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -10831,6 +11077,7 @@ class Handler(BaseHTTPRequestHandler):
                 query_params = urllib.parse.parse_qs(parsed.query)
                 search = (query_params.get("search", [""])[0] or "").strip()
                 banned = (query_params.get("banned", [""])[0] or "").strip()
+                version = (query_params.get("version", [""])[0] or "").strip()[:32]
                 sort_by = (query_params.get("sort_by", ["created_at"])[0] or "created_at").strip()
                 sort_order = (query_params.get("sort_order", ["desc"])[0] or "desc").strip().lower()
                 try:
@@ -10888,6 +11135,12 @@ class Handler(BaseHTTPRequestHandler):
                     where_list.append("u.is_banned = 1")
                 elif banned == "0":
                     where_list.append("(u.is_banned = 0 OR u.is_banned IS NULL)")
+                # 按脚本版本筛选：_unknown_ = 从没上报过版本的老用户
+                if version == "_unknown_":
+                    where_list.append("(u.script_version IS NULL OR u.script_version = '')")
+                elif version:
+                    where_list.append("u.script_version = %s")
+                    params_list.append(version)
                 if where_list:
                     sql += " WHERE " + " AND ".join(where_list)
                 count_sql = "SELECT COUNT(*) AS cnt FROM users u" + (" WHERE " + " AND ".join(where_list) if where_list else "")
@@ -10908,7 +11161,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, {"code": 200, "users": users_list,
                                       "total": total, "page": page, "page_size": page_size,
                                       "total_pages": total_pages,
-                                      "latest_script_version": latest_script_version})
+                                      "latest_script_version": latest_script_version,
+                                      "script_versions": _get_user_script_versions(),
+                                      "version": version})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
         elif path == "/admin/users-by-ip":
@@ -11099,16 +11354,24 @@ class Handler(BaseHTTPRequestHandler):
                 qs = parse_qs(parsed.query)
                 date_from = qs.get("date_from", [""])[0]
                 date_to = qs.get("date_to", [""])[0]
+                version = qs.get("version", [""])[0]
+                if version == "_unknown_":
+                    version = "__none__"
                 page = max(1, int(qs.get("page", ["1"])[0] or 1))
                 page_size = min(100, max(10, int(qs.get("page_size", ["50"])[0] or 50)))
                 if date_from or date_to:
                     datetime.strptime(date_to or date_from, "%Y-%m-%d")
                     datetime.strptime(date_from or date_to, "%Y-%m-%d")
-                total = db.count_answer_summaries(date_from=date_from + " 00:00:00" if date_from else "", date_to=date_to + " 23:59:59" if date_to else "")
+                total = db.count_answer_summaries(
+                    date_from=date_from + " 00:00:00" if date_from else "",
+                    date_to=date_to + " 23:59:59" if date_to else "",
+                    version=version,
+                )
                 rows = db.list_answer_summaries(
                     date_from=date_from + " 00:00:00" if date_from else "",
                     date_to=date_to + " 23:59:59" if date_to else "",
-                    limit=page_size, offset=(page - 1) * page_size
+                    limit=page_size, offset=(page - 1) * page_size,
+                    version=version,
                 )
                 items = []
                 for row in rows:
@@ -11153,7 +11416,7 @@ class Handler(BaseHTTPRequestHandler):
                         "bank": max(0, int(src.get("bank") or 0)),
                         "ai": max(0, int(src.get("ai") or 0)),
                         "unfilled_types": unfilled_names[:10],
-                        "script_version": str(extra.get("script_version") or "")[:20]
+                        "script_version": str(row.get("script_version") or extra.get("script_version") or "")[:20]
                     })
                 self._send_json(200, {"code": 200, "data": {"items": items, "total": total, "page": page, "page_size": page_size}})
             except ValueError:
@@ -11168,7 +11431,8 @@ class Handler(BaseHTTPRequestHandler):
                 qs = parse_qs(parsed.query)
                 start = qs.get("start", [""])[0]
                 end = qs.get("end", [""])[0]
-                self._send_json(200, {"code": 200, "data": get_admin_answer_stats(start or None, end or None)})
+                version = qs.get("version", [""])[0]
+                self._send_json(200, {"code": 200, "data": get_admin_answer_stats(start or None, end or None, version)})
             except ValueError as e:
                 self._send_json(400, {"code": 400, "msg": str(e)})
             except Exception as e:

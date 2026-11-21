@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -802,6 +802,9 @@ html[data-theme="light"] .ip-badge.flag { color: #b45309; }
 .date-quick { background: transparent; color: var(--text2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 14px; font-size: 12px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
 .date-quick:hover { border-color: var(--accent); color: var(--accent); background: rgba(59, 130, 246, 0.06); }
 .date-quick.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.dash-loading { display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; padding-left: 12px; border-left: 1px solid var(--border); font-size: 12px; color: var(--accent2); white-space: nowrap; }
+.dash-loading::before { content: ""; width: 7px; height: 7px; border-radius: 50%; border: 2px solid var(--accent2); border-top-color: transparent; animation: dashSpin .8s linear infinite; }
+@keyframes dashSpin { to { transform: rotate(360deg); } }
 
 .revenue-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
 .revenue-card { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; text-align: center; }
@@ -827,6 +830,11 @@ html[data-theme="light"] .ip-badge.flag { color: #b45309; }
 .stack-bad { background: var(--danger); }
 .stack-label { font-size: 11px; color: var(--text3); }
 .analysis-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 18px; }
+/* 答题统计 · 按版本：整行可点，点了就按该版本筛选 */
+.version-row { cursor: pointer; border-bottom: 1px solid var(--border); transition: background .15s ease; }
+.version-row:hover { background: var(--bg3); }
+.version-row.active { background: var(--accent-subtle); }
+.version-row.active td:first-child { color: var(--accent); }
 
 /* ==================== MODALS ==================== */
 .modal-overlay {
@@ -1173,6 +1181,27 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
 .live-stat.success .live-stat-num { color: var(--success); }
 .live-stat.warn .live-stat-num { color: var(--warning); }
 .live-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(310px, 0.85fr); gap: 16px; align-items: start; }
+/* 实时看板筛选条：搜索 + 排队状态 + 只看识图/只看有错误，纯前端过滤已拉到的数据 */
+.live-filter { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.live-filter-search { display: flex; align-items: center; gap: 7px; flex: 1 1 240px; min-width: 200px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg2); color: var(--text3); }
+.live-filter-search input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text); font-size: 12.5px; outline: none; }
+.live-filter-search input::placeholder { color: var(--text3); }
+.live-filter-clear { border: 0; background: transparent; color: var(--text3); font-size: 11px; cursor: pointer; padding: 0 2px; }
+.live-filter-clear:hover { color: var(--accent); }
+.live-filter-chips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.live-filter-label { font-size: 11px; color: var(--text3); }
+.live-chip { padding: 4px 11px; border-radius: 9px; border: 1px solid var(--border); background: var(--bg2); color: var(--text2); font-size: 11.5px; cursor: pointer; transition: border-color .15s ease, color .15s ease, background .15s ease; white-space: nowrap; }
+.live-chip:hover { border-color: var(--accent); color: var(--text); }
+.live-chip.active { border-color: var(--accent); background: var(--accent-subtle); color: var(--accent); font-weight: 600; }
+.live-filter-sep { width: 1px; height: 14px; background: var(--border); margin: 0 3px; }
+.live-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--text2); cursor: pointer; user-select: none; white-space: nowrap; }
+.live-toggle input { accent-color: var(--accent); margin: 0; }
+.live-filter-summary { font-size: 11px; color: var(--text3); white-space: nowrap; }
+@media (max-width: 768px) {
+  .live-filter { padding: 9px 11px; gap: 8px; }
+  .live-filter-search { flex: 1 1 100%; }
+  .live-filter-summary { display: none; }
+}
 .live-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .live-panel { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--card); overflow: hidden; min-width: 0; }
 .live-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
@@ -1185,6 +1214,55 @@ html[data-theme="light"] .model-test-result.fail { color: #dc2626; }
 .live-conn::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--text3); }
 .live-conn.on { color: var(--success); }
 .live-conn.on::before { background: var(--success); }
+/* 数据看板：日期区间筛选 + 处理量/失败统计 */
+.stats-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 18px; border-bottom: 1px solid var(--border); }
+.stats-presets { display: flex; gap: 6px; flex-wrap: wrap; }
+.stats-preset { padding: 5px 13px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg2); color: var(--text2); font-size: 12px; cursor: pointer; transition: border-color .16s ease, background .16s ease, color .16s ease; }
+.stats-preset:hover { border-color: var(--accent); color: var(--text); }
+.stats-preset.active { border-color: var(--accent); background: var(--accent-subtle); color: var(--accent); font-weight: 600; }
+.stats-range { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text3); flex-wrap: wrap; }
+.stats-range .date-input { min-width: 132px; padding: 5px 9px; font-size: 12px; }
+.stats-metrics { display: grid; grid-template-columns: repeat(6, minmax(118px, 1fr)); gap: 10px; padding: 16px 18px 4px; }
+.stats-metric { padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg2); min-width: 0; }
+.stats-metric-num { font-size: 24px; line-height: 1.15; font-weight: 700; letter-spacing: -0.03em; color: var(--text); font-variant-numeric: tabular-nums; }
+.stats-metric-label { margin-top: 4px; font-size: 11.5px; font-weight: 600; color: var(--text2); }
+.stats-metric-sub { margin-top: 3px; font-size: 10.5px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stats-metric.ok .stats-metric-num { color: var(--success); }
+.stats-metric.bad .stats-metric-num { color: var(--danger); }
+.stats-metric.accent .stats-metric-num { color: var(--accent2); }
+.stats-metric.muted .stats-metric-num { color: var(--text3); }
+.stats-detail { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 14px; padding: 14px 18px 0; }
+.stats-detail-full { grid-template-columns: minmax(0, 1fr); padding-bottom: 18px; }
+.stats-card { border: 1px solid var(--border); border-radius: 12px; background: var(--bg2); padding: 14px 16px 12px; min-width: 0; }
+.stats-card h4 { margin: 0 0 10px; font-size: 12.5px; font-weight: 650; color: var(--text2); display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.stats-card h4 span { font-size: 11px; font-weight: 400; color: var(--text3); }
+.stats-legend { display: flex; gap: 14px; margin-bottom: 6px; font-size: 11px; color: var(--text3); }
+.stats-legend i { display: inline-block; width: 12px; height: 3px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+.stats-chart { width: 100%; height: 220px; display: block; }
+.stats-empty { padding: 18px 0; text-align: center; font-size: 12px; color: var(--text3); }
+.stats-fail-list { display: flex; flex-direction: column; }
+.stats-fail-row { display: grid; grid-template-columns: 62px minmax(120px, 1.6fr) 90px 52px minmax(110px, 1.2fr) 82px; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--border); font-size: 11.5px; cursor: pointer; border-radius: 6px; }
+.stats-fail-row:last-child { border-bottom: 0; }
+.stats-fail-row:hover { background: var(--bg3); }
+.stats-fail-id { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; color: var(--text3); }
+.stats-fail-q { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.stats-fail-user { color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats-fail-try { color: var(--text3); }
+.stats-fail-err { color: #ef4444; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats-fail-time { color: var(--text3); text-align: right; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; font-size: 10.5px; white-space: nowrap; }
+.bar-fill.bad { background: linear-gradient(90deg, #ef4444, #f59e0b); }
+@media (max-width: 1320px) { .stats-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 1100px) { .stats-detail { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 768px) {
+  .stats-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 12px 14px 2px; }
+  .stats-metric { padding: 10px 12px; }
+  .stats-metric-num { font-size: 20px; }
+  .stats-detail { padding: 12px 14px 0; }
+  .stats-detail-full { padding-bottom: 14px; }
+  .stats-fail-row { grid-template-columns: 50px minmax(0, 1fr) 44px 74px; }
+  .stats-fail-user, .stats-fail-time { display: none; }
+  .stats-chart { height: 180px; }
+}
 .run-list { max-height: 760px; overflow-y: auto; }
 .run-card { padding: 17px 18px 15px; border-bottom: 1px solid var(--border); }
 .run-card:last-child { border-bottom: 0; }
@@ -1931,6 +2009,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                 <button class="date-quick" :class="{active:dashStartDate===d30ago&&dashEndDate===todayStr}" @click="setQuickRange('30')">近30天</button>
                 <button class="date-quick" :class="{active:dashStartDate===d90ago&&dashEndDate===todayStr}" @click="setQuickRange('90')">近90天</button>
               </div>
+              <span class="dash-loading" v-if="dashboardLoading">统计中…</span>
             </div>
           </div>
           <div class="dash-section">
@@ -3116,6 +3195,11 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                   <option value="">全部状态</option>
                   <option value="0">正常用户</option>
                   <option value="1">已封禁</option>
+                </select>
+                <select v-model="userVersionFilter" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:13px" @change="loadUsers(1)" title="按用户最近上报的脚本版本筛选">
+                  <option value="">全部版本</option>
+                  <option v-for="v in userScriptVersions" :key="v" :value="v">v{{v}}</option>
+                  <option value="_unknown_">未上报版本</option>
                 </select>
                 <select v-model="userSortBy" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:13px" @change="loadUsers(1)">
                   <option value="created_at">注册时间</option>
@@ -4841,14 +4925,31 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                 <div class="live-stat"><div class="live-stat-num">{{aiLiveCounts.solved||0}}</div><div class="live-stat-label">累计解决</div></div>
               </div>
             </section>
+            <div class="live-filter">
+              <div class="live-filter-search">
+                <svg class="ui-icon sm"><use href="#i-search"></use></svg>
+                <input v-model="aiLiveFilter.keyword" placeholder="搜用户名 / 任务ID / 题目关键词">
+                <button class="live-filter-clear" v-if="aiLiveFilter.keyword" @click="aiLiveFilter.keyword=''">清除</button>
+              </div>
+              <div class="live-filter-chips">
+                <span class="live-filter-label">排队状态</span>
+                <button class="live-chip" :class="{active:aiLiveFilter.status===''}" @click="aiLiveFilter.status=''">全部</button>
+                <button class="live-chip" :class="{active:aiLiveFilter.status==='queued'}" @click="aiLiveFilter.status='queued'">排队中 {{aiLiveCounts.queued||0}}</button>
+                <button class="live-chip" :class="{active:aiLiveFilter.status==='waiting'}" @click="aiLiveFilter.status='waiting'">等待重试 {{aiLiveCounts.waiting||0}}</button>
+                <span class="live-filter-sep"></span>
+                <label class="live-toggle"><input type="checkbox" v-model="aiLiveFilter.onlyImage">只看识图</label>
+                <label class="live-toggle"><input type="checkbox" v-model="aiLiveFilter.withError">只看有错误</label>
+              </div>
+              <span class="live-filter-summary" v-if="liveFilterActive">筛选后：运行 {{aiLiveRunningView.length}} · 排队/等待 {{aiLiveQueueView.length}}</span>
+            </div>
             <div class="live-grid">
               <div class="live-panel">
                 <div class="live-panel-head">
-                  <h3><svg class="ui-icon sm"><use href="#i-zap"></use></svg>正在作答<span class="live-badge">{{aiLiveRunning.length}}</span><span class="worker-load" :title="'工作线程 '+aiLiveRunning.length+' / '+aiLiveWorkers+' 占用'"><i v-for="n in aiLiveWorkers" :key="n" :class="{busy:n<=aiLiveRunning.length}"></i></span></h3>
+                  <h3><svg class="ui-icon sm"><use href="#i-zap"></use></svg>正在作答<span class="live-badge">{{aiLiveRunningView.length}}</span><span class="worker-load" :title="'工作线程 '+aiLiveRunning.length+' / '+aiLiveWorkers+' 占用'"><i v-for="n in aiLiveWorkers" :key="n" :class="{busy:n<=aiLiveRunning.length}"></i></span></h3>
                   <span class="live-conn" :class="{on:aiLiveConnected}">{{aiLiveConnected?'连接正常':'等待数据'}}</span>
                 </div>
                 <div class="run-list">
-                  <article class="run-card" v-for="card in aiLiveRunning" :key="card.task_id">
+                  <article class="run-card" v-for="card in aiLiveRunningView" :key="card.task_id">
                     <div class="run-top">
                       <span class="run-id">#{{card.task_id}}</span>
                       <span class="run-user" :title="'提交用户：'+(card.username||'未知')">{{card.username||'匿名用户'}}</span>
@@ -4870,10 +4971,10 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                       <span class="run-error" v-if="card.last_error" :title="card.last_error">{{card.last_error}}</span>
                     </div>
                   </article>
-                  <div class="live-empty" v-if="aiLiveRunning.length===0">
+                  <div class="live-empty" v-if="aiLiveRunningView.length===0">
                     <div class="live-empty-icon"><svg class="ui-icon md"><use href="#i-clock"></use></svg></div>
-                    <div class="live-empty-title">工作线程空闲</div>
-                    <div class="live-empty-desc">有新任务排队时会自动开始，这里会实时出现模型切换过程。</div>
+                    <div class="live-empty-title">{{liveFilterActive?'没有匹配的作答任务':'工作线程空闲'}}</div>
+                    <div class="live-empty-desc">{{liveFilterActive?'换个关键词，或取消「只看识图 / 只看有错误」再试。':'有新任务排队时会自动开始，这里会实时出现模型切换过程。'}}</div>
                   </div>
                 </div>
                 <div class="worker-pool">
@@ -4889,11 +4990,11 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
               <div class="live-side">
                 <div class="live-panel">
                   <div class="live-panel-head">
-                    <h3><svg class="ui-icon sm"><use href="#i-layers"></use></svg>排队与等待<span class="live-badge">{{aiLiveQueue.length}}</span></h3>
+                    <h3><svg class="ui-icon sm"><use href="#i-layers"></use></svg>排队与等待<span class="live-badge">{{aiLiveQueueView.length}}</span></h3>
                     <span class="live-conn">自动重试</span>
                   </div>
                   <div class="queue-list">
-                    <div class="queue-row" v-for="t in aiLiveQueue" :key="t.id">
+                    <div class="queue-row" v-for="t in aiLiveQueueView" :key="t.id">
                       <span class="queue-dot" :class="{queued:t.status==='queued'}"></span>
                       <div class="queue-body">
                         <div class="queue-q" :title="t.question">#{{t.id}} {{t.question||'（空题目）'}}</div>
@@ -4902,7 +5003,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                       <span class="queue-countdown" :class="{queued:t.status==='queued'}" v-if="t.status==='waiting'">{{(t.retry_in===null||t.retry_in===undefined)?'待重试':formatCountdown(queueCountdown(t))}}</span>
                       <span class="queue-countdown queued" v-else>就绪</span>
                     </div>
-                    <div class="queue-empty" v-if="aiLiveQueue.length===0">当前没有排队或等待的任务</div>
+                    <div class="queue-empty" v-if="aiLiveQueueView.length===0">{{liveFilterActive?'没有符合筛选条件的排队/等待任务':'当前没有排队或等待的任务'}}</div>
                   </div>
                 </div>
                 <div class="live-panel">
@@ -4921,6 +5022,120 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                 </div>
               </div>
             </div>
+            <section class="live-panel stats-board">
+              <div class="live-panel-head">
+                <h3><svg class="ui-icon sm"><use href="#i-bar-chart"></use></svg>数据看板<span class="live-badge">{{aiStats.range_label||'近7天'}}</span></h3>
+                <span class="live-conn" :class="{on:!!aiStats.generated_at}">{{aiStatsLoading?'统计中…':(aiStats.generated_at?'更新于 '+aiStats.generated_at.substring(11,19):'等待数据')}}</span>
+              </div>
+              <div class="stats-toolbar">
+                <div class="stats-presets">
+                  <button class="stats-preset" :class="{active:aiStats.range==='today'}" @click="loadAiTaskStats('today')">今日</button>
+                  <button class="stats-preset" :class="{active:aiStats.range==='7d'}" @click="loadAiTaskStats('7d')">近7天</button>
+                  <button class="stats-preset" :class="{active:aiStats.range==='30d'}" @click="loadAiTaskStats('30d')">近30天</button>
+                  <button class="stats-preset" :class="{active:aiStats.range==='month'}" @click="loadAiTaskStats('month')">本月</button>
+                  <button class="stats-preset" :class="{active:aiStats.range==='custom'}" @click="loadAiTaskStats('custom')">自定义</button>
+                </div>
+                <div class="stats-range">
+                  <input class="date-input" type="date" v-model="aiStatsFrom" title="开始日期" @change="loadAiTaskStats('custom')">
+                  <span>至</span>
+                  <input class="date-input" type="date" v-model="aiStatsTo" title="结束日期" @change="loadAiTaskStats('custom')">
+                  <button class="btn btn-primary btn-sm" @click="loadAiTaskStats('custom')">查询</button>
+                </div>
+              </div>
+              <div class="stats-metrics">
+                <div class="stats-metric">
+                  <div class="stats-metric-num">{{aiStats.created}}</div>
+                  <div class="stats-metric-label">新增任务</div>
+                  <div class="stats-metric-sub">含图片 {{aiStats.images}} 题 · 累计尝试 {{aiStats.attempts}} 次</div>
+                </div>
+                <div class="stats-metric ok">
+                  <div class="stats-metric-num">{{aiStats.solved}}</div>
+                  <div class="stats-metric-label">已解决</div>
+                  <div class="stats-metric-sub">平均 {{aiStats.solved_avg_attempts}} 次 / {{formatStatDuration(aiStats.solved_avg_seconds)}}</div>
+                </div>
+                <div class="stats-metric bad">
+                  <div class="stats-metric-num">{{aiStats.failed}}</div>
+                  <div class="stats-metric-label">已失败</div>
+                  <div class="stats-metric-sub">平均 {{aiStats.failed_avg_attempts}} 次尝试</div>
+                </div>
+                <div class="stats-metric muted">
+                  <div class="stats-metric-num">{{aiStats.stopped}}</div>
+                  <div class="stats-metric-label">已停止</div>
+                  <div class="stats-metric-sub">人工或系统中止</div>
+                </div>
+                <div class="stats-metric accent">
+                  <div class="stats-metric-num">{{aiStats.rate}}%</div>
+                  <div class="stats-metric-label">成功率</div>
+                  <div class="stats-metric-sub">完成 {{aiStats.finished}} 条中解出</div>
+                </div>
+                <div class="stats-metric">
+                  <div class="stats-metric-num">{{aiStats.pending_now}}</div>
+                  <div class="stats-metric-label">区间内未完成</div>
+                  <div class="stats-metric-sub">排队 + 运行 + 等待重试</div>
+                </div>
+              </div>
+              <div class="stats-detail">
+                <div class="stats-card">
+                  <h4>处理趋势<span>{{aiStats.date_from}} ~ {{aiStats.date_to}}</span></h4>
+                  <div class="stats-legend">
+                    <span><i style="background:var(--accent2)"></i>新增</span>
+                    <span><i style="background:#10b981"></i>解决</span>
+                    <span><i style="background:#ef4444"></i>失败</span>
+                  </div>
+                  <svg class="stats-chart" viewBox="0 0 700 210" preserveAspectRatio="xMidYMid meet">
+                    <g style="stroke:var(--chart-grid)" stroke-width="1">
+                      <line x1="40" y1="30" x2="680" y2="30"></line>
+                      <line x1="40" y1="105" x2="680" y2="105"></line>
+                      <line x1="40" y1="180" x2="680" y2="180"></line>
+                    </g>
+                    <g fill="#6b7280" font-size="10" text-anchor="end">
+                      <text x="34" y="33">{{Math.ceil(statsTrendMax())}}</text>
+                      <text x="34" y="108">{{Math.ceil(statsTrendMax()/2)}}</text>
+                      <text x="34" y="183">0</text>
+                    </g>
+                    <template v-if="statsDaily.length>1">
+                      <polyline :points="statsPoints('created')" fill="none" style="stroke:var(--accent2)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                      <polyline :points="statsPoints('solved')" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                      <polyline :points="statsPoints('failed')" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                    </template>
+                    <g v-for="(r,i) in statsDaily" :key="r.day">
+                      <circle :cx="statsX(i)" :cy="statsY(r.created)" r="3" style="fill:var(--accent2)"></circle>
+                      <circle :cx="statsX(i)" :cy="statsY(r.solved)" r="3" fill="#10b981"></circle>
+                      <circle :cx="statsX(i)" :cy="statsY(r.failed)" r="3" fill="#ef4444"></circle>
+                      <text v-if="statsDaily.length<=14 || i % Math.max(1,Math.ceil(statsDaily.length/10))===0" :x="statsX(i)" y="199" fill="#6b7280" font-size="10" text-anchor="middle">{{r.label}}</text>
+                    </g>
+                    <text v-if="statsDaily.length===0" x="350" y="110" fill="var(--text3)" font-size="13" text-anchor="middle">区间内没有数据</text>
+                  </svg>
+                </div>
+                <div class="stats-card">
+                  <h4>失败原因 TOP<span>{{aiStats.failed}} 条失败</span></h4>
+                  <div class="bar-list">
+                    <div class="bar-row" v-for="(f,idx) in aiStats.failure_reasons" :key="idx">
+                      <div class="bar-name" :title="f.reason">{{f.reason||'（无错误信息）'}}</div>
+                      <div class="bar-track"><div class="bar-fill bad" :style="{width:statsReasonWidth(f.count)}"></div></div>
+                      <div style="color:var(--text2);text-align:right">{{f.count}}</div>
+                    </div>
+                    <div class="stats-empty" v-if="!aiStats.failure_reasons.length">区间内没有失败任务</div>
+                  </div>
+                </div>
+              </div>
+              <div class="stats-detail stats-detail-full">
+                <div class="stats-card">
+                  <h4>最近失败任务<span>点击按任务 ID 跳到历史轨迹排查</span></h4>
+                  <div class="stats-fail-list">
+                    <div class="stats-fail-row" v-for="r in aiStats.recent_failed" :key="r.id" @click="openAiTaskFromStats(r)">
+                      <span class="stats-fail-id">#{{r.id}}</span>
+                      <span class="stats-fail-q" :title="r.question">{{r.question||'（空题目）'}}</span>
+                      <span class="stats-fail-user" :title="r.username">{{r.username||'匿名'}}</span>
+                      <span class="stats-fail-try">{{r.attempts}} 次</span>
+                      <span class="stats-fail-err" :title="r.last_error">{{r.last_error||'无错误信息'}}</span>
+                      <span class="stats-fail-time">{{String(r.updated_at||'').replace('T',' ').substring(5,16)}}</span>
+                    </div>
+                    <div class="stats-empty" v-if="!aiStats.recent_failed.length">区间内没有失败任务</div>
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
           <div class="card" v-show="aiTaskTab==='list'">
             <div class="card-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
@@ -5401,6 +5616,10 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
             <input class="date-input" type="date" v-model="answerStatsFilter.date_from">
             <span style="color:var(--text3)">至</span>
             <input class="date-input" type="date" v-model="answerStatsFilter.date_to">
+            <select class="date-input" v-model="answerStatsFilter.version" @change="loadAnswerStats()" title="按脚本版本筛选，版本列表来自当前区间上报的小结">
+              <option value="">全部版本</option>
+              <option v-for="v in answerStatsVersions" :key="v.value" :value="v.value">{{v.label}}</option>
+            </select>
             <button class="btn btn-primary btn-sm" @click="loadAnswerStats()">查询</button>
             <button class="btn btn-secondary btn-sm" @click="setAnswerStatRange(1)">今天</button>
             <button class="btn btn-secondary btn-sm" @click="setAnswerStatRange(7)">近7天</button>
@@ -5446,6 +5665,35 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                   </g>
                   <text v-if="!ansTrendRows().length" x="350" y="120" fill="var(--text3)" font-size="13" text-anchor="middle">区间内没有答题小结</text>
                 </svg>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><h3>按脚本版本</h3><span>{{answerStats.version_label==='全部版本'?'点一行按该版本筛选':('当前筛选：'+answerStats.version_label)}}</span></div>
+              <div class="card-body" style="overflow-x:auto">
+                <table class="data-table" style="width:100%;border-collapse:collapse;font-size:13px;min-width:820px">
+                  <thead><tr style="border-bottom:1px solid var(--border);color:var(--text2);text-align:left"><th style="padding:8px">版本</th><th style="padding:8px">场次</th><th style="padding:8px">题目</th><th style="padding:8px">填上</th><th style="padding:8px">没填上</th><th style="padding:8px">填充率</th><th style="padding:8px">题库</th><th style="padding:8px">缓存</th><th style="padding:8px">模型</th><th style="padding:8px">平均阈值</th></tr></thead>
+                  <tbody>
+                    <tr v-for="v in answerStats.versions" :key="v.value" class="version-row" :class="{active:v.value===answerStatsFilter.version}" @click="answerStatsFilter.version=(v.value===answerStatsFilter.version?'':v.value);loadAnswerStats()">
+                      <td style="padding:8px;font-weight:600;white-space:nowrap">{{v.label}}</td>
+                      <td style="padding:8px;color:var(--text2)">{{v.sessions}}</td>
+                      <td style="padding:8px">{{v.questions}}</td>
+                      <td style="padding:8px">{{v.filled}}</td>
+                      <td style="padding:8px" :style="{color:v.unfilled?'var(--danger)':'var(--text3)'}">{{v.unfilled}}</td>
+                      <td style="padding:8px">
+                        <div style="display:flex;align-items:center;gap:8px">
+                          <div style="flex:1;max-width:150px;height:8px;background:var(--bg3);border-radius:6px;overflow:hidden"><div :style="{width:v.fill_rate+'%',height:'100%',background:v.fill_rate>=80?'#10b981':(v.fill_rate>=50?'#f59e0b':'#ef4444'),borderRadius:'6px'}"></div></div>
+                          <span :style="{color:v.fill_rate>=80?'#10b981':(v.fill_rate>=50?'#f59e0b':'#ef4444'),fontWeight:'700'}">{{v.fill_rate}}%</span>
+                        </div>
+                      </td>
+                      <td style="padding:8px;color:var(--text2)">{{v.bank_rate}}%</td>
+                      <td style="padding:8px;color:var(--text2)">{{v.cache_rate}}%</td>
+                      <td style="padding:8px;color:var(--text2)">{{v.ai_rate}}%</td>
+                      <td style="padding:8px;color:var(--text3)">{{v.threshold?v.threshold+'%':'-'}}</td>
+                    </tr>
+                    <tr v-if="!answerStats.versions.length"><td colspan="10" style="padding:24px;text-align:center;color:var(--text3)">区间内没有带版本号的小结</td></tr>
+                  </tbody>
+                </table>
               </div>
             </div>
 
@@ -8179,6 +8427,9 @@ createApp({
     const latestScriptVersion=ref('');
     const userSearch=ref('');
     const userBanFilter=ref('');
+    // 注册用户按脚本版本筛选：选项来自后端 users 表的 DISTINCT 版本（不受当前筛选影响）
+    const userVersionFilter=ref('');
+    const userScriptVersions=ref([]);
     const userSortBy=ref('created_at');
     const userSortOrder=ref('desc');
     const userPage=ref(1);
@@ -8264,7 +8515,9 @@ createApp({
     const bankAnalysisFilter=reactive({new_from:'',new_to:''});
     const answerStats=ref(null);
     const answerStatsLoading=ref(false);
-    const answerStatsFilter=reactive({date_from:'',date_to:''});
+    const answerStatsFilter=reactive({date_from:'',date_to:'',version:''});
+    // 版本下拉的选项来自区间内全部小结（不受当前版本筛选影响）
+    const answerStatsVersions=ref([]);
     const answerRows=ref([]);const answerRowsTotal=ref(0);const answerRowsPage=ref(1);const answerRowsPageSize=50;const answerRowsLoading=ref(false);const answerRowsLoaded=ref(false);
     async function loadAnswerRows(page=1){
       if(!token.value)return;
@@ -8273,6 +8526,7 @@ createApp({
         const qs=new URLSearchParams();
         if(answerStatsFilter.date_from)qs.set('date_from',answerStatsFilter.date_from);
         if(answerStatsFilter.date_to)qs.set('date_to',answerStatsFilter.date_to);
+        if(answerStatsFilter.version)qs.set('version',answerStatsFilter.version);
         qs.set('page',String(page));
         const res=await safeFetch('/admin/answer-summary-rows?'+qs.toString(),{headers:{'Authorization':token.value}});
         const data=await res.json();
@@ -8335,6 +8589,9 @@ createApp({
     const collapsedProviders=reactive(JSON.parse(localStorage.getItem('ne21_collapsed_providers')||'{}'));
     function fmtLocalDate(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),da=String(d.getDate()).padStart(2,'0');return `${y}-${m}-${da}`;}
     const dashboard=ref({cards:{users:0,active:0,question_bank:0,bank_new:0,calls:0,success:0,error:0,bank_hits:0,bank_hit_rate:0},trend:[],models:[]});
+    // 长区间统计要几秒，开关切区间时用序号丢弃过期响应，避免旧数据盖掉新选择
+    const dashboardLoading=ref(false);
+    let dashboardSeq=0;
     const dashStartDate=ref(fmtLocalDate(new Date()));
     const dashEndDate=ref(fmtLocalDate(new Date()));
     const todayStr=fmtLocalDate(new Date());
@@ -8612,6 +8869,8 @@ createApp({
     }
     async function loadDashboard(){
       if(!token.value)return;
+      const seq=++dashboardSeq;
+      dashboardLoading.value=true;
       // 首页统计和待处理反馈数互不依赖，一起发出去
       const feedbackJob=(async()=>{
         try{
@@ -8624,10 +8883,15 @@ createApp({
         const params=new URLSearchParams({start:dashStartDate.value,end:dashEndDate.value});
         const res=await safeFetch('/admin/dashboard?'+params,{headers:{'Authorization':token.value}});
         const data=await res.json();
+        if(seq!==dashboardSeq)return;
         if(data.code===200&&data.data){dashboard.value=data.data;}
         else if(data.code===403){logout();showMsg('登录已过期','error');}
         else showMsg(data.msg||'获取首页统计失败','error');
-      }catch(e){showMsg('获取首页统计失败: '+(e.message||e),'error',6000);}
+      }catch(e){
+        if(seq===dashboardSeq)showMsg('获取首页统计失败: '+(e.message||e),'error',6000);
+      }finally{
+        if(seq===dashboardSeq)dashboardLoading.value=false;
+      }
       await feedbackJob;
     }
     function dashDeltaInfo(key){
@@ -8688,7 +8952,7 @@ createApp({
       }catch(e){showMsg('导出失败：'+(e.message||e),'error');}
     }
     async function exportUsersCsv(){
-      const p=new URLSearchParams({search:userSearch.value.trim(),banned:userBanFilter.value,sort_by:userSortBy.value,sort_order:userSortOrder.value});
+      const p=new URLSearchParams({search:userSearch.value.trim(),banned:userBanFilter.value,version:userVersionFilter.value,sort_by:userSortBy.value,sort_order:userSortOrder.value,page_size:'100'});
       try{
         const r=await fetch('/admin/users?'+p,{headers:{'Authorization':token.value}});
         const d=await r.json();
@@ -8734,6 +8998,7 @@ createApp({
         const params=new URLSearchParams();
         if(userSearch.value.trim())params.set('search',userSearch.value.trim());
         if(userBanFilter.value!=='')params.set('banned',userBanFilter.value);
+        if(userVersionFilter.value)params.set('version',userVersionFilter.value);
         if(userSortBy.value)params.set('sort_by',userSortBy.value);
         if(userSortOrder.value)params.set('sort_order',userSortOrder.value);
         params.set('page',String(page));
@@ -8748,6 +9013,7 @@ createApp({
           userTotal.value=Number(data.total)||0;
           userTotalPages.value=Number(data.total_pages)||0;
           latestScriptVersion.value=data.latest_script_version||'';
+          userScriptVersions.value=data.script_versions||[];
         }
         else if(data.code===403){logout();showMsg('登录已过期','error');}
       }catch(e){showMsg('获取用户列表失败: '+e,'error');}
@@ -8828,6 +9094,7 @@ createApp({
     function resetUserSearch(){
       userSearch.value='';
       userBanFilter.value='';
+      userVersionFilter.value='';
       userSortBy.value='created_at';
       userSortOrder.value='desc';
       loadUsers(1);
@@ -8962,9 +9229,19 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         const qs=new URLSearchParams();
         if(answerStatsFilter.date_from)qs.set('start',answerStatsFilter.date_from);
         if(answerStatsFilter.date_to)qs.set('end',answerStatsFilter.date_to);
+        if(answerStatsFilter.version)qs.set('version',answerStatsFilter.version);
         const res=await safeFetch('/admin/answer-stats?'+qs.toString(),{headers:{'Authorization':token.value}});
         const data=await res.json();
-        if(data.code===200){answerStats.value=data.data||null;}
+        if(data.code===200){
+          answerStats.value=data.data||null;
+          const vs=(data.data&&data.data.versions)||[];
+          answerStatsVersions.value=vs;
+          // 选中的版本在新区间里已经没有数据时，退回「全部版本」，避免筛选空视图
+          if(answerStatsFilter.version&&!vs.some(v=>v.value===answerStatsFilter.version)){
+            answerStatsFilter.version='';
+            setTimeout(()=>loadAnswerStats(),0);
+          }
+        }
         else if(data.code===403){logout();showMsg('登录已过期','error');}
         else showMsg(data.msg||'获取答题统计失败','error');
       }catch(e){showMsg('获取答题统计失败: '+(e.message||e),'error',6000);}
@@ -10621,6 +10898,31 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     const aiLiveEvents=computed(()=>aiLive.value.events||[]);
     const aiLiveCounts=computed(()=>({queued:0,running:0,waiting:0,solved:0,failed:0,stopped:0,pending:0,...(aiLive.value.counts||{})}));
     const aiLiveWorkers=computed(()=>Number(aiLive.value.workers||6));
+    // 实时看板的本地筛选：只筛「正在作答 / 排队与等待」两块展示，不改轮询数据和线程池占用
+    const aiLiveFilter=reactive({keyword:'',status:'',onlyImage:false,withError:false});
+    const liveFilterActive=computed(()=>!!(String(aiLiveFilter.keyword||'').trim()||aiLiveFilter.status||aiLiveFilter.onlyImage||aiLiveFilter.withError));
+    function aiLiveMatchTask(t,applyStatus){
+      const kw=String(aiLiveFilter.keyword||'').trim().toLowerCase();
+      if(kw){
+        const hay=(String(t.username||'')+' '+String(t.task_id||t.id||'')+' '+String(t.question||'')).toLowerCase();
+        if(!hay.includes(kw))return false;
+      }
+      if(aiLiveFilter.onlyImage&&!t.has_image)return false;
+      if(aiLiveFilter.withError&&!String(t.last_error||'').trim())return false;
+      if(applyStatus&&aiLiveFilter.status&&t.status!==aiLiveFilter.status)return false;
+      return true;
+    }
+    const aiLiveRunningView=computed(()=>aiLiveRunning.value.filter(t=>aiLiveMatchTask(t,false)));
+    const aiLiveQueueView=computed(()=>aiLiveQueue.value.filter(t=>aiLiveMatchTask(t,true)));
+    // 数据看板：按日期区间统计新增/解决/失败/停止，刷新节奏与 2 秒实时轮询分开（30 秒）
+    const aiStats=ref({range:'7d',range_label:'近7天',date_from:'',date_to:'',days:0,created:0,images:0,attempts:0,solved:0,solved_avg_attempts:0,solved_avg_seconds:0,failed:0,failed_avg_attempts:0,stopped:0,finished:0,rate:0,pending_now:0,solved_now:0,failed_now:0,stopped_now:0,daily:[],failure_reasons:[],recent_failed:[],generated_at:''});
+    const aiStatsRange=ref('7d');
+    const aiStatsFrom=ref('');
+    const aiStatsTo=ref('');
+    const aiStatsLoading=ref(false);
+    const statsDaily=computed(()=>aiStats.value.daily||[]);
+    let aiStatsTimer=null;
+    let aiStatsSeq=0;
     // 答题线程数可在线调整：输入框只在第一次拿到数据时同步，保存后以服务端返回为准
     const aiWorkerInput=ref(10);
     const aiWorkerSaving=ref(false);
@@ -11610,12 +11912,86 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       stopAiTaskLive();
       aiLiveNow.value=Date.now()/1000;
       loadAiTasksLive();
+      loadAiTaskStats();
       aiLiveTimer=setInterval(loadAiTasksLive,2000);
+      aiStatsTimer=setInterval(()=>{if(aiTaskTab.value==='live')loadAiTaskStats();},30000);
       aiLiveTickTimer=setInterval(()=>{aiLiveNow.value=Date.now()/1000+aiLiveOffset.value;},1000);
     }
     function stopAiTaskLive(){
       if(aiLiveTimer){clearInterval(aiLiveTimer);aiLiveTimer=null;}
       if(aiLiveTickTimer){clearInterval(aiLiveTickTimer);aiLiveTickTimer=null;}
+      if(aiStatsTimer){clearInterval(aiStatsTimer);aiStatsTimer=null;}
+    }
+    async function loadAiTaskStats(range){
+      if(!token.value)return;
+      const r=range||aiStatsRange.value||'7d';
+      aiStatsRange.value=r;
+      const params=new URLSearchParams({range:r});
+      if(r==='custom'){
+        if(!aiStatsFrom.value||!aiStatsTo.value){
+          const end=new Date();
+          const start=new Date();start.setDate(start.getDate()-6);
+          if(!aiStatsFrom.value)aiStatsFrom.value=fmtLocalDate(start);
+          if(!aiStatsTo.value)aiStatsTo.value=fmtLocalDate(end);
+        }
+        params.set('date_from',aiStatsFrom.value);
+        params.set('date_to',aiStatsTo.value);
+      }
+      const seq=++aiStatsSeq;
+      aiStatsLoading.value=true;
+      try{
+        const res=await safeFetch('/admin/ai-tasks/stats?'+params.toString(),{headers:{'Authorization':token.value}});
+        const d=await res.json();
+        if(seq!==aiStatsSeq)return;
+        if(d.code===200&&d.stats){
+          aiStats.value=d.stats;
+          if(d.stats.date_from)aiStatsFrom.value=d.stats.date_from;
+          if(d.stats.date_to)aiStatsTo.value=d.stats.date_to;
+          if(d.stats.range)aiStatsRange.value=d.stats.range;
+        }else if(d.code===403){
+          logout();showMsg('登录已过期','error');
+        }
+      }catch(e){
+        // 统计失败不打断实时看板，等下一轮刷新
+      }finally{
+        if(seq===aiStatsSeq)aiStatsLoading.value=false;
+      }
+    }
+    function statsTrendMax(){
+      let m=0;
+      statsDaily.value.forEach(r=>{m=Math.max(m,Number(r.created||0),Number(r.solved||0),Number(r.failed||0));});
+      return Math.max(1,m);
+    }
+    function statsX(i){
+      const n=statsDaily.value.length;
+      if(n<=1)return 360;
+      return 40+(640*i)/(n-1);
+    }
+    function statsY(v){
+      return 180-(150*Math.min(1,(Number(v)||0)/statsTrendMax()));
+    }
+    function statsPoints(key){
+      return statsDaily.value.map((r,i)=>statsX(i)+','+statsY(r[key])).join(' ');
+    }
+    function statsReasonWidth(cnt){
+      const list=aiStats.value.failure_reasons||[];
+      const max=Math.max(1,...list.map(f=>Number(f.count)||0));
+      const pct=Math.round((Number(cnt)||0)*100/max);
+      return Math.max(3,pct)+'%';
+    }
+    function formatStatDuration(sec){
+      sec=Math.max(0,Math.round(Number(sec)||0));
+      if(!sec)return '—';
+      if(sec<60)return sec+' 秒';
+      if(sec<3600)return Math.round(sec/60)+' 分钟';
+      return (sec/3600).toFixed(1)+' 小时';
+    }
+    function openAiTaskFromStats(r){
+      if(!r||!r.id)return;
+      aiTaskTab.value='history';
+      aiHistoryStatus.value='failed';
+      aiHistoryKeyword.value=String(r.id);
+      loadAiTaskHistory(1);
     }
     function liveElapsed(ts){
       const n=Number(ts||0);
@@ -12369,14 +12745,14 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
        loading,page,loginMode,themeMode,themeLabels,themeIcons,cycleTheme,breadcrumbItems,navigateBreadcrumb,toasts,removeToast,toasts,removeToast,toasts,removeToast,config,emailConfig,emailTemplates,hubTplSyncing,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,SCENE_ICONS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
        mailServers,showServerForm,mailServerForm,showSmtpPass,mailServerTotalWeight,mailServerWeightPercent,toggleEmailEnabled,toggleEmailSmtp,openServerForm,saveMailServer,deleteMailServer,
        showMailHubRecords,mailHubRecords,mailHubRecordsLoading,mailHubRecordsError,toggleEmailHub,loadMailHubRecords,modelHubConfig,loadModelHubConfig,toggleModelHub,barW,
-       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,adminCaptchaTotal,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,latestScriptVersion,userPage,userTotal,userTotalPages,userPageSize,userSearch,userBanFilter,userSortBy,userSortOrder,ipSearch,ipSearchList,ipSearchLoading,ipSearchPage,ipSearchTotal,ipSearchTotalPages,loadUsersByIp,gotoIpSearch,gotoIpSearchFromOrder,showUserModal,userForm,gotoUserSearch,
+       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,adminCaptchaTotal,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,latestScriptVersion,userPage,userTotal,userTotalPages,userPageSize,userSearch,userBanFilter,userVersionFilter,userScriptVersions,userSortBy,userSortOrder,ipSearch,ipSearchList,ipSearchLoading,ipSearchPage,ipSearchTotal,ipSearchTotalPages,loadUsersByIp,gotoIpSearch,gotoIpSearchFromOrder,showUserModal,userForm,gotoUserSearch,
         showHtmlPreview,htmlPreviewFrame,htmlPreviewData,toggleHtmlPreview,updateHtmlPreview,switchToHtml,onHtmlInput,syncPlainFromHtml,
        paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,hubPayConfig,planForm,
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,
       aiLogSorted,aiLogSort,toggleAiLogSort,aiLogSortMark,
       bankLogs,bankLogLoading,bankLogFilter,bankLogTotal,expandedBankLogs,
       bankAnalysis,bankAnalysisLoading,bankAnalysisFilter,loadBankAnalysis,setBankAnalysisRange,
-      answerStats,answerStatsLoading,answerStatsFilter,loadAnswerStats,setAnswerStatRange,ansTrendRows,ansTrendX,ansTrendY,ansTrendPoints,
+      answerStats,answerStatsLoading,answerStatsFilter,answerStatsVersions,loadAnswerStats,setAnswerStatRange,ansTrendRows,ansTrendX,ansTrendY,ansTrendPoints,
       pageIssues,pageIssueLoading,pageIssueFilter,pageIssueDetail,pageIssueTotalPages,loadPageIssues,setPageIssueRange,pageIssueSelected,togglePageIssue,toggleAllPageIssues,deletePageIssues,
       answerRows,answerRowsTotal,answerRowsPage,answerRowsPageSize,answerRowsLoading,answerRowsLoaded,loadAnswerRows,
       userAnalysis,userAnalysisLoading,userAnalysisFilter,loadUserAnalysis,setUserAnalysisRange,pct,
@@ -12385,7 +12761,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       oldUserRechargeExpanded,oldUserRechargeDetails,oldUserRechargePage,oldUserRechargeTotal,oldUserRechargeTotalPages,oldUserRechargeSum,oldUserRechargeLoading,toggleOldUserRecharge,loadOldUserRechargeDetails,
       questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,deleteQuestionBankItem,bankTypeOptions,bankModelOptions,loadBankModels,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,ssoConfig,ssoSaving,showSsoSecret,ssoCallbackUrl,riskConfig,riskWhitelistText,riskUsers,riskScanning,riskSaving,riskFilter,riskPage,riskTotal,riskTotalPages,resetRiskFilter,
       doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,saveEmailHubFromAddr,hubTplStatusText,syncHubTemplates,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,adminCaptchaClick,adminCaptchaRemove,adminCaptchaCell,
-      loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadSsoConfig,saveSsoConfig,copySsoUrl,captchaFlags,captchaFlagsSaving,saveCaptchaFlags,loadCaptchaFlags,loadRiskConfig,saveRiskConfig,scanRisk,riskBan,riskAddWhitelist,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,
+      loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadSsoConfig,saveSsoConfig,copySsoUrl,captchaFlags,captchaFlagsSaving,saveCaptchaFlags,loadCaptchaFlags,loadRiskConfig,saveRiskConfig,scanRisk,riskBan,riskAddWhitelist,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,dashboardLoading,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,
       savePaymentConfig,savePayApiConfig,saveHubPayConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,movePlan,openUserEdit,saveUserAdmin,
       toggleProvider,collapseAllProviders,togglePayApiSection,
        addProvider,removeProvider,addModel,removeModel,
@@ -12439,7 +12815,8 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     aiTaskList,aiTaskTab,aiTaskFilter,aiTaskPage,aiTaskTotal,aiTaskTotalPages,aiTaskCounts,loadAiTasks,aiTaskAction,aiTaskStatusText,aiTaskStatusStyle,
     aiHistoryRows,aiHistoryKeyword,aiHistoryStatus,aiHistoryHasImage,aiHistoryFrom,aiHistoryTo,aiHistoryPage,aiHistoryTotal,aiHistoryTotalPages,aiHistoryLoading,loadAiTaskHistory,resetAiTaskHistory,
     aiTaskDetail,aiTaskDetailLoading,openAiTaskDetail,traceStatusText,
-    aiLiveRunning,aiLiveQueue,aiLiveEvents,aiLiveCounts,aiLiveWorkers,aiLiveClock,aiLiveConnected,loadAiTasksLive,startAiTaskLive,stopAiTaskLive,
+    aiLiveRunning,aiLiveQueue,aiLiveEvents,aiLiveCounts,aiLiveWorkers,aiLiveClock,aiLiveConnected,aiLiveFilter,liveFilterActive,aiLiveRunningView,aiLiveQueueView,aiLiveMatchTask,loadAiTasksLive,startAiTaskLive,stopAiTaskLive,
+    aiStats,aiStatsRange,aiStatsFrom,aiStatsTo,aiStatsLoading,statsDaily,loadAiTaskStats,statsTrendMax,statsX,statsY,statsPoints,statsReasonWidth,formatStatDuration,openAiTaskFromStats,
     aiWorkerInput,aiWorkerSaving,saveAiTaskWorkers,
     liveElapsed,liveDuration,formatCountdown,queueCountdown,eventAgo,relayClass,relayLabel,liveProgress,
     loadAdaptRequests,adaptPrev,adaptNext,openAdaptDetail,setAdaptStatus,copyAdaptText,

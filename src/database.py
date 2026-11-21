@@ -1475,6 +1475,49 @@ class Database:
         except Exception:
             return False
 
+    # 长区间统计（首页/看板一个月以上）会按 created_at 扫 ai_call_logs，
+    # 再按 username 去重活跃用户。现有的单列 created_at 索引只能定位范围，
+    # 每行还要回表取 username/status，区间一长就很慢；补一组联合索引。
+    # 只在缺失时创建，正常启动由后台线程执行，不阻塞服务。
+    _PERF_INDEXES = (
+        ("ai_call_logs", "idx_created_username", "created_at, username"),
+        ("ai_call_logs", "idx_created_status", "created_at, status"),
+        ("script_event_logs", "idx_created_username", "created_at, username"),
+    )
+
+    def ensure_perf_indexes(self):
+        """补齐长区间统计用的联合索引，返回本次新建的索引名列表。
+
+        日志表可能有几百万行，建索引动辄几十秒到几分钟；连接池里的连接
+        read_timeout 只有 15 秒，等 DDL 返回会直接超时，所以这里单独开一条
+        长超时连接来建，失败只记日志，下次启动还会再试。
+        """
+        import pymysql
+        ph = _ph()
+        created = []
+        ddl_cfg = dict(MYSQL_CONFIG)
+        ddl_cfg.update({"read_timeout": 1800, "write_timeout": 1800, "connect_timeout": 10})
+        for table, index_name, columns in self._PERF_INDEXES:
+            try:
+                row = self.fetchone(
+                    "SELECT COUNT(*) AS cnt FROM information_schema.statistics "
+                    f"WHERE table_schema = DATABASE() AND table_name = {ph} AND index_name = {ph}",
+                    (table, index_name),
+                ) or {}
+                if int(row.get("cnt") or 0) > 0:
+                    continue
+                conn = pymysql.connect(cursorclass=pymysql.cursors.DictCursor, autocommit=True, **ddl_cfg)
+                try:
+                    conn.cursor().execute(f"CREATE INDEX {index_name} ON {table} ({columns})")
+                finally:
+                    conn.close()
+                created.append(f"{table}.{index_name}")
+            except Exception as e:
+                print(f"[索引] {table}.{index_name} 创建失败: {e}", flush=True)
+        if created:
+            print(f"[索引] 已补充统计索引: {', '.join(created)}", flush=True)
+        return created
+
     def _ensure_payment_columns(self):
         self._add_column_if_missing("payment_plans", "xianyu_url", "xianyu_url VARCHAR(255) DEFAULT ''")
         self._add_column_if_missing("users", "points_balance", "points_balance INT DEFAULT 0")
@@ -4994,6 +5037,148 @@ class Database:
             out[str(row.get("status") or "")] = int(row.get("cnt") or 0)
         return out
 
+    def ai_answer_task_stats(self, date_from="", date_to=""):
+        """答题看板数据统计：区间新增、完成（解决/失败/停止）、失败原因与按天量。
+
+        时间口径分开算，避免「今天处理」漏掉昨天提交、今天才跑完的题：
+          新增     created_at 落在区间
+          已解决   status='solved' 且 solved_at（历史行缺失时回退 updated_at）落在区间
+          已失败   status='failed' 且 updated_at 落在区间
+          已停止   status='stopped' 且 updated_at 落在区间
+        日期按自然日闭区间处理，date_from/date_to 形如 2026-11-21。
+        """
+        ph = _ph()
+
+        def _day(v):
+            s = str(v or "").strip()[:10]
+            if not s:
+                return ""
+            try:
+                datetime.strptime(s, "%Y-%m-%d")
+            except ValueError:
+                return ""
+            return s
+
+        date_from = _day(date_from)
+        date_to = _day(date_to)
+
+        def _conds(col):
+            parts, vals = [], []
+            if date_from:
+                parts.append(f"{col} >= {ph}")
+                vals.append(date_from + " 00:00:00")
+            if date_to:
+                parts.append(f"{col} < DATE_ADD({ph}, INTERVAL 1 DAY)")
+                vals.append(date_to + " 00:00:00")
+            return parts, vals
+
+        def _compose(extra, col):
+            parts, vals = _conds(col)
+            if extra:
+                parts.insert(0, extra)
+            where = (" WHERE " + " AND ".join(parts)) if parts else ""
+            return where, vals
+
+        w_created, v_created = _compose("", "created_at")
+        w_solved, v_solved = _compose("status='solved'", "COALESCE(solved_at, updated_at)")
+        w_failed, v_failed = _compose("status='failed'", "updated_at")
+        w_stopped, v_stopped = _compose("status='stopped'", "updated_at")
+
+        totals = self.fetchone(
+            f"""SELECT COUNT(*) AS created,
+                       COALESCE(SUM(status='solved'),0) AS solved_now,
+                       COALESCE(SUM(status='failed'),0) AS failed_now,
+                       COALESCE(SUM(status='stopped'),0) AS stopped_now,
+                       COALESCE(SUM(status IN ('queued','running','waiting')),0) AS pending_now,
+                       COALESCE(SUM(has_image=1),0) AS images,
+                       COALESCE(SUM(attempts),0) AS attempts
+                FROM ai_answer_tasks{w_created}""",
+            tuple(v_created),
+        ) or {}
+        solved_row = self.fetchone(
+            f"""SELECT COUNT(*) AS cnt,
+                       COALESCE(ROUND(AVG(attempts),2),0) AS avg_attempts,
+                       COALESCE(ROUND(AVG(TIMESTAMPDIFF(SECOND, created_at, COALESCE(solved_at, updated_at)))),0) AS avg_seconds
+                FROM ai_answer_tasks{w_solved}""",
+            tuple(v_solved),
+        ) or {}
+        failed_row = self.fetchone(
+            f"""SELECT COUNT(*) AS cnt,
+                       COALESCE(ROUND(AVG(attempts),2),0) AS avg_attempts
+                FROM ai_answer_tasks{w_failed}""",
+            tuple(v_failed),
+        ) or {}
+        stopped_row = self.fetchone(
+            f"SELECT COUNT(*) AS cnt FROM ai_answer_tasks{w_stopped}",
+            tuple(v_stopped),
+        ) or {}
+
+        def _daily(col, where, vals):
+            rows = self.fetchall(
+                f"SELECT DATE({col}) AS d, COUNT(*) AS cnt FROM ai_answer_tasks{where} GROUP BY DATE({col})",
+                tuple(vals),
+            ) or []
+            return {str(r.get("d") or "")[:10]: int(r.get("cnt") or 0) for r in rows}
+
+        created_daily = _daily("created_at", w_created, v_created)
+        solved_daily = _daily("COALESCE(solved_at, updated_at)", w_solved, v_solved)
+        failed_daily = _daily("updated_at", w_failed, v_failed)
+        stopped_daily = _daily("updated_at", w_stopped, v_stopped)
+
+        reasons = self.fetchall(
+            f"""SELECT LEFT(TRIM(COALESCE(last_error,'')), 80) AS err, COUNT(*) AS cnt
+                FROM ai_answer_tasks{w_failed}
+                GROUP BY err
+                ORDER BY cnt DESC
+                LIMIT 8""",
+            tuple(v_failed),
+        ) or []
+        recent = self.fetchall(
+            f"""SELECT id, username, question_text, attempts, round_no, last_error, updated_at
+                FROM ai_answer_tasks{w_failed}
+                ORDER BY updated_at DESC
+                LIMIT 10""",
+            tuple(v_failed),
+        ) or []
+
+        return {
+            "created": int(totals.get("created") or 0),
+            "solved_now": int(totals.get("solved_now") or 0),
+            "failed_now": int(totals.get("failed_now") or 0),
+            "stopped_now": int(totals.get("stopped_now") or 0),
+            "pending_now": int(totals.get("pending_now") or 0),
+            "images": int(totals.get("images") or 0),
+            "attempts": int(totals.get("attempts") or 0),
+            "solved": int(solved_row.get("cnt") or 0),
+            "solved_avg_attempts": float(solved_row.get("avg_attempts") or 0),
+            "solved_avg_seconds": int(solved_row.get("avg_seconds") or 0),
+            "failed": int(failed_row.get("cnt") or 0),
+            "failed_avg_attempts": float(failed_row.get("avg_attempts") or 0),
+            "stopped": int(stopped_row.get("cnt") or 0),
+            "daily": {
+                "created": created_daily,
+                "solved": solved_daily,
+                "failed": failed_daily,
+                "stopped": stopped_daily,
+            },
+            "failure_reasons": [
+                {"reason": str(r.get("err") or ""), "count": int(r.get("cnt") or 0)}
+                for r in reasons
+            ],
+            "recent_failed": [
+                {
+                    "id": int(r.get("id") or 0),
+                    "username": str(r.get("username") or ""),
+                    "question": str(r.get("question_text") or "")[:120],
+                    "attempts": int(r.get("attempts") or 0),
+                    "round_no": int(r.get("round_no") or 0),
+                    "last_error": str(r.get("last_error") or "")[:200],
+                    "updated_at": str(r.get("updated_at") or ""),
+                }
+                for r in recent
+            ],
+        }
+
     def reset_running_ai_answer_tasks(self):
         """进程重启后，把上次没跑完的 running 任务放回队列。"""
         self.execute("UPDATE ai_answer_tasks SET status='waiting', next_retry_at=NOW() WHERE status='running'")
@@ -5594,11 +5779,13 @@ class Database:
         cur = self.execute(sql, tuple(clean_ids))
         return int(cur.rowcount or 0) if cur is not None else 0
 
-    def list_answer_summaries(self, date_from="", date_to="", username="", limit=3000, offset=0):
+    def list_answer_summaries(self, date_from="", date_to="", username="", limit=3000, offset=0, version=""):
         """取「一卷一报」的答题小结原始行（event_type=answer_summary）。
 
         明细在 extra_json 里，MySQL 5.7 没有 JSON_TABLE，所以这里只限量取原文，
         聚合放到 backend 的 Python 里做；limit 是防止有人刷接口时把后台拖死。
+        version 用来按脚本版本筛：优先用落库时写好的 script_version 列，
+        老数据没有该列值时回退到 extra_json 里的同名字段。
         """
         ph = _ph()
         limit = min(max(int(limit or 3000), 1), 5000)
@@ -5608,6 +5795,7 @@ class Database:
             offset = 0
         where = [f"s.event_type = {ph}"]
         params = ["answer_summary"]
+        version = str(version or "").strip()[:32]
         if username:
             where.append(f"s.username = {ph}")
             params.append(username)
@@ -5617,7 +5805,19 @@ class Database:
         if date_to:
             where.append(f"s.created_at <= {ph}")
             params.append(date_to)
-        sql = ("SELECT s.username, s.page_url, s.extra_json, s.created_at, u.channel, u.channel_ref "
+        if version == "__none__":
+            where.append(
+                "(COALESCE(NULLIF(s.script_version,''), "
+                "JSON_UNQUOTE(JSON_EXTRACT(s.extra_json, '$.script_version')), '') = '')"
+            )
+        elif version:
+            where.append(
+                "(COALESCE(NULLIF(s.script_version,''), "
+                "JSON_UNQUOTE(JSON_EXTRACT(s.extra_json, '$.script_version')), '') = %s)"
+            )
+            params.append(version)
+        sql = ("SELECT s.username, s.page_url, s.extra_json, s.script_version, s.created_at, "
+               "u.channel, u.channel_ref "
                "FROM script_event_logs s LEFT JOIN users u ON u.username = s.username")
         sql += " WHERE " + " AND ".join(where)
         sql += f" ORDER BY s.created_at DESC, s.id DESC LIMIT {ph} OFFSET {ph}"
@@ -5625,11 +5825,12 @@ class Database:
         params.append(offset)
         return self.fetchall(sql, tuple(params))
 
-    def count_answer_summaries(self, date_from="", date_to="", username=""):
+    def count_answer_summaries(self, date_from="", date_to="", username="", version=""):
         """统计「一卷一报」小结条数，配合 list_answer_summaries 做分页。"""
         ph = _ph()
         where = [f"s.event_type = {ph}"]
         params = ["answer_summary"]
+        version = str(version or "").strip()[:32]
         if username:
             where.append(f"s.username = {ph}")
             params.append(username)
@@ -5639,6 +5840,17 @@ class Database:
         if date_to:
             where.append(f"s.created_at <= {ph}")
             params.append(date_to)
+        if version == "__none__":
+            where.append(
+                "(COALESCE(NULLIF(s.script_version,''), "
+                "JSON_UNQUOTE(JSON_EXTRACT(s.extra_json, '$.script_version')), '') = '')"
+            )
+        elif version:
+            where.append(
+                "(COALESCE(NULLIF(s.script_version,''), "
+                "JSON_UNQUOTE(JSON_EXTRACT(s.extra_json, '$.script_version')), '') = %s)"
+            )
+            params.append(version)
         sql = "SELECT COUNT(*) AS c FROM script_event_logs s WHERE " + " AND ".join(where)
         row = self.fetchone(sql, tuple(params))
         return int(row.get("c") or 0) if row else 0
