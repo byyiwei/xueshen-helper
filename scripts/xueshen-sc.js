@@ -9225,6 +9225,9 @@ const MAX_RECORDS = 200;
                   }
                 })(),
                 clicked: !!(question && question.__xsClicked),
+                // 题目节点是否还连着活文档：脱离的节点上点击永远无效，能直接分辨「重渲染失联」
+                el_connected: !!(el && el.isConnected),
+                rebinded: !!(question && question.__xsRebinded),
                 ...(() => {
                   const type = String((question && question.type) || "");
                   // 连线题/复合题以前只报「点了几个」，后台分不出是全没点上还是只填了一半
@@ -10181,6 +10184,35 @@ const MAX_RECORDS = 200;
         // 信任集合只在本轮有效：上一次重试里「点了但页面不暴露状态」记下的 key，
         // 重试时页面可能已经重渲染丢了选中态，沿用旧信任会把失败掩盖成成功。
         question.__xsTrustedSelected = null;
+        // iframe 重载 / SPA 重渲染后，解析时缓存的题目节点可能已脱离活文档：
+        // 往死节点上点不会产生任何 DOM 变化，所有兜底点击全部白点，表现就是
+        // 单选/多选/判断整题「点击后未选中」（2026-11-21 预科教育多选、ha 单选+判断）。
+        // 填前先检查节点是否还连着活文档；脱离了就按题目容器 id 重找并重取选项。
+        try {
+          if (question.element && !question.element.isConnected && ["zj", "zy", "ks"].includes(this.type)) {
+            const liveDoc = this._document || document;
+            const anchorId = question.element.id
+              || ((question.element.parentElement && question.element.parentElement.id) || "");
+            let liveEl = anchorId ? liveDoc.getElementById(anchorId) : null;
+            if (liveEl && !/\b(TiMu|questionLi)\b/.test(String(liveEl.className || ""))) {
+              liveEl = liveEl.querySelector(".TiMu, .questionLi") || null;
+            }
+            if (liveEl && liveEl !== question.element) {
+              const optSel = ["zj"].includes(this.type)
+                ? ['[class*="before-after"]', ".fl.after"]
+                : [".answerBg", ".answer_p"];
+              const liveOptionEls = liveEl.querySelectorAll(optSel[0]);
+              const [liveOpts, liveTexts] = this.extractOptions(liveOptionEls, optSel[1]);
+              if (Object.keys(liveOpts).length) {
+                question.element = liveEl;
+                question.options = liveOpts;
+                question.optionsText = liveTexts;
+                question.__xsOptionCount = liveOptionEls.length;
+                question.__xsRebinded = 1;
+              }
+            }
+          }
+        } catch (_) {}
         const cleanChoiceAnswer = (raw) => String(raw == null ? "" : raw)
           .split(/\r?\n/)[0]
           .replace(/[*_`#>]/g, "")
@@ -12404,6 +12436,19 @@ const MAX_RECORDS = 200;
             await sleep(0.5);
           }
           this.parseHtml();
+          // 等了 8 秒接口还是没把题目塞进 store（stuExamWeb 这种整页考试：验证码挡接口、
+          // 刷新后接口早于脚本 inject、SPA 内嵌），但页面明明已经把 10 道 .subject_node 渲染出来。
+          // 以前这里直接判「页面解析失败」整份作业不答；现在按 DOM 兜底解析，能答多少答多少。
+          if (!this.questions.length) {
+            const domQuestions = this.parseSubjectNodesToQuestions();
+            if (domQuestions.length) {
+              this.addQuestions(domQuestions);
+              this.log.insertLog(
+                `题目接口没返回，已按页面结构兜底解析到${this.questions.length}道题`,
+                "warning"
+              );
+            }
+          }
         }
         if (this.questions.length) {
           this.log.insertLog(
@@ -12681,6 +12726,9 @@ const MAX_RECORDS = 200;
             "没有解析到题目，请检查是否进入正确页面...",
             "warning"
           );
+          const doc = this._document;
+          const subjectNodes = doc ? Array.from(doc.querySelectorAll(".subject_node")) : [];
+          const storeList = (this.questionStore && this.questionStore.questionList) || [];
           window.__XSReportPageIssue && window.__XSReportPageIssue({
             page_type: "zhs-web",
             stage: "parse",
@@ -12688,10 +12736,15 @@ const MAX_RECORDS = 200;
             selector: ".subject_node",
             expected: "智慧树作业页 .subject_node 题目节点",
             found: {
-              subject_nodes: this._document ? this._document.querySelectorAll(".subject_node").length : 0,
-              iframes: this._document ? this._document.querySelectorAll("iframe").length : 0
+              subject_nodes: subjectNodes.length,
+              iframes: doc ? doc.querySelectorAll("iframe").length : 0,
+              // 页面上有题、题目列表却为空：多半是题目接口没被脚本抓到（刷新/换页时机、验证码挡接口），
+              // 不是选择器失效。两边数量都带上，下次一眼分得清是哪种。
+              question_list: Array.isArray(storeList) ? storeList.length : -1,
+              captcha: doc ? doc.querySelectorAll("#captchaYidun, .yidun, [class*='captcha']").length : 0
             },
-            nodes: this._document && this._document.body ? [this._document.body] : []
+            // 节点样本取真实题目容器：以前传 body，后台只看到一大段页面文字，判断不了题目结构
+            nodes: subjectNodes.slice(0, 2)
           });
         }
         setTimeout(() => {
@@ -13349,6 +13402,63 @@ const MAX_RECORDS = 200;
         });
         return [optionsObject, optionTexts];
       });
+      // 智慧树题目本来是接口给的（name/questionType/questionOptions），接口抓不到时按页面结构兜底：
+      // .subject_node 里题干、题型标记、选项都是现成的，拼成和接口一样的形状，后面的取答案/填写链路就不用改。
+      __publicField(this, "parseSubjectNodesToQuestions", () => {
+        const doc = this._document;
+        if (!doc || !doc.querySelectorAll) return [];
+        const TYPE_MAP = {
+          单选题: "单选题", 多选题: "多选题", 多项选择题: "多项选择题", 不定项选择题: "不定项选择题",
+          X型题: "X型选择题", 判断题: "判断题", 填空题: "填空题", 简答题: "简答题",
+          名词解释: "名词解释", 论述题: "论述题", 计算题: "计算题", 写作题: "写作题"
+        };
+        const stripLetter = (s) => String(s || "").replace(/^\s*[A-Za-zＡ-Ｚ][.、．)）:：]\s*/, "").trim();
+        const optionEls = (node) => {
+          const all = Array.from(node.querySelectorAll(".node_detail, .nodeLab, label, .option_item"))
+            .filter((el) => String(el.innerText || el.textContent || "").trim());
+          // 去掉被外层命中项包住的内层节点，避免 .nodeLab 和它的 label 重复计数
+          const outer = all.filter((el) => !all.some((m) => m !== el && el.contains(m)));
+          return outer.length >= 2 ? outer : all;
+        };
+        const detectType = (node, text) => {
+          const m = text.match(/[【\[（(]\s*(单选题|多选题|多项选择题|不定项选择题|X型题|判断题|填空题|简答题|名词解释|论述题|计算题|写作题)\s*[】\]）)]/);
+          if (m && TYPE_MAP[m[1]]) return TYPE_MAP[m[1]];
+          if (node.querySelector('input[type="checkbox"], [role="checkbox"]')) return "多选题";
+          if (node.querySelector('input[type="radio"], [role="radio"]')) return "单选题";
+          if (node.querySelector('textarea, [contenteditable="true"]')) return "简答题";
+          return "单选题";
+        };
+        const out = [];
+        Array.from(doc.querySelectorAll(".subject_node")).forEach((node) => {
+          const rawText = String(node.innerText || node.textContent || "").replace(/\s+/g, " ").trim();
+          if (!rawText) return;
+          const type = detectType(node, rawText);
+          const texts = [];
+          optionEls(node).forEach((el) => {
+            const t = stripLetter(String(el.innerText || el.textContent || "").replace(/\s+/g, " ").trim());
+            if (t && !texts.includes(t)) texts.push(t);
+          });
+          // 判断题的选项是「对/错」两个按钮，不交给正文匹配（和接口解析口径一致）
+          const optionTexts = type === "判断题" ? [] : texts;
+          let title = rawText;
+          texts.forEach((t) => { title = title.replace(t, " "); });
+          // 去掉题号与题型标记：题库指纹按题干正文算，带「1.【单选题】」会永远命中不到
+          title = title
+            .replace(/^\s*\d+\s*[.、．]\s*/, "")
+            .replace(/[【\[（(]\s*(?:单选题|多选题|多项选择题|不定项选择题|X型题|判断题|填空题|简答题|名词解释|论述题|计算题|写作题)\s*[】\]）)]/g, " ")
+            // 选项正文被拿走后会剩「A. B. C. D.」这些字母标记（有时还带括号/顿号），题干里不能留
+            .replace(/(^|\s)[A-ZＡ-Ｚ]\s*[.、．)）:：](?=\s|$)/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+          if (!title) return;
+          out.push({
+            name: title,
+            questionType: { name: type },
+            questionOptions: optionTexts.map((t) => ({ content: t }))
+          });
+        });
+        return out;
+      });
       __publicField(this, "addQuestions", (questions) => {
         if (!Array.isArray(questions) || !questions.length) return;
         questions.forEach((question) => {
@@ -13444,9 +13554,9 @@ const MAX_RECORDS = 200;
       if (!isNativeFn(w.document.getSelection)) issues.push("document.getSelection");
       if (!isNativeFn(w.getSelection)) issues.push("window.getSelection");
       if (!isNativeFn(w.Element && w.Element.prototype.attachShadow)) issues.push("attachShadow");
-      if (!isNativeFn(w.Function.prototype.call)) issues.push("Function.call");
-      if (!isNativeFn(w.Function.prototype.apply)) issues.push("Function.apply");
-      if (!isNativeFn(w.Function.prototype.bind)) issues.push("Function.bind");
+      // Function.prototype.call/apply/bind 不查：站方的 isAllNative 只查 window.prototype 上的同名方法，
+      // 而脚本管理器沙箱自己会把 Function.prototype.call 包一层，这里查它必然恒假 → 每个页面都报一次
+      // 「原生检查没还原」（2026-11-21 后台 22 条全是 Function.call）。查了也修不回来，只会刷假异常。
       if (typeof w.prototype !== "undefined") {
         if (!isNativeFn(w.prototype && w.prototype.call)) issues.push("window.prototype.call");
         if (!isNativeFn(w.prototype && w.prototype.apply)) issues.push("window.prototype.apply");
@@ -13539,19 +13649,19 @@ const MAX_RECORDS = 200;
           // 站方检测到异常会直接弹窗，用户一般不会来反馈；把检查项变化上报后台，
           // 后台能直接看到是哪一项被改、有没有修回来。
           try {
-            if (window.__XSReportPageIssue) {
-              // 快照本身就不是原生的，说明在脚本注入之前（站方自己的脚本或更早加载的扩展）
-              // 就已经改过了，我们拿不到干净的基线，修不回来也不该记成「没还原」。
-              // 这类单独标 native_check_preexisting，后台不按待修问题处理。
-              const snapNative = isNativeFn(NATIVE_SNAPSHOT.attachShadow);
+            // 快照本身就不是原生的，说明在脚本注入之前（站方自己的脚本或更早加载的扩展）
+            // 就已经改过了，我们拿不到干净的基线，修不回来也不该记成「没还原」。
+            // 这种情况站方自己也不报警（它的快照同样是被包过的），上报只会白占后台一行 → 只留本地日志。
+            const snapNative = isNativeFn(NATIVE_SNAPSHOT.attachShadow);
+            if (after.length && !snapNative) {
+              lastReportedSig = sig;
+            } else if (window.__XSReportPageIssue) {
               window.__XSReportPageIssue({
                 page_type: "zhs-web",
                 stage: "detect",
-                reason_code: after.length ? (snapNative ? "native_check_unfixed" : "native_check_preexisting") : "native_check_fixed",
+                reason_code: after.length ? "native_check_unfixed" : "native_check_fixed",
                 selector: "isAllNative",
-                expected: snapNative
-                  ? "XMLHttpRequest.prototype.open 等原生检查项保持原生"
-                  : "脚本注入前检查项已被改动，无干净基线可还原",
+                expected: "XMLHttpRequest.prototype.open 等原生检查项保持原生",
                 found: {
                   before: before.join(","),
                   after: after.join(","),
@@ -15868,18 +15978,50 @@ const MAX_RECORDS = 200;
     const queryOneSafe = (root, selectors) => queryAllSafe(root, selectors)[0] || null;
     const resolveType = (root, profile2) => {
       var _a2;
-      const rawText = ((_a2 = queryOneSafe(root, profile2.type)) == null ? void 0 : _a2.textContent) || root.textContent || "";
+      const typeEl = queryOneSafe(root, profile2.type);
+      const domMulti = detectMultiChoiceDom(root);
+      // 题块开头的「1. 【单选题】」「2. 单选题」标记最可信：复习/查看页会把答案解析
+      // 一起回显进题块，整段文本按序匹配会先撞上排在前面的「填空」（2026-11-21
+      // 三条单选题被误判成填空题上报 unsupported）。题头只认紧跟题号的「N. 单选题」
+      // 或【单选题】两种写法，避免「第1部分 单选题」这类段头误配。
+      const HEAD_TYPE_MAP = {
+        "单项选择题": "单选题", "单选题": "单选题",
+        "多选题": "多选题", "多项选择题": "多选题", "不定项选择题": "多选题", "X型题": "多选题",
+        "判断题": "判断题", "是非题": "判断题",
+        "填空题": "填空题", "完形填空": "填空题", "完型填空": "填空题",
+        "简答题": "简答题", "名词解释": "名词解释", "论述题": "论述题",
+        "计算题": "计算题", "写作题": "写作题", "作文题": "写作题"
+      };
+      const headText = cleanText(String(root.textContent || "")).slice(0, 120);
+      const headM = headText.match(/\d{1,3}\s*[.、．]\s*[【\[]?\s*(单项选择题|多选题|多项选择题|不定项选择题|X型题|判断题|是非题|填空题|完形填空|简答题|名词解释|论述题|计算题|写作题|作文题|单选题)\s*[】\]]?/)
+        || headText.match(/[【\[]\s*(单项选择题|多选题|多项选择题|不定项选择题|X型题|判断题|是非题|填空题|完形填空|简答题|名词解释|论述题|计算题|写作题|作文题|单选题)\s*[】\]]/);
+      const headType = headM && HEAD_TYPE_MAP[headM[1]];
+      const pickWithDom = (type) => (domMulti && type === "单选题" ? "多选题" : type);
+      const selectorText = cleanText(((_a2 = typeEl == null ? void 0 : typeEl.textContent) != null ? _a2 : "") || "");
       const matched = TYPE_TEXT_MAP.find(
+        ({ keywords }) => keywords.some((keyword) => selectorText.includes(keyword))
+      );
+      if (matched == null ? void 0 : matched.type) {
+        // 题型元素判成需要输入框的题型、题头却明确写着选择题时，以题头为准：
+        // 「填空/简答」字样常来自解析区或题干内容，不是本题题型
+        const overriden = ["填空题", "简答题", "论述题", "计算题"].includes(matched.type) && headType;
+        root.__xsTypeSource = overriden ? "head-over-selector" : "selector";
+        return pickWithDom(overriden ? headType : matched.type);
+      }
+      if (headType) {
+        root.__xsTypeSource = "head";
+        return pickWithDom(headType);
+      }
+      const rawText = String((typeEl == null ? void 0 : typeEl.textContent) || root.textContent || "");
+      const allMatched = TYPE_TEXT_MAP.find(
         ({ keywords }) => keywords.some((keyword) => rawText.includes(keyword))
       );
-      const domMulti = detectMultiChoiceDom(root);
-      if (matched == null ? void 0 : matched.type) {
-        // 题型文字写的是单选、页面却是复选框：以页面控件为准，否则多选只答一项
-        if (domMulti && matched.type === "单选题") return "多选题";
-        return matched.type;
+      if (allMatched == null ? void 0 : allMatched.type) {
+        root.__xsTypeSource = "text";
+        return pickWithDom(allMatched.type);
       }
-      if (domMulti) return "多选题";
-      return "单选题";
+      root.__xsTypeSource = domMulti ? "dom" : "default";
+      return domMulti ? "多选题" : "单选题";
     };
     const toApiQuestion = (question) => ({
       ...question,
@@ -15962,6 +16104,24 @@ const MAX_RECORDS = 200;
       if (tag === "input") return ["text", "search", "tel", "number", ""].includes(String(x.getAttribute("type") || "text").toLowerCase());
       return x.isContentEditable === true;
     }));
+    // 查看/解析态的题目（已提交的复习页回显，如 studentReviewTestOrExam）：题干带
+    // 「正确答案/答案解析」字样，且题块里没有任何可见的作答控件。这种题无法也不需要
+    // 作答，以前会被当成「填空题不支持」上报页面异常（2026-11-21 S41592 三条）。
+    // 命中就跳过且不上报——真作答页不会在题干里印「正确答案」，不会误伤。
+    const isReadOnlyReviewQuestion = (question) => {
+      try {
+        const el = question && question.element;
+        if (!el || !el.querySelectorAll) return false;
+        const text = String(el.textContent || "");
+        if (!/(正确答案|参考答案|答案解析|试题解析|查看解析)/.test(text)) return false;
+        const interactive = Array.from(el.querySelectorAll(
+          'input:not([type="hidden"]), textarea, [contenteditable="true"], [role="radio"], [role="checkbox"], [onclick*="addChoice"], [onclick*="addMultipleChoice"]'
+        ));
+        return !interactive.some((node) => node.getClientRects && node.getClientRects().length > 0);
+      } catch (_) {
+        return false;
+      }
+    };
     // 题目节点里常混着隐藏 input、按钮、题型编码等非答题控件，以前都被当成一个空，
     // 结果永远「填不满」而报失败（智慧树填空客观题那类页面）。只认真正能写字的控件
     const isBlankInput = (el) => {
@@ -16517,6 +16677,11 @@ const MAX_RECORDS = 200;
       questionStore.questionList = [...questions];
       log.insertLog(`当前页面解析到${pageQuestions.length}个题目..`);
       for (const question of pageQuestions) {
+        // 查看/解析态的只读回显题：跳过且不上报（见 isReadOnlyReviewQuestion 注释）
+        if (isReadOnlyReviewQuestion(question)) {
+          log.insertLog("本题是查看/解析态的只读回显，无需作答，已跳过", "warning");
+          continue;
+        }
         const questionIndex = questions.indexOf(question);
         questionStore.currentQuestionIndex = questionIndex;
         questionStore.questionList = [...questions];
