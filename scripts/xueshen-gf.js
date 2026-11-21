@@ -9268,6 +9268,18 @@ const MAX_RECORDS = 200;
                 // 填的时候是否关过图片查看器遮罩：extra_selected 里区分「遮罩挡点击」
                 viewer_closed: !!(question && question.__xsViewerClosed),
                 viewer_retried: !!(question && question.__xsViewerRetried),
+                // 选项是否被识别成内联切换式（addChoice / addMultipleChoice）：
+                // 识别不出来会重复补点，把刚选中的又点掉
+                toggle_click: !!(_that && _that.__xsLastToggle),
+                state_changed: !!(_that && _that.__xsLastStateChanged),
+                option_after_html: (() => {
+                  try {
+                    const first = Object.values((question && question.options) || {})[0];
+                    return first && first.outerHTML ? String(first.outerHTML).replace(/\s+/g, " ").slice(0, 400) : "";
+                  } catch (_) {
+                    return "";
+                  }
+                })(),
                 ...(() => {
                   const type = String((question && question.type) || "");
                   // 连线题/复合题以前只报「点了几个」，后台分不出是全没点上还是只填了一半
@@ -9807,10 +9819,15 @@ const MAX_RECORDS = 200;
           }
         };
         // 超星章节/作业常把事件绑在字母链或 input 上，只点外层 li 可能没反应
-        const inlineToggle = /addChoice|toggleChoice|switchChoice/i;
+        // 注意多选的内联事件叫 addMultipleChoice（不是 addChoice）：只认 addChoice 会把
+        // 多选当成普通选项，点一次读不到状态就连补点几次，把刚选上的又取消掉
+        // （2026-11-21 三条「多选题选项点击后未选中」）。前缀+Choice 的写法都算切换式。
+        const inlineToggle = /add[A-Za-z]*Choice|toggle[A-Za-z]*Choice|switch[A-Za-z]*Choice|changeChoice/i;
         const toggleClick = !!((optionContainer.getAttribute && inlineToggle.test(String(optionContainer.getAttribute("onclick") || "")))
-          || (optionContainer.closest && optionContainer.closest('[onclick*="addChoice"]'))
-          || (optionContainer.querySelector && optionContainer.querySelector('[onclick*="addChoice"]')));
+          || (optionContainer.closest && optionContainer.closest('[onclick*="Choice"]'))
+          || (optionContainer.querySelector && optionContainer.querySelector('[onclick*="Choice"]')));
+        // 这两个标记进上报：下次再出现「点击后未选中」，能直接看出是没识别成切换式还是页面没响应
+        this.__xsLastToggle = toggleClick;
         const reactScope = (optionContainer.closest && (optionContainer.closest("ul") || optionContainer.closest(".answerBg"))) || optionContainer;
         // 新版章节测验的选中态写在题目里的隐藏 input 上，只看选项那一行读不到变化
         const stateScope = (optionContainer.closest && optionContainer.closest(".TiMu, .questionLi, .reading_answer, [id^='question']")) || reactScope;
@@ -9822,7 +9839,8 @@ const MAX_RECORDS = 200;
         if (this.isChoiceOptionSelected(optionContainer)) return true;
         // 页面已经响应（class / 子节点变化）但认不出「已选」标记时也要立即收手：
         // addChoice 这类切换式选项再点一次会把刚选中的又取消，最终整题空着并误报「点不到」。
-        if (stateBefore && snapshot() !== stateBefore) return true;
+        this.__xsLastStateChanged = !!(stateBefore && snapshot() !== stateBefore);
+        if (this.__xsLastStateChanged) return true;
         // 内联 addChoice 是切换式的：单次点击已经交给页面处理，继续补点只会把它取消。
         // 选中标记认不出来时按成功处理，由上层 __xsTrustedSelected 记录，避免重复点击。
         if (toggleClick) return true;
