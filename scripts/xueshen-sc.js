@@ -2162,7 +2162,7 @@
   // 模型面对听力/图片/残缺题时经常回一句「请提供音频及具体题目」「题目不完整」。
   // 那不是答案：拿去填必然匹配不到，最后变成 answer_not_matched 刷进页面异常；
   // 还会被当有效答案存进本地答题记录。命中就按「这题需要人工」处理，不填也不上报。
-  const PLACEHOLDER_ANSWER_RE = /(?:请|麻烦|需要|请先)?\s*(?:提供|上传|补充|发送)\s*(?:音频|录音|听力|题目|题干|完整题目|图片|材料)|题目不完整|题干不完整|无法作答|无法回答|不能作答|缺少(?:音频|题目|材料)|音频(?:未|没有|缺失)|未(?:提供|收到)音频|no\s*audio|audio\s*(?:is\s*)?(?:missing|required)|please\s*provide/i;
+  const PLACEHOLDER_ANSWER_RE = /(?:请|麻烦|需要|请先)?\s*(?:提供|上传|补充|发送)\s*(?:音频|录音|听力|题目|题干|完整题目|图片|材料)|请提供[^。\n]{0,20}(?:文章|题目|题干|材料|图片)|目前只有[^。\n]{0,10}(?:图片|截图|表格|词汇表)|题目不完整|题干不完整|无法作答|无法回答|不能作答|缺少(?:音频|题目|材料)|音频(?:未|没有|缺失)|未(?:提供|收到)音频|no\s*audio|audio\s*(?:is\s*)?(?:missing|required)|please\s*provide/i;
   const isPlaceholderAnswer = (value) => {
     const text = String(value == null ? "" : value).trim();
     return !!text && text.length <= 40 && PLACEHOLDER_ANSWER_RE.test(text);
@@ -9593,7 +9593,9 @@ const MAX_RECORDS = 200;
           const el = q && q.element;
           if (!el || !el.querySelector) return false;
           try {
-            return !!el.querySelector('.answerBg, [class*="before-after"], [onclick*="addChoice"], .stem_answer, .reading_answer, li, [role="radio"], [role="checkbox"]');
+            // 不要再用裸 li 和 .reading_answer 判断：选词填空的词库、材料题的段落也是 li，
+            // 这类题本来就没有选项，会把「结构变了」天天报一遍（2026-11-22 十条假异常）。
+            return !!el.querySelector('.answerBg, [class*="before-after"], [onclick*="addChoice"], [onclick*="saveSingleSelect"], [onclick*="saveMultiSelect"], [role="radio"], [role="checkbox"], .stem_answer');
           } catch (_) {
             return false;
           }
@@ -10823,10 +10825,49 @@ const MAX_RECORDS = 200;
           }
         } else if (question.type === "11") {
           filled = this.fillLineQuestion(question);
-        } else if (question.type === "14") {
-          filled = this.fillCompositeChoiceQuestion(question, ".filling_answer");
-        } else if (question.type === "15") {
-          filled = this.fillCompositeChoiceQuestion(question, ".reading_answer");
+        } else if (question.type === "14" || question.type === "15") {
+          filled = this.fillCompositeChoiceQuestion(question, question.type === "14" ? ".filling_answer" : ".reading_answer");
+          // 选词填空/完形填空常被平台标成复合题（14/15），但页面里没有复合子题容器，
+          // 只有一串填空框：以前直接判「答案未匹配」整题放弃（2026-11-22 九条选词填空）。
+          // 没有复合子题时按普通填空题兜底填写。
+          if (!filled && !question.__xsCompositeExpected) {
+            const blankFields = this.getBlankFields(question.element);
+            if (!blankFields.length) {
+              question.__xsFillReason = "answer_not_matched";
+              return false;
+            }
+            const blankAnswers = this.resolveBlankAnswers(question.answer.answer, blankFields.length);
+            if (!blankAnswers.length) {
+              question.__xsFillReason = "answer_invalid";
+              return false;
+            }
+            let blankFilled = 0;
+            blankFields.forEach((field, index) => {
+              const blankAnswer = blankAnswers[index];
+              if (blankAnswer && this.fillBlankField(field, blankAnswer)) blankFilled += 1;
+            });
+            question.__xsBlankFields = blankFields.length;
+            question.__xsBlankAnswers = blankAnswers.length;
+            question.__xsBlankFilled = blankFilled;
+            filled = blankFilled === blankFields.length;
+            if (!filled) {
+              question.__xsBlankPartial = blankFields.length - blankFilled;
+              // 答案比空少（模型只答了前几个空）不是页面问题，只本地提示不上报
+              if (blankAnswers.length < blankFields.length) {
+                question.__xsFillReason = "answer_incomplete";
+                question.__xsSkipPageReport = 1;
+              } else {
+                question.__xsFillReason = blankFilled > 0 ? "blank_partial" : "fill_not_effective";
+                question.__xsSkipPageReport = 0;
+              }
+              try {
+                this.log.insertLog(
+                  `选词填空还有${question.__xsBlankPartial}个空没填上，按未完成处理`,
+                  "warning"
+                );
+              } catch (_) {}
+            }
+          }
         } else {
           question.__xsFillReason = "unknown_type";
           this.log.insertLog(
