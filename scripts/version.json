@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.1.5",
+    "version": "6.1.6",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.1.5 单选题答案正文本身是「A、B」「[1, 2, 3, 4]」时不再被拆成字母/数字整题填不上；整卷预览与 addMultipleChoice 切换式点击不再重复补点；填空「1.A 2.B」按编号拆空、答案比空少不再上报；选词填空无复合子题时回退按填空作答；问卷/验证码页不再空报；新增程序题作答"
+    "changelog": "v6.1.6 紧急修复 6.1.5 超星章节测验发现测验后解析不到任何题目：恢复答题处理器的题型标记与 iframe 题目文档绑定，章节测验、作业、考试恢复正常解析"
   },
   "xueshen-gf": {
-    "version": "6.1.5",
+    "version": "6.1.6",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.1.5 单选题答案正文本身是「A、B」「[1, 2, 3, 4]」时不再被拆成字母/数字整题填不上；整卷预览与 addMultipleChoice 切换式点击不再重复补点；填空「1.A 2.B」按编号拆空、答案比空少不再上报；选词填空无复合子题时回退按填空作答；问卷/验证码页不再空报；新增程序题作答"
+    "changelog": "v6.1.6 紧急修复 6.1.5 超星章节测验发现测验后解析不到任何题目：恢复答题处理器的题型标记与 iframe 题目文档绑定，章节测验、作业、考试恢复正常解析"
   }
 }

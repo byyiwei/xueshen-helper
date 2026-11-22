@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.1.5
+// @version      6.1.6
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -15,6 +15,8 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.1.6 (2026-11-22)
+// @changelog    1. 紧急修复 6.1.5 超星章节测验「发现测验后解析不到任何题目」：恢复答题处理器的题型标记与 iframe 题目文档绑定，章节测验、作业、考试恢复正常解析
 // @changelog    v6.1.5 (2026-11-22)
 // @changelog    1. 单选/多选：答案正文本身就是「A、B」「[1, 2, 3, 4]」这类写法时按选项正文匹配，不再被拆成多个字母/数字导致整题填不上
 // @changelog    2. 整卷预览：识别 saveSingleSelect / saveMultiSelect 为切换式，单选只回读目标选项，修复点击后未选中和多余已选项
@@ -11040,6 +11042,13 @@ const MAX_RECORDS = 200;
           });
         });
       });
+      // 题型和解析用的文档必须由构造函数写入：章节测验的题目在 api/work iframe 里，
+      // 不切到 iframe.contentDocument 就永远解析不到题目（6.1.5 误删过，6.1.6 恢复）
+      this.type = type;
+      if (iframe) {
+        this._document = iframe.contentDocument;
+        this._window = iframe.contentWindow;
+      }
     }
     extractOptions(optionElements, optionSelector) {
       const optionsObject = {};
