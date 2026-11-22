@@ -9562,19 +9562,12 @@ const MAX_RECORDS = 200;
               }
             });
           } catch (_) {}
-          // 学习页（章节列表、视频页）上实例的 type 识别不出来时会拿 .questionLi 空报
-          // no_container（2026-11-22 四条 cx-undefined）；页面其实放着章节测验（有 .TiMu）
-          // 时，说明不是这个实例该作答的页面，也不报。
-          const typeUnknown = !this.type;
-          let quizContainerPresent = false;
-          try {
-            quizContainerPresent = !!(this._document &&
-              this._document.querySelector(this.type === "zj" ? ".TiMu" : ".TiMu, .questionLi"));
-          } catch (_) {}
+          // 学习页实例题型为空时也要上报：6.1.5 正是因为「题型为空不报」把章节测验
+          // 解析失败整个静默掉，用户不反馈就发现不了。题型为空本身就是异常，要查。
           // 章节任务里的问卷/调查页（「匿名问卷」「问卷调查」）本来就没有 .TiMu，
           // 拿测验选择器去等当然等不到，报 no_container 是假异常（2026-11-22 两条）
           const surveyPage = /(匿名问卷|问卷调查|调查问卷|问卷星|投票)/.test(pageText);
-          window.__XSReportPageIssue && !emptyQuiz && !finishedQuiz && !containerInFrame && !typeUnknown && !quizContainerPresent && !surveyPage && window.__XSReportPageIssue({
+          window.__XSReportPageIssue && !emptyQuiz && !finishedQuiz && !containerInFrame && !surveyPage && window.__XSReportPageIssue({
             page_type: "cx-" + this.type,
             stage: "parse",
             reason_code: "no_container",
