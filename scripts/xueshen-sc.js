@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.1.4
+// @version      6.1.5
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -15,6 +15,14 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.1.5 (2026-11-22)
+// @changelog    1. 单选/多选：答案正文本身就是「A、B」「[1, 2, 3, 4]」这类写法时按选项正文匹配，不再被拆成多个字母/数字导致整题填不上
+// @changelog    2. 整卷预览：识别 saveSingleSelect / saveMultiSelect 为切换式，单选只回读目标选项，修复点击后未选中和多余已选项
+// @changelog    3. 多选选项内联事件是 addMultipleChoice 时也识别为切换式，不再补点把刚选中的取消掉
+// @changelog    4. 填空：答案写成「1.A 2.B」编号挤在一行时按编号拆到各空；答案比空少时不再当页面异常上报
+// @changelog    5. 选词填空（完形/阅读）页面没有复合子题时回退按填空逐空作答；占位语答案不再填入
+// @changelog    6. 章节任务里的问卷/调查页、学习列表页不再空报「找不到题目容器」；智慧树考试页弹验证码时不再报解析失败
+// @changelog    7. 新增程序题作答：题头写「程序题/编程题/代码题」时按文本框写完整代码
 // @changelog    v6.1.4 (2026-11-21)
 // @changelog    1. 智慧树作业页：题目接口没返回时按页面结构兜底解析，整份作业不再直接放弃
 // @changelog    2. 超星章节测验：题目节点被页面重渲染脱离后自动按原容器 id 重找并重取选项，修复多选/判断整题「点击后未选中」
