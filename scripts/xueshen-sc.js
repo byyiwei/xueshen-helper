@@ -9543,7 +9543,16 @@ const MAX_RECORDS = 200;
               }
             });
           } catch (_) {}
-          window.__XSReportPageIssue && !emptyQuiz && !finishedQuiz && !containerInFrame && window.__XSReportPageIssue({
+          // 学习页（章节列表、视频页）上实例的 type 识别不出来时会拿 .questionLi 空报
+          // no_container（2026-11-22 四条 cx-undefined）；页面其实放着章节测验（有 .TiMu）
+          // 时，说明不是这个实例该作答的页面，也不报。
+          const typeUnknown = !this.type;
+          let quizContainerPresent = false;
+          try {
+            quizContainerPresent = !!(this._document &&
+              this._document.querySelector(this.type === "zj" ? ".TiMu" : ".TiMu, .questionLi"));
+          } catch (_) {}
+          window.__XSReportPageIssue && !emptyQuiz && !finishedQuiz && !containerInFrame && !typeUnknown && !quizContainerPresent && window.__XSReportPageIssue({
             page_type: "cx-" + this.type,
             stage: "parse",
             reason_code: "no_container",
@@ -9924,20 +9933,32 @@ const MAX_RECORDS = 200;
         // "-30kJ" 和 "+30kJ" 归一化后一模一样，单选题会被误判成 answer_ambiguous。
         // 先用「保留符号、只去空白」的口径比对，能唯一命中的直接返回。
         const keepSign = (s) => String(s || "").normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+        // 选项正文：选项键「D. A、B」这种前缀只属于选项；答案侧不能一律剥前缀，
+        // 否则答案正文本身就是「A、B」时会被剥成「B」，和选项 D 正文对不上，
+        // 又被当成字母 A、B 去点（2026-11-22 十六条单选题 answer_not_matched）。
+        const optionBody = stripLead(rawOpt);
+        const ansStripped = stripLead(rawAns);
+        const ansVariants = ansStripped && ansStripped !== rawAns ? [rawAns, ansStripped] : [rawAns];
         if (keepSign(rawAns) === keepSign(rawOpt) ||
-            keepSign(stripLead(rawAns)) === keepSign(stripLead(rawOpt))) return true;
+            ansVariants.some((v) => keepSign(v) === keepSign(optionBody))) return true;
         const a = this.clearMark(rawAns);
         const b = this.clearMark(rawOpt);
-        const a2 = this.clearMark(stripLead(rawAns));
-        const b2 = this.clearMark(stripLead(rawOpt));
+        const b2 = this.clearMark(optionBody);
+        const ansClears = [a];
+        if (ansStripped !== rawAns) {
+          const a2 = this.clearMark(ansStripped);
+          if (a2 !== a) ansClears.push(a2);
+        }
         // 英文选项大小写不敏感
         const eq = (x, y) => Boolean(x && y && x.toLowerCase() === y.toLowerCase());
-        if (eq(a, b) || eq(a2, b2)) return true;
+        if (eq(a, b) || ansClears.some((x) => eq(x, b2))) return true;
         if (strict) return false;
         // 选项/答案一侧带了多余说明时，用包含关系兜底（要求足够长，防短串误撞）
-        const al = String(a2 || "").toLowerCase();
         const bl = String(b2 || "").toLowerCase();
-        if (al.length >= 4 && bl.length >= 4 && (al.includes(bl) || bl.includes(al))) return true;
+        for (const x of ansClears) {
+          const al = String(x || "").toLowerCase();
+          if (al.length >= 4 && bl.length >= 4 && (al.includes(bl) || bl.includes(al))) return true;
+        }
         return false;
       });
       __publicField(this, "splitAnswer", (answer = "") => {
