@@ -121,6 +121,37 @@ def check_versions(texts):
           % (nums.pop(), len(got)))
 
 
+def check_runtime_bindings(texts):
+    """超星答题处理器的关键绑定不能少。6.1.5 清理「残骸代码」时把构造函数末尾的
+    this.type / iframe 文档赋值一起删了，语法完全合法、页面照样打开，但章节测验整卷
+    解析不到任何题目。这种删法检查脚本原先看不出来，在这里钉死：少一行就判发版失败。"""
+    required = (
+        "this.type = type;",
+        "this._document = iframe.contentDocument;",
+        "this._window = iframe.contentWindow;",
+    )
+    for fn in MASTERS:
+        src = texts[fn]
+        start = src.find("let QuestionHandler$1 = class QuestionHandler extends BasicQuestionHandler {")
+        if start < 0:
+            raise SystemExit("FAIL %s 找不到超星答题处理器 QuestionHandler$1（锚点被改名了？）" % fn)
+        end = src.find("extractOptions(optionElements, optionSelector) {", start)
+        if end < 0 or end - start > 300000:
+            raise SystemExit("FAIL %s 找不到 QuestionHandler$1 构造函数收尾（extractOptions）" % fn)
+        body = src[start:end]
+        missing = [token for token in required if token not in body]
+        if missing:
+            raise SystemExit(
+                "FAIL %s 超星答题处理器缺少关键绑定：%s\n"
+                "     删掉会让章节测验、作业、考试解析不到任何题目（6.1.5 事故），"
+                "不要为了清理残骸代码删这三行" % (fn, "、".join(missing)))
+        if 'new QuestionHandler$1("zj", iframe)' not in src:
+            raise SystemExit(
+                "FAIL %s 章节测验入口没有把 iframe 传给处理器："
+                'new QuestionHandler$1("zj", iframe)' % fn)
+    print("OK   超星答题处理器关键绑定齐备（题型 / iframe 文档 / 入口传参）")
+
+
 def check_isolation_gates(texts, channel):
     """门禁自检：故意造一处没挂 FX-CH 的官方收银台链接，构建必须炸；
     代理商把「店铺链接」填成官网也必须被拒。炸不了就等于门禁形同虚设。"""
@@ -206,6 +237,7 @@ def main():
     print("OK   官方版主脚本 __DIST 为空，哨兵不改变现有行为")
 
     check_versions(texts)
+    check_runtime_bindings(texts)
     check_isolation_gates(texts, channel)
 
     for f in os.listdir(outdir):
