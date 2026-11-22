@@ -5138,12 +5138,32 @@ def _norm_option_text(v):
     return re.sub(r"\s+", "", s).lower()
 
 
+def _answer_items_for_question(question, answer):
+    """答案整串正好是页面某个选项正文时，按单个答案算。
+
+    答案正文本身就是 JSON 数组样式的选项（`[1, 2, 3, 4]`、`[20, 30]`）时，
+    _parse_answer_list 会把它当结构化多选答案拆成一串数字，单选被判「给了多个答案」、
+    每一项又都对不上选项，任务池无限换模型重试（2026-11-22 两条 Python 作业）。
+    """
+    text = str(answer or "").strip()
+    if text:
+        try:
+            options = [str(o).strip() for o in extract_options_from_question(question) if str(o).strip()]
+            if options:
+                n_text = _norm_option_text(text)
+                if n_text and any(_norm_option_text(o) == n_text for o in options):
+                    return [text]
+        except Exception:
+            pass
+    return _answer_items(answer)
+
+
 def _answer_hits_options(question, answer):
     """答案（含多选 JSON 数组）是否至少对应一个页面选项；无选项题不参与判断。"""
     options = [str(o).strip() for o in extract_options_from_question(question) if str(o).strip()]
     if not options:
         return True
-    items = [str(x).strip() for x in _answer_items(answer) if str(x).strip()]
+    items = [str(x).strip() for x in _answer_items_for_question(question, answer) if str(x).strip()]
     if not items:
         return False
 
@@ -5182,7 +5202,7 @@ def _answer_matches_question_options(question, answer):
     polarities = [_judge_polarity(o, max_len=10) for o in options]
     if None in polarities or polarities[0] == polarities[1]:
         return False
-    items = [str(x).strip() for x in _answer_items(answer) if str(x).strip()]
+    items = [str(x).strip() for x in _answer_items_for_question(question, answer) if str(x).strip()]
     if len(items) != 1:
         return False
     return _judge_polarity(items[0], max_len=10) in polarities
@@ -5207,7 +5227,7 @@ def _answer_choice_conflict(question, answer):
     if not _answer_matches_question_options(question, answer):
         return True
     if qname in ("单选题", "判断题"):
-        items = [str(x).strip() for x in _answer_items(answer) if str(x).strip()]
+        items = [str(x).strip() for x in _answer_items_for_question(question, answer) if str(x).strip()]
         if len(items) != 1:
             return True
         # "A,B" 这种带分隔符的字母串表示选了多项，单选题只能有一个；
