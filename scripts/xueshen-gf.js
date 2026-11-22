@@ -8918,7 +8918,12 @@ const MAX_RECORDS = 200;
         "论述": "6",
         "计算": "7",
         "证明": "7",
-        "思政元素": "2"
+        "思政元素": "2",
+        // 新版作业页题头直接写 typename="程序题"：不在表里会被判成 999 整题跳过
+        // （2026-11-22 一条 cx-zy）。程序题是文本框题，按长文本写出完整代码
+        "程序题": "17",
+        "编程题": "17",
+        "代码题": "17"
       };
       this.questionTypeKeywordRules = [
         {
@@ -9556,7 +9561,10 @@ const MAX_RECORDS = 200;
             quizContainerPresent = !!(this._document &&
               this._document.querySelector(this.type === "zj" ? ".TiMu" : ".TiMu, .questionLi"));
           } catch (_) {}
-          window.__XSReportPageIssue && !emptyQuiz && !finishedQuiz && !containerInFrame && !typeUnknown && !quizContainerPresent && window.__XSReportPageIssue({
+          // 章节任务里的问卷/调查页（「匿名问卷」「问卷调查」）本来就没有 .TiMu，
+          // 拿测验选择器去等当然等不到，报 no_container 是假异常（2026-11-22 两条）
+          const surveyPage = /(匿名问卷|问卷调查|调查问卷|问卷星|投票)/.test(pageText);
+          window.__XSReportPageIssue && !emptyQuiz && !finishedQuiz && !containerInFrame && !typeUnknown && !quizContainerPresent && !surveyPage && window.__XSReportPageIssue({
             page_type: "cx-" + this.type,
             stage: "parse",
             reason_code: "no_container",
@@ -10825,7 +10833,7 @@ const MAX_RECORDS = 200;
           } else {
             question.__xsFillReason = "option_not_found";
           }
-        } else if (question.type === "4" || question.type === "5" || question.type === "6" || question.type === "7" || question.type === "9" || question.type === "26") {
+        } else if (question.type === "4" || question.type === "5" || question.type === "6" || question.type === "7" || question.type === "9" || question.type === "17" || question.type === "26") {
           const longAnswer = this.resolveBlankAnswers(question.answer.answer, 1)[0] || "";
           if (!longAnswer) {
             question.__xsFillReason = "answer_invalid";
@@ -12965,23 +12973,30 @@ const MAX_RECORDS = 200;
           const doc = this._document;
           const subjectNodes = doc ? Array.from(doc.querySelectorAll(".subject_node")) : [];
           const storeList = (this.questionStore && this.questionStore.questionList) || [];
-          window.__XSReportPageIssue && window.__XSReportPageIssue({
-            page_type: "zhs-web",
-            stage: "parse",
-            reason_code: "page_parse_failed",
-            selector: ".subject_node",
-            expected: "智慧树作业页 .subject_node 题目节点",
-            found: {
-              subject_nodes: subjectNodes.length,
-              iframes: doc ? doc.querySelectorAll("iframe").length : 0,
-              // 页面上有题、题目列表却为空：多半是题目接口没被脚本抓到（刷新/换页时机、验证码挡接口），
-              // 不是选择器失效。两边数量都带上，下次一眼分得清是哪种。
-              question_list: Array.isArray(storeList) ? storeList.length : -1,
-              captcha: doc ? doc.querySelectorAll("#captchaYidun, .yidun, [class*='captcha']").length : 0
-            },
-            // 节点样本取真实题目容器：以前传 body，后台只看到一大段页面文字，判断不了题目结构
-            nodes: subjectNodes.slice(0, 2)
-          });
+          const captchaCount = doc ? doc.querySelectorAll("#captchaYidun, .yidun, [class*='captcha']").length : 0;
+          // 智慧树考试页先弹人机验证时，题目接口被验证码挡住、题目列表为空：
+          // 这不是脚本解析坏了，等用户通过验证再答，不刷页面异常（2026-11-22 两条 stuExamWeb）
+          if (captchaCount) {
+            this.log.insertLog("页面有人机验证，请先手动完成验证，题目加载后再开始答题", "warning");
+          } else {
+            window.__XSReportPageIssue && window.__XSReportPageIssue({
+              page_type: "zhs-web",
+              stage: "parse",
+              reason_code: "page_parse_failed",
+              selector: ".subject_node",
+              expected: "智慧树作业页 .subject_node 题目节点",
+              found: {
+                subject_nodes: subjectNodes.length,
+                iframes: doc ? doc.querySelectorAll("iframe").length : 0,
+                // 页面上有题、题目列表却为空：多半是题目接口没被脚本抓到（刷新/换页时机、验证码挡接口），
+                // 不是选择器失效。两边数量都带上，下次一眼分得清是哪种。
+                question_list: Array.isArray(storeList) ? storeList.length : -1,
+                captcha: captchaCount
+              },
+              // 节点样本取真实题目容器：以前传 body，后台只看到一大段页面文字，判断不了题目结构
+              nodes: subjectNodes.slice(0, 2)
+            });
+          }
         }
         setTimeout(() => {
           autoSetTab(_that.setting, "1");
