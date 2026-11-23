@@ -889,6 +889,10 @@ html[data-theme="light"] .ip-badge.flag { color: #b45309; }
 }
 .modal-card .format-tabs { display: flex; gap: 8px; }
 .modal-card .format-tabs .btn { flex: 1; justify-content: center; }
+/* 人机验证弹窗：验证图只放在弹窗里，登录卡片不再内嵌 */
+.captcha-modal-card { width: min(460px, calc(100vw - 32px)); }
+.captcha-modal-sub { margin: 0 0 12px; font-size: 12.5px; line-height: 1.6; color: var(--text2); }
+.captcha-modal-card .slider-verify { margin: 0; }
 .modal-card .var-tag {
   display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 6px;
   background: var(--bg); border: 1px solid var(--border); font-family: monospace; font-size: 12px; color: var(--brand); cursor: pointer;
@@ -1609,44 +1613,6 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
       <div :class="['msg',msg.show&&'show',msg.type]" v-html="msg.text"></div>
       <div class="form-group"><input type="text" v-model="loginForm.username" placeholder="管理员用户名" autocomplete="username"></div>
       <div class="form-group"><input type="password" v-model="loginForm.password" placeholder="管理密码" autocomplete="current-password" @keydown.enter="doLogin"></div>
-      <div :class="['slider-verify',adminSlider.verified&&'done']" v-if="captchaFlags.admin">
-        <div class="slider-top">
-          <span>人机验证</span>
-          <span class="slider-state">{{adminSlider.verified?'验证通过':(adminSlider.loading?'加载中…':(adminSlider.token?(adminSlider.kind==='slider'?'拖动拼图到缺口':'请按提示完成验证'):'加载中…'))}}</span>
-        </div>
-        <div class="captcha-prompt" v-if="adminSlider.kind!=='slider'&&adminSlider.prompt">{{adminSlider.prompt}}</div>
-        <div class="hub-box" :class="{busy:adminSlider.loading,'click-mode':adminSlider.kind!=='slider'}">
-          <template v-if="adminSlider.kind==='slider'">
-            <template v-if="adminSlider.bg">
-              <img class="puzzle-bg" :src="adminSlider.bg" draggable="false">
-              <img class="puzzle-piece-img" :src="adminSlider.piece" draggable="false"
-                :style="{left:(adminSlider.x/adminSlider.w*100)+'%',top:(adminSlider.pieceY/adminSlider.h*100)+'%',width:(adminSlider.pieceSize/adminSlider.w*100)+'%',height:(adminSlider.pieceSize/adminSlider.h*100)+'%'}">
-            </template>
-            <div v-else class="hub-skeleton">正在加载验证图…</div>
-          </template>
-          <template v-else-if="adminSlider.image">
-            <img class="captcha-click-img" :src="adminSlider.image" draggable="false" @click="adminCaptchaClick">
-            <span v-for="(p,i) in adminSlider.points" :key="'pt'+i" class="captcha-marker"
-              :style="{left:(p.x/adminSlider.w*100)+'%',top:(p.y/adminSlider.h*100)+'%'}"
-              @click.stop="adminCaptchaRemove(i)">{{i+1}}</span>
-            <div class="captcha-grid" v-if="adminSlider.kind==='grid'">
-              <button v-for="c in 9" :key="'gc'+c" type="button"
-                :class="['captcha-grid-cell',adminSlider.cells.indexOf(c-1)>=0&&'sel']"
-                @click.stop="adminCaptchaCell(c-1)"></button>
-            </div>
-          </template>
-          <div v-else class="hub-skeleton">正在加载验证图…</div>
-        </div>
-        <div class="puzzle-track" v-if="adminSlider.kind==='slider'">
-          <div class="puzzle-progress" :style="{width:(adminSlider.x/(adminSlider.w-adminSlider.pieceSize)*100)+'%'}"></div>
-          <span class="puzzle-tip">{{adminSlider.verified?'验证通过':'按住滑块，拖动完成拼图'}}</span>
-          <button type="button" class="puzzle-thumb" :style="{left:'calc((100% - 36px) * '+(adminSlider.x/(adminSlider.w-adminSlider.pieceSize))+')'}" @mousedown="beginAdminPuzzle" @touchstart.prevent="beginAdminPuzzle">›</button>
-        </div>
-        <div class="captcha-actions" v-if="adminSlider.kind!=='slider'&&!adminSlider.verified">
-          <span class="captcha-count">{{adminSlider.kind==='grid'?(adminSlider.cells.length?'已选 '+adminSlider.cells.length+' 格':'点选格子后再确认'):(adminSlider.points.length?'已点选 '+adminSlider.points.length+(adminCaptchaTotal?'/'+adminCaptchaTotal:'')+' 个':'点选图片后再确认')}}</span>
-          <button type="button" class="btn btn-secondary btn-sm" :disabled="adminSlider.loading||(adminSlider.kind==='grid'?!adminSlider.cells.length:!adminSlider.points.length)" @click="verifyAdminSlider">确认验证</button>
-        </div>
-      </div>
       <button class="btn btn-primary" style="width:100%" @click="doLogin">登 录</button>
       <div class="footer-links">
         <a @click="loginMode='forgot'">忘记密码？</a>
@@ -1672,6 +1638,59 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
       <div class="form-group"><input type="password" v-model="resetForm.newPassword" placeholder="新密码"></div>
       <div class="form-group"><input type="password" v-model="resetForm.confirmPassword" placeholder="确认新密码" @keydown.enter="doReset"></div>
       <button class="btn btn-primary" style="width:100%" @click="doReset">确认重置</button>
+    </div>
+
+    <!-- 人机验证弹窗：验证通过后自动继续登录 -->
+    <div v-if="adminCaptchaOpen && captchaFlags.admin" class="modal-overlay" @click.self="dismissAdminCaptcha">
+      <div class="modal-card captcha-modal-card" role="dialog" aria-modal="true" aria-labelledby="adminCaptchaTitle">
+        <div class="modal-header">
+          <h3 id="adminCaptchaTitle">安全验证</h3>
+          <button type="button" class="btn-close" aria-label="关闭验证弹窗" @click="dismissAdminCaptcha">
+            <svg class="ui-icon sm"><use href="#i-x"></use></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="captcha-modal-sub">完成人机验证后会自动继续登录</p>
+          <div :class="['slider-verify',adminSlider.verified&&'done']">
+            <div class="slider-top">
+              <span>人机验证</span>
+              <span class="slider-state">{{adminSlider.verified?'验证通过':(adminSlider.loading?'加载中…':(adminSlider.token?(adminSlider.kind==='slider'?'拖动拼图到缺口':'请按提示完成验证'):'加载中…'))}}</span>
+            </div>
+            <div class="captcha-prompt" v-if="adminSlider.kind!=='slider'&&adminSlider.prompt">{{adminSlider.prompt}}</div>
+            <div class="hub-box" :class="{busy:adminSlider.loading,'click-mode':adminSlider.kind!=='slider'}">
+              <template v-if="adminSlider.kind==='slider'">
+                <template v-if="adminSlider.bg">
+                  <img class="puzzle-bg" :src="adminSlider.bg" draggable="false">
+                  <img class="puzzle-piece-img" :src="adminSlider.piece" draggable="false"
+                    :style="{left:(adminSlider.x/adminSlider.w*100)+'%',top:(adminSlider.pieceY/adminSlider.h*100)+'%',width:(adminSlider.pieceSize/adminSlider.w*100)+'%',height:(adminSlider.pieceSize/adminSlider.h*100)+'%'}">
+                </template>
+                <div v-else class="hub-skeleton">正在加载验证图…</div>
+              </template>
+              <template v-else-if="adminSlider.image">
+                <img class="captcha-click-img" :src="adminSlider.image" draggable="false" @click="adminCaptchaClick">
+                <span v-for="(p,i) in adminSlider.points" :key="'pt'+i" class="captcha-marker"
+                  :style="{left:(p.x/adminSlider.w*100)+'%',top:(p.y/adminSlider.h*100)+'%'}"
+                  @click.stop="adminCaptchaRemove(i)">{{i+1}}</span>
+                <div class="captcha-grid" v-if="adminSlider.kind==='grid'">
+                  <button v-for="c in 9" :key="'gc'+c" type="button"
+                    :class="['captcha-grid-cell',adminSlider.cells.indexOf(c-1)>=0&&'sel']"
+                    @click.stop="adminCaptchaCell(c-1)"></button>
+                </div>
+              </template>
+              <div v-else class="hub-skeleton">正在加载验证图…</div>
+            </div>
+            <div class="puzzle-track" v-if="adminSlider.kind==='slider'">
+              <div class="puzzle-progress" :style="{width:(adminSlider.x/(adminSlider.w-adminSlider.pieceSize)*100)+'%'}"></div>
+              <span class="puzzle-tip">{{adminSlider.verified?'验证通过':'按住滑块，拖动完成拼图'}}</span>
+              <button type="button" class="puzzle-thumb" :style="{left:'calc((100% - 36px) * '+(adminSlider.x/(adminSlider.w-adminSlider.pieceSize))+')'}" @mousedown="beginAdminPuzzle" @touchstart.prevent="beginAdminPuzzle">›</button>
+            </div>
+            <div class="captcha-actions" v-if="adminSlider.kind!=='slider'&&!adminSlider.verified">
+              <span class="captcha-count">{{adminSlider.kind==='grid'?(adminSlider.cells.length?'已选 '+adminSlider.cells.length+' 格':'点选格子后再确认'):(adminSlider.points.length?'已点选 '+adminSlider.points.length+(adminCaptchaTotal?'/'+adminCaptchaTotal:'')+' 个':'点选图片后再确认')}}</span>
+              <button type="button" class="btn btn-secondary btn-sm" :disabled="adminSlider.loading||(adminSlider.kind==='grid'?!adminSlider.cells.length:!adminSlider.points.length)" @click="verifyAdminSlider">确认验证</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -8599,6 +8618,18 @@ createApp({
     const d30ago=fmtLocalDate(new Date(Date.now()-30*86400000));
     const d90ago=fmtLocalDate(new Date(Date.now()-90*86400000));
     const adminSlider=reactive({token:'',kind:'slider',bg:'',piece:'',image:'',prompt:'',points:[],cells:[],pieceY:0,pieceSize:44,w:620,h:310,x:0,sliderToken:'',verified:false,loading:false,dragging:false,trackEl:null});
+    const adminCaptchaOpen=ref(false);
+    let pendingAdminLogin=false;
+    function openAdminCaptcha(){
+      adminCaptchaOpen.value=true;
+      pendingAdminLogin=true;
+      // 票据一次性：没有可用图或上一张已验证过，就换一张新图
+      if(!adminSlider.token||adminSlider.verified)initAdminSlider();
+    }
+    function dismissAdminCaptcha(){
+      pendingAdminLogin=false;
+      adminCaptchaOpen.value=false;
+    }
     function adminCaptchaExpected(){
       const p=String(adminSlider.prompt||'').replace(/^[^：:]*[：:]/,'').trim();
       if(!p)return 0;
@@ -8719,7 +8750,11 @@ createApp({
       try{
         const res=await fetch('/captcha/check',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
         const data=await res.json();
-        if(data.code===200&&data.token){adminSlider.sliderToken=data.token;adminSlider.verified=true;showMsg('人机验证通过','success',1200);}
+        if(data.code===200&&data.token){
+          adminSlider.sliderToken=data.token;adminSlider.verified=true;showMsg('人机验证通过','success',1200);
+          // 停留 600ms 让「验证通过」看得见，再关弹窗继续登录
+          if(pendingAdminLogin){pendingAdminLogin=false;setTimeout(()=>{adminCaptchaOpen.value=false;doLogin();},600);}
+        }
         else{await resetAdminSlider(data.msg||'验证未通过，已换新图');}
       }catch(e){await resetAdminSlider('人机验证失败，已换新图');}
       finally{adminSlider.loading=false;}
@@ -8789,16 +8824,15 @@ createApp({
       if(!loginForm.username||!loginForm.password)return showMsg('请输入管理员用户名和密码','error');
       let sliderToken='';
       if(captchaFlags.value.admin){
-        const sliderOk=await ensureAdminSliderVerified();
-        if(!sliderOk){showMsg('请先完成人机验证','error',2200);return;}
+        if(!(adminSlider.verified&&adminSlider.sliderToken)){openAdminCaptcha();return;}
         sliderToken=adminSlider.sliderToken;
       }
       try{
         const res=await fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:loginForm.username,password:loginForm.password,slider_token:sliderToken})});
         const data=await res.json();
-        if(data.code===200){token.value=data.token;localStorage.setItem('ne21_admin_token',token.value);const start=readHashPage()||'dashboard';page.value=start;loadAll();if(start!=='dashboard')loadPageData(start);}
-        else{loginForm.password='';if(captchaFlags.value.admin)await resetAdminSlider(data.msg||'用户名或密码错误，请重新完成人机验证');else showMsg(data.msg||'用户名或密码错误','error');}
-      }catch(e){if(captchaFlags.value.admin)await resetAdminSlider('请求失败，请重新完成人机验证');else showMsg('请求失败: '+e,'error');}
+        if(data.code===200){token.value=data.token;localStorage.setItem('ne21_admin_token',token.value);Object.assign(adminSlider,{verified:false,sliderToken:'',token:''});const start=readHashPage()||'dashboard';page.value=start;loadAll();if(start!=='dashboard')loadPageData(start);}
+        else{loginForm.password='';if(captchaFlags.value.admin){await resetAdminSlider(data.msg||'用户名或密码错误，请重新完成人机验证');openAdminCaptcha();}else showMsg(data.msg||'用户名或密码错误','error');}
+      }catch(e){if(captchaFlags.value.admin){await resetAdminSlider('请求失败，请重新完成人机验证');openAdminCaptcha();}else showMsg('请求失败: '+e,'error');}
     }
     function emailLooksOk(v){
       v=String(v||'').replace(/＠/g,'@').replace(/[。．]/g,'.').replace(/[\s　]/g,'');
@@ -12738,14 +12772,14 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     }
 
     if(token.value){const start=readHashPage()||'dashboard';page.value=start;loadAll();if(start!=='dashboard')loadPageData(start);}
-    else {page.value='login';loadCaptchaFlags().then(()=>{if(captchaFlags.value.admin)initAdminSlider();});}
+    else {page.value='login';loadCaptchaFlags();}
     loading.value=false;
 
     return{
        loading,page,loginMode,themeMode,themeLabels,themeIcons,cycleTheme,breadcrumbItems,navigateBreadcrumb,toasts,removeToast,toasts,removeToast,toasts,removeToast,config,emailConfig,emailTemplates,hubTplSyncing,templateModal,templateForm,editingTemplateId,TEMPLATE_SCENES,SCENE_VARS,SCENE_ICONS,templateSceneLabel,sceneDefaultVars,msg,showAddModal,newProvider,
        mailServers,showServerForm,mailServerForm,showSmtpPass,mailServerTotalWeight,mailServerWeightPercent,toggleEmailEnabled,toggleEmailSmtp,openServerForm,saveMailServer,deleteMailServer,
        showMailHubRecords,mailHubRecords,mailHubRecordsLoading,mailHubRecordsError,toggleEmailHub,loadMailHubRecords,modelHubConfig,loadModelHubConfig,toggleModelHub,barW,
-       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,adminCaptchaTotal,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,latestScriptVersion,userPage,userTotal,userTotalPages,userPageSize,userSearch,userBanFilter,userVersionFilter,userScriptVersions,userSortBy,userSortOrder,ipSearch,ipSearchList,ipSearchLoading,ipSearchPage,ipSearchTotal,ipSearchTotalPages,loadUsersByIp,gotoIpSearch,gotoIpSearchFromOrder,showUserModal,userForm,gotoUserSearch,
+       loginForm,forgotForm,resetForm,pwdForm,accountConfig,adminSlider,adminCaptchaOpen,openAdminCaptcha,dismissAdminCaptcha,adminCaptchaTotal,enabledCount,providerReadyCount,providerTotalCount,providerEntries,modelSearch,filteredProviderEntries,modelRowVisible,users,latestScriptVersion,userPage,userTotal,userTotalPages,userPageSize,userSearch,userBanFilter,userVersionFilter,userScriptVersions,userSortBy,userSortOrder,ipSearch,ipSearchList,ipSearchLoading,ipSearchPage,ipSearchTotal,ipSearchTotalPages,loadUsersByIp,gotoIpSearch,gotoIpSearchFromOrder,showUserModal,userForm,gotoUserSearch,
         showHtmlPreview,htmlPreviewFrame,htmlPreviewData,toggleHtmlPreview,updateHtmlPreview,switchToHtml,onHtmlInput,syncPlainFromHtml,
        paymentPlans,paymentConfig,payApiConfig,payApiCollapsed,hubPayConfig,planForm,
       aiLogs,aiLogLoading,aiLogFilter,aiLogTotal,expandedLogs,scriptLogs,scriptLogLoading,scriptLogFilter,scriptLogTotal,

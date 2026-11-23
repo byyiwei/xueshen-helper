@@ -3224,7 +3224,7 @@
         }
         .verify-modal-close:hover { background: var(--c-surface-2); color: var(--c-text); }
         .verify-modal-sub { margin: 4px 0 12px; font-size: 12.5px; line-height: 1.6; color: var(--c-text-3); }
-        #loginSliderModal .slider-verify, #codeSliderModal .slider-verify {
+        #loginSliderModal .slider-verify, #codeSliderModal .slider-verify, #moneySliderModal .slider-verify {
             max-width: 100% !important;
             width: 100% !important;
             margin: 0 !important;
@@ -3233,7 +3233,7 @@
             border: 0;
             box-shadow: none;
         }
-        #loginSliderModal .hub-box, #codeSliderModal .hub-box { max-width: 100% !important; }
+        #loginSliderModal .hub-box, #codeSliderModal .hub-box, #moneySliderModal .hub-box { max-width: 100% !important; }
 
         /* ===================== 题库工具结束 ===================== */
     </style>
@@ -3471,6 +3471,20 @@
             </div>
             <p class="verify-modal-sub">完成人机验证后会自动发送邮箱验证码</p>
             <div id="codeSliderModal"></div>
+        </div>
+    </div>
+
+    <div id="moneyVerifyModal" class="verify-modal">
+        <div class="verify-modal-mask"></div>
+        <div class="verify-modal-card" role="dialog" aria-modal="true" aria-labelledby="moneyVerifyTitle">
+            <div class="verify-modal-head">
+                <h3 id="moneyVerifyTitle">安全验证</h3>
+                <button type="button" class="verify-modal-close" id="moneyVerifyClose" aria-label="关闭验证弹窗">
+                    <svg class="ui-icon sm" aria-hidden="true"><use href="#i-x"></use></svg>
+                </button>
+            </div>
+            <p class="verify-modal-sub" id="moneyVerifySub">完成人机验证后会自动继续操作</p>
+            <div id="moneySliderModal"></div>
         </div>
     </div>
 
@@ -3837,9 +3851,6 @@
                                     <b id="promoExchangePreview">0 题</b>
                                 </div>
 
-                                <!-- 紧凑滑块验证 -->
-                                <div id="moneySliderE"></div>
-
                                 <button class="primary btn-block" id="submitExchangeBtn">确认兑换题数</button>
                                 <div id="promoExchangeMsg" class="msg"></div>
                             </div>
@@ -3874,9 +3885,6 @@
                                         <option value="wechat">微信</option>
                                     </select>
                                 </div>
-
-                                <!-- 紧凑滑块验证 -->
-                                <div id="moneySliderW"></div>
 
                                 <button class="primary btn-block" id="submitWithdrawBtn">提交提现申请</button>
                                 <div id="promoWithdrawMsg" class="msg"></div>
@@ -4639,7 +4647,7 @@
         let cloudSettings = {};
         let profileTimer = null;
         let initialUserSection = '';
-        let moneySliderE = null, moneySliderW = null;
+        let moneySlider = null, pendingMoney = null;
         // 各入口人机验证开关，由后台「系统设置 → 人机验证开关」控制
         const captchaFlags = { login: true, register: true, reset: true, withdraw: true, exchange: true, admin: true };
         async function loadCaptchaFlags() {
@@ -4648,12 +4656,6 @@
                 const data = await res.json();
                 if (data && data.code === 200 && data.flags) Object.assign(captchaFlags, data.flags);
             } catch (_) { }
-            syncCaptchaVisibility();
-        }
-        function syncCaptchaVisibility() {
-            const setHidden = (id, on) => { const el = $(id); if (el) el.style.display = on ? '' : 'none'; };
-            setHidden('moneySliderE', captchaFlags.exchange);
-            setHidden('moneySliderW', captchaFlags.withdraw);
         }
 
         function $(id) { return document.getElementById(id); }
@@ -5142,6 +5144,64 @@
                 if (e.key === 'Escape' && m.classList.contains('open')) dismissCodeVerifyModal();
             });
         }
+        // 兑换/提现的人机验证也走弹窗，验证通过后自动继续原操作，页面里不再内嵌验证图
+        function moneySliderVerified() {
+            return !!(moneySlider && moneySlider.verified && moneySlider.sliderToken);
+        }
+        function openMoneyVerifyModal(kind, note) {
+            const m = $('moneyVerifyModal');
+            if (!m) return false;
+            $('moneyVerifyTitle').textContent = kind === 'exchange' ? '兑换安全验证' : '提现安全验证';
+            $('moneyVerifySub').textContent = note || (kind === 'exchange'
+                ? '完成人机验证后会自动继续兑换'
+                : '完成人机验证后会自动继续提交提现');
+            m.classList.add('open');
+            document.body.classList.add('verify-open');
+            pendingMoney = kind;
+            // 每次打开都换一张新图：验证票据是一次性的，旧图验证过也不能再用
+            if (!moneySlider) {
+                moneySlider = new HubSlider($('moneySliderModal'), 'money', { onMessage: onMoneySliderMessage });
+            } else {
+                moneySlider.reload();
+            }
+            return true;
+        }
+        function closeMoneyVerifyModal() {
+            const m = $('moneyVerifyModal');
+            if (m) m.classList.remove('open');
+            if (!document.querySelector('.verify-modal.open')) document.body.classList.remove('verify-open');
+        }
+        function dismissMoneyVerifyModal() {
+            pendingMoney = null;
+            closeMoneyVerifyModal();
+        }
+        function onMoneySliderMessage(text, ok) {
+            if (ok && pendingMoney) {
+                const kind = pendingMoney;
+                pendingMoney = null;
+                // 停留 600ms 让「验证通过」看得见，再关闭弹窗继续原操作
+                setTimeout(function () {
+                    closeMoneyVerifyModal();
+                    if (kind === 'exchange') runExchange();
+                    else runWithdraw();
+                }, 600);
+                return;
+            }
+            if (pendingMoney) {
+                msg(pendingMoney === 'exchange' ? 'promoExchangeMsg' : 'promoWithdrawMsg', text || '请完成人机验证', false);
+            }
+        }
+        function bindMoneyVerifyModal() {
+            const m = $('moneyVerifyModal');
+            if (!m) return;
+            const mask = m.querySelector('.verify-modal-mask');
+            const closeBtn = $('moneyVerifyClose');
+            if (mask) mask.addEventListener('click', dismissMoneyVerifyModal);
+            if (closeBtn) closeBtn.addEventListener('click', dismissMoneyVerifyModal);
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && m.classList.contains('open')) dismissMoneyVerifyModal();
+            });
+        }
         function saveSession(token, user) {
             localStorage.setItem(TOKEN_KEY, token);
             localStorage.setItem(USER_KEY, JSON.stringify(user || {}));
@@ -5295,17 +5355,10 @@
             if (name === 'home') loadDashboard();
             if (name === 'consumption') loadDashboard();
             if (name === 'billing') { loadProfile(); loadPlans(); loadCustomModelConfig(); loadCommissionState(); }
-            if (name === 'promotion') { loadPromotion(); ensureMoneySliders(); }
+            if (name === 'promotion') { loadPromotion(); }
             if (name === 'feedback') loadFeedback();
             if (name === 'adapt') loadAdaptRequests();
             if (name === 'payment-info') loadPaymentInfo();
-        }
-        function ensureMoneySliders() {
-            if (captchaFlags.exchange && !moneySliderE && $('moneySliderE')) moneySliderE = new HubSlider($('moneySliderE'), 'money', { onMessage: (t, ok) => msg('promoExchangeMsg', t, ok) });
-            else if (captchaFlags.exchange && moneySliderE && !moneySliderE.verified) moneySliderE.reload();
-            if (captchaFlags.withdraw && !moneySliderW && $('moneySliderW')) moneySliderW = new HubSlider($('moneySliderW'), 'money', { onMessage: (t, ok) => msg('promoWithdrawMsg', t, ok) });
-            else if (captchaFlags.withdraw && moneySliderW && !moneySliderW.verified) moneySliderW.reload();
-            syncCaptchaVisibility();
         }
         let dashboardTimer = null;
         async function loadDashboard() {
@@ -6910,18 +6963,22 @@ await loadPlans();
             $('promoExchangeAmount').value = c.balance.toFixed(2);
             updateExchangePreview();
         };
-        $('submitExchangeBtn').onclick = async function () {
+        $('submitExchangeBtn').onclick = function () {
             const amount = Math.round((parseFloat($('promoExchangeAmount').value) || 0) * 100) / 100;
             if (amount <= 0) return msg('promoExchangeMsg', '请输入有效兑换金额', false);
             const points = exchangePoints(amount);
             if (points < 1) return msg('promoExchangeMsg', '兑换金额不足 1 题，请提高金额', false);
             if (!confirm('确认用 ¥' + amount.toFixed(2) + ' 佣金兑换 ' + points + ' 题？题数即时到账、不可折现。')) return;
-            let sliderToken = '';
-            if (captchaFlags.exchange) {
-                if (!moneySliderE || !(await moneySliderE.ensureVerified())) { if (moneySliderE) moneySliderE.reload(); return msg('promoExchangeMsg', '请先完成人机验证', false); }
-                sliderToken = moneySliderE.getToken();
-            }
-            const btn = this;
+            if (captchaFlags.exchange && !moneySliderVerified()) { openMoneyVerifyModal('exchange'); return; }
+            runExchange();
+        };
+        async function runExchange() {
+            const amount = Math.round((parseFloat($('promoExchangeAmount').value) || 0) * 100) / 100;
+            if (amount <= 0) return msg('promoExchangeMsg', '请输入有效兑换金额', false);
+            const points = exchangePoints(amount);
+            if (points < 1) return msg('promoExchangeMsg', '兑换金额不足 1 题，请提高金额', false);
+            const sliderToken = captchaFlags.exchange && moneySlider ? moneySlider.getToken() : '';
+            const btn = $('submitExchangeBtn');
             setBusy(btn, true, '兑换中...');
             try {
                 const res = await post('/api/promotion/exchange', {
@@ -6934,11 +6991,16 @@ await loadPlans();
                     $('promoExchangeAmount').value = '';
                     if (typeof fillProfile === 'function') fillProfile(res.profile);
                     loadPromotion();
+                } else if (captchaFlags.exchange) {
+                    openMoneyVerifyModal('exchange', (res.msg || '兑换失败') + '，请重新完成验证');
                 }
-                if (captchaFlags.exchange && moneySliderE) await moneySliderE.reload();
-            } catch (_) { msg('promoExchangeMsg', '网络错误', false); if (captchaFlags.exchange && moneySliderE) await moneySliderE.reload(); }
+                if (moneySlider) { moneySlider.verified = false; moneySlider.sliderToken = ''; }
+            } catch (_) {
+                msg('promoExchangeMsg', '网络错误', false);
+                if (captchaFlags.exchange) openMoneyVerifyModal('exchange', '网络错误，请重新完成验证');
+            }
             setBusy(btn, false);
-        };
+        }
         function readFileAsDataURL(file) {
             return new Promise((resolve, reject) => {
                 const r = new FileReader();
@@ -6990,29 +7052,40 @@ await loadPlans();
             } catch (_) { msg('promoPaymentMsg', '网络错误', false); }
             setBusy(this, false);
         };
-        $('submitWithdrawBtn').onclick = async function () {
+        function withdrawPayload() {
             const amount = parseFloat($('promoWithdrawAmount').value);
-            if (!amount || amount <= 0) return msg('promoWithdrawMsg', '请输入有效金额', false);
+            if (!amount || amount <= 0) { msg('promoWithdrawMsg', '请输入有效金额', false); return null; }
             const method = $('promoWithdrawMethod').value;
             let payAccount = '', qr = '';
             if (method === 'alipay') { payAccount = $('promoAlipayAccount').value.trim(); qr = promoAlipayQr; }
             else { payAccount = $('promoWechatAccount').value.trim(); qr = promoWechatQr; }
-            if (!payAccount) return msg('promoWithdrawMsg', '请先完善' + (method === 'alipay' ? '支付宝' : '微信') + '收款账号', false);
-            if (!qr) return msg('promoWithdrawMsg', '请先上传' + (method === 'alipay' ? '支付宝' : '微信') + '收款二维码', false);
-            let wSliderToken = '';
-            if (captchaFlags.withdraw) {
-                if (!moneySliderW || !(await moneySliderW.ensureVerified())) { if (moneySliderW) moneySliderW.reload(); return msg('promoWithdrawMsg', '请先完成人机验证', false); }
-                wSliderToken = moneySliderW.getToken();
-            }
-            setBusy(this, true, '提交中...');
+            if (!payAccount) { msg('promoWithdrawMsg', '请先完善' + (method === 'alipay' ? '支付宝' : '微信') + ' 收款账号', false); return null; }
+            if (!qr) { msg('promoWithdrawMsg', '请先上传' + (method === 'alipay' ? '支付宝' : '微信') + ' 收款二维码', false); return null; }
+            return { amount, pay_method: method, pay_account: payAccount, qr_code: qr };
+        }
+        $('submitWithdrawBtn').onclick = function () {
+            if (!withdrawPayload()) return;
+            if (captchaFlags.withdraw && !moneySliderVerified()) { openMoneyVerifyModal('withdraw'); return; }
+            runWithdraw();
+        };
+        async function runWithdraw() {
+            const payload = withdrawPayload();
+            if (!payload) return;
+            payload.slider_token = captchaFlags.withdraw && moneySlider ? moneySlider.getToken() : '';
+            const btn = $('submitWithdrawBtn');
+            setBusy(btn, true, '提交中...');
             try {
-                const res = await post('/api/promotion/withdraw', { amount, pay_method: method, pay_account: payAccount, qr_code: qr, slider_token: wSliderToken }, localStorage.getItem(TOKEN_KEY));
+                const res = await post('/api/promotion/withdraw', payload, localStorage.getItem(TOKEN_KEY));
                 msg('promoWithdrawMsg', res.msg || '提交失败', res.code === 200);
                 if (res.code === 200) { $('promoWithdrawAmount').value = ''; loadPromotion(); }
-                if (captchaFlags.withdraw && moneySliderW) await moneySliderW.reload();
-            } catch (_) { msg('promoWithdrawMsg', '网络错误', false); if (captchaFlags.withdraw && moneySliderW) await moneySliderW.reload(); }
-            setBusy(this, false);
-        };
+                else if (captchaFlags.withdraw) { openMoneyVerifyModal('withdraw', (res.msg || '提交失败') + '，请重新完成验证'); }
+                if (moneySlider) { moneySlider.verified = false; moneySlider.sliderToken = ''; }
+            } catch (_) {
+                msg('promoWithdrawMsg', '网络错误', false);
+                if (captchaFlags.withdraw) openMoneyVerifyModal('withdraw', '网络错误，请重新完成验证');
+            }
+            setBusy(btn, false);
+        }
 
         // ===== 问题反馈 =====
         const FB_CATEGORY_MAP = { bug: 'Bug反馈', feature: '功能建议', payment: '支付问题', account: '账号问题', other: '其他' };
@@ -8002,6 +8075,7 @@ await loadPlans();
         startByPath();
         bindVerifyModal();
         bindCodeVerifyModal();
+        bindMoneyVerifyModal();
         loadCaptchaFlags();
 
         // ===== 主题切换（0-Emoji，纯矢量 SVG 驱动） =====
