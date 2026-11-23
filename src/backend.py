@@ -5030,6 +5030,10 @@ def _is_garbage_bank_answer(answer, question=None):
     text = str(answer or "").strip()
     if not text:
         return True
+    # 占位话术（「未提供具体题目，请提供需作答的句子」）不是答案。以前只在 AI 返回时
+    # 拦一次，一旦写进缓存/题库，后面每次都当有效答案返回（2026-11-23 新版单元测试页）。
+    if _is_placeholder_answer(text):
+        return True
     if is_reasoning_leak(text):
         return True
     low = text.lower()
@@ -5663,13 +5667,19 @@ def _is_placeholder_answer(answer):
     命中就返回空，让上层按「没答案」处理（换模型 / 提示人工），不填、不入库。
     """
     text = str(answer or "").strip()
-    # 真答案一般很短；超过 40 字的多半是解释或分析，不在这里拦
-    if not text or len(text) > 40:
+    # 真答案一般很短；超过 80 字的多半是解释或分析，不在这里拦
+    if not text or len(text) > 80:
         return False
     return bool(re.search(
         r"(?:请|麻烦|需要|请先)?\s*(?:提供|上传|补充|发送)\s*(?:音频|录音|听力|题目|题干|完整题目|图片|材料)"
         r"|题目不完整|题干不完整|题目[缺失少]|无法作答|无法回答|不能作答|缺少(?:音频|题目|材料)"
-        r"|音频(?:未|没有|缺失)|未(?:提供|收到)音频|no\s*audio|audio\s*(?:is\s*)?(?:missing|required)|please\s*provide",
+        r"|音频(?:未|没有|缺失)|未(?:提供|收到)音频|no\s*audio|audio\s*(?:is\s*)?(?:missing|required)|please\s*provide"
+        # 新版作业/单元测试页会把整卷标题当题目发过来，模型常回下面这几句。
+        # 「请提供」后面可能跟一长串页面标题（B1U2 unit test-单词部分的具体句子和选项），
+        # 所以中间允许 30 个字符，不能要求紧挨着名词。
+        r"|未提供(?:具体|完整|实际)?(?:的)?(?:题目|题干|句子|选项|文章)"
+        r"|(?:请|需要)[^。\n]{0,30}(?:题目|题干|句子|选项|文章)"
+        r"|我需要看到[^。\n]{0,12}(?:题目|内容|选项)",
         text,
         flags=re.I,
     ))
