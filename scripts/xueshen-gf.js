@@ -25210,8 +25210,10 @@ const XS_EXT = (() => {
     try {
       const host = location.hostname || "";
       const plat = platformConfigs.find((item) => item.domains.some((d) => host === d || host.endsWith("." + d)));
-      // 只对「只做视频助手」的平台启用；超星/智慧树/青书/国开这些已经能答题的不需要
-      if (!plat || !plat.watchSite) return;
+      // 只对「只做视频助手」的平台启用；已支持答题的平台不抓。
+      // 2026-11-23：以前只看 watchSite，国开（watchSite + showAi）也被算进来，
+      // 用户正常答 50 道题的同时还在刷「未支持平台」异常（yxlnzjbs 13 条）。
+      if (!plat || !plat.watchSite || plat.showAi) return;
       const path = String(location.pathname || "") + String(location.hash || "") + String(location.search || "");
       // 只在作业/考试/测验页面抓，普通课程播放页不抓
       if (!/(homework|exam|test|quiz|paper|exercise|\/do\/|\/work)/i.test(path)) return;
@@ -25273,6 +25275,12 @@ const XS_EXT = (() => {
         if (text.length < 40) return;
         const u = String(url || "").slice(0, 200);
         if (!TOPIC_RE.test(u + text.slice(0, 800))) return;
+        // 2026-11-23：只看关键词会把「课程学习权限」这类接口也收进来（正文里带
+        // hasEndHomework 就命中了 homework），回传的数据完全没法用来适配。
+        // 要求响应体里真的出现题目类字段（options/question/stem/choices…），
+        // 抓到的样本才对「照着写解析」有用。
+        const questionBodyRe = /(?:^|[{,]\s*)"(?:options?|optionList|option_list|questionContent|questionTitle|questions?|subjects?|stem|choices?|content|type)"\s*:/i;
+        if (!questionBodyRe.test(text.slice(0, 4000))) return;
         const key = u.split("?")[0];
         if (seenUrls.has(key)) return;
         seenUrls.add(key);
