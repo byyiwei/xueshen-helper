@@ -2540,6 +2540,15 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               type: "switch",
               tips: "手动答题时，建议关闭，学习时，建议开启"
             },
+            // 中国大学MOOC：填完答案后是否逐题点「提交答案」。提交不可撤销，默认关闭，
+            // 只在这个平台的设置里出现，不影响其它平台的「自动提交」开关。
+            moocAutoSubmit: {
+              text: "MOOC 答题后自动提交",
+              platforms: ["mooc"],
+              value: false,
+              type: "switch",
+              tips: "仅中国大学MOOC。开启后在「答题」页点开始答题，填完会逐题点「提交答案」（不可撤销，建议先确认答案）；关闭则手动点每题右侧的「提交答案」"
+            },
             autoRefresh: {
               text: "定时刷新（防卡死）",
               platforms: ANSWER_PLATFORM_KEYS,
@@ -11008,6 +11017,16 @@ const MAX_RECORDS = 200;
             element,
             questionTypeText
           );
+          // 口语测评题（data=22、【口语测评题】）要真人录音，脚本无法作答：
+          // 直接跳过并提示一次，不调 AI、不填、不报页面异常（2026-11-23 用户 3178398135）。
+          if (String((element.getAttribute && element.getAttribute("data")) || "") === "22" ||
+              /口语测评|口语题|朗读题|录音题/.test(questionTypeText)) {
+            if (!this.__xsOralTipShown) {
+              this.__xsOralTipShown = 1;
+              this.log.insertLog("口语测评题需要真人录音，脚本跳过，请手动完成", "warning");
+            }
+            return;
+          }
           if (["14", "15"].includes(resolvedQuestionType)) {
             [optionsObject, optionTexts] = this.extractCompositeChoiceOptions(
               element,
@@ -23741,7 +23760,9 @@ const XS_EXT = (() => {
         domains: ["icourse163.org"],
         roots: [".u-questionItem", "[class*=questionBody]"],
         title: [".j-title .j-richTxt", "[class*=questionInfo]"],
-        type: [],
+        // 题头 .j-qacate 写着「单选(2分) / 多选 / 判断 / 填空」：不识别题型的话，
+        // 判断题会被当成普通单选、填空题也只能靠「有没有选项」猜
+        type: [".j-qacate", ".qaCate span"],
         options: [".choices li", "[class*=index-module__optionBody]"],
         optionText: [".f-richEditorText"],
         blanks: ["textarea"],
@@ -24630,6 +24651,19 @@ const XS_EXT = (() => {
         else if (unparsedQuestions) log(`有 ${unparsedQuestions} 道题脚本没识别出选项，请手动作答`, "warning");
         else log("核对完成，所有题目都已填上答案");
       }
+      // 中国大学MOOC：填完是否自动逐题提交，由这个平台自己的开关决定（默认关）。
+      // 其它平台不会进入这个分支，原有行为不变。
+      if (isMoocQuizPage()) {
+        try {
+          const moocCfg = useSettingStore().config.basicConfig.moocAutoSubmit;
+          if (moocCfg && moocCfg.value) {
+            await sleep(0.6);
+            await submitMoocFilled();
+          } else {
+            log("答案已填好，可点每题右侧的「提交答案」；设置里可开启自动提交");
+          }
+        } catch (_) {}
+      }
       state.running = false;
       // 国开一卷一报（是否上报由调用方传 opts.reportSummary，见 start 开头说明）：
       // 每题 code/msg/src 都在 questionStore 里，后台才能看到填充率与卡点
@@ -24687,6 +24721,124 @@ const XS_EXT = (() => {
       } catch (_) {
         return false;
       }
+    };
+    // ===== 中国大学 MOOC（icourse163）：题目页逐题作答，每题单独「提交答案」 =====
+    // 页面结构（2026-11-23 用户回传）：div.u-questionItem 一题一个，
+    // 题干 .j-title .j-richTxt、题型 .j-qacate（单选/多选/判断/填空）、
+    // 选项 ul.choices li（内含 radio/checkbox）、填空 textarea.j-textarea、
+    // 每题右下角 a.j-submitBtn「提交答案」。选项和题型由 PROFILES 里的 mooc 规则解析，
+    // 这里只补「提交」这一步，平台判断全部收在 isMoocHost/isMoocQuizPage 里，不影响其它平台。
+    const isMoocHost = () => {
+      try { return /(^|\.)icourse163\.org$/i.test(location.hostname); } catch (_) { return false; }
+    };
+    const isMoocQuizPage = () => {
+      try { return isMoocHost() && !!document.querySelector(".u-questionItem"); } catch (_) { return false; }
+    };
+    // 已经点过提交的题不再点第二次：提交后按钮会变灰/隐藏，或者出现得分、解析区
+    const moocSubmitted = /* @__PURE__ */ new WeakSet();
+    const moocQuestionSubmitted = (block) => {
+      try {
+        if (!block || !block.el) return false;
+        if (moocSubmitted.has(block.el)) return true;
+        const btn = block.el.querySelector(".j-submitBtn");
+        // 按钮已经不在了，通常说明已经提交过（页面渲染过结果）
+        if (!btn) return true;
+        if (/disabled/i.test(String(btn.className || ""))) return true;
+        if (btn.getAttribute && btn.getAttribute("disabled") != null) return true;
+        const analysis = block.el.querySelector(".j-analysis");
+        const score = block.el.querySelector(".j-score");
+        return !!((analysis && !/\bf-dn\b/.test(String(analysis.className || ""))) ||
+          (score && !/\bf-dn\b/.test(String(score.className || ""))));
+      } catch (_) {
+        return false;
+      }
+    };
+    const submitMoocQuestion = async (block) => {
+      try {
+        if (!block || !block.el || moocSubmitted.has(block.el)) return false;
+        const btn = block.el.querySelector(".j-submitBtn") || block.el.querySelector('a[class*="submitBtn"]');
+        if (!btn || !isVisibleEl(btn)) return false;
+        // 页面上还有空着的输入框就不提交，避免把半截答案交上去
+        const textareas = Array.from(block.el.querySelectorAll("textarea")).filter(isVisibleEl);
+        if (textareas.some((t) => !String(t.value || "").trim())) return false;
+        btn.click();
+        await sleep(1.5);
+        if (moocQuestionSubmitted(block)) {
+          moocSubmitted.add(block.el);
+          return true;
+        }
+        return false;
+      } catch (_) {
+        return false;
+      }
+    };
+    // 只提交「完整填好」的题：status=done/warn 且没有 issue、页面上再核一遍也完整。
+    // 没搜到答案、只填了一半的题保持原样，留给用户处理。
+    // 两种页面布局都要兼容：有的测验每题自带「提交答案」，有的整卷只有一个提交按钮。
+    const submitMoocFilled = async () => {
+      if (!isMoocQuizPage()) return { ok: 0, failed: 0 };
+      const blocks = registry.slice();
+      const items = state.items || [];
+      const isComplete = (block, index) => {
+        const item = items[index];
+        return !!block && !!item && (item.status === "done" || item.status === "warn") && !item.issue && blockOkay(block, index);
+      };
+      let ok = 0, failed = 0;
+      const hasPerQuestionBtn = blocks.some((block) => block && block.el && block.el.querySelector(".j-submitBtn"));
+      if (hasPerQuestionBtn) {
+        for (let i = 0; i < blocks.length; i += 1) {
+          const block = blocks[i];
+          const item = items[i];
+          if (!block || !item) continue;
+          if (item.status !== "done" && item.status !== "warn") continue;
+          if (item.issue) continue;
+          if (!blockOkay(block, i)) continue;
+          if (moocQuestionSubmitted(block)) {
+            moocSubmitted.add(block.el);
+            continue;
+          }
+          const done = await submitMoocQuestion(block);
+          if (done) {
+            ok += 1;
+            setItem(i, { status: "done", issue: false, msg: "已提交答案" });
+          } else {
+            failed += 1;
+            setItem(i, { status: "warn", msg: item.msg || "提交状态未确认，请检查" });
+          }
+          await sleep(0.8);
+        }
+      } else {
+        // 整卷只有一个提交按钮：必须每一题都完整才点，避免把白卷交上去
+        const quizBtn = document.querySelector(".j-submitBtn");
+        if (!quizBtn || !isVisibleEl(quizBtn)) return { ok: 0, failed: 0 };
+        if (/disabled/i.test(String(quizBtn.className || "")) ||
+            (quizBtn.getAttribute && quizBtn.getAttribute("disabled") != null)) {
+          log("中国大学MOOC：提交按钮已不可点，整卷应该已经提交过");
+          return { ok: 0, failed: 0 };
+        }
+        const left = blocks.filter((block, i) => !isComplete(block, i)).length;
+        if (!blocks.length || left) {
+          if (left) log(`中国大学MOOC：还有 ${left} 道题没填完整，先不提交`, "warning");
+          return { ok: 0, failed: 0 };
+        }
+        quizBtn.click();
+        await sleep(2);
+        const still = document.querySelector(".j-submitBtn");
+        const gone = !still || !isVisibleEl(still) || /disabled/i.test(String(still.className || ""));
+        if (gone) {
+          ok = blocks.length;
+          blocks.forEach((block, i) => setItem(i, { status: "done", issue: false, msg: "已提交答案" }));
+          log(`中国大学MOOC：整卷 ${blocks.length} 题已提交`);
+        } else {
+          failed = 1;
+          // 有的测验点提交后会弹确认框：脚本不替用户点确认，提示一下即可
+          log("中国大学MOOC：已点「提交答案」，如果弹出确认框请手动确认", "warning");
+        }
+      }
+      if (hasPerQuestionBtn && (ok || failed)) {
+        log(`中国大学MOOC：已提交 ${ok} 题${failed ? `，${failed} 题提交状态未确认` : ""}`, failed ? "warning" : void 0);
+      }
+      return { ok, failed };
     };
     const findVisibleByText = (selector, pattern) => Array.from(document.querySelectorAll(selector))
       .find((el) => isVisibleEl(el) && pattern.test(TEXT(el)));
@@ -25005,10 +25157,13 @@ const XS_EXT = (() => {
           h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } }, [
             h("button", { onClick: this.scan, disabled: this.state.scanning, style: plain }, this.state.scanning ? "扫描中" : "扫描题目"),
             h("button", { onClick: this.start, disabled: this.state.running || !this.state.total, style: primary }, this.state.running ? "正在作答" : "开始答题"),
-            this.state.running ? h("button", { onClick: this.stop, style: plain }, "停止") : null
+            this.state.running ? h("button", { onClick: this.stop, style: plain }, "停止") : null,
+            isMoocQuizPage() ? h("button", { onClick: () => { void submitMoocFilled(); }, disabled: this.state.running, style: plain }, "提交已填答案") : null
           ]),
           h("div", { style: { color: "var(--t-text3)", fontSize: "12px", lineHeight: 1.7 } },
-            "进入考试后，「自动答题」开启会自动作答；答案和相似题选择显示在下面，自动交卷在「设置 - 考试设置」里。"),
+            isMoocQuizPage()
+              ? "中国大学MOOC：先点「扫描题目」，再点「开始答题」；填完点「提交已填答案」逐题提交，或在设置里开启「MOOC 答题后自动提交」。"
+              : "进入考试后，「自动答题」开启会自动作答；答案和相似题选择显示在下面，自动交卷在「设置 - 考试设置」里。"),
           h(_sfc_main$7)
         ]);
       }
