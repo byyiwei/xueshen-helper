@@ -5060,6 +5060,10 @@ def _is_garbage_bank_answer(answer, question=None):
             _hit_option = bool(_opts) and (
                 text in _opts
                 or (re.fullmatch(r"[A-Z](?:[\s、,，]+[A-Z])*", text.strip()) and _letters_to_option_answer(text, _opts))
+                # 多选题的答案本身就是选项原文数组：某一项里带「无法判断」「无法确定」
+                # 是选项措辞，不是模型在拒答。以前只认单条答案，整题被误判成脏答案，
+                # 55 次尝试全部跳过（2026-11-23 #26810 图灵测试）。
+                or (_parse_answer_list(text) is not None and _answer_hits_options(question, text))
             )
             if not _hit_option:
                 return True
