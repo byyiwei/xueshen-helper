@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.1.6
+// @version      6.1.7
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
@@ -15,6 +15,11 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.1.7 (2026-11-23)
+// @changelog    1. 智慧树：题干和选项里的公式、图片不再丢失（公式还原成 LaTeX、图片保留），修复选项只剩「A. B. C. D.」导致 AI 答不出、反复重试
+// @changelog    2. 人脸识别检测只看遮罩/弹窗层，课程正文出现「人脸识别」字样不再误判为要采集人脸、不再停刷
+// @changelog    3. 页面异常不再漏报：题型为空、解析失败的页面照常上报，方便快速修复（已结束测验、问卷页等确证误报仍会过滤）
+// @changelog    4. AI 答题：同一题连续 5 轮答不出自动停止；选项只有标号没有正文时立即判失败并提示刷新或手动作答
 // @changelog    v6.1.6 (2026-11-22)
 // @changelog    1. 紧急修复 6.1.5 超星章节测验「发现测验后解析不到任何题目」：恢复答题处理器的题型标记与 iframe 题目文档绑定，章节测验、作业、考试恢复正常解析
 // @changelog    v6.1.5 (2026-11-22)

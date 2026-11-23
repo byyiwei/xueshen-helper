@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.1.6",
+    "version": "6.1.7",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.1.6 紧急修复 6.1.5 超星章节测验发现测验后解析不到任何题目：恢复答题处理器的题型标记与 iframe 题目文档绑定，章节测验、作业、考试恢复正常解析"
+    "changelog": "v6.1.7 智慧树公式与选项图片不再丢失；人脸识别只在弹窗层判断；页面异常不再漏报；AI 答题连续 5 轮失败自动停止"
   },
   "xueshen-gf": {
-    "version": "6.1.6",
+    "version": "6.1.7",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.1.6 紧急修复 6.1.5 超星章节测验发现测验后解析不到任何题目：恢复答题处理器的题型标记与 iframe 题目文档绑定，章节测验、作业、考试恢复正常解析"
+    "changelog": "v6.1.7 智慧树公式与选项图片不再丢失；人脸识别只在弹窗层判断；页面异常不再漏报；AI 答题连续 5 轮失败自动停止"
   }
 }
