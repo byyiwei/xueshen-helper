@@ -2070,9 +2070,11 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     const clean = (s, n) => String(s == null ? "" : s).replace(/\s+/g, " ").trim().slice(0, n);
     // 「返回的页面结构不清晰」时，光有 tag/class 只能猜：带上外层 HTML 片段、
     // 一层子节点摘要、以及「像选项的节点」数量，后台才能一眼看出是换了 class
-    // 还是整块换成了别的容器。只截 500 字符，不传整页。
+    // 还是整块换成了别的容器。
+    // 2026-11-23：新版单元测试页断在 readComprehensionQu 正好看不到选项结构，
+    // 截断长度从 500 提到 4000（后端同步放宽），只传节点片段，仍不传整页。
     let html = "", childTags = "", optionLike = 0;
-    try { html = clean(el.outerHTML, 500); } catch (_) {}
+    try { html = clean(el.outerHTML, 4000); } catch (_) {}
     try {
       childTags = [...(el.children || [])].slice(0, 6).map((child) => {
         const tag = String(child.tagName || "").toLowerCase();
@@ -2179,10 +2181,13 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
   // 模型面对听力/图片/残缺题时经常回一句「请提供音频及具体题目」「题目不完整」。
   // 那不是答案：拿去填必然匹配不到，最后变成 answer_not_matched 刷进页面异常；
   // 还会被当有效答案存进本地答题记录。命中就按「这题需要人工」处理，不填也不上报。
-  const PLACEHOLDER_ANSWER_RE = /(?:请|麻烦|需要|请先)?\s*(?:提供|上传|补充|发送)\s*(?:音频|录音|听力|题目|题干|完整题目|图片|材料)|请提供[^。\n]{0,20}(?:文章|题目|题干|材料|图片)|目前只有[^。\n]{0,10}(?:图片|截图|表格|词汇表)|题目不完整|题干不完整|无法作答|无法回答|不能作答|缺少(?:音频|题目|材料)|音频(?:未|没有|缺失)|未(?:提供|收到)音频|no\s*audio|audio\s*(?:is\s*)?(?:missing|required)|please\s*provide/i;
+  // 2026-11-23 新版单元测试页又多了几种说法（「未提供具体题目，请提供需作答的句子」、
+  // 「我需要看到具体的题目内容才能作答…」、「请提供需要连线的动词和名词短语」），
+  // 模型还常把它们写成一整段说明，长度上限从 40 放宽到 200。
+  const PLACEHOLDER_ANSWER_RE = /(?:请|麻烦|需要|请先)?\s*(?:提供|上传|补充|发送)\s*(?:音频|录音|听力|题目|题干|完整题目|图片|材料)|请提供[^。\n]{0,20}(?:文章|题目|题干|材料|图片)|目前只有[^。\n]{0,10}(?:图片|截图|表格|词汇表)|题目不完整|题干不完整|无法作答|无法回答|不能作答|缺少(?:音频|题目|材料)|音频(?:未|没有|缺失)|未(?:提供|收到)音频|no\s*audio|audio\s*(?:is\s*)?(?:missing|required)|please\s*provide|未提供(?:具体|完整|实际)?(?:的)?(?:题目|题干|句子|选项|文章|内容)|我需要(?:看到|知道)[^。\n]{0,15}(?:题目|题干|内容|选项|句子)|^(?:抱歉|对不起|很抱歉)?[，,]?\s*(?:请|麻烦|需要)(?:您|你)?\s*(?:先|重新)?\s*(?:提供|给出|上传|补充|发送)/i;
   const isPlaceholderAnswer = (value) => {
     const text = String(value == null ? "" : value).trim();
-    return !!text && text.length <= 40 && PLACEHOLDER_ANSWER_RE.test(text);
+    return !!text && text.length <= 200 && PLACEHOLDER_ANSWER_RE.test(text);
   };
   // 答题失败原因要能直接进统计：都写成「答案拿到了但没点上去」，后台就分不出是没匹配、没点上还是只填了一半
   const XS_FILL_REASON_TEXT = {
@@ -9270,16 +9275,17 @@ const MAX_RECORDS = 200;
                 option_html: (() => {
                   try {
                     const first = Object.values((question && question.options) || {})[0];
-                    return first && first.outerHTML ? String(first.outerHTML).replace(/\s+/g, " ").slice(0, 400) : "";
+                    return first && first.outerHTML ? String(first.outerHTML).replace(/\s+/g, " ").slice(0, 1200) : "";
                   } catch (_) {
                     return "";
                   }
                 })(),
                 // 整题容器片段：选项结构认不出来时，光看第一个选项的 HTML 判断不了
                 // 是「选项换容器」还是「整个题目节点换了」，这一段能直接看出层级。
+                // 2026-11-23 起放宽到 4000：500 字在新版单元测试页正好断在选项容器开头。
                 question_html: (() => {
                   try {
-                    return el && el.outerHTML ? String(el.outerHTML).replace(/\s+/g, " ").slice(0, 500) : "";
+                    return el && el.outerHTML ? String(el.outerHTML).replace(/\s+/g, " ").slice(0, 4000) : "";
                   } catch (_) {
                     return "";
                   }
@@ -9298,7 +9304,7 @@ const MAX_RECORDS = 200;
                 option_after_html: (() => {
                   try {
                     const first = Object.values((question && question.options) || {})[0];
-                    return first && first.outerHTML ? String(first.outerHTML).replace(/\s+/g, " ").slice(0, 400) : "";
+                    return first && first.outerHTML ? String(first.outerHTML).replace(/\s+/g, " ").slice(0, 1200) : "";
                   } catch (_) {
                     return "";
                   }
@@ -11008,6 +11014,16 @@ const MAX_RECORDS = 200;
               resolvedQuestionType
             );
           }
+          // 新版单元测试页：旧选择器一个选项都没取到，但选项是 li[role=radio|checkbox]，
+          // 按选项组拆成独立小题，别把整卷当一道「单词部分」大题发给 AI
+          // （2026-11-23 用户 3178398135：AI 只收到小节标题，回「未提供具体题目」）。
+          if (["zj"].includes(this.type) && !(optionTexts || []).length && resolvedQuestionType !== "11") {
+            const liQuestions = this.extractLiChoiceQuestions(element);
+            if (liQuestions.length) {
+              liQuestions.forEach((q) => this.questions.push(q));
+              return;
+            }
+          }
           if (resolvedQuestionType === "999") {
             this.log.insertLog(
               `未识别题型：${questionTypeText || "空题型"}，请反馈给开发者补充规则..`,
@@ -11050,6 +11066,108 @@ const MAX_RECORDS = 200;
       if (iframe) {
         this._document = iframe.contentDocument;
         this._window = iframe.contentWindow;
+      }
+    }
+    // 新版「单元测试」页（2026-11-23 用户 3178398135 反馈）：一个 .TiMu[data="15"] 里套着
+    // 多个小题，选项是 li[qid][qtype][role=radio|checkbox]（点击走 addChoice/addMultipleChoice），
+    // 旧的 before-after / saveSingleSelect 命中数为 0，整卷被当成一道「单词部分」大题，
+    // AI 只收到小节标题和空选项，只能回「请提供具体题目，请提供需作答的句子」。
+    // 这里按「一组选项 li」把小题拆出来，题干取选项组前面最近的文字块。
+    // 只在旧解析一个选项都没取到时兜底，不影响原有页面。
+    extractLiChoiceQuestions(element) {
+      try {
+        if (!element || !element.querySelectorAll) return [];
+        // 连线题的配对栏也是 li（matching / beautiSelect / ulTop），不是选择题选项，排除
+        if (element.querySelector(".matching, .beautiSelect, [class*='matching'], #connLine_")) return [];
+        const optionSel = 'li[role="radio"], li[role="checkbox"], [role="radio"], [role="checkbox"], li[onclick*="addChoice"], li[onclick*="addMultipleChoice"]';
+        let nodes = [...element.querySelectorAll(optionSel)];
+        if (nodes.length < 2) return [];
+        // 外层 li 里可能还嵌着带 role 的元素，只保留最外层
+        nodes = nodes.filter((n) => !nodes.some((m) => m !== n && m.contains(n)));
+        // 分组标题（「第一组数据」）不是选项
+        nodes = nodes.filter((n) => {
+          const tag = String((n.tagName || "")).toLowerCase();
+          const role = String((n.getAttribute && n.getAttribute("role")) || "").toLowerCase();
+          if (!tag || !(tag === "li" || role === "radio" || role === "checkbox")) return false;
+          return !/groupTit|group-title/i.test(String(n.className || ""));
+        });
+        if (nodes.length < 2) return [];
+        const groups = /* @__PURE__ */ new Map();
+        nodes.forEach((n) => {
+          const key = (n.closest && n.closest("ul")) || n.parentElement;
+          if (!key) return;
+          if (!groups.has(key)) groups.set(key, []);
+          groups.get(key).push(n);
+        });
+        const pickStem = (groupEl) => {
+          // 先看选项组前面的兄弟（最常见：题干 div 紧挨着选项 ul），再加两级父节点
+          let base = groupEl;
+          let hops = 0;
+          while (hops < 3) {
+            let cursor = base.previousElementSibling;
+            while (cursor) {
+              if (!cursor.querySelector || !cursor.querySelector(optionSel)) {
+                const text = this.removeHtml(cursor.innerHTML || "").replace(/\s+/g, " ").trim();
+                // 太短的多半是题号/字母标号，至少 5 个字才算题干
+                if (text.length >= 5) return text;
+              }
+              cursor = cursor.previousElementSibling;
+            }
+            base = base.parentElement;
+            if (!base || base === element) break;
+            hops += 1;
+          }
+          // 兜底：父节点里去掉选项组后的文字
+          const parent = groupEl.parentElement;
+          if (!parent || parent === element) return "";
+          try {
+            const clone = parent.cloneNode(true);
+            clone.querySelectorAll("ul, " + optionSel).forEach((n) => n.remove());
+            const text = this.removeHtml(clone.innerHTML || "").replace(/\s+/g, " ").trim();
+            return text.slice(-600);
+          } catch (_) {
+            return "";
+          }
+        };
+        const out = [];
+        groups.forEach((optionNodes, groupEl) => {
+          if (optionNodes.length < 2) return;
+          const optionTexts = [];
+          const optionsObject = {};
+          optionNodes.forEach((node, index) => {
+            let text = this.removeHtml(node.innerHTML || "");
+            // 去掉行首的「A. / A、/ (A)」，答案正文才好和模型输出匹配
+            text = String(text || "").replace(/^\s*(?:[（(]\s*[A-Za-z]\s*[)）]\s*|[A-Za-z]\s*[.、．)）:：]\s*)/, "").trim();
+            if (!text) {
+              const img = node.querySelector && node.querySelector("img");
+              const src = img ? (img.getAttribute("data-src") || img.currentSrc || img.src || "") : "";
+              text = src ? `<img src="${src}"/>` : `选项${String.fromCharCode(65 + index)}`;
+            }
+            optionsObject[`${String.fromCharCode(65 + index)}. ${text}`] = node;
+            optionTexts.push(text);
+          });
+          const isMulti = optionNodes.some((n) => {
+            const role = String((n.getAttribute && n.getAttribute("role")) || "").toLowerCase();
+            const onclick = String((n.getAttribute && n.getAttribute("onclick")) || "");
+            return role === "checkbox" || /addMultipleChoice|saveMultiSelect/i.test(onclick);
+          });
+          out.push({
+            element: groupEl,
+            type: isMulti ? "1" : "0",
+            __xsCompositeSub: 1,
+            title: this.clean(pickStem(groupEl)).slice(0, 600),
+            optionsText: optionTexts,
+            options: optionsObject,
+            __xsOptionCount: optionNodes.length,
+            __xsOptionSelector: optionSel,
+            answer: { code: -1, answer: [] },
+            workType: this.type,
+            refer: this._window.location.href
+          });
+        });
+        return out;
+      } catch (_) {
+        return [];
       }
     }
     extractOptions(optionElements, optionSelector) {

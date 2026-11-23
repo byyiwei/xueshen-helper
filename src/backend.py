@@ -732,7 +732,9 @@ def sanitize_page_snapshot(item):
             else:
                 # toStringHead 这类诊断字段要保留到 100 字符，才能看出包装函数长什么样；
                 # *_html 是「页面结构不清晰」时脚本额外带回来的节点片段，留 500 字符才有诊断价值。
-                limit = 500 if k.endswith("_html") else (200 if k in ("dom", "body_cls", "toStringHead", "dom_summary") else 100)
+                # 2026-11-23：新版单元测试页的 500 字正好断在选项容器（readComprehensionQu）开头，
+                # 放大到 4000 才能看到子题和选项的结构；只收节点片段，不收整页。
+                limit = 4000 if k.endswith("_html") else (200 if k in ("dom", "body_cls", "toStringHead", "dom_summary") else 100)
                 found[k] = str(val)[:limit]
         nodes = []
         raw_nodes = extra.get("nodes") if isinstance(extra.get("nodes"), list) else []
@@ -748,7 +750,9 @@ def sanitize_page_snapshot(item):
                 # 结构快照的核心：「这一个节点长什么样」。
                 # 只给 tag/class 时，页面改版只能猜；带上 outerHTML 片段和一层子节点摘要，
                 # 后台能直接看出选项是换了 class 还是整块换成了别的容器。
-                "html": re.sub(r"\s+", " ", str(row.get("html") or ""))[:500],
+                # 2026-11-23：节点片段从 500 字放宽到 4000 字，新版单元测试页的选项结构
+                # 正好在 500 字之后，截断了就写不出解析规则。
+                "html": re.sub(r"\s+", " ", str(row.get("html") or ""))[:4000],
                 "child_tags": re.sub(r"\s+", " ", str(row.get("child_tags") or row.get("children") or ""))[:200],
                 "option_like": max(-1, min(_safe_int(row.get("option_like"), 0), 100000)),
             })
