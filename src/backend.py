@@ -6634,6 +6634,56 @@ def _download_image_to_base64(url, timeout=15, deadline=None):
     print(f"[图片下载最终失败] {url}", flush=True)
     return None
 
+# 题目图片是 base64 直接塞进模型请求的：几张原图 PNG 就能到 1MB 以上，模型网关对超大
+# 内联图片直接回 HTTP 500「服务内部错误」，表现为同一道多图题所有模型都失败、任务无限重试
+# （2026-11-23 六图匹配题 #26257，连续 24 次全 500）。发送前统一压成 JPEG。
+AI_IMG_MAX_SIDE = 1280
+AI_IMG_JPEG_QUALITY = 82
+AI_IMG_MAX_BYTES = 70 * 1024
+
+
+def _shrink_data_url_image(data_url):
+    """把内联图片压到网关能接受的体积；不是内联图、体积已够小或没有 Pillow 时原样返回。"""
+    try:
+        m = re.match(r"^data:image/([a-zA-Z0-9.+-]+);base64,(.*)$", data_url or "", re.S)
+        if not m:
+            return data_url
+        mime, b64 = m.group(1).lower(), m.group(2)
+        if mime not in ("png", "jpeg", "jpg", "webp", "bmp"):
+            return data_url
+        raw = base64.b64decode(b64)
+        if len(raw) <= AI_IMG_MAX_BYTES:
+            return data_url
+        import io
+        from PIL import Image
+        img = Image.open(io.BytesIO(raw))
+        if getattr(img, "is_animated", False):
+            img.seek(0)
+        if img.mode in ("RGBA", "LA") or (img.mode == "P" and "transparency" in img.info):
+            rgba = img.convert("RGBA")
+            bg = Image.new("RGB", rgba.size, (255, 255, 255))
+            bg.paste(rgba, mask=rgba.split()[-1])
+            img = bg
+        else:
+            img = img.convert("RGB")
+        if max(img.size) > AI_IMG_MAX_SIDE:
+            img.thumbnail((AI_IMG_MAX_SIDE, AI_IMG_MAX_SIDE), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=AI_IMG_JPEG_QUALITY, optimize=True)
+        data = buf.getvalue()
+        if len(data) > AI_IMG_MAX_BYTES:
+            img.thumbnail((1024, 1024), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=68, optimize=True)
+            data = buf.getvalue()
+        if len(data) >= len(raw):
+            return data_url
+        return "data:image/jpeg;base64," + base64.b64encode(data).decode("ascii")
+    except Exception as e:
+        print(f"[build_ai_messages] 图片压缩失败，按原图发送: {e}", flush=True)
+        return data_url
+
+
 def build_ai_messages(question_payload_str, force_text_only=False, deadline=None):
     """构造 AI 请求消息。若题目含图片，则使用多模态消息格式(content 数组)"""
     info = parse_question_payload(question_payload_str)
@@ -6743,7 +6793,8 @@ def build_ai_messages(question_payload_str, force_text_only=False, deadline=None
             _lab = option_img_labels.get(img)
             if _lab:
                 user_content.append({"type": "text", "text": f"第{img_no}张图＝选项{_lab}"})
-            user_content.append({"type": "image_url", "image_url": {"url": img}})
+            # 选项标签按原图 data URL 查，真正发给模型的用压缩后的图
+            user_content.append({"type": "image_url", "image_url": {"url": _shrink_data_url_image(img)}})
         else:
             # 下载远程图片转 base64，防止 AI 提供商无法访问需登录态的图片 URL
             img_data = _download_image_to_base64(img, deadline=deadline)
@@ -6755,7 +6806,7 @@ def build_ai_messages(question_payload_str, force_text_only=False, deadline=None
                 _lab = option_img_labels.get(img)
                 if _lab:
                     user_content.append({"type": "text", "text": f"第{img_no}张图＝选项{_lab}"})
-                user_content.append({"type": "image_url", "image_url": {"url": img_data}})
+                user_content.append({"type": "image_url", "image_url": {"url": _shrink_data_url_image(img_data)}})
     if failed_imgs:
         # 装饰图在脚本侧已经过滤；能走到这里的都是真正的内容图，缺一张题目就不完整，
         # 继续作答只会让模型猜。仍然拦下，让用户刷新重试。
