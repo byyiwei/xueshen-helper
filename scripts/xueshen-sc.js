@@ -11281,22 +11281,55 @@ const MAX_RECORDS = 200;
   const hasNewFaceRecognition = (doc) => {
     return Array.from(doc.querySelectorAll(".chapterVideoFaceMaskDiv")).some(isVisible$1);
   };
+  // 人脸弹窗一定在遮罩/弹窗层里。以前这里连 body 和所有 div 都扫，课程正文或目录
+  // 只要出现「人脸识别」「继续学习」并配有图片就误判：2026-11-23《手机里的人工智能》
+  // 整门课一进就报人脸、视频永远不开播。文本判断改为只看遮罩/弹窗容器。
+  const FACE_OVERLAY_SELECTOR = [
+    '[class*="face"]', '[id*="face"]',
+    '[class*="Face"]', '[id*="Face"]',
+    '[class*="mask"]', '[id*="mask"]',
+    '[class*="Mask"]', '[id*="Mask"]',
+    '[class*="popup"]', '[id*="popup"]',
+    '[class*="Popup"]', '[id*="Popup"]',
+    '[class*="dialog"]', '[id*="dialog"]',
+    '[class*="Dialog"]', '[id*="Dialog"]',
+    '[class*="modal"]', '[id*="modal"]',
+    '[class*="Modal"]', '[id*="Modal"]',
+    '[class*="overlay"]', '[id*="overlay"]',
+    '[class*="Overlay"]', '[id*="Overlay"]',
+    '[class*="qrcode"]', '[class*="QrCode"]', '[id*="qrcode"]'
+  ].join(",");
+  // surface / interface 这类普通容器名里也含 face，按词或驼峰判断，避免把主题容器当弹窗
+  const isFaceOverlayNode = (element) => {
+    const marks = String(element.className || "") + " " + String(element.id || "");
+    return /(^|[\s_-])(face|mask|popup|dialog|modal|overlay|qrcode|qr)([\s_-]|$)/i.test(marks)
+      || /(face|mask|popup|dialog|modal|overlay|qrcode)[A-Z]/.test(marks);
+  };
+  const faceOverlayCandidates = (doc) => {
+    const list = Array.from(doc.querySelectorAll(FACE_OVERLAY_SELECTOR)).filter(isFaceOverlayNode);
+    // 有些弹窗只有 position:fixed、没有可识别的 class；只查挂在 body 下的顶层节点，成本很低
+    try {
+      Array.from((doc.body && doc.body.children) || []).forEach((el) => {
+        try {
+          if (doc.defaultView.getComputedStyle(el).position === "fixed") list.push(el);
+        } catch (_) {}
+      });
+    } catch (_) {}
+    return list.filter(isVisible$1);
+  };
   const hasFaceRecognitionText = (doc) => {
     var _a, _b;
     const bodyText = ((_a = doc.body) == null ? void 0 : _a.innerText) || ((_b = doc.body) == null ? void 0 : _b.textContent) || "";
-    if (FACE_RECOGNITION_TEXTS.some((keyword) => bodyText.includes(keyword))) {
-      return true;
-    }
-    const visibleElements = Array.from(
-      doc.querySelectorAll("div, section, article, body")
-    ).filter(isVisible$1);
-    return visibleElements.some((element) => {
+    // 这句是手机端采集人脸的完整指引，课程正文不会出现，按整页文字判断是安全的
+    if (bodyText.includes("请使用手机APP采集人脸信息后继续学习")) return true;
+    return faceOverlayCandidates(doc).some((element) => {
       const text = element.innerText || element.textContent || "";
-      const hasFaceText = GENERIC_FACE_RECOGNITION_TEXTS.some(
-        (keyword) => text.includes(keyword)
-      );
+      if (!text || text.length > 400) return false;
+      const hasFaceText = FACE_RECOGNITION_TEXTS.some((keyword) => text.includes(keyword))
+        || GENERIC_FACE_RECOGNITION_TEXTS.some((keyword) => text.includes(keyword));
+      if (!hasFaceText) return false;
       const hasQRCode = Boolean(element.querySelector("canvas, img, svg"));
-      return hasFaceText && (hasQRCode || text.includes("人脸"));
+      return hasQRCode || text.includes("人脸");
     });
   };
   const hasCxFaceRecognition = (extraDocuments = []) => {
@@ -16002,6 +16035,43 @@ const MAX_RECORDS = 200;
     const cleanText = (text = "") => String(text ?? "").replace(/<[^>]+>/g, "").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
     const normalize = (text = "") => cleanText(text).replace(/^[A-Z][.、．]\s*/i, "").replace(/[^\p{L}\p{N}√×]/gu, "").toLowerCase();
     const htmlOf = (el) => (el == null ? void 0 : el.innerHTML) || (el == null ? void 0 : el.textContent) || "";
+    // 智慧树的公式和不少选项正文本身就是图片：以前用 cleanText 取纯文本，图片被整段丢掉，
+    // 题干只剩「如果函数 的定义域是 ，则…」、选项只剩「A.」，模型无从作答（2026-11-23
+    // 三条高数题重试 78 次）。这里保留 <img src>（后端会按选项字母给图片打标），
+    // 带 data 的公式图尽量还原成 $LaTeX$。
+    const latexFromImgData = (raw) => {
+      let s = String(raw || "");
+      if (!s) return "";
+      try {
+        s = s.replace(/%u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+      } catch (_) {}
+      try {
+        s = decodeURIComponent(s);
+      } catch (_) {
+        try { s = unescape(s); } catch (_) {}
+      }
+      try {
+        const v = JSON.parse(s);
+        if (typeof v === "string") s = v;
+      } catch (_) {
+        s = s.replace(/^"+|"+$/g, "");
+      }
+      return String(s || "").trim();
+    };
+    const richTextOf = (el) => {
+      let html = String(htmlOf(el) || "");
+      html = html.replace(/<img\b[^>]*>/gi, (tag) => {
+        const dm = tag.match(/\bdata=["']([^"']*)["']/i);
+        if (dm) {
+          const tex = latexFromImgData(dm[1]);
+          if (tex && /[\\^_$]/.test(tex)) return " $" + tex + "$ ";
+        }
+        const srcMatch = tag.match(/\bdata-src=["']([^"']+)["']/i) || tag.match(/\bsrc=["']([^"']+)["']/i);
+        return srcMatch && srcMatch[1] ? '<img src="' + srcMatch[1] + '"/>' : " ";
+      });
+      html = html.replace(/<(?!\/?img\b)[^>]*>/gi, " ");
+      return html.replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+    };
     const getByKeys = (obj, keys) => {
       if (!obj || typeof obj !== "object") return "";
       const key = keys.find((item) => obj[item] != null && obj[item] !== "");
@@ -16327,7 +16397,8 @@ const MAX_RECORDS = 200;
           return !!(option.querySelector && option.querySelector("img"));
         });
         const optionsText = optionEls.map((option, index) => {
-          const t = cleanText(option.textContent);
+          // 保留图片/公式，并去掉页面自带的「A.」标号（后端会按顺序补字母）
+          const t = richTextOf(option).replace(/^\s*[A-Za-z]\s*[.、．)）:：]\s*/, "");
           if (t) return t;
           const img = option.querySelector && option.querySelector("img");
           const src = img ? (img.getAttribute("data-src") || img.currentSrc || img.src || "") : "";

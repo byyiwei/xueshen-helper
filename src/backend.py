@@ -5240,6 +5240,31 @@ def _answer_choice_conflict(question, answer):
     return False
 
 
+def _choice_options_have_no_content(question):
+    """选择题的选项只有「A.」这类标号、既没有文字也没有图片时，模型无从作答。
+
+    智慧树复习页的公式和选项正文都是图片，脚本旧版取纯文本会把图片整段丢掉，
+    只剩字母标号；这种题换多少模型、重试多少轮都不可能答出来（2026-11-23
+    三条高数题重试 78 次，全部死在「答案与页面选项对不上」）。判出来直接停，
+    不烧模型额度，也避免后台一直显示「等待重试」。
+    """
+    info = parse_question_payload(question)
+    qname = _normalize_question_type_name(info.get("question_type"))
+    if qname not in ("单选题", "多选题", "判断题"):
+        return False
+    options = [str(o).strip() for o in extract_options_from_question(question) if str(o).strip()]
+    if len(options) < 2:
+        return False
+    for opt in options:
+        if re.search(r"<img\b", opt, re.I):
+            return False
+        text = re.sub(r"^\s*[A-Za-z]\s*[.、．)）:：]\s*", "", opt)
+        text = re.sub(r"<[^>]+>", "", text)
+        if re.sub(r"[\s ]+", "", text):
+            return False
+    return True
+
+
 def _with_choice_retry_hint(question):
     """给「答案对不上选项」的题补一句明确要求，再用同一道题重问一次。"""
     hint = "只从上面给出的选项中选择，答案必须与某个选项完全一致，不要解释；单选题只选一项。"
@@ -7046,6 +7071,10 @@ AI_TASK_WORKER_SLOTS = []  # [(停止事件, 线程)]，用于运行时增减线
 AI_TASK_WORKERS_LOCK = threading.Lock()
 AI_TASK_WORKER_SEQ = 0
 AI_TASK_ROUND_WAIT = (120, 300, 900, 1800, 3600)
+# 轮次上限：同一道题换完一轮所有模型仍答不出，最多重试到第 5 轮就判失败。
+# 以前没有总上限，遇到根本答不出的题（选项为空、题目残缺）会每小时重试一次，
+# 后台一直显示「等待重试」，用户以为卡死（2026-11-23 三条高数题 13 轮 78 次）。
+AI_TASK_MAX_ROUNDS = 5
 AI_TASK_CLAIM_LOCK = threading.Lock()
 AI_TASK_WORKER_STARTED = False
 AI_TASK_TRIED_LIMIT = 200
@@ -7178,7 +7207,7 @@ def _task_model_order(need_vision):
 
 
 def _run_ai_task(task):
-    """跑一轮完整候选模型；全失败就写 waiting + 下次重试时间，不设总截止。"""
+    """跑一轮完整候选模型；全失败就写 waiting + 下次重试时间，最多重试到 AI_TASK_MAX_ROUNDS 轮。"""
     task_id = int(task["id"])
     question = str(task.get("question") or "")
     if not question:
@@ -7196,6 +7225,16 @@ def _run_ai_task(task):
         tried = []
     attempts = int(task.get("attempts") or 0)
     round_no = int(task.get("round_no") or 0)
+    if _choice_options_have_no_content(question):
+        _task_live_clear(task_id)
+        db.update_ai_answer_task(
+            task_id, status="failed", round_no=round_no, attempts=attempts,
+            last_error="题目选项内容为空（页面只给到字母标号），无法作答，请刷新页面重试或手动作答",
+            next_retry_at=None,
+        )
+        _task_event(f"#{task_id} 选项内容为空，已停止重试", "error", task_id)
+        print(f"[答题任务] 选项内容为空，停止 task={task_id}", flush=True)
+        return
     try:
         prepared_messages = build_ai_messages(question, deadline=time.time() + 120)
     except Exception as e:
@@ -7371,11 +7410,23 @@ def _run_ai_task(task):
                 set_cooldown(MODEL_TIMEOUT_COOLDOWN, provider_name, model_name, MODEL_TIMEOUT_COOLDOWN_SECONDS)
 
     round_no += 1
+    last_error_text = "；".join(last_errors[-5:])[:2000] or "本轮模型均失败"
+    if round_no >= AI_TASK_MAX_ROUNDS:
+        # 已经换完全部模型 5 轮还答不出：再排队只会每小时空转一次，判失败等用户重提
+        db.update_ai_answer_task(
+            task_id, status="failed", round_no=round_no, attempts=attempts,
+            tried_models=json.dumps(tried, ensure_ascii=False),
+            last_error=last_error_text, next_retry_at=None,
+        )
+        _task_live_clear(task_id)
+        _task_event(f"#{task_id} 连续 {round_no} 轮未答出，已停止重试", "error", task_id)
+        print(f"[答题任务] 连续 {round_no} 轮失败，停止 task={task_id}", flush=True)
+        return
     wait_seconds = AI_TASK_ROUND_WAIT[min(round_no - 1, len(AI_TASK_ROUND_WAIT) - 1)]
     db.update_ai_answer_task(
         task_id, status="waiting", round_no=round_no, attempts=attempts,
         tried_models=json.dumps(tried, ensure_ascii=False),
-        last_error="；".join(last_errors[-5:])[:2000] or "本轮模型均失败",
+        last_error=last_error_text,
         next_retry_at=datetime.now() + timedelta(seconds=wait_seconds),
     )
     _task_live_clear(task_id)
