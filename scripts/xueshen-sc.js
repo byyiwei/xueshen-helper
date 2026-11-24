@@ -10182,6 +10182,18 @@ const MAX_RECORDS = 200;
       });
       __publicField(this, "fillLineQuestion", (question) => {
         const answerGroups = this.buildAnswerGroups(question.answer.answer);
+        // 模型没拿到题目正文时会回「请提供需要连线的动词和名词短语」这类说明文字。
+        // 这不是页面结构变了，不该刷「页面异常」；只本地提示并跳过（2026-11-24 三条）。
+        const answerRefusal = (question.answer.answer || []).some((item) => {
+          const text = String(item == null ? "" : item).trim();
+          return text.length >= 8 && /请提供|请给出|请补充|需要.{0,4}(提供|题目|内容)|无法(作答|判断|确定)|抱歉|未提供/.test(text);
+        });
+        if (answerRefusal) {
+          question.__xsFillReason = "answer_invalid";
+          question.__xsSkipPageReport = 1;
+          this.log.insertLog("连线题答案无效（模型未给出可用的连线关系），本题跳过", "warning");
+          return false;
+        }
         const selectBoxes = question.element.querySelectorAll(
           ".line_answer_ct .selectBox, .thirdUlList .dept_select"
         );
@@ -10405,13 +10417,25 @@ const MAX_RECORDS = 200;
               const optSel = ["zj"].includes(this.type)
                 ? ['[class*="before-after"]', ".fl.after"]
                 : [".answerBg", ".answer_p"];
-              const liveOptionEls = liveEl.querySelectorAll(optSel[0]);
-              const [liveOpts, liveTexts] = this.extractOptions(liveOptionEls, optSel[1]);
+              let liveOptionEls = liveEl.querySelectorAll(optSel[0]);
+              let liveSelector = optSel[0];
+              let [liveOpts, liveTexts] = this.extractOptions(liveOptionEls, optSel[1]);
+              // 新版 li > label + input 布局没有旧选择器：重绑定时同样按行兜底，否则会一直抓着失联的旧节点
+              if (Object.keys(liveOpts).length < 2 && ["0", "1", "3"].includes(String(question.type))) {
+                const rows = this.extractChoiceRows(liveEl);
+                if (rows && rows.texts.length >= 2) {
+                  liveOpts = rows.options;
+                  liveTexts = rows.texts;
+                  liveOptionEls = rows.nodes;
+                  liveSelector = rows.selector;
+                }
+              }
               if (Object.keys(liveOpts).length) {
                 question.element = liveEl;
                 question.options = liveOpts;
                 question.optionsText = liveTexts;
                 question.__xsOptionCount = liveOptionEls.length;
+                question.__xsOptionSelector = liveSelector;
                 question.__xsRebinded = 1;
               }
             }
@@ -10991,6 +11015,8 @@ const MAX_RECORDS = 200;
           let optionElements;
           let optionsObject = {};
           let optionTexts = [];
+          // 选项是从哪组选择器解析出来的：页面异常上报要用真实值，不能再固定写 before-after
+          let optionSelectorUsed = "";
           if (["zj"].includes(this.type)) {
             questionTitle = this.removeHtml(
               ((_a = element.querySelector(".fontLabel")) == null ? void 0 : _a.innerHTML) || ""
@@ -10998,11 +11024,12 @@ const MAX_RECORDS = 200;
             questionTypeText = this.removeHtml(
               ((_b = element.querySelector(".newZy_TItle")) == null ? void 0 : _b.innerHTML) || ""
             );
-            optionElements = element.querySelectorAll('[class*="before-after"]');
+            optionElements = this.visibleOnlyOptions(element.querySelectorAll('[class*="before-after"]'));
             [optionsObject, optionTexts] = this.extractOptions(
               optionElements,
               ".fl.after"
             );
+            if ((optionTexts || []).length) optionSelectorUsed = '[class*="before-after"]';
           } else if (["zy", "ks"].includes(this.type)) {
             const titleElement = ((_c = element == null ? void 0 : element.querySelector("h3")) == null ? void 0 : _c.innerHTML) || "";
             const colorShallowElement = ((_d = element.querySelector(".colorShallow")) == null ? void 0 : _d.outerHTML) || "";
@@ -11014,11 +11041,12 @@ const MAX_RECORDS = 200;
             questionTitle = this.removeHtml(
               colorShallowElement ? titleElement.replace(colorShallowElement, "") : titleElement
             );
-            optionElements = element.querySelectorAll(".answerBg");
+            optionElements = this.visibleOnlyOptions(element.querySelectorAll(".answerBg"));
             [optionsObject, optionTexts] = this.extractOptions(
               optionElements,
               ".answer_p"
             );
+            if ((optionTexts || []).length) optionSelectorUsed = ".answerBg";
           }
           const resolvedQuestionType = this.resolveCxQuestionType(
             element,
@@ -11039,6 +11067,19 @@ const MAX_RECORDS = 200;
               element,
               resolvedQuestionType
             );
+          }
+          // 新版章节测验的判断题/选择题改用「li > label > b + radio/checkbox」布局
+          //（.Py_tk > ul.Zy_ulBottom），页面里既没有 before-after 也没有 answerBg，
+          // 旧解析一个选项都取不到，整题报 option_not_found（2026-11-24 夕雾-01 五条）。
+          // 题型已确认是选择/判断时，按「带输入框的最内层 li」兜底解析。
+          if (!(optionTexts || []).length && ["0", "1", "3"].includes(String(resolvedQuestionType))) {
+            const rowOptions = this.extractChoiceRows(element);
+            if (rowOptions && rowOptions.texts.length >= 2) {
+              optionsObject = rowOptions.options;
+              optionTexts = rowOptions.texts;
+              optionElements = rowOptions.nodes;
+              optionSelectorUsed = rowOptions.selector;
+            }
           }
           // 新版单元测试页：旧选择器一个选项都没取到，但选项是 li[role=radio|checkbox]，
           // 按选项组拆成独立小题，别把整卷当一道「单词部分」大题发给 AI
@@ -11077,9 +11118,9 @@ const MAX_RECORDS = 200;
             options: optionsObject,
             // 这些字段给「页面异常」上报用：超星这边以前没记，后台看到的选项数总是 0，分不出是没认出选项还是点不上
             __xsOptionCount: optionElements ? optionElements.length : 0,
-            __xsOptionSelector: ["zj"].includes(this.type)
+            __xsOptionSelector: optionSelectorUsed || (["zj"].includes(this.type)
               ? '[class*="before-after"]'
-              : (["zy", "ks"].includes(this.type) ? ".answerBg" : ""),
+              : (["zy", "ks"].includes(this.type) ? ".answerBg" : "")),
             answer: { code: -1, answer: [] },
             workType: this.type,
             refer: this._window.location.href
@@ -11092,6 +11133,76 @@ const MAX_RECORDS = 200;
       if (iframe) {
         this._document = iframe.contentDocument;
         this._window = iframe.contentWindow;
+      }
+    }
+    // 同一题偶尔会出现两组选项：一组可见、一组 aria-hidden 的重复结构（外观/动画用）。
+    // 以前两组一起解析，选项数和输入框数对不上，点的是隐藏副本或点完回读到别的行，
+    // 表现成「点击后未选中」（2026-11-24 多选题一条：4 options / 6 controls）。
+    // 可见组至少有两项时才只用可见组，否则保留原样，避免图片没加载时把选项全过滤掉。
+    visibleOnlyOptions(optionElements) {
+      const all = optionElements ? [...optionElements] : [];
+      if (all.length < 2) return optionElements;
+      const visible = all.filter((el) => {
+        try {
+          if (el.closest && el.closest('[aria-hidden="true"]')) return false;
+          if (el.getClientRects && el.getClientRects().length === 0) return false;
+        } catch (_) {
+        }
+        return true;
+      });
+      return visible.length >= 2 ? visible : optionElements;
+    }
+    // 判断题等新布局：选项是「li > label > b（对/错） + radio」，点击数挂在 li/label 上，
+    // 既没有 before-after 也没有 answerBg。按「带输入框的最内层 li」取一行一个选项，
+    // 文字优先取行内 label（避免把隐藏 input 的 value 混进选项文本）。
+    extractChoiceRows(element) {
+      try {
+        if (!element || !element.querySelectorAll) return null;
+        const inputSel = 'input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"]';
+        const boxes = [
+          ...element.querySelectorAll("ul.Zy_ulBottom, .Py_tk, .Zy_ulTop, .Zy_ul, .TiMu, .questionLi")
+        ];
+        if (!boxes.length) boxes.push(element);
+        const seen = new Set();
+        const nodes = [];
+        boxes.forEach((box) => {
+          [...box.querySelectorAll("li, label")].forEach((row) => {
+            if (!row.querySelector(inputSel)) return;
+            // li 里还套着带输入框的 li 时只取最内层，避免外层整组被当成一个选项
+            if ([...row.querySelectorAll("li")].some((inner) => inner.querySelector(inputSel))) return;
+            if (seen.has(row)) return;
+            seen.add(row);
+            nodes.push(row);
+          });
+        });
+        // li 和它里面的 label 会同时命中：只留最外层那一行
+        let rows = nodes.filter((n) => !nodes.some((m) => m !== n && m.contains(n)));
+        rows = rows.filter((n) => {
+          try {
+            if (n.closest && n.closest('[aria-hidden="true"]')) return false;
+            if (n.getClientRects && n.getClientRects().length === 0) return false;
+          } catch (_) {
+          }
+          return true;
+        });
+        if (rows.length < 2 || rows.length > 10) return null;
+        const options = {};
+        const texts = [];
+        rows.forEach((row, index) => {
+          const label = row.querySelector("label, .fl.after, .after, b") || row;
+          let text = this.removeHtml(label.innerHTML || "");
+          text = String(text || "").replace(/^\s*(?:[（(]\s*[A-Za-z]\s*[)）]\s*|[A-Za-z]\s*[.、．)）:：]\s*)/, "").trim();
+          if (!text) {
+            const img = row.querySelector && row.querySelector("img");
+            const src = img ? (img.getAttribute("data-src") || img.currentSrc || img.src || "") : "";
+            text = src ? `<img src="${src}"/>` : `选项${String.fromCharCode(65 + index)}`;
+          }
+          options[`${String.fromCharCode(65 + index)}. ${text}`] = row;
+          texts.push(text);
+        });
+        return { options, texts, nodes: rows, selector: "li > label + input[radio/checkbox]" };
+      } catch (_) {
+        return null;
       }
     }
     // 新版「单元测试」页（2026-11-23 用户 3178398135 反馈）：一个 .TiMu[data="15"] 里套着
@@ -11108,6 +11219,16 @@ const MAX_RECORDS = 200;
         const optionSel = 'li[role="radio"], li[role="checkbox"], [role="radio"], [role="checkbox"], li[onclick*="addChoice"], li[onclick*="addMultipleChoice"]';
         let nodes = [...element.querySelectorAll(optionSel)];
         if (nodes.length < 2) return [];
+        // 重复隐藏组（aria-hidden）不算选项：它们点不上，还会让小题被拆成两份
+        const visibleNodes = nodes.filter((n) => {
+          try {
+            if (n.closest && n.closest('[aria-hidden="true"]')) return false;
+            if (n.getClientRects && n.getClientRects().length === 0) return false;
+          } catch (_) {
+          }
+          return true;
+        });
+        if (visibleNodes.length >= 2) nodes = visibleNodes;
         // 外层 li 里可能还嵌着带 role 的元素，只保留最外层
         nodes = nodes.filter((n) => !nodes.some((m) => m !== n && m.contains(n)));
         // 分组标题（「第一组数据」）不是选项
