@@ -20,6 +20,8 @@
 // @changelog    2. 人脸识别检测只看遮罩/弹窗层，课程正文出现「人脸识别」字样不再误判为要采集人脸、不再停刷
 // @changelog    3. 页面异常不再漏报：题型为空、解析失败的页面照常上报，方便快速修复（已结束测验、问卷页等确证误报仍会过滤）
 // @changelog    4. AI 答题：同一题连续 5 轮答不出自动停止；选项只有标号没有正文时立即判失败并提示刷新或手动作答
+// @changelog    5. 学堂在线：视频/音频自动播放并支持 2 倍速，图文/PDF/Word/PPT 自动滚到底点「标记看完」，播完自动切下一节、跳过已完成任务（和超星同一套完成度标准）
+// @changelog    6. 学堂在线：作业/考试页自动答题（单选、多选、判断、填空），默认只填不提交；设置里开启「自动交卷」后逐题提交并在最后交卷
 // @changelog    v6.1.6 (2026-11-22)
 // @changelog    1. 紧急修复 6.1.5 超星章节测验「发现测验后解析不到任何题目」：恢复答题处理器的题型标记与 iframe 题目文档绑定，章节测验、作业、考试恢复正常解析
 // @changelog    v6.1.5 (2026-11-22)
@@ -2401,7 +2403,7 @@
     return result;
   }
   // 哪些平台有哪些能力：设置页按当前平台过滤，没这个功能的平台不显示对应设置
-  const ANSWER_PLATFORM_KEYS = ["cx", "zhs", "qs", "ct", "jdz", "ouchn"];
+  const ANSWER_PLATFORM_KEYS = ["cx", "zhs", "qs", "ct", "jdz", "ouchn", "xtzx"];
   // 国开考试拿不到答案对照，交卷前算不出正确率，也没有章节自动提交；
   // 这几项只给有完整作业/考试流程的平台显示
   const ANSWER_REPORT_KEYS = ["cx", "zhs", "qs", "ct", "jdz"];
@@ -3190,9 +3192,10 @@
         const sections = [
           { label: "基本设置", configs: pick(setting.config.basicConfig), showRemainCount: true }
         ];
-        // 国开虽然走通用视频助手，但考试页支持自动答题，所以考试设置也要显示
-        // 青书走视频助手但作业/考试答题走接口直通层（自动交卷在 EXT_CONF，不在这份配置里），也不显示考试设置
-        if (!isWatchSite || platformKey === "ouchn") sections.push({ label: "考试设置", configs: pick(setting.config.examConfig) });
+        // 国开虽然走通用视频助手，但考试页支持自动答题，所以考试设置也要显示；
+        // 学堂在线作业页同样支持自动答题和自动交卷，也显示；
+        // 青书走视频助手但作业/考试答题走接口直通层（自动交卷在 EXT_CONF，不在这份配置里），不显示考试设置
+        if (!isWatchSite || platformKey === "ouchn" || platformKey === "xtzx") sections.push({ label: "考试设置", configs: pick(setting.config.examConfig) });
         if (platformKey === "cx") sections.push({ label: "超星设置", configs: pick(setting.config.cxConfig) });
         return sections;
       });
@@ -23336,6 +23339,11 @@ const XS_EXT = (() => {
       return true;
     };
     const xtzxTick = async (profile, settings) => {
+      // 作业/考试页由答题助手（xsQuiz 里的 xtzxQuizTick）接管，视频助手不在这里找播放器
+      if (/\/(exercise|homework|exam)\//.test(location.pathname)) {
+        state.media = "学堂在线：作业/考试页，答题助手处理";
+        return;
+      }
       const kind = xtzxKind();
       const cur = xtzxCurrent();
       const curId = (cur && cur.id) || xtzxPathId();
@@ -24814,6 +24822,13 @@ const XS_EXT = (() => {
 
     // 扫一遍页面，题目有变化才更新列表
     const scan = (silent) => {
+      // 学堂在线：整卷数据在 Vue 组件里，一屏只显示一道题，按组件数据同步面板
+      if (isXtzxQuizHost() && xtzxQuizVm()) {
+        if (!state.running) {
+          try { xtzxQuizSyncPanel(xtzxQuizVm()); } catch (_) {}
+        }
+        return [];
+      }
       // 答题过程中不要重建列表，否则会把手里的进度和已答结果冲掉
       if (state.running) return [];
       state.scanning = true;
@@ -25099,7 +25114,452 @@ const XS_EXT = (() => {
         unmatched: matched.unmatched
       };
     };
+
+    // ===== 学堂在线（xuetangx.com）作业/考试：整卷数据在 Vue 组件里，一题一提交 =====
+    // CourseActionExamine.$data.prictice 是整卷：content.Body 题干、content.Options 选项、
+    // content.Blanks 填空、type 1单选/2多选/4填空/5简答/6判断；setAnswer(选项) 答题，
+    // submitAnswer() 提交当前题，答题卡组件的 submitAll() 才是最后交卷。
+    // 平台一屏只渲染一道题，所以不能走通用的「整页扫描」，这里按题切 active 逐题处理。
+    // 所有函数只在 xuetangx.com 的作业/考试页生效，其它平台不会进入。
+    const isXtzxQuizHost = () => {
+      try { return /(^|\.)xuetangx\.com$/i.test(location.hostname); } catch (_) { return false; }
+    };
+    const xtzxQuizVm = () => {
+      try {
+        if (!isXtzxQuizHost()) return null;
+        const el = document.querySelector(".courseActionExamineLearnSpace, .courseActionExamine");
+        const vm = el && el.__vue__;
+        if (!vm || !vm.$data || !Array.isArray(vm.$data.prictice) || !vm.$data.prictice.length) return null;
+        return vm;
+      } catch (_) { return null; }
+    };
+    const xtzxQuizPage = () => !!xtzxQuizVm();
+    const xtzxHtmlText = (html) => {
+      try {
+        const box = document.createElement("div");
+        box.innerHTML = String(html == null ? "" : html);
+        return TEXT(box);
+      } catch (_) {
+        return String(html == null ? "" : html).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+      }
+    };
+    const XTZX_QUIZ_TYPES = { 1: "单选题", 2: "多选题", 3: "单选题", 4: "填空题", 5: "简答题", 6: "判断题" };
+    const xtzxQuizType = (q) => XTZX_QUIZ_TYPES[q && q.type] || "单选题";
+    // 判断题接口只有 true/false 两个空选项，页面上显示的是对/错，这里补成后端和模型都认的文字
+    const xtzxQuizOptions = (q) => ((q && q.content && q.content.Options) || []).map((o, i) => {
+      let text = xtzxHtmlText(o.value);
+      if (!text) text = String(o.key) === "true" ? "对" : String(o.key) === "false" ? "错" : "";
+      return {
+        src: o,
+        text,
+        letter: /^[A-H]$/i.test(String(o.key || "")) ? String(o.key).toUpperCase() : String.fromCharCode(65 + i)
+      };
+    });
+    const xtzxQuizQid = (q, i) => String(
+      (q && q.problem_id) || (q && q.content && q.content.ProblemID) || ("idx-" + i)
+    );
+    const xtzxQuizSubmitted = (q) => !!(
+      q && q.user && (Number(q.user.my_count) > 0 || Number(q.user.status) === 3)
+    );
+    const xtzxQuizState = {
+      key: "",
+      busy: false,
+      settled: false,
+      filled: {},
+      submitted: {},
+      skipped: {},
+      submitFail: {},
+      answerText: {},
+      msg: {},
+      submitAt: 0,
+      submitId: "",
+      finalDone: false,
+      finalLogged: 0
+    };
+    const xtzxQuizReset = () => {
+      xtzxQuizState.settled = false;
+      xtzxQuizState.filled = {};
+      xtzxQuizState.submitted = {};
+      xtzxQuizState.skipped = {};
+      xtzxQuizState.submitFail = {};
+      xtzxQuizState.answerText = {};
+      xtzxQuizState.msg = {};
+      xtzxQuizState.submitAt = 0;
+      xtzxQuizState.submitId = "";
+      xtzxQuizState.finalDone = false;
+      xtzxQuizState.finalLogged = 0;
+    };
+    const xtzxQuizKey = (vm) => location.pathname + "|" + String((vm && vm.$data && vm.$data.leaf_id) || "");
+    const xtzxQuizQuestion = (q) => {
+      const c = (q && q.content) || {};
+      return {
+        // 题干就是 Body；Remark 一般只是说明文字，带上反而影响题库匹配，Body 为空时才兜底
+        title: xtzxHtmlText(c.Body) || xtzxHtmlText(c.Remark),
+        optionsText: xtzxQuizOptions(q).map((o) => o.text),
+        type: xtzxQuizType(q),
+        refer: location.href
+      };
+    };
+    // 面板上同步整卷进度（题号、题型、答案、状态），并写进超星那套「题目结果」界面
+    const xtzxQuizSyncPanel = (vm) => {
+      const pr = (vm && vm.$data && vm.$data.prictice) || [];
+      const active = Math.max(0, Math.min(pr.length - 1, Number(vm.$data && vm.$data.active) || 0));
+      state.total = pr.length;
+      const prevList = (useQuestionStore().questionList || []).slice();
+      const list = pr.map((item, i) => {
+        const id = xtzxQuizQid(item, i);
+        const done = xtzxQuizSubmitted(item) || !!xtzxQuizState.submitted[id];
+        const filled = !!xtzxQuizState.filled[id];
+        const skipped = !!xtzxQuizState.skipped[id];
+        const answerText = xtzxQuizState.answerText[id] || "";
+        const prevAnswer = (prevList[i] && prevList[i].answer) || {};
+        const options = xtzxQuizOptions(item);
+        return {
+          index: i,
+          // 超星那套界面用 innerHTML 渲染题干，保留原样（图片、公式都能显示）
+          title: (item.content && item.content.Body) || `第 ${i + 1} 题`,
+          titleText: xtzxHtmlText(item.content && item.content.Body),
+          type: xtzxQuizType(item),
+          optionsText: options.map((o) => o.text),
+          options: options.map((o) => ({ text: o.text, letter: o.letter })),
+          answer: {
+            code: done ? 1 : skipped ? -1 : filled ? 2 : -1,
+            answer: answerText ? [answerText] : [],
+            src: filled ? "bank" : "",
+            msg: done ? "已提交" : (xtzxQuizState.msg[id] || ""),
+            // 正在等用户选相似题时保留候选，别被下一轮同步冲掉
+            candidates: prevAnswer.src === "pick" ? prevAnswer.candidates : void 0,
+            picked: prevAnswer.picked
+          }
+        };
+      });
+      const store = useQuestionStore();
+      store.questionList = list;
+      store.currentQuestionIndex = pr.length ? active + 1 : 0;
+      // 旧版精简列表也保持同步
+      state.items = list.map((item) => ({
+        index: item.index,
+        title: `第 ${item.index + 1} 题 · ${item.type} · ${String(item.titleText || "").slice(0, 80)}`,
+        type: item.type,
+        answer: item.answer.answer.join(" "),
+        status: item.answer.code === 1 ? "done" : item.answer.code === -1 && xtzxQuizState.skipped[xtzxQuizQid(pr[item.index], item.index)] ? "fail" : item.answer.code === 2 ? "warn" : "pending",
+        msg: item.answer.msg
+      }));
+    };
+    // 把答案点进组件数据：单选/判断直接 setAnswer，多选逐项对齐，填空写 Blanks 并同步页面输入框
+    const xtzxQuizFill = (vm, q, answer) => {
+      const list = Array.isArray(answer) ? answer : [answer];
+      const opts = xtzxQuizOptions(q);
+      if (q.type === 1 || q.type === 2 || q.type === 3 || q.type === 6) {
+        if (!opts.length) return { ok: false, reason: "题目没有选项" };
+        const matched = pickOptions({ options: opts }, list);
+        if (!matched.picked.length) return { ok: false, reason: "答案没对上选项" };
+        const want = q.type === 2 ? matched.picked : matched.picked.slice(0, 1);
+        if (q.type === 2) {
+          opts.forEach((opt) => {
+            const on = want.indexOf(opt) >= 0;
+            if (!!opt.src.ifchoose !== on) vm.setAnswer(opt.src);
+          });
+        } else {
+          want.forEach((opt) => vm.setAnswer(opt.src));
+        }
+        return { ok: true, text: want.map((opt) => opt.letter).join("") };
+      }
+      if (q.type === 4) {
+        const blanks = (q.content && q.content.Blanks) || [];
+        if (!blanks.length) return { ok: false, reason: "题目没有填空项" };
+        let n = 0;
+        blanks.forEach((blank, i) => {
+          const value = String(list[i] == null ? "" : list[i]).trim();
+          if (!value) return;
+          // Blanks[i].answer 是平台提交时读取的字段
+          if (blank.answer === undefined) vm.$set(blank, "answer", value);
+          else blank.answer = value;
+          n += 1;
+        });
+        // 页面输入框也写上，用户能直接看到答案；平台提交读 Blanks，不依赖这一步
+        try {
+          const inputs = Array.from(document.querySelectorAll(".question input[type='text'], .question textarea"))
+            .filter((input) => !input.disabled && !input.readOnly);
+          blanks.forEach((blank, i) => {
+            const input = inputs[i];
+            const value = String(list[i] == null ? "" : list[i]).trim();
+            if (!input || !value) return;
+            input.focus();
+            input.value = value;
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          });
+        } catch (_) {}
+        return n ? { ok: true, text: list.slice(0, n).join(" / ") } : { ok: false, reason: "答案为空" };
+      }
+      // 简答题（UEditor 富文本）没有可靠的自动填写入口，留给用户自己答
+      return { ok: false, reason: "简答题需要手动作答" };
+    };
+    // 下一道要处理的题：先往后找，再从头找。onlyEmpty=true 表示只找「还没填」的（不自动提交时用）
+    const xtzxQuizPending = (vm, from, onlyEmpty) => {
+      const pr = (vm && vm.$data && vm.$data.prictice) || [];
+      const pending = (q, i) => {
+        const id = xtzxQuizQid(q, i);
+        if (xtzxQuizSubmitted(q) || xtzxQuizState.submitted[id] || xtzxQuizState.skipped[id]) return false;
+        if (onlyEmpty && xtzxQuizState.filled[id]) return false;
+        return true;
+      };
+      for (let step = 1; step <= pr.length; step += 1) {
+        const i = (from + step) % pr.length;
+        if (pending(pr[i], i)) return i;
+      }
+      return -1;
+    };
+    // 所有题处理完：没开自动交卷就提示手动提交；开了就核对每题都已提交成功再交卷
+    const xtzxQuizFinal = async (vm) => {
+      const pr = (vm && vm.$data && vm.$data.prictice) || [];
+      const isLeft = (q, i) => {
+        const id = xtzxQuizQid(q, i);
+        return !xtzxQuizSubmitted(q) && !xtzxQuizState.submitted[id];
+      };
+      const left = pr.filter(isLeft).length;
+      // 没答案 / 简答题被跳过的题，单独提示，别让用户以为全都填好了
+      const skipped = pr.filter((q, i) => isLeft(q, i) && xtzxQuizState.skipped[xtzxQuizQid(q, i)]).length;
+      if (!useSettingStore().config.examConfig.autoSubmit.value) {
+        if (!xtzxQuizState.finalLogged) {
+          xtzxQuizState.finalLogged = Date.now();
+          log(skipped
+            ? `学堂在线：其余题目已填好，还有 ${skipped} 道没答案（简答或未搜到），请手动完成后再点「提交」`
+            : "学堂在线：所有题目已填好，请在页面上确认后手动点「提交」；设置里可开启自动交卷");
+        }
+        xtzxQuizState.settled = true;
+        return "done";
+      }
+      if (left) {
+        if (!xtzxQuizState.finalLogged) {
+          xtzxQuizState.finalLogged = Date.now();
+          log(`学堂在线：还有 ${left} 道题没提交成功${skipped ? `（其中 ${skipped} 道没答案）` : ""}，先不自动交卷`, "warning");
+        }
+        xtzxQuizState.settled = true;
+        return "blocked";
+      }
+      if (xtzxQuizState.finalDone) return "done";
+      // 之前已经交过卷：不再重复调交卷接口
+      if (vm.$data && vm.$data.is_apply_answer_sheet) {
+        xtzxQuizState.finalDone = true;
+        xtzxQuizState.settled = true;
+        log("学堂在线：这份作业/考试已经交过卷，不再重复提交");
+        return "done";
+      }
+      xtzxQuizState.finalDone = true;
+      xtzxQuizState.settled = true;
+      const sheet = vm.$refs && vm.$refs.showAnswerSheet;
+      if (!sheet || typeof sheet.submitAll !== "function") {
+        log("学堂在线：没找到答题卡交卷入口，请在页面上手动交卷", "warning");
+        return "done";
+      }
+      log("学堂在线：所有题目已提交，正在交卷");
+      try { sheet.submitAll(); } catch (_) {
+        log("学堂在线：交卷调用失败，请手动交卷", "warning");
+        return "done";
+      }
+      // 等接口回来再看一眼状态，避免「点了但没交上」还提示成功
+      await sleep(2.5);
+      if (vm.$data && vm.$data.is_apply_answer_sheet) log("学堂在线：交卷成功");
+      else log("学堂在线：已点交卷，但没等到成功状态，请到答题卡确认", "warning");
+      return "done";
+    };
+    // 超星那套「题目结果」里点相似题候选时，回调把答案填进学堂在线当前题
+    const xtzxQuizRegisterFillHook = (vm) => {
+      const pr = (vm && vm.$data && vm.$data.prictice) || [];
+      registerQuestionFillHook({
+        questions: useQuestionStore().questionList || [],
+        fillQuestion: (real, index) => {
+          const target = pr[index];
+          const want = (real && real.answer && real.answer.answer) || [];
+          if (!target || !want.length) return false;
+          const filled = xtzxQuizFill(vm, target, want);
+          if (!filled.ok) return false;
+          const id = xtzxQuizQid(target, index);
+          xtzxQuizState.filled[id] = true;
+          xtzxQuizState.answerText[id] = filled.text || want.join(" ");
+          xtzxQuizState.msg[id] = "已填，待提交";
+          return true;
+        }
+      });
+    };
+    // 走一步：取答案 -> 填题 -> （自动交卷开启时）提交当前题 -> 切下一题
+    const xtzxQuizStep = async () => {
+      const vm = xtzxQuizVm();
+      if (!vm) return "idle";
+      const autoSubmit = !!useSettingStore().config.examConfig.autoSubmit.value;
+      const pr = vm.$data.prictice || [];
+      const active = Math.max(0, Math.min(pr.length - 1, Number(vm.$data.active) || 0));
+      const q = pr[active];
+      if (!q) return "idle";
+      const qid = xtzxQuizQid(q, active);
+      try { xtzxQuizSyncPanel(vm); } catch (_) {}
+      // 上一轮刚点过提交：等平台把 my_count 写回来再继续
+      if (xtzxQuizState.submitAt && xtzxQuizState.submitId === qid) {
+        if (xtzxQuizSubmitted(q)) {
+          xtzxQuizState.submitAt = 0;
+          xtzxQuizState.submitted[qid] = true;
+        } else if (Date.now() - xtzxQuizState.submitAt > 12000) {
+          xtzxQuizState.submitAt = 0;
+          const tries = (xtzxQuizState.submitFail[qid] || 0) + 1;
+          xtzxQuizState.submitFail[qid] = tries;
+          xtzxQuizState.msg[qid] = "提交未确认";
+          log(`学堂在线：第 ${active + 1} 题提交未确认（第 ${tries} 次）`, "warning");
+          if (tries >= 2) xtzxQuizState.skipped[qid] = true;
+        } else {
+          return "submitting";
+        }
+      }
+      if (xtzxQuizSubmitted(q)) {
+        xtzxQuizState.submitted[qid] = true;
+        const next = xtzxQuizPending(vm, active, !autoSubmit);
+        if (next >= 0) { vm.changeActive(next); return "next"; }
+        return xtzxQuizFinal(vm);
+      }
+      // 还没填：取一次答案
+      if (!xtzxQuizState.filled[qid] && !xtzxQuizState.skipped[qid]) {
+        const question = xtzxQuizQuestion(q);
+        setItem(active, { status: "running", title: `第 ${active + 1} 题 · ${question.type} · ${question.title.slice(0, 80)}` });
+        const res = await askAnswer(question);
+        let answer = res && res.data && res.data.answer;
+        const candidates = (res && res.data && res.data.candidates) || [];
+        // 题库有多道相似题：按「手动选择的处理」设置跳过，或者等用户点选
+        if (res && res.data && res.data.multimatch && candidates.length) {
+          if (getManualWaitMode() === "skip") {
+            xtzxQuizState.skipped[qid] = true;
+            xtzxQuizState.msg[qid] = `有 ${candidates.length} 道相似题，已按设置跳过`;
+            log(`学堂在线：第 ${active + 1} 题有 ${candidates.length} 道相似题，已按设置跳过`, "warning");
+            answer = [];
+          } else {
+            const pickMsg = `有 ${candidates.length} 道相似题，请选择后继续`;
+            xtzxQuizState.msg[qid] = pickMsg;
+            setItem(active, { status: "pick", msg: pickMsg });
+            // 超星样式面板读的是 questionStore，把候选项挂到当前题上
+            const qs = useQuestionStore();
+            if (qs.questionList[active]) {
+              qs.questionList[active] = Object.assign({}, qs.questionList[active], {
+                answer: { code: 0, answer: [], src: "pick", msg: pickMsg, candidates }
+              });
+              qs.questionList = [...qs.questionList];
+            }
+            xtzxQuizRegisterFillHook(vm);
+            log(`学堂在线：第 ${active + 1} 题有 ${candidates.length} 道相似题，等你选择后继续…`, "warning");
+            const picked = await waitForManualPick(active);
+            answer = picked || [];
+            if (!picked) xtzxQuizState.msg[qid] = "等待选择超时";
+          }
+        }
+        if (!Array.isArray(answer) || !answer.length) {
+          if (!xtzxQuizState.skipped[qid]) {
+            xtzxQuizState.skipped[qid] = true;
+            xtzxQuizState.msg[qid] = (res && res.msg) || "未搜到答案";
+            log(`学堂在线：第 ${active + 1} 题未搜到答案，先跳过`, "warning");
+          }
+          const next = xtzxQuizPending(vm, active, true);
+          if (next >= 0) { vm.changeActive(next); return "skip"; }
+          return xtzxQuizFinal(vm);
+        }
+        const filled = xtzxQuizFill(vm, q, answer);
+        if (!filled.ok) {
+          xtzxQuizState.skipped[qid] = true;
+          xtzxQuizState.msg[qid] = filled.reason || "填写失败";
+          log(`学堂在线：第 ${active + 1} 题${filled.reason || "填写失败"}，先跳过`, "warning");
+          const next = xtzxQuizPending(vm, active, !autoSubmit);
+          if (next >= 0) { vm.changeActive(next); return "skip"; }
+          return xtzxQuizFinal(vm);
+        }
+        xtzxQuizState.filled[qid] = true;
+        xtzxQuizState.answerText[qid] = filled.text || (Array.isArray(answer) ? answer.join(" ") : String(answer));
+        xtzxQuizState.msg[qid] = "已填，待提交";
+        setItem(active, { status: "warn", answer: xtzxQuizState.answerText[qid], msg: "已填，待提交" });
+        log(`学堂在线：第 ${active + 1} 题已填 ${xtzxQuizState.answerText[qid]}`);
+        if (!autoSubmit) {
+          const next = xtzxQuizPending(vm, active, true);
+          if (next >= 0) { vm.changeActive(next); return "next"; }
+          return xtzxQuizFinal(vm);
+        }
+        // 自动提交交给下一轮，给页面一点时间更新选项/按钮
+        return "filled";
+      }
+      // 已填好、开了自动交卷：提交当前题
+      if (autoSubmit && !xtzxQuizState.submitted[qid] && !xtzxQuizState.skipped[qid]) {
+        if ((xtzxQuizState.submitFail[qid] || 0) >= 2) {
+          xtzxQuizState.skipped[qid] = true;
+          const next = xtzxQuizPending(vm, active, false);
+          if (next >= 0) { vm.changeActive(next); return "skip"; }
+          return xtzxQuizFinal(vm);
+        }
+        xtzxQuizState.submitAt = Date.now();
+        xtzxQuizState.submitId = qid;
+        try {
+          vm.submitAnswer();
+          setItem(active, { status: "running", msg: "已点提交，等结果" });
+          return "submit";
+        } catch (_) {
+          xtzxQuizState.submitAt = 0;
+          log(`学堂在线：第 ${active + 1} 题提交出错`, "warning");
+        }
+      }
+      // 兜底：切到下一道还没处理的题
+      const next = xtzxQuizPending(vm, active, !autoSubmit);
+      if (next >= 0) { vm.changeActive(next); return "next"; }
+      return xtzxQuizFinal(vm);
+    };
+    // 手动点「开始答题」：连续跑，直到整卷处理完
+    const xtzxQuizRun = async () => {
+      if (!xtzxQuizVm()) {
+        log("没有打开学堂在线的作业或考试页面");
+        return;
+      }
+      if (state.running) return;
+      state.running = true;
+      xtzxQuizReset();
+      try { useSettingStore().tabIndex = "2"; } catch (_) {}
+      log("学堂在线：开始自动答题");
+      let guard = 0;
+      try {
+        while (state.running && guard < 4000) {
+          guard += 1;
+          const step = await xtzxQuizStep();
+          if (step === "done" || step === "blocked" || step === "idle") break;
+          await sleep(step === "submitting" ? 1.5 : 1);
+        }
+      } finally {
+        state.running = false;
+      }
+      log("学堂在线：本轮答题结束");
+    };
+    // 自动答题开关打开时，2 秒一轮盯着作业/考试页；一次只走一步，不阻塞页面
+    const xtzxQuizTick = async () => {
+      if (!isXtzxQuizHost() || xtzxQuizState.busy) return;
+      const vm = xtzxQuizVm();
+      if (!vm) return;
+      if (state.running || state.scanning || state.pick) return;
+      if (!useSettingStore().config.basicConfig.autoAnswer.value) return;
+      const key = xtzxQuizKey(vm);
+      if (xtzxQuizState.key !== key) {
+        xtzxQuizState.key = key;
+        xtzxQuizReset();
+        try { useSettingStore().tabIndex = "2"; } catch (_) {}
+        log("学堂在线：检测到作业/考试页，开始自动答题");
+      }
+      if (xtzxQuizState.settled) return;
+      xtzxQuizState.busy = true;
+      try {
+        await xtzxQuizStep();
+      } catch (e) {
+        log("学堂在线自动答题出错：" + String((e && e.message) || e).slice(0, 80));
+      } finally {
+        xtzxQuizState.busy = false;
+      }
+    };
     const start = async (opts) => {
+      // 学堂在线：作业/考试页的题目在 Vue 数据里，一屏一题，走自己的逐题流程
+      if (isXtzxQuizHost() && xtzxQuizVm()) {
+        await xtzxQuizRun();
+        return;
+      }
       const auto = !!(opts && opts.auto);
       if (state.running) return;
       // 一卷一报由调用方决定是否上报（opts.reportSummary）：
@@ -25586,6 +26046,11 @@ const XS_EXT = (() => {
       return false;
     };
     const autoExamTick = async () => {
+      // 学堂在线：作业/考试页不挂在路由逻辑上，共用这个 2 秒定时器逐题处理
+      if (isXtzxQuizHost()) {
+        await xtzxQuizTick();
+        return;
+      }
       if (examBusy || state.running || state.pick) return;
       if (!isOuchnExamPage()) return;
       if (!useSettingStore().config.basicConfig.autoAnswer.value) return;
@@ -25761,14 +26226,16 @@ const XS_EXT = (() => {
         return h("div", { style: { display: "flex", flexDirection: "column", gap: "8px" } }, [
           h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } }, [
             h("button", { onClick: this.scan, disabled: this.state.scanning, style: plain }, this.state.scanning ? "扫描中" : "扫描题目"),
-            h("button", { onClick: this.start, disabled: this.state.running || !this.state.total, style: primary }, this.state.running ? "正在作答" : "开始答题"),
+            h("button", { onClick: this.start, disabled: this.state.running || (!this.state.total && !xtzxQuizPage()), style: primary }, this.state.running ? "正在作答" : "开始答题"),
             this.state.running ? h("button", { onClick: this.stop, style: plain }, "停止") : null,
             isMoocQuizPage() ? h("button", { onClick: () => { void submitMoocFilled(); }, disabled: this.state.running, style: plain }, "提交已填答案") : null
           ]),
           h("div", { style: { color: "var(--t-text3)", fontSize: "12px", lineHeight: 1.7 } },
-            isMoocQuizPage()
-              ? "中国大学MOOC：先点「扫描题目」，再点「开始答题」；填完点「提交已填答案」逐题提交，或在设置里开启「MOOC 答题后自动提交」。"
-              : "进入考试后，「自动答题」开启会自动作答；答案和相似题选择显示在下面，自动交卷在「设置 - 考试设置」里。"),
+            xtzxQuizPage()
+              ? "学堂在线：进入作业/考试页，「自动答题」开启会自动填题；默认只填不提交，在「设置 - 考试设置」里开启「自动交卷」后会逐题提交并在最后交卷。"
+              : isMoocQuizPage()
+                ? "中国大学MOOC：先点「扫描题目」，再点「开始答题」；填完点「提交已填答案」逐题提交，或在设置里开启「MOOC 答题后自动提交」。"
+                : "进入考试后，「自动答题」开启会自动作答；答案和相似题选择显示在下面，自动交卷在「设置 - 考试设置」里。"),
           h(_sfc_main$7)
         ]);
       }
@@ -26289,7 +26756,8 @@ const XS_EXT = (() => {
         {
           key: "2",
           tab: "答题",
-          component: currentPlatform?.key === "ouchn"
+          // 国开、学堂在线用超星那套「题目结果」界面（题号、题干、答案卡片）
+          component: currentPlatform?.key === "ouchn" || currentPlatform?.key === "xtzx"
             ? xsQuiz.OuchnPanel
             : currentPlatform?.watchSite
               ? xsQuiz.Panel
