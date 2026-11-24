@@ -2593,7 +2593,7 @@
               text: "已完成任务自动跳过",
               value: true,
               type: "switch",
-              platforms: ["ouchn", "qs", "xtzx"],
+              platforms: ["ouchn", "qs", "xtzx", "jdz"],
               tips: "开启后，平台上已经完成的视频、课件不再重播，直接打开下一个没完成的任务；关闭则按顺序继续"
             },
             // 学堂在线：视频/音频由平台自己的心跳记进度，图文、PDF/Word/PPT 课件必须点「标记看完」才算任务点完成
@@ -3200,7 +3200,7 @@
         // 国开虽然走通用视频助手，但考试页支持自动答题，所以考试设置也要显示；
         // 学堂在线作业页同样支持自动答题和自动交卷，也显示；
         // 青书走视频助手但作业/考试答题走接口直通层（自动交卷在 EXT_CONF，不在这份配置里），不显示考试设置
-        if (!isWatchSite || platformKey === "ouchn" || platformKey === "xtzx") sections.push({ label: "考试设置", configs: pick(setting.config.examConfig) });
+        if (!isWatchSite || platformKey === "ouchn" || platformKey === "xtzx" || platformKey === "jdz") sections.push({ label: "考试设置", configs: pick(setting.config.examConfig) });
         if (platformKey === "cx") sections.push({ label: "超星设置", configs: pick(setting.config.cxConfig) });
         return sections;
       });
@@ -24955,6 +24955,11 @@ const XS_EXT = (() => {
         }
         return [];
       }
+      // 景德镇新版作业页：题目在页面里，接口读卷拿 id，后台异步同步到面板
+      if (isJdzQuizPage()) {
+        if (!state.running) { void jdzScan(silent); }
+        return [];
+      }
       // 答题过程中不要重建列表，否则会把手里的进度和已答结果冲掉
       if (state.running) return [];
       state.scanning = true;
@@ -25680,7 +25685,535 @@ const XS_EXT = (() => {
         xtzxQuizState.busy = false;
       }
     };
+    // ===== 景德镇 o-learn（新版学习页）作业：接口读卷、页面点选、超星样式面板 =====
+    // 新版作业页是 Vue3 + Element UI 的整卷页面，题目和选项是 el-radio-button /
+    // el-checkbox-button，点选项页面自己会保存。这里用平台接口拿题目 id 和版本号，
+    // 题干、选项、勾选状态都以页面为准，答案由题库/AI 提供，逐题点选后统一保存；
+    // 默认只填不提交，设置里开「自动交卷」才会调用 submitHomework。
+    const isJdzHost = () => {
+      try { return /(^|\.)o-learn\.cn$/i.test(location.hostname); } catch (_) { return false; }
+    };
+    const jdzHomeworkRoute = () => {
+      try {
+        const m = String(location.hash || "").match(/\/course\/([^/]+)\/learn\/(?:outline\/)?homework\/do\/([^/?#]+)/);
+        return m ? { courseId: m[1], homeworkId: m[2] } : null;
+      } catch (_) { return null; }
+    };
+    const isJdzQuizPage = () => {
+      try { return !!jdzHomeworkRoute() && !!document.querySelector(".topic-container"); } catch (_) { return false; }
+    };
+    const jdzToken = () => {
+      try {
+        const raw = String(document.cookie || "").split(/;\s*/).find((item) => item.indexOf("xxpt_access_token=") === 0);
+        return raw ? decodeURIComponent(raw.slice("xxpt_access_token=".length)) : "";
+      } catch (_) { return ""; }
+    };
+    const jdzPost = async (path, params) => {
+      const token = jdzToken();
+      if (!token) return { ok: false, msg: "没有读到登录信息，请先登录" };
+      try {
+        const res = await fetch(path, {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            Authorization: "Bearer " + token,
+            device: "PC",
+            "X-Requested-With": "XMLHttpRequest",
+            "Content-Type": "application/x-www-form-urlencoded"
+          },
+          body: new URLSearchParams(params || {}).toString()
+        });
+        const text = await res.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch (_) {}
+        if (!data) return { ok: false, msg: "接口返回异常（HTTP " + res.status + "）" };
+        if (res.status === 401 || Number(data.errorCode) === 401) return { ok: false, msg: "登录已失效，请重新登录" };
+        if (data.responseCode && data.responseCode !== "SUCCESS") return { ok: false, msg: data.message || "接口返回失败", data };
+        return { ok: true, data };
+      } catch (e) {
+        return { ok: false, msg: "网络请求失败" };
+      }
+    };
+    const JDZ_API_TYPES = [
+      { list: "danxuanList", type: "单选题", multi: false, text: false },
+      { list: "duoxuanList", type: "多选题", multi: true, text: false },
+      { list: "panduanList", type: "判断题", multi: false, text: false },
+      { list: "wendaList", type: "简答题", multi: false, text: true }
+    ];
+    const jdzText = (value) => String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+    const jdzApiQuestions = (data) => {
+      const qObj = (data && data.questionObj) || {};
+      const out = [];
+      JDZ_API_TYPES.forEach((meta) => {
+        ((qObj[meta.list]) || []).forEach((q) => {
+          out.push({
+            id: String(q.id || ""),
+            list: meta.list,
+            type: meta.type,
+            multi: meta.multi,
+            text: meta.text,
+            title: jdzText(q.title),
+            options: ((q.topicItemList) || []).map((opt, i) => ({
+              letter: String(opt.index || "").toUpperCase() || String.fromCharCode(65 + i),
+              text: jdzText(opt.content)
+            }))
+          });
+        });
+      });
+      return out;
+    };
+    // 页面上的题块：题干、选项文字和字母、input 都从这里取，顺序就是页面顺序
+    const jdzDomBlocks = () => {
+      const blocks = [];
+      document.querySelectorAll(".topic-container").forEach((el) => {
+        const inputs = Array.from(el.querySelectorAll('input[type="radio"], input[type="checkbox"]'));
+        const title = TEXT(el.querySelector(".topic-title"));
+        if (!inputs.length) {
+          const textInputs = Array.from(el.querySelectorAll("textarea, input[type='text'], input:not([type])"))
+            .filter((input) => !input.disabled && !input.readOnly);
+          if (textInputs.length) {
+            blocks.push({
+              el,
+              kind: "input",
+              type: textInputs.some((input) => input.tagName === "TEXTAREA") ? "简答题" : "填空题",
+              title,
+              options: [],
+              controls: [],
+              inputs: textInputs,
+              api: null
+            });
+          }
+          return;
+        }
+        const type = inputs.some((input) => input.type === "checkbox")
+          ? "多选题"
+          : inputs.every((input) => /^[TF]$/i.test(String(input.value || ""))) ? "判断题" : "单选题";
+        const options = [];
+        inputs.forEach((input) => {
+          const wrap = input.closest(".radio-wrap, .checkbox-wrap") || input.closest("label") || input.parentElement;
+          const label = input.closest("label") || wrap;
+          const inner = label && label.querySelector("span");
+          const letter = String(input.value || (inner && inner.textContent) || "").trim().toUpperCase();
+          if (!letter) return;
+          const textEl = wrap && wrap.querySelector(".radio-text, .checkbox-text");
+          options.push({
+            el: label || wrap || input,
+            input,
+            letter,
+            text: TEXT(textEl) || TEXT(wrap) || letter
+          });
+        });
+        if (options.length) {
+          blocks.push({ el, kind: "choice", type, title, options, controls: inputs, inputs: [], api: null });
+        }
+      });
+      return blocks;
+    };
+    const jdzQuizState = {
+      key: "", tickKey: "", loading: false, loaded: false, done: false, busy: false, settled: false,
+      courseId: "", homeworkId: "", version: "", data: null,
+      blocks: [], order: [], answers: {}, filled: {}, skipped: {}, msg: {}, errLogged: false
+    };
+    const jdzPickedOf = (block) => {
+      if (!block) return [];
+      if (block.kind === "input") {
+        return block.inputs.map((input) => String(input.value || "").trim()).filter(Boolean);
+      }
+      return block.options
+        .filter((opt) => opt.input && opt.input.checked)
+        .map((opt) => opt.letter)
+        .filter(Boolean);
+    };
+    const jdzValueOf = (block) => {
+      const picked = jdzPickedOf(block);
+      if (block.kind === "input") return picked.join("\n");
+      return block.type === "多选题" ? picked : (picked[0] || "");
+    };
+    // Element UI 的选项点下去后要等 Vue 把状态写回 input，立刻回读会以为没点上。
+    // 这里点完等一下再回读，并把多选题里多余的勾去掉，保证页面和答案一致。
+    const jdzFillBlock = async (block, answer) => {
+      if (!block) return { ok: false, reason: "没有题目块" };
+      if (block.kind === "input") {
+        const res = fill(block, answer);
+        return { ok: res.ok, letters: jdzPickedOf(block), unmatched: [] };
+      }
+      const matched = pickOptions(block, answer);
+      if (!matched.picked.length) return { ok: false, reason: "答案没匹配到任何选项", unmatched: matched.unmatched };
+      const picked = block.type === "多选题" ? matched.picked.slice() : matched.picked.slice(0, 1);
+      const wantLetters = picked.map((opt) => opt.letter);
+      for (const opt of block.options) {
+        const want = picked.indexOf(opt) >= 0;
+        if (!!opt.input.checked === want) continue;
+        try { (opt.el || opt.input).click(); } catch (_) {}
+        await sleep(0.16);
+      }
+      let got = jdzPickedOf(block);
+      // 个别时候第一下没生效，再点一次目标选项
+      if (!got.length) {
+        for (const opt of picked) {
+          try { (opt.el || opt.input).click(); } catch (_) {}
+          await sleep(0.18);
+        }
+        got = jdzPickedOf(block);
+      }
+      const extra = block.type === "多选题"
+        ? got.some((letter) => wantLetters.indexOf(letter) < 0)
+        : got.length > 1;
+      const ok = got.length > 0 && !extra
+        && wantLetters.every((letter) => got.indexOf(letter) >= 0);
+      return {
+        ok,
+        letters: got,
+        want: wantLetters,
+        reason: !got.length ? "点了选项但页面没反应" : ok ? "" : "选项没有全部选中",
+        unmatched: matched.unmatched
+      };
+    };
+    const jdzNormTitle = (text) => String(text || "").replace(/[\s　"'“”‘’（）()【】\[\]、，,。.：:；;！!？?]/g, "").toLowerCase();
+    // 把页面题块和接口题目按题型、题干对上，接口拿到的 id/版本号用于保存
+    const jdzPairBlocks = () => {
+      const blocks = jdzDomBlocks();
+      const pools = {};
+      (jdzQuizState.order || []).forEach((q) => { (pools[q.type] = pools[q.type] || []).push(q); });
+      blocks.forEach((block) => {
+        const pool = pools[block.type] || [];
+        let q = null;
+        const want = jdzNormTitle(block.title);
+        if (want) {
+          const at = pool.findIndex((item) => jdzNormTitle(item.title) === want);
+          if (at >= 0) q = pool.splice(at, 1)[0];
+        }
+        if (!q && pool.length) q = pool.shift();
+        block.api = q || null;
+      });
+      jdzQuizState.blocks = blocks;
+      return blocks;
+    };
+    const jdzSyncPanel = () => {
+      const store = useQuestionStore();
+      const blocks = jdzQuizState.blocks || [];
+      state.total = blocks.length;
+      const list = blocks.map((block, index) => {
+        const qid = block.api ? block.api.id : "dom-" + index;
+        const picked = jdzPickedOf(block);
+        const filled = !!jdzQuizState.filled[qid];
+        const skipped = !!jdzQuizState.skipped[qid];
+        let stored = jdzQuizState.answers[qid];
+        stored = Array.isArray(stored) ? stored : (String(stored == null ? "" : stored).trim() ? [String(stored)] : []);
+        return {
+          index,
+          // 超星那套界面用 innerHTML 渲染题干，这里把页面题干转义后放进去
+          title: escapeHtml(block.title || (block.api && block.api.title) || `第 ${index + 1} 题`),
+          titleText: block.title || "",
+          type: block.type,
+          optionsText: block.options.map((opt) => opt.text),
+          options: block.options.map((opt) => ({ text: opt.text, letter: opt.letter })),
+          answer: {
+            code: picked.length ? 1 : filled ? 2 : -1,
+            answer: picked.length ? picked : stored,
+            src: filled ? "bank" : picked.length ? "page" : "",
+            msg: jdzQuizState.msg[qid] || (picked.length ? "页面已作答" : skipped ? "已跳过" : "")
+          }
+        };
+      });
+      store.questionList = list;
+      store.currentQuestionIndex = blocks.length ? 1 : 0;
+      state.items = list.map((item) => ({
+        index: item.index,
+        title: `第 ${item.index + 1} 题 · ${item.type} · ${String(item.titleText || "").slice(0, 80)}`,
+        type: item.type,
+        answer: item.answer.answer.join(" "),
+        status: item.answer.code === 1 ? "done" : item.answer.code === 2 ? "warn" : "pending",
+        msg: item.answer.msg
+      }));
+    };
+    const jdzLoadAndSync = async () => {
+      const route = jdzHomeworkRoute();
+      if (!route) return { ok: false, msg: "当前不是作业页面" };
+      const key = route.courseId + "|" + route.homeworkId;
+      if (jdzQuizState.loaded && jdzQuizState.key === key) {
+        jdzPairBlocks();
+        jdzSyncPanel();
+        return { ok: true };
+      }
+      if (jdzQuizState.loading) return jdzQuizState.loading;
+      jdzQuizState.loading = (async () => {
+        const res = await jdzPost("/courseware/homework/app/user/student/homework/doHomework", route);
+        if (!res.ok) return res;
+        const data = res.data || {};
+        if (!data.homeworkObj || !data.questionObj) return { ok: false, msg: data.message || "没有拿到作业内容" };
+        if (jdzQuizState.key !== key) {
+          jdzQuizState.key = key;
+          jdzQuizState.filled = {};
+          jdzQuizState.skipped = {};
+          jdzQuizState.msg = {};
+          jdzQuizState.done = false;
+          jdzQuizState.settled = false;
+          jdzQuizState.errLogged = false;
+        }
+        jdzQuizState.loaded = true;
+        jdzQuizState.courseId = route.courseId;
+        jdzQuizState.homeworkId = route.homeworkId;
+        jdzQuizState.version = String(data.homeworkObj.version || "");
+        jdzQuizState.data = data;
+        jdzQuizState.order = jdzApiQuestions(data);
+        jdzQuizState.answers = {};
+        const ua = data.userAnswerObj || {};
+        JDZ_API_TYPES.forEach((meta) => {
+          const listKey = meta.list.replace("List", "UserAnswerList");
+          ((ua[listKey]) || []).forEach((item) => {
+            if (!item || !item.id) return;
+            const value = item.uanswer;
+            const has = Array.isArray(value) ? value.length > 0 : String(value == null ? "" : value).trim() !== "";
+            if (has) jdzQuizState.answers[String(item.id)] = value;
+          });
+        });
+        jdzPairBlocks();
+        jdzSyncPanel();
+        return { ok: true };
+      })();
+      try { return await jdzQuizState.loading; } finally { jdzQuizState.loading = false; }
+    };
+    const jdzQuestionFor = (block) => ({
+      title: block.title || (block.api && block.api.title) || "",
+      optionsText: block.options.map((opt) => opt.text),
+      type: block.type,
+      refer: location.href
+    });
+    const jdzPendingIndex = () => {
+      const blocks = jdzQuizState.blocks || [];
+      for (let i = 0; i < blocks.length; i += 1) {
+        const block = blocks[i];
+        const qid = block.api ? block.api.id : "dom-" + i;
+        if (jdzPickedOf(block).length) continue;
+        if (jdzQuizState.filled[qid] || jdzQuizState.skipped[qid]) continue;
+        return i;
+      }
+      return -1;
+    };
+    const jdzAnswerPayload = () => {
+      const payload = {
+        danxuanUserAnswerList: [],
+        duoxuanUserAnswerList: [],
+        panduanUserAnswerList: [],
+        wendaUserAnswerList: []
+      };
+      const qObj = (jdzQuizState.data && jdzQuizState.data.questionObj) || {};
+      JDZ_API_TYPES.forEach((meta) => {
+        const listKey = meta.list.replace("List", "UserAnswerList");
+        ((qObj[meta.list]) || []).forEach((q) => {
+          const id = String(q.id || "");
+          const block = (jdzQuizState.blocks || []).find((item) => item.api && item.api.id === id);
+          const picked = block ? jdzPickedOf(block) : [];
+          const stored = jdzQuizState.answers[id];
+          const storedList = Array.isArray(stored)
+            ? stored
+            : (String(stored == null ? "" : stored).trim() ? [String(stored)] : []);
+          const value = picked.length ? picked : storedList;
+          if (meta.text) {
+            payload[listKey].push({ id, uanswer: value.join("\n"), fileList: [] });
+          } else if (meta.multi) {
+            payload[listKey].push({ id, uanswer: value.map((item) => String(item).toUpperCase()) });
+          } else {
+            payload[listKey].push({ id, uanswer: String(value[0] || "").toUpperCase() });
+          }
+        });
+      });
+      return payload;
+    };
+    const jdzSave = () => jdzPost("/courseware/homework/app/user/student/homework/saveHomeworkUserAnswer", {
+      courseId: jdzQuizState.courseId,
+      homeworkId: jdzQuizState.homeworkId,
+      version: jdzQuizState.version,
+      userAnswerJSONString: JSON.stringify(jdzAnswerPayload())
+    });
+    const jdzSubmit = () => jdzPost("/courseware/homework/app/user/student/homework/submitHomework", {
+      courseId: jdzQuizState.courseId,
+      homeworkId: jdzQuizState.homeworkId,
+      version: jdzQuizState.version,
+      userAnswerJSONString: JSON.stringify(jdzAnswerPayload()),
+      clientType: "PC"
+    });
+    const jdzFinish = async () => {
+      if (jdzQuizState.done) return "done";
+      jdzQuizState.done = true;
+      const blocks = jdzQuizState.blocks || [];
+      const left = blocks.filter((block) => !jdzPickedOf(block).length).length;
+      const skipped = blocks.filter((block, i) => !!jdzQuizState.skipped[block.api ? block.api.id : "dom-" + i]).length;
+      await sleep(0.6);
+      const saved = await jdzSave();
+      if (!saved.ok) log("景德镇：保存答案失败：" + saved.msg, "warning");
+      else log("景德镇：答案已保存到作业");
+      jdzSyncPanel();
+      try { reportAnswerSummary("jdz", useQuestionStore().questionList); } catch (_) {}
+      const autoSubmit = !!useSettingStore().config.examConfig.autoSubmit.value;
+      if (!autoSubmit) {
+        log(skipped
+          ? `景德镇：已填好，还有 ${skipped} 道题没答案，请检查后手动提交`
+          : "景德镇：所有题目已填好，请确认后手动点「提交」；设置里可开启自动交卷");
+        jdzQuizState.settled = true;
+        return "done";
+      }
+      if (left) {
+        log(`景德镇：还有 ${left} 道题没答完${skipped ? `（其中 ${skipped} 道没答案）` : ""}，先不自动交卷`, "warning");
+        jdzQuizState.settled = true;
+        return "blocked";
+      }
+      const submitted = await jdzSubmit();
+      if (submitted.ok) log("景德镇：作业已提交");
+      else log("景德镇：自动交卷失败：" + submitted.msg, "warning");
+      jdzQuizState.settled = true;
+      return "done";
+    };
+    const jdzStep = async () => {
+      const loaded = await jdzLoadAndSync();
+      if (!loaded.ok) {
+        if (!jdzQuizState.errLogged) {
+          jdzQuizState.errLogged = true;
+          log("景德镇：读取作业失败：" + loaded.msg, "warning");
+        }
+        return "blocked";
+      }
+      const index = jdzPendingIndex();
+      if (index < 0) return jdzFinish();
+      const block = jdzQuizState.blocks[index];
+      const qid = block.api ? block.api.id : "dom-" + index;
+      setItem(index, { status: "running" });
+      // 取答案偶发卡住时不能让定时器一直挂着，超时就按本题失败往下走
+      const res = await Promise.race([
+        askAnswer(jdzQuestionFor(block)),
+        new Promise((resolve) => setTimeout(() => resolve({ code: -1006, msg: "取答案超时" }), 90e3))
+      ]);
+      let answer = res && res.data && res.data.answer;
+      const candidates = (res && res.data && res.data.candidates) || [];
+      if (res && res.data && res.data.multimatch && candidates.length) {
+        if (getManualWaitMode() === "skip") {
+          jdzQuizState.skipped[qid] = true;
+          jdzQuizState.msg[qid] = `有 ${candidates.length} 道相似题，已按设置跳过`;
+          setItem(index, { status: "fail", msg: jdzQuizState.msg[qid] });
+          log(`景德镇：第 ${index + 1} 题有 ${candidates.length} 道相似题，已按设置跳过`, "warning");
+          return "skip";
+        }
+        const pickMsg = `有 ${candidates.length} 道相似题，请选择后继续`;
+        jdzQuizState.msg[qid] = pickMsg;
+        setItem(index, { status: "pick", msg: pickMsg });
+        const qs = useQuestionStore();
+        if (qs.questionList[index]) {
+          qs.questionList[index] = Object.assign({}, qs.questionList[index], {
+            answer: { code: 0, answer: [], src: "pick", msg: pickMsg, candidates }
+          });
+          qs.questionList = [...qs.questionList];
+        }
+        registerQuestionFillHook({
+          questions: useQuestionStore().questionList || [],
+          fillQuestion: (real, at) => {
+            const target = jdzQuizState.blocks[at];
+            const want = (real && real.answer && real.answer.answer) || [];
+            if (!target || !want.length) return false;
+            const id = target.api ? target.api.id : "dom-" + at;
+            void jdzFillBlock(target, target.kind === "input" ? want : (target.type === "多选题" ? want : want.slice(0, 1))).then((filled) => {
+              if (!filled.ok) return;
+              jdzQuizState.filled[id] = true;
+              jdzQuizState.answers[id] = jdzValueOf(target);
+              jdzQuizState.msg[id] = "已填，待保存";
+            });
+            return true;
+          }
+        });
+        log(`景德镇：第 ${index + 1} 题有 ${candidates.length} 道相似题，等你选择后继续…`, "warning");
+        const picked = await waitForManualPick(index);
+        answer = picked || [];
+      }
+      if (!Array.isArray(answer) || !answer.length) {
+        jdzQuizState.skipped[qid] = true;
+        jdzQuizState.msg[qid] = (res && res.msg) || "未搜到答案";
+        setItem(index, { status: "fail", msg: jdzQuizState.msg[qid] });
+        log(`景德镇：第 ${index + 1} 题未搜到答案，先跳过`, "warning");
+        return "skip";
+      }
+      const want = block.kind === "input" ? answer : (block.type === "多选题" ? answer : answer.slice(0, 1));
+      const filled = await jdzFillBlock(block, want);
+      const got = filled.letters || jdzPickedOf(block);
+      if (!filled.ok || !got.length) {
+        jdzQuizState.skipped[qid] = true;
+        jdzQuizState.msg[qid] = filled.reason || "答案没填上";
+        setItem(index, { status: "fail", msg: jdzQuizState.msg[qid] });
+        log(`景德镇：第 ${index + 1} 题${filled.reason || "答案没填上"}，先跳过`, "warning");
+        return "skip";
+      }
+      jdzQuizState.filled[qid] = true;
+      jdzQuizState.answers[qid] = jdzValueOf(block);
+      jdzQuizState.msg[qid] = "已填，待保存";
+      setItem(index, { status: "done", answer: got.join(" "), msg: "已填，待保存" });
+      jdzSyncPanel();
+      log(`景德镇：第 ${index + 1} 题已填 ${got.join(" ")}`);
+      return "filled";
+    };
+    const jdzRun = async () => {
+      if (!isJdzQuizPage()) {
+        log("没有打开景德镇的作业页面");
+        return;
+      }
+      if (state.running) return;
+      state.running = true;
+      jdzQuizState.done = false;
+      jdzQuizState.settled = false;
+      try { useSettingStore().tabIndex = "2"; } catch (_) {}
+      log("景德镇：开始自动答题");
+      let guard = 0;
+      try {
+        while (state.running && guard < 600) {
+          guard += 1;
+          const step = await jdzStep();
+          if (step === "done" || step === "blocked" || step === "idle") break;
+          await sleep(0.8);
+        }
+      } finally {
+        state.running = false;
+      }
+      log("景德镇：本轮答题结束");
+    };
+    const jdzScan = async (silent) => {
+      const loaded = await jdzLoadAndSync();
+      if (!loaded.ok && !silent) log("景德镇：读取作业失败：" + loaded.msg, "warning");
+      return jdzQuizState.blocks;
+    };
+    const jdzTick = async () => {
+      if (!isJdzQuizPage() || jdzQuizState.busy) return;
+      if (state.running || state.scanning || state.pick) return;
+      const basic = useSettingStore().config.basicConfig;
+      if (!basic.autoAnswer || !basic.autoAnswer.value) return;
+      if (basic.assistAnswer && !basic.assistAnswer.value) return;
+      const key = String(location.hash || "");
+      if (jdzQuizState.tickKey !== key) {
+        jdzQuizState.tickKey = key;
+        jdzQuizState.loaded = false;
+        jdzQuizState.done = false;
+        jdzQuizState.settled = false;
+        try { useSettingStore().tabIndex = "2"; } catch (_) {}
+        log("景德镇：检测到作业页面，开始自动答题");
+      }
+      if (jdzQuizState.settled) return;
+      jdzQuizState.busy = true;
+      let step = "";
+      try {
+        step = await jdzStep();
+      } catch (e) {
+        log("景德镇自动答题出错：" + String((e && e.message) || e).slice(0, 80), "warning");
+      } finally {
+        jdzQuizState.busy = false;
+      }
+      // 填完一题立刻接着下一题，页面定时器被浏览器节流时也不会停在半路
+      if ((step === "filled" || step === "skip") && !jdzQuizState.settled && !state.running) {
+        setTimeout(() => { void jdzTick(); }, 300);
+      }
+    };
     const start = async (opts) => {
+      // 景德镇新版学习页：作业整卷在页面里，接口只提供题目 id 和版本号
+      if (isJdzQuizPage()) {
+        await jdzRun();
+        return;
+      }
       // 学堂在线：作业/考试页的题目在 Vue 数据里，一屏一题，走自己的逐题流程
       if (isXtzxQuizHost() && xtzxQuizVm()) {
         await xtzxQuizRun();
@@ -26172,6 +26705,11 @@ const XS_EXT = (() => {
       return false;
     };
     const autoExamTick = async () => {
+      // 景德镇新版作业页：SPA 切页不刷新，共用这个 2 秒定时器逐题处理
+      if (isJdzHost() && jdzHomeworkRoute()) {
+        await jdzTick();
+        return;
+      }
       // 学堂在线：作业/考试页不挂在路由逻辑上，共用这个 2 秒定时器逐题处理
       if (isXtzxQuizHost()) {
         await xtzxQuizTick();
@@ -26357,7 +26895,9 @@ const XS_EXT = (() => {
             isMoocQuizPage() ? h("button", { onClick: () => { void submitMoocFilled(); }, disabled: this.state.running, style: plain }, "提交已填答案") : null
           ]),
           h("div", { style: { color: "var(--t-text3)", fontSize: "12px", lineHeight: 1.7 } },
-            xtzxQuizPage()
+            isJdzQuizPage()
+              ? "景德镇 o-learn：进入作业页后，「自动答题」开启会自动填题并保存；默认只填不提交，在「设置 - 考试设置」里开启「自动交卷」后才会提交作业。"
+              : xtzxQuizPage()
               ? "学堂在线：进入作业/考试页，「自动答题」开启会自动填题；默认只填不提交，在「设置 - 考试设置」里开启「自动交卷」后会逐题提交并在最后交卷。"
               : isMoocQuizPage()
                 ? "中国大学MOOC：先点「扫描题目」，再点「开始答题」；填完点「提交已填答案」逐题提交，或在设置里开启「MOOC 答题后自动提交」。"
@@ -26400,8 +26940,16 @@ const XS_EXT = (() => {
   };
   // 景德镇 o-learn：刷课、考试、随堂答题由内置的景德镇模块负责，
   // 这里只负责挂出同一套主面板（首页/答题/日志/记录/设置），不再单独渲染 olvh 面板。
+  // 学习页是 SPA，进入课程时路由逻辑只跑一次，所以这里先把答题定时器启动起来，
+  // 之后在站内切到作业页也能自动发现并作答。
   const oLearnRoutes = {
-    match: [{ keyword: "", tab: "0" }],
+    match: [{
+      keyword: "",
+      tab: "0",
+      logic: () => {
+        xsQuiz.boot();
+      }
+    }],
     defaultRoute: { show: true, tab: "0" }
   };
   const platformConfigs = [
@@ -26911,8 +27459,8 @@ const XS_EXT = (() => {
         {
           key: "2",
           tab: "答题",
-          // 国开、学堂在线用超星那套「题目结果」界面（题号、题干、答案卡片）
-          component: currentPlatform?.key === "ouchn" || currentPlatform?.key === "xtzx"
+          // 国开、学堂在线、景德镇用超星那套「题目结果」界面（题号、题干、答案卡片）
+          component: currentPlatform?.key === "ouchn" || currentPlatform?.key === "xtzx" || currentPlatform?.key === "jdz"
             ? xsQuiz.OuchnPanel
             : currentPlatform?.watchSite
               ? xsQuiz.Panel
@@ -29676,8 +30224,184 @@ const XS_EXT = (() => {
         updateUI();
     }
 
+    /* ======================== 新版学习页：任务点切换 / 验证拦截 ======================== */
+    // 新版学习页的任务点是 hash 路由，页面里没有「下一节」按钮；
+    // 这里用大纲接口拿到整门课的任务点顺序，播完或已完成时按顺序切到下一项。
+    const isJdzSpaHost = () => {
+        try { return /(^|\.)o-learn\.cn$/i.test(location.hostname); } catch (e) { return false; }
+    };
+    const jdzSpaCourseId = () => {
+        const m = String(location.hash || '').match(/\/course\/([^/]+)\//);
+        return m ? m[1] : '';
+    };
+    const jdzSpaItemId = () => {
+        const m = String(location.hash || '').match(/\/courseware\/item\/([^/?#]+)/);
+        return m ? m[1] : '';
+    };
+    const jdzSpaToken = () => {
+        try {
+            const raw = String(document.cookie || '').split(/;\s*/).find((x) => x.indexOf('xxpt_access_token=') === 0);
+            return raw ? decodeURIComponent(raw.slice('xxpt_access_token='.length)) : '';
+        } catch (e) { return ''; }
+    };
+    async function jdzSpaPost(path, params) {
+        const token = jdzSpaToken();
+        if (!token) return null;
+        try {
+            const res = await fetch(path, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Authorization': 'Bearer ' + token,
+                    'device': 'PC',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: new URLSearchParams(params || {}).toString()
+            });
+            const text = await res.text();
+            try { return JSON.parse(text); } catch (e) { return null; }
+        } catch (e) { return null; }
+    }
+    let jdzSpaOutlineCache = { courseId: '', at: 0, items: [] };
+    async function jdzSpaItems(force) {
+        const cid = jdzSpaCourseId();
+        if (!cid) return [];
+        if (!force && jdzSpaOutlineCache.courseId === cid
+            && jdzSpaOutlineCache.items.length && Date.now() - jdzSpaOutlineCache.at < 60000) {
+            return jdzSpaOutlineCache.items;
+        }
+        const data = await jdzSpaPost('/user/student/app/user/course/outline/queryCourseOutline', { courseId: cid });
+        const items = [];
+        ((data && data.chapterList) || []).forEach((chapter) => {
+            (chapter.sectionList || []).forEach((section) => {
+                (section.itemList || []).forEach((item) => {
+                    items.push(Object.assign({}, item, { chapterTitle: chapter.title, sectionTitle: section.title }));
+                });
+            });
+        });
+        jdzSpaOutlineCache = { courseId: cid, at: Date.now(), items };
+        return items;
+    }
+    function jdzSpaRouteOf(item) {
+        const cid = jdzSpaCourseId();
+        if (!cid || !item) return '';
+        if (item.type === 'jz') return '#/course/' + cid + '/learn/outline/courseware/item/' + item.id;
+        if (item.type === 'tk') return '#/course/' + cid + '/learn/outline/homework/do/' + item.id;
+        return '';
+    }
+    async function jdzSpaGoNext() {
+        const cid = jdzSpaCourseId();
+        const itemId = jdzSpaItemId();
+        if (!cid || !itemId) {
+            log('没有识别到当前任务点，无法自动切换');
+            return false;
+        }
+        const before = location.hash;
+        // 平台开了连播时，播完会自己先切；等几秒，页面已经切了就不再重复跳
+        await new Promise((resolve) => setTimeout(resolve, 3500));
+        if (location.hash !== before) return true;
+        const items = await jdzSpaItems();
+        const at = items.findIndex((item) => item.id === itemId);
+        if (at < 0) {
+            log('大纲里没有找到当前任务点，无法自动切换');
+            return false;
+        }
+        let nextItem = null;
+        for (let i = at + 1; i < items.length; i += 1) {
+            if (jdzSpaRouteOf(items[i])) { nextItem = items[i]; break; }
+        }
+        if (!nextItem) {
+            log('已经是最后一个任务点');
+            return false;
+        }
+        const route = jdzSpaRouteOf(nextItem);
+        log('自动进入下一项：' + (nextItem.title || route));
+        location.hash = route;
+        return true;
+    }
+    const jdzSpaSkipped = new Set();
+    let jdzSpaSkipCourse = '';
+    // 已完成任务自动跳过：只认接口的 completeStatus=2，不看大纲里的 99%（那是学时比例）
+    async function jdzSpaSkipDone(video) {
+        if (!isJdzSpaHost() || !video) return;
+        const cid = jdzSpaCourseId();
+        const itemId = jdzSpaItemId();
+        if (!cid || !itemId) return;
+        if (jdzSpaSkipCourse !== cid) {
+            jdzSpaSkipCourse = cid;
+            jdzSpaSkipped.clear();
+        }
+        if (jdzSpaSkipped.has(itemId)) return;
+        jdzSpaSkipped.add(itemId);
+        let skipDone = true;
+        let autoNext = true;
+        try {
+            const basic = useSettingStore().config.basicConfig;
+            if (basic.skipWatchDone) skipDone = !!basic.skipWatchDone.value;
+            if (basic.autoChangeChapter) autoNext = !!basic.autoChangeChapter.value;
+            if (basic.assistVideo) skipDone = skipDone && !!basic.assistVideo.value;
+        } catch (e) { /* ignore */ }
+        if (!skipDone || !autoNext || !store.autoPlay) return;
+        const data = await jdzSpaPost('/courseware/video/app/user/student/video/queryUserVideoCoursewareDetail', {
+            courseId: cid,
+            itemId: itemId
+        });
+        const record = data && data.courseware && data.courseware.learnRecordObj;
+        if (record && String(record.completeStatus) === '2') {
+            log('本节已经完成，自动跳到下一节');
+            await jdzSpaGoNext();
+        }
+    }
+    function jdzSpaShown(el) {
+        try {
+            const rect = el.getBoundingClientRect();
+            const style = getComputedStyle(el);
+            return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+        } catch (e) { return false; }
+    }
+    // 出现滑块验证 / 人脸识别 / 行为验证时先把视频停住，等用户处理完再自动继续
+    function jdzSpaPauseForCheck(video, reason) {
+        if (!video || video.__jdzCheckPaused) return;
+        video.__jdzCheckPaused = true;
+        video.__userPaused = true;
+        try { (video.__originalPause || video.pause.bind(video))(); } catch (e) { /* ignore */ }
+        log('出现' + reason + '，已暂停视频，请在页面上完成后会自动继续播放');
+    }
+    function jdzSpaCheckOverlays() {
+        if (!isJdzSpaHost()) return;
+        const video = state.currentVideo;
+        if (!video || !document.contains(video)) return;
+        const text = String((document.body && document.body.innerText) || '');
+        const captcha = Array.from(document.querySelectorAll('.sxkjw-captcha-wrap')).some(jdzSpaShown)
+            || /拖动下方滑块完成拼图/.test(text);
+        const face = Array.from(document.querySelectorAll('[class*="face-check"], [class*="faceCheck"], [class*="FaceCheck"]')).some(jdzSpaShown)
+            || /请完成人脸识别|只可一人进行人脸识别|已识别到人脸|需要进行人脸识别/.test(text);
+        const behavior = /行为验证/.test(text);
+        if (captcha || face || behavior) {
+            jdzSpaPauseForCheck(video, captcha ? '滑块验证码' : face ? '人脸识别校验' : '行为验证');
+            return;
+        }
+        if (video.__jdzCheckPaused) {
+            video.__jdzCheckPaused = false;
+            video.__userPaused = false;
+            if (store.autoPlay && !video.ended) {
+                video.muted = true;
+                video.play().catch(() => {});
+                log('验证已完成，继续播放');
+            }
+        }
+    }
+    function isJdzSpaHomeworkPage() {
+        return isJdzSpaHost() && /\/learn\/(?:outline\/)?homework\/do\//.test(location.hash || '');
+    }
+    function isJdzSpaTestingPage() {
+        return isJdzSpaHost() && /\/learn\/(?:outline\/)?(?:testing|exam)\/[^#]*\/(?:do|record)/.test(location.hash || '');
+    }
+
     /* ======================== 自动下一节 ======================== */
     function gotoNextCourseware() {
+        if (isJdzSpaHost()) { void jdzSpaGoNext(); return; }
         log('🔜 视频播完了，正在自动进入下一节...');
         const nextTexts = ['下一节', '下一个', '下一页', '下一章', 'next', 'Next', '继续学习'];
         const allClickable = document.querySelectorAll('button, a, [role="button"], [class*="next"], [class*="Next"]');
@@ -30278,6 +31002,7 @@ const XS_EXT = (() => {
     function setupExamWatcher() {
         setInterval(() => {
             if (!store.tasks.exam) return;
+            if (isJdzSpaTestingPage()) return;
             if (isExamPage() && !state.examStarted) {
                 runExamAutoAnswer();
             }
@@ -30311,6 +31036,9 @@ const XS_EXT = (() => {
     }
 
     async function runWorkAutoAnswer() {
+        // 新版学习页的作业由 xsQuiz 里的景德镇模块负责，这里不能再跑旧 DOM 逻辑；
+        // 考试/自测页还没适配，也先别让旧逻辑乱点
+        if (isJdzSpaHomeworkPage() || isJdzSpaTestingPage()) return;
         const questions = extractWorkQuestions();
         if (!questions.length) return;
         log(`📝 检测到作业/测验 ${questions.length} 个题目容器`);
@@ -30361,6 +31089,7 @@ const XS_EXT = (() => {
     function setupWorkWatcher() {
         setInterval(() => {
             if (!store.tasks.quiz) return;
+            if (isJdzSpaHomeworkPage()) return;
             if (/work|homework|quiz|test|作业|测验/.test(location.href)) {
                 runWorkAutoAnswer();
             }
@@ -30396,6 +31125,8 @@ const XS_EXT = (() => {
             if (!state.currentVideo || !document.contains(state.currentVideo)) {
                 state.currentVideo = videos[videos.length - 1];
             }
+            // 新版学习页：完成过的任务自动跳过（每次任务点只判断一次）
+            if (isJdzSpaHost()) { void jdzSpaSkipDone(state.currentVideo); }
             updateUI();
         }
     }
@@ -31024,6 +31755,8 @@ const XS_EXT = (() => {
             setTimeout(scanForVideos, 8000);
 
             setInterval(scanForVideos, CONFIG.retryInterval);
+            // 新版学习页：滑块/人脸/行为验证随时可能弹，2.5 秒看一次
+            if (isJdzSpaHost()) setInterval(jdzSpaCheckOverlays, 2500);
         };
 
         if (document.body) start();
