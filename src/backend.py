@@ -770,8 +770,9 @@ def sanitize_page_snapshot(item):
             "signature": str(extra.get("signature") or "")[:64],
         }
         # 未支持平台的题目接口样本（只读抓取）：单独字段保存，不塞进 found ——
-        # found 只留短诊断值会被截成 100 字符。每条留 3000 字符、最多 4 条，
-        # 够看清题目/选项/题型的 JSON 结构，又不至于把整卷数据搬回库。
+        # found 只留短诊断值会被截成 100 字符。每条留 8000 字符、最多 10 条：
+        # 2026-11-24 o-learn 作业整卷有单选30/多选10/判断10，3000 字符只够看到前十题，
+        # 提交参数（保存/交卷请求体）也常超过 500 字符，放宽后适配不用再反复要样本。
         capture = []
         raw_capture = extra.get("capture") if isinstance(extra.get("capture"), list) else []
         _cap_sensitive = re.compile(
@@ -779,10 +780,10 @@ def sanitize_page_snapshot(item):
             r'idcard|id_card|studentNo|student_no|cookie|sessionId)"\s*:\s*")[^"]*"',
             re.I,
         )
-        for row in raw_capture[:6]:
+        for row in raw_capture[:10]:
             if not isinstance(row, dict):
                 continue
-            sample = re.sub(r"\s+", " ", str(row.get("sample") or ""))[:3000]
+            sample = re.sub(r"\s+", " ", str(row.get("sample") or ""))[:8000]
             # 脚本端已经抹过一遍；后端再抹一次，避免旧版本脚本把登录态/学号带上来
             sample = _cap_sensitive.sub(r"\1***", sample)
             if not sample:
@@ -790,9 +791,9 @@ def sanitize_page_snapshot(item):
             capture.append({
                 "url": str(row.get("url") or "")[:200],
                 "method": str(row.get("method") or "")[:8],
-                "req": _cap_sensitive.sub(r"\1***", str(row.get("req") or ""))[:500],
+                "req": _cap_sensitive.sub(r"\1***", str(row.get("req") or ""))[:2000],
                 "sample": sample,
-                "schema": str(row.get("schema") or "")[:3000],
+                "schema": str(row.get("schema") or "")[:5000],
             })
         if capture:
             clean["capture"] = capture

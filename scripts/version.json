@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.1.7",
+    "version": "6.1.8",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.1.7 智慧树公式与选项图片不再丢失；人脸识别只在弹窗层判断；页面异常不再漏报；AI 答题连续 5 轮失败自动停止"
+    "changelog": "v6.1.8 超星判断题新布局与隐藏重复选项修复；连线题拒答不再误报；未支持平台抓取参数更完整"
   },
   "xueshen-gf": {
-    "version": "6.1.7",
+    "version": "6.1.8",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.1.7 智慧树公式与选项图片不再丢失；人脸识别只在弹窗层判断；页面异常不再漏报；AI 答题连续 5 轮失败自动停止"
+    "changelog": "v6.1.8 超星判断题新布局与隐藏重复选项修复；连线题拒答不再误报；未支持平台抓取参数更完整"
   }
 }

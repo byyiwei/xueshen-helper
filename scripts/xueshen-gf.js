@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.1.7
+// @version      6.1.8
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
@@ -15,6 +15,11 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.1.8 (2026-11-24)
+// @changelog    1. 超星章节测验：判断题新版「li + label + 单选」布局能正常识别选项并作答，不再出现「答案拿到了却找不到选项按钮」
+// @changelog    2. 超星章节测验：同一题存在隐藏的重复选项组时只使用可见选项，修复多选题点击后未选中
+// @changelog    3. 超星：连线题 AI 没拿到题目只回了说明文字时按答案无效跳过，不再误报页面异常
+// @changelog    4. 未支持平台题目抓取：保存/交卷的表单参数也能记录，样本上限提高，方便新平台适配
 // @changelog    v6.1.7 (2026-11-23)
 // @changelog    1. 智慧树：题干和选项里的公式、图片不再丢失（公式还原成 LaTeX、图片保留），修复选项只剩「A. B. C. D.」导致 AI 答不出、反复重试
 // @changelog    2. 人脸识别检测只看遮罩/弹窗层，课程正文出现「人脸识别」字样不再误判为要采集人脸、不再停刷
@@ -26572,8 +26577,8 @@ const XS_EXT = (() => {
       if (pageWin.__xsPageCaptureInstalled) return;
       pageWin.__xsPageCaptureInstalled = 1;
 
-      const MAX_RECORDS = 6;
-      const MAX_SAMPLE = 3000;
+      const MAX_RECORDS = 10;
+      const MAX_SAMPLE = 8000;
       const records = [];
       const seenUrls = new Set();
       const TOPIC_RE = /(question|subject|exercise|homework|paper|answer|item|题目|试题|作业|选项)/i;
@@ -26614,12 +26619,41 @@ const XS_EXT = (() => {
             keys.slice(0, 10).forEach((k) => walk(node[k], depth + 1, path + "." + k));
           };
           walk(data, 0, "$");
-          return out.join("\n").slice(0, 3000);
+          return out.join("\n").slice(0, 5000);
         } catch (_) {
           return "";
         }
       };
 
+      // 请求体以前只认字符串：axios 用 FormData 提交时 req 是空的，保存/交卷参数就抓不到。
+      // 这里把表单对象、URLSearchParams、普通对象也转成文本，文件只记文件名和大小。
+      const reqBodyText = (body) => {
+        try {
+          if (body == null) return "";
+          if (typeof body === "string") return body;
+          const tag = Object.prototype.toString.call(body);
+          if (tag === "[object URLSearchParams]") return body.toString();
+          if (tag === "[object FormData]") {
+            const out = [];
+            try {
+              body.forEach((value, key) => {
+                const isFile = value && typeof value === "object" && (value.name || value.size);
+                out.push(key + "=" + (isFile
+                  ? "[文件 " + String(value.name || "blob") + " " + String(value.size || 0) + "B]"
+                  : String(value)));
+              });
+            } catch (_) {
+            }
+            return out.join("&");
+          }
+          if (tag === "[object Object]") {
+            const json = JSON.stringify(body);
+            return typeof json === "string" ? json : "";
+          }
+        } catch (_) {
+        }
+        return "";
+      };
       const record = (url, body, method, reqBody) => {
         if (records.length >= MAX_RECORDS) return;
         const text = String(body || "");
@@ -26639,7 +26673,7 @@ const XS_EXT = (() => {
         records.push({
           url: u,
           method: String(method || "GET").toUpperCase().slice(0, 8),
-          req: clean(String(reqBody || "")).slice(0, 500),
+          req: clean(reqBodyText(reqBody)).slice(0, 2000),
           sample: clean(text).slice(0, MAX_SAMPLE),
           schema: jsonOutline(text),
         });
@@ -26652,7 +26686,7 @@ const XS_EXT = (() => {
           const init = args[1] || {};
           const reqUrl = typeof first === "string" ? first : (first && first.url) || "";
           const reqMethod = (first && first.method) || init.method || "GET";
-          const reqBody = typeof init.body === "string" ? init.body : "";
+          const reqBody = reqBodyText(init.body);
           const p = origFetch.apply(this, args);
           try {
             p.then((res) => {
@@ -26678,7 +26712,7 @@ const XS_EXT = (() => {
         };
         XHR.prototype.send = function (body) {
           try {
-            const reqBody = typeof body === "string" ? body : "";
+            const reqBody = reqBodyText(body);
             this.addEventListener("load", () => {
               try {
                 if (this.responseType && this.responseType !== "text") return;
