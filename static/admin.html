@@ -7884,6 +7884,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
             <div class="modal-actions" style="flex-wrap:wrap;gap:8px">
               <button class="btn btn-secondary" style="margin-right:auto;color:#ef4444;border-color:rgba(239,68,68,.35)" @click="deleteAdaptRequest()">删除需求</button>
               <button class="btn btn-secondary" @click="adaptDetail=null">关闭</button>
+              <button class="btn btn-secondary" v-if="adaptDetail.status==='done'||adaptDetail.status==='rejected'" @click="notifyAdaptRequest()">重发通知</button>
               <button class="btn" style="background:#3b82f6;color:#fff" @click="setAdaptStatus('processing')">标记开发中</button>
               <button class="btn" style="background:#10b981;color:#fff" @click="setAdaptStatus('done')">标记已上线</button>
               <button class="btn" style="background:#ef4444;color:#fff" @click="setAdaptStatus('rejected')">标记未通过</button>
@@ -12118,6 +12119,15 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
         }else showMsg((res&&res.msg)||'更新失败','error');
       }catch(e){showMsg('更新失败: '+(e.message||e),'error');}
     }
+    async function notifyAdaptRequest(){
+      const r=adaptDetail.value;if(!r)return;
+      if(!confirm('给 '+r.email+' 重发一封「'+(r.status==='done'?'已上线':'未通过')+'」通知邮件？'))return;
+      try{
+        const res=await adminPost('/admin/adapt-requests/notify',{id:r.id});
+        if(res&&res.code===200)showMsg(res.msg||'已发送');
+        else showMsg((res&&res.msg)||'发送失败','error');
+      }catch(e){showMsg('发送失败: '+(e.message||e),'error');}
+    }
     async function deleteAdaptRequest(){
       const r=adaptDetail.value;if(!r)return;
       if(!confirm('确定删除需求 #'+r.id+'（'+r.site_name+'）吗？\n删除后不可恢复，用户提交的内容也会一起删掉。'))return;
@@ -12867,7 +12877,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     aiStats,aiStatsRange,aiStatsFrom,aiStatsTo,aiStatsLoading,statsDaily,loadAiTaskStats,statsTrendMax,statsX,statsY,statsPoints,statsReasonWidth,formatStatDuration,openAiTaskFromStats,
     aiWorkerInput,aiWorkerSaving,saveAiTaskWorkers,
     liveElapsed,liveDuration,formatCountdown,queueCountdown,eventAgo,relayClass,relayLabel,liveProgress,
-    loadAdaptRequests,adaptPrev,adaptNext,openAdaptDetail,setAdaptStatus,deleteAdaptRequest,copyAdaptText,
+    loadAdaptRequests,adaptPrev,adaptNext,openAdaptDetail,setAdaptStatus,deleteAdaptRequest,notifyAdaptRequest,copyAdaptText,
     adsList,adsEdit,adsSaving,adsUploading,newAd,editAd,loadAds,saveAd,toggleAd,deleteAd,pickAdImage,onAdFileChange,
    aiPolishing,aiPolishReply,testingModel,testingNewProvider,testModel,testNewProvider,modelTestResults,newProviderTestResult,
        dailyReportConfig,dailyReportPreview,loadDailyReport,saveDailyReport,sendDailyReportNow,previewDailyReport,

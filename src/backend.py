@@ -1777,6 +1777,7 @@ HUB_TEMPLATE_SCENE_LABELS = {
     "refund_approved": "退款通过通知",
     "refund_rejected": "退款拒绝通知",
     "refund_request": "新退款申请通知",
+    "adapt_status": "定制需求进展通知",
 }
 HUB_TEMPLATE_NAMES_BY_SCENE = {k: "学神助手-" + v for k, v in HUB_TEMPLATE_SCENE_LABELS.items()}
 HUB_TEMPLATE_STATUS_TEXT = {0: "已通过", 1: "审核中", 2: "被拒", 3: "未知"}
@@ -1791,6 +1792,9 @@ HUB_VAR_DESC = {
     "note": "备注",
     "title": "标题",
     "reply_text": "回复内容",
+    "site_name": "网站名称",
+    "status_text": "需求状态",
+    "note_text": "处理备注",
     "category": "反馈分类",
     "content": "反馈内容",
     "date": "统计日期",
@@ -9571,6 +9575,50 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
         return False
 
+    def _send_adapt_status_notice(self, row, status, admin_note=""):
+        """给定制需求提交人发状态通知。返回 (ok, err)。"""
+        to_addr = (row.get("email") or "").strip()
+        if not to_addr:
+            return False, "该需求没填邮箱"
+        status_text = "已上线" if status == "done" else "未通过"
+        note_text = ("备注：" + admin_note) if admin_note else ""
+        try:
+            if db.get_email_template_by_scene("adapt_status"):
+                return send_email(
+                    to_addr=to_addr, subject=None,
+                    scene="adapt_status",
+                    variables={
+                        "username": row.get("username") or "同学",
+                        "site_name": row.get("site_name") or "",
+                        "status_text": status_text,
+                        "note_text": note_text,
+                    }
+                )
+            site_name = row.get("site_name") or ""
+            username = row.get("username") or "同学"
+            subject = "学神助手 - 定制需求进展通知"
+            body_text = (
+                f"尊敬的 {username}，您好！\n\n"
+                f"您提交的自动化定制需求有了新进展：\n\n"
+                f"    网站：{site_name}\n"
+                f"    当前状态：{status_text}\n\n"
+                + ((note_text + "\n\n") if note_text else "")
+                + "可登录学神助手用户中心「定制需求」查看详情。"
+            )
+            body_html = (
+                '<div style="background:#f4f6fb;padding:24px;font-family:sans-serif;">'
+                '<div style="max-width:480px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;">'
+                f'<p style="color:#1f2937;font-size:15px;">尊敬的 <b>{username}</b>，您好！</p>'
+                '<p style="color:#4b5563;font-size:14px;">您提交的自动化定制需求有了新进展：</p>'
+                f'<p style="color:#1f2937;font-size:14px;">网站：<b>{site_name}</b><br>当前状态：<b>{status_text}</b></p>'
+                + (f'<p style="color:#4b5563;font-size:14px;white-space:pre-wrap;">{note_text}</p>' if note_text else "")
+                + '<p style="color:#9ca3af;font-size:12px;">可登录学神助手用户中心「定制需求」查看详情。</p>'
+                '</div></div>'
+            )
+            return send_email(to_addr, subject, body_text=body_text, body_html=body_html)
+        except Exception as e:
+            return False, str(e)
+
     def _handle_sso_login(self, parsed):
         """捕获 hub_ticket → 服务端兑换 → 校验角色 → 自铸会话 → bootstrap 落地。
 
@@ -15131,49 +15179,11 @@ class Handler(BaseHTTPRequestHandler):
                 email_status = "none"
                 msg = "已更新"
                 if status in ("done", "rejected") and old_status in ("pending", "processing"):
-                    to_addr = (old.get("email") or "").strip()
-                    if not to_addr:
+                    if not (old.get("email") or "").strip():
                         email_status = "no_email"
                         msg = "已更新（该需求没填邮箱，未发送通知）"
                     else:
-                        status_text = "已上线" if status == "done" else "未通过"
-                        try:
-                            if db.get_email_template_by_scene("adapt_status"):
-                                ok, err = send_email(
-                                    to_addr=to_addr, subject=None,
-                                    scene="adapt_status",
-                                    variables={
-                                        "username": old.get("username") or "同学",
-                                        "site_name": old.get("site_name") or "",
-                                        "status_text": status_text,
-                                        "note_text": ("备注：" + admin_note) if admin_note else "",
-                                    }
-                                )
-                            else:
-                                site_name = old.get("site_name") or ""
-                                username = old.get("username") or "同学"
-                                subject = "学神助手 - 定制需求进展通知"
-                                body_text = (
-                                    f"尊敬的 {username}，您好！\n\n"
-                                    f"您提交的自动化定制需求有了新进展：\n\n"
-                                    f"    网站：{site_name}\n"
-                                    f"    当前状态：{status_text}\n\n"
-                                    + (("备注：" + admin_note + "\n\n") if admin_note else "")
-                                    + "可登录学神助手用户中心「定制需求」查看详情。"
-                                )
-                                body_html = (
-                                    '<div style="background:#f4f6fb;padding:24px;font-family:sans-serif;">'
-                                    '<div style="max-width:480px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;">'
-                                    f'<p style="color:#1f2937;font-size:15px;">尊敬的 <b>{username}</b>，您好！</p>'
-                                    '<p style="color:#4b5563;font-size:14px;">您提交的自动化定制需求有了新进展：</p>'
-                                    f'<p style="color:#1f2937;font-size:14px;">网站：<b>{site_name}</b><br>当前状态：<b>{status_text}</b></p>'
-                                    + (f'<p style="color:#4b5563;font-size:14px;white-space:pre-wrap;">备注：{admin_note}</p>' if admin_note else "")
-                                    + '<p style="color:#9ca3af;font-size:12px;">可登录学神助手用户中心「定制需求」查看详情。</p>'
-                                    '</div></div>'
-                                )
-                                ok, err = send_email(to_addr, subject, body_text=body_text, body_html=body_html)
-                        except Exception as e:
-                            ok, err = False, str(e)
+                        ok, err = self._send_adapt_status_notice(old, status, admin_note)
                         if ok:
                             email_sent = True
                             email_status = "sent"
@@ -15183,6 +15193,41 @@ class Handler(BaseHTTPRequestHandler):
                             msg = f"已更新，但通知邮件没发出去：{err}"
                 self._send_json(200, {"code": 200, "msg": msg,
                                       "email_sent": email_sent, "email_status": email_status})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        # 重发定制需求状态通知（模板审核通过后补发用）
+        elif path == "/admin/adapt-requests/notify":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                req_id = int(data.get("id") or 0)
+                if not req_id:
+                    self._send_json(400, {"code": 400, "msg": "参数错误"})
+                    return
+                row = db.fetchone(
+                    "SELECT id, status, email, username, site_name, admin_note FROM adapt_requests WHERE id=%s",
+                    (req_id,)
+                )
+                if not row:
+                    self._send_json(404, {"code": 404, "msg": "需求不存在"})
+                    return
+                req_status = (row.get("status") or "").strip()
+                if req_status not in ("done", "rejected"):
+                    self._send_json(400, {"code": 400, "msg": "只有已上线/未通过的需求才能发通知"})
+                    return
+                if not (row.get("email") or "").strip():
+                    self._send_json(400, {"code": 400, "msg": "该需求没填邮箱，无法发送"})
+                    return
+                ok, err = self._send_adapt_status_notice(row, req_status, row.get("admin_note") or "")
+                self._audit("adapt_requests.notify", f"adapt#{req_id}", "重发状态通知")
+                if ok:
+                    self._send_json(200, {"code": 200, "msg": "通知邮件已发送", "email_sent": True})
+                else:
+                    self._send_json(200, {"code": 200, "msg": f"通知邮件没发出去：{err}",
+                                          "email_sent": False})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
