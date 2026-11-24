@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.1.8
+// @version      6.1.9
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
 // @keywords     超星学习通,知到智慧树,学习通,智慧树,免费刷课,自动答题,免费搜题,刷课脚本,网课助手,网课答案,油猴脚本,chaoxing,zhihuishu
-// @description  超星学习通、知到智慧树免费网课助手（刷课脚本）：自动刷课、自动答题、视频倍速、自动切换任务点，海量题库每日更新，支持免费搜题查网课答案。同时支持青书学堂、出头科技、雨课堂、云班课、智慧职教、国家开放大学、中国大学MOOC、U校园、学堂在线、绎通云、山东专技、西财在线｜DeepSeek AI 兜底作答｜字体加密解析
+// @description  超星学习通、知到智慧树免费网课助手（刷课脚本）：自动刷课、自动答题、视频倍速、自动切换任务点，海量题库每日更新，支持免费搜题查网课答案。同时支持青书学堂、出头科技、雨课堂、云班课、智慧职教、国家开放大学、中国大学MOOC、U校园、学堂在线、景德镇 o-learn、绎通云、山东专技、西财在线｜DeepSeek AI 兜底作答｜字体加密解析
 // @description:zh-CN 超星学习通、知到智慧树免费网课助手（刷课脚本）：自动刷课、自动答题、视频倍速、自动切换任务点，海量题库每日更新，支持免费搜题查网课答案。同时支持青书学堂、出头科技、雨课堂、云班课、智慧职教、国家开放大学、中国大学MOOC、U校园、学堂在线、绎通云、山东专技、西财在线｜DeepSeek AI 兜底作答｜字体加密解析
 // @homepageURL  https://xs.openget.cn/
 // @supportURL   https://xs.openget.cn/user.html
@@ -15,6 +15,11 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.1.9 (2026-11-24)
+// @changelog    1. 新增景德镇 o-learn（jluctlearning.o-learn.cn）适配：新版学习页视频自动播放、默认 2 倍速，播完自动下一节，已完成任务自动跳过
+// @changelog    2. 景德镇 o-learn：作业页自动识别单选题、多选题、判断题，题库/AI 作答并保存；默认只填不提交，设置里开「自动交卷」才提交
+// @changelog    3. 景德镇 o-learn：答题页签使用和超星一样的题目面板，支持相似题候选；设置里补齐视频助手、答题助手、已完成任务自动跳过、考试设置
+// @changelog    4. 景德镇 o-learn：出现滑块验证码、人脸识别、行为验证时暂停视频，处理完自动继续
 // @changelog    v6.1.8 (2026-11-24)
 // @changelog    1. 超星章节测验：判断题新版「li + label + 单选」布局能正常识别选项并作答，不再出现「答案拿到了却找不到选项按钮」
 // @changelog    2. 超星章节测验：同一题存在隐藏的重复选项组时只使用可见选项，修复多选题点击后未选中

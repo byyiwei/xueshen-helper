@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.1.8",
+    "version": "6.1.9",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.1.8 超星判断题新布局与隐藏重复选项修复；连线题拒答不再误报；未支持平台抓取参数更完整"
+    "changelog": "v6.1.9 新增景德镇 o-learn 适配：视频 2 倍速连播、已完成任务自动跳过、作业整卷自动作答与超星样式答题面板"
   },
   "xueshen-gf": {
-    "version": "6.1.8",
+    "version": "6.1.9",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.1.8 超星判断题新布局与隐藏重复选项修复；连线题拒答不再误报；未支持平台抓取参数更完整"
+    "changelog": "v6.1.9 新增景德镇 o-learn 适配：视频 2 倍速连播、已完成任务自动跳过、作业整卷自动作答与超星样式答题面板"
   }
 }
