@@ -15113,11 +15113,101 @@ class Handler(BaseHTTPRequestHandler):
                 if not req_id or status not in {"pending", "processing", "done", "rejected"}:
                     self._send_json(400, {"code": 400, "msg": "参数错误"})
                     return
+                old = db.fetchone(
+                    "SELECT id, status, email, username, site_name FROM adapt_requests WHERE id=%s",
+                    (req_id,)
+                )
+                if not old:
+                    self._send_json(404, {"code": 404, "msg": "需求不存在"})
+                    return
+                old_status = (old.get("status") or "").strip()
                 db.execute(
                     "UPDATE adapt_requests SET status=%s, admin_note=%s WHERE id=%s",
                     (status, admin_note, req_id)
                 )
-                self._send_json(200, {"code": 200, "msg": "已更新"})
+                self._audit("adapt_requests.status", f"adapt#{req_id}", f"状态改为 {status}")
+                # 需求从待评估/开发中变为已上线或未通过时，发邮件通知提交人
+                email_sent = False
+                email_status = "none"
+                msg = "已更新"
+                if status in ("done", "rejected") and old_status in ("pending", "processing"):
+                    to_addr = (old.get("email") or "").strip()
+                    if not to_addr:
+                        email_status = "no_email"
+                        msg = "已更新（该需求没填邮箱，未发送通知）"
+                    else:
+                        status_text = "已上线" if status == "done" else "未通过"
+                        try:
+                            if db.get_email_template_by_scene("adapt_status"):
+                                ok, err = send_email(
+                                    to_addr=to_addr, subject=None,
+                                    scene="adapt_status",
+                                    variables={
+                                        "username": old.get("username") or "同学",
+                                        "site_name": old.get("site_name") or "",
+                                        "status_text": status_text,
+                                        "note_text": ("备注：" + admin_note) if admin_note else "",
+                                    }
+                                )
+                            else:
+                                site_name = old.get("site_name") or ""
+                                username = old.get("username") or "同学"
+                                subject = "学神助手 - 定制需求进展通知"
+                                body_text = (
+                                    f"尊敬的 {username}，您好！\n\n"
+                                    f"您提交的自动化定制需求有了新进展：\n\n"
+                                    f"    网站：{site_name}\n"
+                                    f"    当前状态：{status_text}\n\n"
+                                    + (("备注：" + admin_note + "\n\n") if admin_note else "")
+                                    + "可登录学神助手用户中心「定制需求」查看详情。"
+                                )
+                                body_html = (
+                                    '<div style="background:#f4f6fb;padding:24px;font-family:sans-serif;">'
+                                    '<div style="max-width:480px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;">'
+                                    f'<p style="color:#1f2937;font-size:15px;">尊敬的 <b>{username}</b>，您好！</p>'
+                                    '<p style="color:#4b5563;font-size:14px;">您提交的自动化定制需求有了新进展：</p>'
+                                    f'<p style="color:#1f2937;font-size:14px;">网站：<b>{site_name}</b><br>当前状态：<b>{status_text}</b></p>'
+                                    + (f'<p style="color:#4b5563;font-size:14px;white-space:pre-wrap;">备注：{admin_note}</p>' if admin_note else "")
+                                    + '<p style="color:#9ca3af;font-size:12px;">可登录学神助手用户中心「定制需求」查看详情。</p>'
+                                    '</div></div>'
+                                )
+                                ok, err = send_email(to_addr, subject, body_text=body_text, body_html=body_html)
+                        except Exception as e:
+                            ok, err = False, str(e)
+                        if ok:
+                            email_sent = True
+                            email_status = "sent"
+                            msg = "已更新，通知邮件已发送给用户"
+                        else:
+                            email_status = "failed"
+                            msg = f"已更新，但通知邮件没发出去：{err}"
+                self._send_json(200, {"code": 200, "msg": msg,
+                                      "email_sent": email_sent, "email_status": email_status})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        # 删除定制需求
+        elif path == "/admin/adapt-requests/delete":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                req_id = int(data.get("id") or 0)
+                if not req_id:
+                    self._send_json(400, {"code": 400, "msg": "参数错误"})
+                    return
+                row = db.fetchone(
+                    "SELECT id, site_name, username FROM adapt_requests WHERE id=%s",
+                    (req_id,)
+                )
+                if not row:
+                    self._send_json(404, {"code": 404, "msg": "需求不存在"})
+                    return
+                db.execute("DELETE FROM adapt_requests WHERE id=%s", (req_id,))
+                self._audit("adapt_requests.delete", f"adapt#{req_id}",
+                            f"删除需求：{row.get('site_name') or ''} / {row.get('username') or '游客'}")
+                self._send_json(200, {"code": 200, "msg": "已删除"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
