@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.1.9
+// @version      6.1.10
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
@@ -15,6 +15,9 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.1.10 (2026-11-24)
+// @changelog    1. 景德镇 o-learn：已批阅作业的查看页不再被旧答题模块当成作业页扫描，修复整卷题目被误点成 B、正确率偏低的问题
+// @changelog    2. 其它平台行为不变
 // @changelog    v6.1.9 (2026-11-24)
 // @changelog    1. 新增景德镇 o-learn（jluctlearning.o-learn.cn）适配：新版学习页视频自动播放、默认 2 倍速，播完自动下一节，已完成任务自动跳过
 // @changelog    2. 景德镇 o-learn：作业页自动识别单选题、多选题、判断题，题库/AI 作答并保存；默认只填不提交，设置里开「自动交卷」才提交

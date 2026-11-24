@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.1.9",
+    "version": "6.1.10",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.1.9 新增景德镇 o-learn 适配：视频 2 倍速连播、已完成任务自动跳过、作业整卷自动作答与超星样式答题面板"
+    "changelog": "v6.1.10 修复景德镇 o-learn 已批阅作业查看页被旧模块误答，整卷题目不再被误点成 B"
   },
   "xueshen-gf": {
-    "version": "6.1.9",
+    "version": "6.1.10",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.1.9 新增景德镇 o-learn 适配：视频 2 倍速连播、已完成任务自动跳过、作业整卷自动作答与超星样式答题面板"
+    "changelog": "v6.1.10 修复景德镇 o-learn 已批阅作业查看页被旧模块误答，整卷题目不再被误点成 B"
   }
 }
