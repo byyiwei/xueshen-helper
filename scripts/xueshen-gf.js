@@ -30401,7 +30401,7 @@ const XS_EXT = (() => {
         }
     }
     function isJdzSpaHomeworkPage() {
-        return isJdzSpaHost() && /\/learn\/(?:outline\/)?homework\/do\//.test(location.hash || '');
+        return isJdzSpaHost() && /\/learn\/(?:outline\/)?homework\/(?:do|show)\//.test(location.hash || '');
     }
     function isJdzSpaTestingPage() {
         return isJdzSpaHost() && /\/learn\/(?:outline\/)?(?:testing|exam)\/[^#]*\/(?:do|record)/.test(location.hash || '');
