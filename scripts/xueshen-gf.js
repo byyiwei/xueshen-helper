@@ -2588,8 +2588,16 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               text: "已完成任务自动跳过",
               value: true,
               type: "switch",
-              platforms: ["ouchn", "qs"],
+              platforms: ["ouchn", "qs", "xtzx"],
               tips: "开启后，平台上已经完成的视频、课件不再重播，直接打开下一个没完成的任务；关闭则按顺序继续"
+            },
+            // 学堂在线：视频/音频由平台自己的心跳记进度，图文、PDF/Word/PPT 课件必须点「标记看完」才算任务点完成
+            xtzxMarkDoc: {
+              text: "图文/文档自动标记看完",
+              platforms: ["xtzx"],
+              value: true,
+              type: "switch",
+              tips: "仅学堂在线。打开图文、PDF/Word/PPT 课件后自动滚到底并点「标记看完」，和视频一样自动连播；关闭则只滚动不标记，等你手动确认"
             },
             forceClipboard: {
               text: "解除复制限制",
@@ -22189,8 +22197,9 @@ const XS_EXT = (() => {
       id: "xtzx",
       name: "学堂在线",
       test: (host) => /(^|\.)xuetangx\.com$/.test(host),
-      play: ["[class*=play]"],
-      next: [".next", "[class*=next]:not([disabled])"],
+      play: [".xt_video_bit_play_btn", ".xt_video_player_play_btn", ".xt_video_player_common_icon", "[class*=play]"],
+      // 学堂在线没有「下一节」按钮，切节走左侧目录（脚本里的 xtzx 分支负责）
+      next: [],
       verified: true
     },
     {
@@ -22234,7 +22243,7 @@ const XS_EXT = (() => {
   const xsWatchSupported = () => Boolean(xsWatchProfileFor(location.hostname));
   // 倍速、自动翻页、开关都直接用「设置」里的现成项，视频页不再单独放一份
   const readWatchSettings = () => {
-    const fallback = { speed: 1.5, autoNext: true, autoScroll: true, enabled: true };
+    const fallback = { speed: 1.5, autoNext: true, autoScroll: true, enabled: true, skipDone: true, markDoc: true };
     try {
       const basic = useSettingStore().config.basicConfig;
       const speed = Number(basic.videoPlayrate && basic.videoPlayrate.value) || 1.5;
@@ -22244,7 +22253,8 @@ const XS_EXT = (() => {
         autoNext,
         autoScroll: autoNext,
         enabled: basic.watchAssist ? !!basic.watchAssist.value : true,
-        skipDone: basic.skipWatchDone ? !!basic.skipWatchDone.value : true
+        skipDone: basic.skipWatchDone ? !!basic.skipWatchDone.value : true,
+        markDoc: basic.xtzxMarkDoc ? !!basic.xtzxMarkDoc.value : true
       };
     } catch (e) {
       return fallback;
@@ -23013,6 +23023,600 @@ const XS_EXT = (() => {
         await sleep(2500);
       }
     };
+    // ===== 学堂在线（xuetangx.com）视频 / 音频 / 图文助手 =====
+    // 学习页左侧目录是平铺的 .menu-content-item（id = unit-item-<leafId>），
+    // 类型：视频 音频 直播 图文 讨论 考试 作业；完成态 = .item-status .is-finish。
+    // 视频/音频的进度由平台每 30 秒一次心跳记在服务端，页面上的圆圈不会实时刷新，
+    // 所以任务点进度统一用 POST /api/v1/lms/learn/chapter/schedule 查（leaf_schedule 0~1）。
+    // 视频按超星标准 90% 算完成；图文/PDF/Word/PPT 必须点「标记看完」才会记账。
+    const xtzxWatch = {
+      currentId: "",
+      arrivedAt: 0,
+      lastOpenAt: 0,
+      endedAt: 0,
+      lastLogAt: 0,
+      doneAt: 0,
+      doneId: "",
+      bottomAt: 0,
+      bottomId: "",
+      markAt: 0,
+      markId: "",
+      markTries: 0,
+      schedule: {},        // leafId -> { value, at }
+      scheduleBusy: {},    // leafId -> Promise
+      localDone: {},       // 本轮脚本已经确认完成的 leafId
+      replay: {},          // leafId -> 已从头补看的次数
+      failed: {}           // leafId -> 自动处理失败的时间（10 分钟内不再选它）
+    };
+    const isXtzxWatch = (profile) => !!profile && profile.id === "xtzx";
+    const xtzxVm = () => {
+      const el = document.querySelector(".course-action-learn-space");
+      return el && el.__vue__ ? el.__vue__ : null;
+    };
+    const xtzxPathId = () => {
+      const m = String(location.pathname || "").match(/\/(?:video|audio|article|homework|exam|discuss)\/(\d+)/);
+      return m ? m[1] : "";
+    };
+    const xtzxKind = () => {
+      const m = String(location.pathname || "").match(/\/(video|audio|article|homework|exam|discuss)\//);
+      return m ? m[1] : "";
+    };
+    const xtzxClassroomId = () => {
+      const vm = xtzxVm();
+      const fromVm = vm && vm.$data ? vm.$data.classroom_id : "";
+      if (fromVm) return String(fromVm);
+      const m = String(location.pathname || "").match(/\/learn\/space\/[^/]+\/[^/]+\/(\d+)/);
+      return m ? m[1] : "";
+    };
+    const xtzxSkuId = () => {
+      const vm = xtzxVm();
+      return String(vm && vm.$data && vm.$data.sku_id ? vm.$data.sku_id : "");
+    };
+    const xtzxStatusOf = (el) => {
+      let done = !!el.querySelector(".item-status .is-finish");
+      let pct = -1;
+      const pie = el.querySelector(".item-status .status-pie");
+      if (pie) {
+        const m = String(pie.getAttribute("style") || "").match(/--p:\s*([\d.]+)/);
+        if (m) pct = Number(m[1]) || 0;
+        if (pct >= 99.5) done = true;
+      }
+      return { done, pct };
+    };
+    const xtzxItems = () => Array.from(document.querySelectorAll(".menu-content-item")).map((el) => {
+      const status = xtzxStatusOf(el);
+      return {
+        el,
+        id: String(el.id || "").replace(/^unit-item-/, ""),
+        type: textOf(el.querySelector(".item-type")),
+        name: textOf(el.querySelector(".item-name")),
+        done: status.done,
+        pct: status.pct,
+        active: el.classList.contains("is-active"),
+        disabled: el.classList.contains("is-disabled")
+      };
+    }).filter((item) => item.id);
+    const xtzxCurrent = () => {
+      const items = xtzxItems();
+      const pid = xtzxPathId();
+      if (pid) {
+        const hit = items.find((item) => item.id === pid);
+        if (hit) return hit;
+      }
+      return items.find((item) => item.active) || null;
+    };
+    const xtzxStudyable = (item) => !!item && !item.disabled && /^(视频|音频|图文)$/.test(item.type);
+    const xtzxOpen = (item) => {
+      if (!item || !item.el) return false;
+      try { item.el.scrollIntoView({ block: "center" }); } catch (e) {
+      }
+      try {
+        item.el.click();
+        xtzxWatch.lastOpenAt = Date.now();
+        return true;
+      } catch (e) {
+        return false;
+      }
+    };
+    // 下一个要学的：先往后找，走到目录末尾再从开头找没完成的；
+    // 讨论/作业/考试/直播 不归视频助手管，锁住的节点也跳过。
+    const xtzxNextItem = (currentId, settings) => {
+      const items = xtzxItems();
+      if (!items.length) return null;
+      const skipDone = settings.skipDone !== false;
+      const usable = (item) => xtzxStudyable(item) && item.id !== currentId
+        && (!skipDone || !item.done)
+        && !xtzxWatch.localDone[item.id]
+        && (!xtzxWatch.failed[item.id] || Date.now() - xtzxWatch.failed[item.id] > 10 * 60e3);
+      const idx = items.findIndex((item) => item.id === currentId);
+      for (let i = idx + 1; i < items.length; i += 1) {
+        if (usable(items[i])) return items[i];
+      }
+      for (let i = 0; i < items.length; i += 1) {
+        if (usable(items[i])) return items[i];
+      }
+      return null;
+    };
+    // 任务点进度：POST /api/v1/lms/learn/chapter/schedule，返回 0~1。15 秒内复用结果
+    const xtzxFetchSchedule = (leafId, force) => {
+      const id = String(leafId || "");
+      if (!id) return Promise.resolve(-1);
+      const cached = xtzxWatch.schedule[id];
+      if (!force && cached && cached.at && Date.now() - cached.at < 15e3) return Promise.resolve(cached.value);
+      if (xtzxWatch.scheduleBusy[id]) return xtzxWatch.scheduleBusy[id];
+      const classroom = xtzxClassroomId();
+      const sku = xtzxSkuId();
+      if (!classroom || !sku) return Promise.resolve(cached ? cached.value : -1);
+      let csrf = "";
+      try {
+        const m = String(document.cookie || "").match(/(?:^|;\s*)csrftoken=([^;]+)/);
+        csrf = m ? decodeURIComponent(m[1]) : "";
+      } catch (e) {
+        csrf = "";
+      }
+      const task = (async () => {
+        const controller = typeof AbortController === "function" ? new AbortController() : null;
+        const timer = controller ? setTimeout(() => controller.abort(), 8000) : null;
+        try {
+          const resp = await fetch("/api/v1/lms/learn/chapter/schedule", {
+            method: "POST",
+            credentials: "include",
+            headers: {
+              "content-type": "application/json",
+              "X-CSRFToken": csrf
+            },
+            body: JSON.stringify({
+              leaf_id: Number(id) || id,
+              classroom_id: classroom,
+              sku_id: Number(sku) || sku
+            }),
+            signal: controller ? controller.signal : void 0
+          });
+          const json = await resp.json();
+          const raw = json && json.data ? json.data.leaf_schedule : null;
+          const value = raw === null || raw === void 0 ? -1 : Number(raw);
+          xtzxWatch.schedule[id] = { value: isNaN(value) ? -1 : value, at: Date.now() };
+        } catch (e) {
+          // 查询失败不要缓存成“已完成/未完成”，下一轮再试
+          if (!cached) xtzxWatch.schedule[id] = { value: -1, at: 0 };
+        } finally {
+          if (timer) clearTimeout(timer);
+          delete xtzxWatch.scheduleBusy[id];
+        }
+        const saved = xtzxWatch.schedule[id];
+        return saved ? saved.value : -1;
+      })();
+      xtzxWatch.scheduleBusy[id] = task;
+      return task;
+    };
+    const xtzxAudioVm = () => {
+      const el = document.querySelector(".audioCon");
+      if (!el) return null;
+      let v = el.__vue__;
+      let hops = 0;
+      while (v && !(v.$data && v.$data.audio) && hops < 10) {
+        v = v.$parent;
+        hops += 1;
+      }
+      return v && v.$data && v.$data.audio ? v : null;
+    };
+    // 播放器自带倍速白名单，并且每秒把 playbackRate 拉回自己记的值；
+    // 直接改 video.playbackRate 会被它覆盖，必须点它自己的倍速菜单。
+    const xtzxSpeedList = [2, 1.5, 1.25, 1, 0.5];
+    const xtzxVideoSpeed = (wanted) => {
+      const value = Number(wanted) || 1;
+      for (const speed of xtzxSpeedList) {
+        if (speed <= value + 0.01) return speed;
+      }
+      return 0.5;
+    };
+    let xtzxSpeedNoticeAt = 0;
+    const xtzxApplyVideoSpeed = (video, wanted) => {
+      if (!video) return;
+      const target = xtzxVideoSpeed(wanted);
+      if (Number(wanted) > 2.01 && Date.now() - xtzxSpeedNoticeAt > 60e3) {
+        xtzxSpeedNoticeAt = Date.now();
+        log(`学堂在线最高支持 2 倍速，已按 ${target}x 播放`);
+      }
+      if (Math.abs(Number(video.playbackRate) - target) < 0.01) return;
+      const box = document.querySelector("xt-speedbutton");
+      const item = box && box.querySelector('li[data-speed="' + target + '"]');
+      if (!box || !item) {
+        try { video.playbackRate = target; } catch (e) {
+        }
+        return;
+      }
+      try {
+        const rect = box.getBoundingClientRect();
+        const x = rect.left + Math.max(1, rect.width / 2);
+        const y = rect.top + Math.max(1, rect.height / 2);
+        // 播放器的点击处理要求先有 mousemove（内部 n 标记），再点菜单项
+        box.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, clientX: x, clientY: y }));
+        box.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: x, clientY: y }));
+        box.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: x + 6, clientY: y + 6 }));
+        item.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+      } catch (e) {
+      }
+    };
+    const xtzxApplyAudioSpeed = (audio, wanted) => {
+      if (!audio) return;
+      const target = Math.min(4, Math.max(0.5, Number(wanted) || 1));
+      try {
+        if (Math.abs(Number(audio.playbackRate) - target) > 0.01) audio.playbackRate = target;
+      } catch (e) {
+      }
+    };
+    // 学堂在线的音量插件会在每次 timeupdate 把 video.muted 改回来，只能点它自己的静音按钮
+    const xtzxMuteVideo = (video) => {
+      const icon = document.querySelector("xt-volumebutton .xt_video_player_common_icon");
+      if (icon) {
+        if (icon.classList.contains("xt_video_player_common_icon_muted")) return;
+        const box = icon.closest("xt-volumebutton");
+        try {
+          const rect = (box || icon).getBoundingClientRect();
+          const x = rect.left + Math.max(1, rect.width / 2);
+          const y = rect.top + Math.max(1, rect.height / 2);
+          (box || icon).dispatchEvent(new MouseEvent("mouseover", { bubbles: true, clientX: x, clientY: y }));
+          (box || icon).dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: x, clientY: y }));
+          (box || icon).dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: x + 6, clientY: y + 6 }));
+          icon.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+        } catch (e) {
+        }
+        return;
+      }
+      try {
+        if (video && !video.muted) video.muted = true;
+      } catch (e) {
+      }
+    };
+    const xtzxFindMarkButton = () => {
+      const btns = Array.from(document.querySelectorAll(".btnCon button, .btnCon .btn"));
+      return btns.find((btn) => {
+        if (!btn || btn.disabled || btn.classList.contains("disable")) return false;
+        const label = textOf(btn);
+        return /标记看完|Mark as complete/i.test(label) && !/已阅读|已看完/.test(label);
+      }) || null;
+    };
+    // 「标记看完」按钮滚进视野就停止下滚，下方讨论区是无限加载，滚到底会一直滚
+    const xtzxMarkInView = (btn) => {
+      if (!btn || !btn.getBoundingClientRect) return false;
+      const rect = btn.getBoundingClientRect();
+      const vh = window.innerHeight || (document.documentElement && document.documentElement.clientHeight) || 800;
+      return rect.height > 0 && rect.bottom > 0 && rect.top < vh - 20;
+    };
+    // 图文页的滚动条在 .hover_overflow 上；PDF/Word/PPT 预览可能在 iframe 里，同源时一起滚
+    const xtzxScrollStep = () => {
+      let any = false;
+      let moved = false;
+      const scrollBox = (box) => {
+        if (!box || box.scrollHeight <= box.clientHeight + 20) return;
+        any = true;
+        if (box.scrollTop + box.clientHeight < box.scrollHeight - 8) {
+          box.scrollTop = Math.min(box.scrollHeight, box.scrollTop + Math.max(160, Math.floor(box.clientHeight * 0.6)));
+          moved = true;
+        }
+      };
+      scrollBox(document.querySelector(".hover_overflow"));
+      scrollBox(document.querySelector(".content-scroll"));
+      scrollBox(document.querySelector(".lesson_right"));
+      const frames = Array.from(document.querySelectorAll("iframe")).slice(0, 8);
+      for (const frame of frames) {
+        let doc = null;
+        try { doc = frame.contentDocument; } catch (e) { doc = null; }
+        if (!doc || !doc.documentElement) continue;
+        scrollBox(doc.scrollingElement || doc.documentElement);
+      }
+      if (!any) return "none";
+      return moved ? "moving" : "bottom";
+    };
+    const xtzxAdvanceTo = (curId, settings, reason) => {
+      if (!settings.autoNext) {
+        state.status = "已完成（自动切换章节已关闭）";
+        return false;
+      }
+      const next = xtzxNextItem(curId, settings);
+      if (!next) {
+        state.status = "课程任务已全部完成";
+        if (Date.now() - xtzxWatch.lastLogAt > 60e3) {
+          xtzxWatch.lastLogAt = Date.now();
+          log("学堂在线：目录里能自动学习的视频、音频、图文都已完成");
+        }
+        return false;
+      }
+      if (Date.now() - xtzxWatch.lastOpenAt < 5000) return false;
+      if (!xtzxOpen(next)) {
+        xtzxWatch.failed[next.id] = Date.now();
+        log(`学堂在线：打不开「${next.name || next.id}」，先跳过`, "warning");
+        return false;
+      }
+      advanceGuard.at = Date.now();
+      advanceGuard.href = location.href;
+      advanceGuard.src = "";
+      state.segments += 1;
+      prefs.segments = state.segments;
+      xsWatchWritePrefs(prefs);
+      log(`${reason}，接着打开「${next.name || next.id}」`);
+      state.status = "已切换到下一节";
+      return true;
+    };
+    const xtzxTick = async (profile, settings) => {
+      const kind = xtzxKind();
+      const cur = xtzxCurrent();
+      const curId = (cur && cur.id) || xtzxPathId();
+      if (!document.querySelector(".menu-content-item")) {
+        state.media = "学堂在线：等待课程目录";
+        return;
+      }
+      if (!curId) {
+        // 课程总览等没有任务号的页面：从目录开头找第一个没完成的任务打开
+        if (Date.now() - xtzxWatch.lastOpenAt > 8000) {
+          const first = xtzxNextItem("", settings);
+          if (first && xtzxOpen(first)) {
+            log(`学堂在线：从课程目录打开「${first.name || first.id}」`);
+            state.media = "已打开第一个未完成任务";
+            return;
+          }
+        }
+        state.media = "学堂在线：当前页面没有任务点";
+        return;
+      }
+      if (curId !== xtzxWatch.currentId) {
+        xtzxWatch.currentId = curId;
+        xtzxWatch.arrivedAt = Date.now();
+        xtzxWatch.endedAt = 0;
+        xtzxWatch.lastLogAt = 0;
+        xtzxWatch.doneAt = 0;
+        xtzxWatch.doneId = "";
+        xtzxWatch.bottomAt = 0;
+        xtzxWatch.bottomId = "";
+        xtzxWatch.markAt = 0;
+        xtzxWatch.markId = "";
+        xtzxWatch.markTries = 0;
+        pausedTicks = 0;
+        if (cur) log(`学堂在线：进入「${cur.name || cur.id}」（${cur.type || kind}）`);
+        void xtzxFetchSchedule(curId, true);
+      }
+      if (!cur) {
+        state.media = "学堂在线：还没定位到当前任务";
+        return;
+      }
+      if (kind === "homework" || kind === "exam" || kind === "discuss") {
+        state.media = "学堂在线：作业/考试/讨论页，视频助手待命";
+        return;
+      }
+      if (kind !== "video" && kind !== "audio" && kind !== "article") {
+        state.media = "学堂在线：当前页面没有可自动学习的任务";
+        return;
+      }
+      const schedule = await xtzxFetchSchedule(curId);
+      const scheduleText = schedule >= 0 ? `，任务点 ${Math.round(schedule * 100)}%` : "";
+      const doneNow = !!cur.done || !!xtzxWatch.localDone[curId] || schedule >= 0.9;
+      // 进来时这一节已经完成了：直接跳到下一个没完成的
+      if (settings.skipDone && doneNow && Date.now() - xtzxWatch.arrivedAt > 2500) {
+        state.status = "已完成，跳过";
+        if (xtzxAdvanceTo(curId, settings, `「${cur.name || curId}」已完成`)) return;
+        return;
+      }
+      if (kind === "video") {
+        const video = findVideo();
+        if (!video) {
+          state.media = "学堂在线：等待视频加载";
+          state.progress = "";
+          return;
+        }
+        state.media = "视频";
+        const duration = Number(video.duration) || 0;
+        const current = Number(video.currentTime) || 0;
+        state.progress = duration > 0
+          ? `${formatTime(current)} / ${formatTime(duration)}（${Math.floor(current / duration * 100)}%${scheduleText}）`
+          : scheduleText.slice(1);
+        xtzxApplyVideoSpeed(video, settings.speed);
+        xtzxMuteVideo(video);
+        if (schedule >= 0.9 && (settings.skipDone || !cur.done)) {
+          if (xtzxWatch.doneId !== curId) {
+            xtzxWatch.doneId = curId;
+            xtzxWatch.doneAt = Date.now();
+            state.status = "任务点已达标，等平台记账";
+            return;
+          }
+          if (Date.now() - xtzxWatch.doneAt < 3000) {
+            state.status = "任务点已达标，等平台记账";
+            return;
+          }
+          xtzxWatch.localDone[curId] = true;
+          if (xtzxAdvanceTo(curId, settings, `「${cur.name || curId}」任务点已达 ${Math.round(schedule * 100)}%`)) return;
+          state.status = "课程任务已完成";
+          return;
+        }
+        xtzxWatch.doneAt = 0;
+        xtzxWatch.doneId = "";
+        if (video.ended) {
+          // 刚切节时页面里可能还挂着上一节的播放器，先等新视频加载
+          if (Date.now() - xtzxWatch.arrivedAt < 4000) {
+            state.status = "等待视频加载";
+            return;
+          }
+          const tries = xtzxWatch.replay[curId] || 0;
+          if (schedule >= 0 && schedule < 0.9 && tries < 2) {
+            xtzxWatch.replay[curId] = tries + 1;
+            try {
+              video.currentTime = 0;
+              safePlay(video);
+              log(`学堂在线：本节任务点只有 ${Math.round(schedule * 100)}%，从头补看第 ${tries + 1} 次`);
+            } catch (e) {
+            }
+            state.status = "任务点未满，从头补看";
+            return;
+          }
+          if (schedule >= 0 && schedule < 0.9 && tries >= 2) {
+            xtzxWatch.failed[curId] = Date.now();
+            log(`学堂在线：本节补看两次任务点仍只有 ${Math.round(schedule * 100)}%，先跳过`, "warning");
+          }
+          state.status = "本节已播完";
+          if (!settings.autoNext) return;
+          if (!xtzxWatch.endedAt) xtzxWatch.endedAt = Date.now();
+          if (Date.now() - xtzxWatch.endedAt > 5000) {
+            xtzxAdvanceTo(curId, settings, `「${cur.name || curId}」已播完`);
+          }
+          return;
+        }
+        if (video.paused) {
+          pausedTicks += 1;
+          const btn = clickFirst([".xt_video_bit_play_btn", ".xt_video_player_play_btn", ".xt_video_player_common_icon"]);
+          safePlay(video);
+          if (!btn) {
+            setTimeout(() => {
+              if (!state.running || !video.paused) return;
+              try { video.click(); } catch (e) {
+              }
+            }, 500);
+          }
+        } else {
+          pausedTicks = 0;
+        }
+        state.status = "运行中";
+        return;
+      }
+      if (kind === "audio") {
+        const vm = xtzxAudioVm();
+        const audio = vm && vm.$data ? vm.$data.audio : null;
+        if (!audio) {
+          state.media = "学堂在线：等待音频加载";
+          return;
+        }
+        state.media = "音频";
+        const duration = Number(audio.duration) || 0;
+        const current = Number(audio.currentTime) || 0;
+        state.progress = duration > 0
+          ? `${formatTime(current)} / ${formatTime(duration)}（${Math.floor(current / duration * 100)}%${scheduleText}）`
+          : scheduleText.slice(1);
+        xtzxApplyAudioSpeed(audio, settings.speed);
+        try { if (audio.volume > 0) audio.volume = 0; } catch (e) {
+        }
+        if (schedule >= 0.9 && (settings.skipDone || !cur.done)) {
+          if (xtzxWatch.doneId !== curId) {
+            xtzxWatch.doneId = curId;
+            xtzxWatch.doneAt = Date.now();
+            state.status = "任务点已达标，等平台记账";
+            return;
+          }
+          if (Date.now() - xtzxWatch.doneAt < 3000) {
+            state.status = "任务点已达标，等平台记账";
+            return;
+          }
+          xtzxWatch.localDone[curId] = true;
+          if (xtzxAdvanceTo(curId, settings, `「${cur.name || curId}」音频任务点已达 ${Math.round(schedule * 100)}%`)) return;
+          state.status = "课程任务已完成";
+          return;
+        }
+        xtzxWatch.doneAt = 0;
+        xtzxWatch.doneId = "";
+        if (audio.ended) {
+          // 刚切节时页面里可能还挂着上一节的音频对象，先等新音频加载
+          if (Date.now() - xtzxWatch.arrivedAt < 4000) {
+            state.status = "等待音频加载";
+            return;
+          }
+          const tries = xtzxWatch.replay[curId] || 0;
+          if (schedule >= 0 && schedule < 0.9 && tries < 2) {
+            xtzxWatch.replay[curId] = tries + 1;
+            try {
+              audio.currentTime = 0;
+              audio.play().catch(() => {});
+              log(`学堂在线：本节音频任务点只有 ${Math.round(schedule * 100)}%，从头补听第 ${tries + 1} 次`);
+            } catch (e) {
+            }
+            state.status = "任务点未满，从头补听";
+            return;
+          }
+          if (schedule >= 0 && schedule < 0.9 && tries >= 2) {
+            xtzxWatch.failed[curId] = Date.now();
+            log(`学堂在线：本节音频补听两次任务点仍只有 ${Math.round(schedule * 100)}%，先跳过`, "warning");
+          }
+          state.status = "本节音频已播完";
+          if (!settings.autoNext) return;
+          if (!xtzxWatch.endedAt) xtzxWatch.endedAt = Date.now();
+          if (Date.now() - xtzxWatch.endedAt > 5000) {
+            xtzxAdvanceTo(curId, settings, `「${cur.name || curId}」音频已播完`);
+          }
+          return;
+        }
+        if (audio.paused) {
+          pausedTicks += 1;
+          try { audio.play().catch(() => {}); } catch (e) {
+          }
+          const btn = document.querySelector(".audioSelf .play");
+          if (btn) {
+            try { btn.click(); } catch (e) {
+            }
+          }
+        } else {
+          pausedTicks = 0;
+        }
+        state.status = "运行中";
+        return;
+      }
+      // 图文 / PDF / Word / PPT 课件：滚到「标记看完」按钮出现，再点它
+      if (!document.querySelector(".hover_overflow, .content-scroll, .lesson_right")) {
+        state.media = "学堂在线：等待图文内容加载";
+        return;
+      }
+      const hover = document.querySelector(".hover_overflow");
+      state.progress = hover && hover.scrollHeight > hover.clientHeight
+        ? `滚动 ${Math.min(100, Math.round((hover.scrollTop + hover.clientHeight) / hover.scrollHeight * 100))}%`
+        : "";
+      const markBtn = xtzxFindMarkButton();
+      const markReady = !!markBtn && xtzxMarkInView(markBtn);
+      // 按钮已经滚进视野就不再往下滚，避免被下方讨论区的无限加载拖住
+      const scrollState = markReady ? "bottom" : xtzxScrollStep();
+      if (scrollState === "moving") {
+        xtzxWatch.bottomId = "";
+        state.media = "图文：正在向下滚动";
+        state.status = "运行中";
+        return;
+      }
+      if (xtzxWatch.bottomId !== curId) {
+        xtzxWatch.bottomId = curId;
+        xtzxWatch.bottomAt = Date.now();
+        state.media = markReady ? "图文：已滚到「标记看完」" : "图文：已滚到底";
+        return;
+      }
+      if (Date.now() - xtzxWatch.bottomAt < 1500) {
+        state.media = "图文：准备标记";
+        return;
+      }
+      if (!settings.markDoc) {
+        state.media = "图文：已滚到底（自动标记已关闭）";
+        state.status = "等你手动点「标记看完」";
+        return;
+      }
+      if (markBtn && Date.now() - xtzxWatch.markAt > 6000) {
+        xtzxWatch.markAt = Date.now();
+        xtzxWatch.markId = curId;
+        xtzxWatch.markTries += 1;
+        try {
+          markBtn.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+          markBtn.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+          log(`学堂在线：图文「${cur.name || curId}」已滚到底，点「标记看完」`);
+        } catch (e) {
+        }
+        state.media = "图文：已点「标记看完」，等平台确认";
+        return;
+      }
+      if (schedule >= 0.9 && (settings.skipDone || !cur.done)) {
+        xtzxWatch.localDone[curId] = true;
+        if (xtzxAdvanceTo(curId, settings, `「${cur.name || curId}」图文已完成`)) return;
+        state.status = "课程任务已完成";
+        return;
+      }
+      if (xtzxWatch.markTries >= 4 && Date.now() - xtzxWatch.markAt > 20000) {
+        xtzxWatch.failed[curId] = Date.now();
+        log(`学堂在线：图文「${cur.name || curId}」点了多次仍未确认完成，先跳过`, "warning");
+        if (xtzxAdvanceTo(curId, settings, `「${cur.name || curId}」未能确认完成`)) return;
+        return;
+      }
+      state.media = "图文：已标记，等平台确认";
+    };
     const start = (profile) => {
       const active = profile || xsWatchProfileFor(location.hostname);
       if (!active) {
@@ -23148,6 +23752,11 @@ const XS_EXT = (() => {
           }
         }
         if (handleQuizPopup(profile)) return;
+        // 学堂在线：视频、音频、图文走自己的目录 + 任务点接口，下面的通用逻辑不参与
+        if (isXtzxWatch(profile)) {
+          await xtzxTick(profile, settings);
+          return;
+        }
         // 国开切到课件/测验后，上一个视频的播放器可能还挂在页面里，别拿它当当前视频
         let video = findVideo();
         if (video && isOuchnWatch(profile)) {
