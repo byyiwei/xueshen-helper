@@ -27125,7 +27125,9 @@ const XS_EXT = (() => {
       // 只对「只做视频助手」的平台启用；已支持答题的平台不抓。
       // 2026-11-23：以前只看 watchSite，国开（watchSite + showAi）也被算进来，
       // 用户正常答 50 道题的同时还在刷「未支持平台」异常（yxlnzjbs 13 条）。
-      if (!plat || !plat.watchSite || plat.showAi) return;
+      // 2026-11-24：景德镇 o-learn、学堂在线已支持答题，但 showAi=false + watchSite=true，
+      // 作业页会被当成未支持平台反复回传（闲云野鹤 6.1.10 两条），这里按平台 key 排掉。
+      if (!plat || !plat.watchSite || plat.showAi || plat.key === "jdz" || plat.key === "xtzx") return;
       const path = String(location.pathname || "") + String(location.hash || "") + String(location.search || "");
       // 只在作业/考试/测验页面抓，普通课程播放页不抓
       if (!/(homework|exam|test|quiz|paper|exercise|\/do\/|\/work)/i.test(path)) return;
