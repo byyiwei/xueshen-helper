@@ -26547,6 +26547,12 @@ const XS_EXT = (() => {
               if (!markSet[ch]) break;
               letters.push(ch);
             }
+            // 这一支只处理「段落匹配」：材料有 A)、B) 段落标记，且每个 item 只有一个空。
+            // 课件里的整段填空也是一个 .item 里塞多个 fe-scoop，不能按段落匹配处理，
+            // 否则只会填第一个空、还会把单词答案当成段落字母拒绝掉。
+            const paragraphMatch = letters.length >= 2
+              && scoopItems.every((item) => item.querySelectorAll("input").length === 1);
+            if (paragraphMatch) {
             scoopItems.forEach((item) => {
               const input = item.querySelector("input");
               if (!input) return;
@@ -26571,6 +26577,7 @@ const XS_EXT = (() => {
               });
             });
             return;
+            }
           }
           // 段落匹配（课件常见）：左边文章、右边 10 个句子各一个输入框，填的是段落字母
           const textmatch = reply.querySelector(".question-common-abs-textmatch");
