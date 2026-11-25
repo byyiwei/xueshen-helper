@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.1.10
+// @version      6.1.11
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
@@ -15,6 +15,9 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.1.11 (2026-11-25)
+// @changelog    1. 页面异常上报更安静：景德镇 o-learn、学堂在线的作业页不再被当成「未支持平台」反复上报，后台不再出现重复误报
+// @changelog    2. 已支持自动答题的平台行为不变，其他平台的未支持页面题目回传照旧
 // @changelog    v6.1.10 (2026-11-24)
 // @changelog    1. 景德镇 o-learn：已批阅作业的查看页不再被旧答题模块当成作业页扫描，修复整卷题目被误点成 B、正确率偏低的问题
 // @changelog    2. 其它平台行为不变
