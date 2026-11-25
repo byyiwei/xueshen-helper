@@ -23846,12 +23846,33 @@ const XS_EXT = (() => {
       }
       return null;
     };
+    // 同一节里还有小题（听力/练习等）：先走完本节内的任务，别直接跳到下一节
+    const uschoolNextTask = () => {
+      const tasks = Array.from(document.querySelectorAll(".pc-task"));
+      const cur = tasks.find((el) => /pc-header-task-activity/.test(String(el.className || "")));
+      if (!cur) return null;
+      const idx = tasks.indexOf(cur);
+      return tasks.slice(idx + 1).find((el) => {
+        try { const rect = el.getBoundingClientRect(); return rect.width > 0 && rect.height > 0; } catch (_) { return false; }
+      }) || null;
+    };
     const uschoolContentNext = (settings, reason) => {
       if (!settings.autoNext) {
         state.status = "已完成（自动切换章节已关闭）";
         return false;
       }
       if (Date.now() - uschoolContent.lastClickAt < 6000) return false;
+      const nextTask = uschoolNextTask();
+      if (nextTask) {
+        uschoolContent.lastClickAt = Date.now();
+        try { nextTask.click(); } catch (_) { return false; }
+        state.segments += 1;
+        prefs.segments = state.segments;
+        xsWatchWritePrefs(prefs);
+        log(`U 校园：${reason}，打开「${uschoolMenuLabel(nextTask)}」`);
+        state.status = "已切换到下一节";
+        return true;
+      }
       const cur = uschoolCurrentMenu();
       const next = uschoolNextMenu(cur, settings.skipDone);
       if (!next) {
