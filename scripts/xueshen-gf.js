@@ -2421,7 +2421,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
     return result;
   }
   // 哪些平台有哪些能力：设置页按当前平台过滤，没这个功能的平台不显示对应设置
-  const ANSWER_PLATFORM_KEYS = ["cx", "zhs", "qs", "ct", "jdz", "ouchn", "xtzx"];
+  const ANSWER_PLATFORM_KEYS = ["cx", "zhs", "qs", "ct", "jdz", "ouchn", "xtzx", "uschool"];
   // 国开考试拿不到答案对照，交卷前算不出正确率，也没有章节自动提交；
   // 这几项只给有完整作业/考试流程的平台显示
   const ANSWER_REPORT_KEYS = ["cx", "zhs", "qs", "ct", "jdz"];
@@ -2567,6 +2567,14 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               type: "switch",
               tips: "仅中国大学MOOC。开启后在「答题」页点开始答题，填完会逐题点「提交答案」（不可撤销，建议先确认答案）；关闭则手动点每题右侧的「提交答案」"
             },
+            // U 校园提交不可撤销：单独一个开关，默认关闭；整卷全部答出后才点提交
+            uschoolAutoSubmit: {
+              text: "U 校园答完自动提交",
+              platforms: ["uschool"],
+              value: false,
+              type: "switch",
+              tips: "仅 U 校园。作业或课件练习全部答完后，自动点页面上的「提交」并确认（提交不可撤销，建议第一次先手动确认）；只想填不想交时保持关闭"
+            },
             autoRefresh: {
               text: "定时刷新（防卡死）",
               platforms: ANSWER_PLATFORM_KEYS,
@@ -2606,7 +2614,7 @@ var __TTF2_TABLE__ = {"10434866":23247,"10583225":34076,"10642690":35052,"107222
               text: "已完成任务自动跳过",
               value: true,
               type: "switch",
-              platforms: ["ouchn", "qs", "xtzx", "jdz"],
+              platforms: ["ouchn", "qs", "xtzx", "jdz", "uschool"],
               tips: "开启后，平台上已经完成的视频、课件不再重播，直接打开下一个没完成的任务；关闭则按顺序继续"
             },
             // 学堂在线：视频/音频由平台自己的心跳记进度，图文、PDF/Word/PPT 课件必须点「标记看完」才算任务点完成
@@ -23825,6 +23833,89 @@ const XS_EXT = (() => {
       }
       return null;
     };
+    // ===== U 校园课件（ucontent.unipus.cn）：视频自动播放 + 按右侧目录切节 =====
+    const isUschoolContentWatch = (profile) => !!profile && profile.id === "uschool" && /\/courseware\//.test(String(location.hash || ""));
+    const uschoolMenuItems = () => Array.from(document.querySelectorAll(".pc-slider-menu-micro, .pc-slider-menu-node"));
+    const uschoolMenuDone = (el) => !!el && !!el.querySelector(".pc-slider-menu-status-circle-all");
+    const uschoolCurrentMenu = () => document.querySelector(".pc-slider-menu-micro.pc-menu-activity, .pc-slider-menu-node.pc-menu-activity");
+    const uschoolMenuLabel = (el) => String((el && (el.innerText || el.textContent)) || "").replace(/\s+/g, " ").trim().slice(0, 24);
+    const uschoolContent = { lastClickAt: 0, lastLogAt: 0 };
+    const uschoolNextMenu = (current, skipDone) => {
+      const items = uschoolMenuItems();
+      const idx = items.indexOf(current);
+      if (idx < 0) return null;
+      for (let i = idx + 1; i < items.length; i += 1) {
+        if (skipDone && uschoolMenuDone(items[i])) continue;
+        return items[i];
+      }
+      return null;
+    };
+    const uschoolContentNext = (settings, reason) => {
+      if (!settings.autoNext) {
+        state.status = "已完成（自动切换章节已关闭）";
+        return false;
+      }
+      if (Date.now() - uschoolContent.lastClickAt < 6000) return false;
+      const cur = uschoolCurrentMenu();
+      const next = uschoolNextMenu(cur, settings.skipDone);
+      if (!next) {
+        state.status = "本课程任务已全部完成";
+        if (Date.now() - uschoolContent.lastLogAt > 60000) {
+          uschoolContent.lastLogAt = Date.now();
+          log("U 校园：目录里能自动学习的课件都已完成");
+        }
+        return false;
+      }
+      uschoolContent.lastClickAt = Date.now();
+      try { next.click(); } catch (_) { return false; }
+      advanceGuard.at = Date.now();
+      advanceGuard.href = location.href;
+      advanceGuard.src = "";
+      state.segments += 1;
+      prefs.segments = state.segments;
+      xsWatchWritePrefs(prefs);
+      log(`U 校园：${reason}，打开「${uschoolMenuLabel(next)}」`);
+      state.status = "已切换到下一节";
+      return true;
+    };
+    const uschoolContentTick = async (profile, settings) => {
+      if (!/\/courseware\//.test(String(location.hash || ""))) {
+        state.media = "U 校园：等待进入课件";
+        return;
+      }
+      const cur = uschoolCurrentMenu();
+      if (!cur) {
+        state.media = "U 校园：等待课程目录";
+        return;
+      }
+      // 已完成任务自动跳过：当前节点进度已满就切下一个
+      if (settings.skipDone && uschoolMenuDone(cur)) {
+        if (uschoolContentNext(settings, `${uschoolMenuLabel(cur)}已完成`)) return;
+      }
+      const video = findVideo();
+      if (!video) {
+        state.media = "U 校园：当前课件没有视频（图文/练习页）";
+        state.progress = "";
+        return;
+      }
+      if (!video.muted) {
+        try { video.muted = true; } catch (_) {}
+      }
+      setSpeed(video, settings.speed);
+      state.media = "U 校园课件";
+      const duration = Number(video.duration) || 0;
+      const current = Number(video.currentTime) || 0;
+      if (video.ended || (duration > 0 && current >= duration - 0.8)) {
+        state.progress = "本节已播完，正在切换";
+        uschoolContentNext(settings, "本节播完");
+        return;
+      }
+      if (video.paused) {
+        safePlay(video);
+      }
+      pausedTicks = 0;
+      state.status = "运行中";
+    };
     const tick = async (profile) => {
       if (!state.running) return;
       // 上一轮卡在慢请求上时不要一直占着锁，超过 15 秒就放开重来
@@ -23900,6 +23991,11 @@ const XS_EXT = (() => {
         // 学堂在线：视频、音频、图文走自己的目录 + 任务点接口，下面的通用逻辑不参与
         if (isXtzxWatch(profile)) {
           await xtzxTick(profile, settings);
+          return;
+        }
+        // U 校园课件：video.js 播放器 + 右侧目录切节，没有「下一节」按钮
+        if (isUschoolContentWatch(profile)) {
+          await uschoolContentTick(profile, settings);
           return;
         }
         // 国开切到课件/测验后，上一个视频的播放器可能还挂在页面里，别拿它当当前视频
@@ -24699,6 +24795,8 @@ const XS_EXT = (() => {
     // 扫描当前页面（含 iframe），返回题目块
     const findBlocks = (scope) => {
       scope = scope || document;
+      // U 校园作业页：页面结构固定（判断题/单选题/选词填空），走专用解析
+      if (isUschoolQuizPage()) return uschoolBlocks();
       // 先按平台精确选择器找，找不到再走通用结构识别
       const host = (scope.location && scope.location.hostname) || location.hostname;
       for (const profile of profilesForHost(host)) {
@@ -24841,6 +24939,8 @@ const XS_EXT = (() => {
 
     const fill = (block, answer) => {
       if (!block) return { ok: false, reason: "没有题目块" };
+      // U 校园的受控输入、选词填空要异步写入，交给平台自己的组件接口
+      if (block.uschool) return uschoolFillBlock(block, answer);
       if (block.kind === "input") {
         const list = Array.isArray(answer) ? answer : [answer];
         let count = 0;
@@ -24983,7 +25083,18 @@ const XS_EXT = (() => {
         for (const doc of collectDocuments()) {
           try { blocks.push(...findBlocks(doc)); } catch (_) {}
         }
-        const usable = blocks.filter((block) => (block.options && block.options.length >= 2) || (block.inputs && block.inputs.length));
+        // U 校园课件页会把同一份练习同时挂在主文档和 iframe 里，按题干去重，别重复作答
+        let deduped = blocks;
+        if (isUschoolQuizPage()) {
+          const seenTitles = new Set();
+          deduped = blocks.filter((block) => {
+            const key = String(block.title || "").replace(/\s+/g, " ").trim();
+            if (!key || seenTitles.has(key)) return false;
+            seenTitles.add(key);
+            return true;
+          });
+        }
+        const usable = deduped.filter((block) => (block.options && block.options.length >= 2) || (block.inputs && block.inputs.length));
         // 题目换了（或换了考试），之前记下的答案作废；同一套题补答时保留，方便核对
         const sig = usable.map((block) => (block.title || "").slice(0, 80)).join("\u0001");
         if (sig !== lastQuestionSig) {
@@ -25022,8 +25133,8 @@ const XS_EXT = (() => {
           status: isAnswered(block) ? "done" : "pending",
           msg: ""
         }));
-        // 国开：把题目同步到超星那套答题界面，搜到的答案也显示在那里
-        if (isOuchnHost()) {
+        // 国开 / U 校园：把题目同步到超星那套答题界面，搜到的答案也显示在那里
+        if (isOuchnHost() || isUschoolQuizPage()) {
           // applyPickedCandidate 需要题目上的 optionsText 来做答案归一化
           usable.forEach((block) => {
             block.optionsText = (block.options || []).map((opt) => stripLetter(opt.text));
@@ -25084,7 +25195,7 @@ const XS_EXT = (() => {
     const escapeHtml = (text) => String(text == null ? "" : text)
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const syncStoreItem = (index, patch) => {
-      if (!isOuchnHost()) return;
+      if (!isOuchnHost() && !isUschoolQuizPage()) return;
       const store = useQuestionStore();
       const list = store.questionList.slice();
       if (!list[index]) return;
@@ -25094,6 +25205,22 @@ const XS_EXT = (() => {
     // 从页面上读当前已选的答案：重答失败时用它可以保住原有答案，不让面板变空
     const pageAnswer = (block) => {
       const picked = [];
+      // U 校园：单选题是点击式选项，判断题/填空题/段落匹配是输入框
+      if (block && block.uschool) {
+        if (block.uschool.kind === "choice") {
+          (block.options || []).forEach((opt) => {
+            if (/(^|[\s-])(active|selected|checked|is-checked|choose|chosen)([\s-]|$)/i.test(String((opt.el && opt.el.className) || ""))) {
+              picked.push(opt.letter || stripLetter(opt.text));
+            }
+          });
+        } else {
+          (block.inputs || []).forEach((input) => {
+            const value = String((input && input.value) || "").trim();
+            if (value) picked.push(value);
+          });
+        }
+        return picked;
+      }
       if (block.controls && block.controls.length) {
         (block.options || []).forEach((opt) => {
           if (opt.input && opt.input.checked) picked.push(opt.letter || stripLetter(opt.text));
@@ -25225,8 +25352,10 @@ const XS_EXT = (() => {
       optionsText: (block.options || []).map((opt) => stripLetter(opt.text)),
       // 题型要如实告诉后端：判断题按单选发出去，模型容易当普通单选题答
       type: block.kind === "input"
-        ? (block.type === "简答" ? "简答题" : "填空题")
+        ? (block.type === "简答" ? "简答题" : block.type === "判断题" ? "判断题" : block.type === "选词填空" ? "选词填空" : "填空题")
         : (block.type === "多选" ? "多选题" : block.type === "判断" ? "判断题" : "单选题"),
+      // 阅读类大题的材料单独放 context：题目本身照样进题库匹配，材料只给模型当题面
+      context: block.context || "",
       refer: location.href
     });
 
@@ -26222,6 +26351,328 @@ const XS_EXT = (() => {
         setTimeout(() => { void jdzTick(); }, 300);
       }
     };
+    // ===== U 校园（unipus.cn）：作业整卷渲染在页面里 =====
+    // 判断题是 fillblank-scoop（React 受控 input），单选题是点击式 div 选项，
+    // 选词填空是整段材料 + 多个拖拽空。三者都不能用通用填法：受控 input 直接写 value
+    // 不会同步到页面状态，选词填空的 input 是只读的、由组件状态驱动。
+    // 这里通过 React fiber 拿到组件自己的回调（input.onChange / stuAnswerChange）写入，
+    // 保存答案的时机不变（离开页面、组件卸载时页面自己会缓存）。
+    const isUschoolHost = () => {
+      try { return /(^|\.)unipus\.cn$/i.test(location.hostname); } catch (_) { return false; }
+    };
+    // 课件页（ucontent.unipus.cn）的练习也是同一套 question-abs 组件，只是没有 /homework/ 路径
+    const isUschoolCoursewarePage = () => {
+      try {
+        if (!isUschoolHost()) return false;
+        if (!/\/courseware\//.test(String(location.hash || ""))) return false;
+        return !!document.querySelector(".question-abs-question");
+      } catch (_) { return false; }
+    };
+    const isUschoolQuizPage = () => {
+      try {
+        if (!isUschoolHost()) return false;
+        if (!/\/homework\//.test(location.pathname) && !isUschoolCoursewarePage()) return false;
+        return !!document.querySelector(".question-abs-question .question-common-abs-reply, .question-abs-question .question-material-banked-cloze-scoop");
+      } catch (_) { return false; }
+    };
+    const uschoolFiber = (el) => {
+      try {
+        if (!el) return null;
+        const key = Object.keys(el).find((k) => k.indexOf("__reactFiber$") === 0 || k.indexOf("__reactInternalInstance$") === 0);
+        return key ? el[key] : null;
+      } catch (_) { return null; }
+    };
+    // 往组件链上方找带某个回调的 props：React 把输入/答题处理挂在最近的组件上
+    const uschoolPropsWith = (el, name, maxUp) => {
+      const fiber = uschoolFiber(el);
+      // React 重渲染后 DOM 上挂的 fiber 可能还是上一棵树，两棵树都找一遍
+      for (const start of [fiber, fiber && fiber.alternate]) {
+        let node = start;
+        for (let i = 0; node && i < (maxUp || 30); i++, node = node.return) {
+          const props = node.memoizedProps;
+          if (props && typeof props === "object" && typeof props[name] === "function") return props;
+        }
+      }
+      return null;
+    };
+    const uschoolTextOf = (el) => String((el && (el.innerText || el.textContent)) || "").replace(/\s+/g, " ").trim();
+    // 题干里去掉题号和答题控件，只留文字
+    const uschoolQuestionText = (el) => {
+      if (!el) return "";
+      const clone = el.cloneNode(true);
+      clone.querySelectorAll(".question-number, .comp-abs-input, .option-wrap").forEach((node) => node.remove());
+      return uschoolTextOf(clone);
+    };
+    const uschoolBlocks = () => {
+      const blocks = [];
+      Array.from(document.querySelectorAll(".question-abs-question")).forEach((section) => {
+        const materialEl = section.querySelector(".question-common-abs-material");
+        const context = materialEl ? uschoolTextOf(materialEl).slice(0, 6000) : "";
+        const cloze = section.querySelector(".question-material-banked-cloze-scoop");
+        if (cloze) {
+          const inputs = Array.from(cloze.querySelectorAll(".scoop-wrapper input"));
+          const words = [];
+          Array.from(section.querySelectorAll(".question-material-banked-cloze-reply .option-placeholder, .question-material-banked-cloze-reply .option")).forEach((item) => {
+            const word = uschoolTextOf(item);
+            if (word && words.indexOf(word) < 0) words.push(word);
+          });
+          // 把每个空换成 ___1___ 标记，交给 AI 的是完整短文
+          const toMarkers = cloze.cloneNode(true);
+          toMarkers.querySelectorAll(".scoop-wrapper").forEach((wrap, index) => {
+            const holder = document.createElement("span");
+            holder.textContent = ` ___${index + 1}___ `;
+            if (wrap.parentNode) wrap.parentNode.replaceChild(holder, wrap);
+          });
+          const passage = uschoolTextOf(toMarkers);
+          if (!inputs.length || !passage) return;
+          blocks.push({
+            el: cloze,
+            kind: "input",
+            type: "选词填空",
+            title: passage,
+            context: words.length ? "词库：" + words.join(" / ") : "",
+            options: words.map((word, index) => ({ el: null, input: null, letter: String.fromCharCode(65 + index), text: word })),
+            controls: [],
+            inputs,
+            uschool: { kind: "cloze", words }
+          });
+          return;
+        }
+        Array.from(section.querySelectorAll(".question-common-abs-reply")).forEach((reply) => {
+          // 段落匹配（课件常见）：左边文章、右边 10 个句子各一个输入框，填的是段落字母
+          const textmatch = reply.querySelector(".question-common-abs-textmatch");
+          if (textmatch) {
+            let letterOpts = [];
+            const startFiber = uschoolFiber(textmatch);
+            for (const start of [startFiber, startFiber && startFiber.alternate]) {
+              let node = start;
+              for (let i = 0; node && i < 10; i++, node = node.return) {
+                const props = node.memoizedProps;
+                if (props && Array.isArray(props.options) && props.options.length) {
+                  letterOpts = props.options;
+                  break;
+                }
+              }
+              if (letterOpts.length) break;
+            }
+            const letters = letterOpts
+              .map((o, i) => String((o && (o.value || o.key)) || String.fromCharCode(65 + i)).toUpperCase())
+              .filter(Boolean);
+            Array.from(textmatch.querySelectorAll(".input-wrapper")).forEach((wrap) => {
+              const input = wrap.querySelector("input");
+              const statement = uschoolQuestionText(wrap);
+              if (!input || !statement) return;
+              blocks.push({
+                el: wrap,
+                kind: "input",
+                type: "匹配题",
+                title: statement,
+                context: (letters.length ? "文章各段用字母标出：" + letters.join("、") + "。请判断该句出自哪一段。回答格式：只写一个段落字母（例如 C），不要解释。\n" : "") + context,
+                options: letters.map((letter) => ({ el: null, input: null, letter, text: letter })),
+                controls: [],
+                inputs: [input],
+                uschool: { kind: "text", letters }
+              });
+            });
+            return;
+          }
+          const optionWrap = reply.querySelector(".option-wrap");
+          if (optionWrap) {
+            const title = uschoolQuestionText(reply.querySelector(".ques-title") || reply);
+            const options = Array.from(optionWrap.querySelectorAll(".option")).map((opt) => ({
+              el: opt,
+              input: null,
+              letter: uschoolTextOf(opt.querySelector(".caption")),
+              text: uschoolTextOf(opt.querySelector(".content")) || uschoolTextOf(opt)
+            })).filter((opt) => opt.text);
+            if (options.length < 2 || !title) return;
+            blocks.push({
+              el: reply, kind: "click", type: "单选题", title,
+              context, options, controls: [], inputs: [],
+              uschool: { kind: "choice" }
+            });
+            return;
+          }
+          const input = reply.querySelector(".comp-abs-input input");
+          if (!input) return;
+          const title = uschoolQuestionText(reply);
+          if (!title) return;
+          blocks.push({
+            el: reply, kind: "input", type: "判断题", title,
+            context, options: [], controls: [], inputs: [input],
+            uschool: { kind: "judge" }
+          });
+        });
+      });
+      return blocks;
+    };
+    // 判断题页面只认 T/F（输入框 placeholder 就是 T）
+    const uschoolJudgeValue = (value) => {
+      const text = String(value == null ? "" : value).trim();
+      if (/^(t|true|对|正确|是|√)$/i.test(text)) return "T";
+      if (/^(f|false|错|错误|不对|不正确|否|×|x)$/i.test(text)) return "F";
+      if (/^对|^(?:正确|是)\b/.test(text)) return "T";
+      if (/^错|^(?:不对|不正确|否)\b/.test(text)) return "F";
+      return "";
+    };
+    // 选词填空的答案可能给字母（A-O）也可能直接给单词，统一换成词库里的词
+    const uschoolClozeWords = (answer, words, count) => {
+      const bank = words || [];
+      const letterToWord = (letter) => {
+        const index = letter.toUpperCase().charCodeAt(0) - 65;
+        return bank[index] != null ? bank[index] : "";
+      };
+      const pickOne = (item) => {
+        const text = String(item == null ? "" : item).trim();
+        if (!text) return "";
+        const prefixed = text.match(/^([A-Oa-o])\s*[.、:：)）]\s*(.+)$/);
+        if (prefixed) {
+          const word = letterToWord(prefixed[1]);
+          if (word) return word;
+        }
+        if (/^[A-Oa-o]$/.test(text) && bank.length) {
+          const word = letterToWord(text);
+          if (word) return word;
+        }
+        return text;
+      };
+      let list = Array.isArray(answer) ? answer.slice() : [answer];
+      if (list.length === 1) {
+        const raw = String(list[0] == null ? "" : list[0]).trim();
+        if (raw) {
+          const byLine = raw.split(/\r?\n/)
+            .map((line) => line.replace(/^\s*(?:[（(]?\d{1,2}[)）.、:：]|第\s*\d+\s*空)\s*/, "").trim())
+            .filter(Boolean);
+          list = byLine.length > 1
+            ? byLine
+            : raw.replace(/^\s*(?:[（(]?\d{1,2}[)）.、:：])\s*/, "").split(/[\s,;，；|]+/).filter(Boolean);
+        }
+      }
+      return list.map(pickOne).filter(Boolean).slice(0, count);
+    };
+    const uschoolFillBlock = async (block, answer) => {
+      if (!block || !block.uschool) return null;
+      const meta = block.uschool;
+      // 课件里的普通输入框（段落匹配等）：走原生 value setter + input 事件，
+      // React 才会把它当成用户输入写进组件状态；直接 props.onChange 会因为缺少事件字段被忽略
+      if (meta.kind === "text") {
+        const list = Array.isArray(answer) ? answer : [answer];
+        const raw = String(list[0] == null ? "" : list[0]).trim();
+        if (!raw) return { ok: false, reason: "答案为空" };
+        let value = raw;
+        if (block.type === "匹配题") {
+          // 模型有时只给 "L"，有时给 "L. 第四段"、"答案是 L"：从文本里挑出合法的段落字母
+          const allowed = (meta.letters && meta.letters.length) ? meta.letters : [];
+          const head = raw.match(/^\s*([A-Za-z])(?![A-Za-z])/);
+          let letter = head ? head[1].toUpperCase() : "";
+          if (!letter || (allowed.length && allowed.indexOf(letter) < 0)) {
+            const found = (raw.toUpperCase().match(/[A-Z]/g) || []).filter((ch) => !allowed.length || allowed.indexOf(ch) >= 0);
+            letter = found.length ? found[found.length - 1] : "";
+          }
+          if (!letter || (allowed.length && allowed.indexOf(letter) < 0)) {
+            return { ok: false, reason: "答案不是段落字母" };
+          }
+          value = letter;
+        }
+        const input = block.inputs[0];
+        try {
+          const view = input.ownerDocument.defaultView;
+          const setter = Object.getOwnPropertyDescriptor(view.HTMLInputElement.prototype, "value").set;
+          setter.call(input, value);
+          input.focus();
+          input.dispatchEvent(new view.Event("input", { bubbles: true }));
+          input.dispatchEvent(new view.Event("change", { bubbles: true }));
+        } catch (_) {
+          return { ok: false, reason: "写入答案失败" };
+        }
+        await sleep(0.2);
+        return { ok: String(input.value || "").trim() === value, filled: 1, letters: [value], reason: "" };
+      }
+      // 判断题：React 受控输入框必须走组件的 onChange，直接改 value 页面状态不会变
+      if (meta.kind === "judge") {
+        const list = Array.isArray(answer) ? answer : [answer];
+        const value = uschoolJudgeValue(list[0]);
+        if (!value) return { ok: false, reason: "答案不是判断题的 T/F" };
+        const props = uschoolPropsWith(block.inputs[0], "onChange", 4);
+        if (!props) return { ok: false, reason: "没找到输入框的答题接口" };
+        try { props.onChange({ target: { value }, currentTarget: { value } }); } catch (_) { return { ok: false, reason: "写入答案失败" }; }
+        await sleep(0.15);
+        return { ok: String(block.inputs[0].value || "").trim() === value, filled: 1, letters: [value], reason: "" };
+      }
+      // 选词填空：整段组件有 stuAnswerChange(index, word)
+      if (meta.kind === "cloze") {
+        const values = uschoolClozeWords(answer, meta.words, block.inputs.length);
+        if (!values.length) return { ok: false, reason: "答案里没有可用于选词填空的词" };
+        const props = uschoolPropsWith(block.el, "stuAnswerChange", 4);
+        if (!props) return { ok: false, reason: "没找到选词填空的答题接口" };
+        values.forEach((value, index) => {
+          try { props.stuAnswerChange(index, value); } catch (_) {}
+        });
+        await sleep(0.3);
+        const got = block.inputs.filter((input) => String(input.value || "").trim()).length;
+        const complete = got >= block.inputs.length;
+        return {
+          ok: got > 0,
+          filled: got,
+          letters: values,
+          missing: Math.max(0, block.inputs.length - got),
+          reason: complete ? "" : got ? `词库只填上了 ${got}/${block.inputs.length} 个空` : "选词填空没写进去"
+        };
+      }
+      // 单选题：点页面的选项，点击后页面自己记录答案
+      const matched = pickOptions(block, answer);
+      if (!matched.picked.length) return { ok: false, reason: "答案没匹配到任何选项", unmatched: matched.unmatched };
+      const opt = matched.picked[0];
+      const isPicked = () => /(^|[\s-])(active|selected|checked|is-checked|choose|chosen)([\s-]|$)/i.test(String(opt.el.className || ""));
+      try { opt.el.click(); } catch (_) {}
+      await sleep(0.2);
+      if (!isPicked()) {
+        try { opt.el.click(); } catch (_) {}
+        await sleep(0.2);
+      }
+      return { ok: isPicked(), filled: 1, letters: [opt.letter], reason: isPicked() ? "" : "点了选项但页面没反应", unmatched: matched.unmatched };
+    };
+    // U 校园「答完自动提交」：单独开关（默认关闭），整卷全部答出后才点页面提交
+    const uschoolAutoSubmitNow = async () => {
+      try {
+        const basic = useSettingStore().config.basicConfig;
+        if (!basic.uschoolAutoSubmit || !basic.uschoolAutoSubmit.value) return false;
+        if (basic.autoAnswer && !basic.autoAnswer.value) return false;
+        const items = (state.items || []).slice();
+        if (!items.length) return false;
+        const bad = items.filter((it) => it.status !== "done");
+        if (bad.length) {
+          log(`U 校园：还有 ${bad.length} 题没答出来，暂不自动提交`, "warning");
+          return false;
+        }
+        const visible = (el) => {
+          try { const rect = el.getBoundingClientRect(); return rect.width > 0 && rect.height > 0; } catch (_) { return false; }
+        };
+        const byText = (re, root) => Array.from((root || document).querySelectorAll("button, a, .btn, [role=button], div[class*=btn]"))
+          .find((el) => visible(el) && re.test(String(el.innerText || el.textContent || "").replace(/\s+/g, "")));
+        const btn = byText(/^(提交|交卷|提交作业|提交答案)$/);
+        if (!btn) {
+          log("U 校园：没找到页面上的提交按钮，请手动提交", "warning");
+          return false;
+        }
+        try { btn.click(); } catch (_) { return false; }
+        await sleep(1.2);
+        const modal = document.querySelector(".ant-modal, .ant-modal-wrap, [class*=modal], [class*=dialog]");
+        const confirm = byText(/^(确定|确认|确认提交|提交|交卷)$/, modal || document);
+        if (confirm && confirm !== btn) {
+          try { confirm.click(); } catch (_) {}
+          await sleep(0.8);
+        }
+        log("U 校园：已自动点提交，请以页面显示的结果为准");
+        return true;
+      } catch (e) {
+        log("U 校园：自动提交出错 " + String((e && e.message) || e).slice(0, 60), "warning");
+        return false;
+      }
+    };
+    // 同一份作业只自动跑一轮，避免定时器反复重填
+    let uschoolAutoKey = "";
+    let uschoolAutoBusy = false;
     const start = async (opts) => {
       // 景德镇新版学习页：作业整卷在页面里，接口只提供题目 id 和版本号
       if (isJdzQuizPage()) {
@@ -26260,7 +26711,7 @@ const XS_EXT = (() => {
         const block = registry[item.index];
         if (!block) continue;
         setItem(item.index, { status: "running" });
-        if (isOuchnHost()) useQuestionStore().currentQuestionIndex = item.index + 1;
+        if (isOuchnHost() || isUschoolQuizPage()) useQuestionStore().currentQuestionIndex = item.index + 1;
         try {
           const question = toQuestion(block);
           const res = await askAnswer(question);
@@ -26719,6 +27170,31 @@ const XS_EXT = (() => {
       return false;
     };
     const autoExamTick = async () => {
+      // U 校园作业页：整卷在页面里，开启「自动答题」后同一份作业自动跑一轮
+      if (isUschoolQuizPage()) {
+        if (uschoolAutoBusy) return;
+        const basic = useSettingStore().config.basicConfig;
+        if (!basic.autoAnswer || !basic.autoAnswer.value) return;
+        if (basic.assistAnswer && !basic.assistAnswer.value) return;
+        if (state.running || state.scanning || state.pick) return;
+        const key = location.href;
+        if (uschoolAutoKey === key) return;
+        uschoolAutoKey = key;
+        uschoolAutoBusy = true;
+        try {
+          const blocks = scan(true);
+          if (!blocks.length) return;
+          try { useSettingStore().tabIndex = "2"; } catch (_) {}
+          log("U 校园：检测到作业页面，开始自动答题");
+          await start({ auto: true });
+          await uschoolAutoSubmitNow();
+        } catch (e) {
+          log("U 校园自动答题出错：" + String((e && e.message) || e).slice(0, 80), "warning");
+        } finally {
+          uschoolAutoBusy = false;
+        }
+        return;
+      }
       // 景德镇新版作业页：SPA 切页不刷新，共用这个 2 秒定时器逐题处理
       if (isJdzHost() && jdzHomeworkRoute()) {
         await jdzTick();
@@ -26913,6 +27389,8 @@ const XS_EXT = (() => {
               ? "景德镇 o-learn：进入作业页后，「自动答题」开启会自动填题并保存；默认只填不提交，在「设置 - 考试设置」里开启「自动交卷」后才会提交作业。"
               : xtzxQuizPage()
               ? "学堂在线：进入作业/考试页，「自动答题」开启会自动填题；默认只填不提交，在「设置 - 考试设置」里开启「自动交卷」后会逐题提交并在最后交卷。"
+              : isUschoolQuizPage()
+              ? "U 校园：作业页和课件练习页（判断题、单选题、选词填空、段落匹配）在「自动答题」开启后会自动填题；默认只填不提交，需要自动交可在设置里打开「U 校园答完自动提交」。"
               : isMoocQuizPage()
                 ? "中国大学MOOC：先点「扫描题目」，再点「开始答题」；填完点「提交已填答案」逐题提交，或在设置里开启「MOOC 答题后自动提交」。"
                 : "进入考试后，「自动答题」开启会自动作答；答案和相似题选择显示在下面，自动交卷在「设置 - 考试设置」里。"),
@@ -27130,7 +27608,7 @@ const XS_EXT = (() => {
       // 用户正常答 50 道题的同时还在刷「未支持平台」异常（yxlnzjbs 13 条）。
       // 2026-11-24：景德镇 o-learn、学堂在线已支持答题，但 showAi=false + watchSite=true，
       // 作业页会被当成未支持平台反复回传（闲云野鹤 6.1.10 两条），这里按平台 key 排掉。
-      if (!plat || !plat.watchSite || plat.showAi || plat.key === "jdz" || plat.key === "xtzx") return;
+      if (!plat || !plat.watchSite || plat.showAi || plat.key === "jdz" || plat.key === "xtzx" || plat.key === "uschool") return;
       const path = String(location.pathname || "") + String(location.hash || "") + String(location.search || "");
       // 只在作业/考试/测验页面抓，普通课程播放页不抓
       if (!/(homework|exam|test|quiz|paper|exercise|\/do\/|\/work)/i.test(path)) return;
@@ -27476,7 +27954,7 @@ const XS_EXT = (() => {
           key: "2",
           tab: "答题",
           // 国开、学堂在线、景德镇用超星那套「题目结果」界面（题号、题干、答案卡片）
-          component: currentPlatform?.key === "ouchn" || currentPlatform?.key === "xtzx" || currentPlatform?.key === "jdz"
+          component: currentPlatform?.key === "ouchn" || currentPlatform?.key === "xtzx" || currentPlatform?.key === "jdz" || currentPlatform?.key === "uschool"
             ? xsQuiz.OuchnPanel
             : currentPlatform?.watchSite
               ? xsQuiz.Panel
