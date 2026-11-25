@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.1.12
+// @version      6.1.13
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -15,6 +15,9 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.1.13 (2026-11-25)
+// @changelog    1. 修复 U 校园课件多空填空题被当成段落匹配：只填第一个空、单词答案被当成段落字母拒绝的问题，现在按顺序一次填完
+// @changelog    2. 其余平台行为不变
 // @changelog    v6.1.12 (2026-11-25)
 // @changelog    1. 新增 U 校园（unipus.cn）适配：作业和课件练习自动答题，支持单选、判断、选词填空、段落匹配、听力填空和简答题
 // @changelog    2. 课件视频自动播放、倍速、播完按右侧目录切到下一节，已完成的小节自动跳过

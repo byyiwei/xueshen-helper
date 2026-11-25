@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.1.12",
+    "version": "6.1.13",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.1.12 新增 U 校园适配：作业和课件练习自动答题（单选、判断、选词填空、段落匹配、听力填空、简答），课件视频自动播放与切节，视频字幕交给 AI 提升听力题正确率"
+    "changelog": "v6.1.13 修复 U 校园课件多空填空题被当成段落匹配的问题：现在多个空按顺序一次填完，答案能正常写入"
   },
   "xueshen-gf": {
-    "version": "6.1.12",
+    "version": "6.1.13",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.1.12 新增 U 校园适配：作业和课件练习自动答题（单选、判断、选词填空、段落匹配、听力填空、简答），课件视频自动播放与切节，视频字幕交给 AI 提升听力题正确率"
+    "changelog": "v6.1.13 修复 U 校园课件多空填空题被当成段落匹配的问题：现在多个空按顺序一次填完，答案能正常写入"
   }
 }
