@@ -26393,6 +26393,69 @@ const XS_EXT = (() => {
         return !!document.querySelector(".question-abs-question .question-common-abs-reply, .question-abs-question .question-material-banked-cloze-scoop");
       } catch (_) { return false; }
     };
+    // 课件视频/音频大多带 .vtt 字幕，平台播放时用 XHR 拉取。这里记下地址，
+    // 答题时把字幕原文一起交给 AI，听力/视频题才答得准（纯文字模型看不到画面）。
+    let uschoolVttLog = [];
+    const uschoolNoteVtt = (url) => {
+      try {
+        const u = String(url || "");
+        if (!/\.vtt(\?|$)/i.test(u)) return;
+        if (uschoolVttLog.some((item) => item.url === u)) return;
+        uschoolVttLog.push({ url: u, at: Date.now() });
+        if (uschoolVttLog.length > 30) uschoolVttLog.shift();
+      } catch (_) {}
+    };
+    if (isUschoolHost()) {
+      try {
+        const rawOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function (method, url) {
+          uschoolNoteVtt(url);
+          return rawOpen.apply(this, arguments);
+        };
+      } catch (_) {}
+      // 换一节/换一题后旧字幕不能再拿来用
+      try {
+        window.addEventListener("hashchange", () => { uschoolVttLog = []; });
+      } catch (_) {}
+    }
+    const uschoolVttCache = {};
+    const uschoolVttText = (raw) => String(raw || "")
+      .split(/\r?\n/)
+      .filter((line) => {
+        const s = line.trim();
+        if (!s) return false;
+        if (/^WEBVTT/i.test(s) || /^NOTE\b/i.test(s) || /^(STYLE|REGION)\b/i.test(s)) return false;
+        if (/^\d+$/.test(s) || s.indexOf("-->") >= 0) return false;
+        return true;
+      })
+      .join(" ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const uschoolTranscript = async () => {
+      let url = "";
+      const now = Date.now();
+      for (let i = uschoolVttLog.length - 1; i >= 0; i -= 1) {
+        if (now - uschoolVttLog[i].at < 30 * 60 * 1000) { url = uschoolVttLog[i].url; break; }
+      }
+      if (!url) return "";
+      if (uschoolVttCache[url] != null) return uschoolVttCache[url];
+      const text = await new Promise((resolve) => {
+        try {
+          // 这个 CDN 允许跨域，但页面里的 fetch 会被拦住，XHR 正常，所以用 XHR
+          const xhr = new XMLHttpRequest();
+          xhr.open("GET", url);
+          xhr.timeout = 15000;
+          xhr.onload = () => resolve(uschoolVttText(xhr.responseText));
+          xhr.onerror = () => resolve("");
+          xhr.ontimeout = () => resolve("");
+          xhr.send();
+        } catch (_) { resolve(""); }
+      });
+      uschoolVttCache[url] = text;
+      return text;
+    };
     const uschoolFiber = (el) => {
       try {
         if (!el) return null;
@@ -26494,6 +26557,54 @@ const XS_EXT = (() => {
             });
             return;
           }
+          // 听力填空：段落里嵌着 .fe-scoop 输入框，把每个空换成 ___N___ 让 AI 按顺序填
+          const scoops = Array.from(reply.querySelectorAll(".fe-scoop"));
+          if (scoops.length && !reply.querySelector(".option-wrap")) {
+            const inputs = scoops.map((el) => el.querySelector("input")).filter(Boolean);
+            if (!inputs.length) return;
+            const holder = reply.cloneNode(true);
+            Array.from(holder.querySelectorAll(".fe-scoop")).forEach((el, index) => {
+              const mark = document.createElement("span");
+              mark.textContent = ` ___${index + 1}___ `;
+              if (el.parentNode) el.parentNode.replaceChild(mark, el);
+            });
+            const title = uschoolQuestionText(holder);
+            if (!title) return;
+            blocks.push({
+              el: reply,
+              kind: "input",
+              type: "填空题",
+              title,
+              context: context + "\n本题有 " + inputs.length + " 个空，请按顺序给出每个空的答案，每行一个，不要解释。",
+              options: [],
+              controls: [],
+              inputs,
+              uschool: { kind: "text" }
+            });
+            return;
+          }
+          // 开放题/摘要题：一个大文本框
+          const inputBoxes = Array.from(reply.querySelectorAll(".question-inputbox"));
+          if (inputBoxes.length && !reply.querySelector(".option-wrap")) {
+            inputBoxes.forEach((box) => {
+              const input = box.querySelector("textarea");
+              if (!input) return;
+              const title = uschoolQuestionText(box.querySelector(".question-inputbox-header") || box);
+              if (!title) return;
+              blocks.push({
+                el: box,
+                kind: "input",
+                type: "简答",
+                title,
+                context: context + "\n请用英文简洁回答（1-2 句），不要解释。",
+                options: [],
+                controls: [],
+                inputs: [input],
+                uschool: { kind: "text" }
+              });
+            });
+            return;
+          }
           const optionWrap = reply.querySelector(".option-wrap");
           if (optionWrap) {
             const title = uschoolQuestionText(reply.querySelector(".ques-title") || reply);
@@ -26574,37 +26685,71 @@ const XS_EXT = (() => {
       // 课件里的普通输入框（段落匹配等）：走原生 value setter + input 事件，
       // React 才会把它当成用户输入写进组件状态；直接 props.onChange 会因为缺少事件字段被忽略
       if (meta.kind === "text") {
-        const list = Array.isArray(answer) ? answer : [answer];
-        const raw = String(list[0] == null ? "" : list[0]).trim();
-        if (!raw) return { ok: false, reason: "答案为空" };
-        let value = raw;
+        const inputs = block.inputs || [];
+        if (!inputs.length) return { ok: false, reason: "没有输入框" };
+        const splitAnswer = (raw, count) => {
+          const lines = String(raw).split(/\r?\n|；|;/)
+            .map((line) => line.replace(/^\s*(?:[（(]?\d{1,2}[)）.、:：]|第\s*\d+\s*空)\s*/, "").trim())
+            .filter(Boolean);
+          if (lines.length >= count) return lines.slice(0, count);
+          const pieces = String(raw).split(/[\s,，|]+/).filter(Boolean);
+          return pieces.length >= count ? pieces.slice(0, count) : lines;
+        };
+        let list = (Array.isArray(answer) ? answer : [answer])
+          .map((item) => String(item == null ? "" : item).trim())
+          .filter(Boolean);
+        if (!list.length) return { ok: false, reason: "答案为空" };
+        let values = [];
         if (block.type === "匹配题") {
           // 模型有时只给 "L"，有时给 "L. 第四段"、"答案是 L"：从文本里挑出合法的段落字母
           const allowed = (meta.letters && meta.letters.length) ? meta.letters : [];
-          const head = raw.match(/^\s*([A-Za-z])(?![A-Za-z])/);
-          let letter = head ? head[1].toUpperCase() : "";
-          if (!letter || (allowed.length && allowed.indexOf(letter) < 0)) {
-            const found = (raw.toUpperCase().match(/[A-Z]/g) || []).filter((ch) => !allowed.length || allowed.indexOf(ch) >= 0);
-            letter = found.length ? found[found.length - 1] : "";
+          for (const raw of list) {
+            const head = raw.match(/^\s*([A-Za-z])(?![A-Za-z])/);
+            let letter = head ? head[1].toUpperCase() : "";
+            if (!letter || (allowed.length && allowed.indexOf(letter) < 0)) {
+              const found = (raw.toUpperCase().match(/[A-Z]/g) || []).filter((ch) => !allowed.length || allowed.indexOf(ch) >= 0);
+              letter = found.length ? found[found.length - 1] : "";
+            }
+            if (letter && (!allowed.length || allowed.indexOf(letter) >= 0)) values.push(letter);
           }
-          if (!letter || (allowed.length && allowed.indexOf(letter) < 0)) {
-            return { ok: false, reason: "答案不是段落字母" };
+          if (!values.length) return { ok: false, reason: "答案不是段落字母" };
+          values = values.slice(0, inputs.length);
+        } else if (block.type === "简答") {
+          values = [list.join(" ").replace(/\s+/g, " ").trim()];
+        } else {
+          // 填空题：答案可能一行一个，也可能一句话里用空格隔开
+          if (list.length < inputs.length) list = splitAnswer(list.join(" "), inputs.length);
+          values = list.slice(0, inputs.length);
+          if (values.length < inputs.length) {
+            return { ok: false, reason: `应填 ${inputs.length} 个空，只给了 ${values.length} 个答案` };
           }
-          value = letter;
         }
-        const input = block.inputs[0];
-        try {
-          const view = input.ownerDocument.defaultView;
-          const setter = Object.getOwnPropertyDescriptor(view.HTMLInputElement.prototype, "value").set;
-          setter.call(input, value);
-          input.focus();
-          input.dispatchEvent(new view.Event("input", { bubbles: true }));
-          input.dispatchEvent(new view.Event("change", { bubbles: true }));
-        } catch (_) {
-          return { ok: false, reason: "写入答案失败" };
+        let wrote = 0;
+        for (let i = 0; i < values.length && i < inputs.length; i += 1) {
+          const input = inputs[i];
+          const value = values[i];
+          if (!input || !value) continue;
+          try {
+            const view = input.ownerDocument.defaultView;
+            const proto = input.tagName === "TEXTAREA" ? view.HTMLTextAreaElement.prototype : view.HTMLInputElement.prototype;
+            const setter = Object.getOwnPropertyDescriptor(proto, "value").set;
+            setter.call(input, value);
+            input.focus();
+            input.dispatchEvent(new view.Event("input", { bubbles: true }));
+            input.dispatchEvent(new view.Event("change", { bubbles: true }));
+            wrote += 1;
+          } catch (_) {}
         }
-        await sleep(0.2);
-        return { ok: String(input.value || "").trim() === value, filled: 1, letters: [value], reason: "" };
+        await sleep(0.25);
+        const got = inputs.filter((input) => String(input.value || "").trim()).length;
+        const complete = got >= inputs.length;
+        return {
+          ok: wrote > 0,
+          filled: got,
+          letters: values,
+          missing: Math.max(0, inputs.length - got),
+          reason: complete ? "" : got ? `只填上了 ${got}/${inputs.length} 个空` : "写入答案失败"
+        };
       }
       // 判断题：React 受控输入框必须走组件的 onChange，直接改 value 页面状态不会变
       if (meta.kind === "judge") {
@@ -26728,6 +26873,19 @@ const XS_EXT = (() => {
         }
         const block = registry[item.index];
         if (!block) continue;
+        // 听力/视频题：把当前音视频的字幕原文一起交给 AI（截图受平台限制，文字稿更准）
+        if (block.uschool && !block.uschool.vttTried) {
+          block.uschool.vttTried = true;
+          try {
+            if (document.querySelector("video, audio, .video-js")) {
+              const vtt = await uschoolTranscript();
+              if (vtt) {
+                block.context = (block.context ? block.context + "\n" : "")
+                  + "本页音视频的字幕原文（供作答参考，可能有断句）：\n" + vtt.slice(0, 6000);
+              }
+            }
+          } catch (_) {}
+        }
         setItem(item.index, { status: "running" });
         if (isOuchnHost() || isUschoolQuizPage()) useQuestionStore().currentQuestionIndex = item.index + 1;
         try {
@@ -27408,7 +27566,7 @@ const XS_EXT = (() => {
               : xtzxQuizPage()
               ? "学堂在线：进入作业/考试页，「自动答题」开启会自动填题；默认只填不提交，在「设置 - 考试设置」里开启「自动交卷」后会逐题提交并在最后交卷。"
               : isUschoolQuizPage()
-              ? "U 校园：作业页和课件练习页（判断题、单选题、选词填空、段落匹配）在「自动答题」开启后会自动填题；默认只填不提交，需要自动交可在设置里打开「U 校园答完自动提交」。"
+              ? "U 校园：作业页和课件练习页（判断题、单选题、选词填空、段落匹配、听力填空、简答）在「自动答题」开启后会自动填题；课件视频自带的字幕会一起交给 AI，听力题答得更准；默认只填不提交，需要自动交可在设置里打开「U 校园答完自动提交」。"
               : isMoocQuizPage()
                 ? "中国大学MOOC：先点「扫描题目」，再点「开始答题」；填完点「提交已填答案」逐题提交，或在设置里开启「MOOC 答题后自动提交」。"
                 : "进入考试后，「自动答题」开启会自动作答；答案和相似题选择显示在下面，自动交卷在「设置 - 考试设置」里。"),
