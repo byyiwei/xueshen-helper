@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.1.11
+// @version      6.1.12
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
@@ -15,6 +15,11 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.1.12 (2026-11-25)
+// @changelog    1. 新增 U 校园（unipus.cn）适配：作业和课件练习自动答题，支持单选、判断、选词填空、段落匹配、听力填空和简答题
+// @changelog    2. 课件视频自动播放、倍速、播完按右侧目录切到下一节，已完成的小节自动跳过
+// @changelog    3. 视频/音频自带的字幕会读出来一起交给 AI，听力题答得更准；没有字幕的视频题不瞎填
+// @changelog    4. 答题记录同步到「答题」页并按来源标色；新增「U 校园答完自动提交」开关，默认关闭
 // @changelog    v6.1.11 (2026-11-25)
 // @changelog    1. 页面异常上报更安静：景德镇 o-learn、学堂在线的作业页不再被当成「未支持平台」反复上报，后台不再出现重复误报
 // @changelog    2. 已支持自动答题的平台行为不变，其他平台的未支持页面题目回传照旧
@@ -26491,7 +26496,7 @@ const XS_EXT = (() => {
       const blocks = [];
       Array.from(document.querySelectorAll(".question-abs-question")).forEach((section) => {
         const materialEl = section.querySelector(".question-common-abs-material");
-        const context = materialEl ? uschoolTextOf(materialEl).slice(0, 6000) : "";
+        const context = materialEl ? uschoolTextOf(materialEl).slice(0, 9000) : "";
         const cloze = section.querySelector(".question-material-banked-cloze-scoop");
         if (cloze) {
           const inputs = Array.from(cloze.querySelectorAll(".scoop-wrapper input"));
@@ -26523,6 +26528,50 @@ const XS_EXT = (() => {
           return;
         }
         Array.from(section.querySelectorAll(".question-common-abs-reply")).forEach((reply) => {
+          // U 校园云作业（ucloud.unipus.cn /app/homework）：整段材料下面一列陈述句，
+          // 每句一个空，填的是段落字母（A/B/C/D）。结构和课件里的段落匹配不同，单独处理。
+          const scoopItems = Array.from(reply.querySelectorAll(".question-common-abs-scoop .item"));
+          if (scoopItems.length && !reply.querySelector(".option-wrap")) {
+            // 段落字母只认段首的「A) 、B)」这类标记，并且必须是 A 开始连续的，
+            // 避免正文里偶然出现的「H)」被当成段落，导致填进不存在的字母
+            const markSet = {};
+            String((materialEl && (materialEl.innerText || materialEl.textContent)) || "")
+              .split(/\r?\n/)
+              .forEach((line) => {
+                const hit = line.trim().match(/^([A-Z])\s*[).）、．]/);
+                if (hit) markSet[hit[1]] = true;
+              });
+            const letters = [];
+            for (let code = 65; code <= 90; code += 1) {
+              const ch = String.fromCharCode(code);
+              if (!markSet[ch]) break;
+              letters.push(ch);
+            }
+            scoopItems.forEach((item) => {
+              const input = item.querySelector("input");
+              if (!input) return;
+              const holder = item.cloneNode(true);
+              Array.from(holder.querySelectorAll(".fe-scoop")).forEach((el) => {
+                const mark = document.createElement("span");
+                mark.textContent = " ___ ";
+                if (el.parentNode) el.parentNode.replaceChild(mark, el);
+              });
+              const statement = uschoolQuestionText(holder);
+              if (!statement) return;
+              blocks.push({
+                el: item,
+                kind: "input",
+                type: "匹配题",
+                title: statement,
+                context: "阅读材料各段用字母标出：" + (letters.length ? letters.join("、") : "A、B、C…") + "。请判断该句出自哪一段，只写一个段落字母，不要解释。\n" + context,
+                options: letters.map((letter) => ({ el: null, input: null, letter, text: letter })),
+                controls: [],
+                inputs: [input],
+                uschool: { kind: "text", letters }
+              });
+            });
+            return;
+          }
           // 段落匹配（课件常见）：左边文章、右边 10 个句子各一个输入框，填的是段落字母
           const textmatch = reply.querySelector(".question-common-abs-textmatch");
           if (textmatch) {

@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.1.11",
+    "version": "6.1.12",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.1.11 景德镇 o-learn、学堂在线作业页不再被当成未支持平台重复上报，页面异常列表更安静"
+    "changelog": "v6.1.12 新增 U 校园适配：作业和课件练习自动答题（单选、判断、选词填空、段落匹配、听力填空、简答），课件视频自动播放与切节，视频字幕交给 AI 提升听力题正确率"
   },
   "xueshen-gf": {
-    "version": "6.1.11",
+    "version": "6.1.12",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.1.11 景德镇 o-learn、学堂在线作业页不再被当成未支持平台重复上报，页面异常列表更安静"
+    "changelog": "v6.1.12 新增 U 校园适配：作业和课件练习自动答题（单选、判断、选词填空、段落匹配、听力填空、简答），课件视频自动播放与切节，视频字幕交给 AI 提升听力题正确率"
   }
 }
