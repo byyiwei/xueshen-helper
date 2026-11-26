@@ -5297,7 +5297,8 @@
             document.body.classList.add('app-mode');
             $('userApp').classList.add('active');
             if (!profileTimer) profileTimer = setInterval(loadProfile, 8000);
-            const section = ['home', 'account', 'billing', 'model', 'script', 'bank', 'consumption', 'promotion'].includes(initialUserSection) ? initialUserSection : 'home';
+            // 允许直接用 ?section=xxx 跳到任意分区，这里是唯一白名单，新增分区记得同步
+            const section = ['home', 'account', 'billing', 'model', 'script', 'bank', 'consumption', 'promotion', 'feedback', 'adapt', 'payment-info'].includes(initialUserSection) ? initialUserSection : 'home';
             initialUserSection = '';
             showUserSection(section);
             history.replaceState(null, '', '/user');
