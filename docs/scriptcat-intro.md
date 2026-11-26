@@ -100,11 +100,11 @@
 | 出头科技 | superchutou.com | 自动刷课 + 自动答题 |
 | 江西开放大学继续教育 | jxrtvu.com | 自动刷课 |
 | 景德镇艺术职业学院 | o-learn.cn | 自动刷课 + 自动答题 |
-| 东北农业大学网络教学 | neauce.com | 自动刷课 |
+| 东北农业大学网络教学 | neauce.com | 自动刷课 + 自动答题 |
 | 雨课堂 | yuketang.cn | 视频助手 |
 | 云班课 | mosoteach.cn | 视频助手 |
 | 智慧职教 | icve.com.cn | 视频助手 |
-| 国家开放大学 | ouchn.cn | 视频助手 |
+| 国家开放大学 | ouchn.cn | 自动刷课 + 自动答题 |
 | 中国大学MOOC | icourse163.org | 视频助手 |
 | U校园 | unipus.cn | 自动刷课 + 自动答题 |
 | 学堂在线 | xuetangx.com | 自动刷课 + 自动答题 |

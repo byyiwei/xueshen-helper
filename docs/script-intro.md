@@ -98,7 +98,7 @@
 |------|------|----------|
 | 超星学习通 | chaoxing.com | ✅ 全功能支持 |
 | 智慧树 | zhihuishu.com | ✅ 全功能支持 |
-| 青书学堂 | qingshuxuetang.com | ✅ 支持（v5.6.0 起，学习挂课 + 作业作答） |
+| 青书学堂 | qingshuxuetang.com | ✅ 支持（v5.6.0 起，学习挂课 + 作业作答；v6.1.2 起视频助手） |
 | 出头科技 | web2.superchutou.com | ✅ 支持（v5.6.0 起，章节学习 + 考试自动作答） |
 | 东北农业大学网络教学 | neauce.com | ✅ 全功能支持 |
 | 江西开放大学继续教育 | jxrtvu.com | ✅ 支持（v5.2.1 起） |
@@ -109,9 +109,9 @@
 | 雨课堂 | yuketang.cn | ✅ 视频助手（v5.6.3 起） |
 | 云班课 | mosoteach.cn | ✅ 视频助手（v5.6.3 起，待实测） |
 | 智慧职教 | icve.com.cn | ✅ 视频助手（v5.6.3 起，含 AI 版 / 2 版） |
-| 国家开放大学 | ouchn.cn | ✅ 视频助手（v5.6.3 起，含 syxy 版） |
+| 国家开放大学 | ouchn.cn | ✅ 视频助手 + 自动答题（v6.1.1 起，含 syxy 版） |
 | 中国大学MOOC | icourse163.org | ✅ 视频助手（v5.6.3 起，待实测） |
-| 学堂在线 | xuetangx.com | ✅ 视频/图文助手 + 作业考试自动答题 |
+| 学堂在线 | xuetangx.com | ✅ 视频/图文助手 + 作业考试自动答题（v6.1.7 起） |
 | 绎通云 | ytccr.com | ✅ 视频助手（v5.6.3 起，待实测） |
 | 山东专技 | treewises.com | ✅ 视频助手（v5.6.3 起） |
 | 西财在线 | swufe-online.com | ✅ 视频助手（v5.6.3 起） |
