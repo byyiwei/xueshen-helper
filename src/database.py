@@ -28,6 +28,44 @@ def _fts_safe_term(keyword):
     text = " ".join(text.split())
     return text[:_FTS_SAFE_CHARS]
 
+
+_FTS_PART_SPLIT_RE = re.compile(r"[\s+\-<>()~*\"'@,，。.;；:：!！?？、/\\|]+")
+
+
+def _fts_boolean_terms(keyword):
+    """把关键词转成 BOOLEAN MODE 检索式（库里的 ngram_token_size 是 2）。
+
+    实测 InnoDB ngram 对多字中文做整串/phrase 搜索会漏命中（"答案为空"只命中 1 条，
+    LIKE 是 147 条），所以中文按两字一组切开、用 + 连接，要求全部命中；
+    英文、数字按整词。零命中时调用方再退回 LIKE 兜底，保证不漏结果。
+    """
+    kw = (keyword or "").strip()
+    if not kw:
+        return ""
+    parts = [p for p in _FTS_PART_SPLIT_RE.split(kw) if p]
+    terms = []
+    for part in parts:
+        if any("一" <= ch <= "鿿" for ch in part):
+            if len(part) <= 2:
+                terms.append(part)
+            else:
+                terms.extend(part[i:i + 2] for i in range(len(part) - 1))
+        else:
+            terms.append(part)
+    seen = set()
+    out = []
+    total = 0
+    for t in terms:
+        if t in seen:
+            continue
+        seen.add(t)
+        piece = "+" + t
+        if total + len(piece) + 1 > _FTS_SAFE_CHARS:
+            break
+        out.append(piece)
+        total += len(piece) + 1
+    return " ".join(out)
+
 # ==================== 配置 ====================
 
 
@@ -6139,7 +6177,7 @@ class Database:
         )
         return rows
 
-    def _build_ai_log_where(self, status="", model="", keyword="", date_from="", date_to="", source="", username=""):
+    def _build_ai_log_where(self, status="", model="", keyword="", date_from="", date_to="", source="", username="", keyword_mode="like"):
         ph = _ph()
         where = []
         params = []
@@ -6169,9 +6207,17 @@ class Database:
             where.append(f"(a.provider_key IS NULL OR a.provider_key <> {ph})")
             params.append("custom")
         if keyword:
-            like = f"%{keyword}%"
-            where.append(f"(a.question LIKE {ph} OR a.answer LIKE {ph} OR a.error LIKE {ph})")
-            params.extend([like, like, like])
+            kw = keyword.strip()
+            fts_term = _fts_boolean_terms(kw) if len(kw) >= 2 else ""
+            if keyword_mode == "fts" and fts_term:
+                # 走全文索引：question 一列 145MB，LIKE '%kw%' 每次要整表扫，实测 1.0-1.2 秒；
+                # 全文索引 10-20ms。零命中时调用方会退回 LIKE 兜底。
+                where.append(f"MATCH(a.question, a.answer, a.error) AGAINST({ph} IN BOOLEAN MODE)")
+                params.append(fts_term)
+            else:
+                like = f"%{kw}%"
+                where.append(f"(a.question LIKE {ph} OR a.answer LIKE {ph} OR a.error LIKE {ph})")
+                params.extend([like, like, like])
         if date_from:
             where.append(f"a.created_at >= {ph}")
             params.append(date_from)
@@ -6193,26 +6239,39 @@ class Database:
         limit = max(1, min(limit, 200))
         page = max(1, page)
         offset = (page - 1) * limit
-        where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to, source, username)
-        sql = ("SELECT a.id, a.provider_key, a.username, a.model, a.final_model, a.question, a.answer, a.status, a.error, "
-               "a.duration_ms, a.client_ip, a.created_at, "
-               "COALESCE(a.points_balance, u.points_balance) AS points_balance, "
-               "COALESCE(a.member_until, u.member_until) AS member_until "
-               "FROM ai_call_logs a LEFT JOIN users u ON u.username = a.username")
-        if where:
-            sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY id DESC"
-        sql += f" LIMIT {ph} OFFSET {ph}"
-        params.extend([limit, offset])
-        return self.fetchall(sql, tuple(params))
+
+        def _query(mode):
+            where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to, source, username, keyword_mode=mode)
+            sql = ("SELECT a.id, a.provider_key, a.username, a.model, a.final_model, a.question, a.answer, a.status, a.error, "
+                   "a.duration_ms, a.client_ip, a.created_at, "
+                   "COALESCE(a.points_balance, u.points_balance) AS points_balance, "
+                   "COALESCE(a.member_until, u.member_until) AS member_until "
+                   "FROM ai_call_logs a LEFT JOIN users u ON u.username = a.username")
+            if where:
+                sql += " WHERE " + " AND ".join(where)
+            sql += " ORDER BY id DESC"
+            sql += f" LIMIT {ph} OFFSET {ph}"
+            return self.fetchall(sql, tuple(params + [limit, offset]))
+
+        rows = _query("fts")
+        if not rows and keyword.strip() and page == 1:
+            # 全文没命中（短词、两字母、特殊符号等）时退回 LIKE，保证能搜到
+            rows = _query("like")
+        return rows
 
     def count_ai_call_logs(self, status="", model="", keyword="", date_from="", date_to="", source="", username=""):
-        where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to, source, username)
-        sql = "SELECT COUNT(*) AS total FROM ai_call_logs a"
-        if where:
-            sql += " WHERE " + " AND ".join(where)
-        row = self.fetchone(sql, tuple(params))
-        return int(row.get("total", 0) if row else 0)
+        def _count(mode):
+            where, params = self._build_ai_log_where(status, model, keyword, date_from, date_to, source, username, keyword_mode=mode)
+            sql = "SELECT COUNT(*) AS total FROM ai_call_logs a"
+            if where:
+                sql += " WHERE " + " AND ".join(where)
+            row = self.fetchone(sql, tuple(params))
+            return int(row.get("total", 0) if row else 0)
+
+        total = _count("fts")
+        if total == 0 and keyword.strip():
+            total = _count("like")
+        return total
 
     def get_qq_bot_logs(self, limit=50):
         """获取 QQ 频道机器人产生的调用日志（username='qq_bot'）"""
