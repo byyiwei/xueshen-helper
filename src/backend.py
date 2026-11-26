@@ -4558,7 +4558,9 @@ def _search_keywords(q_norm):
 def _search_bank_candidates(q_norm, limit=20):
     """先用短关键词召回，召回不到再退回整句，避免长题干全文检索命中为空。"""
     for kw in _search_keywords(q_norm):
-        rows = db.search_question_bank(keyword=kw, limit=limit)
+        # 答题热路径的每个候选关键词只走全文索引；LIKE 会整表扫题库，
+        # 放在这里会让每个关键词都多花几百毫秒，兜底只在最后整句检索时做一次。
+        rows = db.search_question_bank(keyword=kw, limit=limit, like_fallback=False)
         if rows:
             return rows
     return db.search_question_bank(keyword=q_norm, limit=limit)
@@ -4625,7 +4627,9 @@ def get_bank_match_all(question):
         # 与后台 search_question_bank 行为一致，避免"后台有、首页搜不到"。
         q_norm = normalize_question_text(info.get("question_text", ""))
         if len(q_norm) >= 4:
-            fb = db.search_question_bank(keyword=q_norm, limit=20)
+            # 第一层只走全文索引，避免整句 LIKE 全表扫跑两遍；
+            # 第二层才允许 LIKE 兜底，每次答题最多扫一次题库。
+            fb = db.search_question_bank(keyword=q_norm, limit=20, like_fallback=False)
             if not fb:
                 # 全文索引对去掉标点后的长串常常零命中：退到原题干的关键词搜索
                 fb = db.search_question_bank(keyword=str(info.get("question_text") or "").strip()[:200], limit=20)

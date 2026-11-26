@@ -6345,7 +6345,7 @@ class Database:
         )
         return rows or []
 
-    def search_question_bank(self, keyword="", question_hash="", limit=100, page=1, question_type="", is_image=None, source_model=""):
+    def search_question_bank(self, keyword="", question_hash="", limit=100, page=1, question_type="", is_image=None, source_model="", like_fallback=True):
         ph = _ph()
         try:
             limit = int(limit)
@@ -6377,6 +6377,9 @@ class Database:
         if source_model:
             where.append(f"source_model = {ph}")
             params.append(source_model)
+        base_where = list(where)
+        base_params = list(params)
+        fts_term = ""
         if keyword:
             # 优先使用全文索引（MATCH AGAINST），大幅提升大数据量搜索性能
             # ngram 分词器支持中文，2字以上可命中
@@ -6384,8 +6387,11 @@ class Database:
             kw = keyword.strip()
             fts_term = _fts_safe_term(kw) if len(kw) >= 2 else ""
             if fts_term:
-                where.append(f"(MATCH(question_text, answer) AGAINST({ph} IN BOOLEAN MODE) OR options_text LIKE {ph})")
-                params.extend([fts_term, f"%{kw}%"])
+                # 只走全文索引。以前这里是 MATCH OR options_text LIKE，
+                # 带前导通配符的 LIKE 会让 18 万行题库整表扫描，实测单次 150-500ms；
+                # 全文没命中时再按 like_fallback 退回 LIKE（每次答题只兜底一次）。
+                where.append(f"MATCH(question_text, answer) AGAINST({ph} IN BOOLEAN MODE)")
+                params.append(fts_term)
             else:
                 like = f"%{kw}%"
                 where.append(f"(question_text LIKE {ph} OR options_text LIKE {ph} OR answer LIKE {ph})")
@@ -6397,7 +6403,23 @@ class Database:
         sql += f" LIMIT {ph} OFFSET {ph}"
         params.extend([limit, offset])
         try:
-            return self.fetchall(sql, tuple(params))
+            rows = self.fetchall(sql, tuple(params))
+            if fts_term and not rows and like_fallback and page == 1:
+                # 全文索引对带标点/个别用字差异的题会零命中，最后一层退回 LIKE，
+                # 保证「题库里有、但全文没召回」的题还能搜到；调用方在答题热路径
+                # 传 like_fallback=False，避免每个候选关键词都扫一遍题库。
+                like = f"%{keyword.strip()}%"
+                fresh_ph = _ph()
+                like_where = base_where + [
+                    f"(question_text LIKE {fresh_ph} OR options_text LIKE {fresh_ph} OR answer LIKE {fresh_ph})"
+                ]
+                like_sql = ("SELECT id, question_hash, question_text, question_type, options_text, answer, source_model, "
+                            "source_provider, hit_count, created_at, updated_at, last_used_at FROM question_bank")
+                like_sql += " WHERE " + " AND ".join(like_where)
+                like_sql += " ORDER BY updated_at DESC, id DESC"
+                like_sql += f" LIMIT {fresh_ph} OFFSET {fresh_ph}"
+                return self.fetchall(like_sql, tuple(base_params + [like, like, like, limit, offset]))
+            return rows
         except Exception as e:
             # 兜底：万一 ngram 仍判定短语过长，退回纯 LIKE 查询，绝不把 DB 错误抛给业务层
             if "FTS phrase" not in str(e):
@@ -6409,7 +6431,7 @@ class Database:
                    f"ORDER BY updated_at DESC, id DESC LIMIT {ph} OFFSET {ph}")
             return self.fetchall(sql, (like, like, like, limit, offset))
 
-    def count_question_bank(self, keyword="", question_hash="", question_type="", is_image=None, source_model=""):
+    def count_question_bank(self, keyword="", question_hash="", question_type="", is_image=None, source_model="", like_fallback=True):
         ph = _ph()
         where = []
         params = []
@@ -6430,12 +6452,15 @@ class Database:
         if source_model:
             where.append(f"source_model = {ph}")
             params.append(source_model)
+        base_where = list(where)
+        base_params = list(params)
+        fts_term = ""
         if keyword:
             kw = keyword.strip()
             fts_term = _fts_safe_term(kw) if len(kw) >= 2 else ""
             if fts_term:
-                where.append(f"(MATCH(question_text, answer) AGAINST({ph} IN BOOLEAN MODE) OR options_text LIKE {ph})")
-                params.extend([fts_term, f"%{kw}%"])
+                where.append(f"MATCH(question_text, answer) AGAINST({ph} IN BOOLEAN MODE)")
+                params.append(fts_term)
             else:
                 like = f"%{kw}%"
                 where.append(f"(question_text LIKE {ph} OR options_text LIKE {ph} OR answer LIKE {ph})")
@@ -6445,6 +6470,14 @@ class Database:
             sql += " WHERE " + " AND ".join(where)
         try:
             row = self.fetchone(sql, tuple(params))
+            if fts_term and like_fallback and int((row or {}).get("total", 0) or 0) == 0:
+                like = f"%{keyword.strip()}%"
+                fresh_ph = _ph()
+                like_where = base_where + [
+                    f"(question_text LIKE {fresh_ph} OR options_text LIKE {fresh_ph} OR answer LIKE {fresh_ph})"
+                ]
+                like_sql = "SELECT COUNT(*) AS total FROM question_bank WHERE " + " AND ".join(like_where)
+                row = self.fetchone(like_sql, tuple(base_params + [like, like, like]))
         except Exception as e:
             if "FTS phrase" not in str(e):
                 raise
