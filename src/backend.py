@@ -4325,6 +4325,23 @@ def normalize_question_text(text):
     text = re.sub(r"[，。！？；：,.!?;:\-—_【】\[\]（）()\"'“”‘’]", "", text)
     return text.lower()
 
+
+# 题干开头的题号：37. / 73、/ 28) / （36）/ 第37题
+# 同一道题在不同页面、不同卷子里题号经常不一样，题号留在检索文本里会让
+# 全文检索的两字组对不上，候选直接是 0 条（实测 36. 对 37. 的题库行相似度 0）。
+_LEADING_NUMBER_RE = re.compile(
+    r"^\s*(?:"
+    r"第\s*\d{1,3}\s*题\s*[.、．:：]?"
+    r"|[（(]\s*\d{1,3}\s*[)）]"
+    r"|\d{1,3}\s*[.、．)）:：](?!\d)"
+    r")\s*"
+)
+
+
+def strip_leading_question_number(text):
+    """去掉题干开头的题号，只用于检索，不改题库里已存的匹配指纹。"""
+    return _LEADING_NUMBER_RE.sub("", str(text or ""), count=1)
+
 def parse_question_payload(question):
     raw = str(question or "")
     result = {"question_text": raw, "question_type": "", "options": [], "images": [], "context": ""}
@@ -4400,7 +4417,7 @@ def _image_fingerprint(info):
 
 def _normalized_components(question):
     info = parse_question_payload(question)
-    q = normalize_question_text(_canonicalize_img_urls_in_text(info.get("question_text", "")))
+    q = normalize_question_text(strip_leading_question_number(_canonicalize_img_urls_in_text(info.get("question_text", ""))))
     t = normalize_question_text(info.get("question_type", ""))
     opts = sorted({normalize_question_text(_canonicalize_img_urls_in_text(x)) for x in info.get("options", []) if normalize_question_text(_canonicalize_img_urls_in_text(x))})
     img_fp = _image_fingerprint(info)
@@ -4578,7 +4595,7 @@ def get_question_bank_similar(question):
         return None, None, 0.0, (time.time() - _t0) * 1000
     info = parse_question_payload(question)
     current_type = info.get("question_type", "")
-    q_norm = normalize_question_text(info.get("question_text", ""))
+    q_norm = normalize_question_text(strip_leading_question_number(info.get("question_text", "")))
     if len(q_norm) < 4:
         return None, None, 0.0, (time.time() - _t0) * 1000
     candidates = _search_bank_candidates(q_norm, limit=20)
@@ -4625,7 +4642,7 @@ def get_bank_match_all(question):
     if not candidates:
         # 哈希精确匹配未命中：模糊关键词回退（容忍 标点/前后缀/个别用字差异），
         # 与后台 search_question_bank 行为一致，避免"后台有、首页搜不到"。
-        q_norm = normalize_question_text(info.get("question_text", ""))
+        q_norm = normalize_question_text(strip_leading_question_number(info.get("question_text", "")))
         if len(q_norm) >= 4:
             # 第一层只走全文索引，避免整句 LIKE 全表扫跑两遍；
             # 第二层才允许 LIKE 兜底，每次答题最多扫一次题库。
@@ -4863,9 +4880,9 @@ def _jaccard(a, b):
 def _match_score(info, row):
     """候选与当前题的相似度（0~1）。题面 6 : 选项 3 : 题型 1。
     选项按「逐项最高相似度的平均」算，题目文本只差标点/前后缀时仍能拿到接近 1 分。"""
-    q_norm = normalize_question_text(_canonicalize_img_urls_in_text(info.get("question_text", "")))
+    q_norm = normalize_question_text(strip_leading_question_number(_canonicalize_img_urls_in_text(info.get("question_text", ""))))
     row_text = _canonicalize_img_urls_in_text(str(row.get("question_text") or ""))
-    row_q = normalize_question_text(row_text)
+    row_q = normalize_question_text(strip_leading_question_number(row_text))
     score = _jaccard(_bigram_set(q_norm), _bigram_set(row_q))
     if q_norm and q_norm == row_q:
         score = 1.0
@@ -5449,7 +5466,7 @@ def save_question_bank_answer(question, answer, model_name="", provider_name="")
         "question_hash": qhash,
         "matching_key": mkey,
         "match_stem": stem,
-        "question_text": info.get("question_text", ""),
+        "question_text": strip_leading_question_number(info.get("question_text", "")),
         "question_type": info.get("question_type", ""),
         "options_text": " | ".join(info.get("options", [])),
         "answer": answer,
