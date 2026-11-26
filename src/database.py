@@ -6208,7 +6208,10 @@ class Database:
             params.append("custom")
         if keyword:
             kw = keyword.strip()
-            fts_term = _fts_boolean_terms(kw) if len(kw) >= 2 else ""
+            # 只给中文关键词走全文索引：英文常见词（如 course）命中十几万行，
+            # 全文索引要排序整片结果，实测 20 秒，反而比 LIKE 的 0.4 秒慢得多。
+            has_cjk = any("一" <= ch <= "鿿" for ch in kw)
+            fts_term = _fts_boolean_terms(kw) if (len(kw) >= 2 and has_cjk) else ""
             if keyword_mode == "fts" and fts_term:
                 # 走全文索引：question 一列 145MB，LIKE '%kw%' 每次要整表扫，实测 1.0-1.2 秒；
                 # 全文索引 10-20ms。零命中时调用方会退回 LIKE 兜底。
