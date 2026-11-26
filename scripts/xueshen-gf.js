@@ -23205,7 +23205,9 @@ const XS_EXT = (() => {
       schedule: {},        // leafId -> { value, at }
       scheduleBusy: {},    // leafId -> Promise
       localDone: {},       // 本轮脚本已经确认完成的 leafId
-      replay: {},          // leafId -> 已从头补看的次数
+      replay: {},          // leafId -> 已补看的次数（第 1 次从头，之后只补最后一段）
+      tail: {},            // leafId -> 正在补最后一段（1 倍速，慢一点但能让心跳记满）
+      warned: {},          // leafId -> 已经提示过「补不上去」
       failed: {}           // leafId -> 自动处理失败的时间（10 分钟内不再选它）
     };
     const isXtzxWatch = (profile) => !!profile && profile.id === "xtzx";
@@ -23584,7 +23586,7 @@ const XS_EXT = (() => {
         state.progress = duration > 0
           ? `${formatTime(current)} / ${formatTime(duration)}（${Math.floor(current / duration * 100)}%${scheduleText}）`
           : scheduleText.slice(1);
-        xtzxApplyVideoSpeed(video, settings.speed);
+        xtzxApplyVideoSpeed(video, xtzxWatch.tail[curId] ? 1 : settings.speed);
         xtzxMuteVideo(video);
         if (schedule >= 0.9 && (settings.skipDone || !cur.done)) {
           if (xtzxWatch.doneId !== curId) {
@@ -23611,20 +23613,32 @@ const XS_EXT = (() => {
             return;
           }
           const tries = xtzxWatch.replay[curId] || 0;
-          if (schedule >= 0 && schedule < 0.9 && tries < 2) {
+          if (schedule >= 0 && schedule < 0.9 && tries < 3) {
             xtzxWatch.replay[curId] = tries + 1;
+            // 第一次从头补看；还差就只补「平台已经记到的那一点往后」的最后一段，
+            // 并且用 1 倍速慢慢播——整段重播两遍又慢，播放器心跳也未必记得上
+            const duration = Number(video.duration) || 0;
+            const from = tries >= 1 && duration > 0
+              ? Math.max(0, Math.round(schedule * duration) - 10)
+              : 0;
+            if (from > 0) xtzxWatch.tail[curId] = true;
             try {
-              video.currentTime = 0;
+              video.currentTime = from;
               safePlay(video);
-              log(`学堂在线：本节任务点只有 ${Math.round(schedule * 100)}%，从头补看第 ${tries + 1} 次`);
+              log(from > 0
+                ? `学堂在线：本节任务点只有 ${Math.round(schedule * 100)}%，从 ${formatTime(from)} 处补看到结束`
+                : `学堂在线：本节任务点只有 ${Math.round(schedule * 100)}%，从头补看第 1 次`);
             } catch (e) {
             }
-            state.status = "任务点未满，从头补看";
+            state.status = from > 0 ? "任务点未满，补看最后一段" : "任务点未满，从头补看";
             return;
           }
-          if (schedule >= 0 && schedule < 0.9 && tries >= 2) {
+          if (schedule >= 0 && schedule < 0.9 && tries >= 3) {
             xtzxWatch.failed[curId] = Date.now();
-            log(`学堂在线：本节补看两次任务点仍只有 ${Math.round(schedule * 100)}%，先跳过`, "warning");
+            if (!xtzxWatch.warned[curId]) {
+              xtzxWatch.warned[curId] = true;
+              log(`学堂在线：本节补看 3 次任务点仍只有 ${Math.round(schedule * 100)}%，先跳过，最后这段建议手动看一下`, "warning");
+            }
           }
           state.status = "本节已播完";
           if (!settings.autoNext) return;
@@ -23664,7 +23678,7 @@ const XS_EXT = (() => {
         state.progress = duration > 0
           ? `${formatTime(current)} / ${formatTime(duration)}（${Math.floor(current / duration * 100)}%${scheduleText}）`
           : scheduleText.slice(1);
-        xtzxApplyAudioSpeed(audio, settings.speed);
+        xtzxApplyAudioSpeed(audio, xtzxWatch.tail[curId] ? 1 : settings.speed);
         try { if (audio.volume > 0) audio.volume = 0; } catch (e) {
         }
         if (schedule >= 0.9 && (settings.skipDone || !cur.done)) {
@@ -23692,20 +23706,30 @@ const XS_EXT = (() => {
             return;
           }
           const tries = xtzxWatch.replay[curId] || 0;
-          if (schedule >= 0 && schedule < 0.9 && tries < 2) {
+          if (schedule >= 0 && schedule < 0.9 && tries < 3) {
             xtzxWatch.replay[curId] = tries + 1;
+            const duration = Number(audio.duration) || 0;
+            const from = tries >= 1 && duration > 0
+              ? Math.max(0, Math.round(schedule * duration) - 10)
+              : 0;
+            if (from > 0) xtzxWatch.tail[curId] = true;
             try {
-              audio.currentTime = 0;
+              audio.currentTime = from;
               audio.play().catch(() => {});
-              log(`学堂在线：本节音频任务点只有 ${Math.round(schedule * 100)}%，从头补听第 ${tries + 1} 次`);
+              log(from > 0
+                ? `学堂在线：本节音频任务点只有 ${Math.round(schedule * 100)}%，从 ${formatTime(from)} 处补听到结束`
+                : `学堂在线：本节音频任务点只有 ${Math.round(schedule * 100)}%，从头补听第 1 次`);
             } catch (e) {
             }
-            state.status = "任务点未满，从头补听";
+            state.status = from > 0 ? "任务点未满，补听最后一段" : "任务点未满，从头补听";
             return;
           }
-          if (schedule >= 0 && schedule < 0.9 && tries >= 2) {
+          if (schedule >= 0 && schedule < 0.9 && tries >= 3) {
             xtzxWatch.failed[curId] = Date.now();
-            log(`学堂在线：本节音频补听两次任务点仍只有 ${Math.round(schedule * 100)}%，先跳过`, "warning");
+            if (!xtzxWatch.warned[curId]) {
+              xtzxWatch.warned[curId] = true;
+              log(`学堂在线：本节音频补听 3 次任务点仍只有 ${Math.round(schedule * 100)}%，先跳过，最后这段建议手动看一下`, "warning");
+            }
           }
           state.status = "本节音频已播完";
           if (!settings.autoNext) return;
