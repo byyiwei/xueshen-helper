@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.1.14
+// @version      6.1.15
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
@@ -15,6 +15,9 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.1.15 (2026-11-26)
+// @changelog    1. 学堂在线：视频/音频任务点差一点没记满时，不再整段重播两遍，改为从已记进度前 10 秒处补播到结尾，最后一段用 1 倍速，最多补 3 次
+// @changelog    2. 学堂在线：补不上去时提示只报一次，并注明最后一段建议手动看一下，不再每秒刷屏
 // @changelog    v6.1.14 (2026-11-26)
 // @changelog    1. 更新提示不再依赖面板展开：面板收成迷你球或关闭时，页面顶部也会显示悬浮提示，点「更新」直接打开安装页
 // @changelog    2. 每 30 分钟复查新版本，切回页面时补查；同一版本关掉后不再重复提醒，下个版本再提示
