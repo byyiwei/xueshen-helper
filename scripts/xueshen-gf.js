@@ -2838,7 +2838,7 @@ var __TTF2_TABLE__ = __TTF_TABLE__; // ttf 与 ttf2 两份映射表内容完全�
               vue.unref(scriptInfo).version !== vue.unref(latestVersion) ? (vue.openBlock(), vue.createElementBlock("li", _hoisted_3$5, _cache[0] || (_cache[0] = [
                 vue.createTextVNode("检测到脚本非最新版本，"),
                 vue.createElementVNode("a", {
-                  href: "https://scriptcat.org/zh-CN/script-show-page/2827",
+                  href: "https://xs.openget.cn/scripts/xueshen-gf.user.js",
                   target: "_blank"
                 }, "点我更新", -1)
               ]))) : vue.createCommentVNode("", true),
@@ -30272,7 +30272,14 @@ const XS_EXT = (() => {
           ".update-notify-btn{padding:3px 12px;background:rgba(255,255,255,.25);border-radius:4px;cursor:pointer;white-space:nowrap;font-weight:600;transition:background .2s}",
           ".update-notify-btn:hover{background:rgba(255,255,255,.4)}",
           ".update-dismiss-btn{cursor:pointer;opacity:.6;font-size:16px;padding:0 4px;transition:opacity .2s}",
-          ".update-dismiss-btn:hover{opacity:1}"
+          ".update-dismiss-btn:hover{opacity:1}",
+          ".xs-update-float{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:2147483646;display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--t-surface,#fff);color:var(--t-text,#1a1a2e);border:1px solid var(--t-border,#e2e5ea);border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,.14),0 0 0 1px rgba(0,0,0,.02);font-size:12px;line-height:1;pointer-events:auto;white-space:nowrap}",
+          ".xs-update-dot{width:7px;height:7px;border-radius:50%;background:var(--t-primary,#2563eb);box-shadow:0 0 0 3px rgba(37,99,235,.16);flex-shrink:0}",
+          ".xs-update-text{font-weight:600}",
+          ".xs-update-btn{padding:4px 10px;border-radius:999px;background:var(--t-primary,#2563eb);color:#fff;font-weight:600;cursor:pointer;transition:background .2s}",
+          ".xs-update-btn:hover{background:var(--t-primary-2,#1d4ed8)}",
+          ".xs-update-close{cursor:pointer;opacity:.45;font-size:13px;padding:0 2px;transition:opacity .2s}",
+          ".xs-update-close:hover{opacity:.9}"
         ].join("\n");
         shadow.appendChild(resetStyle);
         injectCSSIntoShadow(shadow);
@@ -30318,65 +30325,157 @@ const XS_EXT = (() => {
         } catch (e) {
         }
         // >>> FX-STRIP:auto-update
-        // === 自动检测更新 + 顶部提示条 ===
+        // === 自动检测更新：面板顶部条 + 悬浮提示（面板收起也能看到）+ 每 30 分钟复查 ===
         (function() {
-          var _showUpdateBar = function(remote) {
-            var _insertBar = function() {
-              if (shadow.querySelector('.update-notify-bar')) return;
-              var mainBox = shadow.querySelector('.main-box');
-              if (!mainBox) return false;
-              var bar = document.createElement('div');
-              bar.className = 'update-notify-bar';
-              bar.innerHTML = '<span style="flex:1">🎉 发现新版本 v' + remote.version + '，点击右侧按钮更新</span>' +
-                '<span class="update-notify-btn">立即更新</span>' +
-                '<span class="update-dismiss-btn">✕</span>';
-              mainBox.insertBefore(bar, mainBox.firstChild);
-              bar.querySelector('.update-notify-btn').addEventListener('click', function(e) {
-                e.stopPropagation();
-                if (typeof GM_openInTab === 'function') {
-                  GM_openInTab(remote.download_url, { active: true, insert: true });
-                } else if (typeof GM !== 'undefined' && typeof GM.openInTab === 'function') {
-                  GM.openInTab(remote.download_url, { active: true });
-                } else {
-                  window.open(remote.download_url, '_blank');
-                }
-              });
-              bar.querySelector('.update-dismiss-btn').addEventListener('click', function(e) {
-                e.stopPropagation();
-                bar.remove();
-              });
-              return true;
-            };
-            if (_insertBar()) return;
-            var _obs = new MutationObserver(function(mutations, obs) {
-              if (_insertBar()) obs.disconnect();
-            });
-            _obs.observe(shadow, { childList: true, subtree: true });
-          };
+          var UPDATE_KEY = "xsUpdateDismissedVersion";
+          var CHECK_INTERVAL = 30 * 60 * 1000;
           var currentVersion = (_GM_info && _GM_info.script && _GM_info.script.version) || "0.0.0";
-          GM_xmlhttpRequest({
-            method: 'GET',
-            url: 'https://xs.openget.cn/scripts/version.json?t=' + Date.now(),
-            onload: function(res) {
-              try {
-                var data = JSON.parse(res.responseText);
-                var remote = data['xueshen-sc'];
-                if (!remote) return;
-                var rv = remote.version.split('.').map(Number);
-                var lv = currentVersion.split('.').map(Number);
-                var newer = false;
-                for (var i = 0; i < Math.max(rv.length, lv.length); i++) {
-                  var r = rv[i] || 0, l = lv[i] || 0;
-                  if (r > l) { newer = true; break; }
-                  if (r < l) break;
-                }
-                if (newer) _showUpdateBar(remote);
-              } catch(e) {}
-            },
-            onerror: function() {}
-          });
+          var remoteInfo = null;
+          var renderTimer = null;
+
+          var getDismissed = function() {
+            try {
+              if (typeof GM_getValue === "function") return GM_getValue(UPDATE_KEY, "") || "";
+              return window.localStorage.getItem(UPDATE_KEY) || "";
+            } catch (e) { return ""; }
+          };
+          var setDismissed = function(version) {
+            try {
+              if (typeof GM_setValue === "function") GM_setValue(UPDATE_KEY, version);
+              else window.localStorage.setItem(UPDATE_KEY, version);
+            } catch (e) {}
+          };
+          var openInstall = function() {
+            var url = remoteInfo && remoteInfo.download_url;
+            if (!url) return;
+            try {
+              if (typeof GM_openInTab === "function") GM_openInTab(url, { active: true, insert: true });
+              else if (typeof GM !== "undefined" && typeof GM.openInTab === "function") GM.openInTab(url, { active: true });
+              else window.open(url, "_blank");
+            } catch (e) {
+              try { window.open(url, "_blank"); } catch (_) {}
+            }
+          };
+          var removeAll = function() {
+            var bar = shadow.querySelector(".update-notify-bar");
+            if (bar) bar.remove();
+            var box = shadow.querySelector(".xs-update-float");
+            if (box) box.remove();
+          };
+          var dismissUpdate = function() {
+            if (remoteInfo) setDismissed(remoteInfo.version);
+            removeAll();
+          };
+          var ensureBar = function() {
+            if (shadow.querySelector(".update-notify-bar")) return true;
+            var mainBox = shadow.querySelector(".main-box");
+            if (!mainBox) return false;
+            var bar = document.createElement("div");
+            bar.className = "update-notify-bar";
+            bar.innerHTML = '<span style="flex:1">发现新版本 v' + remoteInfo.version + '，点击右侧按钮更新</span>' +
+              '<span class="update-notify-btn">立即更新</span>' +
+              '<span class="update-dismiss-btn">✕</span>';
+            mainBox.insertBefore(bar, mainBox.firstChild);
+            bar.querySelector(".update-notify-btn").addEventListener("click", function(e) {
+              e.stopPropagation();
+              openInstall();
+            });
+            bar.querySelector(".update-dismiss-btn").addEventListener("click", function(e) {
+              e.stopPropagation();
+              dismissUpdate();
+            });
+            return true;
+          };
+          var ensureFloat = function() {
+            if (shadow.querySelector(".xs-update-float")) return;
+            var box = document.createElement("div");
+            box.className = "xs-update-float";
+            box.innerHTML = '<span class="xs-update-dot"></span>' +
+              '<span class="xs-update-text">发现新版本 v' + remoteInfo.version + '</span>' +
+              '<span class="xs-update-btn">更新</span>' +
+              '<span class="xs-update-close">✕</span>';
+            box.querySelector(".xs-update-btn").addEventListener("click", function(e) {
+              e.stopPropagation();
+              openInstall();
+            });
+            box.querySelector(".xs-update-close").addEventListener("click", function(e) {
+              e.stopPropagation();
+              dismissUpdate();
+            });
+            shadow.appendChild(box);
+          };
+          var render = function() {
+            if (!remoteInfo) return;
+            if (getDismissed() === remoteInfo.version) { removeAll(); return; }
+            if (ensureBar()) {
+              var box = shadow.querySelector(".xs-update-float");
+              if (box) box.remove();
+            } else {
+              var bar = shadow.querySelector(".update-notify-bar");
+              if (bar) bar.remove();
+              ensureFloat();
+            }
+          };
+          var scheduleRender = function() {
+            if (renderTimer) return;
+            renderTimer = setTimeout(function() {
+              renderTimer = null;
+              try { render(); } catch (e) {}
+            }, 250);
+          };
+          // 面板展开、收成迷你球、切页签都会动 DOM，跟着重新摆一次提示
+          try {
+            new MutationObserver(scheduleRender).observe(shadow, { childList: true, subtree: true });
+          } catch (e) {}
+          var check = function() {
+            try {
+              GM_xmlhttpRequest({
+                method: "GET",
+                url: "https://xs.openget.cn/scripts/version.json?t=" + Date.now(),
+                onload: function(res) {
+                  try {
+                    var data = JSON.parse(res.responseText);
+                    var remote = data['xueshen-gf'];
+                    if (!remote || !remote.version) return;
+                    var rv = String(remote.version).split(".").map(Number);
+                    var lv = String(currentVersion).split(".").map(Number);
+                    var newer = false;
+                    for (var i = 0; i < Math.max(rv.length, lv.length); i++) {
+                      var r = rv[i] || 0, l = lv[i] || 0;
+                      if (r > l) { newer = true; break; }
+                      if (r < l) break;
+                    }
+                    if (!newer) {
+                      remoteInfo = null;
+                      removeAll();
+                      return;
+                    }
+                    remoteInfo = remote;
+                    try {
+                      var settingStore = useSettingStore();
+                      if (settingStore) settingStore.latestVersion = remote.version;
+                    } catch (e) {}
+                    render();
+                  } catch (e) {}
+                },
+                onerror: function() {},
+                ontimeout: function() {}
+              });
+            } catch (e) {}
+          };
+          check();
+          setInterval(check, CHECK_INTERVAL);
+          try {
+            document.addEventListener("visibilitychange", function() {
+              if (document.visibilityState === "visible") {
+                check();
+                scheduleRender();
+              }
+            });
+          } catch (e) {}
         })();
         // <<< FX-STRIP:auto-update
+
       }
     }, 100);
   }

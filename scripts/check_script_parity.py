@@ -62,6 +62,8 @@ def drift(a, b):
     ca, cb = Counter(a), Counter(b)
     known = (
         "__TTF_TABLE__", "__TTF2_TABLE__", "data['xueshen-",
+        # 面板里的更新入口各自指向自己那个下载地址
+        "xueshen-sc.user.js", "xueshen-gf.user.js",
         # 脚本猫版要按平台规则补 @antifeature / @original-*，并精简 @keywords；
         # 更新日志两边各自描述本次改动，版本号由 check_versions 单独校验。
         "@keywords", "@antifeature", "@original-", "@changelog",
