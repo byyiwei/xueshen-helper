@@ -23265,7 +23265,16 @@ const XS_EXT = (() => {
       }
       return items.find((item) => item.active) || null;
     };
-    const xtzxStudyable = (item) => !!item && !item.disabled && /^(视频|音频|图文)$/.test(item.type);
+    // 作业页也算可自动处理：自动答题打开时，刷课流程会自己进作业并作答；
+    // 考试、讨论、直播不自动打开。
+    const xtzxStudyable = (item) => {
+      if (!item || item.disabled) return false;
+      if (/^(视频|音频|图文)$/.test(item.type)) return true;
+      if (/^作业$/.test(item.type)) {
+        try { return !!useSettingStore().config.basicConfig.autoAnswer.value; } catch (e) { return false; }
+      }
+      return false;
+    };
     const xtzxOpen = (item) => {
       if (!item || !item.el) return false;
       try { item.el.scrollIntoView({ block: "center" }); } catch (e) {
@@ -25481,7 +25490,9 @@ const XS_EXT = (() => {
       submitAt: 0,
       submitId: "",
       finalDone: false,
-      finalLogged: 0
+      finalLogged: 0,
+      advanceAt: 0,
+      advanceFail: {}
     };
     const xtzxQuizReset = () => {
       xtzxQuizState.settled = false;
@@ -25495,6 +25506,8 @@ const XS_EXT = (() => {
       xtzxQuizState.submitId = "";
       xtzxQuizState.finalDone = false;
       xtzxQuizState.finalLogged = 0;
+      xtzxQuizState.advanceAt = 0;
+      xtzxQuizState.advanceFail = {};
     };
     const xtzxQuizKey = (vm) => location.pathname + "|" + String((vm && vm.$data && vm.$data.leaf_id) || "");
     const xtzxQuizQuestion = (q) => {
@@ -25652,6 +25665,7 @@ const XS_EXT = (() => {
         xtzxQuizState.finalDone = true;
         xtzxQuizState.settled = true;
         log("学堂在线：这份作业/考试已经交过卷，不再重复提交");
+        xtzxQuizAdvanceNext();
         return "done";
       }
       xtzxQuizState.finalDone = true;
@@ -25659,19 +25673,67 @@ const XS_EXT = (() => {
       const sheet = vm.$refs && vm.$refs.showAnswerSheet;
       if (!sheet || typeof sheet.submitAll !== "function") {
         log("学堂在线：没找到答题卡交卷入口，请在页面上手动交卷", "warning");
+        xtzxQuizAdvanceNext();
         return "done";
       }
       log("学堂在线：所有题目已提交，正在交卷");
       try { sheet.submitAll(); } catch (_) {
         log("学堂在线：交卷调用失败，请手动交卷", "warning");
+        xtzxQuizAdvanceNext();
         return "done";
       }
       // 等接口回来再看一眼状态，避免「点了但没交上」还提示成功
       await sleep(2.5);
       if (vm.$data && vm.$data.is_apply_answer_sheet) log("学堂在线：交卷成功");
       else log("学堂在线：已点交卷，但没等到成功状态，请到答题卡确认", "warning");
+      xtzxQuizAdvanceNext();
       return "done";
     };
+
+    // 整卷提交完，自动打开目录里的下一个任务（视频/音频/图文/作业），
+    // 让「作业 → 下一节」也能一路往下走；考试不自动打开，讨论/直播也不归脚本管。
+    const xtzxQuizAdvanceNext = () => {
+      if (Date.now() - (xtzxQuizState.advanceAt || 0) < 6000) return false;
+      try {
+        const basic = useSettingStore().config.basicConfig;
+        if (basic && basic.autoChangeChapter && basic.autoChangeChapter.value === false) return false;
+      } catch (e) {}
+      // 考试不替用户自动进考场：只有确认已交卷才往下走
+      if (/\/exam\//.test(String(location.pathname || ""))) {
+        const vm = xtzxQuizVm();
+        if (!vm || !(vm.$data && vm.$data.is_apply_answer_sheet)) return false;
+      }
+      const cur = (String(location.pathname || "").match(/\/(?:exercise|homework|exam)\/(\d+)/) || [])[1] || "";
+      const items = xtzxItems();
+      if (!items.length) return false;
+      const usable = (item) => !!item && !item.disabled && !item.done && item.id !== cur
+        && /^(视频|音频|图文|作业)$/.test(item.type)
+        && !(xtzxQuizState.advanceFail[item.id] && Date.now() - xtzxQuizState.advanceFail[item.id] < 10 * 60e3);
+      const idx = items.findIndex((item) => item.id === cur);
+      let next = null;
+      for (let i = idx + 1; i < items.length && !next; i += 1) if (usable(items[i])) next = items[i];
+      for (let i = 0; i < items.length && !next; i += 1) if (usable(items[i])) next = items[i];
+      if (!next) {
+        log("学堂在线：这道作业已完成，目录里没有其它待处理的任务了");
+        return false;
+      }
+      xtzxQuizState.advanceAt = Date.now();
+      const before = location.href;
+      if (!xtzxOpen(next)) {
+        xtzxQuizState.advanceFail[next.id] = Date.now();
+        log(`学堂在线：打不开「${next.name || next.id}」，先跳过`, "warning");
+        return false;
+      }
+      // 记成本轮已处理，避免视频助手回头又把它当「未完成」打开
+      try { xtzxWatch.localDone[cur] = true; } catch (e) {}
+      log(`学堂在线：这道作业已提交，接着打开「${next.name || next.id}」`);
+      // 8 秒后还在原页，说明没跳过去，记为失败，避免每轮都去点它
+      setTimeout(() => {
+        if (location.href === before) xtzxQuizState.advanceFail[next.id] = Date.now();
+      }, 8000);
+      return true;
+    };
+
     // 超星那套「题目结果」里点相似题候选时，回调把答案填进学堂在线当前题
     const xtzxQuizRegisterFillHook = (vm) => {
       const pr = (vm && vm.$data && vm.$data.prictice) || [];
