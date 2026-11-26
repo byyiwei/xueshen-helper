@@ -2774,14 +2774,14 @@
                 target: "_blank",
                 rel: "noopener",
                 onClick: a.link_url ? void 0 : ($event) => $event.preventDefault(),
-                style: { "position": "absolute", "inset": "0", "display": "block", "opacity": i === adIndex.value ? "1" : "0", "transition": "opacity .45s ease" }
+                style: { "position": "absolute", "inset": "0", "display": "block", "opacity": i === adIndex.value ? "1" : "0", "pointerEvents": i === adIndex.value ? "auto" : "none", "zIndex": i === adIndex.value ? 1 : 0, "transition": "opacity .45s ease" }
               }, [
                 vue.createElementVNode("img", { src: a.image_url, alt: "", decoding: "async", draggable: "false", style: { "width": "100%", "height": "100%", "object-fit": "cover", "display": "block" } })
               ], 8, ["href", "onClick", "style"]);
             }), 128)),
             ads.value.length > 1 ? (vue.openBlock(), vue.createElementBlock("div", {
               key: "ad-dots",
-              style: { "position": "absolute", "bottom": "7px", "left": "0", "right": "0", "display": "flex", "justify-content": "center", "gap": "5px" }
+              style: { "position": "absolute", "bottom": "7px", "left": "0", "right": "0", "display": "flex", "justify-content": "center", "gap": "5px", "zIndex": 2 }
             }, [
               (vue.openBlock(true), vue.createElementBlock(vue.Fragment, null, vue.renderList(ads.value, (a, i) => {
                 return vue.createElementVNode("span", {
