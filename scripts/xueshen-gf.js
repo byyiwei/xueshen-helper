@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.1.13
+// @version      6.1.14
 // @updateURL    https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-gf.user.js
 // @author       IPYIWEI
@@ -15,6 +15,10 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.1.14 (2026-11-26)
+// @changelog    1. 更新提示不再依赖面板展开：面板收成迷你球或关闭时，页面顶部也会显示悬浮提示，点「更新」直接打开安装页
+// @changelog    2. 每 30 分钟复查新版本，切回页面时补查；同一版本关掉后不再重复提醒，下个版本再提示
+// @changelog    3. 修复面板里「检测到脚本非最新版本」提示一直不显示的问题
 // @changelog    v6.1.13 (2026-11-25)
 // @changelog    1. 修复 U 校园课件多空填空题被当成段落匹配：只填第一个空、单词答案被当成段落字母拒绝的问题，现在按顺序一次填完
 // @changelog    2. 其余平台行为不变

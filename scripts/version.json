@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.1.13",
+    "version": "6.1.14",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.1.13 修复 U 校园课件多空填空题被当成段落匹配的问题：现在多个空按顺序一次填完，答案能正常写入"
+    "changelog": "v6.1.14 更新提示更可靠：面板收起或关闭时也能看到新版本提醒，每 30 分钟自动复查，关掉的版本不再重复打扰"
   },
   "xueshen-gf": {
-    "version": "6.1.13",
+    "version": "6.1.14",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.1.13 修复 U 校园课件多空填空题被当成段落匹配的问题：现在多个空按顺序一次填完，答案能正常写入"
+    "changelog": "v6.1.14 更新提示更可靠：面板收起或关闭时也能看到新版本提醒，每 30 分钟自动复查，关掉的版本不再重复打扰"
   }
 }
