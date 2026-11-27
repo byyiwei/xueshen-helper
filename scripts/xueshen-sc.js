@@ -2153,6 +2153,11 @@
         url_path: String(location.pathname || "").slice(0, 200)
       }, payload || {});
       extra.script_version = getScriptInfo().version;
+      // 「答案没匹配上选项」不是页面问题：题库/AI 回了一个页面里没有的写法，整卷会同一原因反复触发，
+      // 后台「页面异常」会被刷满（2026-11-27 清掉过一批）。这类失败在答题小结和本地日志里都有记录。
+      if (/^(answer_not_matched|answer_partial_match|answer_ambiguous|answer_invalid)$/.test(String(extra.reason_code || ""))) {
+        return Promise.resolve(false);
+      }
       extra.nodes = (Array.isArray(extra.nodes) ? extra.nodes : [])
         .slice(0, 6)
         .map((n) => (n && n.nodeType === 1 ? summarizeIssueNode(n) : n))
@@ -14145,6 +14150,7 @@ const MAX_RECORDS = 200;
   const NATIVE_SNAPSHOT = (() => {
     const w = _unsafeWindow || window;
     const snap = {};
+    try { snap.XHR = w.XMLHttpRequest; } catch (_) {}
     try { snap.XHRopen = w.XMLHttpRequest && w.XMLHttpRequest.prototype.open; } catch (_) {}
     try { snap.JSONparse = w.JSON.parse; } catch (_) {}
     try { snap.docGetSelection = w.document.getSelection; } catch (_) {}
@@ -14207,6 +14213,9 @@ const MAX_RECORDS = 200;
     } catch (_) {}
     // 2) 检查项被其它扩展改掉的，用原生快照还原
     try {
+      if (!isNativeFn(w.XMLHttpRequest) && NATIVE_SNAPSHOT.XHR) w.XMLHttpRequest = NATIVE_SNAPSHOT.XHR;
+    } catch (_) {}
+    try {
       if (!isNativeFn(w.XMLHttpRequest && w.XMLHttpRequest.prototype.open) && NATIVE_SNAPSHOT.XHRopen) {
         w.XMLHttpRequest.prototype.open = NATIVE_SNAPSHOT.XHRopen;
       }
@@ -14233,6 +14242,8 @@ const MAX_RECORDS = 200;
     } catch (_) {}
   };
 
+  // svg/图片/字体这些不是网页，站方检测也不在其上跑；在它们上面自检只会误报
+  const isNonHtmlPage = () => /\.(?:svg|png|jpe?g|gif|webp|bmp|ico|css|js|json|woff2?|ttf|otf|mp4|mp3|pdf)$/i.test(String(location.pathname || ""));
   // 站方进入答题页 1 秒后查一次、之后每 60 秒查一次；这里同步自检，
   // 有异常就再修一次，并把具体项写进面板日志，方便定位是谁改的。
   const watchExamDetection = () => {
@@ -14244,6 +14255,7 @@ const MAX_RECORDS = 200;
     let lastReportedSig = "";
     const check = (notify) => {
       try {
+        if (isNonHtmlPage()) return;
         const before = collectNativeIssues();
         if (!before.length) {
           lastReportedSig = "";
@@ -14251,6 +14263,23 @@ const MAX_RECORDS = 200;
         }
         guardExamDetection();
         const after = collectNativeIssues();
+        // 逐项看「注入前的快照」干不干净：XHR.open 这类被别的扩展在脚本之前就改掉的，
+        // 既然快照本身就是包过的，我们就修不回来，也不该记成「自己没还原」。
+        // 2026-11-27 后台 28 条全是这种（还有 svg 页），清一色 before==after==XHR.open。
+        const hasBaseline = (name) => {
+          const map = {
+            "XMLHttpRequest": NATIVE_SNAPSHOT.XHR,
+            "XHR.open": NATIVE_SNAPSHOT.XHRopen,
+            "JSON.parse": NATIVE_SNAPSHOT.JSONparse,
+            "document.getSelection": NATIVE_SNAPSHOT.docGetSelection,
+            "window.getSelection": NATIVE_SNAPSHOT.winGetSelection,
+            "attachShadow": NATIVE_SNAPSHOT.attachShadow
+          };
+          if (!(name in map)) return true;
+          return isNativeFn(map[name]);
+        };
+        const reportable = after.filter(hasBaseline);
+        const noBaseline = after.filter((name) => !hasBaseline(name));
         const sig = after.length ? after.join(",") : "fixed:" + before.join(",");
         if (sig === lastReportedSig) return;
         if (notify) {
@@ -14269,7 +14298,8 @@ const MAX_RECORDS = 200;
             // 就已经改过了，我们拿不到干净的基线，修不回来也不该记成「没还原」。
             // 这种情况站方自己也不报警（它的快照同样是被包过的），上报只会白占后台一行 → 只留本地日志。
             const snapNative = isNativeFn(NATIVE_SNAPSHOT.attachShadow);
-            if (after.length && !snapNative) {
+            if (after.length && (!reportable.length || !snapNative)) {
+              // 没有干净基线（或被更早的扩展改过）：修不回来也不该上报，只留本地日志
               lastReportedSig = sig;
             } else if (window.__XSReportPageIssue) {
               window.__XSReportPageIssue({
@@ -14312,7 +14342,8 @@ const MAX_RECORDS = 200;
                       return "";
                     }
                   })(),
-                  host: String(location.hostname || "")
+                  host: String(location.hostname || ""),
+                  noBaseline: noBaseline.join(",")
                 },
                 signature: sig
               });

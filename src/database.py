@@ -5675,13 +5675,14 @@ class Database:
             level = item.get("level", "")
             message = str(item.get("message", ""))[:4000]
             page_url = str(item.get("page_url", ""))[:1000]
-            # 页面结构快照同理：同一用户同一页面同一个问题，60 秒内只留一条。
-            # 脚本可能每道题都命中同一个选择器，不去重的话一次作业能刷出几百条。
+            # 页面结构快照同理：同一用户同一页面同一个问题，30 分钟内只留一条。
+            # 脚本可能每道题都命中同一个选择器、旧版脚本还会每分钟重报，不去重一次作业就能刷出几百条。
+            # 60 秒太短（2026-11-27 后台同一页每分钟一条），放宽到 30 分钟，第一次仍然会留下。
             if event_type == "page_snapshot":
                 recent = self.fetchone(
                     f"""SELECT id FROM script_event_logs
                         WHERE username = {ph} AND event_type = {ph} AND message = {ph} AND page_url = {ph}
-                          AND created_at >= DATE_SUB(NOW(), INTERVAL 60 SECOND)
+                          AND created_at >= DATE_SUB(NOW(), INTERVAL 30 MINUTE)
                         ORDER BY id DESC LIMIT 1""",
                     (username or item.get("username", ""), event_type, message, page_url)
                 )

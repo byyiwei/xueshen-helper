@@ -720,6 +720,10 @@ def sanitize_page_snapshot(item):
         stage = str(extra.get("stage") or "")[:20]
         if not reason and not stage:
             return None
+        # 「答案没匹配上页面选项」不是页面问题，是题库/AI 答案写法的问题，整卷会同一原因反复触发，
+        # 旧版脚本（6.0.x/6.1.x）尤其多。答题小结里已有这些失败记录，页面异常列表不再收。
+        if reason in ("answer_not_matched", "answer_partial_match", "answer_ambiguous", "answer_invalid"):
+            return None
         # found 只留计数/布尔/短字符串，防止有人把整页数据塞进来
         raw_found = extra.get("found") if isinstance(extra.get("found"), dict) else {}
         found = {}
@@ -736,6 +740,13 @@ def sanitize_page_snapshot(item):
                 # 放大到 4000 才能看到子题和选项的结构；只收节点片段，不收整页。
                 limit = 4000 if k.endswith("_html") else (200 if k in ("dom", "body_cls", "toStringHead", "dom_summary") else 100)
                 found[k] = str(val)[:limit]
+        # 原生检查「修了还是原样」：检查项在脚本注入前就被别的扩展改过，没有干净基线，
+        # 我们修不回来，也不是脚本没还原（6.1.15 及以前会照报，2026-11-27 后台 28 条全是这种）。
+        if reason == "native_check_unfixed":
+            before_items = str(found.get("before") or "")
+            after_items = str(found.get("after") or "")
+            if before_items and before_items == after_items:
+                return None
         nodes = []
         raw_nodes = extra.get("nodes") if isinstance(extra.get("nodes"), list) else []
         for row in raw_nodes[:PAGE_SNAPSHOT_NODE_LIMIT]:
