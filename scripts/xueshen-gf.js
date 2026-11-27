@@ -366,6 +366,10 @@
 // @connect      *.webtrn.cn
 // @connect      127.0.0.1
 // @connect      localhost
+// @connect      yuketang.cn
+// @connect      xuetangx.com
+// @connect      aliyuncs.com
+// @connect      cldisk.com
 // @grant        GM_getResourceText
 // @grant        GM_getValue
 // @grant        GM_info
@@ -374,6 +378,7 @@
 // @grant        GM_removeValueChangeListener
 // @grant        GM_xmlhttpRequest
 // @grant        GM_openInTab
+// @grant        GM_download
 // @grant        GM.openInTab
 // @grant        unsafeWindow
 // @run-at       document-start
@@ -2650,6 +2655,27 @@ var __TTF2_TABLE__ = __TTF_TABLE__; // ttf 与 ttf2 两份映射表内容完全�
               value: true,
               type: "switch",
               tips: "解除网页对复制、粘贴、右键菜单、选中文字的限制，并支持富文本编辑器粘贴（含图片）；关闭后刷新页面生效"
+            },
+            docDownload: {
+              text: "文档/课件下载",
+              platforms: ["cx", "ykt"],
+              downloadSection: true,
+              value: false,
+              type: "switch",
+              tips: "开启后，面板会多一个「下载」页签：超星可导出本页文档，雨课堂可抓取课件、视频和课堂录音。默认关闭，不参与刷课和答题；开启后刷新页面生效"
+            },
+            docDownloadFormat: {
+              text: "课件默认格式（雨课堂）",
+              platforms: ["ykt"],
+              downloadSection: true,
+              value: "pdf",
+              type: "select",
+              options: [
+                { value: "pdf", label: "PDF（体积小）" },
+                { value: "zip", label: "ZIP（逐页图片）" },
+                { value: "pptx", label: "PPTX（图片版）" }
+              ],
+              tips: "雨课堂课件默认导出成哪种格式；在「下载」页签里改动只影响那一次"
             }
           },
           examConfig: {
@@ -3229,15 +3255,24 @@ var __TTF2_TABLE__ = __TTF_TABLE__; // ttf 与 ttf2 两份映射表内容完全�
           const result = {};
           Object.entries(group || {}).forEach(([name, field]) => {
             if (!field || typeof field !== "object") return;
+            if (field.downloadSection) return;
             if (Array.isArray(field.platforms) && !field.platforms.includes(platformKey)) return;
             result[name] = field;
           });
           return result;
         };
         const isWatchSite = WATCH_PLATFORM_KEYS.includes(platformKey);
+        const pickDownload = () => {
+          const result = {};
+          Object.entries(setting.config.basicConfig || {}).forEach(([name, field]) => {
+            if (field && typeof field === "object" && field.downloadSection) result[name] = field;
+          });
+          return result;
+        };
         const sections = [
           { label: "基本设置", configs: pick(setting.config.basicConfig), showRemainCount: true }
         ];
+        if ((platformKey === "cx" || platformKey === "ykt") && Object.keys(pickDownload()).length) sections.push({ label: "下载设置", configs: pickDownload() });
         // 国开虽然走通用视频助手，但考试页支持自动答题，所以考试设置也要显示；
         // 学堂在线作业页同样支持自动答题和自动交卷，也显示；
         // 青书走视频助手但作业/考试答题走接口直通层（自动交卷在 EXT_CONF，不在这份配置里），不显示考试设置
@@ -28341,6 +28376,12 @@ const XS_EXT = (() => {
           component: _sfc_main$3
         },
         {
+          key: "download",
+          tab: "下载",
+          component: XsDownloadPanel,
+          hidden: !(setting.config.basicConfig.docDownload && setting.config.basicConfig.docDownload.value && (currentPlatform?.key === "cx" || currentPlatform?.key === "ykt"))
+        },
+        {
           key: settingTabKey,
           tab: "设置",
           component: _sfc_main$6
@@ -28659,6 +28700,983 @@ const XS_EXT = (() => {
       };
     }
   };
+
+  // ===== 文档/课件下载（超星学习通文档、雨课堂课件）=====
+  // 纯新增功能：不替换 XHR / fetch 原型，不改页面结构，不挂任何自动流程。
+  // 只有用户点「扫描」后才读页面、请求接口；答题和刷课逻辑完全不参与。
+  // 请求统一走 GM_xmlhttpRequest 或页面 fetch（正常调用），站方原生检测看不到任何改动。
+  const XS_DL_FORMAT_LABELS = { pdf: "PDF", zip: "ZIP", pptx: "PPTX" };
+  const XS_DL_SLIDE_CONCURRENCY = 3;
+  const XS_DL_SCAN_TEXT_LIMIT = 1500000;
+
+  const xsDlSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const xsDlYield = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const xsDlLog = (text, type) => {
+    try { useLogStore().insertLog(text, type || null); } catch (_) {}
+  };
+  const xsDlFormatBytes = (bytes) => {
+    const n = Number(bytes) || 0;
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+    if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(2) + " MB";
+    return (n / 1024 / 1024 / 1024).toFixed(2) + " GB";
+  };
+  const XS_DL_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.[^.]*)?$/i;
+  const xsDlSafeName = (value, fallback) => {
+    const fb = fallback || "未命名";
+    let name = String(value || "").replace(/[\\/:*?"<>|\r\n\t]/g, "_").replace(/\s+/g, " ").trim().replace(/^\.+/, "").replace(/[. ]+$/, "");
+    if (!name) name = fb;
+    if (XS_DL_RESERVED.test(name)) name = "_" + name;
+    if (name.length > 120) name = name.slice(0, 120).replace(/[. ]+$/, "");
+    return name || fb;
+  };
+  const xsDlTimestamp = () => {
+    const now = new Date();
+    const pad = (v) => String(v).padStart(2, "0");
+    return "" + now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + "-" + pad(now.getHours()) + pad(now.getMinutes());
+  };
+  const xsDlRunPool = async (items, limit, worker) => {
+    const queue = items.map((item, index) => ({ item, index }));
+    const size = Math.max(1, Math.min(limit || 1, queue.length || 1));
+    const runners = Array.from({ length: size }, async () => {
+      while (queue.length) {
+        const entry = queue.shift();
+        try { await worker(entry.item, entry.index); }
+        catch (error) { console.warn("[xs-dl] 任务失败", error); }
+      }
+    });
+    await Promise.all(runners);
+  };
+
+  // ---- STORE ZIP 写入器（无压缩，浏览器端拼包）----
+  const xsDlEncodeUtf8 = (value) => new TextEncoder().encode(String(value || ""));
+  const xsDlDosDateTime = (date) => {
+    const year = Math.max(1980, date.getFullYear());
+    return {
+      date: ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate(),
+      time: (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2)
+    };
+  };
+  const xsDlCrc32Table = (() => {
+    const table = new Uint32Array(256);
+    for (let index = 0; index < 256; index += 1) {
+      let value = index;
+      for (let bit = 0; bit < 8; bit += 1) value = (value & 1) ? (0xedb88320 ^ (value >>> 1)) : (value >>> 1);
+      table[index] = value >>> 0;
+    }
+    return table;
+  })();
+  const xsDlCrc32 = (data) => {
+    let crc = 0xffffffff;
+    for (let index = 0; index < data.length; index += 1) crc = xsDlCrc32Table[(crc ^ data[index]) & 0xff] ^ (crc >>> 8);
+    return (crc ^ 0xffffffff) >>> 0;
+  };
+  const xsDlCreateStoredZipBlob = async (entries, onProgress) => {
+    if (!entries.length) throw new Error("没有可写入 ZIP 的文件");
+    const files = [];
+    let offset = 0;
+    const now = new Date();
+    for (const [index, entry] of entries.entries()) {
+      await xsDlYield();
+      const pathBytes = xsDlEncodeUtf8(entry.path);
+      const data = entry.data instanceof Uint8Array ? entry.data : new Uint8Array(entry.data);
+      const crc = xsDlCrc32(data);
+      const dos = xsDlDosDateTime(entry.date || now);
+      if (pathBytes.length > 0xffff) throw new Error("ZIP 路径过长：" + entry.path);
+      if (data.length > 0xffffffff || offset > 0xffffffff) throw new Error("文件过大，浏览器端 ZIP 写入器不支持 ZIP64");
+      const localHeader = new Uint8Array(30 + pathBytes.length);
+      const localView = new DataView(localHeader.buffer);
+      localView.setUint32(0, 0x04034b50, true);
+      localView.setUint16(4, 20, true);
+      localView.setUint16(6, 0x0800, true);
+      localView.setUint16(8, 0, true);
+      localView.setUint16(10, dos.time, true);
+      localView.setUint16(12, dos.date, true);
+      localView.setUint32(14, crc, true);
+      localView.setUint32(18, data.length, true);
+      localView.setUint32(22, data.length, true);
+      localView.setUint16(26, pathBytes.length, true);
+      localView.setUint16(28, 0, true);
+      localHeader.set(pathBytes, 30);
+      files.push({ pathBytes, data, crc, dos, localHeader, localOffset: offset });
+      offset += localHeader.length + data.length;
+      if (typeof onProgress === "function") onProgress(index + 1, entries.length, entry.path);
+    }
+    const centralParts = [];
+    let centralSize = 0;
+    for (const file of files) {
+      const centralHeader = new Uint8Array(46 + file.pathBytes.length);
+      const centralView = new DataView(centralHeader.buffer);
+      centralView.setUint32(0, 0x02014b50, true);
+      centralView.setUint16(4, 20, true);
+      centralView.setUint16(6, 20, true);
+      centralView.setUint16(8, 0x0800, true);
+      centralView.setUint16(10, 0, true);
+      centralView.setUint16(12, file.dos.time, true);
+      centralView.setUint16(14, file.dos.date, true);
+      centralView.setUint32(16, file.crc, true);
+      centralView.setUint32(20, file.data.length, true);
+      centralView.setUint32(24, file.data.length, true);
+      centralView.setUint16(28, file.pathBytes.length, true);
+      centralView.setUint32(42, file.localOffset, true);
+      centralHeader.set(file.pathBytes, 46);
+      centralParts.push(centralHeader);
+      centralSize += centralHeader.length;
+    }
+    const centralOffset = offset;
+    const endHeader = new Uint8Array(22);
+    const endView = new DataView(endHeader.buffer);
+    endView.setUint32(0, 0x06054b50, true);
+    endView.setUint16(8, files.length, true);
+    endView.setUint16(10, files.length, true);
+    endView.setUint32(12, centralSize, true);
+    endView.setUint32(16, centralOffset, true);
+    const parts = [];
+    for (const file of files) parts.push(file.localHeader, file.data);
+    parts.push(...centralParts, endHeader);
+    if (typeof onProgress === "function") onProgress(entries.length, entries.length, "ZIP 写入完成");
+    return new Blob(parts, { type: "application/zip" });
+  };
+
+  // ---- PDF：JPEG 直嵌（DCTDecode），无需第三方库 ----
+  const xsDlBuildPdfFromJpegs = (pages, pageWidth, pageHeight) => {
+    const encoder = new TextEncoder();
+    const chunks = [];
+    const offsets = [];
+    let offset = 0;
+    const push = (data) => {
+      const bytes = typeof data === "string" ? encoder.encode(data) : data;
+      chunks.push(bytes);
+      offset += bytes.length;
+    };
+    push("%PDF-1.4\n%\u00E2\u00E3\u00CF\u00D3\n");
+    const total = pages.length;
+    const pageNumbers = pages.map((_, index) => 3 + index * 3);
+    const maxObject = 2 + total * 3;
+    const addObject = (number, parts) => {
+      offsets[number] = offset;
+      push(number + " 0 obj\n");
+      for (const part of parts) push(part);
+      push("\nendobj\n");
+    };
+    addObject(1, ["<< /Type /Catalog /Pages 2 0 R >>"]);
+    addObject(2, ["<< /Type /Pages /Kids [" + pageNumbers.map((n) => n + " 0 R").join(" ") + "] /Count " + total + " >>"]);
+    pages.forEach((page, index) => {
+      const pageNumber = pageNumbers[index];
+      const contentNumber = pageNumber + 1;
+      const imageNumber = pageNumber + 2;
+      const width = Number(page.width || pageWidth || 960);
+      const height = Number(page.height || pageHeight || 720);
+      const components = Number(page.components || 3);
+      const colorSpace = components === 1 ? "/DeviceGray" : components === 4 ? "/DeviceCMYK" : "/DeviceRGB";
+      const content = "q\n" + width.toFixed(2) + " 0 0 " + height.toFixed(2) + " 0 0 cm\n/Im0 Do\nQ\n";
+      addObject(pageNumber, ["<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + width.toFixed(2) + " " + height.toFixed(2) + "] /Resources << /XObject << /Im0 " + imageNumber + " 0 R >> /ProcSet [/PDF /ImageC] >> /Contents " + contentNumber + " 0 R >>"]);
+      addObject(contentNumber, ["<< /Length " + content.length + " >>\nstream\n", content, "endstream"]);
+      offsets[imageNumber] = offset;
+      push(imageNumber + " 0 obj\n");
+      push("<< /Type /XObject /Subtype /Image /Width " + width + " /Height " + height + " /ColorSpace " + colorSpace + " /BitsPerComponent 8 /Filter /DCTDecode /Length " + page.jpeg.byteLength + " >>\nstream\n");
+      push(new Uint8Array(page.jpeg));
+      push("\nendstream\nendobj\n");
+    });
+    const xrefStart = offset;
+    let xref = "xref\n0 " + (maxObject + 1) + "\n0000000000 65535 f \n";
+    for (let number = 1; number <= maxObject; number += 1) xref += String(offsets[number] || 0).padStart(10, "0") + " 00000 n \n";
+    push(xref);
+    push("trailer\n<< /Size " + (maxObject + 1) + " /Root 1 0 R >>\nstartxref\n" + xrefStart + "\n%%EOF\n");
+    return new Blob(chunks, { type: "application/pdf" });
+  };
+
+  // ---- PPTX（图片版）：每页幻灯片作为整页图片放进一个形状 ----
+  const xsDlPptxNsA = "http://schemas.openxmlformats.org/drawingml/2006/main";
+  const xsDlPptxNsR = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+  const xsDlPptxNsP = "http://schemas.openxmlformats.org/presentationml/2006/main";
+  const xsDlPptxRel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+  const xsDlXmlEscape = (value) => String(value == null ? "" : value).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" }[ch]));
+  const xsDlBuildPptxEntries = (pages, pageWidth, pageHeight, title) => {
+    const cx = Math.round((Number(pageWidth) || 960) * 12700);
+    const cy = Math.round((Number(pageHeight) || 720) * 12700);
+    const head = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+    const spTreeEmpty = '<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree>';
+    const contentTypes = head + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/><Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/><Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/><Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>' + pages.map((_, index) => '<Override PartName="/ppt/slides/slide' + (index + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>').join("") + '</Types>';
+    const packageRels = head + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="' + xsDlPptxRel + '/officeDocument" Target="ppt/presentation.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="' + xsDlPptxRel + '/extended-properties" Target="docProps/app.xml"/></Relationships>';
+    const coreXml = head + '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>' + xsDlXmlEscape(title || "课件") + '</dc:title><dc:creator>学神助手</dc:creator></cp:coreProperties>';
+    const appXml = head + '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><Application>学神助手</Application><Slides>' + pages.length + '</Slides></Properties>';
+    const slideIds = pages.map((_, index) => '<p:sldId id="' + (256 + index) + '" r:id="rId' + (index + 2) + '"/>').join("");
+    const presentationXml = head + '<p:presentation xmlns:a="' + xsDlPptxNsA + '" xmlns:r="' + xsDlPptxNsR + '" xmlns:p="' + xsDlPptxNsP + '" saveSubsetFonts="1"><p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>' + slideIds + '</p:sldIdLst><p:sldSz cx="' + cx + '" cy="' + cy + '"/><p:notesSz cx="6858000" cy="9144000"/></p:presentation>';
+    const presentationRels = head + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="' + xsDlPptxRel + '/slideMaster" Target="slideMasters/slideMaster1.xml"/>' + pages.map((_, index) => '<Relationship Id="rId' + (index + 2) + '" Type="' + xsDlPptxRel + '/slide" Target="slides/slide' + (index + 1) + '.xml"/>').join("") + '</Relationships>';
+    const masterXml = head + '<p:sldMaster xmlns:a="' + xsDlPptxNsA + '" xmlns:r="' + xsDlPptxNsR + '" xmlns:p="' + xsDlPptxNsP + '"><p:cSld><p:bg><p:bgRef idx="1001"><a:schemeClr val="bg1"/></p:bgRef></p:bg>' + spTreeEmpty + '</p:cSld><p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/><p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst></p:sldMaster>';
+    const masterRels = head + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="' + xsDlPptxRel + '/slideLayout" Target="../slideLayouts/slideLayout1.xml"/><Relationship Id="rId2" Type="' + xsDlPptxRel + '/theme" Target="../theme/theme1.xml"/></Relationships>';
+    const layoutXml = head + '<p:sldLayout xmlns:a="' + xsDlPptxNsA + '" xmlns:r="' + xsDlPptxNsR + '" xmlns:p="' + xsDlPptxNsP + '" type="blank" preserve="1"><p:cSld name="Blank">' + spTreeEmpty + '</p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>';
+    const layoutRels = head + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="' + xsDlPptxRel + '/slideMaster" Target="../slideMasters/slideMaster1.xml"/></Relationships>';
+    const themeXml = head + '<a:theme xmlns:a="' + xsDlPptxNsA + '" name="Office Theme"><a:themeElements><a:clrScheme name="Office"><a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1><a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="44546A"/></a:dk2><a:lt2><a:srgbClr val="E7E6E6"/></a:lt2><a:accent1><a:srgbClr val="4472C4"/></a:accent1><a:accent2><a:srgbClr val="ED7D31"/></a:accent2><a:accent3><a:srgbClr val="A5A5A5"/></a:accent3><a:accent4><a:srgbClr val="FFC000"/></a:accent4><a:accent5><a:srgbClr val="5B9BD5"/></a:accent5><a:accent6><a:srgbClr val="70AD47"/></a:accent6><a:hlink><a:srgbClr val="0563C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink></a:clrScheme><a:fontScheme name="Office"><a:majorFont><a:latin typeface="Calibri Light"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont><a:minorFont><a:latin typeface="Calibri"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont></a:fontScheme><a:fmtScheme name="Office"><a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"><a:tint val="50000"/></a:schemeClr></a:solidFill><a:solidFill><a:schemeClr val="phClr"><a:shade val="80000"/></a:schemeClr></a:solidFill></a:fillStyleLst><a:lnStyleLst><a:ln w="6350" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/></a:ln><a:ln w="12700" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/></a:ln><a:ln w="19050" cap="flat" cmpd="sng" algn="ctr"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:prstDash val="solid"/></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle><a:effectStyle><a:effectLst/></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill><a:solidFill><a:schemeClr val="phClr"><a:tint val="95000"/></a:schemeClr></a:solidFill><a:solidFill><a:schemeClr val="phClr"><a:shade val="90000"/></a:schemeClr></a:solidFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements></a:theme>';
+    const entries = [
+      { path: "[Content_Types].xml", data: new TextEncoder().encode(contentTypes) },
+      { path: "_rels/.rels", data: new TextEncoder().encode(packageRels) },
+      { path: "docProps/core.xml", data: new TextEncoder().encode(coreXml) },
+      { path: "docProps/app.xml", data: new TextEncoder().encode(appXml) },
+      { path: "ppt/presentation.xml", data: new TextEncoder().encode(presentationXml) },
+      { path: "ppt/_rels/presentation.xml.rels", data: new TextEncoder().encode(presentationRels) },
+      { path: "ppt/slideMasters/slideMaster1.xml", data: new TextEncoder().encode(masterXml) },
+      { path: "ppt/slideMasters/_rels/slideMaster1.xml.rels", data: new TextEncoder().encode(masterRels) },
+      { path: "ppt/slideLayouts/slideLayout1.xml", data: new TextEncoder().encode(layoutXml) },
+      { path: "ppt/slideLayouts/_rels/slideLayout1.xml.rels", data: new TextEncoder().encode(layoutRels) },
+      { path: "ppt/theme/theme1.xml", data: new TextEncoder().encode(themeXml) }
+    ];
+    pages.forEach((page, index) => {
+      const slideXml = head + '<p:sld xmlns:a="' + xsDlPptxNsA + '" xmlns:r="' + xsDlPptxNsR + '" xmlns:p="' + xsDlPptxNsP + '"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr><p:pic><p:nvPicPr><p:cNvPr id="2" name="Slide ' + (index + 1) + '"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>';
+      const slideRels = head + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="' + xsDlPptxRel + '/image" Target="../media/image' + (index + 1) + '.jpeg"/></Relationships>';
+      entries.push({ path: "ppt/slides/slide" + (index + 1) + ".xml", data: new TextEncoder().encode(slideXml) });
+      entries.push({ path: "ppt/slides/_rels/slide" + (index + 1) + ".xml.rels", data: new TextEncoder().encode(slideRels) });
+      entries.push({ path: "ppt/media/image" + (index + 1) + ".jpeg", data: new Uint8Array(page.jpeg) });
+    });
+    return entries;
+  };
+
+  const xsDlJpegSize = (buffer) => {
+    const bytes = new Uint8Array(buffer);
+    if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
+    let index = 2;
+    while (index < bytes.length - 9) {
+      if (bytes[index] !== 0xff) { index += 1; continue; }
+      const marker = bytes[index + 1];
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+        return {
+          height: (bytes[index + 5] << 8) | bytes[index + 6],
+          width: (bytes[index + 7] << 8) | bytes[index + 8],
+          components: bytes[index + 9] || 3
+        };
+      }
+      const length = (bytes[index + 2] << 8) | bytes[index + 3];
+      if (length < 2) return null;
+      index += 2 + length;
+    }
+    return null;
+  };
+
+  // ---- 网络：页面 fetch（带登录态）+ GM 通道兜底，不替换任何原生函数 ----
+  const xsDlFetchJson = async (url, options) => {
+    const timeout = (options && options.timeout) || 60000;
+    const attempts = 3;
+    let lastError = null;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      const timer = controller ? setTimeout(() => controller.abort(), timeout) : null;
+      try {
+        const response = await fetch(url, {
+          credentials: "include",
+          headers: Object.assign({ xtbz: "ykt" }, (options && options.headers) || {}),
+          signal: controller ? controller.signal : undefined
+        });
+        if (!response.ok) {
+          const error = new Error("HTTP " + response.status);
+          error.retryable = response.status === 429 || response.status >= 500;
+          throw error;
+        }
+        return await response.json();
+      } catch (error) {
+        lastError = error;
+        const retryable = error && (error.retryable || error.name === "AbortError" || error.name === "TypeError");
+        if (!retryable || attempt === attempts - 1) throw error;
+        await xsDlSleep(500 * Math.pow(2, attempt) + Math.floor(Math.random() * 250));
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    }
+    throw lastError || new Error("请求失败");
+  };
+  const xsDlGmArrayBuffer = (url, headers) => new Promise((resolve, reject) => {
+    try {
+      GM_xmlhttpRequest({
+        method: "GET",
+        url: url,
+        responseType: "arraybuffer",
+        headers: headers || {},
+        timeout: 120000,
+        onload: (response) => {
+          if (response.status >= 200 && response.status < 300) resolve(response.response);
+          else reject(new Error("HTTP " + response.status));
+        },
+        onerror: () => reject(new Error("网络错误")),
+        ontimeout: () => reject(new Error("请求超时"))
+      });
+    } catch (error) { reject(error); }
+  });
+  const xsDlFetchBinary = async (url) => {
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), 60000) : null;
+    try {
+      const response = await fetch(url, { credentials: "omit", signal: controller ? controller.signal : undefined });
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      return await response.arrayBuffer();
+    } catch (error) {
+      return await xsDlGmArrayBuffer(url);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
+  // ---- 落盘：优先 GM_download（流式，不占页面内存），失败退回 <a download> ----
+  const xsDlAnchorDownload = (blob, filename) => {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
+    anchor.click();
+    setTimeout(() => { URL.revokeObjectURL(url); anchor.remove(); }, 30000);
+  };
+  const xsDlSaveUrl = (url, filename, referer) => new Promise((resolve, reject) => {
+    let settled = false;
+    const done = (value) => { if (!settled) { settled = true; resolve(value); } };
+    const fail = (error) => { if (!settled) { settled = true; reject(error); } };
+    const viaBlob = () => {
+      if (settled) return;
+      xsDlGmArrayBuffer(url, referer ? { Referer: referer } : null)
+        .then((buffer) => {
+          if (settled) return;
+          xsDlAnchorDownload(new Blob([buffer], { type: "application/octet-stream" }), filename);
+          done("blob");
+        })
+        .catch(fail);
+    };
+    if (typeof GM_download !== "function") { viaBlob(); return; }
+    try {
+      const options = { url: url, name: filename, saveAs: false, onload: () => done("gm"), onerror: () => viaBlob(), ontimeout: () => viaBlob() };
+      if (referer) options.headers = { Referer: referer };
+      GM_download(options);
+    } catch (error) { viaBlob(); }
+  });
+  const xsDlSaveBlob = async (blob, filename) => {
+    if (typeof GM_download === "function") {
+      const objectUrl = URL.createObjectURL(blob);
+      let ok = true;
+      await new Promise((resolve) => {
+        try {
+          GM_download({
+            url: objectUrl,
+            name: filename,
+            saveAs: false,
+            onload: resolve,
+            onerror: () => { ok = false; resolve(); }
+          });
+        } catch (error) { ok = false; resolve(); }
+      });
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 10 * 60 * 1000);
+      if (ok) return true;
+    }
+    xsDlAnchorDownload(blob, filename);
+    return true;
+  };
+  const xsDlDownloadVideo = (url, filename, onProgress) => new Promise((resolve, reject) => {
+    if (typeof GM_download !== "function") {
+      reject(new Error("浏览器扩展不支持 GM_download，无法直接下载大文件"));
+      return;
+    }
+    let last = { loaded: 0, total: 0 };
+    try {
+      GM_download({
+        url: url,
+        name: filename,
+        timeout: 0,
+        saveAs: false,
+        onload: () => resolve(last),
+        onerror: (error) => reject(new Error((error && error.error) || "下载失败")),
+        ontimeout: () => reject(new Error("下载超时")),
+        onprogress: (progress) => {
+          if (progress) last = { loaded: Number(progress.loaded) || 0, total: Number(progress.total) || 0 };
+          if (typeof onProgress === "function") onProgress(last);
+        }
+      });
+    } catch (error) { reject(error); }
+  });
+
+  // ---- 超星：扫描页面里的文件 ID，按 /ananas/status 拿直链 ----
+  const xsDlExtractFileIds = () => {
+    const found = [];
+    const seen = new Set();
+    const collect = (text) => {
+      if (!text || seen.size >= 200) return;
+      const re = /file_([a-f0-9]{32})/gi;
+      let match;
+      while ((match = re.exec(text))) {
+        const id = match[1].toLowerCase();
+        if (!seen.has(id)) { seen.add(id); found.push(id); }
+        if (seen.size >= 200) break;
+      }
+    };
+    try {
+      const bodyHtml = document.body ? document.body.innerHTML || "" : "";
+      if (bodyHtml.length <= XS_DL_SCAN_TEXT_LIMIT) collect(bodyHtml);
+    } catch (_) {}
+    try {
+      document.querySelectorAll("script").forEach((script) => {
+        const text = script.textContent || "";
+        if (text.length <= XS_DL_SCAN_TEXT_LIMIT) collect(text);
+      });
+    } catch (_) {}
+    return found;
+  };
+  const xsDlChaoxingStatus = (fileId) => new Promise((resolve) => {
+    try {
+      GM_xmlhttpRequest({
+        method: "GET",
+        url: "https://mooc1.chaoxing.com/ananas/status/" + fileId + "?flag=normal",
+        headers: { Referer: location.href, Accept: "application/json" },
+        timeout: 15000,
+        onload: (response) => {
+          try {
+            const data = JSON.parse(response.responseText || "{}");
+            resolve(data && data.status === "success" ? data : null);
+          } catch (_) { resolve(null); }
+        },
+        onerror: () => resolve(null),
+        ontimeout: () => resolve(null)
+      });
+    } catch (_) { resolve(null); }
+  });
+  const xsDlCollectChaoxing = async (reporter) => {
+    const ids = xsDlExtractFileIds();
+    if (!ids.length) return [];
+    const results = [];
+    const seen = new Set();
+    const queue = ids.slice();
+    let done = 0;
+    const workers = Array.from({ length: Math.min(3, queue.length) }, async () => {
+      while (queue.length) {
+        const fileId = queue.shift();
+        const data = await xsDlChaoxingStatus(fileId);
+        done += 1;
+        if (data) {
+          const key = String(data.objectid || fileId);
+          if (!seen.has(key) && (data.download || data.pdf)) {
+            seen.add(key);
+            const size = Number(data.length) || 0;
+            const pages = Number(data.pagenum) || 0;
+            results.push({
+              key: "doc:" + key,
+              filename: data.filename || ("document_" + key + ".pdf"),
+              kind: "doc",
+              meta: [size ? xsDlFormatBytes(size) : "", pages ? pages + " 页" : ""].filter(Boolean).join(" · "),
+              size: size,
+              url: data.download || data.pdf,
+              checked: true
+            });
+          }
+        }
+        if (typeof reporter === "function") reporter({ stage: "查询文档 " + done + "/" + ids.length, current: done, total: ids.length, detail: "" });
+      }
+    });
+    await Promise.all(workers);
+    return results;
+  };
+
+  // ---- 雨课堂：日志 / 章节树 / 课件 / 视频 / 课堂 ----
+  const xsDlYktClassroomId = () => {
+    const match = String(location.pathname || "").match(/\/studentLog\/(\d+)/);
+    return match ? match[1] : "";
+  };
+  const xsDlFetchActivities = async (classroomId, reporter) => {
+    const all = [];
+    for (let page = 0; page < 30; page += 1) {
+      const data = await xsDlFetchJson("/v2/api/web/logs/learn/" + classroomId + "?actype=-1&page=" + page + "&offset=20&sort=-1");
+      if (data.errcode !== 0) throw new Error("课程日志读取失败：" + (data.errmsg || data.errcode));
+      const activities = (data.data && data.data.activities) || [];
+      all.push(...activities);
+      if (typeof reporter === "function") reporter({ stage: "读取课程日志", current: page + 1, total: 0, detail: "已获取 " + all.length + " 条" });
+      if (!data.data || !data.data.has_more || !activities.length) break;
+    }
+    const seen = new Set();
+    return all.filter((activity) => {
+      const key = activity.type + ":" + activity.courseware_id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+  const xsDlFetchDetlist = async (classroomId, coursewareId) => {
+    const data = await xsDlFetchJson("/v2/api/web/cards/detlist/" + coursewareId + "?classroom_id=" + classroomId);
+    if (data.errcode !== 0) throw new Error(data.errmsg || "课件详情读取失败");
+    return data.data || {};
+  };
+  const xsDlFetchVideoInfo = async (classroomId, leafId) => {
+    const data = await xsDlFetchJson("/mooc-api/v1/lms/learn/leaf_info/" + classroomId + "/" + leafId + "/?classroom_id=" + classroomId);
+    if (!data.success) throw new Error(data.msg || "视频信息读取失败（登录态可能失效）");
+    const media = (data.data && data.data.content_info && data.data.content_info.media) || {};
+    return { ccid: media.ccid, name: media.name, size: media.size };
+  };
+  const xsDlFetchVideoUrls = async (ccid) => {
+    const data = await xsDlFetchJson("/api/open/audiovideo/playurl?video_id=" + encodeURIComponent(ccid) + "&provider=cc&file_type=1&is_single=0&domain=changjiang.yuketang.cn");
+    if (!data.success) throw new Error(data.msg || "视频直链解析失败");
+    const sources = (data.data && data.data.playurl && data.data.playurl.sources) || {};
+    const ordered = [];
+    ["quality20", "quality10"].forEach((quality) => {
+      const list = sources[quality];
+      if (Array.isArray(list)) ordered.push(...list.filter(Boolean));
+    });
+    return { primary: ordered[0] || null, ordered: ordered };
+  };
+  const xsDlFetchClassroomMeta = async (classroomId) => {
+    const data = await xsDlFetchJson("/v2/api/web/classrooms/" + classroomId + "?role=5");
+    const info = data.data || {};
+    return { uvId: info.uv_id ? String(info.uv_id) : "", courseSign: info.course_sign || "", courseName: info.course_name || info.name || "" };
+  };
+  const xsDlFetchChapterLeaves = async (classroomId, reporter) => {
+    const meta = await xsDlFetchClassroomMeta(classroomId);
+    const uv = meta.uvId || "3721";
+    const signPart = meta.courseSign ? "&sign=" + encodeURIComponent(meta.courseSign) : "";
+    const data = await xsDlFetchJson("/mooc-api/v1/lms/learn/course/chapter?cid=" + classroomId + signPart + "&term=latest&uv_id=" + uv + "&classroom_id=" + classroomId);
+    const chapters = (data.data && data.data.course_chapter) || [];
+    const leaves = [];
+    const walk = (nodes, chapterName) => {
+      for (const node of nodes || []) {
+        const currentChapter = chapterName || String(node.name || "").trim();
+        if (node.section_leaf_list) walk(node.section_leaf_list, currentChapter);
+        else if (node.leaf_type !== undefined) leaves.push(Object.assign({}, node, { name: String(node.name || "").trim(), chapter: currentChapter }));
+      }
+    };
+    walk(chapters, "");
+    if (typeof reporter === "function") reporter({ stage: "读取学习内容", current: leaves.length, total: leaves.length, detail: "章节 " + chapters.length + " 个" });
+    return leaves;
+  };
+  const xsDlFetchClassSlides = async (lessonId) => {
+    const info = await xsDlFetchJson("/api/v3/classroom-report/student/lesson-info?lesson_id=" + lessonId);
+    if (info.code !== 0) throw new Error(info.msg || "课堂信息读取失败");
+    const presentationIds = (info.data && info.data.presentationIds) || [];
+    if (!presentationIds.length) return { slides: [] };
+    const data = await xsDlFetchJson("/api/v3/classroom-report/student/ppt?lesson_id=" + lessonId + "&presentationId=" + presentationIds[0]);
+    if (data.code !== 0) throw new Error(data.msg || "课堂课件读取失败");
+    const slides = ((data.data && data.data.slideList) || [])
+      .map((slide) => ({ index: slide.index, cover: slide.cover }))
+      .filter((slide) => !!slide.cover);
+    return { slides: slides };
+  };
+  const xsDlFetchClassReplay = async (lessonId) => {
+    const data = await xsDlFetchJson("/api/v3/classroom-report/replay?lesson_id=" + lessonId + "&canFakeLive=1");
+    if (data.code !== 0) throw new Error(data.msg || "课堂回放读取失败");
+    const info = data.data || {};
+    const live = (info.live || []).find((item) => item && item.url) || null;
+    return { audioUrl: live ? live.url : "", durationMs: info.lessonDuration || (live && live.duration) || 0 };
+  };
+  const xsDlCollectSlides = async (classroomId, coursewareId, reporter) => {
+    const detail = await xsDlFetchDetlist(classroomId, coursewareId);
+    const slides = (detail.Slides || []).filter((slide) => slide.Cover);
+    if (!slides.length) throw new Error("该课件没有可抓取的幻灯片");
+    const results = [];
+    let done = 0;
+    const queue = slides.slice();
+    const workers = Array.from({ length: Math.min(XS_DL_SLIDE_CONCURRENCY, queue.length) }, async () => {
+      while (queue.length) {
+        const slide = queue.shift();
+        const pageIndex = slide.PageIndex || (slide.index + 1);
+        try {
+          const buffer = await xsDlFetchBinary(slide.Cover);
+          const size = xsDlJpegSize(buffer) || { width: 960, height: 720, components: 3 };
+          results.push({ pageIndex: pageIndex, buffer: buffer, width: size.width, height: size.height, components: size.components });
+        } catch (error) { console.warn("[xs-dl] 第 " + pageIndex + " 页失败", error); }
+        done += 1;
+        if (typeof reporter === "function") reporter({ stage: "下载幻灯片", current: done, total: slides.length, detail: "第 " + pageIndex + " 页" });
+      }
+    });
+    await Promise.all(workers);
+    results.sort((a, b) => a.pageIndex - b.pageIndex);
+    if (!results.length) throw new Error("课件图片全部下载失败");
+    return { pages: results, meta: detail };
+  };
+  const xsDlCollectClassSlides = async (lessonId, reporter) => {
+    const { slides } = await xsDlFetchClassSlides(lessonId);
+    if (!slides.length) throw new Error("这节课没有可抓取的课件");
+    const results = [];
+    let done = 0;
+    const queue = slides.slice();
+    const workers = Array.from({ length: Math.min(XS_DL_SLIDE_CONCURRENCY, queue.length) }, async () => {
+      while (queue.length) {
+        const slide = queue.shift();
+        try {
+          const buffer = await xsDlFetchBinary(slide.cover);
+          const size = xsDlJpegSize(buffer) || { width: 1280, height: 960, components: 3 };
+          results.push({ pageIndex: slide.index, buffer: buffer, width: size.width, height: size.height, components: size.components });
+        } catch (error) { console.warn("[xs-dl] 课堂第 " + slide.index + " 页失败", error); }
+        done += 1;
+        if (typeof reporter === "function") reporter({ stage: "下载课堂课件", current: done, total: slides.length, detail: "第 " + slide.index + " 页" });
+      }
+    });
+    await Promise.all(workers);
+    results.sort((a, b) => a.pageIndex - b.pageIndex);
+    if (!results.length) throw new Error("课堂课件全部下载失败");
+    const first = results[0];
+    return { pages: results, meta: { Width: first.width, Height: first.height } };
+  };
+  const xsDlBuildPptOutput = async (title, pages, meta, mode, reporter) => {
+    const safeTitle = xsDlSafeName(title);
+    if (mode === "pdf") {
+      if (typeof reporter === "function") reporter({ stage: "生成 PDF", current: pages.length, total: pages.length, detail: pages.length + " 页" });
+      await xsDlYield();
+      return {
+        blob: xsDlBuildPdfFromJpegs(pages.map((page) => ({ jpeg: page.buffer, width: page.width, height: page.height, components: page.components })), meta.Width, meta.Height),
+        filename: safeTitle + ".pdf"
+      };
+    }
+    if (mode === "pptx") {
+      if (typeof reporter === "function") reporter({ stage: "生成 PPTX", current: 0, total: pages.length, detail: pages.length + " 页" });
+      await xsDlYield();
+      const entries = xsDlBuildPptxEntries(pages.map((page) => ({ jpeg: page.buffer })), meta.Width, meta.Height, title);
+      const zipBlob = await xsDlCreateStoredZipBlob(entries, (current, total, detail) => {
+        if (typeof reporter === "function") reporter({ stage: "打包 PPTX", current: current, total: total, detail: detail });
+      });
+      return { blob: new Blob([zipBlob], { type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" }), filename: safeTitle + ".pptx" };
+    }
+    if (typeof reporter === "function") reporter({ stage: "打包 ZIP", current: 0, total: pages.length, detail: "" });
+    const blob = await xsDlCreateStoredZipBlob(
+      pages.map((page) => ({ path: String(page.pageIndex).padStart(3, "0") + ".jpg", data: new Uint8Array(page.buffer) })),
+      (current, total, detail) => {
+        if (typeof reporter === "function") reporter({ stage: "打包 ZIP", current: current, total: total, detail: detail });
+      }
+    );
+    return { blob: blob, filename: safeTitle + ".zip" };
+  };
+  const xsDlCollectYkt = async (reporter) => {
+    const classroomId = xsDlYktClassroomId();
+    if (!classroomId) throw new Error("请先打开雨课堂课程页（studentLog 页面）再扫描");
+    const activities = await xsDlFetchActivities(classroomId, reporter);
+    const items = [];
+    for (const activity of activities.filter((item) => item.type === 2 && item.courseware_id)) {
+      items.push({
+        key: "ppt:" + activity.courseware_id,
+        kind: "ppt",
+        id: String(activity.courseware_id),
+        title: String(activity.title || "课件"),
+        meta: activity.count ? activity.count + " 页" : "PPT 课件",
+        checked: true
+      });
+    }
+    let leaves = [];
+    try { leaves = await xsDlFetchChapterLeaves(classroomId, reporter); } catch (error) { console.warn("[xs-dl] 章节树读取失败", error); }
+    const knownTitles = new Set(items.map((item) => item.title));
+    for (const leaf of leaves.filter((item) => item.leaf_type === 7 && item.id && !knownTitles.has(item.name))) {
+      try {
+        const data = await xsDlFetchJson("/mooc-api/v1/lms/learn/leaf_info/" + classroomId + "/" + leaf.id + "/?classroom_id=" + classroomId);
+        const content = (data.data && data.data.content_info) || {};
+        const coursewareId = content.leaf_type_id ? String(content.leaf_type_id) : "";
+        if (!coursewareId) continue;
+        if (items.some((item) => item.key === "ppt:" + coursewareId)) continue;
+        items.push({ key: "ppt:" + coursewareId, kind: "ppt", id: coursewareId, title: leaf.name, meta: leaf.chapter || "PPT 课件", checked: true });
+      } catch (error) { console.warn("[xs-dl] " + leaf.name + " 读取失败", error); }
+    }
+    for (const leaf of leaves.filter((item) => item.leaf_type === 0 && item.id)) {
+      items.push({ key: "video:" + leaf.id, kind: "video", id: String(leaf.id), title: leaf.name, meta: leaf.chapter || "视频", checked: true });
+    }
+    if (!items.some((item) => item.kind === "video")) {
+      for (const activity of activities.filter((item) => item.type === 17 && item.content && item.content.leaf_id)) {
+        items.push({ key: "video:" + activity.content.leaf_id, kind: "video", id: String(activity.content.leaf_id), title: String(activity.title || "视频"), meta: "视频", checked: true });
+      }
+    }
+    for (const activity of activities.filter((item) => item.type === 14 && item.courseware_id)) {
+      const title = String(activity.title || "").trim() || "课堂";
+      items.push({ key: "classppt:" + activity.courseware_id, kind: "classppt", id: String(activity.courseware_id), title: title, meta: "课堂课件", checked: false });
+      items.push({ key: "audio:" + activity.courseware_id, kind: "audio", id: String(activity.courseware_id), title: title, meta: "课堂录音", checked: false });
+    }
+    if (typeof reporter === "function") reporter({ stage: "扫描完成", current: items.length, total: items.length, detail: "共 " + items.length + " 项" });
+    return { items: items, classroomId: classroomId };
+  };
+  const xsDlRunYkt = async (chosen, format, reporter) => {
+    const classroomId = xsDlYktClassroomId();
+    if (!classroomId) throw new Error("未识别到课程，请刷新页面后重试");
+    const ppts = chosen.filter((item) => item.kind === "ppt");
+    const classes = chosen.filter((item) => item.kind === "classppt");
+    const videos = chosen.filter((item) => item.kind === "video");
+    const audios = chosen.filter((item) => item.kind === "audio");
+    const deckJobs = ppts.map((item) => ({ kind: "ppt", title: item.title, id: item.id }))
+      .concat(classes.map((item) => ({ kind: "classppt", title: item.title, id: item.id })));
+    let doneCount = 0;
+    if (deckJobs.length) {
+      const entries = [];
+      for (let index = 0; index < deckJobs.length; index += 1) {
+        const job = deckJobs[index];
+        const stage = (job.kind === "classppt" ? "课堂" : "PPT") + " " + (index + 1) + "/" + deckJobs.length + "：" + job.title;
+        if (typeof reporter === "function") reporter({ stage: stage, current: index, total: deckJobs.length, detail: "" });
+        try {
+          const collected = job.kind === "classppt"
+            ? await xsDlCollectClassSlides(job.id, reporter)
+            : await xsDlCollectSlides(classroomId, job.id, reporter);
+          const safe = xsDlSafeName(job.title) || ("课件" + (index + 1));
+          if (format === "zip") {
+            for (const page of collected.pages) entries.push({ path: safe + "/" + String(page.pageIndex).padStart(3, "0") + ".jpg", data: new Uint8Array(page.buffer) });
+          } else {
+            const output = await xsDlBuildPptOutput(job.title, collected.pages, collected.meta, format, reporter);
+            entries.push({ path: safe + "." + (format === "pptx" ? "pptx" : "pdf"), data: new Uint8Array(await output.blob.arrayBuffer()) });
+          }
+          doneCount += 1;
+        } catch (error) {
+          xsDlLog("课件「" + job.title + "」失败：" + error.message, "warning");
+        }
+      }
+      if (entries.length === 1 && format !== "zip") {
+        const only = entries[0];
+        const mime = format === "pptx" ? "application/vnd.openxmlformats-officedocument.presentationml.presentation" : "application/pdf";
+        await xsDlSaveBlob(new Blob([only.data], { type: mime }), only.path.split("/").pop());
+      } else if (entries.length) {
+        if (typeof reporter === "function") reporter({ stage: "打包课件", current: 0, total: entries.length, detail: entries.length + " 个文件" });
+        const zipBlob = await xsDlCreateStoredZipBlob(entries, (current, total, detail) => {
+          if (typeof reporter === "function") reporter({ stage: "打包课件", current: current, total: total, detail: detail });
+        });
+        await xsDlSaveBlob(zipBlob, "雨课堂课件_" + classroomId + "_" + xsDlTimestamp() + ".zip");
+      }
+    }
+    for (let index = 0; index < videos.length; index += 1) {
+      const item = videos[index];
+      const stage = "视频 " + (index + 1) + "/" + videos.length + "：" + item.title;
+      if (typeof reporter === "function") reporter({ stage: stage, current: index, total: videos.length, detail: "解析直链" });
+      try {
+        const info = await xsDlFetchVideoInfo(classroomId, item.id);
+        if (!info.ccid) throw new Error("未取到视频 ID");
+        const urls = await xsDlFetchVideoUrls(info.ccid);
+        if (!urls.primary) throw new Error("没有可用直链");
+        const filename = xsDlSafeName(info.name || item.title) + ".mp4";
+        await xsDlDownloadVideo(urls.primary, filename, (progress) => {
+          if (typeof reporter === "function") reporter({ stage: stage, current: progress.loaded || 0, total: progress.total || 0, detail: xsDlFormatBytes(progress.loaded || 0) + " / " + xsDlFormatBytes(progress.total || 0) });
+        });
+        doneCount += 1;
+      } catch (error) {
+        xsDlLog("视频「" + item.title + "」失败：" + error.message, "warning");
+      }
+      await xsDlSleep(400);
+    }
+    for (let index = 0; index < audios.length; index += 1) {
+      const item = audios[index];
+      const stage = "课堂录音 " + (index + 1) + "/" + audios.length + "：" + item.title;
+      if (typeof reporter === "function") reporter({ stage: stage, current: index, total: audios.length, detail: "解析音频直链" });
+      try {
+        const { audioUrl, durationMs } = await xsDlFetchClassReplay(item.id);
+        if (!audioUrl) throw new Error("这节课没有录音");
+        const minutes = durationMs ? Math.round(durationMs / 60000) : 0;
+        const filename = xsDlSafeName(item.title) + "_录音.mp3";
+        if (typeof reporter === "function") reporter({ stage: stage, current: 0, total: 0, detail: filename + (minutes ? " · 课堂 " + minutes + " 分钟" : "") });
+        await xsDlDownloadVideo(audioUrl, filename, null);
+        doneCount += 1;
+      } catch (error) {
+        xsDlLog("课堂录音「" + item.title + "」失败：" + error.message, "warning");
+      }
+      await xsDlSleep(400);
+    }
+    return doneCount;
+  };
+
+  // ---- 面板：下载页签 ----
+  const XS_DL_CSS = [
+    ".xs-dl{display:flex;flex-direction:column;flex:1 1 auto;align-self:stretch;min-height:320px;max-height:none!important;font-size:12.5px;color:var(--t-text)}",
+    ".xs-dl *{box-sizing:border-box}",
+    ".xs-dl-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--t-border);background:var(--t-surface)}",
+    ".xs-dl-btn{height:28px;padding:0 12px;border-radius:7px;border:1px solid var(--t-primary-border);background:var(--t-primary-bg);color:var(--t-primary);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}",
+    ".xs-dl-btn:hover{filter:brightness(.98)}",
+    ".xs-dl-btn:disabled{opacity:.5;cursor:default}",
+    ".xs-dl-check{display:inline-flex;align-items:center;gap:5px;color:var(--t-text2);font-size:12px;cursor:pointer}",
+    ".xs-dl-check input,.xs-dl-row input{appearance:auto;-webkit-appearance:checkbox;width:14px;height:14px;margin:0;accent-color:var(--t-primary);cursor:pointer}",
+    ".xs-dl-format{display:inline-flex;align-items:center;gap:5px;margin-left:auto;color:var(--t-text2);font-size:12px}",
+    ".xs-dl-format select{height:26px;border:1px solid var(--t-border);border-radius:6px;background:var(--t-surface);color:var(--t-text);font-size:12px;padding:0 6px}",
+    ".xs-dl-list{flex:1 1 auto;overflow-y:auto;padding:4px 8px;display:flex;flex-direction:column;gap:1px}",
+    ".xs-dl-row{display:flex;align-items:center;gap:8px;padding:7px 6px;border-radius:7px;cursor:pointer}",
+    ".xs-dl-row:hover{background:var(--t-surface2)}",
+    ".xs-dl-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--t-text)}",
+    ".xs-dl-meta{flex:none;color:var(--t-text3);font-size:11px;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}",
+    ".xs-dl-empty{padding:34px 18px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center}",
+    ".xs-dl-empty-title{font-size:13px;font-weight:600;color:var(--t-text)}",
+    ".xs-dl-empty-desc{font-size:11.5px;line-height:1.7;color:var(--t-text3);max-width:250px}",
+    ".xs-dl-empty-note{font-size:11px;color:var(--t-warning)}",
+    ".xs-dl-notice{margin:8px 10px 0;font-size:11.5px;color:var(--t-primary);background:var(--t-primary-bg);border:1px solid var(--t-primary-border);border-radius:8px;padding:6px 10px;line-height:1.6}",
+    ".xs-dl-progress{margin:8px 10px 0;padding:8px 10px;border:1px solid var(--t-border);border-radius:8px;background:var(--t-surface2)}",
+    ".xs-dl-progress-head{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--t-text2)}",
+    ".xs-dl-progress-track{height:5px;margin-top:6px;border-radius:3px;background:var(--t-border);overflow:hidden}",
+    ".xs-dl-progress-bar{height:100%;width:0;background:var(--t-primary);transition:width .2s ease}",
+    ".xs-dl-progress-detail{margin-top:5px;font-size:10.5px;color:var(--t-text3);word-break:break-all}",
+    ".xs-dl-foot{flex:none;display:flex;align-items:center;gap:8px;padding:10px 12px;border-top:1px solid var(--t-border);background:var(--t-surface)}",
+    ".xs-dl-summary{flex:1;color:var(--t-text3);font-size:11.5px}",
+    "@media (prefers-reduced-motion:reduce){.xs-dl *{animation:none!important;transition:none!important}}"
+  ].join("");
+
+  const XsDownloadPanel = {
+    __name: "DownloadPanel",
+    setup() {
+      const setting = useSettingStore();
+      const shadowRoot = vue.inject("shadowRoot", null);
+      const platformKey = resolvePlatformKey();
+      const isCx = platformKey === "cx";
+      const isYkt = platformKey === "ykt";
+      const state = vue.reactive({
+        items: [],
+        scanned: false,
+        scanning: false,
+        busy: false,
+        stage: "",
+        current: 0,
+        total: 0,
+        detail: "",
+        notice: "",
+        format: (setting.config.basicConfig.docDownloadFormat && setting.config.basicConfig.docDownloadFormat.value) || "pdf"
+      });
+      vue.onMounted(() => {
+        if (shadowRoot && !shadowRoot.querySelector("#xs-dl-css")) {
+          const style = document.createElement("style");
+          style.id = "xs-dl-css";
+          style.textContent = XS_DL_CSS;
+          shadowRoot.appendChild(style);
+        }
+      });
+      const reporter = (next) => {
+        const normalized = typeof next === "string" ? { stage: next, current: 0, total: 0, detail: "" } : next;
+        state.stage = normalized.stage || "";
+        state.current = Number(normalized.current) || 0;
+        state.total = Number(normalized.total) || 0;
+        state.detail = normalized.detail || "";
+      };
+      const scan = async () => {
+        if (state.scanning || state.busy) return;
+        state.scanning = true;
+        state.notice = "";
+        state.items = [];
+        state.scanned = false;
+        state.stage = isCx ? "读取本页文档" : "读取课程内容";
+        state.detail = "";
+        try {
+          if (isCx) {
+            state.items = await xsDlCollectChaoxing(reporter);
+            if (!state.items.length) state.notice = "本页没有找到可下载的文档。只有页面里嵌入了文件的课程页/资料页才能导出。";
+          } else {
+            const result = await xsDlCollectYkt(reporter);
+            state.items = result.items;
+            if (!state.items.length) state.notice = "本课程没有找到可下载的课件或视频。";
+          }
+          state.scanned = true;
+        } catch (error) {
+          state.notice = (isCx ? "扫描失败：" : "读取失败：") + error.message;
+        } finally {
+          state.scanning = false;
+          state.stage = "";
+        }
+      };
+      const allChecked = vue.computed(() => state.items.length > 0 && state.items.every((item) => item.checked));
+      const checkedItems = () => state.items.filter((item) => item.checked);
+      const toggleAll = () => {
+        const next = !allChecked.value;
+        state.items.forEach((item) => { item.checked = next; });
+      };
+      const selectedBytes = vue.computed(() => state.items.filter((item) => item.checked && item.size).reduce((sum, item) => sum + (Number(item.size) || 0), 0));
+      const setFormat = (value) => {
+        state.format = value;
+        try { setting.config.basicConfig.docDownloadFormat.value = value; } catch (_) {}
+      };
+      const startDownload = async () => {
+        if (state.busy) return;
+        const chosen = checkedItems();
+        if (!chosen.length) { state.notice = "请先勾选要下载的内容。"; return; }
+        state.busy = true;
+        state.notice = "";
+        reporter({ stage: "准备下载", current: 0, total: chosen.length, detail: "" });
+        try {
+          let done = 0;
+          if (isCx) {
+            for (let index = 0; index < chosen.length; index += 1) {
+              const item = chosen[index];
+              reporter({ stage: "下载 " + (index + 1) + "/" + chosen.length + "：" + item.filename, current: index, total: chosen.length, detail: item.meta || "" });
+              try { await xsDlSaveUrl(item.url, xsDlSafeName(item.filename), location.href); done += 1; }
+              catch (error) { xsDlLog("文档「" + item.filename + "」下载失败：" + error.message, "warning"); }
+              await xsDlSleep(600);
+            }
+          } else {
+            done = await xsDlRunYkt(chosen, state.format, reporter);
+          }
+          reporter({ stage: "完成", current: chosen.length, total: chosen.length, detail: "" });
+          state.notice = done === chosen.length ? "已全部交给浏览器下载，请在下载栏查看。" : "已处理 " + done + "/" + chosen.length + " 项，失败原因已写入日志。";
+        } catch (error) {
+          state.notice = "下载失败：" + error.message;
+        } finally {
+          state.busy = false;
+          state.stage = "";
+        }
+      };
+      const renderToolbar = () => vue.h("div", { class: "xs-dl-toolbar" }, [
+        vue.h("button", {
+          class: "xs-dl-btn",
+          disabled: state.scanning || state.busy,
+          onClick: scan
+        }, state.scanning ? "扫描中…" : (isCx ? "扫描文档" : "扫描课程")),
+        state.items.length ? vue.h("label", { class: "xs-dl-check" }, [
+          vue.h("input", { type: "checkbox", checked: allChecked.value, disabled: state.busy, onChange: toggleAll }),
+          vue.h("span", null, "全选")
+        ]) : null,
+        isYkt ? vue.h("label", { class: "xs-dl-format" }, [
+          vue.h("span", null, "格式"),
+          vue.h("select", {
+            value: state.format,
+            disabled: state.busy,
+            onChange: (event) => setFormat(event.target.value)
+          }, ["pdf", "zip", "pptx"].map((value) => vue.h("option", { value: value }, XS_DL_FORMAT_LABELS[value])))
+        ]) : null
+      ]);
+      const renderEmpty = () => {
+        if (state.items.length || state.scanning) return null;
+        return vue.h("div", { class: "xs-dl-empty" }, [
+          vue.h("div", { class: "xs-dl-empty-title" }, isCx ? "导出本页文档" : "抓取课程课件"),
+          vue.h("div", { class: "xs-dl-empty-desc" }, isCx
+            ? "扫描当前页面里嵌入的文件，导出为原文件或 PDF。只读取页面，不改动页面上的任何内容。"
+            : "读取本课程的课件、视频和课堂录音：课件可导出 PDF、逐页图片 ZIP 或图片版 PPTX。"),
+          isYkt ? vue.h("div", { class: "xs-dl-empty-note" }, "请在雨课堂课程页（studentLog 页面）使用。") : null
+        ]);
+      };
+      const renderList = () => {
+        if (!state.items.length) return null;
+        return vue.h("div", { class: "xs-dl-list" }, state.items.map((item) => vue.h("label", { class: "xs-dl-row", key: item.key }, [
+          vue.h("input", {
+            type: "checkbox",
+            checked: item.checked,
+            disabled: state.busy,
+            onChange: (event) => { item.checked = event.target.checked; }
+          }),
+          vue.h("span", { class: "xs-dl-name", title: item.title || item.filename }, item.title || item.filename),
+          vue.h("span", { class: "xs-dl-meta", title: item.meta }, item.meta || "")
+        ])));
+      };
+      const renderProgress = () => {
+        if (!state.busy && !state.scanning) return null;
+        const total = Math.max(Number(state.total) || 0, 0);
+        const current = Math.max(Number(state.current) || 0, 0);
+        const percent = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
+        const countText = total > 0 && total <= 5000 ? current + "/" + total : "";
+        return vue.h("div", { class: "xs-dl-progress" }, [
+          vue.h("div", { class: "xs-dl-progress-head" }, [
+            vue.h("span", null, state.stage || "处理中"),
+            countText ? vue.h("span", null, countText) : null
+          ]),
+          vue.h("div", { class: "xs-dl-progress-track" }, vue.h("div", { class: "xs-dl-progress-bar", style: { width: percent + "%" } })),
+          state.detail ? vue.h("div", { class: "xs-dl-progress-detail" }, state.detail) : null
+        ]);
+      };
+      const renderFoot = () => {
+        if (!state.scanned) return null;
+        const count = checkedItems().length;
+        const summary = count
+          ? "已选 " + count + " 项" + (isCx && selectedBytes.value ? " · 约 " + xsDlFormatBytes(selectedBytes.value) : "")
+          : "未选择";
+        return vue.h("div", { class: "xs-dl-foot" }, [
+          vue.h("span", { class: "xs-dl-summary" }, summary),
+          vue.h("button", {
+            class: "xs-dl-btn",
+            disabled: state.busy || !count,
+            onClick: startDownload
+          }, state.busy ? "下载中…" : "开始下载")
+        ]);
+      };
+      return () => vue.h("div", { class: "xs-dl" }, [
+        renderToolbar(),
+        state.notice ? vue.h("div", { class: "xs-dl-notice" }, state.notice) : null,
+        renderEmpty(),
+        renderList(),
+        renderProgress(),
+        renderFoot()
+      ]);
+    }
+  };
+
   // ===== 脚本内反馈中心：列表、对话、新建和附件都在面板里完成 =====
   const FeedbackPanel = {
     __name: "FeedbackPanel",
