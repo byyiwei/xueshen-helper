@@ -29459,6 +29459,22 @@ const XS_EXT = (() => {
   });
 
   // ---- 超星：扫描页面里的文件 ID，按 /ananas/status 拿直链 ----
+  // 课程资料页的列表在 iframe 里（mooc2-ans 主页面 + frame_content-zl），
+  // 只扫主文档会什么都找不到，这里递归扫所有同源 iframe。
+  const xsDlCollectDocs = (root, depth) => {
+    root = root || document;
+    depth = depth || 0;
+    const docs = [root];
+    if (depth >= 6) return docs;
+    let frames = [];
+    try { frames = Array.from(root.querySelectorAll("iframe")); } catch (_) {}
+    for (const frame of frames) {
+      let inner = null;
+      try { inner = frame.contentDocument; } catch (_) { inner = null; }
+      if (inner && inner.body) docs.push(...xsDlCollectDocs(inner, depth + 1));
+    }
+    return docs;
+  };
   const xsDlExtractFileIds = () => {
     const found = [];
     const seen = new Set();
@@ -29472,17 +29488,46 @@ const XS_EXT = (() => {
         if (seen.size >= 200) break;
       }
     };
-    try {
-      const bodyHtml = document.body ? document.body.innerHTML || "" : "";
-      if (bodyHtml.length <= XS_DL_SCAN_TEXT_LIMIT) collect(bodyHtml);
-    } catch (_) {}
-    try {
-      document.querySelectorAll("script").forEach((script) => {
-        const text = script.textContent || "";
-        if (text.length <= XS_DL_SCAN_TEXT_LIMIT) collect(text);
-      });
-    } catch (_) {}
+    for (const doc of xsDlCollectDocs()) {
+      try {
+        const bodyHtml = doc.body ? doc.body.innerHTML || "" : "";
+        if (bodyHtml.length <= XS_DL_SCAN_TEXT_LIMIT) collect(bodyHtml);
+      } catch (_) {}
+      try {
+        doc.querySelectorAll("script").forEach((script) => {
+          const text = script.textContent || "";
+          if (text.length <= XS_DL_SCAN_TEXT_LIMIT) collect(text);
+        });
+      } catch (_) {}
+    }
     return found;
+  };
+  // 新版课程资料页：每行是 <ul class="dataBody_td" dataname="文件名" type="ppt"
+  // objectid="32位id">，行内 .operate_down a 就是下载直链（downloadData），
+  // 不用再查 /ananas/status。文件夹行（type=afolder）没有链接，跳过。
+  const xsDlDataRows = () => {
+    const rows = [];
+    for (const doc of xsDlCollectDocs()) {
+      let list = [];
+      try { list = Array.from(doc.querySelectorAll("ul.dataBody_td")); } catch (_) {}
+      for (const row of list) {
+        const type = String(row.getAttribute("type") || "").toLowerCase();
+        const name = String(row.getAttribute("dataname") || "").trim();
+        if (!name || type === "afolder" || type === "tch-courseware") continue;
+        const link = row.querySelector(".operate_down a[href]");
+        if (!link) continue;
+        let referer = location.href;
+        try { if (doc.location && doc.location.href) referer = doc.location.href; } catch (_) {}
+        rows.push({
+          filename: name,
+          url: link.href,
+          objectid: String(row.getAttribute("objectid") || ""),
+          type: type,
+          referer: referer
+        });
+      }
+    }
+    return rows;
   };
   const xsDlChaoxingStatus = (fileId) => new Promise((resolve) => {
     try {
@@ -29503,6 +29548,31 @@ const XS_EXT = (() => {
     } catch (_) { resolve(null); }
   });
   const xsDlCollectChaoxing = async (reporter) => {
+    // 新版课程资料页：行数据直接带下载链接，按行导出（最快路径）
+    const rows = xsDlDataRows();
+    if (rows.length) {
+      const seen = new Set();
+      const results = [];
+      for (const row of rows) {
+        const key = row.objectid || row.filename;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        results.push({
+          key: "doc:" + key,
+          filename: row.filename,
+          kind: "doc",
+          meta: (row.type || "").toUpperCase(),
+          size: 0,
+          url: row.url,
+          referer: row.referer,
+          checked: true
+        });
+      }
+      if (typeof reporter === "function") {
+        reporter({ stage: "找到 " + results.length + " 个文档", current: results.length, total: results.length, detail: "" });
+      }
+      return results;
+    }
     const ids = xsDlExtractFileIds();
     if (!ids.length) return [];
     const results = [];
@@ -29945,7 +30015,7 @@ const XS_EXT = (() => {
             for (let index = 0; index < chosen.length; index += 1) {
               const item = chosen[index];
               reporter({ stage: "下载 " + (index + 1) + "/" + chosen.length + "：" + item.filename, current: index, total: chosen.length, detail: item.meta || "" });
-              try { await xsDlSaveUrl(item.url, xsDlSafeName(item.filename), location.href); done += 1; }
+              try { await xsDlSaveUrl(item.url, xsDlSafeName(item.filename), item.referer || location.href); done += 1; }
               catch (error) { xsDlLog("文档「" + item.filename + "」下载失败：" + error.message, "warning"); }
               await xsDlSleep(600);
             }
