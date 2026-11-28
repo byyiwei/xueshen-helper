@@ -24655,7 +24655,17 @@ const XS_EXT = (() => {
         tickBusy = false;
       }
     };
-    const watchApi = { prefs, state, start, stop, tick, open: ouchnOpen, nextGlobal: ouchnNextGlobal, profileFor: xsWatchProfileFor, supported: xsWatchSupported, autoStart: () => {
+    const watchApi = { prefs, state, start, stop, tick, open: ouchnOpen, nextGlobal: ouchnNextGlobal, profileFor: xsWatchProfileFor, supported: xsWatchSupported,
+      // 学堂在线答题流程（xsQuiz 里的 xtzxQuizAdvanceNext）要读目录、开下一节、
+      // 记「已处理」，但 xtzxItems/xtzxOpen/xtzxWatch 是这个闭包的私有函数，
+      // 答题代码直接引用会报 is not defined（2026-11-28 用户实测：作业答完不切下一节）。
+      // 这里包一层只读接口暴露出去。
+      quizCatalog: {
+        items: () => { try { return xtzxItems(); } catch (e) { return []; } },
+        open: (item) => { try { return xtzxOpen(item); } catch (e) { return false; } },
+        markDone: (id) => { try { xtzxWatch.localDone[id] = true; } catch (e) {} }
+      },
+      autoStart: () => {
       const profile = xsWatchProfileFor(location.hostname);
       if (!profile) return false;
       // 设置里的「视频助手」开着才自动开始，关掉后连进入页面都不动
@@ -25640,6 +25650,243 @@ const XS_EXT = (() => {
         unmatched: matched.unmatched
       };
     };
+    // ===== 学堂在线考试系统（examination.xuetangx.com/exam/:examid）=====
+    // 主站的考试点「开始考试/查看试卷」后会跳到这个子域名；作答页是 Vue2 组件
+    // answersheet：$data.problems 是整卷，题目顶层就是 Body/Options/ProblemType/
+    // result/answerArr（和主站 quiz 页 prictice 的 content.Body 包装不一样）。
+    // ProblemType：1 单选 / 2 多选 / 3 投票(按单选处理) / 4 填空 / 5 简答 / 6 判断 / 9 编程。
+    // Options 是 [{key, value}]；单选/判断把 key 写进 item.result[0]，多选写 item.result 数组，
+    // 填空写 item.answerArr[i]，然后调 vm.submitAnswer(item, null) 让平台自己保存/提交。
+    // 页面一屏显示整卷（不切题），逐题处理即可，无需 changeActive。
+    const EXAM_SHEET_TYPE = { 1: "单选题", 2: "多选题", 3: "单选题", 4: "填空题", 5: "简答题", 6: "判断题" };
+    const isExamSheetHost = () => {
+      try { return /(^|\.)examination\.xuetangx\.com$/i.test(location.hostname); } catch (_) { return false; }
+    };
+    const isExamSheetPage = () => {
+      try { return isExamSheetHost() && /\/exam\/\d+/.test(String(location.pathname || "")); } catch (_) { return false; }
+    };
+    const examSheetVm = () => {
+      try {
+        if (!isExamSheetPage()) return null;
+        const el = document.querySelector(".exam-main");
+        const vm = el && el.__vue__;
+        if (!vm || !vm.$data || !Array.isArray(vm.$data.problems) || !vm.$data.problems.length) return null;
+        return vm;
+      } catch (_) { return null; }
+    };
+    const examSheetHtmlText = (html) => {
+      try {
+        const box = document.createElement("div");
+        box.innerHTML = String(html == null ? "" : html);
+        return TEXT(box);
+      } catch (_) {
+        return String(html == null ? "" : html).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+      }
+    };
+    // 判断题 Options 的 key 是 "true"/"false"（value 常为空，页面画对/错图标），补成文字
+    const examSheetOptions = (q) => ((q && q.Options) || []).map((o, i) => {
+      let text = examSheetHtmlText(o.value);
+      if (!text) text = String(o.key) === "true" ? "对" : String(o.key) === "false" ? "错" : "";
+      return {
+        src: o,
+        text,
+        letter: /^[A-H]$/i.test(String(o.key || "")) ? String(o.key).toUpperCase() : String.fromCharCode(65 + i)
+      };
+    });
+    const examSheetQid = (q, i) => String((q && q.problem_id) || ("idx-" + i));
+    const examSheetQuestion = (q) => ({
+      title: examSheetHtmlText(q && q.Body),
+      optionsText: examSheetOptions(q).map((o) => o.text),
+      type: EXAM_SHEET_TYPE[q && q.ProblemType] || "单选题",
+      refer: location.href
+    });
+    const examSheetSubmitted = (q) => !!(q && q.isAnswered);
+    // 把答案写进题目数据。返回 {ok, text, reason}
+    const examSheetFill = (vm, q, answer) => {
+      const list = Array.isArray(answer) ? answer : [answer];
+      const opts = examSheetOptions(q);
+      const t = q && q.ProblemType;
+      if (t === 1 || t === 2 || t === 3 || t === 6) {
+        if (!opts.length) return { ok: false, reason: "题目没有选项" };
+        const matched = pickOptions({ options: opts }, list);
+        if (!matched.picked.length) return { ok: false, reason: "答案没对上选项" };
+        const want = t === 2 ? matched.picked : matched.picked.slice(0, 1);
+        // Vue2 响应式：直接改数组元素要用 vm.$set（平台自己的 change 也是这么写）
+        try {
+          if (t === 2) {
+            q.result = want.map((opt) => opt.src.key);
+          } else {
+            if (!Array.isArray(q.result)) vm.$set(q, "result", []);
+            vm.$set(q.result, 0, want[0].src.key);
+          }
+        } catch (_) {
+          if (t === 2) q.result = want.map((opt) => opt.src.key);
+          else { q.result = q.result || []; q.result[0] = want[0].src.key; }
+        }
+        return { ok: true, text: want.map((opt) => opt.letter).join(""), pick: want };
+      }
+      if (t === 4) {
+        const blanks = (String((q && q.Body) || "").match(/<span class="blank-item".*?>[\s\S]*?<\/span>/gi) || []).length;
+        if (!q.answerArr || !q.answerArr.length) {
+          try { vm.$set(q, "answerArr", new Array(blanks || 1).fill("")); } catch (_) { q.answerArr = new Array(blanks || 1).fill(""); }
+        }
+        let n = 0;
+        (q.answerArr || []).forEach((_, i) => {
+          const value = String(list[i] == null ? "" : list[i]).trim();
+          if (!value) return;
+          try { vm.$set(q.answerArr, i, value); } catch (_) { q.answerArr[i] = value; }
+          n += 1;
+        });
+        return n ? { ok: true, text: list.slice(0, n).join(" / ") } : { ok: false, reason: "答案为空" };
+      }
+      return { ok: false, reason: "简答题需要手动作答" };
+    };
+    // 走一步：找一道没答的题 -> 取答案 -> 写入 -> 调平台 submitAnswer 保存
+    const examSheetState = { key: "", busy: false, done: {}, skipped: {}, msg: {}, finalLogged: 0 };
+    const examSheetStep = async () => {
+      const vm = examSheetVm();
+      if (!vm) return "idle";
+      const problems = vm.$data.problems || [];
+      try { examSheetSyncPanel(vm); } catch (_) {}
+      // 找第一道没答也没跳过的题
+      let target = -1;
+      for (let i = 0; i < problems.length; i += 1) {
+        const q = problems[i];
+        const id = examSheetQid(q, i);
+        if (examSheetSubmitted(q) || examSheetState.done[id] || examSheetState.skipped[id]) continue;
+        target = i;
+        break;
+      }
+      if (target < 0) {
+        const left = problems.filter((q) => !examSheetSubmitted(q)).length;
+        if (!examSheetState.finalLogged) {
+          examSheetState.finalLogged = Date.now();
+          if (left) log(`学堂在线考试：还有 ${left} 道题没答（简答或未搜到），请手动完成后再提交`, "warning");
+          else log("学堂在线考试：所有题目已填好，请在页面上确认后手动点「提交」；自动交卷暂不支持此页面");
+        }
+        return "done";
+      }
+      const q = problems[target];
+      const id = examSheetQid(q, target);
+      const question = examSheetQuestion(q);
+      setItem(target, { status: "running", title: `第 ${target + 1} 题 · ${question.type} · ${question.title.slice(0, 80)}` });
+      const res = await askAnswer(question);
+      let answer = res && res.data && res.data.answer;
+      const candidates = (res && res.data && res.data.candidates) || [];
+      if (res && res.data && res.data.multimatch && candidates.length) {
+        if (getManualWaitMode() === "skip") {
+          examSheetState.skipped[id] = true;
+          examSheetState.msg[id] = `有 ${candidates.length} 道相似题，已按设置跳过`;
+          log(`学堂在线考试：第 ${target + 1} 题有 ${candidates.length} 道相似题，已按设置跳过`, "warning");
+          answer = [];
+        } else {
+          const pickMsg = `有 ${candidates.length} 道相似题，请选择后继续`;
+          examSheetState.msg[id] = pickMsg;
+          setItem(target, { status: "pick", msg: pickMsg });
+          const qs = useQuestionStore();
+          if (qs.questionList[target]) {
+            qs.questionList[target] = Object.assign({}, qs.questionList[target], {
+              answer: { code: 0, answer: [], src: "pick", msg: pickMsg, candidates }
+            });
+            qs.questionList = [...qs.questionList];
+          }
+          log(`学堂在线考试：第 ${target + 1} 题有 ${candidates.length} 道相似题，等你选择后继续…`, "warning");
+          const picked = await waitForManualPick(target);
+          answer = picked || [];
+          if (!picked) examSheetState.msg[id] = "等待选择超时";
+        }
+      }
+      if (!Array.isArray(answer) || !answer.length) {
+        if (!examSheetState.skipped[id]) {
+          examSheetState.skipped[id] = true;
+          examSheetState.msg[id] = (res && res.msg) || "未搜到答案";
+          log(`学堂在线考试：第 ${target + 1} 题未搜到答案，先跳过`, "warning");
+        }
+        return "skip";
+      }
+      const filled = examSheetFill(vm, q, answer);
+      if (!filled.ok) {
+        examSheetState.skipped[id] = true;
+        examSheetState.msg[id] = filled.reason || "填写失败";
+        log(`学堂在线考试：第 ${target + 1} 题${filled.reason || "填写失败"}，先跳过`, "warning");
+        return "skip";
+      }
+      examSheetState.done[id] = true;
+      examSheetState.msg[id] = "已填";
+      setItem(target, { status: "warn", answer: filled.text, msg: "已填，待提交" });
+      log(`学堂在线考试：第 ${target + 1} 题已填 ${filled.text}`);
+      // 调平台的 submitAnswer 保存（内部会把这道题放进 results 并 POST answer_problem；
+      // 自动交卷关闭时用户手动点页面「提交」一次性交卷，与「只填不提交」的默认行为一致）
+      try {
+        if (typeof vm.submitAnswer === "function") vm.submitAnswer(q, filled.pick ? filled.pick[0].src : null);
+      } catch (e) {
+        log(`学堂在线考试：第 ${target + 1} 题提交调用出错（答案已写入，稍后随整卷提交）`, "warning");
+      }
+      return "filled";
+    };
+    // 面板同步（复用超星题目结果界面）
+    const examSheetSyncPanel = (vm) => {
+      const problems = (vm && vm.$data && vm.$data.problems) || [];
+      state.total = problems.length;
+      const list = problems.map((item, i) => {
+        const id = examSheetQid(item, i);
+        const done = examSheetSubmitted(item);
+        const filled = !!examSheetState.done[id] || done;
+        const skipped = !!examSheetState.skipped[id];
+        const options = examSheetOptions(item);
+        return {
+          index: i,
+          title: (item && item.Body) || `第 ${i + 1} 题`,
+          titleText: examSheetHtmlText(item && item.Body),
+          type: EXAM_SHEET_TYPE[item && item.ProblemType] || "单选题",
+          optionsText: options.map((o) => o.text),
+          options: options.map((o) => ({ text: o.text, letter: o.letter })),
+          answer: {
+            code: done ? 1 : skipped ? -1 : filled ? 2 : -1,
+            answer: [],
+            src: filled ? "bank" : "",
+            msg: done ? "已提交" : (examSheetState.msg[id] || "")
+          }
+        };
+      });
+      const store = useQuestionStore();
+      store.questionList = list;
+      store.currentQuestionIndex = problems.length;
+      state.items = list.map((item) => ({
+        index: item.index,
+        title: `第 ${item.index + 1} 题 · ${item.type} · ${String(item.titleText || "").slice(0, 80)}`,
+        type: item.type,
+        answer: item.answer.answer.join(" "),
+        status: item.answer.code === 1 ? "done" : item.answer.code === -1 ? "fail" : item.answer.code === 2 ? "warn" : "pending",
+        msg: item.answer.msg
+      }));
+    };
+    const examSheetTick = async () => {
+      if (examSheetState.busy) return;
+      const vm = examSheetVm();
+      if (!vm) return;
+      if (state.running || state.scanning || state.pick) return;
+      if (!useSettingStore().config.basicConfig.autoAnswer.value) return;
+      const key = String((vm.$data && vm.$data.exam_id) || location.pathname);
+      if (examSheetState.key !== key) {
+        examSheetState.key = key;
+        examSheetState.done = {};
+        examSheetState.skipped = {};
+        examSheetState.msg = {};
+        examSheetState.finalLogged = 0;
+        try { useSettingStore().tabIndex = "2"; } catch (_) {}
+        log("学堂在线考试：检测到考试作答页，开始自动答题");
+      }
+      examSheetState.busy = true;
+      try {
+        await examSheetStep();
+      } catch (e) {
+        log("学堂在线考试自动答题出错：" + String((e && e.message) || e).slice(0, 80));
+      } finally {
+        examSheetState.busy = false;
+      }
+    };
+
     // ===== 学堂在线（xuetangx.com）作业/考试：整卷数据在 Vue 组件里，一题一提交 =====
     // CourseActionExamine.$data.prictice 是整卷：content.Body 题干、content.Options 选项、
     // content.Blanks 填空、type 1单选/2多选/4填空/5简答/6判断；setAnswer(选项) 答题，
@@ -25913,7 +26160,10 @@ const XS_EXT = (() => {
         if (!vm || !(vm.$data && vm.$data.is_apply_answer_sheet)) return false;
       }
       const cur = (String(location.pathname || "").match(/\/(?:exercise|homework|exam)\/(\d+)/) || [])[1] || "";
-      const items = xtzxItems();
+      // xtzxItems/xtzxOpen/xtzxWatch 在 xsWatch 闭包里，这里拿不到，
+      // 必须走 watchApi.quizCatalog（2026-11-28 修：直接引用会报 is not defined，作业答完不切下一节）
+      const catalog = (typeof xsWatch !== "undefined" && xsWatch && xsWatch.quizCatalog) || null;
+      const items = catalog ? catalog.items() : [];
       if (!items.length) return false;
       const usable = (item) => !!item && !item.disabled && !item.done && item.id !== cur
         && /^(视频|音频|图文|作业)$/.test(item.type)
@@ -25928,13 +26178,13 @@ const XS_EXT = (() => {
       }
       xtzxQuizState.advanceAt = Date.now();
       const before = location.href;
-      if (!xtzxOpen(next)) {
+      if (!(catalog && catalog.open(next))) {
         xtzxQuizState.advanceFail[next.id] = Date.now();
         log(`学堂在线：打不开「${next.name || next.id}」，先跳过`, "warning");
         return false;
       }
       // 记成本轮已处理，避免视频助手回头又把它当「未完成」打开
-      try { xtzxWatch.localDone[cur] = true; } catch (e) {}
+      if (catalog && cur) catalog.markDone(cur);
       log(`学堂在线：这道作业已提交，接着打开「${next.name || next.id}」`);
       // 8 秒后还在原页，说明没跳过去，记为失败，避免每轮都去点它
       setTimeout(() => {
@@ -27711,6 +27961,10 @@ const XS_EXT = (() => {
       // 景德镇新版作业页：SPA 切页不刷新，共用这个 2 秒定时器逐题处理
       if (isJdzHost() && jdzHomeworkRoute()) {
         await jdzTick();
+        return;
+      }
+      if (isExamSheetPage()) {
+        await examSheetTick();
         return;
       }
       // 学堂在线：作业/考试页不挂在路由逻辑上，共用这个 2 秒定时器逐题处理
