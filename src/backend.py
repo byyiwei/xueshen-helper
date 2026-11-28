@@ -1789,6 +1789,9 @@ HUB_TEMPLATE_SCENE_LABELS = {
     "refund_rejected": "退款拒绝通知",
     "refund_request": "新退款申请通知",
     "adapt_status": "定制需求进展通知",
+    "account_delete_requested": "账号注销申请已受理",
+    "account_delete_completed": "账号已注销",
+    "account_delete_cancelled": "注销申请已撤回",
 }
 HUB_TEMPLATE_NAMES_BY_SCENE = {k: "学神助手-" + v for k, v in HUB_TEMPLATE_SCENE_LABELS.items()}
 HUB_TEMPLATE_STATUS_TEXT = {0: "已通过", 1: "审核中", 2: "被拒", 3: "未知"}
@@ -15815,7 +15818,7 @@ class Handler(BaseHTTPRequestHandler):
             content_type = (data.get("content_type") or "text").strip()
             variables = (data.get("variables") or "").strip()
             is_resend = 1 if data.get("is_resend") else 0
-            if not scene or scene not in ("user_register", "user_reset", "admin_reset", "referral_withdrawal", "feedback_reply", "daily_report", "feedback_new", "refund_approved", "refund_rejected", "refund_request"):
+            if not scene or scene not in ("user_register", "user_reset", "admin_reset", "referral_withdrawal", "feedback_reply", "daily_report", "feedback_new", "refund_approved", "refund_rejected", "refund_request", "adapt_status", "account_delete_requested", "account_delete_completed", "account_delete_cancelled"):
                 self._send_json(400, {"code": 400, "msg": "请选择有效的应用场景"})
                 return
             if not subject:
