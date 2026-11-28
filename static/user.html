@@ -681,6 +681,26 @@
         }
         .theme-toggle:hover { border-color: var(--c-brand); color: var(--c-brand); background: var(--c-brand-soft); }
         .login-theme-toggle { position: fixed; top: 18px; right: 18px; z-index: 100; box-shadow: var(--c-shadow); }
+        /* 登录页左上角返回官网入口（桌面固定，手机移到卡片内，避免遮住标签） */
+        .auth-home-fixed {
+            position: fixed; top: 18px; left: 18px; z-index: 100;
+            display: inline-flex; align-items: center; gap: 6px;
+            height: 36px; padding: 0 14px 0 11px; border-radius: 9px;
+            background: var(--c-surface); border: 1px solid var(--c-border);
+            box-shadow: var(--c-shadow);
+            color: var(--c-text-2); font-size: 13.5px; font-weight: 500; text-decoration: none;
+            transition: color .16s, border-color .16s, background .16s;
+        }
+        .auth-home-fixed:hover { color: var(--c-brand); border-color: var(--c-brand); background: var(--c-brand-soft); }
+        .auth-home-fixed .ui-icon, .auth-home-inline .ui-icon { width: 15px; height: 15px; }
+        .auth-home-inline {
+            display: none; align-items: center; gap: 6px; width: max-content;
+            margin: 0 0 14px; font-size: 13px; font-weight: 500;
+            color: var(--c-text-3); text-decoration: none;
+        }
+        .auth-home-inline:hover { color: var(--c-brand); }
+        html.app-mode .auth-home-fixed,
+        body.app-mode .auth-home-fixed { display: none !important; }
 
         .user-body {
             flex: 1 1 auto;
@@ -1631,13 +1651,15 @@
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            padding: 10px 20px;
-            border-radius: 999px;
+            max-width: min(92vw, 640px);
+            padding: 11px 18px;
+            border-radius: 12px;
             background: var(--c-surface);
             color: var(--c-text);
             border: 1px solid var(--c-border);
             box-shadow: 0 10px 30px rgba(0, 0, 0, .2);
             font-size: 13.5px;
+            line-height: 1.55;
             font-weight: 600;
             z-index: 99999;
             opacity: 0;
@@ -1673,7 +1695,22 @@
             /* 手机上不再展示左侧品牌块，直接进入表单，避免页面过长 */
             .auth-brand { display: none; }
             .shell { padding-top: 26px; }
-            .panel { border-radius: 16px; }
+            .panel { border-radius: 16px; padding: 24px 18px 22px; }
+            .auth-home-fixed { display: none; }
+            .auth-home-inline { display: inline-flex; padding: 6px 0; font-size: 14px; }
+            /* 触控优化：标签、输入框、按钮都放大到 44px 以上的可点区域 */
+            .tabs { gap: 4px 22px; padding-bottom: 14px; margin-bottom: 18px; }
+            .tab { min-height: 44px; padding: 0 2px; margin-bottom: -15px; font-size: 15px; }
+            .panel label { margin: 16px 0 8px; font-size: 14.5px; }
+            .panel input, .panel select { height: 50px; padding: 0 15px; font-size: 16px; border-radius: 10px; }
+            .panel .code-btn { height: 50px; padding: 0 14px; font-size: 14px; border-radius: 10px; }
+            .panel .pwd-toggle { right: 4px; width: 42px; height: 42px; }
+            .panel .pwd-wrap input { padding-right: 56px; }
+            body:not(.app-mode) .panel button.primary { height: 50px; min-height: 50px; margin-top: 22px; font-size: 16px; }
+            .panel .link-button { padding: 10px; font-size: 13px; }
+            .links { margin-top: 16px; gap: 14px; font-size: 13.5px; }
+            .links a { padding: 8px 2px; }
+            .auth-agree { margin-top: 14px; font-size: 12px; }
         }
         @media (max-width: 480px) {
             .shell { padding: 20px 18px 0; }
@@ -3519,6 +3556,7 @@
         </defs>
     </svg>
     <button class="theme-toggle login-theme-toggle" title="主题：跟随系统"><svg class="ui-icon"><use href="#i-theme-auto"></use></svg></button>
+    <a class="auth-home-fixed" href="/"><svg class="ui-icon" aria-hidden="true"><use href="#i-arrow-left"></use></svg>返回官网</a>
     <main class="shell">
         <aside class="auth-brand">
             <div class="brand"><span class="logo">学</span><span>学神助手</span></div>
@@ -3546,6 +3584,7 @@
         </aside>
 
         <section class="panel">
+            <a class="auth-home-inline" href="/"><svg class="ui-icon" aria-hidden="true"><use href="#i-arrow-left"></use></svg>返回官网</a>
             <div class="tabs">
                 <button class="tab active" data-view="login">登录</button>
                 <button class="tab" data-view="register">注册</button>
@@ -4918,6 +4957,13 @@
         function msg(id, text, ok) {
             const el = $(id);
             if (!el) return;
+            // 登录/注册/找回/撤回的提示改用顶部浮层，不再在表单里塞一条大色块
+            if (id === 'loginMsg' || id === 'regMsg' || id === 'resetMsg' || id === 'revertMsg') {
+                el.textContent = text;
+                el.className = 'msg';
+                showToast(text, !ok);
+                return;
+            }
             el.textContent = text;
             el.className = 'msg ' + (ok ? 'ok' : 'err');
         }
@@ -4937,7 +4983,7 @@
             clearTimeout(window._toastTimer);
             window._toastTimer = setTimeout(() => {
                 if (el) el.classList.remove('show');
-            }, 2800);
+            }, isErr ? 5000 : 2800);
         }
         function setPageTitle(title, desc) {
             $('userPageTitle').textContent = title;
@@ -8488,10 +8534,9 @@ await loadPlans();
         }
         document.querySelectorAll('.theme-toggle').forEach(function (btn) {
             btn.addEventListener('click', function () {
-                var order = ['auto', 'light', 'dark'];
-                var mode = (window.__adminTheme && window.__adminTheme.getMode()) || 'auto';
-                var next = order[(order.indexOf(mode) + 1) % 3];
-                if (window.__adminTheme) window.__adminTheme.setMode(next);
+                // 直接按当前实际主题取反，点一次就切换，不再经过「跟随系统」空转一步
+                var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+                if (window.__adminTheme) window.__adminTheme.setMode(isDark ? 'light' : 'dark');
                 syncThemeButtons();
             });
         });
