@@ -489,6 +489,31 @@ class Database:
         self._add_column_if_missing("users", "last_login_ip", "last_login_ip VARCHAR(64) DEFAULT '' COMMENT '最后登录IP'")
         self._add_column_if_missing("users", "last_login_ip_addr", "last_login_ip_addr VARCHAR(200) DEFAULT '' COMMENT '最后登录IP归属地'")
 
+        # 账号注销：deleted_at 非空表示已注销（软删除）。冷静期内可在用户中心撤回，
+        # 到期由后台线程彻底清理个人数据；订单与支付流水保留（脱敏留档）。
+        self._add_column_if_missing("users", "deleted_at", "deleted_at DATETIME NULL DEFAULT NULL COMMENT '注销时间'")
+        self._add_column_if_missing("users", "delete_source", "delete_source VARCHAR(16) DEFAULT '' COMMENT '注销来源 user/admin'")
+        self._add_column_if_missing("users", "delete_reason", "delete_reason VARCHAR(255) DEFAULT '' COMMENT '注销原因'")
+        self._add_column_if_missing("users", "delete_requested_at", "delete_requested_at DATETIME NULL DEFAULT NULL COMMENT '注销申请时间（冷静期起点）'")
+        self.execute(f"""
+            CREATE TABLE IF NOT EXISTS account_deletions (
+                id INT PRIMARY KEY AUTO_INCREMENT,
+                username VARCHAR(50) NOT NULL,
+                email VARCHAR(100) DEFAULT '',
+                source VARCHAR(16) DEFAULT 'user' COMMENT '注销来源 user/admin',
+                reason VARCHAR(500) DEFAULT '',
+                operator VARCHAR(50) DEFAULT '' COMMENT '管理员发起时的操作人',
+                status VARCHAR(16) DEFAULT 'pending' COMMENT 'pending/cancelled/completed',
+                snapshot TEXT COMMENT '注销时的账号状态快照',
+                client_ip VARCHAR(64) DEFAULT '',
+                requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP NULL DEFAULT NULL,
+                INDEX idx_ad_username (username),
+                INDEX idx_ad_status (status),
+                INDEX idx_ad_requested (requested_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+
         self._ensure_payment_columns()
 
         # 退款相关列
@@ -578,6 +603,9 @@ class Database:
             ("captcha_admin_login_enabled", "管理后台登录人机验证"),
         ):
             self._add_column_if_missing("admin_config", _col, f"{_col} TINYINT DEFAULT 1 COMMENT '{_cmt}'")
+        # 账号注销：冷静期天数（默认 7）与注销后同邮箱可重新注册的天数（默认 30）
+        self._add_column_if_missing("admin_config", "account_delete_grace_days", "account_delete_grace_days INT DEFAULT 7 COMMENT '账号注销冷静期天数'")
+        self._add_column_if_missing("admin_config", "account_release_days", "account_release_days INT DEFAULT 30 COMMENT '注销后同邮箱可重新注册的天数'")
 
         # 管理员登录会话：落库保存，服务重启/发版后已登录的后台不会被踢下线
         self.execute("""
@@ -1886,6 +1914,177 @@ class Database:
     def update_password(self, email, password_hash):
         ph = _ph()
         self.execute(f"UPDATE users SET password_hash = {ph} WHERE email = {ph}", (password_hash, email))
+
+    # ==================== 账号注销 ====================
+    def request_user_deletion(self, username, source="user", reason="", operator="", client_ip="", snapshot=None):
+        """标记账号注销（软删除）。冷静期内可撤回，到期由后台线程彻底清理。"""
+        ph = _ph()
+        row = self.fetchone(f"SELECT id, email FROM users WHERE username = {ph}", (username,))
+        if not row:
+            return None
+        now = datetime.now()
+        self.execute(
+            f"""UPDATE users SET deleted_at = {ph}, delete_requested_at = {ph},
+                delete_source = {ph}, delete_reason = {ph}
+                WHERE username = {ph}""",
+            (now, now, (source or "user")[:16], (reason or "")[:255], username)
+        )
+        try:
+            snapshot_text = json.dumps(snapshot or {}, ensure_ascii=False)
+        except Exception:
+            snapshot_text = "{}"
+        self.execute(
+            f"""INSERT INTO account_deletions
+                (username, email, source, reason, operator, status, snapshot, client_ip)
+                VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, 'pending', {ph}, {ph})""",
+            (username, row.get("email") or "", (source or "user")[:16], (reason or "")[:500],
+             (operator or "")[:50], snapshot_text, (client_ip or "")[:64])
+        )
+        return {"username": username, "email": row.get("email") or "", "id": row.get("id")}
+
+    def is_user_deleted(self, username):
+        ph = _ph()
+        row = self.fetchone(f"SELECT deleted_at FROM users WHERE username = {ph}", (username,))
+        return bool(row and row.get("deleted_at"))
+
+    def cancel_user_deletion(self, username):
+        """撤回注销申请（冷静期内）。"""
+        ph = _ph()
+        row = self.fetchone(f"SELECT deleted_at FROM users WHERE username = {ph}", (username,))
+        if not row or not row.get("deleted_at"):
+            return False
+        self.execute(
+            f"""UPDATE users SET deleted_at = NULL, delete_requested_at = NULL,
+                delete_source = '', delete_reason = ''
+                WHERE username = {ph}""",
+            (username,)
+        )
+        self.execute(
+            f"UPDATE account_deletions SET status = 'cancelled' WHERE username = {ph} AND status = 'pending'",
+            (username,)
+        )
+        return True
+
+    def get_user_feedback_attachments(self, username):
+        """注销清理前查该用户反馈附件，供 backend 删对象存储文件。"""
+        ph = _ph()
+        return self.fetchall(
+            f"""SELECT a.object_id, a.bucket, a.cos_key FROM feedback_attachments a
+                JOIN user_feedback f ON a.feedback_id = f.id
+                WHERE f.username = {ph}""",
+            (username,)
+        )
+
+    def purge_user_account(self, username):
+        """彻底清理已注销账号的个人数据；订单与财务流水保留（脱敏留档）。
+
+        注意：users 行的 username 保留不动，订单靠它关联；邮箱改成占位值释放唯一约束，
+        密码和余额清零。返回 {'ok', 'username'}。
+        """
+        ph = _ph()
+        row = self.fetchone(f"SELECT id, email FROM users WHERE username = {ph}", (username,))
+        if not row:
+            return {"ok": False, "reason": "用户不存在"}
+        uid = row.get("id")
+        # 反馈：回复和附件记录先删（附件文件由 backend 另行删除）
+        try:
+            self.execute(
+                f"DELETE r FROM feedback_replies r JOIN user_feedback f ON r.feedback_id = f.id WHERE f.username = {ph}",
+                (username,)
+            )
+        except Exception:
+            pass
+        try:
+            self.execute(
+                f"DELETE a FROM feedback_attachments a JOIN user_feedback f ON a.feedback_id = f.id WHERE f.username = {ph}",
+                (username,)
+            )
+        except Exception:
+            pass
+        # 个人使用数据
+        for table in ("user_settings", "user_question_history", "user_question_bank",
+                      "usage_logs", "script_event_logs", "ai_answer_tasks",
+                      "question_answer_reports", "user_feedback", "user_payment_info",
+                      "adapt_requests"):
+            try:
+                self.execute(f"DELETE FROM {table} WHERE username = {ph}", (username,))
+            except Exception:
+                pass
+        # 账号本体：清邮箱、清密码、清余额与会员
+        self.execute(
+            f"""UPDATE users SET email = {ph}, password_hash = '', is_verified = 0,
+                points_balance = 0, member_until = NULL, commission_balance = 0,
+                custom_model_until = NULL
+                WHERE username = {ph}""",
+            (f"deleted_{uid}@deleted.local", username)
+        )
+        self.execute(
+            f"UPDATE account_deletions SET status = 'completed', completed_at = NOW() WHERE username = {ph} AND status = 'pending'",
+            (username,)
+        )
+        return {"ok": True, "username": username}
+
+    def list_pending_purge(self, grace_days=7):
+        """冷静期已过、等待彻底清理的注销账号。"""
+        try:
+            days = max(0, min(365, int(grace_days)))
+        except Exception:
+            days = 7
+        return self.fetchall(
+            f"""SELECT username, email FROM users
+                WHERE deleted_at IS NOT NULL
+                  AND delete_requested_at IS NOT NULL
+                  AND delete_requested_at <= DATE_SUB(NOW(), INTERVAL {days} DAY)
+                ORDER BY delete_requested_at ASC"""
+        )
+
+    def list_account_deletions(self, keyword="", page=1, page_size=20):
+        """后台注销记录列表。"""
+        ph = _ph()
+        where, params = "", []
+        if keyword:
+            where = f"WHERE username LIKE {ph} OR email LIKE {ph}"
+            params = [f"%{keyword}%", f"%{keyword}%"]
+        try:
+            page = max(1, int(page))
+            page_size = max(1, min(200, int(page_size)))
+        except Exception:
+            page, page_size = 1, 20
+        total_row = self.fetchone(f"SELECT COUNT(*) AS c FROM account_deletions {where}", tuple(params))
+        total = int((total_row or {}).get("c") or 0)
+        rows = self.fetchall(
+            f"SELECT * FROM account_deletions {where} ORDER BY id DESC LIMIT {page_size} OFFSET {(page - 1) * page_size}",
+            tuple(params)
+        )
+        return {"list": rows, "total": total}
+
+    def set_account_deletion_config(self, grace_days=None, release_days=None):
+        ph = _ph()
+        sets, params = [], []
+        if grace_days is not None:
+            sets.append(f"account_delete_grace_days = {ph}")
+            params.append(max(0, min(365, int(grace_days))))
+        if release_days is not None:
+            sets.append(f"account_release_days = {ph}")
+            params.append(max(0, min(3650, int(release_days))))
+        if sets:
+            self.execute(f"UPDATE admin_config SET {', '.join(sets)} WHERE id = 1", tuple(params))
+
+    def find_recent_deletion_by_email(self, email, release_days=30):
+        """该邮箱最近被注销过且仍在保护期内，返回记录（用于注册拦截）。"""
+        ph = _ph()
+        try:
+            days = max(0, min(3650, int(release_days)))
+        except Exception:
+            days = 30
+        return self.fetchone(
+            f"""SELECT username, requested_at, status FROM account_deletions
+                WHERE LOWER(email) = {ph}
+                  AND status IN ('pending', 'completed')
+                  AND requested_at > DATE_SUB(NOW(), INTERVAL {days} DAY)
+                ORDER BY id DESC LIMIT 1""",
+            ((email or "").strip().lower(),)
+        )
 
     def get_user_settings(self, username):
         ph = _ph()

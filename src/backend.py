@@ -4232,6 +4232,90 @@ def _start_commission_settle_thread():
     print("[佣金结算] 定时结算线程已启动", flush=True)
 
 
+def _send_account_deletion_mail(to_addr, username, kind, reason="", grace_days=7):
+    """账号注销相关通知邮件。kind: requested / completed / cancelled。"""
+    if not to_addr or "@" not in str(to_addr):
+        return False, "收件邮箱为空"
+    subject_map = {
+        "requested": "【学神助手】账号注销申请已受理",
+        "completed": "【学神助手】账号已注销",
+        "cancelled": "【学神助手】注销申请已撤回",
+    }
+    now_text = time.strftime("%Y-%m-%d %H:%M")
+    if kind == "requested":
+        body = (
+            "你好 %s：\n\n"
+            "我们已收到你的账号注销申请（%s）。\n\n"
+            "冷静期：%d 天内可随时撤回。撤回方式：打开学神助手用户中心的「账号安全」，输入邮箱验证码撤回。\n\n"
+            "冷静期结束后，账号的个人数据（脚本设置、答题记录、个人题库等）将被彻底删除，"
+            "剩余题数、包月剩余、推广佣金等不予退回。订单与支付记录按财务规定脱敏保留。\n\n"
+            "如非本人操作，请立即通过「找回密码」重置密码并联系客服。\n\n"
+            "—— 学神助手\n"
+        ) % (username or "同学", now_text, grace_days)
+    elif kind == "cancelled":
+        body = (
+            "你好 %s：\n\n"
+            "你的账号注销申请已于 %s 撤回，账号已恢复正常，可以正常登录使用。\n\n"
+            "如果这不是你操作的，请尽快修改密码。\n\n"
+            "—— 学神助手\n"
+        ) % (username or "同学", now_text)
+    else:
+        reason_text = ("注销原因：%s\n\n" % reason) if reason else ""
+        body = (
+            "你好 %s：\n\n"
+            "你的学神助手账号已于 %s 注销，个人数据已删除。\n\n"
+            "%s"
+            "如有疑问请联系客服。\n\n"
+            "—— 学神助手\n"
+        ) % (username or "同学", now_text, reason_text)
+    try:
+        return send_email(to_addr=to_addr, subject=subject_map.get(kind, subject_map["completed"]), body_text=body)
+    except Exception as e:
+        print("[注销通知] 发送邮件失败: %s" % e, flush=True)
+        return False, str(e)
+
+
+def _account_purge_worker():
+    """每小时检查一次：冷静期已过的注销账号，彻底清理个人数据并发邮件通知。"""
+    import time as _time
+    while True:
+        try:
+            cfg = db.get_admin_config() or {}
+            grace_days = int(cfg.get("account_delete_grace_days") or 7)
+            rows = db.list_pending_purge(grace_days) or []
+            for row in rows:
+                username = row.get("username")
+                email = row.get("email") or ""
+                if not username:
+                    continue
+                try:
+                    attachments = db.get_user_feedback_attachments(username) or []
+                except Exception:
+                    attachments = []
+                result = db.purge_user_account(username)
+                if result.get("ok"):
+                    for att in attachments:
+                        try:
+                            oid = int(att.get("object_id") or 0)
+                            if oid:
+                                hub_media_remove(oid)
+                        except Exception:
+                            pass
+                    _send_account_deletion_mail(email, username, "completed")
+                    USER_LOGOUT_AFTER[username] = time.time()
+                    print("[账号注销] 已清理账号 %s" % username, flush=True)
+        except Exception as e:
+            print("[账号注销] 清理异常: %s" % e, flush=True)
+        _time.sleep(3600)
+
+
+def _start_account_purge_thread():
+    import threading
+    t = threading.Thread(target=_account_purge_worker, daemon=True, name="account-purge")
+    t.start()
+    print("[账号注销] 定时清理线程已启动", flush=True)
+
+
 def _send_feedback_notify(feedback_id, notify_type="new", username="", category="", title="", content=""):
     """向管理员发送反馈通知邮件（新反馈/用户追问）"""
     try:
@@ -9581,6 +9665,9 @@ class Handler(BaseHTTPRequestHandler):
                 if logout_after and float(payload.get("iat") or 0) <= logout_after:
                     return None
                 user = db.get_user_by_username(payload["uid"])
+                # 已注销账号：用户端和脚本所有 token 立即失效（撤回走邮箱验证码，不依赖登录）
+                if user and user.get("deleted_at"):
+                    return None
                 return user
         return None
 
@@ -10599,6 +10686,138 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
+        # ===== 账号注销（用户自助）=====
+        elif path == "/api/user/account/delete-check":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "未登录或 Token 已过期"})
+                return
+            try:
+                username = user.get("username") or ""
+                cfg = db.get_admin_config() or {}
+                grace_days = int(cfg.get("account_delete_grace_days") or 7)
+                profile = build_user_profile(username) or {}
+                blockers = []
+                comm = float(profile.get("commission_balance") or 0)
+                if comm > 0:
+                    blockers.append({"type": "commission", "text": "可提现佣金 ¥%.2f，请先提现或兑换题数" % comm})
+                try:
+                    if db.fetchone("SELECT id FROM refund_requests WHERE username = %s AND status IN ('pending','processing') LIMIT 1", (username,)):
+                        blockers.append({"type": "refund", "text": "有退款正在处理中，请等退款完成后再注销"})
+                except Exception:
+                    pass
+                try:
+                    if db.fetchone("SELECT id FROM payment_orders WHERE username = %s AND status NOT IN ('paid','refunded','expired','cancelled','closed') LIMIT 1", (username,)):
+                        blockers.append({"type": "order", "text": "有订单尚未完成支付，请先完成或关闭"})
+                except Exception:
+                    pass
+                self._send_json(200, {
+                    "code": 200,
+                    "username": username,
+                    "email": user.get("email") or "",
+                    "grace_days": grace_days,
+                    "profile": {
+                        "points_balance": int(profile.get("points_balance") or 0),
+                        "member_until": profile.get("member_until") or "",
+                        "commission_balance": comm
+                    },
+                    "blockers": blockers,
+                    "can_delete": not blockers
+                })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/api/user/account/delete":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "未登录或 Token 已过期"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                username = user.get("username") or ""
+                password = (data.get("password_hash") or data.get("password") or "").strip()
+                code = (data.get("code") or "").strip()
+                confirm = (data.get("confirm") or "").strip()
+                if not password or not code:
+                    self._send_json(400, {"code": 400, "msg": "请输入密码和邮箱验证码"})
+                    return
+                if confirm != "注销账号":
+                    self._send_json(400, {"code": 400, "msg": "请输入「注销账号」四个字确认"})
+                    return
+                if not verify_password(password, user.get("password_hash") or ""):
+                    self._send_json(400, {"code": 400, "msg": "密码不正确"})
+                    return
+                ok, err = db.check_verify_code(user.get("email") or "", code, "delete")
+                if not ok:
+                    self._send_json(400, {"code": 400, "msg": err})
+                    return
+                cfg = db.get_admin_config() or {}
+                grace_days = int(cfg.get("account_delete_grace_days") or 7)
+                profile = build_user_profile(username) or {}
+                blockers = []
+                comm = float(profile.get("commission_balance") or 0)
+                if comm > 0:
+                    blockers.append("可提现佣金 ¥%.2f，请先提现或兑换" % comm)
+                try:
+                    if db.fetchone("SELECT id FROM refund_requests WHERE username = %s AND status IN ('pending','processing') LIMIT 1", (username,)):
+                        blockers.append("有退款正在处理中")
+                except Exception:
+                    pass
+                try:
+                    if db.fetchone("SELECT id FROM payment_orders WHERE username = %s AND status NOT IN ('paid','refunded','expired','cancelled','closed') LIMIT 1", (username,)):
+                        blockers.append("有订单尚未完成支付")
+                except Exception:
+                    pass
+                if blockers:
+                    self._send_json(400, {"code": 400, "msg": "暂不能注销：" + "；".join(blockers)})
+                    return
+                snapshot = {
+                    "points_balance": int(profile.get("points_balance") or 0),
+                    "member_until": profile.get("member_until") or "",
+                    "commission_balance": comm,
+                    "deleted_by": "user"
+                }
+                result = db.request_user_deletion(username, source="user", reason="用户自助注销", client_ip=self._client_ip(), snapshot=snapshot)
+                if not result:
+                    self._send_json(400, {"code": 400, "msg": "账号不存在"})
+                    return
+                USER_LOGOUT_AFTER[username] = time.time()
+                _send_account_deletion_mail(result.get("email") or "", username, "requested", grace_days=grace_days)
+                self._send_json(200, {
+                    "code": 200,
+                    "msg": "注销申请已提交，%d 天后账号将彻底删除" % grace_days,
+                    "grace_days": grace_days
+                })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/api/auth/cancel-deletion":
+            try:
+                data = json.loads(body or "{}")
+                email = normalize_email(data.get("email") or "")
+                code = (data.get("code") or "").strip()
+                if not email or not code:
+                    self._send_json(400, {"code": 400, "msg": "请输入邮箱和验证码"})
+                    return
+                ok, err = db.check_verify_code(email, code, "delete")
+                if not ok:
+                    self._send_json(400, {"code": 400, "msg": err})
+                    return
+                user = db.get_user_by_email_ci(email) or db.get_user_by_email(email)
+                if not user:
+                    self._send_json(400, {"code": 400, "msg": "该邮箱没有对应的账号"})
+                    return
+                if not user.get("deleted_at"):
+                    self._send_json(400, {"code": 400, "msg": "该账号没有注销申请，无需撤回"})
+                    return
+                if db.cancel_user_deletion(user.get("username")):
+                    _send_account_deletion_mail(email, user.get("username") or "", "cancelled")
+                    self._send_json(200, {"code": 200, "msg": "注销申请已撤回，账号已恢复正常"})
+                else:
+                    self._send_json(400, {"code": 400, "msg": "撤回失败，账号可能已被彻底注销"})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
         # ===== 用户问题反馈 =====
         elif path == "/api/user/feedback":
             user = self._get_user_from_token()
@@ -11207,6 +11426,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
                 return
             self._send_json(200, {"code": 200, "flags": get_captcha_flags()})
+        elif path == "/admin/account-deletion-config":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            cfg = db.get_admin_config() or {}
+            self._send_json(200, {"code": 200, "config": {
+                "grace_days": int(cfg.get("account_delete_grace_days") or 7),
+                "release_days": int(cfg.get("account_release_days") or 30),
+            }})
         elif path == "/admin/model-config":
             if not self._check_admin():
                 self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
@@ -11412,6 +11640,7 @@ class Handler(BaseHTTPRequestHandler):
                 sql = ("SELECT u.id, u.username, u.email, u.is_verified, u.points_balance, u.member_until, "
                        "u.is_banned, u.ban_reason, u.created_at, u.last_login_at, u.register_ip, u.register_ip_addr, "
                        "u.last_login_ip, u.last_login_ip_addr, u.script_version, u.script_version_at, "
+                       "u.deleted_at, u.delete_reason, u.delete_source, "
                        "COALESCE(p.paid_orders,0) AS paid_orders, COALESCE(p.paid_amount,0) AS paid_amount, "
                        "COALESCE(p.bought_points,0) AS bought_points, COALESCE(p.bought_member,0) AS bought_member, "
                        "p.last_paid_at "
@@ -12537,6 +12766,25 @@ class Handler(BaseHTTPRequestHandler):
                 if not ok:
                     self._send_json(400, {"code": 400, "msg": err})
                     return
+                # 同邮箱近期注销过：保护期内不允许马上重新注册（防止刷新人福利）
+                try:
+                    _cfg = db.get_admin_config() or {}
+                    _release_days = int(_cfg.get("account_release_days") or 30)
+                    _recent = db.find_recent_deletion_by_email(email, _release_days)
+                    if _recent:
+                        _req_at = _recent.get("requested_at")
+                        _left = _release_days
+                        try:
+                            import datetime as _dtm
+                            if isinstance(_req_at, str):
+                                _req_at = _dtm.datetime.strptime(str(_req_at).split(".")[0], "%Y-%m-%d %H:%M:%S")
+                            _left = max(0, _release_days - (_dtm.datetime.now() - _req_at).days)
+                        except Exception:
+                            pass
+                        self._send_json(403, {"code": 403, "msg": f"该邮箱的账号近期被注销，{_left} 天后方可重新注册"})
+                        return
+                except Exception:
+                    pass
                 # 创建用户
                 invite_code = (data.get("invite_code") or "").strip()
                 client_ip = self._client_ip()
@@ -12589,6 +12837,9 @@ class Handler(BaseHTTPRequestHandler):
                 if user.get("is_banned"):
                     self._send_json(403, {"code": 403, "msg": "账号已被封禁：" + (user.get("ban_reason") or "请联系管理员")})
                     return
+                if user.get("deleted_at"):
+                    self._send_json(403, {"code": 403, "msg": "账号已注销或正在注销冷静期。如为本人申请，可在用户中心输入邮箱验证码撤回"})
+                    return
                 if not user.get("is_verified"):
                     self._send_json(401, {"code": 401, "msg": "账号未验证邮箱，请先验证"})
                     return
@@ -12612,7 +12863,7 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(body)
                 email = normalize_email(data.get("email", ""))
                 vtype = (data.get("type") or "register").strip()
-                if vtype not in ("register", "reset"):
+                if vtype not in ("register", "reset", "delete"):
                     self._send_json(400, {"code": 400, "msg": "验证码类型不正确"})
                     return
                 req_username = (data.get("username") or "").strip()  # 注册时前端传来的用户名
@@ -12647,8 +12898,31 @@ class Handler(BaseHTTPRequestHandler):
                 if vtype == "register" and existing_user:
                     self._send_json(400, {"code": 400, "msg": "该邮箱已被注册，可直接登录或找回密码"})
                     return
+                # 同邮箱近期注销过：保护期内不让发注册验证码，免得用户白等
+                if vtype == "register":
+                    try:
+                        _cfg0 = db.get_admin_config() or {}
+                        _rd = int(_cfg0.get("account_release_days") or 30)
+                        _recent0 = db.find_recent_deletion_by_email(email, _rd)
+                        if _recent0:
+                            _rt = _recent0.get("requested_at")
+                            _left0 = _rd
+                            try:
+                                import datetime as _dtm0
+                                if isinstance(_rt, str):
+                                    _rt = _dtm0.datetime.strptime(str(_rt).split(".")[0], "%Y-%m-%d %H:%M:%S")
+                                _left0 = max(0, _rd - (_dtm0.datetime.now() - _rt).days)
+                            except Exception:
+                                pass
+                            self._send_json(403, {"code": 403, "msg": f"该邮箱的账号近期被注销，{_left0} 天后方可重新注册"})
+                            return
+                    except Exception:
+                        pass
                 if vtype == "reset" and not existing_user:
                     self._send_json(400, {"code": 400, "msg": "该邮箱还没注册，请检查是否填写正确"})
+                    return
+                if vtype == "delete" and not existing_user:
+                    self._send_json(400, {"code": 400, "msg": "该邮箱没有对应的账号"})
                     return
                 # 生成验证码
                 code = generate_code(6)
@@ -12658,6 +12932,11 @@ class Handler(BaseHTTPRequestHandler):
                 if vtype == "register":
                     fallback_subject = "学神助手 - 注册验证码"
                     fallback_html = f"<p>您的注册验证码是：<b style='font-size:24px;color:#3b82f6;'>{code}</b></p><p>验证码10分钟内有效，请勿泄露给他人。</p>"
+                elif vtype == "delete":
+                    # 账号注销验证码：没有场景模板，直接用内置内容
+                    scene = None
+                    fallback_subject = "学神助手 - 账号注销验证码"
+                    fallback_html = f"<p>您的账号注销验证码是：<b style='font-size:24px;color:#ef4444;'>{code}</b></p><p>验证码10分钟内有效。如非本人操作，请忽略本邮件并尽快修改密码。</p>"
                 else:
                     fallback_subject = "学神助手 - 密码重置验证码"
                     fallback_html = f"<p>您的密码重置验证码是：<b style='font-size:24px;color:#3b82f6;'>{code}</b></p><p>验证码10分钟内有效，请勿泄露给他人。</p>"
@@ -12666,6 +12945,9 @@ class Handler(BaseHTTPRequestHandler):
                     username_fallback = req_username
                 elif vtype == "reset":
                     existing_user = db.get_user_by_email(email)
+                    username_fallback = (existing_user.get("username") or "").strip() if existing_user else ""
+                elif vtype == "delete":
+                    existing_user = db.get_user_by_email_ci(email) or db.get_user_by_email(email)
                     username_fallback = (existing_user.get("username") or "").strip() if existing_user else ""
                 else:
                     username_fallback = ""
@@ -12684,7 +12966,7 @@ class Handler(BaseHTTPRequestHandler):
                 data = json.loads(body)
                 email = normalize_email(data.get("email", ""))
                 vtype = (data.get("type") or "register").strip()
-                if vtype not in ("register", "reset"):
+                if vtype not in ("register", "reset", "delete"):
                     self._send_json(400, {"code": 400, "msg": "验证码类型不正确"})
                     return
                 if not email:
@@ -12719,22 +13001,33 @@ class Handler(BaseHTTPRequestHandler):
                 if vtype == "reset" and not existing_user:
                     self._send_json(400, {"code": 400, "msg": "该邮箱还没注册，请检查是否填写正确"})
                     return
+                if vtype == "delete" and not existing_user:
+                    self._send_json(400, {"code": 400, "msg": "该邮箱没有对应的账号"})
+                    return
                 # 重新生成验证码并通过腾讯云邮件服务器补发
                 code = generate_code(6)
                 db.save_verify_code(email, code, vtype, expires_minutes=10)
                 scene = "user_register" if vtype == "register" else "user_reset"
+                fallback_html = None
                 if vtype == "register":
                     fallback_subject = "学神助手 - 注册验证码（补发）"
+                elif vtype == "delete":
+                    scene = None
+                    fallback_subject = "学神助手 - 账号注销验证码（补发）"
+                    fallback_html = f"<p>您的账号注销验证码是：<b style='font-size:24px;color:#ef4444;'>{code}</b></p><p>验证码10分钟内有效。如非本人操作，请忽略本邮件并尽快修改密码。</p>"
                 else:
                     fallback_subject = "学神助手 - 密码重置验证码（补发）"
                 if vtype == "reset":
                     existing_user = db.get_user_by_email(email)
                     username_fallback = (existing_user.get("username") or "").strip() if existing_user else ""
+                elif vtype == "delete":
+                    existing_user = db.get_user_by_email_ci(email) or db.get_user_by_email(email)
+                    username_fallback = (existing_user.get("username") or "").strip() if existing_user else ""
                 else:
                     username_fallback = (data.get("username") or "").strip()
                 if not username_fallback:
                     username_fallback = email.split("@")[0] if email and "@" in email else email
-                success, err = send_email(email, fallback_subject, scene=scene, variables={"username": username_fallback, "code": code, "subject": fallback_subject}, resend=True)
+                success, err = send_email(email, fallback_subject, body_html=fallback_html, scene=scene, variables={"username": username_fallback, "code": code, "subject": fallback_subject}, resend=True)
                 if success:
                     self._send_json(200, {"code": 200, "msg": "补发邮件已通过腾讯云发送，请查收"})
                 else:
@@ -14744,6 +15037,94 @@ class Handler(BaseHTTPRequestHandler):
                     db.set_user_member_until(username, data.get("member_until") or None)
                 self._audit("user.update", username, f"点数调整 {int(data.get('points_delta') or 0)}，会员天数 +{int(data.get('member_days_delta') or 0)}")
                 self._send_json(200, {"code": 200, "msg": "用户已更新", "profile": build_user_profile(username)})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/user/delete":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                username = (data.get("username") or "").strip()
+                reason = (data.get("reason") or "").strip()
+                if not username:
+                    self._send_json(400, {"code": 400, "msg": "缺少用户名"})
+                    return
+                if not reason:
+                    self._send_json(400, {"code": 400, "msg": "请填写注销原因（会记录在审计日志并通知用户）"})
+                    return
+                target = db.get_user_by_username(username)
+                if not target:
+                    self._send_json(404, {"code": 404, "msg": "用户不存在"})
+                    return
+                if target.get("deleted_at"):
+                    self._send_json(400, {"code": 400, "msg": "该账号已注销"})
+                    return
+                email = target.get("email") or ""
+                profile = build_user_profile(username) or {}
+                snapshot = {
+                    "points_balance": int(profile.get("points_balance") or 0),
+                    "member_until": profile.get("member_until") or "",
+                    "commission_balance": float(profile.get("commission_balance") or 0),
+                    "deleted_by": "admin"
+                }
+                # 管理员发起：不等待冷静期，标记后立即清理个人数据
+                db.request_user_deletion(username, source="admin", reason=reason,
+                                         operator=self._admin_username(), client_ip=self._client_ip(),
+                                         snapshot=snapshot)
+                attachments = []
+                try:
+                    attachments = db.get_user_feedback_attachments(username) or []
+                except Exception:
+                    attachments = []
+                purge = db.purge_user_account(username)
+                for att in attachments:
+                    try:
+                        oid = int(att.get("object_id") or 0)
+                        if oid:
+                            threading.Thread(target=hub_media_remove, args=(oid,), daemon=True).start()
+                    except Exception:
+                        pass
+                USER_LOGOUT_AFTER[username] = time.time()
+                _send_account_deletion_mail(email, username, "completed", reason=reason)
+                self._audit("user.delete", username, "管理员注销账号：" + reason)
+                self._send_json(200, {"code": 200, "msg": "账号已注销，个人数据已清理", "purge": purge})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/account-deletions":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                qs = parse_qs(parsed.query or "")
+                try:
+                    data = json.loads(body or "{}")
+                except Exception:
+                    data = {}
+                keyword = (data.get("keyword") if isinstance(data, dict) else None) or (qs.get("keyword") or [""])[0]
+                page = int((data.get("page") if isinstance(data, dict) and data.get("page") else (qs.get("page") or ["1"])[0]) or 1)
+                result = db.list_account_deletions(keyword=keyword, page=page, page_size=20)
+                for r in result["list"]:
+                    r["requested_at"] = str(r.get("requested_at") or "")
+                    r["completed_at"] = str(r.get("completed_at") or "") if r.get("completed_at") else ""
+                self._send_json(200, {"code": 200, **result})
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/admin/account-deletion-config":
+            if not self._check_admin():
+                self._send_json(403, {"code": 403, "msg": "未登录或 Token 失效"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                db.set_account_deletion_config(
+                    grace_days=data.get("grace_days") if "grace_days" in data else None,
+                    release_days=data.get("release_days") if "release_days" in data else None
+                )
+                self._audit("config.delete-policy", "账号注销", "更新冷静期/邮箱保护期")
+                self._send_json(200, {"code": 200, "msg": "注销策略已保存"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
@@ -16981,6 +17362,7 @@ if __name__ == "__main__":
     _start_distributor_reconcile_thread()
     _start_daily_report_thread()
     _start_commission_settle_thread()
+    _start_account_purge_thread()
     _start_qq_bot_thread()
     _start_ai_task_workers()
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)

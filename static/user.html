@@ -319,6 +319,22 @@
             color: var(--c-brand); border-color: var(--c-brand);
             background: var(--c-brand-soft);
         }
+        button.danger {
+            color: #fff; background: var(--c-danger); border: 0;
+            box-shadow: 0 1px 2px rgba(16, 24, 40, .1);
+        }
+        button.danger:hover { background: #d92d20; box-shadow: 0 6px 18px rgba(240, 68, 56, .22); }
+        button.danger:active { transform: translateY(1px); }
+        button.danger-ghost {
+            color: var(--c-danger); background: var(--c-danger-soft);
+            border: 1px solid rgba(240, 68, 56, .25);
+        }
+        .danger-box { margin-top: 16px; padding: 16px; border: 1px solid rgba(240, 68, 56, .25); border-radius: var(--c-radius-sm); background: var(--c-danger-soft); }
+        .danger-box .danger-title { font-size: 13.5px; font-weight: 700; color: var(--c-danger); margin-bottom: 8px; }
+        .danger-box ul { margin: 0 0 12px; padding-left: 18px; font-size: 12.5px; line-height: 1.85; color: var(--c-text-2); }
+        .danger-box .blocker-list { margin: 0 0 12px; padding: 10px 12px; border-radius: var(--c-radius-sm); background: var(--c-surface-2); font-size: 12.5px; line-height: 1.8; color: var(--c-text-2); }
+        .revert-box { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--c-border); }
+        .revert-box .hint { margin-top: 0; }
         button:disabled { opacity: .55; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
 
         .code-btn {
@@ -3381,6 +3397,19 @@
                     <a href="javascript:void(0)" data-jump="forgot">忘记密码</a>
                 </div>
                 <div id="loginMsg" class="msg"></div>
+                <button class="secondary" type="button" id="revertToggle" style="width:100%;margin-top:14px">撤回注销申请</button>
+                <div class="revert-box" id="revertBox" hidden>
+                    <p class="hint" style="margin:0 0 8px">账号在注销冷静期内，可凭注册邮箱的验证码撤回注销申请；冷静期结束后个人数据已删除，无法恢复。</p>
+                    <label for="revertEmail">注销时的注册邮箱</label>
+                    <input id="revertEmail" type="email" autocomplete="email" placeholder="请输入邮箱">
+                    <label for="revertCode">验证码</label>
+                    <div class="row">
+                        <input id="revertCode" placeholder="请输入邮箱验证码">
+                        <button class="code-btn" id="revertCodeBtn" type="button">发送验证码</button>
+                    </div>
+                    <button class="primary" id="revertBtn" type="button">撤回注销申请</button>
+                    <div id="revertMsg" class="msg"></div>
+                </div>
             </div>
 
             <div id="register" class="view">
@@ -3732,6 +3761,41 @@
                             </div>
                             <div class="script-key-tip" id="scriptKeyTip">密钥有效期 180 天。重新生成后，请把新密钥重新填入脚本设置。</div>
                             <div id="scriptKeyMsg" class="msg"></div>
+                        </div>
+                    </div>
+                    <div class="user-card" style="margin-top:18px">
+                        <h3><svg class="ui-icon"><use href="#i-shield"></use></svg> 账号安全</h3>
+                        <p class="hint">注销后账号停止服务，用户名与邮箱释放，个人数据（脚本设置、答题记录、个人题库）在冷静期结束后彻底删除。剩余题数、包月剩余、推广佣金不予退回。</p>
+                        <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+                            <button class="danger" type="button" id="deleteAccountBtn" style="width:auto;margin:0">申请注销账号</button>
+                            <span class="hint" id="deleteGraceHint" style="margin:0"></span>
+                        </div>
+                        <div id="deleteAccountMsg" class="msg"></div>
+                        <div class="danger-box" id="deleteAccountBox" hidden>
+                            <div class="danger-title">注销前请确认</div>
+                            <ul>
+                                <li>冷静期结束后，账号设置、答题记录、个人题库等数据将被彻底删除，无法恢复。</li>
+                                <li>剩余题数、包月剩余时间、未兑换的推广佣金将作废，不予退回。</li>
+                                <li>订单与支付流水按财务要求脱敏保留。</li>
+                                <li>同一邮箱在保护期内不能重新注册。</li>
+                            </ul>
+                            <div class="blocker-list" id="deleteBlockers" hidden></div>
+                            <label for="deletePwd">当前密码</label>
+                            <div class="pwd-wrap">
+                                <input id="deletePwd" type="password" autocomplete="current-password" placeholder="请输入当前登录密码">
+                                <span class="pwd-toggle" data-target="deletePwd">显示</span>
+                            </div>
+                            <label for="deleteCode">邮箱验证码</label>
+                            <div class="row">
+                                <input id="deleteCode" placeholder="发送到注册邮箱的验证码">
+                                <button class="code-btn" id="deleteCodeBtn" type="button">发送验证码</button>
+                            </div>
+                            <label for="deleteConfirm">输入「注销账号」确认</label>
+                            <input id="deleteConfirm" placeholder="请输入：注销账号">
+                            <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+                                <button class="danger" type="button" id="deleteSubmitBtn" style="width:auto;margin:0">确认注销</button>
+                                <button class="secondary" type="button" id="deleteCancelBtn" style="width:auto;margin:0">取消</button>
+                            </div>
                         </div>
                     </div>
                 </section>
@@ -6835,6 +6899,131 @@ await loadPlans();
         }
         $('logoutBtn').onclick = logout;
         $('sideLogoutBtn').onclick = logout;
+
+        // ========== 账号注销 / 撤回 ==========
+        let deleteCheckInfo = null;
+
+        // 未登录也能撤回：登录页的「撤回注销申请」用邮箱验证码
+        const revertToggleBtn = $('revertToggle');
+        if (revertToggleBtn) {
+            revertToggleBtn.onclick = function () {
+                const box = $('revertBox');
+                if (box) box.hidden = false;
+                this.hidden = true;
+                const loginUser = ($('loginUser').value || '').trim();
+                if (loginUser.indexOf('@') > 0 && !$('revertEmail').value) $('revertEmail').value = loginUser;
+            };
+        }
+        const revertCodeBtn = $('revertCodeBtn');
+        if (revertCodeBtn) {
+            revertCodeBtn.onclick = function () {
+                const email = cleanEmail($('revertEmail').value);
+                if (!email) return msg('revertMsg', '请先填写注销时的注册邮箱', false);
+                if (!emailFormatOk(email)) return msg('revertMsg', email.indexOf('@') < 0 ? '邮箱缺少 @，请填写完整地址' : '邮箱格式不对，请检查 @ 和域名', false);
+                $('revertEmail').value = email;
+                startCodeVerify({ url: '/api/auth/send-verify', payload: { email, type: 'delete' }, msgEl: 'revertMsg', btn: this, busyText: '发送中...' });
+            };
+        }
+        const revertBtn = $('revertBtn');
+        if (revertBtn) {
+            revertBtn.onclick = async function () {
+                const email = cleanEmail($('revertEmail').value);
+                const code = ($('revertCode').value || '').trim();
+                if (!email || !code) return msg('revertMsg', '请输入邮箱和验证码', false);
+                setBusy(this, true, '撤回中...');
+                try {
+                    const res = await post('/api/auth/cancel-deletion', { email, code });
+                    msg('revertMsg', res.msg || (res.code === 200 ? '注销申请已撤回' : '撤回失败'), res.code === 200);
+                    if (res.code === 200) {
+                        $('revertCode').value = '';
+                        setTimeout(function () {
+                            $('revertBox').hidden = true;
+                            const t = $('revertToggle');
+                            if (t) t.hidden = false;
+                        }, 1800);
+                    }
+                } catch (_) { msg('revertMsg', '网络请求失败', false); }
+                setBusy(this, false);
+            };
+        }
+
+        async function openDeleteAccount() {
+            const token = localStorage.getItem(TOKEN_KEY);
+            if (!token) return;
+            const btn = $('deleteAccountBtn');
+            setBusy(btn, true, '检查中...');
+            try {
+                const res = await post('/api/user/account/delete-check', {}, token);
+                if (res.code !== 200) { showToast(res.msg || '检查失败', true); return; }
+                deleteCheckInfo = res;
+                $('deleteGraceHint').textContent = '冷静期 ' + res.grace_days + ' 天，期内可凭邮箱验证码撤回';
+                const blockers = res.blockers || [];
+                const blockerEl = $('deleteBlockers');
+                if (blockers.length) {
+                    blockerEl.innerHTML = '<b style="color:var(--c-danger)">暂不能注销：</b><br>' + blockers.map(function (b) { return '· ' + escapeHtml(b.text || ''); }).join('<br>');
+                    blockerEl.hidden = false;
+                    $('deleteSubmitBtn').disabled = true;
+                } else {
+                    blockerEl.hidden = true;
+                    $('deleteSubmitBtn').disabled = false;
+                }
+                $('deleteAccountBox').hidden = false;
+                $('deletePwd').focus();
+            } catch (_) { showToast('网络请求失败', true); }
+            setBusy(btn, false);
+        }
+        const deleteAccountBtn = $('deleteAccountBtn');
+        if (deleteAccountBtn) deleteAccountBtn.onclick = openDeleteAccount;
+        const deleteCodeBtn = $('deleteCodeBtn');
+        if (deleteCodeBtn) {
+            deleteCodeBtn.onclick = function () {
+                if (!deleteCheckInfo) return msg('deleteAccountMsg', '请先点击「申请注销账号」', false);
+                const email = deleteCheckInfo.email || '';
+                if (!email) return msg('deleteAccountMsg', '账号邮箱缺失，请联系客服', false);
+                startCodeVerify({ url: '/api/auth/send-verify', payload: { email, type: 'delete' }, msgEl: 'deleteAccountMsg', btn: this, busyText: '发送中...' });
+            };
+        }
+        const deleteSubmitBtn = $('deleteSubmitBtn');
+        if (deleteSubmitBtn) {
+            deleteSubmitBtn.onclick = async function () {
+                const token = localStorage.getItem(TOKEN_KEY);
+                if (!token) return;
+                const rawPwd = ($('deletePwd').value || '').trim();
+                const code = ($('deleteCode').value || '').trim();
+                const confirmText = ($('deleteConfirm').value || '').trim();
+                if (!rawPwd || !code) return msg('deleteAccountMsg', '请输入密码和邮箱验证码', false);
+                if (!deleteCheckInfo || !deleteCheckInfo.can_delete) return msg('deleteAccountMsg', '当前账号仍有未结清事项，暂不能注销', false);
+                if (confirmText !== '注销账号') return msg('deleteAccountMsg', '请输入「注销账号」四个字确认', false);
+                if (!window.confirm('确认提交注销申请？冷静期内可凭邮箱验证码撤回；到期后账号设置、答题记录、个人题库等数据将被彻底删除，无法恢复。')) return;
+                setBusy(this, true, '提交中...');
+                try {
+                    // 安全：密码前端 SHA-256 加密传输，与登录一致
+                    const encoder = new TextEncoder();
+                    const hashBuf = await crypto.subtle.digest('SHA-256', encoder.encode(rawPwd));
+                    const passwordHash = Array.from(new Uint8Array(hashBuf)).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+                    const res = await post('/api/user/account/delete', { password_hash: passwordHash, code: code, confirm: confirmText }, token);
+                    if (res.code === 200) {
+                        showToast(res.msg || '注销申请已提交', false);
+                        msg('deleteAccountMsg', res.msg || '注销申请已提交', true);
+                        setTimeout(function () { logout(); }, 1400);
+                    } else {
+                        msg('deleteAccountMsg', res.msg || '提交失败', false);
+                    }
+                } catch (_) { msg('deleteAccountMsg', '网络请求失败', false); }
+                setBusy(this, false);
+            };
+        }
+        const deleteCancelBtn = $('deleteCancelBtn');
+        if (deleteCancelBtn) {
+            deleteCancelBtn.onclick = function () {
+                $('deleteAccountBox').hidden = true;
+                $('deleteAccountMsg').textContent = '';
+                $('deleteAccountMsg').className = 'msg';
+                $('deletePwd').value = '';
+                $('deleteCode').value = '';
+                $('deleteConfirm').value = '';
+            };
+        }
 
         // ========== 推广返利 ==========
         let promoAlipayQr = '', promoWechatQr = '';

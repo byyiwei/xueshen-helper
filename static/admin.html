@@ -1733,7 +1733,7 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
             <svg class="ui-icon xs arrow"><use href="#i-chevron-right"></use></svg>
           </div>
           <div class="menu-group-items">
-            <div class="menu-item" :class="{active:page==='user-mgmt'}" @click="page='user-mgmt';loadUsers();loadLoginLocks()">
+            <div class="menu-item" :class="{active:page==='user-mgmt'}" @click="page='user-mgmt';loadUsers();loadLoginLocks();loadAccountDeletionConfig();loadAccountDeletions(1)">
               <svg class="ui-icon sm"><use href="#i-users"></use></svg>用户列表
             </div>
             <div class="menu-item" :class="{active:page==='user-analysis'}" @click="page='user-analysis';loadUserAnalysis()">
@@ -2034,8 +2034,8 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
           <div class="dash-section">
             <div class="dash-section-head"><h3>今日业务</h3><span>用户与模型调用</span><span class="dash-section-line"></span></div>
             <div class="metric-grid">
-              <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(96,165,250,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='user-mgmt';loadUsers();loadLoginLocks()"><div class="metric-label">用户数</div><div class="metric-value">{{dashboard.cards.users||0}}</div><div class="metric-sub">点击管理用户 →</div></div>
-              <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(96,165,250,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='user-mgmt';loadUsers();loadLoginLocks()">
+              <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(96,165,250,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='user-mgmt';loadUsers();loadLoginLocks();loadAccountDeletionConfig();loadAccountDeletions(1)"><div class="metric-label">用户数</div><div class="metric-value">{{dashboard.cards.users||0}}</div><div class="metric-sub">点击管理用户 →</div></div>
+              <div class="metric-card" style="cursor:pointer;transition:border-color .2s" onmouseover="this.style.borderColor='rgba(96,165,250,.4)'" onmouseout="this.style.borderColor='rgba(96,165,250,.12)'" @click="page='user-mgmt';loadUsers();loadLoginLocks();loadAccountDeletionConfig();loadAccountDeletions(1)">
                 <div class="metric-label">活跃数</div>
                 <div class="metric-value">{{dashboard.cards.active||0}}</div>
                 <div class="metric-sub" style="display:flex;gap:8px;flex-wrap:wrap">
@@ -3292,9 +3292,11 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                         <span v-else style="color:var(--text3)">—</span>
                       </td>
                       <td style="padding:10px 8px">
-                        <span v-if="u.is_banned" style="color:var(--danger)">已封禁</span>
+                        <span v-if="u.deleted_at" style="color:var(--danger)">已注销</span>
+                        <span v-else-if="u.is_banned" style="color:var(--danger)">已封禁</span>
                         <span v-else style="color:var(--success)">正常</span>
                         <div style="color:var(--text3)">{{u.is_verified?'已验证':'未验证'}}</div>
+                        <div v-if="u.deleted_at" style="color:var(--text3);font-size:11.5px">{{u.delete_source==='admin'?'管理员注销':'用户自助注销'}}</div>
                       </td>
                       <td style="padding:10px 8px;color:var(--text3)">{{u.created_at}}</td>
                       <td style="padding:10px 8px;vertical-align:middle">
@@ -3362,6 +3364,69 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
                     </tr>
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </div>
+          <div class="card" style="margin-top:16px">
+            <div class="card-header">
+              <h3><svg class="ui-icon sm"><use href="#i-shield"></use></svg> 账号注销策略</h3>
+              <button class="btn btn-secondary btn-sm" @click="loadAccountDeletionConfig">刷新</button>
+            </div>
+            <div class="card-body">
+              <div class="info-tips" style="margin-bottom:14px">
+                <div class="tip-row"><span class="tip-num">i</span><span class="tip-text">用户自助注销会进入冷静期，期内可凭邮箱验证码撤回；期满后系统自动删除个人数据（订单与支付流水脱敏保留）。保护期内该邮箱不能重新注册。管理员在用户弹窗里发起的注销不进入冷静期，立即清理。</span></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label>自助注销冷静期（天）</label><input type="number" min="0" max="365" v-model.number="deletePolicy.grace_days"></div>
+                <div class="form-group"><label>同邮箱重新注册保护期（天）</label><input type="number" min="0" max="3650" v-model.number="deletePolicy.release_days"></div>
+              </div>
+              <button class="btn btn-primary btn-sm" :disabled="deletePolicySaving" @click="saveAccountDeletionConfig">{{deletePolicySaving?'保存中...':'保存策略'}}</button>
+            </div>
+          </div>
+          <div class="card" style="margin-top:16px">
+            <div class="card-header">
+              <h3>注销记录 <span style="color:var(--text3);font-size:13px;font-weight:400">（共 {{deleteLogTotal}} 条）</span></h3>
+              <div style="display:flex;gap:8px;align-items:center">
+                <input v-model="deleteLogKeyword" placeholder="搜索用户名/邮箱" style="padding:6px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:13px;width:200px" @keyup.enter="loadAccountDeletions(1)">
+                <button class="btn btn-secondary btn-sm" @click="loadAccountDeletions(1)">查询</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <div v-if="deleteLogs.length===0" style="text-align:center;color:var(--text3);padding:32px 0;font-size:13px">暂无注销记录</div>
+              <div v-else style="overflow-x:auto">
+                <table style="width:100%;border-collapse:collapse;font-size:13px">
+                  <thead>
+                    <tr style="border-bottom:1px solid var(--border);color:var(--text2)">
+                      <th style="text-align:left;padding:10px 8px">用户名</th>
+                      <th style="text-align:left;padding:10px 8px">邮箱</th>
+                      <th style="text-align:left;padding:10px 8px">来源</th>
+                      <th style="text-align:left;padding:10px 8px">原因</th>
+                      <th style="text-align:left;padding:10px 8px">状态</th>
+                      <th style="text-align:left;padding:10px 8px">申请时间</th>
+                      <th style="text-align:left;padding:10px 8px">完成时间</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="d in deleteLogs" :key="d.id" style="border-bottom:1px solid var(--border);color:var(--text)">
+                      <td style="padding:10px 8px">{{d.username}}</td>
+                      <td style="padding:10px 8px;color:var(--text2);word-break:break-all">{{d.email||'-'}}</td>
+                      <td style="padding:10px 8px">{{d.source==='admin'?'管理员':'用户自助'}}<div v-if="d.operator" style="color:var(--text3);font-size:11.5px">{{d.operator}}</div></td>
+                      <td style="padding:10px 8px;color:var(--text2);max-width:260px;word-break:break-all">{{d.reason||'-'}}</td>
+                      <td style="padding:10px 8px">
+                        <span v-if="d.status==='pending'" style="color:var(--warn)">冷静期</span>
+                        <span v-else-if="d.status==='cancelled'" style="color:var(--text3)">已撤回</span>
+                        <span v-else style="color:var(--danger)">已注销</span>
+                      </td>
+                      <td style="padding:10px 8px;color:var(--text3);white-space:nowrap">{{d.requested_at||'-'}}</td>
+                      <td style="padding:10px 8px;color:var(--text3);white-space:nowrap">{{d.completed_at||'-'}}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div v-if="deleteLogTotalPages>1" style="display:flex;justify-content:center;align-items:center;gap:10px;padding:12px 0">
+                <button class="btn btn-secondary btn-sm" :disabled="deleteLogPage<=1" @click="loadAccountDeletions(deleteLogPage-1)">上一页</button>
+                <span style="font-size:12px;color:var(--text3)">第 {{deleteLogPage}} / {{deleteLogTotalPages}} 页</span>
+                <button class="btn btn-secondary btn-sm" :disabled="deleteLogPage>=deleteLogTotalPages" @click="loadAccountDeletions(deleteLogPage+1)">下一页</button>
               </div>
             </div>
           </div>
@@ -8096,6 +8161,15 @@ html[data-theme="light"] .worker-pool { background: linear-gradient(180deg, tran
         <div class="form-group"><label>备注</label><input v-model="userForm.reason" placeholder="如：人工充值 / 违规扣除"></div>
         <label style="display:flex;gap:8px;align-items:center;color:var(--text2);margin:10px 0"><input type="checkbox" v-model="userForm.is_banned"> 封禁该用户</label>
         <div class="form-group"><label>封禁原因</label><input v-model="userForm.ban_reason" placeholder="封禁时展示给用户"></div>
+        <div v-if="!userForm.deleted_at" style="margin-top:18px;padding:14px;border:1px solid rgba(239,68,68,.3);border-radius:8px;background:rgba(239,68,68,.06)">
+          <div style="font-size:13px;font-weight:600;color:var(--danger);margin-bottom:10px">危险操作：注销账号</div>
+          <div class="form-group"><label>注销原因（必填）</label><input v-model="userForm.delete_reason" placeholder="会记入审计日志，并通过邮件告知用户"></div>
+          <button class="btn btn-sm" style="background:var(--danger);color:#fff;border:0" @click="deleteUserAdmin">立即注销该账号</button>
+          <small style="display:block;margin-top:8px;color:var(--text3)">管理员注销会立即清理个人数据，不进入冷静期；订单与支付流水按脱敏方式保留，账号余额作废。</small>
+        </div>
+        <div v-else style="margin-top:18px;padding:12px 14px;border:1px solid rgba(239,68,68,.3);border-radius:8px;background:rgba(239,68,68,.06);color:var(--danger);font-size:13px">
+          该账号已于 {{userForm.deleted_at}} 注销（{{userForm.delete_source==='admin'?'管理员发起':'用户自助'}}）{{userForm.delete_reason?'：'+userForm.delete_reason:''}}
+        </div>
         <div class="modal-actions">
           <button class="btn btn-secondary" @click="showUserModal=false">取消</button>
           <button class="btn btn-primary" @click="saveUserAdmin">保存用户</button>
@@ -8284,6 +8358,8 @@ createApp({
       expandedGroups.value.users=true;
       page.value='user-mgmt';
       loadUsers();
+      loadAccountDeletionConfig();
+      loadAccountDeletions(1);
     }
     function goSearchOrder(o){
       closeSearch();
@@ -8465,7 +8541,15 @@ createApp({
     const ipSearchTotal=ref(0);
     const ipSearchTotalPages=ref(0);
     const showUserModal=ref(false);
-    const userForm=reactive({username:'',email:'',password:'',points_delta:0,member_days_delta:0,member_until:'',is_banned:false,ban_reason:'',reason:''});
+    const userForm=reactive({username:'',email:'',password:'',points_delta:0,member_days_delta:0,member_until:'',is_banned:false,ban_reason:'',reason:'',delete_reason:'',deleted_at:'',delete_source:''});
+    const deletePolicy=reactive({grace_days:7,release_days:30});
+    const deletePolicySaving=ref(false);
+    const deleteLogs=ref([]);
+    const deleteLogKeyword=ref('');
+    const deleteLogPage=ref(1);
+    const deleteLogTotal=ref(0);
+    const deleteLogPageSize=10;
+    const deleteLogTotalPages=computed(()=>Math.max(1,Math.ceil(deleteLogTotal.value/deleteLogPageSize)));
     const paymentPlans=ref([]);
     const paymentConfig=reactive({gift_type:'none',gift_points:0,gift_days:0,custom_model_enabled:false,custom_model_price:0,custom_model_period:'permanent',dedup_question_enabled:true});
     const payApiConfig=reactive({
@@ -10095,12 +10179,49 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     }
     function openUserEdit(u){
       const memberUntil=(u.member_until||'').replace('T',' ').slice(0,16).replace(' ','T');
-      Object.assign(userForm,{username:u.username,email:u.email,password:'',points_delta:0,member_days_delta:0,member_until:memberUntil,is_banned:!!u.is_banned,ban_reason:u.ban_reason||'',reason:''});
+      Object.assign(userForm,{username:u.username,email:u.email,password:'',points_delta:0,member_days_delta:0,member_until:memberUntil,is_banned:!!u.is_banned,ban_reason:u.ban_reason||'',reason:'',delete_reason:'',deleted_at:u.deleted_at?String(u.deleted_at):'',delete_source:u.delete_source||''});
       showUserModal.value=true;
     }
     async function saveUserAdmin(){
       const data=await adminPost('/admin/user/update',userForm);
       if(data){showUserModal.value=false;showMsg('用户已更新');loadUsers(userPage.value);}
+    }
+    async function deleteUserAdmin(){
+      if(!userForm.delete_reason||!userForm.delete_reason.trim())return showMsg('请填写注销原因','error');
+      if(!confirm('确认立即注销「'+userForm.username+'」？个人数据会被清理，无法恢复。'))return;
+      if(!confirm('再次确认：该操作不可撤销，是否继续？'))return;
+      const data=await adminPost('/admin/user/delete',{username:userForm.username,reason:userForm.delete_reason.trim()});
+      if(data){showUserModal.value=false;showMsg(data.msg||'账号已注销');loadUsers(userPage.value);loadAccountDeletions(1);}
+    }
+    async function loadAccountDeletionConfig(){
+      if(!token.value)return;
+      try{
+        const res=await fetch('/admin/account-deletion-config',{headers:{'Authorization':token.value}});
+        const data=await res.json();
+        if(data.code===200&&data.config){
+          deletePolicy.grace_days=data.config.grace_days;
+          deletePolicy.release_days=data.config.release_days;
+        }else if(data.code===403){logout();}
+        else showMsg(data.msg||'读取注销策略失败','error');
+      }catch(e){showMsg('读取注销策略失败: '+(e.message||e),'error');}
+    }
+    async function saveAccountDeletionConfig(){
+      if(deletePolicySaving.value)return;
+      deletePolicySaving.value=true;
+      const data=await adminPost('/admin/account-deletion-config',{grace_days:deletePolicy.grace_days,release_days:deletePolicy.release_days});
+      if(data)showMsg(data.msg||'注销策略已保存');
+      deletePolicySaving.value=false;
+    }
+    async function loadAccountDeletions(p){
+      if(!token.value)return;
+      deleteLogPage.value=p||1;
+      try{
+        const res=await fetch('/admin/account-deletions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':token.value},body:JSON.stringify({keyword:deleteLogKeyword.value.trim(),page:deleteLogPage.value})});
+        const data=await res.json();
+        if(data.code===200){deleteLogs.value=data.list||[];deleteLogTotal.value=data.total||0;}
+        else if(data.code===403){logout();}
+        else showMsg(data.msg||'加载注销记录失败','error');
+      }catch(e){showMsg('加载注销记录失败: '+(e.message||e),'error');}
     }
     async function changePassword(){
       if(!pwdForm.old||!pwdForm.new)return showMsg('请填写完整','error');
@@ -10726,7 +10847,7 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
     function loadPageData(p){
       let fn=null;
       if(p==='dashboard')fn=loadDashboard;
-      else if(p==='user-mgmt')fn=()=>{loadUsers();loadLoginLocks();};
+      else if(p==='user-mgmt')fn=()=>{loadUsers();loadLoginLocks();loadAccountDeletionConfig();loadAccountDeletions(1);};
       else if(p==='user-analysis')fn=loadUserAnalysis;
       else if(p==='risk-control')fn=()=>{loadRiskConfig();scanRisk();};
       else if(p==='question-bank')fn=()=>{loadQuestionBank();loadConfig();};
@@ -12820,7 +12941,8 @@ if(aiLogFilter.username)qs.set('username',aiLogFilter.username);
       questionBank,questionBankTotal,questionBankLoading,questionBankFilter,expandedBank,retrainModel,retrainLoading,retrainResult,questionHasImage,retrainModelsForItem,retrainQuestion,deleteQuestionBankItem,bankTypeOptions,bankModelOptions,loadBankModels,loginLocks,loginLockLoading,saveConfigLoading,collapsedProviders,dashboard,dbConfig,dbTesting,dbSaving,showDbPass,ssoConfig,ssoSaving,showSsoSecret,ssoCallbackUrl,riskConfig,riskWhitelistText,riskUsers,riskScanning,riskSaving,riskFilter,riskPage,riskTotal,riskTotalPages,resetRiskFilter,
       doLogin,doForgot,doReset,logout,saveConfig,saveEmailConfig,saveEmailHubFromAddr,hubTplStatusText,syncHubTemplates,testEmail,loadEmailTemplates,openTemplateModal,onSceneChange,closeTemplateModal,saveTemplate,testTemplate,insertVar,changePassword,initAdminSlider,verifyAdminSlider,beginAdminPuzzle,adminCaptchaClick,adminCaptchaRemove,adminCaptchaCell,
       loadConfig,loadDbConfig,testDbConfig,saveDbConfig,loadSsoConfig,saveSsoConfig,copySsoUrl,captchaFlags,captchaFlagsSaving,saveCaptchaFlags,loadCaptchaFlags,loadRiskConfig,saveRiskConfig,scanRisk,riskBan,riskAddWhitelist,loadEmailConfig,loadUsers,resetUserSearch,setSort,loadPaymentConfig,loadPayApiConfig,loadAdminAccount,loadAiLogs,clearAiLogs,loadScriptLogs,loadBankLogs,clearBankLogs,loadQuestionBank,clearQuestionBank,loadLoginLocks,unlockLoginLock,       loadDashboard,dashStartDate,dashEndDate,dashboardLoading,setQuickRange,todayStr,d7ago,d30ago,d90ago,toggleLog,toggleBank,toggleBankLog,matchMethodText,goToPaymentDetails,
-      savePaymentConfig,savePayApiConfig,saveHubPayConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,movePlan,openUserEdit,saveUserAdmin,
+      savePaymentConfig,savePayApiConfig,saveHubPayConfig,saveAdminAccount,handleAvatarUpload,newPlan,editPlan,savePlan,deletePlan,togglePlan,movePlan,openUserEdit,saveUserAdmin,deleteUserAdmin,
+      deletePolicy,deletePolicySaving,deleteLogs,deleteLogKeyword,deleteLogPage,deleteLogTotal,deleteLogTotalPages,loadAccountDeletionConfig,saveAccountDeletionConfig,loadAccountDeletions,
       toggleProvider,collapseAllProviders,togglePayApiSection,
        addProvider,removeProvider,addModel,removeModel,
        modelUsageTotal,modelUsageToday,modelExpired,modelTotalExhausted,modelDailyExhausted,modelQuotaLeft,modelQuotaTitle,clearModelQuota,weightSegments,weightPools,
