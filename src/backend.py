@@ -10686,138 +10686,6 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
-        # ===== 账号注销（用户自助）=====
-        elif path == "/api/user/account/delete-check":
-            user = self._get_user_from_token()
-            if not user:
-                self._send_json(401, {"code": 401, "msg": "未登录或 Token 已过期"})
-                return
-            try:
-                username = user.get("username") or ""
-                cfg = db.get_admin_config() or {}
-                grace_days = int(cfg.get("account_delete_grace_days") or 7)
-                profile = build_user_profile(username) or {}
-                blockers = []
-                comm = float(profile.get("commission_balance") or 0)
-                if comm > 0:
-                    blockers.append({"type": "commission", "text": "可提现佣金 ¥%.2f，请先提现或兑换题数" % comm})
-                try:
-                    if db.fetchone("SELECT id FROM refund_requests WHERE username = %s AND status IN ('pending','processing') LIMIT 1", (username,)):
-                        blockers.append({"type": "refund", "text": "有退款正在处理中，请等退款完成后再注销"})
-                except Exception:
-                    pass
-                try:
-                    if db.fetchone("SELECT id FROM payment_orders WHERE username = %s AND status NOT IN ('paid','refunded','expired','cancelled','closed') LIMIT 1", (username,)):
-                        blockers.append({"type": "order", "text": "有订单尚未完成支付，请先完成或关闭"})
-                except Exception:
-                    pass
-                self._send_json(200, {
-                    "code": 200,
-                    "username": username,
-                    "email": user.get("email") or "",
-                    "grace_days": grace_days,
-                    "profile": {
-                        "points_balance": int(profile.get("points_balance") or 0),
-                        "member_until": profile.get("member_until") or "",
-                        "commission_balance": comm
-                    },
-                    "blockers": blockers,
-                    "can_delete": not blockers
-                })
-            except Exception as e:
-                self._send_json(500, {"code": 500, "msg": str(e)})
-
-        elif path == "/api/user/account/delete":
-            user = self._get_user_from_token()
-            if not user:
-                self._send_json(401, {"code": 401, "msg": "未登录或 Token 已过期"})
-                return
-            try:
-                data = json.loads(body or "{}")
-                username = user.get("username") or ""
-                password = (data.get("password_hash") or data.get("password") or "").strip()
-                code = (data.get("code") or "").strip()
-                confirm = (data.get("confirm") or "").strip()
-                if not password or not code:
-                    self._send_json(400, {"code": 400, "msg": "请输入密码和邮箱验证码"})
-                    return
-                if confirm != "注销账号":
-                    self._send_json(400, {"code": 400, "msg": "请输入「注销账号」四个字确认"})
-                    return
-                if not verify_password(password, user.get("password_hash") or ""):
-                    self._send_json(400, {"code": 400, "msg": "密码不正确"})
-                    return
-                ok, err = db.check_verify_code(user.get("email") or "", code, "delete")
-                if not ok:
-                    self._send_json(400, {"code": 400, "msg": err})
-                    return
-                cfg = db.get_admin_config() or {}
-                grace_days = int(cfg.get("account_delete_grace_days") or 7)
-                profile = build_user_profile(username) or {}
-                blockers = []
-                comm = float(profile.get("commission_balance") or 0)
-                if comm > 0:
-                    blockers.append("可提现佣金 ¥%.2f，请先提现或兑换" % comm)
-                try:
-                    if db.fetchone("SELECT id FROM refund_requests WHERE username = %s AND status IN ('pending','processing') LIMIT 1", (username,)):
-                        blockers.append("有退款正在处理中")
-                except Exception:
-                    pass
-                try:
-                    if db.fetchone("SELECT id FROM payment_orders WHERE username = %s AND status NOT IN ('paid','refunded','expired','cancelled','closed') LIMIT 1", (username,)):
-                        blockers.append("有订单尚未完成支付")
-                except Exception:
-                    pass
-                if blockers:
-                    self._send_json(400, {"code": 400, "msg": "暂不能注销：" + "；".join(blockers)})
-                    return
-                snapshot = {
-                    "points_balance": int(profile.get("points_balance") or 0),
-                    "member_until": profile.get("member_until") or "",
-                    "commission_balance": comm,
-                    "deleted_by": "user"
-                }
-                result = db.request_user_deletion(username, source="user", reason="用户自助注销", client_ip=self._client_ip(), snapshot=snapshot)
-                if not result:
-                    self._send_json(400, {"code": 400, "msg": "账号不存在"})
-                    return
-                USER_LOGOUT_AFTER[username] = time.time()
-                _send_account_deletion_mail(result.get("email") or "", username, "requested", grace_days=grace_days)
-                self._send_json(200, {
-                    "code": 200,
-                    "msg": "注销申请已提交，%d 天后账号将彻底删除" % grace_days,
-                    "grace_days": grace_days
-                })
-            except Exception as e:
-                self._send_json(500, {"code": 500, "msg": str(e)})
-
-        elif path == "/api/auth/cancel-deletion":
-            try:
-                data = json.loads(body or "{}")
-                email = normalize_email(data.get("email") or "")
-                code = (data.get("code") or "").strip()
-                if not email or not code:
-                    self._send_json(400, {"code": 400, "msg": "请输入邮箱和验证码"})
-                    return
-                ok, err = db.check_verify_code(email, code, "delete")
-                if not ok:
-                    self._send_json(400, {"code": 400, "msg": err})
-                    return
-                user = db.get_user_by_email_ci(email) or db.get_user_by_email(email)
-                if not user:
-                    self._send_json(400, {"code": 400, "msg": "该邮箱没有对应的账号"})
-                    return
-                if not user.get("deleted_at"):
-                    self._send_json(400, {"code": 400, "msg": "该账号没有注销申请，无需撤回"})
-                    return
-                if db.cancel_user_deletion(user.get("username")):
-                    _send_account_deletion_mail(email, user.get("username") or "", "cancelled")
-                    self._send_json(200, {"code": 200, "msg": "注销申请已撤回，账号已恢复正常"})
-                else:
-                    self._send_json(400, {"code": 400, "msg": "撤回失败，账号可能已被彻底注销"})
-            except Exception as e:
-                self._send_json(500, {"code": 500, "msg": str(e)})
-
         # ===== 用户问题反馈 =====
         elif path == "/api/user/feedback":
             user = self._get_user_from_token()
@@ -13182,6 +13050,138 @@ class Handler(BaseHTTPRequestHandler):
                 if result.get("success"):
                     result["msg"] = f"测试通过，模型正常回复（{elapsed_ms}ms）"
                 self._send_json(200, result)
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        # ===== 账号注销（用户自助）=====
+        elif path == "/api/user/account/delete-check":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "未登录或 Token 已过期"})
+                return
+            try:
+                username = user.get("username") or ""
+                cfg = db.get_admin_config() or {}
+                grace_days = int(cfg.get("account_delete_grace_days") or 7)
+                profile = build_user_profile(username) or {}
+                blockers = []
+                comm = float(profile.get("commission_balance") or 0)
+                if comm > 0:
+                    blockers.append({"type": "commission", "text": "可提现佣金 ¥%.2f，请先提现或兑换题数" % comm})
+                try:
+                    if db.fetchone("SELECT id FROM refund_requests WHERE username = %s AND status IN ('pending','processing') LIMIT 1", (username,)):
+                        blockers.append({"type": "refund", "text": "有退款正在处理中，请等退款完成后再注销"})
+                except Exception:
+                    pass
+                try:
+                    if db.fetchone("SELECT id FROM payment_orders WHERE username = %s AND status NOT IN ('paid','refunded','expired','cancelled','closed') LIMIT 1", (username,)):
+                        blockers.append({"type": "order", "text": "有订单尚未完成支付，请先完成或关闭"})
+                except Exception:
+                    pass
+                self._send_json(200, {
+                    "code": 200,
+                    "username": username,
+                    "email": user.get("email") or "",
+                    "grace_days": grace_days,
+                    "profile": {
+                        "points_balance": int(profile.get("points_balance") or 0),
+                        "member_until": profile.get("member_until") or "",
+                        "commission_balance": comm
+                    },
+                    "blockers": blockers,
+                    "can_delete": not blockers
+                })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/api/user/account/delete":
+            user = self._get_user_from_token()
+            if not user:
+                self._send_json(401, {"code": 401, "msg": "未登录或 Token 已过期"})
+                return
+            try:
+                data = json.loads(body or "{}")
+                username = user.get("username") or ""
+                password = (data.get("password_hash") or data.get("password") or "").strip()
+                code = (data.get("code") or "").strip()
+                confirm = (data.get("confirm") or "").strip()
+                if not password or not code:
+                    self._send_json(400, {"code": 400, "msg": "请输入密码和邮箱验证码"})
+                    return
+                if confirm != "注销账号":
+                    self._send_json(400, {"code": 400, "msg": "请输入「注销账号」四个字确认"})
+                    return
+                if not verify_password(password, user.get("password_hash") or ""):
+                    self._send_json(400, {"code": 400, "msg": "密码不正确"})
+                    return
+                ok, err = db.check_verify_code(user.get("email") or "", code, "delete")
+                if not ok:
+                    self._send_json(400, {"code": 400, "msg": err})
+                    return
+                cfg = db.get_admin_config() or {}
+                grace_days = int(cfg.get("account_delete_grace_days") or 7)
+                profile = build_user_profile(username) or {}
+                blockers = []
+                comm = float(profile.get("commission_balance") or 0)
+                if comm > 0:
+                    blockers.append("可提现佣金 ¥%.2f，请先提现或兑换" % comm)
+                try:
+                    if db.fetchone("SELECT id FROM refund_requests WHERE username = %s AND status IN ('pending','processing') LIMIT 1", (username,)):
+                        blockers.append("有退款正在处理中")
+                except Exception:
+                    pass
+                try:
+                    if db.fetchone("SELECT id FROM payment_orders WHERE username = %s AND status NOT IN ('paid','refunded','expired','cancelled','closed') LIMIT 1", (username,)):
+                        blockers.append("有订单尚未完成支付")
+                except Exception:
+                    pass
+                if blockers:
+                    self._send_json(400, {"code": 400, "msg": "暂不能注销：" + "；".join(blockers)})
+                    return
+                snapshot = {
+                    "points_balance": int(profile.get("points_balance") or 0),
+                    "member_until": profile.get("member_until") or "",
+                    "commission_balance": comm,
+                    "deleted_by": "user"
+                }
+                result = db.request_user_deletion(username, source="user", reason="用户自助注销", client_ip=self._client_ip(), snapshot=snapshot)
+                if not result:
+                    self._send_json(400, {"code": 400, "msg": "账号不存在"})
+                    return
+                USER_LOGOUT_AFTER[username] = time.time()
+                _send_account_deletion_mail(result.get("email") or "", username, "requested", grace_days=grace_days)
+                self._send_json(200, {
+                    "code": 200,
+                    "msg": "注销申请已提交，%d 天后账号将彻底删除" % grace_days,
+                    "grace_days": grace_days
+                })
+            except Exception as e:
+                self._send_json(500, {"code": 500, "msg": str(e)})
+
+        elif path == "/api/auth/cancel-deletion":
+            try:
+                data = json.loads(body or "{}")
+                email = normalize_email(data.get("email") or "")
+                code = (data.get("code") or "").strip()
+                if not email or not code:
+                    self._send_json(400, {"code": 400, "msg": "请输入邮箱和验证码"})
+                    return
+                ok, err = db.check_verify_code(email, code, "delete")
+                if not ok:
+                    self._send_json(400, {"code": 400, "msg": err})
+                    return
+                user = db.get_user_by_email_ci(email) or db.get_user_by_email(email)
+                if not user:
+                    self._send_json(400, {"code": 400, "msg": "该邮箱没有对应的账号"})
+                    return
+                if not user.get("deleted_at"):
+                    self._send_json(400, {"code": 400, "msg": "该账号没有注销申请，无需撤回"})
+                    return
+                if db.cancel_user_deletion(user.get("username")):
+                    _send_account_deletion_mail(email, user.get("username") or "", "cancelled")
+                    self._send_json(200, {"code": 200, "msg": "注销申请已撤回，账号已恢复正常"})
+                else:
+                    self._send_json(400, {"code": 400, "msg": "撤回失败，账号可能已被彻底注销"})
             except Exception as e:
                 self._send_json(500, {"code": 500, "msg": str(e)})
 
