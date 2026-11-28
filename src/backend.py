@@ -4233,7 +4233,11 @@ def _start_commission_settle_thread():
 
 
 def _send_account_deletion_mail(to_addr, username, kind, reason="", grace_days=7):
-    """账号注销相关通知邮件。kind: requested / completed / cancelled。"""
+    """账号注销相关通知邮件。kind: requested / completed / cancelled。
+
+    三个场景各有邮件模板（scene: account_delete_requested/completed/cancelled），
+    可在后台「邮件模板」里修改；没配模板时退回下面的内置内容。
+    """
     if not to_addr or "@" not in str(to_addr):
         return False, "收件邮箱为空"
     subject_map = {
@@ -4241,7 +4245,27 @@ def _send_account_deletion_mail(to_addr, username, kind, reason="", grace_days=7
         "completed": "【学神助手】账号已注销",
         "cancelled": "【学神助手】注销申请已撤回",
     }
-    now_text = time.strftime("%Y-%m-%d %H:%M")
+    scene_map = {
+        "requested": "account_delete_requested",
+        "completed": "account_delete_completed",
+        "cancelled": "account_delete_cancelled",
+    }
+    kind = kind if kind in subject_map else "completed"
+    scene = scene_map[kind]
+    variables = {
+        "username": username or "同学",
+        "time": time.strftime("%Y-%m-%d %H:%M"),
+        "grace_days": grace_days,
+        "reason": reason or "",
+        "subject": subject_map[kind],
+    }
+    # 有模板时按模板发（send_email 会取模板、渲染 subject/正文，中控通道也只认模板）；
+    # 没配模板时用内置内容，保证注销通知始终能发出去。
+    if db.get_email_template_by_scene(scene):
+        try:
+            return send_email(to_addr=to_addr, subject=subject_map[kind], scene=scene, variables=variables)
+        except Exception as e:
+            print("[注销通知] 模板发送失败，回退内置内容: %s" % e, flush=True)
     if kind == "requested":
         body = (
             "你好 %s：\n\n"
@@ -4251,14 +4275,14 @@ def _send_account_deletion_mail(to_addr, username, kind, reason="", grace_days=7
             "剩余题数、包月剩余、推广佣金等不予退回。订单与支付记录按财务规定脱敏保留。\n\n"
             "如非本人操作，请立即通过「找回密码」重置密码并联系客服。\n\n"
             "—— 学神助手\n"
-        ) % (username or "同学", now_text, grace_days)
+        ) % (username or "同学", variables["time"], grace_days)
     elif kind == "cancelled":
         body = (
             "你好 %s：\n\n"
             "你的账号注销申请已于 %s 撤回，账号已恢复正常，可以正常登录使用。\n\n"
             "如果这不是你操作的，请尽快修改密码。\n\n"
             "—— 学神助手\n"
-        ) % (username or "同学", now_text)
+        ) % (username or "同学", variables["time"])
     else:
         reason_text = ("注销原因：%s\n\n" % reason) if reason else ""
         body = (
@@ -4267,9 +4291,9 @@ def _send_account_deletion_mail(to_addr, username, kind, reason="", grace_days=7
             "%s"
             "如有疑问请联系客服。\n\n"
             "—— 学神助手\n"
-        ) % (username or "同学", now_text, reason_text)
+        ) % (username or "同学", variables["time"], reason_text)
     try:
-        return send_email(to_addr=to_addr, subject=subject_map.get(kind, subject_map["completed"]), body_text=body)
+        return send_email(to_addr=to_addr, subject=subject_map[kind], body_text=body, variables=variables)
     except Exception as e:
         print("[注销通知] 发送邮件失败: %s" % e, flush=True)
         return False, str(e)
