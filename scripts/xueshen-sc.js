@@ -10650,7 +10650,10 @@ const MAX_RECORDS = 200;
               );
               const textMatches = strictMatches.length === 1 ? strictMatches
                 : optionKeys.filter(k => this.optionTextMatches(k, clearAnswer) || this.optionTextMatches(k, answer));
-              if (textMatches.length === 1 && letters.length > 1) matches = textMatches;
+              // 单字母答案既可能是选项编号（A/B/C），也可能是选项正文（R 进制的数，选项正文就是「R」）。
+              // 以前只有 letters.length > 1 才采用正文匹配，单字母一律按编号处理，正文「R」越界后
+              // 整题放弃（2026-11-28 后台 answer_out_of_range）。正文严格唯一命中时优先按正文点。
+              if (textMatches.length === 1 && (letters.length > 1 || strictMatches.length === 1)) matches = textMatches;
               else if (/^[A-Z]+$/.test(letters)) {
                 const validLetters = [...letters].filter(c => c.charCodeAt(0) - 65 < optionKeys.length);
                 const outOfRange = [...letters].filter(c => c.charCodeAt(0) - 65 >= optionKeys.length);
