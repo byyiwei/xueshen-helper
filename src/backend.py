@@ -4911,6 +4911,33 @@ def bank_tool_search(username, question, limit=3):
     return [], "none"
 
 
+def personal_bank_answer(username, question):
+    """私人题库命中（脚本答题链路）。
+
+    本人导入的题只要答案能对上页面选项就直接用：不查公共题库、不调 AI、不扣题数。
+    答案质量按与公共题库同一套标准校验，对不上就返回 None 继续走后面的流程。
+    """
+    if not username:
+        return None
+    try:
+        items = search_personal_bank(username, question, limit=3)
+    except Exception as e:
+        print(f"[私人题库] 查询失败 user={username}: {e}", flush=True)
+        return None
+    for item in items or []:
+        ans = normalize_ai_answer(question, item.get("answer") or "")
+        if not ans:
+            continue
+        if _is_truncated_multi_answer(question, ans) or _is_garbage_bank_answer(ans, question):
+            continue
+        if not _answer_matches_question_options(question, ans) or _answer_choice_conflict(question, ans):
+            continue
+        hit = dict(item)
+        hit["answer"] = ans
+        return hit
+    return None
+
+
 def ocr_question_text(image_data, username=""):
     """图片 → 题目文字。只做识别，不作答、不扣题数（识别成本由 OCR 日限控制）。"""
     candidates = get_enabled_model_candidates(need_vision=True)
@@ -8458,9 +8485,10 @@ def parse_agent_decision(response_text):
 
 
 # 注册用户列表的「脚本版本」下拉：版本集合变化很慢，缓存 5 分钟，
-# 避免每次翻页/筛选都把 users 表 DISTINCT 扫一遍。
+# 避免每次翻页/筛选都把 users 表 DISTINCT 扫一遍。新版本发布后要尽快出现在后台下拉里，
+# 缓存别设太长：60 秒足够挡住翻页的重复查询，也不会让刚更新的版本一等就是 5 分钟。
 USER_SCRIPT_VERSION_CACHE = {"time": 0, "data": []}
-USER_SCRIPT_VERSION_CACHE_SECONDS = 300
+USER_SCRIPT_VERSION_CACHE_SECONDS = 60
 
 
 def _version_sort_key(v):
@@ -16735,6 +16763,36 @@ class Handler(BaseHTTPRequestHandler):
                             use_custom = True
                             custom_cfg = {"protocol": cproto, "base_url": cbase, "api_key": ckey, "model": cmodel}
                 model_mode = "custom" if use_custom else "auto"
+                # ---------- 私人题库优先：本人导入的题命中后直接作答，不消耗题数、不走 AI ----------
+                if not use_custom and not skip_bank:
+                    _personal_hit = personal_bank_answer(user.get("username", ""), question)
+                    if _personal_hit:
+                        answer = str(_personal_hit.get("answer") or "")
+                        resolved_model = "私人题库"
+                        provider_name = "question_bank"
+                        status = "success"
+                        _pinfo = parse_question_payload(question)
+                        _pkey = make_matching_key(question)
+                        enqueue_bank_log({
+                            "username": user.get("username", ""),
+                            "question_hash": _pkey,
+                            "question_text": _pinfo.get("question_text", question)[:500],
+                            "question_type": _pinfo.get("question_type", ""),
+                            "options_text": " | ".join(_pinfo.get("options", [])),
+                            "matched": True,
+                            "matched_hash": "private:" + str(_personal_hit.get("item_id") or ""),
+                            "match_method": "private",
+                            "duration_ms": 0,
+                            "client_ip": self.client_address[0] if self.client_address else ""
+                        })
+                        profile_after = build_user_profile(user["username"])
+                        print(f"[私人题库命中] user={user['username']} question={question[:60]}...", flush=True)
+                        self._send_json(200, {"code": 200, "msg": "命中你的私人题库，本题未消耗题数", "data": {
+                            "answer": answer, "model": resolved_model, "mode": "question_bank",
+                            "bank": True, "private": True, "profile": profile_after,
+                            "remainCount": 999999 if profile_after and profile_after.get("active_member") else int((profile_after or {}).get("points_balance") or 0)
+                        }})
+                        return
                 # 自有模型：使用用户自己的接口，不扣题数、不校验包月/题数余额
                 if use_custom:
                     # 提前标记，保证闸门拦截时日志也能记录模型名与来源（自有模型）
@@ -17148,6 +17206,15 @@ class Handler(BaseHTTPRequestHandler):
                     # 图片题不入库也不查库，批量接口直接标记跳过
                     if is_multimodal_question(question):
                         items.append({"index": idx, "answer": None, "bank": False, "status": "image", "msg": "图片题必须设置成AI"})
+                        continue
+                    # 私人题库优先：命中本人题库不扣题数，余额不足也照常返回
+                    personal = personal_bank_answer(user["username"], question)
+                    if personal:
+                        items.append({
+                            "index": idx, "answer": personal.get("answer"), "bank": True,
+                            "status": "ok", "msg": "命中你的私人题库，本题未消耗题数",
+                            "model": "私人题库", "private": True
+                        })
                         continue
                     if quota_err:
                         items.append({"index": idx, "answer": None, "bank": False, "status": "quota", "msg": quota_err})
