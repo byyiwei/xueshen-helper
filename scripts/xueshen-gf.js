@@ -13123,6 +13123,11 @@ const MAX_RECORDS = 200;
                 option_selector: (question && question.__xsOptionSelector) || "",
                 clicked: !!(question && question.__xsClicked),
                 answer_text: String(((question && question.answer && question.answer.answer) || []).join(",")).slice(0, 60),
+                // page_not_advanced 时把「下一题」按钮的诊断带回来：没找到按钮还是点击没生效
+                ...(String((question && question.__xsFillReason) || "") === "page_not_advanced" && this.__zsLastAdvanceFail ? {
+                  next_fail: String((this.__zsLastAdvanceFail && this.__zsLastAdvanceFail.reason) || ""),
+                  next_btn_html: String((this.__zsLastAdvanceFail && this.__zsLastAdvanceFail.html) || "").slice(0, 300)
+                } : {}),
                 // 答案里有几个项没映射到任何选项（多选少选/答案格式对不上时能直接看出来）
                 unmatched: (question && question.__xsUnmatchedAnswers) || 0,
                 unmatched_answers: String((question && question.__xsUnmatchedAnswerPreview) || "").slice(0, 60),
@@ -13335,31 +13340,24 @@ const MAX_RECORDS = 200;
             // 填不上也要切到下一题：不切题会导致下一题的答案被填到当前这题上，
             // 比漏填更糟（主动把对的题改错，还上报成功）。
             if (this.type == "zy") {
-              // 新版页面可能没有 switch-btn-box，原来直接取 [0].innerText 会抛错并中断整个答题流程，
-              // 表现就是「答完第一题就不动了」。这里改成：先按原结构找，找不到再按按钮文字找「下一题」。
-              let nextBtn = this._document.querySelector(
-                "div.switch-btn-box > button:nth-child(2) > span"
+              const advanced = await this.zhsAdvancePage(
+                pagedMode,
+                pagedMode && this.__answeredNodes
+                  ? (node) => this.__answeredNodes.has(this.zhsNodeKey(node))
+                  : null
               );
-              if (!nextBtn || (nextBtn.innerText || nextBtn.textContent || "").trim() !== "下一题") {
-                nextBtn = Array.from(this._document.querySelectorAll("button, span, a")).find(
-                  (el) => el.children.length === 0 && (el.textContent || "").trim() === "下一题"
-                );
-              }
-              if (nextBtn && (nextBtn.innerText || nextBtn.textContent || "").trim() === "下一题") {
-                const visibleNode = () => Array.from(this._document.querySelectorAll(".subject_node")).find((n) => {
-                  const rect = n.getBoundingClientRect();
-                  return rect.width > 0 && rect.height > 0;
-                });
-                const prevText = pagedMode ? ((visibleNode() || {}).innerText || "") : "";
-                nextBtn.click();
-                // 一屏一题：等新题真的渲染出来再处理下一道，否则还会点到上一题的选项上
-                if (pagedMode) {
-                  for (let wait = 0; wait < 20; wait++) {
-                    await sleep(0.3);
-                    const node = visibleNode();
-                    if (node && node.innerText && node.innerText !== prevText) break;
-                  }
+              if (pagedMode) {
+                if (!advanced) {
+                  // 记下失败原因，下一题报 page_not_advanced 时随上报带回后台
+                  this.__zsLastAdvanceFail = this.__zsNextFail || { reason: "next_click_failed" };
+                  try {
+                    this.log.insertLog(`「下一题」点击后页面没有切走，剩余题目先暂停，请手动翻页后重试`, "warning");
+                  } catch (_) {}
+                  // 页面卡在这道题上继续循环只会每道题都报 page_not_advanced，
+                  // 还可能把下一题的答案写进当前题。直接结束本轮答题更安全。
+                  break;
                 }
+                this.__zsLastAdvanceFail = null;
               }
             }
           }
@@ -13419,6 +13417,126 @@ const MAX_RECORDS = 200;
         }
         this.questionStore.questionList = this.questions;
       });
+      // 智慧树题目节点的去重键（全文哈希），fillQuestion 与切题确认共用
+      __publicField(this, "zhsNodeKey", (n) => {
+        const text = this.removeHtml((n && n.innerHTML) || "").replace(/\s+/g, "");
+        let hash = 0;
+        for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) | 0;
+        return `${hash}:${text.length}`;
+      });
+      // 找「下一题」按钮：旧结构 switch-btn-box 优先，找不到再按文字找。
+      // 文字精确匹配放宽到带子元素的按钮（a > span 也算），最后兜底包含「下一题」的叶子节点；
+      // 以前只认无子元素且文字完全相等的节点，新版页面结构一变就找不到按钮，答完一题就卡住。
+      __publicField(this, "zhsFindNextBtn", () => {
+        const doc = this._document || document;
+        const text = (el) => String((el && (el.innerText || el.textContent)) || "").trim();
+        const usable = (el) => {
+          if (!el || el.disabled) return false;
+          if (/\bdisabled\b/i.test(String(el.className || ""))) return false;
+          const rect = el.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        };
+        const legacySpan = doc.querySelector("div.switch-btn-box > button:nth-child(2) > span");
+        if (legacySpan && text(legacySpan) === "下一题" && usable(legacySpan)) return legacySpan;
+        const legacyBtn = doc.querySelector("div.switch-btn-box > button:nth-child(2)");
+        if (legacyBtn && text(legacyBtn) === "下一题" && usable(legacyBtn)) return legacyBtn;
+        const exact = Array.from(doc.querySelectorAll("button, span, a, [role='button']")).find(
+          (el) => text(el) === "下一题" && usable(el)
+        );
+        if (exact) return exact;
+        return Array.from(doc.querySelectorAll("button, span, a")).find(
+          (el) => !el.children.length && usable(el) && text(el).length <= 8 && text(el).includes("下一题")
+        ) || null;
+      });
+      __publicField(this, "zhsWaitAdvance", async (didAdvance, maxMs = 2e3) => {
+        const deadline = Date.now() + maxMs;
+        while (true) {
+          let ok = false;
+          try { ok = !!didAdvance(); } catch (_) {}
+          if (ok) return true;
+          if (Date.now() >= deadline) return false;
+          await sleep(0.2);
+        }
+      });
+      // 答完一题切下一题：点完必须确认页面真的切走了，没切走就换姿势重试
+      // （先等渲染、再点外层按钮、再派发完整鼠标事件）。以前点完就完事，
+      // 按钮没找到或点击没生效时页面停在原题，后面每道题都报「上一题没有切走」
+      // （2026-11-28 stuExamWeb 上报）。失败原因留在 __zsNextFail 供异常上报带上。
+      __publicField(this, "zhsAdvancePage", async (pagedMode, isProcessed) => {
+        const doc = this._document || document;
+        const visibleNode = () => Array.from(doc.querySelectorAll(".subject_node")).find((n) => {
+          const rect = n.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        });
+        this.__zsNextFail = null;
+        const prevText = pagedMode ? String((visibleNode() || {}).innerText || "") : "";
+        const didAdvance = () => {
+          if (!pagedMode) return true;
+          const node = visibleNode();
+          if (!node) return false;
+          const nowText = String(node.innerText || "");
+          if (nowText && nowText !== prevText) return true;
+          // 相邻两题文本完全相同（极少数）时，看可见题是否已不在已处理集合里
+          if (typeof isProcessed === "function" && !isProcessed(node)) return true;
+          return false;
+        };
+        let btn = this.zhsFindNextBtn();
+        if (!btn) {
+          // 切题动画期间按钮可能被替换或暂时不可见，等 1.5s 再找
+          for (let i = 0; i < 5 && !btn; i++) {
+            await sleep(0.3);
+            btn = this.zhsFindNextBtn();
+          }
+        }
+        if (!btn) {
+          this.__zsNextFail = { reason: "next_btn_missing" };
+          return false;
+        }
+        for (let attempt = 0; attempt < 3; attempt++) {
+          // 重试前先等 1.2s：上一轮点击可能延迟生效（切题渲染慢），防止多点跳过一道题
+          if (attempt > 0 && pagedMode && await this.zhsWaitAdvance(didAdvance, 1200)) return true;
+          const fresh = this.zhsFindNextBtn();
+          if (!fresh) {
+            let found = null;
+            for (let i = 0; i < 3 && !found; i++) {
+              await sleep(0.3);
+              found = this.zhsFindNextBtn();
+            }
+            if (!found) {
+              this.__zsNextFail = { reason: "next_btn_missing" };
+              return false;
+            }
+            btn = found;
+          } else {
+            btn = fresh;
+          }
+          try { btn.scrollIntoView({ block: "center" }); } catch (_) {}
+          try { btn.click(); } catch (_) {}
+          if (await this.zhsWaitAdvance(didAdvance, 4e3)) return true;
+          // 原生 click 没生效：试点外层按钮，再试派发完整鼠标事件序列
+          const owner = btn.closest && btn.closest("button, a, [role='button']");
+          if (owner && owner !== btn) {
+            try { owner.click(); } catch (_) {}
+            if (await this.zhsWaitAdvance(didAdvance, 2500)) return true;
+          }
+          try {
+            const win = this._window || window;
+            const rect = btn.getBoundingClientRect();
+            for (const type of ["mousedown", "mouseup", "click"]) {
+              btn.dispatchEvent(new win.MouseEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                view: win,
+                clientX: Math.round(rect.left + rect.width / 2),
+                clientY: Math.round(rect.top + rect.height / 2)
+              }));
+            }
+          } catch (_) {}
+          if (await this.zhsWaitAdvance(didAdvance, 2500)) return true;
+        }
+        this.__zsNextFail = { reason: "next_click_failed", html: String((btn && btn.outerHTML) || "").replace(/\s+/g, " ").slice(0, 300) };
+        return false;
+      });
       __publicField(this, "fillQuestion", async (question, index) => {
         let isSelected = false;
         question.__xsFillReason = "";
@@ -13439,12 +13557,7 @@ const MAX_RECORDS = 200;
         if (paged) {
           // 用全文哈希做去重键：只取前 40 字时，两道题干开头相同（「下列关于……的说法正确的是」）
           // 会互相误判成已答过，导致跳过真实题目或重复处理同一题。
-          const normNode = (n) => {
-            const text = this.removeHtml(n.innerHTML).replace(/\s+/g, "");
-            let hash = 0;
-            for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) | 0;
-            return `${hash}:${text.length}`;
-          };
+          const normNode = (n) => this.zhsNodeKey(n);
           const done = this.__answeredNodes || (this.__answeredNodes = new Set());
           const visible = allNodes.filter((n) => {
             const rect = n.getBoundingClientRect();
