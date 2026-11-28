@@ -30950,7 +30950,8 @@ const XS_EXT = (() => {
         loginMsg.value = "正在恢复上次登录状态...";
         const profile = await localBackendJson("https://xs.openget.cn/api/user/profile", null, remembered.token);
         if (profile.code === 401 || profile.code === 403) {
-          loginMsg.value = "登录状态已过期，请重新登录";
+          // 403 带后端原因（如封禁）时原样提示，避免一律说「过期」误导用户
+          loginMsg.value = profile.code === 403 && profile.msg ? profile.msg : "登录状态已过期，请重新登录";
           setRememberedLogin({ remember: rememberLogin.value, username: remembered.username || "" });
           isAutoLoggedIn.value = false;
           loginBusy.value = false;
@@ -30958,6 +30959,14 @@ const XS_EXT = (() => {
         }
         if (profile.code !== 200) {
           loginMsg.value = "网络异常，暂未恢复登录状态（已保留登录记忆）";
+          isAutoLoggedIn.value = false;
+          loginBusy.value = false;
+          return;
+        }
+        // profile 接口对封禁账号不拦（200），这里主动看一眼，别把封禁用户显示成恢复成功
+        const prof = profile.profile || {};
+        if (prof.is_banned) {
+          loginMsg.value = "账号已被封禁：" + (prof.ban_reason || "请联系管理员");
           isAutoLoggedIn.value = false;
           loginBusy.value = false;
           return;
