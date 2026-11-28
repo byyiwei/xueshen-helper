@@ -1,12 +1,12 @@
 {
   "xueshen-sc": {
-    "version": "6.1.15",
+    "version": "6.1.16",
     "download_url": "https://xs.openget.cn/scripts/xueshen-sc.user.js",
-    "changelog": "v6.1.15 学堂在线视频/音频任务点补看更稳：只补最后一段、1 倍速、最多补 3 次，补不上去只提示一次"
+    "changelog": "v6.1.16 学堂在线作业切题与考试选择题修复、超星资料页扫描文档、智慧树切题重试、R 进制题作答、封禁账号登录提示"
   },
   "xueshen-gf": {
-    "version": "6.1.15",
+    "version": "6.1.16",
     "download_url": "https://xs.openget.cn/scripts/xueshen-gf.user.js",
-    "changelog": "v6.1.15 学堂在线视频/音频任务点补看更稳：只补最后一段、1 倍速、最多补 3 次，补不上去只提示一次"
+    "changelog": "v6.1.16 学堂在线作业切题与考试选择题修复、超星资料页扫描文档、智慧树切题重试、R 进制题作答、封禁账号登录提示"
   }
 }

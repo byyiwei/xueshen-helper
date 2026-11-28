@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         超星学习通｜知到智慧树 免费网课助手 - 学神助手｜自动答题｜免费搜题｜全平台刷课｜海量题库
 // @namespace    IPYIWEI
-// @version      6.1.15
+// @version      6.1.16
 // @updateURL    https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @downloadURL  https://xs.openget.cn/scripts/xueshen-sc.user.js
 // @author       IPYIWEI
@@ -15,6 +15,13 @@
 // @original-author enncy
 // @original-license MIT
 // @original-script https://github.com/ocsjs/ocsjs
+// @changelog    v6.1.16 (2026-11-28)
+// @changelog    1. 学堂在线：作业答完一题自动切下一题，修复「xtzxItems is not defined」报错后卡在第一题不动
+// @changelog    2. 学堂在线：考试系统作答页（examination.xuetangx.com）能识别并作答单选、多选、判断、填空题，不再只认文字题
+// @changelog    3. 超星资料页：点「扫描文档」能列出当前页和文件夹里的文件并下载，修复扫描结果为空
+// @changelog    4. 智慧树：「下一题」按钮找不到或点了没反应时自动重试，确认切走后再答下一题，修复答完一题卡住、答案填到上一题
+// @changelog    5. 超星单选题：答案字母在选项里越界时（如 R 进制题答案「R」），按选项正文匹配作答，不再整题放弃
+// @changelog    6. 登录框：账号被封禁时，「记住登录」自动恢复会提示「账号已被封禁」及原因，不再误显示恢复成功
 // @changelog    v6.1.15 (2026-11-26)
 // @changelog    1. 学堂在线：视频/音频任务点差一点没记满时，不再整段重播两遍，改为从已记进度前 10 秒处补播到结尾，最后一段用 1 倍速，最多补 3 次
 // @changelog    2. 学堂在线：补不上去时提示只报一次，并注明最后一段建议手动看一下，不再每秒刷屏
