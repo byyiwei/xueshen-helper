@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="icon" href="/favicon.ico?v=20260704" type="image/x-icon">
+    <title>服务条款 - 学神助手</title>
+    <style>
+        :root {
+            --c-brand: #2f6bff; --c-brand-strong: #1d53e0; --c-brand-soft: #eef3ff;
+            --c-bg: #f6f8fc; --c-surface: #ffffff; --c-surface-2: #f1f4f9;
+            --c-text: #101828; --c-text-2: #475467; --c-text-3: #98a2b3;
+            --c-border: #e2e8f0;
+            --c-font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+        }
+        html[data-theme="dark"] {
+            --c-brand: #4d82ff; --c-brand-strong: #6b97ff; --c-brand-soft: rgba(77, 130, 255, .15);
+            --c-bg: #0b101b; --c-surface: #121a2c; --c-surface-2: #18233a;
+            --c-text: #e9eef8; --c-text-2: #a2afc7; --c-text-3: #6b7a95;
+            --c-border: #23304c;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; min-height: 100vh;
+            background: var(--c-bg); color: var(--c-text);
+            font-family: var(--c-font);
+            -webkit-font-smoothing: antialiased;
+        }
+        .page { max-width: 860px; margin: 0 auto; padding: 30px 20px 64px; }
+        .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 18px; border-bottom: 1px solid var(--c-border); }
+        .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--c-text); text-decoration: none; font-weight: 700; font-size: 15px; }
+        .logo {
+            width: 32px; height: 32px; border-radius: 9px;
+            display: inline-flex; align-items: center; justify-content: center;
+            background: var(--c-brand); color: #fff; font-size: 15px; font-weight: 800;
+        }
+        .back {
+            color: var(--c-text-2); text-decoration: none; font-size: 13.5px; font-weight: 500;
+            padding: 8px 14px; border: 1px solid var(--c-border); border-radius: 8px;
+            transition: color .16s, border-color .16s;
+        }
+        .back:hover { color: var(--c-brand); border-color: var(--c-brand); }
+        .doc {
+            margin-top: 26px; padding: clamp(26px, 5vw, 48px) clamp(20px, 5vw, 52px);
+            background: var(--c-surface);
+            border: 1px solid var(--c-border); border-radius: 16px;
+        }
+        .eyebrow { margin: 0 0 10px; font-size: 12px; font-weight: 600; letter-spacing: .12em; color: var(--c-text-3); }
+        h1 { margin: 0; font-size: clamp(27px, 4vw, 36px); line-height: 1.25; letter-spacing: -.6px; }
+        .meta { margin: 10px 0 0; font-size: 13px; color: var(--c-text-3); }
+        section h2 { margin: 34px 0 10px; font-size: 17px; line-height: 1.5; letter-spacing: -.2px; }
+        p, li { font-size: 14.5px; line-height: 1.9; color: var(--c-text-2); }
+        p { margin: 8px 0; }
+        ul { margin: 8px 0; padding-left: 20px; }
+        li { margin: 4px 0; }
+        a { color: var(--c-brand); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .foot { margin-top: 28px; text-align: center; font-size: 12.5px; color: var(--c-text-3); }
+        .foot a { color: var(--c-text-3); }
+        .foot a:hover { color: var(--c-brand); }
+        @media (max-width: 520px) {
+            .page { padding: 18px 12px 40px; }
+            .doc { margin-top: 16px; border-radius: 14px; }
+            .brand span:last-child { display: none; }
+        }
+    </style>
+    <script>
+        (function () {
+            try {
+                var mode = localStorage.getItem('ne21_admin_theme') || 'light';
+                var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
+                var t = mode === 'light' ? 'light' : mode === 'dark' ? 'dark' : (mq && mq.matches ? 'light' : 'dark');
+                document.documentElement.setAttribute('data-theme', t);
+            } catch (_) { }
+        })();
+    </script>
+</head>
+<body>
+    <div class="page">
+        <header class="top">
+            <a class="brand" href="/static/user.html"><span class="logo">学</span><span>学神助手</span></a>
+            <a class="back" href="/static/user.html">返回登录</a>
+        </header>
+        <main class="doc">
+            <p class="eyebrow">学神助手 · 用户协议</p>
+            <h1>服务条款</h1>
+            <p class="meta">更新日期：2026 年 11 月 28 日</p>
+
+            <section>
+                <h2>1. 服务说明</h2>
+                <p>学神助手（以下简称“本服务”）提供题库检索、AI 辅助答题、学习平台脚本工具及相关账号服务。使用本服务前请认真阅读本条款；注册、登录或使用本服务，即视为你已阅读并同意本条款。</p>
+            </section>
+
+            <section>
+                <h2>2. 账号注册与安全</h2>
+                <ul>
+                    <li>注册时请使用真实有效的邮箱，并妥善保管账号、密码与脚本密钥。</li>
+                    <li>账号仅限本人使用，不得出租、出售、共享或转让给他人。</li>
+                    <li>如发现账号异常或密码泄露，请及时修改密码并联系客服。</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>3. 使用规范</h2>
+                <ul>
+                    <li>你应遵守所在学校、学习平台的规定及适用的法律法规，不得将本服务用于违法违规用途。</li>
+                    <li>不得攻击、逆向、爬取本服务，或干扰其正常运行；不得批量注册、恶意刷取额度。</li>
+                    <li>因你违反学校或学习平台规则所产生的成绩、学籍等后果，由你自行承担。</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>4. 额度与付费</h2>
+                <ul>
+                    <li>部分功能会消耗答题额度，额度获取方式与价格以页面展示为准。</li>
+                    <li>虚拟额度一经使用不支持退款；因本服务原因导致的服务中断，按实际情况处理。</li>
+                    <li>支付由第三方支付渠道完成，退款按原支付渠道退回。</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>5. 服务变更与终止</h2>
+                <ul>
+                    <li>我们可能根据运营需要调整功能、额度规则或暂停服务，重大变更会提前公告。</li>
+                    <li>你可以随时停止使用本服务；账号注销按用户中心流程办理，注销冷静期内可凭邮箱验证码撤回。</li>
+                    <li>对违反本条款的账号，我们有权限制相关功能或予以封禁。</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>6. 免责声明</h2>
+                <ul>
+                    <li>本服务按“现状”提供，不对答题结果的正确性、完整性作出保证。</li>
+                    <li>因网络故障、第三方平台接口变更、不可抗力等导致的服务中断或数据异常，我们不承担由此产生的间接损失。</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>7. 知识产权</h2>
+                <p>本服务的页面设计、程序、题库整理等内容受法律保护。未经许可，不得复制、传播或用于商业用途。</p>
+            </section>
+
+            <section>
+                <h2>8. 条款更新</h2>
+                <p>条款更新后会在本页面公布，继续使用本服务即视为接受更新后的条款。</p>
+            </section>
+
+            <section>
+                <h2>9. 联系我们</h2>
+                <p>如有疑问，可发送邮件至 <a href="mailto:xueshen@mail.openget.cn">xueshen@mail.openget.cn</a>。</p>
+            </section>
+        </main>
+        <footer class="foot">学神助手 · <a href="/static/privacy.html">隐私政策</a> · <a href="/static/user.html">用户中心</a></footer>
+    </div>
+</body>
+</html>

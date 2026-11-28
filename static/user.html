@@ -258,7 +258,7 @@
 
         .panel {
             min-width: 0;
-            padding: clamp(28px, 3.4vw, 46px) clamp(24px, 3vw, 40px) clamp(26px, 3vw, 38px);
+            padding: clamp(24px, 3vw, 36px) clamp(22px, 3vw, 32px) clamp(22px, 3vw, 30px);
             background: var(--c-surface);
             border: 1px solid var(--c-border);
             border-radius: 20px;
@@ -268,8 +268,8 @@
         .tabs {
             display: flex; flex-wrap: wrap;
             gap: 4px 18px;
-            padding: 0 0 22px;
-            margin: 0 0 26px;
+            padding: 0 0 16px;
+            margin: 0 0 20px;
             border-radius: 0;
             background: transparent;
             border: 0;
@@ -277,8 +277,8 @@
         }
         .tab {
             position: relative;
-            border: 0; border-radius: 0; padding: 2px 0 12px;
-            margin-bottom: -23px;
+            border: 0; border-radius: 0; padding: 2px 0 10px;
+            margin-bottom: -17px;
             background: transparent; color: var(--c-text-3);
             cursor: pointer; font-weight: 600; font-size: 14px; font-family: inherit;
             transition: color .18s;
@@ -304,41 +304,41 @@
         }
 
         /* 卡片内的小标题块：浅色标签 + 大标题 + 一句说明，随当前视图切换文案 */
-        .auth-head { margin: 0 0 26px; }
+        .auth-head { margin: 0 0 18px; }
         .auth-tag {
             display: inline-flex; align-items: center;
-            height: 28px; padding: 0 12px;
-            border-radius: 7px;
+            height: 24px; padding: 0 10px;
+            border-radius: 6px;
             background: #fdf3d7; color: #7a4f01;
-            font-size: 13px; font-weight: 600; line-height: 1;
+            font-size: 12px; font-weight: 600; line-height: 1;
         }
         html[data-theme="dark"] .auth-tag { background: rgba(245, 158, 11, .16); color: #fcd38a; }
         .auth-title {
-            margin: 16px 0 0;
-            font-size: clamp(26px, 2.6vw, 32px);
-            line-height: 1.3;
+            margin: 10px 0 0;
+            font-size: clamp(23px, 2.3vw, 28px);
+            line-height: 1.28;
             font-weight: 700;
             letter-spacing: -.5px;
             color: var(--c-text);
         }
-        .auth-sub { margin: 10px 0 0; font-size: 14.5px; line-height: 1.65; color: var(--c-text-3); }
+        .auth-sub { margin: 6px 0 0; font-size: 13.5px; line-height: 1.6; color: var(--c-text-3); }
 
-        /* 卡片内的表单：字段更大、间距更松，贴近参考图的体量 */
-        .panel label { margin: 20px 0 9px; font-size: 14.5px; font-weight: 600; color: var(--c-text); }
-        .panel input, .panel select { height: 52px; padding: 0 16px; border-radius: 10px; font-size: 15px; }
+        /* 卡片内的表单：字段清晰但不拖长页面 */
+        .panel label { margin: 14px 0 7px; font-size: 14px; font-weight: 600; color: var(--c-text); }
+        .panel input, .panel select { height: 46px; padding: 0 14px; border-radius: 9px; font-size: 14.5px; }
         .panel input::placeholder { font-weight: 400; }
         .panel .row { gap: 10px; }
-        .panel .code-btn { height: 52px; padding: 0 16px; border-radius: 10px; font-size: 14px; }
-        .panel .pwd-wrap input { padding-right: 58px; }
+        .panel .code-btn { height: 46px; padding: 0 14px; border-radius: 9px; font-size: 13.5px; }
+        .panel .pwd-wrap input { padding-right: 52px; }
         .panel .pwd-toggle {
-            right: 8px; top: 50%;
-            width: 38px; height: 38px;
+            right: 6px; top: 50%;
+            width: 34px; height: 34px;
             display: inline-flex; align-items: center; justify-content: center;
             font-size: 0;
             color: var(--c-text-3);
             border-radius: 8px;
         }
-        .panel .pwd-toggle .ui-icon { width: 19px; height: 19px; }
+        .panel .pwd-toggle .ui-icon { width: 18px; height: 18px; }
         .panel .pwd-toggle:hover { color: var(--c-text); background: var(--c-surface-2); }
         /* 眼睛式密码切换：只显示图标，隐藏「显示/隐藏」文字 */
         .panel .pwd-eye { font-size: 0; }
@@ -347,21 +347,21 @@
         .panel .pwd-eye.is-visible .pwd-eye-closed { display: inline-block; }
         /* 次要的文字式按钮（如「撤回注销申请」入口），保持卡片干净 */
         .panel .link-button {
-            display: block; margin: 14px auto 0; padding: 6px 8px;
+            display: block; margin: 10px auto 0; padding: 5px 8px;
             background: none; border: 0;
-            color: var(--c-text-3); font-family: inherit; font-size: 12.5px; font-weight: 500;
+            color: var(--c-text-3); font-family: inherit; font-size: 12px; font-weight: 500;
             cursor: pointer; border-radius: 6px;
             transition: color .16s, background .16s;
         }
         .panel .link-button:hover { color: var(--c-brand); background: var(--c-brand-soft); }
         .panel .link-button:focus-visible { outline: 2px solid var(--c-brand); outline-offset: 2px; }
-        .panel .email-hint { margin-top: 8px; font-size: 12.5px; }
+        .panel .email-hint { margin-top: 6px; min-height: 0; font-size: 12px; }
 
         body:not(.app-mode) .panel button.primary {
-            width: 100%; margin-top: 28px;
-            height: 52px; min-height: 52px;
-            border-radius: 10px;
-            font-size: 15.5px; font-weight: 600; letter-spacing: .2px;
+            width: 100%; margin-top: 20px;
+            height: 48px; min-height: 48px;
+            border-radius: 9px;
+            font-size: 15px; font-weight: 600; letter-spacing: .2px;
             color: #fff; background: var(--c-brand);
             border: 0; box-shadow: none;
         }
@@ -375,8 +375,8 @@
         .panel .primary:hover .btn-arrow { transform: translateX(3px); }
         .panel .primary.is-busy .btn-arrow { display: none; }
         .panel button.secondary {
-            height: 50px; width: 100%;
-            border-radius: 10px; font-size: 14.5px; font-weight: 600;
+            height: 46px; width: 100%;
+            border-radius: 9px; font-size: 14px; font-weight: 600;
             color: var(--c-brand);
             background: var(--c-surface);
             border: 1px solid var(--c-border);
@@ -384,21 +384,19 @@
         .panel button.secondary:hover { color: var(--c-brand-strong); border-color: var(--c-brand); background: var(--c-brand-soft); }
         .panel button.secondary:focus-visible { outline: 3px solid var(--c-brand-ring); outline-offset: 2px; }
 
-        /* 「其他方式」分隔线（目前无第三方登录，保留样式备用） */
-        .links { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 18px; font-size: 13.5px; }
+        .links { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 14px; font-size: 13px; }
         .links a { color: var(--c-text-3); font-weight: 500; text-decoration: none; }
         .links a:hover { color: var(--c-brand); }
         .links .dot { color: var(--c-text-3); opacity: .7; }
         .auth-agree {
-            margin: 22px 0 0;
+            margin: 16px 0 0;
             text-align: center;
-            font-size: 12.5px; line-height: 1.7;
+            font-size: 12px; line-height: 1.6;
             color: var(--c-text-3);
         }
-        .auth-agree b { font-weight: 600; color: var(--c-text-2); }
-        .panel .revert-box { margin-top: 22px; padding-top: 20px; }
-        .panel .revert-box .hint { color: var(--c-text-2); }
-        .auth-foot { display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 18px; font-size: 12px; color: var(--c-text-3); }
+        .auth-agree a { color: var(--c-text-2); font-weight: 500; text-decoration: none; border-bottom: 1px solid transparent; transition: color .16s, border-color .16s; }
+        .auth-agree a:hover { color: var(--c-brand); border-color: currentColor; }
+        .auth-foot { display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 16px; font-size: 12px; color: var(--c-text-3); }
         .auth-foot a { color: var(--c-text-3); text-decoration: none; transition: color .16s; }
         .auth-foot a:hover { color: var(--c-brand); }
 
@@ -485,8 +483,6 @@
         .danger-box .danger-title { font-size: 13.5px; font-weight: 700; color: var(--c-danger); margin-bottom: 8px; }
         .danger-box ul { margin: 0 0 12px; padding-left: 18px; font-size: 12.5px; line-height: 1.85; color: var(--c-text-2); }
         .danger-box .blocker-list { margin: 0 0 12px; padding: 10px 12px; border-radius: var(--c-radius-sm); background: var(--c-surface-2); font-size: 12.5px; line-height: 1.8; color: var(--c-text-2); }
-        .revert-box { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--c-border); }
-        .revert-box .hint { margin-top: 0; }
         button:disabled { opacity: .55; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
 
         .code-btn {
@@ -1673,8 +1669,14 @@
             .brand-foot { display: none; }
             .panel { padding: 26px 22px 24px; border-radius: 18px; }
         }
+        @media (max-width: 640px) {
+            /* 手机上不再展示左侧品牌块，直接进入表单，避免页面过长 */
+            .auth-brand { display: none; }
+            .shell { padding-top: 26px; }
+            .panel { border-radius: 16px; }
+        }
         @media (max-width: 480px) {
-            .shell { padding: 0 18px; }
+            .shell { padding: 20px 18px 0; }
             .auth-brand { padding: 34px 2px 22px; }
             .panel { padding: 22px 16px 20px; }
             input, select, textarea, button.primary, button.secondary, .code-btn { --c-control: 44px; }
@@ -3567,21 +3569,9 @@
                 <div class="links">
                     <a href="javascript:void(0)" data-jump="register">注册新账号</a><span class="dot">·</span><a href="javascript:void(0)" data-jump="forgot">忘记密码</a>
                 </div>
-                <p class="auth-agree">登录即表示你已阅读并同意<b>《服务条款》</b>与<b>《隐私政策》</b></p>
+                <p class="auth-agree">登录即表示你已阅读并同意<a href="/static/terms.html" target="_blank" rel="noopener">《服务条款》</a>与<a href="/static/privacy.html" target="_blank" rel="noopener">《隐私政策》</a></p>
                 <div id="loginMsg" class="msg"></div>
-                <button class="link-button" type="button" id="revertToggle">撤回注销申请</button>
-                <div class="revert-box" id="revertBox" hidden>
-                    <p class="hint" style="margin:0 0 8px">账号在注销冷静期内，可凭注册邮箱的验证码撤回注销申请；冷静期结束后个人数据已删除，无法恢复。</p>
-                    <label for="revertEmail">注销时的注册邮箱</label>
-                    <input id="revertEmail" type="email" autocomplete="email" placeholder="请输入邮箱">
-                    <label for="revertCode">验证码</label>
-                    <div class="row">
-                        <input id="revertCode" placeholder="请输入邮箱验证码">
-                        <button class="code-btn" id="revertCodeBtn" type="button">发送验证码</button>
-                    </div>
-                    <button class="primary" id="revertBtn" type="button">撤回注销申请</button>
-                    <div id="revertMsg" class="msg"></div>
-                </div>
+                <button class="link-button" type="button" id="revertToggle">账号在注销冷静期？撤回注销申请</button>
             </div>
 
             <div id="register" class="view">
@@ -3608,6 +3598,7 @@
                 </div>
                 <button class="primary" id="regBtn"><span class="btn-label">注册并登录</span><svg class="ui-icon btn-arrow" aria-hidden="true"><use href="#i-arrow-right"></use></svg></button>
                 <div id="regMsg" class="msg"></div>
+                <p class="auth-agree">注册即表示你已阅读并同意<a href="/static/terms.html" target="_blank" rel="noopener">《服务条款》</a>与<a href="/static/privacy.html" target="_blank" rel="noopener">《隐私政策》</a></p>
             </div>
 
             <div id="forgot" class="view">
@@ -3632,6 +3623,24 @@
                 </div>
                 <button class="primary" id="resetBtn"><span class="btn-label">重置密码</span><svg class="ui-icon btn-arrow" aria-hidden="true"><use href="#i-arrow-right"></use></svg></button>
                 <div id="resetMsg" class="msg"></div>
+            </div>
+
+            <div id="revert" class="view">
+                <div class="auth-head">
+                    <span class="auth-tag">账号注销</span>
+                    <h2 class="auth-title">撤回注销申请</h2>
+                    <p class="auth-sub">仅注销冷静期内可撤回。冷静期结束后个人数据已删除，无法恢复。</p>
+                </div>
+                <label for="revertEmail">注销时的注册邮箱</label>
+                <input id="revertEmail" type="email" autocomplete="email" placeholder="请输入邮箱">
+                <label for="revertCode">验证码</label>
+                <div class="row">
+                    <input id="revertCode" placeholder="请输入邮箱验证码">
+                    <button class="code-btn" id="revertCodeBtn" type="button">发送验证码</button>
+                </div>
+                <button class="primary" id="revertBtn" type="button"><span class="btn-label">撤回注销申请</span><svg class="ui-icon btn-arrow" aria-hidden="true"><use href="#i-arrow-right"></use></svg></button>
+                <div id="revertMsg" class="msg"></div>
+                <div class="links"><a href="javascript:void(0)" data-jump="login">返回登录</a></div>
             </div>
 
             <div id="dashboard" class="view">
@@ -5515,6 +5524,9 @@
             document.body.classList.remove('app-mode');
             closeMobileSidebar();
             document.querySelector('.shell').style.display = 'grid';
+            // 撤回注销是独立入口，不占顶部标签栏
+            const tabsEl = document.querySelector('.tabs');
+            if (tabsEl) tabsEl.style.display = name === 'revert' ? 'none' : '';
             document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
             document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === name));
             const el = $(name);
@@ -7098,15 +7110,13 @@ await loadPlans();
         // ========== 账号注销 / 撤回 ==========
         let deleteCheckInfo = null;
 
-        // 未登录也能撤回：登录页的「撤回注销申请」用邮箱验证码
+        // 未登录也能撤回：登录页的入口跳到独立的撤回视图，用邮箱验证码
         const revertToggleBtn = $('revertToggle');
         if (revertToggleBtn) {
             revertToggleBtn.onclick = function () {
-                const box = $('revertBox');
-                if (box) box.hidden = false;
-                this.hidden = true;
                 const loginUser = ($('loginUser').value || '').trim();
-                if (loginUser.indexOf('@') > 0 && !$('revertEmail').value) $('revertEmail').value = loginUser;
+                if (loginUser.indexOf('@') > 0 && $('revertEmail') && !$('revertEmail').value) $('revertEmail').value = loginUser;
+                showView('revert');
             };
         }
         const revertCodeBtn = $('revertCodeBtn');
@@ -7132,10 +7142,9 @@ await loadPlans();
                     if (res.code === 200) {
                         $('revertCode').value = '';
                         setTimeout(function () {
-                            $('revertBox').hidden = true;
-                            const t = $('revertToggle');
-                            if (t) t.hidden = false;
-                        }, 1800);
+                            showView('login');
+                            msg('loginMsg', '注销申请已撤回，请重新登录', true);
+                        }, 1600);
                     }
                 } catch (_) { msg('revertMsg', '网络请求失败', false); }
                 setBusy(this, false);
